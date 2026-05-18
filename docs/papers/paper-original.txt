@@ -1,0 +1,1140 @@
+Modelo N4 de trazabilidad cognitiva para la enseñanza universitaria de
+programación con asistentes de IA generativa: formalización conceptual y
+propuesta de validación empírica
+
+Alberto Cortez^(¹1,2) y Ana Garis^(¹1,2)
+
+¹ Universidad Tecnológica Nacional, Facultad Regional Mendoza, Argentina
+
+² Doctorado en Ciencias de la Computación, Universidad Nacional de San
+Luis, Argentina
+
+{albertocortez, anagaris}@frm.utn.edu.ar
+
+Resumen. La irrupción de los asistentes de IA generativa en la formación
+universitaria de programación ha invalidado la premisa evaluativa
+tradicional según la cual el código entregado por el estudiante
+constituye evidencia confiable de su aprendizaje. Las respuestas
+reactivas habituales —prohibición o detección forense ex-post— resultan
+estructuralmente insuficientes porque operan sobre el producto y no
+sobre el proceso cognitivo del estudiante. Este trabajo presenta el
+Modelo N4 de Trazabilidad Cognitiva, marco analítico que organiza la
+observación del proceso de resolución en cuatro niveles articulados
+—comprensión del problema, estrategia de resolución, validación de la
+solución e interacción con IA— tratando este último como nivel autónomo
+y no como variable contextual subsidiaria. El modelo se operacionaliza
+mediante una ontología de eventos observables persistidos en un
+Cognitive Trace Record, sobre los cuales un Clasificador N4 explícito
+calcula cinco coherencias agregadas y asigna a cada episodio cerrado una
+de tres categorías de apropiación cognitiva: delegación pasiva,
+apropiación superficial o apropiación reflexiva. El paper formaliza el
+modelo, articula los tres órdenes epistemológicos involucrados (eventos
+observables, indicadores derivados, constructos sintéticos), y presenta
+una propuesta metodológica de validación basada en un diseño
+cuasi-experimental con tres hipótesis contrastables y un protocolo de
+fiabilidad intercodificador con target κ ≥ 0,70 según la convención de
+Landis y Koch. Se discute explícitamente el confound
+intervención-medición como limitación estructural del enfoque y se
+formula la agenda de validación confirmatoria.
+
+Palabras clave: trazabilidad cognitiva · IA generativa · enseñanza de
+programación · modelo N4 · evaluación auténtica · kappa de Cohen ·
+evidence-centered design · cognición distribuida.
+
+1 Introducción
+
+La incorporación masiva de asistentes de IA generativa al trabajo
+cotidiano de estudiantes de programación universitaria, fenómeno
+consolidado entre 2022 y 2026 con la disponibilidad pública amplia de
+modelos como ChatGPT, Claude, Gemini y GitHub Copilot, ha modificado en
+pocos años las prácticas formativas y evaluativas de las cátedras del
+campo. La pregunta que el cuerpo docente enfrenta no admite dilación: si
+el código entregado deja de ser evidencia confiable del razonamiento del
+estudiante, ¿cómo evaluamos lo que aprendió?
+
+El problema admite una formulación en tres dimensiones articuladas. En
+su dimensión evaluativa, la evidencia empírica reciente [4, 9, 13]
+documenta que los modelos generativos contemporáneos producen código
+funcional que supera el desempeño promedio estudiantil en CS1 y CS2, con
+la consecuencia directa de que el código entregado pierde su valor como
+base inferencial de un proceso cognitivo no observado. En su dimensión
+epistemológica, la crisis trasciende la mera validez de los instrumentos
+e interpela los fundamentos sobre los que se construyen las inferencias
+acerca del aprendizaje [11, 14]: la cadena evaluativa que iba desde el
+código (observable) hacia el aprendizaje (constructo inferido) se ha
+quebrado por la mediación opaca de un agente cuya contribución no queda
+registrada. En su dimensión pedagógica, el problema concierne a la
+formación de programadores en un ecosistema profesional que ha
+incorporado a la IA generativa como pieza estable del flujo de trabajo:
+una formación que la prohíbe segrega del contexto profesional
+contemporáneo, una formación que la admite sin más corre el riesgo de no
+formar el razonamiento autónomo que la disciplina requiere.
+
+La especificidad estructural del dominio programación agrava el
+problema. A diferencia de la escritura académica o del diseño, donde la
+voz autoral o la sensibilidad situacional dejan marcas estilísticas que
+un lector experto puede identificar, en programación la corrección
+funcional es binaria y verificable automáticamente: un fragmento de
+código que ordena una lista es indistinguible de cualquier otro
+fragmento que produzca el mismo resultado para las mismas entradas,
+independientemente de quién lo haya producido. Esta indistinguibilidad
+funcional no es una limitación temporal de los detectores sino una
+propiedad estructural del dominio.
+
+Una tercera vía, todavía minoritariamente explorada en la práctica
+argentina, propone instrumentar el proceso cognitivo del estudiante
+durante la sesión misma de trabajo y producir un registro auditable de
+sus acciones cognitivas observables, de modo que la cátedra pueda
+razonar sobre el proceso y no sólo sobre el producto [3, 18]. Esta vía
+es metodológicamente prometedora pero exige un aparato conceptual que no
+se reduce a la suma de tecnología disponible: requiere un modelo del
+proceso cognitivo que permita interpretar los registros, criterios
+evaluativos que no dependan de la corrección del artefacto, y un
+protocolo de validación que sostenga la confiabilidad de las
+inferencias.
+
+El presente trabajo presenta el Modelo N4 de Trazabilidad Cognitiva como
+respuesta articulada a esta exigencia. La sección 2 posiciona el aporte
+respecto del estado del arte. La sección 3 desarrolla el marco teórico
+que sustenta las decisiones epistemológicas del modelo. La sección 4
+formaliza el modelo en sus cuatro niveles, los tres tipos de apropiación
+de la IA, las tres dimensiones de coherencia estructural y un ejemplo
+canónico ilustrativo. La sección 5 describe la operacionalización
+mediante el Cognitive Trace Record y el Clasificador N4. La sección 6
+presenta el diseño cuasi-experimental para la validación empírica con
+sus tres hipótesis contrastables y su confound declarado. La sección 7
+formula el protocolo de fiabilidad intercodificador con kappa de Cohen y
+discute consideraciones de equidad. La sección 8 reporta hallazgos
+cualitativos parciales y la agenda confirmatoria. La sección 9 discute
+el posicionamiento del modelo frente a la literatura reciente. La
+sección 10 cierra con conclusiones.
+
+2 Antecedentes y posicionamiento
+
+El campo de la enseñanza de programación con IA generativa ha producido
+en los últimos tres años una literatura en expansión exponencial. Cinco
+revisiones recientes cubren el campo con énfasis distintos, sin que
+ninguna de ellas articule simultáneamente las dimensiones de gobernanza
+institucional, instrumentación del proceso cognitivo y validación de la
+autoría que el presente modelo propone. Elnaffar et al. [8] reportan una
+revisión sistemática de 58 estudios sobre LLM en educación universitaria
+con foco general. Reihanian et al. [16] revisan personalización
+habilitada por IA generativa en CS education con énfasis en métricas de
+desempeño. Bernstein et al. [2] documentan empíricamente el fenómeno de
+daños cognitivos (cognitive offloading, metacognitive laziness) en
+estudiantes universitarios expuestos a asistentes de IA, identificando
+224 estudios de un corpus inicial de 1677. Prather et al. [15] presentan
+un análisis cualitativo de las nuevas dimensiones del aprendizaje de
+programación en contextos mediados por IA. Una revisión bibliométrica
+reciente sobre metacognición en STEM [19] identifica el cognitive
+offloading como constructo emergente sin instrumento estandarizado de
+medición.
+
+La literatura argentina y latinoamericana 2025 documenta empíricamente
+la situación regional con varios trabajos que constituyen antecedentes
+específicos del presente modelo. Paez et al. [12] reportan, en un
+estudio preliminar, el uso de la inteligencia artificial en la enseñanza
+de la programación en universidades argentinas, encontrando adopción
+mayoritaria sin orientación pedagógica institucional explícita. Oviedo
+et al. [10] aportan la perspectiva estudiantil mediante un análisis
+basado en el Modelo 3P de Biggs en la Universidad Nacional de San Juan,
+mostrando coexistencia entre alta motivación de uso y autopercepción de
+riesgo cognitivo en los estudiantes. Garrido y Neil [9] presentan un
+mapeo sistemático de la literatura sobre el impacto de la IA en la
+experiencia de aprendizaje y las prácticas evaluativas universitarias,
+que documenta un cambio de paradigma en las metodologías de enseñanza y
+evaluación e identifica desafíos específicos para la integración de
+estas herramientas. Estos trabajos dialogan con el presente modelo en
+tres puntos específicos: confirman empíricamente la existencia del
+problema en la población argentina, identifican el gap evaluativo que el
+modelo propone abordar, y aportan el contexto institucional sobre el que
+el modelo se valida.
+
+El aporte distintivo del Modelo N4 respecto de las cinco revisiones
+internacionales y los cuatro antecedentes regionales es triple. Primero,
+ofrece un aparato conceptual que trata la interacción del estudiante con
+la IA como dimensión cognitiva autónoma con sus operaciones distintivas,
+en lugar de subsumirla bajo categorías genéricas de uso de herramientas.
+Segundo, articula tres tipos observacionalmente distinguibles de
+apropiación de la IA (delegación pasiva, apropiación superficial,
+apropiación reflexiva) que no son etiquetas morales sobre el estudiante
+sino caracterizaciones de patrones de uso del asistente. Tercero,
+propone un criterio evaluativo multidimensional —la coherencia
+estructural— que opera sobre el proceso y no sobre el producto, y se
+operacionaliza mediante indicadores reproducibles bit-a-bit que el
+cuerpo docente puede consultar y contrastar con su propio juicio
+profesional.
+
+3 Marco teórico
+
+Cuatro tradiciones teóricas convergentes sustentan las decisiones
+epistemológicas del Modelo N4. La tesis de la cognición distribuida
+[Hutchins, 1995] sostiene que la cognición humana no se localiza
+exclusivamente en el cerebro individual sino que se distribuye a través
+de artefactos, agentes y representaciones externas. Aplicada al uso de
+asistentes de IA en programación, la tesis sustenta la decisión de
+incluir N4 como nivel autónomo: la interacción con el asistente no es
+accesoria al proceso cognitivo sino potencialmente constitutiva del
+mismo. La tesis de la mente extendida [Clark y Chalmers, 1998]
+complementa este marco al argumentar que cuando un sistema externo opera
+con suficiente acoplamiento funcional con el agente humano, puede
+considerarse parte de su sistema cognitivo. La consecuencia metodológica
+es que la observación del proceso cognitivo no debe descartar la
+interacción con el asistente como distorsión a controlar sino integrarla
+como dimensión a observar.
+
+La tradición de génesis instrumental [Rabardel, 1995] aporta el
+reconocimiento de la variabilidad inter-sujeto en la apropiación de los
+instrumentos cognitivos: distintos estudiantes desarrollan distintos
+esquemas de uso de la misma herramienta, y esta variabilidad es
+pedagógicamente productiva. La distinción entre delegación pasiva,
+apropiación superficial y apropiación reflexiva que el modelo propone se
+inscribe directamente en este marco: caracteriza tres regímenes
+distintos de apropiación instrumental observables sobre los registros
+del proceso. La cuarta tradición, evidence-centered design [Mislevy,
+Steinberg y Almond, 2003; Pellegrino, Chudowsky y Glaser, 2001], aporta
+el aparato conceptual para articular cadenas inferenciales rigurosas
+desde evidencia observable hacia constructos teóricos. La crisis
+evaluativa contemporánea es, en su núcleo, una crisis del eslabón medio
+de la cadena evidence-centered: lo que era evidencia (el código) ya no
+sostiene la inferencia hacia el aprendizaje. Reconstruir la cadena exige
+producir nueva evidencia desde la observación del proceso, y articularla
+con los constructos teóricos mediante reglas explícitas de codificación.
+
+Sobre estas cuatro tradiciones se asienta una decisión epistemológica
+fundacional: el modelo distingue entre constructos contrastables
+empíricamente y constructos sintéticos que operan como horizonte
+interpretativo. Las hipótesis del trabajo (sección 6) se formulan en
+términos de indicadores derivados susceptibles de contrastación. Los
+constructos sintéticos —calidad epistémica, apropiación reflexiva en
+sentido fuerte, coherencia estructural multidimensional— operan como
+horizontes de lectura que orientan la interpretación pedagógica de los
+resultados sin pretender ser variables medibles directamente.
+
+4 El Modelo N4: formalización
+
+4.1 Los cuatro niveles del modelo
+
+El Modelo N4 organiza la observación del proceso de resolución de
+problemas de programación en cuatro niveles analíticos articulados. El
+Nivel 1 (Comprensión del problema) captura las acciones orientadas a la
+comprensión del problema antes y durante el desarrollo de una solución:
+lectura del enunciado, identificación de entradas y salidas esperadas,
+análisis de casos límite, reformulación del problema en términos
+propios. El Nivel 2 (Estrategia de resolución) captura las acciones
+orientadas al diseño de la estrategia: descomposición en subproblemas,
+elección de estructuras de datos, selección de algoritmos, articulación
+de invariantes. El Nivel 3 (Validación de la solución) captura las
+acciones de verificación contra casos de prueba, análisis de cobertura,
+depuración, razonamiento sobre complejidad. El Nivel 4 (Interacción con
+IA) captura las acciones del estudiante en su interacción con el
+asistente: formulación de prompts, lectura crítica de respuestas,
+reformulación tras respuestas insatisfactorias, verificación crítica de
+propuestas, apropiación argumentada.
+
+La decisión epistemológica de tratar la dimensión N4 como nivel
+analítico autónomo, y no como subsidiaria de los anteriores, constituye
+la contribución más distintiva del modelo. Tres consideraciones
+sustentan esta decisión. Primera, si se adoptan los marcos de cognición
+distribuida y mente extendida, la interacción con IA no es accesoria al
+proceso cognitivo sino potencialmente constitutiva. Tratarla como
+subsidiaria oscurecería su especificidad. Segunda, la interacción con IA
+tiene gramáticas propias —formulación de prompts útiles, evaluación
+crítica de respuestas, gestión iterativa de contextos— que no se reducen
+a las gramáticas de comprensión, estrategia o validación. Tercera, los
+tipos de apropiación del asistente son distinguibles analíticamente solo
+a nivel agregado, lo cual exige un nivel analítico específico que tenga
+ese objeto como foco propio. La Fig. 1 representa la arquitectura
+conceptual del modelo: tres niveles ordenados en el eje temporal del
+proceso de resolución (N1, N2, N3) más una dimensión paralela (N4) que
+atraviesa los anteriores.
+
+[]
+
+Fig. 1. Los cuatro niveles del Modelo N4. N1, N2 y N3 se ordenan en el
+eje temporal del proceso de resolución con retroalimentaciones desde N3.
+N4 (Interacción con IA) opera como dimensión paralela que atraviesa los
+tres niveles anteriores.
+
+Los cuatro niveles no son independientes. En una trayectoria típica, N1
+precede a N2, que a su vez precede a una primera producción evaluada
+mediante N3. Los resultados de N3 retroalimentan a N1 (comprensión
+revisada) o a N2 (reconsideración de la estrategia), produciendo nuevas
+iteraciones. N4 atraviesa los otros tres: la interacción con el
+asistente puede orientarse a clarificar la comprensión del problema, a
+discutir estrategias alternativas o a verificar críticamente la
+solución, y las apropiaciones resultantes se integran en cualquiera de
+los niveles. Esta arquitectura de niveles entrelazados se distingue
+explícitamente de las jerarquías taxonómicas clásicas (Bloom/Anderson y
+Krathwohl, 2001; SOLO/Biggs y Collis, 1982): no hay una jerarquía
+cognitiva entre los niveles. N3 no es necesariamente "más alto" que N1,
+ni N4 "más bajo" que N2. Los niveles son dimensiones analíticas
+paralelas del proceso, no etapas jerárquicas del desarrollo cognitivo.
+
+4.2 Operacionalización en eventos observables
+
+Cada uno de los cuatro niveles se operacionaliza mediante un catálogo de
+eventos observables registrables por la instrumentación del sistema. La
+Tabla 1 presenta la ontología de eventos organizada por nivel.
+
+Tabla 1. Ontología de eventos observables del Modelo N4 por nivel.
+
+  ----------- ---------------------------------------------------------
+  Nivel       Eventos observables registrables
+
+  N1          Lectura del enunciado · anotaciones tempranas (≤ 120s
+              desde apertura) · reformulación del problema · ejemplos
+              elaborados · preguntas clarificadoras al tutor sobre el
+              enunciado
+
+  N2          Edición de código tipeado · pseudocódigo en comentarios ·
+              selección de estructura de datos · enunciado de
+              invariante · descomposición explícita en funciones
+
+  N3          Ejecución del código · ejecución de tests con conteo de
+              pruebas pasadas/fallidas · análisis de salidas ·
+              depuración con prints · revisión de invariante
+
+  N4          Prompt enviado al tutor · respuesta recibida ·
+              reformulación de prompt · anotación post-respuesta (≤
+              60s) · código pegado desde el tutor · intento adverso
+              detectado
+  ----------- ---------------------------------------------------------
+
+Dos overrides condicionales operan sobre el mapeo base. Cuando una
+edición de código tiene origen pasted_external (código pegado desde
+fuente externa) o copied_from_tutor (código incorporado desde el propio
+tutor), su etiqueta cambia de N2 a N4 por tratarse de apropiación de
+código de origen interactivo y no de elaboración propia. Cuando una
+anotación se produce dentro de los 120 segundos posteriores a la
+apertura del episodio, se etiqueta como N1 por tratarse plausiblemente
+de lectura del enunciado; si se produce dentro de los 60 segundos
+posteriores a una respuesta del tutor, se etiqueta como N4 por
+apropiación reflexiva. Estas constantes de ventana han sido sometidas a
+análisis de sensibilidad sobre 2000 episodios sintéticos generados con
+semilla determinista, mostrando robustez de las decisiones dentro del
+rango operativo.
+
+4.3 Tres órdenes epistemológicos de los constructos
+
+La operacionalización del modelo procede mediante la distinción
+explícita de tres órdenes epistemológicos de los constructos
+involucrados. Esta distinción es importante para evitar confusiones
+entre niveles de análisis y para situar adecuadamente las afirmaciones
+del trabajo. La Fig. 2 representa la articulación de los tres órdenes
+con las hipótesis contrastables y el marco interpretativo.
+
+[]
+
+Fig. 2. Tres órdenes epistemológicos de los constructos del Modelo N4.
+Las hipótesis H1–H3 se formulan sobre indicadores de segundo orden
+(contrastables empíricamente). El marco interpretativo MI1–MI3 opera
+sobre constructos sintéticos de tercer orden (no contrastable directo).
+
+Los eventos observables (primer orden) son registros directos de
+acciones realizadas por el estudiante: clics, tipeos, prompts enviados,
+respuestas recibidas, tests ejecutados. Tienen marca temporal y contexto
+pero no constituyen aún evidencia evaluativa sin interpretación. Los
+indicadores derivados (segundo orden) son construcciones que sintetizan
+secuencias de eventos aplicando reglas de codificación explícitas:
+proporción de prompts reformulados, proporción de respuestas verificadas
+ejecutivamente, tiempo promedio entre recepción de respuesta y siguiente
+acción. Son cuantitativos y objetivos pero ya incorporan decisiones
+interpretativas. Los constructos sintéticos (tercer orden) son
+abstracciones teóricas que no se definen mediante una fórmula sino
+mediante articulación conceptual: calidad epistémica, apropiación
+reflexiva en sentido fuerte, coherencia estructural multidimensional.
+Operan como horizontes interpretativos y su validación es indirecta,
+mediante triangulación con juicios expertos y con indicadores de segundo
+orden.
+
+4.4 Tres tipos de apropiación de la IA
+
+Una contribución específica del modelo es la caracterización de tres
+tipos de apropiación de la IA observables al nivel N4. Estos tipos no
+son exhaustivos ni mutuamente excluyentes en sentido estricto (un mismo
+estudiante puede exhibir distintos tipos en distintos momentos del
+curso) pero operan como categorías pedagógicamente productivas. La Tabla
+2 sintetiza sus patrones observables característicos.
+
+Tabla 2. Tres tipos de apropiación de la IA observables en el nivel N4 y
+patrones característicos.
+
+  --------------- -----------------------------------------------------
+  Tipo            Patrones observables característicos
+
+  Delegación      Prompts genéricos (transcripción del enunciado) ·
+  pasiva          aceptación acrítica de la primera respuesta ·
+                  ausencia de verificación ejecutiva · ausencia de
+                  reformulación · ausencia de preguntas sobre los
+                  fundamentos de la respuesta
+
+  Apropiación     Prompts más elaborados que en delegación pero con
+  superficial     intención de obtener soluciones directas ·
+                  verificación ejecutiva básica (compila + tests
+                  parciales) sin verificación conceptual · reproducción
+                  de argumentos sin capacidad de explicarlos
+
+  Apropiación     Prompts epistemológicamente productivos (preguntan
+  reflexiva       por razones, comparan alternativas, solicitan
+                  verificación) · verificación crítica con
+                  contraargumentación · reformulación productiva ·
+                  integración con capacidad de explicación posterior
+  --------------- -----------------------------------------------------
+
+La distinción entre los tres tipos es observacional, no moral: no se
+trata de juzgar al estudiante sino de caracterizar patrones de uso del
+asistente. Pedagógicamente, los tipos permiten orientar intervenciones
+específicas: un estudiante con perfil de delegación pasiva puede
+beneficiarse de indicaciones explícitas sobre formulación de prompts;
+uno con apropiación superficial, de discusiones sobre verificación
+conceptual; uno con apropiación reflexiva, de desafíos adicionales que
+profundicen su práctica.
+
+4.5 Coherencia estructural como criterio evaluativo multidimensional
+
+La evaluación del proceso mediante el modelo N4 procede no mediante
+agregación de puntajes por nivel sino mediante el análisis de coherencia
+estructural entre los niveles. Un proceso de alta calidad se caracteriza
+no por la sola presencia de actividad en todos los niveles sino por la
+articulación coherente entre ellos: la comprensión del problema (N1) se
+refleja en la estrategia (N2); las validaciones (N3) producen
+retroalimentación efectiva sobre los niveles anteriores; las
+interacciones con IA (N4) se integran a los otros niveles sin
+sustituirlos. La coherencia estructural se operacionaliza en tres
+dimensiones independientes (Tabla 3) que el modelo se rehúsa
+explícitamente a colapsar en un score único, por dos razones: las tres
+dimensiones capturan aspectos teóricamente distintos no reducibles a una
+dimensión común, y la colapsación facilitaría usos evaluativos
+reduccionistas de alto stake que el modelo explícitamente declara fuera
+de su alcance legítimo.
+
+Tabla 3. Tres dimensiones de la coherencia estructural y sus indicadores
+derivados.
+
+  ----------------- ---------------------------------------------------
+  Dimensión         Indicadores de segundo orden y propósito analítico
+
+  Coherencia        Densidad de eventos por minuto en ventanas de
+  temporal          trabajo sostenido · proporción
+                    prompts/(prompts+ejecuciones) · proporción de
+                    tiempo por nivel · estructura de transiciones entre
+                    niveles. Captura la articulación de los eventos en
+                    su evolución temporal.
+
+  Coherencia        Proximidad temporal entre prompts al tutor y
+  código-discurso   ediciones de código · fracción de ediciones sin
+                    prompt cercano (ediciones huérfanas) · alineamiento
+                    semántico entre verbalizaciones del chat y
+                    artefactos producidos. Captura el alineamiento
+                    entre lo que el estudiante hace y lo que dice.
+
+  Coherencia        Estabilidad léxica intra-episodio (Jaccard de
+  inter-iteración   tokens entre prompts consecutivos) · pendiente de
+                    complejidad de prompts · transferencia
+                    inter-episodio de criterios aprendidos. Captura la
+                    estabilidad de criterios al enfrentar problemas
+                    análogos.
+  ----------------- ---------------------------------------------------
+
+Las tres dimensiones se calculan separadamente sobre cada episodio
+cerrado. La operacionalización de primera generación implementada en el
+sistema prototipo prioriza métricas computacionalmente livianas,
+deterministas y reproducibles bit-a-bit. La extensión hacia
+operacionalizaciones más sofisticadas —similitud semántica mediante
+embeddings, observación longitudinal multi-episodio para coherencia
+inter-iteración, postprocesamiento del contenido textual de las
+anotaciones— constituye agenda explícita de las líneas confirmatorias.
+
+4.6 Ejemplo canónico: trayectoria de alta coherencia sobre el problema
+del segundo mayor
+
+Para ilustrar cómo el modelo opera sobre episodios concretos, se
+presenta un ejemplo canónico construido sobre patrones observados en el
+piloto, que no reproduce un episodio individual específico sino que
+sintetiza un caso prototípico de apropiación reflexiva. El problema
+enunciado es típico de CS1: encontrar el segundo mayor elemento de una
+lista de enteros, asumiendo que existe y que puede haber repetidos en el
+máximo. La trayectoria del estudiante recorre los cuatro niveles del
+modelo de manera articulada.
+
+En el nivel N1 (Comprensión), el estudiante lee el enunciado y, ante la
+cláusula "puede haber repetidos en el máximo", consulta al asistente con
+un prompt como: "¿El segundo mayor debe ser estrictamente menor que el
+máximo o puede ser igual?". El asistente devuelve que depende de la
+definición y ofrece dos interpretaciones. El estudiante elige la
+interpretación estricta y anota en un comentario del código la decisión
+tomada. En el nivel N2 (Estrategia), escribe pseudocódigo en español:
+"recorrer la lista manteniendo dos variables: mayor y segundo_mayor".
+Pregunta al asistente sobre la complejidad de alternativas como ordenar
+la lista, y recibe una comparación entre O(n) y O(n log n). Adopta la
+alternativa O(n). En el nivel N3 (Validación), escribe tests manuales:
+la lista [3, 1, 4, 1, 5, 9, 2, 6] debe dar 6; la lista [5, 5, 3] debe
+dar 3; la lista [5, 5] debe dar ¿qué? Reconsidera el problema y anota
+que debería levantar excepción o devolver un valor indicador. Consulta
+al asistente sobre convenciones del lenguaje, elige levantar ValueError
+y ejecuta los tests.
+
+La interacción con IA al nivel N4 se manifiesta en los tres prompts
+formulados (sobre la interpretación del enunciado, sobre complejidad
+algorítmica comparativa, sobre convenciones del lenguaje), todos
+epistemológicamente productivos: no solicitan una solución directa sino
+razones y comparaciones. La verificación ejecutiva se realizó ante la
+sugerencia del asistente sobre ValueError. La apropiación es reflexiva:
+el estudiante puede explicar a posteriori por qué eligió cada
+alternativa. Este episodio exhibe alta coherencia estructural en sus
+tres dimensiones. La comprensión del problema se refleja en la
+estrategia adoptada (alta coherencia código-discurso). La estrategia
+produce artefactos validables y la validación retroalimenta la decisión
+sobre el caso límite (alta coherencia temporal). Las interacciones con
+IA orientan decisiones específicas del estudiante sin sustituirlas
+(perfil característico de apropiación reflexiva en N4). Un episodio
+contrafactual de delegación pasiva sobre el mismo enunciado exhibiría un
+único prompt genérico transcribiendo el enunciado, una sola edición de
+código pegado desde la respuesta del tutor, ninguna ejecución de tests
+previos al cierre y CCD orfanas alta por ediciones de código sin
+verbalización. La distinción observacional entre los dos perfiles es la
+base de la hipótesis H1.
+
+5 Operacionalización: el Cognitive Trace Record y el Clasificador N4
+
+5.1 El Cognitive Trace Record como artefacto evidencial
+
+La operacionalización del Modelo N4 requiere un artefacto que persista
+los eventos observables del proceso cognitivo del estudiante con
+propiedades que sostengan la cadena inferencial de evidence-centered
+design. Ese artefacto es el Cognitive Trace Record (CTR), registro de
+eventos cognitivos del estudiante durante una sesión de trabajo sobre
+una tarea práctica. Cada acción del estudiante genera un evento que el
+sistema instrumental persiste en una cadena con dos propiedades
+estructurales relevantes: encadenamiento criptográfico inmutable
+mediante hash SHA-256 sobre serialización canónica, y vinculación de
+cada evento al estado del sistema (versión del prompt del tutor,
+configuración del clasificador) que lo produjo. El registro de eventos
+del CTR es funcionalmente análogo a los estándares contemporáneos de
+trazabilidad de experiencias de aprendizaje como Caliper Analytics 1.2 o
+xAPI, pero introduce las dos extensiones mencionadas por razones
+epistemológicas específicas del problema: el encadenamiento sostiene que
+cualquier intento de tampering sobre un evento histórico produce
+automáticamente la invalidación de los hashes posteriores del mismo
+episodio (condición criptográficamente verificable), y el versionado
+vinculante sostiene la reproducibilidad inter-temporal del análisis
+(cualquier reanálisis posterior puede reconstruir qué configuración del
+modelo y del sistema estaba operando al momento en que cada estudiante
+trabajó).
+
+La propiedad arquitectónica clave del CTR es el carácter append-only
+riguroso: los eventos nunca se modifican ni se eliminan. Esta
+inalterabilidad no es una promesa procedimental sino una propiedad
+criptográfica observable, funcionalmente análoga a las cadenas hash
+documentadas en aplicaciones a sectores con requerimientos de
+auditabilidad académica. Para la cátedra, la consecuencia práctica es
+que los registros producidos constituyen evidencia de calidad académica
+defendible: el docente puede afirmar, con respaldo criptográfico, que
+las trayectorias cognitivas sobre las cuales basa su retroalimentación
+son las trayectorias efectivamente producidas por sus estudiantes
+durante el período evaluado.
+
+5.2 El Clasificador N4 sobre cinco coherencias agregadas
+
+Sobre la base de los eventos persistidos en el Cognitive Trace Record y
+de los indicadores derivados de las tres dimensiones de coherencia, el
+Clasificador N4 asigna a cada episodio cerrado una de tres categorías de
+apropiación cognitiva: delegación pasiva, apropiación superficial o
+apropiación reflexiva. La decisión de implementar el clasificador como
+árbol de decisión explícito sobre coherencias calculables, en lugar de
+un clasificador supervisado opaco entrenado sobre un corpus etiquetado,
+es deliberada y vincula directamente con la utilidad pedagógica del
+instrumento. La transparencia del proceso inferencial es condición de
+aceptabilidad académica de los sistemas que toman decisiones sobre
+estudiantes [11, 17], y la propiedad de reproducibilidad bit-exacta
+—dada la misma secuencia de eventos y el mismo reference profile, el
+clasificador produce siempre la misma clasificación— sostiene la
+auditabilidad del trabajo: dos docentes que ejecuten el clasificador
+sobre el mismo dataset obtienen los mismos resultados, condición de
+comparabilidad entre evaluaciones realizadas por distintos miembros del
+cuerpo docente.
+
+El árbol de decisión calcula sobre cada episodio cinco coherencias
+agregadas: coherencia temporal (CT) sobre densidad de eventos y
+prompt-exec ratio; coherencia código-discurso promedio (CCD prom) sobre
+proximidad temporal prompt-edición; coherencia código-discurso de
+huérfanas (CCD orfanas) sobre fracción de ediciones sin prompt cercano;
+coherencia inter-iteración estabilidad (CII estab) sobre similitud
+léxica intra-episodio; y coherencia inter-iteración evolución (CII evol)
+sobre tendencia de complejidad de prompts. La Fig. 3 representa el árbol
+de decisión que aplica reglas explícitas sobre las cinco coherencias
+para asignar categoría.
+
+[]
+
+Fig. 3. Árbol de decisión del Clasificador N4 sobre cinco coherencias
+agregadas. La categoría "apropiación superficial" opera como rama por
+defecto cuando no se cumplen las condiciones de las dos ramas
+distintivas. La salida incluye explicación textual con valores
+observados de coherencias.
+
+Cada clasificación devuelve, junto con la categoría, una explicación
+textual que articula los valores observados de las coherencias y la rama
+del árbol que aplicó. Esta explicación es lo que el docente lee cuando
+revisa la trayectoria de un estudiante: no recibe una etiqueta opaca
+sino una narrativa razonada sobre por qué el sistema clasificó el
+episodio del modo que lo hizo, narrativa que el docente puede contrastar
+con su propio juicio profesional. La articulación entre clasificación
+automática y juicio docente es lo que hace al sistema usable en el aula
+universitaria, en lugar de un instrumento cerrado que dictamina sobre
+los estudiantes. La salida del clasificador incluye además el
+classifier_config_hash, identificador criptográfico de la versión del
+reference profile activo al momento de la clasificación, propiedad
+estructural que sostiene la reproducibilidad inter-temporal del
+análisis.
+
+6 Diseño cuasi-experimental para la validación
+
+La validación empírica del Modelo N4 se conduce mediante un diseño
+cuasi-experimental específico, dentro de un marco metodológico general
+de Design-Based Research [Reeves, 2006]. La adopción del diseño
+cuasi-experimental, y no experimental puro, responde a las restricciones
+inherentes al contexto educativo real donde la asignación aleatoria de
+estudiantes a condiciones está limitada por consideraciones pedagógicas
+y éticas, y donde la existencia de cohortes naturales preexistentes
+(comisiones, grupos de clase) hace pragmáticamente inviable la
+randomización al nivel individual. Shadish, Cook y Campbell (2002)
+proporcionan el marco conceptual adoptado: los diseños
+cuasi-experimentales preservan el requisito de manipulación sistemática
+de la condición independiente pero renuncian al requisito de asignación
+aleatoria, a cambio de cuidado específico en el control de amenazas a la
+validez.
+
+6.1 Hipótesis contrastables
+
+Tres hipótesis operativas estructuran la validación, distinguidas
+explícitamente del marco interpretativo de orden superior que opera como
+horizonte de lectura de los resultados.
+
+H1 (Diferenciabilidad observacional). Los perfiles estructurales de
+trayectoria cognitiva, reconstruidos a partir del Cognitive Trace Record
+y clasificados mediante el Modelo N4, permiten distinguir
+observacionalmente entre episodios correspondientes a distintos tipos de
+apropiación de la IA (delegación pasiva, apropiación superficial,
+apropiación reflexiva).
+
+H2 (Asociación con desempeño). La coherencia estructural
+multidimensional del proceso, medida en sus tres dimensiones, se asocia
+con indicadores de desempeño independientes en tareas de transferencia,
+controlando por nivel inicial de competencia.
+
+H3 (Validez del clasificador). El Clasificador N4 alcanza fiabilidad
+intercodificador sustancial (κ ≥ 0,70 conforme a Landis y Koch, 1977)
+ante anotadores humanos capacitados, en una muestra estratificada de al
+menos 200 eventos que cubra los cuatro niveles.
+
+6.2 Condiciones, variables e instrumentos
+
+El estudio compara dos condiciones en cohortes paralelas de un mismo
+curso. La condición experimental utiliza la instrumentación del Modelo
+N4 en el desarrollo de las actividades, con sus interacciones
+registradas en el CTR y clasificadas mediante el Clasificador N4. La
+condición de comparación realiza las actividades del curso con
+metodología tradicional, sin interactuar con el sistema instrumentado, y
+tiene acceso a los recursos habituales del curso. Ambas condiciones son
+expuestas a las mismas tareas de transferencia y evaluaciones
+convencionales, que constituyen las medidas de desempeño utilizadas para
+la comparación en H2. La Tabla 4 sintetiza variables e instrumentos del
+diseño.
+
+Tabla 4. Variables e instrumentos del diseño cuasi-experimental.
+
+  ---------------- ------------------ ---------------------------------
+  Tipo             Variable           Instrumento
+
+  Independiente    Condición de uso   Asignación experimental vs.
+                                      comparación
+
+  Dependientes     Coherencia         Indicadores derivados del CTR ·
+  principales      estructural (3     Clasificador N4 · pruebas comunes
+                   dim) · tipo de     a ambos grupos
+                   apropiación ·      
+                   desempeño en       
+                   transferencia      
+
+  De control       Nivel inicial de   Pretest estandarizado ·
+                   competencia ·      cuestionario inicial
+                   experiencia previa 
+                   con IA             
+
+  Cualitativas     Reconstrucción del Entrevistas semi-estructuradas
+                   proceso por el     con submuestra estratificada ·
+                   estudiante ·       análisis temático
+                   juicio docente     
+                   sobre trayectoria  
+  ---------------- ------------------ ---------------------------------
+
+La población es estudiantes de primer y segundo año de carreras de
+informática y sistemas. El análisis de potencia estadística a priori,
+conforme a Cohen (1988), establece para detectar efectos de tamaño d ≥
+0,5 con potencia del 80 % y α = 0,05 un n mínimo por grupo de 64
+estudiantes. La muestra del piloto se constituye con voluntarios que
+aceptan participar mediante consentimiento informado. La Tabla 5
+sintetiza la articulación entre las hipótesis y las métricas que las
+validan.
+
+Tabla 5. Hipótesis contrastables, indicadores principales y criterios de
+validación.
+
+  ------ ------------------------- ------------------------------------
+  Hip.   Indicador principal       Criterio de validación
+
+  H1     Distancia entre perfiles  ANOVA / Kruskal-Wallis sobre cada
+         vectoriales de coherencia dimensión · Manova multivariada ·
+         entre las tres categorías efecto observacional con η² ≥ 0,06
+
+  H2     Correlación entre         Spearman ρ con corrección por nivel
+         coherencia estructural y  pretest · regresión múltiple · IC95%
+         desempeño en tareas de    que excluya 0
+         transferencia             
+
+  H3     Acuerdo intercodificador  κ ≥ 0,70 (sustancial, Landis y Koch
+         entre Clasificador y dos  1977) en al menos dos de los tres
+         anotadores humanos        pares evaluados
+  ------ ------------------------- ------------------------------------
+
+6.3 El confound intervención-medición
+
+La presente sección discute explícitamente una limitación metodológica
+central del diseño que no puede ser resuelta en el marco del estudio
+piloto y cuya explicitación es requisito de integridad científica. La
+instrumentación del Modelo N4 desempeña dos funciones simultáneas que en
+un diseño experimental idealmente estarían separadas: opera como
+intervención pedagógica (la condición experimental que se manipula) y
+como instrumento de medición (el mecanismo que produce los datos sobre
+los que se realizan las inferencias). Esta dualidad funcional produce un
+confound estructural: las diferencias observadas entre condiciones
+podrían deberse tanto a efectos de la intervención pedagógica como a
+diferencias en la observabilidad del proceso. Concretamente, los
+estudiantes del grupo experimental tienen sus procesos registrados en
+granularidad fina por el CTR; los del grupo de comparación no. La
+comparación entre grupos en términos de desempeño en tareas de
+transferencia es metodológicamente sólida, pero la atribución causal de
+las diferencias a la intervención pedagógica específica (separadamente
+del efecto de la observación) excede las posibilidades del presente
+diseño.
+
+Esta limitación no es un defecto local sino una propiedad estructural
+del problema: cualquier sistema de medición fina del proceso es,
+simultáneamente, una intervención. McCambridge, Witton y Elbourne
+(2014), en su revisión sobre efectos de participación en estudios,
+documentan la ubicuidad de los efectos de medición y sugieren que su
+tratamiento debe ser explícito, no negado. Las estrategias de mitigación
+adoptadas son tres: análisis intra-grupo del grupo experimental (las
+asociaciones entre coherencia estructural y desempeño, reportadas como
+parte de H2, son internas al grupo y no dependen de la comparación entre
+grupos); triangulación con fuentes independientes (entrevistas que
+permiten contrastar la reconstrucción basada en el CTR con la
+auto-reconstrucción del estudiante); y formulación de una agenda
+confirmatoria explícita (sección 8) que descomponga factorialmente el
+confound mediante diseños posteriores con grupos adicionales que reciban
+la intervención sin la medición fina.
+
+7 Protocolo de validación intercodificador del Clasificador N4
+
+La validación específica de la hipótesis H3 procede mediante el
+procedimiento estándar de fiabilidad intercodificador con kappa de Cohen
+[5, 6]. El coeficiente kappa, definido como el acuerdo observado
+corregido por el acuerdo esperado por azar, descuenta el acuerdo
+atribuible a la distribución marginal de las categorías y proporciona
+una medida más conservadora y comparable que el mero porcentaje de
+acuerdo. La interpretación adopta la convención de Landis y Koch (1977):
+valores entre 0,00 y 0,20 representan acuerdo leve; 0,21–0,40 justo;
+0,41–0,60 moderado; 0,61–0,80 sustancial; 0,81–1,00 casi perfecto. El
+umbral de aceptación adoptado para H3 es κ ≥ 0,70, valor que se ubica
+firmemente en la franja sustancial. Este umbral es exigente sin ser
+irrazonable para el tipo de clasificación en cuestión, donde las
+categorías tienen fronteras con cierto grado de borrosidad inherente.
+
+La Fig. 4 representa el flujo del protocolo en sus seis pasos
+articulados, con dos puntos de decisión que regulan la continuidad o el
+refinamiento iterativo del procedimiento.
+
+[]
+
+Fig. 4. Protocolo de validación intercodificador del Clasificador N4.
+Dos puntos de decisión regulan la continuidad: el primero tras la prueba
+piloto (calibración si κ < 0,70), el segundo tras la codificación
+principal (refinamiento del clasificador si κ < 0,70).
+
+La muestra de validación se establece en 200 eventos distribuidos 50 por
+nivel del modelo (N1, N2, N3, N4), tamaño que permite estimaciones de
+kappa con intervalo de confianza razonablemente estrecho y sensibilidad
+a diferencias de magnitud relevante. La distribución estratificada es
+importante para evitar que categorías menos frecuentes (típicamente N1
+si los estudiantes tienden a saltarla) queden subrepresentadas en la
+evaluación de fiabilidad. Dos anotadores humanos independientes
+—docentes auxiliares del curso con formación específica sobre el Modelo
+N4— reciben capacitación mediante un documento de referencia que define
+operacionalmente cada categoría con ejemplos prototípicos y casos
+límite, y mediante una sesión de codificación conjunta sobre 20
+episodios de calibración. Las anotaciones del Clasificador N4 se
+mantienen ocultas durante el proceso de codificación humana para
+garantizar independencia.
+
+Tras la codificación independiente sobre la muestra completa, se
+calculan tres pares de kappa: Clasificador vs. Anotador 1, Clasificador
+vs. Anotador 2, y Anotador 1 vs. Anotador 2. El reporte incluye el valor
+de κ con su intervalo de confianza al 95 %, la matriz de confusión entre
+categorías, el número de episodios procesados, y la categorización del
+nivel de acuerdo. Si el kappa observado cae en el tramo entre 0,40 y
+0,69, el protocolo prescribe una sesión de calibración entre los
+anotadores para revisar los desacuerdos episodio por episodio, refinar
+los criterios escritos de las tres categorías, y muestrear 50 episodios
+distintos sin reusar la muestra previa para evitar sesgo de ajuste. Si
+el kappa permanece bajo 0,40 tras dos rondas, se reformulan los
+criterios operativos del clasificador y se reinicia la validación. El
+análisis de discrepancias incluye exploración cualitativa de patrones
+sistemáticos: si dos categorías específicas se confunden con frecuencia,
+esto sugiere refinamiento de la frontera operativa entre ellas o
+reconsideración de la rama del árbol de decisión correspondiente.
+
+7.4 Consideraciones de equidad y sesgo del criterio de coherencia
+
+El criterio de coherencia estructural, aunque epistemológicamente
+fundado, no es un criterio neutral respecto de estilos de aprendizaje y
+de configuraciones culturales del estudiante. Una discusión honesta de
+sus limitaciones exige reconocer cuatro modos en que podría desfavorecer
+sistemáticamente a ciertos perfiles. Primero, los estilos de aprendizaje
+no lineales, documentados en la literatura sobre creatividad y
+aprendizaje, exhiben múltiples saltos entre niveles, experimentación
+lateral y exploración de alternativas no directamente vinculadas a la
+solución final. Estos estilos pueden ser clasificados erróneamente como
+baja coherencia temporal cuando en realidad constituyen un patrón
+productivo distinto. La mitigación se realiza mediante la conservación
+del perfil multidimensional (no colapsado a un score único) y el
+contraste con triangulación cualitativa.
+
+Segundo, los patrones culturales diversos presuponen que el estudiante
+verbaliza sus decisiones en el chat con el tutor. Estudiantes de
+culturas o contextos donde la verbalización del proceso no es parte del
+repertorio habitual pueden exhibir baja coherencia código-discurso sin
+que esto refleje deficiencia en su proceso cognitivo. La mitigación
+incluye la posibilidad de modalidades alternativas de registro de
+discurso (comentarios estructurados en el código, notas personales en el
+sistema). Tercero, los estudiantes con discapacidades o necesidades
+específicas pueden encontrar barreras de accesibilidad que afecten
+diferencialmente el registro observable; el monitoreo de estos efectos
+es parte de la agenda de investigación responsable. Cuarto, la brecha
+digital previa puede manifestarse en los primeros episodios como
+patrones que se asemejan a delegación pasiva pero que reflejan
+exploración inicial más que patrón estable. La observación longitudinal
+es esencial para no hacer diagnósticos prematuros.
+
+Estas consideraciones de equidad no invalidan el criterio pero exigen
+uso cauteloso. Por esta razón, el modelo se propone explícitamente como
+instrumento diagnóstico para la orientación pedagógica, no como
+instrumento de selección o acreditación de alto stake. El protocolo
+interpretativo de los resultados incorpora siete principios rectores:
+contextualidad (toda lectura considera el contexto institucional),
+no-reducción (los constructos sintéticos no se reducen a indicadores),
+triangulación obligatoria (toda inferencia involucra al menos dos
+fuentes independientes), no-etiquetado individual (las categorías
+describen episodios, no estudiantes), no-uso para alto stake sin
+triangulación, explicitación de versión (todo reporte incluye
+classifier_config_hash) y apertura a la crítica (los datos están
+disponibles para reanálisis externo).
+
+8 Hallazgos preliminares del piloto y agenda confirmatoria
+
+El sistema instrumental que materializa el Modelo N4 fue desplegado
+durante el ciclo lectivo 2026 en un piloto universitario que registra al
+cierre de este reporte del orden de 108 episodios cerrados. Los
+hallazgos cualitativos del pilotaje, que pueden reportarse con el
+carácter provisorio propio del análisis en curso, sugieren patrones
+consistentes con las hipótesis operativas. Los estudiantes del grupo
+experimental exhibieron diferenciación observacional entre los tres
+tipos de apropiación; el Clasificador N4 produjo perfiles que fueron
+reconocibles por los docentes cuando se les presentaron anonimizados;
+las discusiones con los estudiantes en las entrevistas mostraron que el
+modelo capturaba diferencias fenomenológicamente reconocibles para
+ellos. Tres patrones específicos merecen mención. Primero, los
+estudiantes con perfil inicial de delegación pasiva que recibieron
+retroalimentación específica del sistema mostraron, en los episodios
+subsiguientes, mayor frecuencia de prompts reformulados y mayor
+presencia de eventos N1 (comprensión). Segundo, los estudiantes con
+perfil inicial de apropiación reflexiva mantuvieron sus patrones con
+cierta variabilidad pero sin regresión sistemática a modos más
+superficiales. Tercero, los estudiantes con perfil intermedio
+(apropiación superficial) mostraron mayor heterogeneidad en sus
+trayectorias, con algunos avanzando hacia apropiación reflexiva y otros
+oscilando.
+
+Estos patrones son consistentes con el marco interpretativo MI1–MI3 pero
+no deben confundirse con contrastación cuantitativa de las hipótesis. La
+contrastación cuantitativa de H1, H2 y H3 requiere el cierre del estudio
+empírico principal, en curso al momento de la submisión. La Tabla 6
+sintetiza el estado de cada componente del reporte empírico al momento
+de cierre.
+
+Tabla 6. Estado del reporte empírico al momento de cierre.
+
+  -------------------------- ------------- -----------------------------
+  Componente                 Estado        Próximo hito
+
+  Modelo N4: formalización   Cerrado       —
+  conceptual                               
+
+  Sistema instrumental       Desplegado    Iteración v1.1.0 con
+  v1.0.0                                   extensiones de eventos
+
+  Hallazgos cualitativos del Provisorios   Análisis temático completo de
+  piloto                                   entrevistas
+
+  Validación intercoder (H3) En ejecución  Cierre del protocolo y
+                                           reporte de κ
+
+  Análisis cuantitativo H1,  Pendiente     Cierre del reclutamiento del
+  H2                                       grupo de comparación
+
+  Análisis factorial         Pendiente     EFA con KMO, Bartlett y
+  exploratorio                             análisis paralelo
+  -------------------------- ------------- -----------------------------
+
+Cinco riesgos específicos del estudio se declaran a priori, con sus
+estrategias de mitigación respectivas: efecto Hawthorne (mitigación por
+extensión temporal del piloto), performatividad cognitiva (mitigación
+por análisis intra-grupo), deriva comportamental del LLM subyacente
+(mitigación por versionado del prompt), brecha digital previa
+(mitigación por observación longitudinal antes que diagnóstico
+prematuro) y sobrecarga cognitiva (mitigación por diseño de la interfaz
+con feedback continuo). La agenda confirmatoria explícita comprende
+siete líneas: descomposición factorial del confound
+intervención-medición, replicación multisite, análisis factorial
+confirmatorio sobre muestra independiente, extensión a otros dominios
+cognitivos, estudios longitudinales, integración institucional a gran
+escala, e investigación metacognitiva sobre los efectos del propio uso
+del modelo en la auto-percepción del estudiante.
+
+9 Discusión: posicionamiento del Modelo N4 frente a la literatura
+reciente
+
+El Modelo N4 dialoga con tres cuerpos de literatura reciente que
+conviene posicionar explícitamente. El primero es el cuerpo de
+revisiones sistemáticas sobre IA generativa en educación de
+programación. Las cinco revisiones identificadas en la sección 2 cubren
+parcialmente el campo pero ninguna articula simultáneamente las
+dimensiones que el presente modelo aborda. La revisión amplia de
+Elnaffar et al. opera sobre toda la educación universitaria sin foco
+disciplinar; la de Reihanian et al. enfoca personalización con énfasis
+en métricas de desempeño sin tomar posición sobre el régimen de uso del
+asistente; la de Bernstein et al. documenta empíricamente daños
+cognitivos pero sin ofrecer aparato analítico para distinguir tipos de
+apropiación; la de Prather et al. problematiza la dimensión cualitativa
+sin instrumento evaluativo replicable; la revisión bibliométrica sobre
+metacognición en STEM identifica el cognitive offloading como constructo
+emergente sin instrumento estandarizado de medición. El Modelo N4 no es
+alternativo a estas revisiones sino complementario: ofrece un aparato
+conceptual operacionalizable que podría servir como instrumento común
+para que estudios futuros cuantifiquen rigurosamente la incidencia de
+los tres tipos de apropiación en distintos contextos.
+
+El segundo cuerpo de literatura es el de tutores inteligentes basados en
+LLM con configuración pedagógica explícita. Trabajos como AutoTutor con
+guardarraíles [3] y SocraticAI [18] han consolidado la observación de
+que la mera disponibilidad de un asistente generativo en el contexto
+educativo no produce automáticamente beneficio pedagógico, y que la
+productividad efectiva del asistente depende de su configuración
+pedagógica explícita. El presente modelo extiende este hallazgo en una
+dirección específica: la configuración pedagógica del tutor es condición
+necesaria pero no suficiente. La condición complementaria es la
+instrumentación del proceso cognitivo del estudiante en interacción con
+el tutor configurado, lo cual permite distinguir si el estudiante
+aprovecha efectivamente el régimen socrático del asistente o desarrolla
+estrategias de elusión que conducen a apropiación superficial pese a la
+configuración del tutor. La articulación entre tutor configurado y CTR
+instrumentado es lo que sostiene la diferencia.
+
+El tercer cuerpo de literatura es el de evaluación basada en procesos y
+learning analytics. La tradición de evidence-centered design [14] aporta
+el aparato conceptual general pero su aplicación al dominio específico
+de programación con IA generativa exige extensiones. Las revisiones
+recientes sobre métodos de inteligencia artificial explicable en
+educación [11, 17] consolidan que la transparencia del proceso
+inferencial es condición de aceptabilidad académica de los sistemas que
+toman decisiones sobre estudiantes. El Modelo N4 se inscribe en esta
+tradición mediante tres decisiones específicas: implementación del
+clasificador como árbol explícito (no modelo supervisado opaco),
+reproducibilidad bit-exacta de las clasificaciones, y narrativa textual
+de explicación que el docente puede contrastar con su propio juicio
+profesional. La articulación entre transparencia técnica y juicio
+profesional docente es lo que diferencia al modelo de propuestas que
+pretenden reemplazar la evaluación docente por automatización opaca.
+
+Una limitación del presente posicionamiento merece explicitarse. El
+Modelo N4 fue formulado en el contexto institucional argentino, sobre
+cohortes de carreras de informática y sistemas en una universidad
+nacional argentina, con estudiantes que cursan en español y con
+materiales de cátedra producidos en español. La generalización a otros
+contextos institucionales, otros idiomas de cursada (particularmente al
+portugués brasileño y al inglés de carreras internacionales), otros
+sistemas educativos y otras culturas pedagógicas requiere replicación
+específica. La línea de replicación multisite, declarada como Línea 2 de
+la agenda confirmatoria, articula los criterios para esta extensión:
+invariantes de diseño que deben preservarse (los cuatro niveles del
+modelo, los tres tipos de apropiación, las tres dimensiones de
+coherencia, el target κ ≥ 0,70) y dimensiones variables que pueden
+adaptarse al contexto local (ventanas temporales del etiquetador,
+criterios específicos de calibración del prompt del tutor, granularidad
+de los eventos del CTR). El presente paper formula el modelo y propone
+su validación inicial; la consolidación cross-cultural es objeto
+explícito de trabajo futuro.
+
+10 Conclusiones
+
+El presente trabajo formalizó el Modelo N4 de Trazabilidad Cognitiva
+como respuesta articulada a la crisis evaluativa contemporánea de la
+formación universitaria de programación con asistentes de IA generativa.
+La contribución se sitúa en cuatro niveles. En el nivel conceptual, la
+formalización del modelo con la interacción con IA como nivel analítico
+autónomo, los tres tipos de apropiación observacionalmente
+distinguibles, y la coherencia estructural multidimensional como
+criterio evaluativo. En el nivel evaluativo, el desplazamiento del foco
+desde el producto (código entregado, opaco bajo mediación de IA) hacia
+el proceso (trayectoria registrada, observable bajo instrumentación). En
+el nivel metodológico, la propuesta de validación con tres hipótesis
+contrastables, un diseño cuasi-experimental con declaración explícita
+del confound intervención-medición, y un protocolo de fiabilidad
+intercodificador con target κ ≥ 0,70 alineado con la convención de
+Landis y Koch. En el nivel epistemológico, la distinción entre tres
+órdenes de constructos —observables, indicadores derivados, sintéticos—
+que evita confusiones entre niveles de análisis y sitúa adecuadamente
+las afirmaciones de validez del trabajo.
+
+La integridad epistemológica del trabajo se sostiene en lo que el modelo
+es y, en igual medida, en lo que el modelo declara explícitamente no
+ser. El Modelo N4 es un marco analítico para observar el proceso de
+resolución, una propuesta operacionalizable mediante instrumentación
+auditable, un aparato conceptual para evaluación basada en coherencia
+estructural, y una contribución abierta a contrastación empírica y
+refinamiento. El Modelo N4 no es una taxonomía pedagógica universal de
+tipo Bloom, no es un sistema de acreditación de alto stake, no asigna
+etiquetas globales a estudiantes, no es una caja negra algorítmica, y no
+es una respuesta definitiva al problema de la evaluación en la era
+AI-Native: es una contribución, no un cierre. La agenda confirmatoria
+explícita formulada en la sección 8 articula las extensiones necesarias
+para consolidar las afirmaciones del modelo más allá del piloto inicial.
+
+Agradecimientos. Los autores agradecen al equipo del PID UTN-FRM y
+Universidad Marcelino Champagnat sobre evaluación auténtica con IA
+generativa, particularmente a Daniela Carbonari (co-directora del PID),
+Bruno Roberti, Carlos Martínez, Claudia Naveda, Juan Sarmiento y Juan
+Robledo, por las discusiones que enriquecieron el aparato conceptual del
+modelo. Se reconoce el apoyo institucional de UTN-FRM y de UNSL.
+
+Referencias
+
+1. Arksey, H., O’Malley, L.: Scoping studies: towards a methodological
+framework. International Journal of Social Research Methodology 8(1),
+19–32 (2005)
+
+2. Bernstein, S., Rahman, A., Sharifi, N., Terbish, A., MacNeil, S.:
+Beyond the Benefits: A Systematic Review of the Harms and Consequences
+of Generative AI in Computing Education. In: Proc. 25th Koli Calling
+International Conference on Computing Education Research (Koli Calling
+’25), pp. 1–18, ACM (2025). https://doi.org/10.1145/3769994.3770036
+
+3. Chowdhury, S.P., Zouhar, V., Sachan, M.: AutoTutor meets large
+language models: a language model tutor with rich pedagogy and
+guardrails. In: Proc. 11th ACM Conf. Learning at Scale, pp. 5–15 (2024)
+
+4. Clark, A., Chalmers, D.: The extended mind. Analysis 58(1), 7–19
+(1998)
+
+5. Cohen, J.: A coefficient of agreement for nominal scales. Educational
+and Psychological Measurement 20(1), 37–46 (1960)
+
+6. Cohen, J.: Statistical Power Analysis for the Behavioral Sciences,
+2nd edn. Lawrence Erlbaum Associates (1988)
+
+7. Denny, P., Prather, J., Becker, B.A., Finnie-Ansley, J., Hellas, A.,
+Leinonen, J., Luxton-Reilly, A., Reeves, B.N., Santos, E.A., Sarsa, S.:
+Computing education in the era of generative AI. Communications of the
+ACM 67(2), 56–67 (2024)
+
+8. Elnaffar, S., Rashidi, F., Abualkishik, A.Z.: Teaching with AI: A
+Systematic Review of Chatbots, Generative Tools, and Tutoring Systems in
+Programming Education. International Journal of Learning, Teaching and
+Educational Research 25(1), 1–28 (2026).
+https://doi.org/10.26803/ijlter.25.1.1
+
+9. Garrido, N., Neil, C.G.: Impact of Artificial Intelligence on the
+Learning Experience: A Systematic Literature Mapping. En: Simposio
+Argentino de Educación en Informática (SAEI 2025), 54° JAIIO, Vol. 11
+No. 8, pp. 1–14, SADIO (2025).
+http://sedici.unlp.edu.ar/handle/10915/190295
+
+10. Hutchins, E.: Cognition in the Wild. MIT Press, Cambridge MA (1995)
+
+11. Islam, M.R., Nitu, A.M., Marjan, M.A., Uddin, M.P., Afjal, M.I., Al
+Mamun, M.A., Aung, Z.: Enhancing tertiary students’ programming skills
+with an explainable Educational Data Mining approach. PLOS ONE 19(9),
+e0307536 (2024)
+
+12. Landis, J.R., Koch, G.G.: The measurement of observer agreement for
+categorical data. Biometrics 33(1), 159–174 (1977)
+
+13. Levac, D., Colquhoun, H., O’Brien, K.K.: Scoping studies: advancing
+the methodology. Implementation Science 5, 69 (2010)
+
+14. McCambridge, J., Witton, J., Elbourne, D.R.: Systematic review of
+the Hawthorne effect: new concepts are needed to study research
+participation effects. Journal of Clinical Epidemiology 67(3), 267–277
+(2014)
+
+15. Mislevy, R.J., Steinberg, L.S., Almond, R.G.: Focus article: on the
+structure of educational assessments. Measurement: Interdisciplinary
+Research and Perspectives 1(1), 3–62 (2003)
+
+16. Oviedo, S., Diaz, D., Otazú, A.: Perspectiva estudiantil sobre el
+uso de inteligencia artificial generativa en la enseñanza universitaria
+mediante el Modelo 3P de Biggs. Universidad Nacional de San Juan, FCEFN,
+Instituto de Informática (2025). [En prensa]
+
+17. Paez, N., Marcet, D., Cozzi, G.: Uso de la inteligencia artificial
+en la enseñanza de la programación: un estudio preliminar. JAIIO,
+Jornadas Argentinas de Informática 11(8), 74–79 (2025). En: Simposio
+Argentino de Educación en Informática (SAEI 2025), 54° JAIIO, SADIO.
+https://revistas.unlp.edu.ar/JAIIO/article/view/19934
+
+18. Pellegrino, J.W., Chudowsky, N., Glaser, R. (eds.): Knowing What
+Students Know: The Science and Design of Educational Assessment.
+National Academy Press (2001)
+
+19. Prather, J., Leinonen, J., Kiesler, N., et al.: Beyond the Hype: A
+Comprehensive Review of Current Trends in Generative AI Research,
+Teaching Practices, and Tools. In: Proc. 2024 ITiCSE Working Group
+Reports, ACM (2024). arXiv:2412.14732
+
+20. Rabardel, P.: Les hommes et les technologies: approche cognitive des
+instruments contemporains. Armand Colin, Paris (1995)
+
+21. Reihanian, I., Hou, Y., Sun, Q.: From Pilots to Practices: A Scoping
+Review of GenAI-Enabled Personalization in Computer Science Education.
+AI (MDPI) 7(1), 6 (2026). https://doi.org/10.3390/ai7010006
+
+22. Shadish, W.R., Cook, T.D., Campbell, D.T.: Experimental and
+Quasi-Experimental Designs for Generalized Causal Inference. Houghton
+Mifflin (2002)
+
+23. Soloway, E., Spohrer, J.C. (eds.): Studying the Novice Programmer.
+Lawrence Erlbaum Associates (1989)
+
+24. Sunil, K., Thakkar, A.: SocraticAI: transforming LLMs into guided CS
+tutors through scaffolded interaction. arXiv preprint arXiv:2512.03501
+(2025)
+
+25. Tricco, A.C., Lillie, E., Zarin, W., O’Brien, K.K., Colquhoun, H.,
+Levac, D., et al.: PRISMA Extension for Scoping Reviews (PRISMA-ScR):
+checklist and explanation. Annals of Internal Medicine 169(7), 467–473
+(2018)
+
+26. Türkmen, G.: The review of studies on explainable artificial
+intelligence in educational research: a systematic review from 2019 to
+2024. Journal of Educational Computing Research (2025)

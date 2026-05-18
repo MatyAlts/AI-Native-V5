@@ -1,0 +1,129 @@
+# Valores default del chart de la plataforma.
+# Para overrides por ambiente, ver values.staging.yaml y values.production.yaml.
+
+global:
+  imageRegistry: ghcr.io/your-org
+  imagePullPolicy: IfNotPresent
+  env: development
+
+image:
+  tag: latest
+
+# Lista de todos los servicios; cada uno tendrá su Deployment + Service.
+services:
+  api-gateway:
+    port: 8000
+    replicas: 2
+    strategy: blue-green  # ADR-015
+    resources:
+      requests: { cpu: 100m, memory: 256Mi }
+      limits: { cpu: 500m, memory: 512Mi }
+
+  # identity-service: DEPRECATED por ADR-041 (auth via api-gateway + Casbin).
+  # enrollment-service: DEPRECATED por ADR-030 (bulk-import en academic-service).
+  # Ambos servicios borrados del workspace; ver ADRs para detalle de revival.
+
+  academic-service:
+    port: 8002
+    replicas: 2
+    strategy: blue-green
+
+  evaluation-service:
+    port: 8004
+    replicas: 2
+    strategy: blue-green
+
+  analytics-service:
+    port: 8005
+    replicas: 2
+    strategy: blue-green
+    resources:
+      requests: { cpu: 250m, memory: 512Mi }
+      limits: { cpu: 1000m, memory: 1Gi }
+
+  tutor-service:
+    port: 8006
+    replicas: 3
+    strategy: blue-green
+
+  ctr-service:
+    port: 8007
+    replicas: 8  # uno por partición, ADR-005
+    strategy: rolling  # ADR-015
+    resources:
+      requests: { cpu: 250m, memory: 512Mi }
+      limits: { cpu: 1000m, memory: 1Gi }
+
+  classifier-service:
+    port: 8008
+    replicas: 2
+    strategy: rolling
+    resources:
+      requests: { cpu: 500m, memory: 1Gi }
+      limits: { cpu: 2000m, memory: 2Gi }
+
+  content-service:
+    port: 8009
+    replicas: 2
+    strategy: blue-green
+    resources:
+      requests: { cpu: 500m, memory: 2Gi }  # embeddings local = GPU o mucha RAM
+      limits: { cpu: 2000m, memory: 4Gi }
+
+  governance-service:
+    port: 8010
+    replicas: 2
+    strategy: blue-green
+
+  ai-gateway:
+    port: 8011
+    replicas: 3
+    strategy: blue-green
+
+# Frontends
+frontends:
+  web-admin:
+    replicas: 2
+  web-teacher:
+    replicas: 2
+  web-student:
+    replicas: 3
+
+# PostgreSQL (usar un operator real en producción, ej. CloudNativePG)
+postgres:
+  enabled: false  # asumimos managed/externo en prod
+  host: postgres.example.com
+  port: 5432
+
+# Redis
+redis:
+  enabled: false
+  host: redis.example.com
+  port: 6379
+
+# Ingress (Traefik por default)
+ingress:
+  enabled: true
+  className: traefik
+  hosts:
+    - host: api.platform.example.com
+      paths: ["/"]
+    - host: admin.platform.example.com
+      paths: ["/"]
+  tls:
+    - hosts:
+        - api.platform.example.com
+        - admin.platform.example.com
+      secretName: platform-tls
+
+# Autoscaling default
+autoscaling:
+  enabled: true
+  minReplicas: 2
+  maxReplicas: 10
+  targetCPUUtilizationPercentage: 70
+
+# Observabilidad
+observability:
+  otelEndpoint: otel-collector:4317
+  sentryEnabled: true

@@ -1,0 +1,106 @@
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: ctr-integrity-checker
+  labels:
+    app.kubernetes.io/name: ctr-integrity-checker
+    app.kubernetes.io/part-of: platform
+spec:
+  # Cada 6 horas. Verifica episodios de las últimas 24h (ventana de overlap
+  # para no perder casos por delays de ingesta).
+  schedule: "0 */6 * * *"
+  concurrencyPolicy: Forbid  # no correr dos jobs simultáneos
+  successfulJobsHistoryLimit: 3
+  failedJobsHistoryLimit: 5
+  startingDeadlineSeconds: 600
+
+  jobTemplate:
+    spec:
+      backoffLimit: 1  # un retry si falla; luego alerta
+      ttlSecondsAfterFinished: 86400  # limpiar pods completados a las 24h
+      template:
+        metadata:
+          labels:
+            app.kubernetes.io/name: ctr-integrity-checker
+        spec:
+          restartPolicy: OnFailure
+          serviceAccountName: ctr-integrity-checker
+          containers:
+            - name: checker
+              image: platform/ctr-service:latest
+              imagePullPolicy: IfNotPresent
+              command:
+                - python
+                - -m
+                - ctr_service.workers.integrity_checker
+                - --since-hours
+                - "24"
+              env:
+                - name: CTR_DB_URL
+                  valueFrom:
+                    secretKeyRef:
+                      name: ctr-service-secrets
+                      key: db-url
+                - name: OTEL_ENDPOINT
+                  value: "http://otel-collector:4317"
+                - name: SERVICE_NAME
+                  value: "ctr-integrity-checker"
+                - name: ENVIRONMENT
+                  value: "production"
+              resources:
+                requests:
+                  cpu: "100m"
+                  memory: "256Mi"
+                limits:
+                  cpu: "500m"
+                  memory: "512Mi"
+---
+# ServiceAccount con permisos mínimos (solo read/write a su propia DB,
+# ningún permiso de cluster)
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: ctr-integrity-checker
+  labels:
+    app.kubernetes.io/name: ctr-integrity-checker
+---
+# PrometheusRule: alerta si el último job falló o detectó violaciones
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: ctr-integrity-alerts
+  labels:
+    app.kubernetes.io/name: ctr-integrity-checker
+    prometheus: platform
+spec:
+  groups:
+    - name: ctr-integrity
+      rules:
+        - alert: CTRIntegrityJobFailed
+          expr: |
+            kube_job_failed{job_name=~"ctr-integrity-checker.*"} > 0
+          for: 10m
+          labels:
+            severity: critical
+          annotations:
+            summary: "CTR integrity checker falló en el último run"
+            description: >
+              El job de verificación de integridad criptográfica del CTR
+              falló. Sin este job, nuevas manipulaciones de la cadena
+              podrían pasar desapercibidas. Investigar logs del pod.
+            runbook_url: "https://wiki.platform/runbooks/ctr-integrity"
+
+        - alert: CTRIntegrityViolationsDetected
+          expr: |
+            kube_job_status_succeeded{job_name=~"ctr-integrity-checker.*"}
+            and on(namespace) kube_pod_container_status_last_terminated_exitcode
+              {container="checker"} == 1
+          for: 1m
+          labels:
+            severity: critical
+          annotations:
+            summary: "Violaciones de integridad del CTR detectadas"
+            description: >
+              El checker detectó episodios con cadena manipulada. Los
+              episodios afectados quedaron marcados `integrity_compromised=true`
+              en la base. Revisar kubectl logs del último pod del job.

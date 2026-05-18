@@ -1,0 +1,85 @@
+{
+  "annotations": {"list": []},
+  "description": "Audiencia: pedagogía + demo de defensa. Engagement con el tutor socrático — episodios open/close/abandon, latencia bajo SLO (3s p95 / 8s p99), intentos adversos detectados. Refresh 30s.",
+  "editable": true,
+  "fiscalYearStartMonth": 0,
+  "graphTooltip": 0,
+  "id": null,
+  "links": [],
+  "liveNow": false,
+  "panels": [
+    {
+      "datasource": {"type": "prometheus", "uid": "prometheus"},
+      "fieldConfig": {"defaults": {"unit": "ops"}, "overrides": []},
+      "gridPos": {"h": 8, "w": 12, "x": 0, "y": 0},
+      "id": 1,
+      "options": {"legend": {"displayMode": "list", "placement": "bottom", "showLegend": true}, "tooltip": {"mode": "multi"}},
+      "targets": [
+        {"expr": "sum(rate(ctr_events_total{event_type=\"episodio_abierto\", tenant_id=~\"$tenant\"}[1m]))", "legendFormat": "abiertos", "refId": "A"},
+        {"expr": "sum(rate(ctr_events_total{event_type=\"episodio_cerrado\", tenant_id=~\"$tenant\"}[1m]))", "legendFormat": "cerrados", "refId": "B"},
+        {"expr": "sum(rate(ctr_events_total{event_type=\"episodio_abandonado\", tenant_id=~\"$tenant\"}[1m]))", "legendFormat": "abandonados", "refId": "C"}
+      ],
+      "title": "Episodios opened/closed/abandoned (per minuto)",
+      "type": "timeseries"
+    },
+    {
+      "datasource": {"type": "prometheus", "uid": "prometheus"},
+      "fieldConfig": {"defaults": {"unit": "s", "custom": {"thresholdsStyle": {"mode": "line+area"}}, "thresholds": {"mode": "absolute", "steps": [{"color": "green", "value": null}, {"color": "yellow", "value": 3}, {"color": "red", "value": 8}]}}, "overrides": []},
+      "gridPos": {"h": 8, "w": 12, "x": 12, "y": 0},
+      "id": 2,
+      "options": {"legend": {"displayMode": "list", "placement": "bottom", "showLegend": true}, "tooltip": {"mode": "multi"}},
+      "targets": [
+        {"expr": "histogram_quantile(0.5, sum(rate(tutor_response_duration_seconds_bucket[5m])) by (le))", "legendFormat": "p50", "refId": "A"},
+        {"expr": "histogram_quantile(0.99, sum(rate(tutor_response_duration_seconds_bucket[5m])) by (le))", "legendFormat": "p99", "refId": "B"}
+      ],
+      "title": "Tutor response latency p50/p99 (SLO: p95<3s, p99<8s)",
+      "type": "timeseries"
+    },
+    {
+      "datasource": {"type": "prometheus", "uid": "prometheus"},
+      "fieldConfig": {"defaults": {"unit": "ops"}, "overrides": []},
+      "gridPos": {"h": 8, "w": 12, "x": 0, "y": 8},
+      "id": 3,
+      "options": {"legend": {"displayMode": "list", "placement": "bottom", "showLegend": true}, "tooltip": {"mode": "multi"}},
+      "targets": [{"expr": "sum by (category) (rate(ctr_events_total{event_type=\"intento_adverso_detectado\", tenant_id=~\"$tenant\"}[5m]))", "legendFormat": "{{category}}", "refId": "A"}],
+      "title": "intento_adverso_detectado rate por categoría (RN-129)",
+      "type": "timeseries"
+    },
+    {
+      "datasource": {"type": "prometheus", "uid": "prometheus"},
+      "fieldConfig": {"defaults": {"unit": "short"}, "overrides": []},
+      "gridPos": {"h": 8, "w": 6, "x": 12, "y": 8},
+      "id": 4,
+      "options": {"legend": {"displayMode": "list", "placement": "bottom", "showLegend": true, "values": ["percent"]}, "pieType": "donut", "reduceOptions": {"calcs": ["lastNotNull"], "fields": "", "values": false}, "tooltip": {"mode": "single"}},
+      "targets": [{"expr": "sum by (prompt_kind) (rate(ctr_events_total{event_type=\"prompt_enviado\", tenant_id=~\"$tenant\"}[1h]))", "legendFormat": "{{prompt_kind}}", "refId": "A"}],
+      "title": "prompt_kind distribution (1h)",
+      "type": "piechart"
+    },
+    {
+      "datasource": {"type": "prometheus", "uid": "prometheus"},
+      "fieldConfig": {"defaults": {"unit": "short", "thresholds": {"mode": "absolute", "steps": [{"color": "green", "value": null}]}}, "overrides": []},
+      "gridPos": {"h": 8, "w": 6, "x": 18, "y": 8},
+      "id": 5,
+      "options": {"colorMode": "value", "graphMode": "area", "justifyMode": "auto", "orientation": "auto", "reduceOptions": {"calcs": ["lastNotNull"], "fields": "", "values": false}, "textMode": "auto"},
+      "targets": [{"expr": "tutor_active_sessions_count", "refId": "A"}],
+      "title": "Sesiones activas",
+      "type": "stat"
+    }
+  ],
+  "refresh": "30s",
+  "schemaVersion": 39,
+  "tags": ["tutor", "engagement", "piloto-unsl"],
+  "templating": {
+    "list": [
+      {"current": {"selected": false, "text": "All", "value": "$__all"}, "datasource": {"type": "prometheus", "uid": "prometheus"}, "definition": "label_values(ctr_events_total, tenant_id)", "hide": 0, "includeAll": true, "multi": false, "name": "tenant", "options": [], "query": {"query": "label_values(ctr_events_total, tenant_id)", "refId": "StandardVariableQuery"}, "refresh": 1, "regex": "", "skipUrlSync": false, "sort": 0, "type": "query"},
+      {"current": {"selected": false, "text": "All", "value": "$__all"}, "datasource": {"type": "prometheus", "uid": "prometheus"}, "definition": "label_values(ctr_events_total{tenant_id=\"$tenant\"}, comision_id)", "hide": 0, "includeAll": true, "multi": false, "name": "cohort", "options": [], "query": {"query": "label_values(ctr_events_total{tenant_id=\"$tenant\"}, comision_id)", "refId": "StandardVariableQuery"}, "refresh": 1, "regex": "", "skipUrlSync": false, "sort": 0, "type": "query"}
+    ]
+  },
+  "time": {"from": "now-1h", "to": "now"},
+  "timepicker": {},
+  "timezone": "browser",
+  "title": "Tutor — engagement",
+  "uid": "tutor-engagement",
+  "version": 1,
+  "weekStart": ""
+}

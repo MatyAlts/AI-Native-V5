@@ -1,0 +1,206 @@
+# Infraestructura local de desarrollo.
+#
+# Levanta:
+#  - PostgreSQL 16 con extensión pgvector (3 bases lógicas)
+#  - Keycloak 25 con realms preconfigurados
+#  - Redis 7 para bus de eventos + cache
+#  - MinIO para storage S3-compatible (materiales + archivo de CTR)
+#  - Stack de observabilidad: OTel Collector, Jaeger, Prometheus, Grafana, Loki
+#
+# Uso: make dev-bootstrap
+#
+# NOTA: este compose no corre los servicios de la plataforma; solo dependencias.
+# Los servicios corren en host con `uv run` / `pnpm dev` para tener hot-reload.
+
+name: platform-dev
+
+services:
+  # ──────────────────────────────────────────────────────────────
+  # PostgreSQL 16 con pgvector (ADR-003, ADR-011)
+  # ──────────────────────────────────────────────────────────────
+  postgres:
+    image: pgvector/pgvector:pg16
+    container_name: platform-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: postgres
+    volumes:
+      - pg_data:/var/lib/postgresql/data
+      - ./postgres/init-dbs.sql:/docker-entrypoint-initdb.d/01-init-dbs.sql:ro
+    ports:
+      - "5432:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  # ──────────────────────────────────────────────────────────────
+  # Keycloak 25 (ADR-002)
+  # ──────────────────────────────────────────────────────────────
+  keycloak-db:
+    image: postgres:16-alpine
+    container_name: platform-keycloak-db
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: keycloak
+      POSTGRES_USER: keycloak
+      POSTGRES_PASSWORD: keycloak
+    volumes:
+      - kc_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U keycloak"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  keycloak:
+    image: quay.io/keycloak/keycloak:25.0
+    container_name: platform-keycloak
+    restart: unless-stopped
+    command:
+      - start-dev
+      - --import-realm
+    environment:
+      KC_DB: postgres
+      KC_DB_URL: jdbc:postgresql://keycloak-db:5432/keycloak
+      KC_DB_USERNAME: keycloak
+      KC_DB_PASSWORD: keycloak
+      KEYCLOAK_ADMIN: admin
+      KEYCLOAK_ADMIN_PASSWORD: admin
+      KC_HOSTNAME: localhost
+      KC_HTTP_ENABLED: "true"
+      KC_HEALTH_ENABLED: "true"
+    volumes:
+      - ./keycloak/realm-templates:/opt/keycloak/data/import:ro
+    ports:
+      - "8180:8080"
+    depends_on:
+      keycloak-db:
+        condition: service_healthy
+
+  # ──────────────────────────────────────────────────────────────
+  # Redis 7 Streams (ADR-005)
+  # ──────────────────────────────────────────────────────────────
+  redis:
+    image: redis:7-alpine
+    container_name: platform-redis
+    restart: unless-stopped
+    command: redis-server --appendonly yes --maxmemory 1gb --maxmemory-policy noeviction
+    volumes:
+      - redis_data:/data
+    ports:
+      - "6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
+  # ──────────────────────────────────────────────────────────────
+  # MinIO (S3-compatible) para materiales y archive del CTR
+  # ──────────────────────────────────────────────────────────────
+  minio:
+    image: minio/minio:RELEASE.2025-09-07T16-13-09Z
+    container_name: platform-minio
+    restart: unless-stopped
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: minioadmin
+      MINIO_ROOT_PASSWORD: minioadmin
+    volumes:
+      - minio_data:/data
+    ports:
+      - "9000:9000"
+      - "9001:9001"
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+
+  # ──────────────────────────────────────────────────────────────
+  # Observabilidad (ADR-013)
+  # ──────────────────────────────────────────────────────────────
+  otel-collector:
+    image: otel/opentelemetry-collector-contrib:0.150.1
+    container_name: platform-otel-collector
+    restart: unless-stopped
+    command: ["--config=/etc/otel-collector-config.yaml"]
+    volumes:
+      - ./observability/otel-collector-config.yaml:/etc/otel-collector-config.yaml:ro
+    ports:
+      - "4317:4317"   # OTLP gRPC
+      - "4318:4318"   # OTLP HTTP
+    depends_on:
+      - jaeger
+      - prometheus
+      - loki
+
+  jaeger:
+    image: jaegertracing/all-in-one:1.62.0
+    container_name: platform-jaeger
+    restart: unless-stopped
+    environment:
+      COLLECTOR_OTLP_ENABLED: "true"
+    ports:
+      - "16686:16686"  # UI
+      - "14268:14268"  # Jaeger thrift HTTP
+
+  prometheus:
+    image: prom/prometheus:v2.55.0
+    container_name: platform-prometheus
+    restart: unless-stopped
+    command:
+      - "--config.file=/etc/prometheus/prometheus.yml"
+      - "--storage.tsdb.retention.time=30d"
+    volumes:
+      - ./observability/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - prom_data:/prometheus
+    ports:
+      - "9090:9090"
+
+  loki:
+    image: grafana/loki:3.7.1
+    container_name: platform-loki
+    restart: unless-stopped
+    command: -config.file=/etc/loki/local-config.yaml
+    ports:
+      - "3100:3100"
+
+  grafana:
+    image: grafana/grafana:11.3.0
+    container_name: platform-grafana
+    restart: unless-stopped
+    environment:
+      GF_SECURITY_ADMIN_USER: admin
+      GF_SECURITY_ADMIN_PASSWORD: admin
+      GF_USERS_ALLOW_SIGN_UP: "false"
+    volumes:
+      # Path canónico nuevo (epic grafana-dashboards-provisioned, 2026-05).
+      # `infrastructure/grafana/provisioning/` reemplaza al legacy
+      # `infrastructure/observability/grafana-datasources.yaml` + `ops/grafana/`
+      # (archivado en `ops/grafana/_archive/` con README de deprecación).
+      - ./grafana/provisioning/datasources:/etc/grafana/provisioning/datasources:ro
+      - ./grafana/provisioning/dashboards:/etc/grafana/provisioning/dashboards:ro
+      - grafana_data:/var/lib/grafana
+    ports:
+      - "3000:3000"
+    depends_on:
+      - prometheus
+      - loki
+      - jaeger
+
+volumes:
+  pg_data:
+  kc_data:
+  redis_data:
+  minio_data:
+  prom_data:
+  grafana_data:
+
+networks:
+  default:
+    name: platform-dev

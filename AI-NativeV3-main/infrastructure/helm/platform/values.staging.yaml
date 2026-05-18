@@ -1,0 +1,23 @@
+global:
+  env: staging
+  imagePullPolicy: Always
+
+ingress:
+  hosts:
+    - host: api.staging.plataforma.ar
+      paths: ["/"]
+    - host: admin.staging.plataforma.ar
+      paths: ["/"]
+    - host: app.staging.plataforma.ar
+      paths: ["/"]
+  tls:
+    - hosts:
+        - api.staging.plataforma.ar
+        - admin.staging.plataforma.ar
+        - app.staging.plataforma.ar
+      secretName: platform-staging-tls
+
+# Menos réplicas en staging
+autoscaling:
+  minReplicas: 1
+  maxReplicas: 3

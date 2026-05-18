@@ -1,0 +1,31 @@
+# Manifest global del repo de prompts (fuente declarativa de versiones activas).
+#
+# Lo parsea PromptLoader.active_configs() en governance-service y se expone
+# en GET /api/v1/active_configs para frontends y dashboards informativos.
+#
+# Convencion (formato minimal del parser, ver prompt_loader.py:128):
+#   active:
+#     default:
+#       <prompt_name>: <version>
+#     <tenant_uuid>:
+#       <prompt_name>: <version>   # override por tenant
+#
+# IMPORTANTE: el tutor-service consume directamente
+# `Settings.default_prompt_version` (apps/tutor-service/src/tutor_service/config.py)
+# para resolver la version del prompt en runtime — NO consulta este manifest.
+# Cambiar la version "activa" requiere alinear AMBOS:
+#   1. Este archivo (declarativo, expuesto via /active_configs).
+#   2. apps/tutor-service/src/tutor_service/config.py:default_prompt_version (efectivo).
+#
+# Activacion v1.0.1 (ADR-009 + bump documental G12, 2026-04-29):
+#   - Cuenta de guardarrailes corregida 4/10 -> 3/10 (HTML comment del prompt).
+#   - Texto del prompt entregado al modelo IDENTICO a v1.0.0 (HTML comment es invisible).
+#   - Comportamiento del tutor preservado bit-a-bit por construccion del bump PATCH.
+#   - v1.0.0 sigue accesible en disco para reproducibilidad historica del piloto.
+active:
+  default:
+    tutor: v1.1.0
+    classifier: v1.0.0
+    reflection: v1.0.0
+    tp_generator: v1.0.0
+    ejercicio_generator: v1.0.0

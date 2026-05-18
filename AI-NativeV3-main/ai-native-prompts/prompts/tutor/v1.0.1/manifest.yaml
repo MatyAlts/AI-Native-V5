@@ -1,0 +1,13 @@
+# Manifest del prompt tutor v1.0.1 (bump PATCH documental sobre v1.0.0).
+# El governance-service verifica fail-loud que sha256(system.md) == hash declarado.
+# Si el archivo se modifica sin re-firmar este manifest, el servicio falla al cargar.
+version: v1.0.1
+parent_version: v1.0.0
+bump_kind: patch_documental
+files:
+  system.md: 2ecfcdddd29681b24539114975b601f9ec432560dc3c3a066980bb2e3d36187b
+notas:
+  - HTML comment al pie corregido (cuenta 4/10 -> 3/10 por mapeo erroneo de GP3 a Principio 3 en v1.0.0).
+  - Texto del prompt identico salvo cambio del header de version (v1.0.0 -> v1.0.1).
+  - Comportamiento del tutor preservado por construccion del bump PATCH (tesis 7.4).
+  - v1.0.0 sigue accesible para reproducibilidad historica del piloto.

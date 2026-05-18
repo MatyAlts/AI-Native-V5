@@ -1,0 +1,155 @@
+# Canary deployment del tutor-service con Argo Rollouts.
+#
+# Estrategia:
+#   10% del tráfico → esperar 2 min → análisis automático de métricas
+#   (latencia P95 del tutor, error rate) → si pasa, subir a 50%
+#   otros 5 min → si sigue bien → 100%.
+#
+# Si falla el análisis en cualquier step, rollback automático.
+#
+# Los servicios críticos (tutor, ctr-service, api-gateway) deben usar
+# este patrón en producción. Servicios menos críticos (content-service,
+# classifier-service) pueden usar rolling updates estándar.
+
+apiVersion: argoproj.io/v1alpha1
+kind: Rollout
+metadata:
+  name: tutor-service
+  labels:
+    app.kubernetes.io/name: tutor-service
+    app.kubernetes.io/part-of: platform
+spec:
+  replicas: 3
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: tutor-service
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: tutor-service
+    spec:
+      containers:
+        - name: tutor-service
+          image: platform/tutor-service:latest
+          ports:
+            - containerPort: 8006
+          readinessProbe:
+            httpGet:
+              path: /health/ready
+              port: 8006
+            initialDelaySeconds: 5
+            periodSeconds: 3
+          livenessProbe:
+            httpGet:
+              path: /health/live
+              port: 8006
+            initialDelaySeconds: 10
+            periodSeconds: 10
+          env:
+            - name: SERVICE_NAME
+              value: "tutor-service"
+            - name: ENVIRONMENT
+              value: "production"
+            - name: OTEL_ENDPOINT
+              value: "http://otel-collector:4317"
+  strategy:
+    canary:
+      canaryService: tutor-service-canary
+      stableService: tutor-service-stable
+      steps:
+        # Step 1: 10% del tráfico va al canary por 2 min
+        - setWeight: 10
+        - pause: { duration: 2m }
+
+        # Step 2: análisis de métricas (latency P95, error rate)
+        - analysis:
+            templates:
+              - templateName: tutor-canary-health
+            args:
+              - name: service-name
+                value: tutor-service
+
+        # Step 3: si pasa, 50% por 5 min
+        - setWeight: 50
+        - pause: { duration: 5m }
+
+        # Step 4: segundo análisis (más largo, más confianza)
+        - analysis:
+            templates:
+              - templateName: tutor-canary-health
+            args:
+              - name: service-name
+                value: tutor-service
+
+        # Step 5: full rollout
+        - setWeight: 100
+
+      trafficRouting:
+        istio:
+          virtualService:
+            name: tutor-service-vs
+            routes:
+              - primary
+---
+# AnalysisTemplate: criterios que debe cumplir el canary para progresar.
+# Si alguno falla, Argo Rollouts hace rollback automático.
+apiVersion: argoproj.io/v1alpha1
+kind: AnalysisTemplate
+metadata:
+  name: tutor-canary-health
+spec:
+  args:
+    - name: service-name
+  metrics:
+    # Criterio 1: latencia P95 del tutor debe estar bajo 3 segundos
+    - name: tutor-p95-latency
+      interval: 30s
+      count: 5
+      successCondition: result[0] <= 3.0
+      failureLimit: 2
+      provider:
+        prometheus:
+          address: http://prometheus:9090
+          query: |
+            histogram_quantile(
+              0.95,
+              sum by (le) (
+                rate(http_server_duration_seconds_bucket{
+                  service_name="{{args.service-name}}",
+                  http_route=~"/api/v1/episodes/.+/message"
+                }[2m])
+              )
+            )
+
+    # Criterio 2: error rate < 1%
+    - name: tutor-error-rate
+      interval: 30s
+      count: 5
+      successCondition: result[0] < 0.01
+      failureLimit: 2
+      provider:
+        prometheus:
+          address: http://prometheus:9090
+          query: |
+            sum(rate(http_server_requests_total{
+              service_name="{{args.service-name}}",
+              http_status_code=~"5.."
+            }[2m]))
+            /
+            sum(rate(http_server_requests_total{
+              service_name="{{args.service-name}}"
+            }[2m]))
+
+    # Criterio 3: el canary no debe tener integridad comprometida en CTR
+    # (porque el tutor es quien emite los eventos). Si hay una regresión
+    # que rompa la cadena, Argo Rollouts debe detectarlo rápido.
+    - name: ctr-integrity-violations
+      interval: 30s
+      count: 3
+      successCondition: result[0] == 0
+      failureLimit: 1  # cualquier violación → rollback inmediato
+      provider:
+        prometheus:
+          address: http://prometheus:9090
+          query: |
+            increase(ctr_episodes_integrity_compromised_total[3m])

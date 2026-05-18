@@ -1,0 +1,106 @@
+@import "./motion.css";
+
+/*
+ * Design tokens compartidos por los 3 frontends (web-student, web-teacher,
+ * web-admin). Importar desde cada index.css via
+ * `@import "@platform/ui/tokens/theme.css"` antes del @source / @theme.
+ *
+ * Decision tecnica (Tailwind v4):
+ *   El bloque @theme debe vivir en el CSS principal de cada app (es donde
+ *   Tailwind genera sus utilidades). Los tokens reusables se declaran en
+ *   :root como CSS custom properties standard. Los componentes consumen
+ *   los tokens via var(--name) en clases arbitrarias o style inline,
+ *   patron usado hoy en todos los frontends. No se necesita @theme aca:
+ *   las custom properties resuelven igual sin ese wrapper.
+ *
+ * Si necesitas un token nuevo cross-frontend, agregalo aca (NO en cada
+ * index.css por separado).
+ */
+:root {
+  /* === Texto / superficies basicas (HelpButton, modals, helpContent) === */
+  --text-inverse: #fafafa;
+  --text-tertiary: #a1a1aa;
+  --danger-text: #fecaca;
+
+  /* === CHROME / Estructura UI (paleta "Stack Blue institucional", v2) ===
+     Reemplaza la mezcla histórica de blue-600 SaaS + slate/gray/zinc inconsistente.
+     Norte: cuaderno de laboratorio doctoral (off-white cálido + tinta china + acento marca). */
+
+  /* Texto */
+  --color-ink: #0a0a0a;            /* Casi negro - títulos, cifras críticas */
+  --color-body: #2a2a2a;           /* Carbón - body text */
+  --color-muted: #6b7280;          /* Slate medio - hints, captions, metadata */
+  --color-muted-soft: #94a3b8;     /* Slate claro - placeholder, disabled */
+
+  /* Canvas y superficies (off-white cálido en lugar de blanco puro saturado) */
+  --color-canvas: #fafaf7;         /* Background principal - papel */
+  --color-surface: #ffffff;        /* Cards y modales */
+  --color-surface-alt: #f5f5f0;    /* Hover, secondary buttons */
+
+  /* Bordes (definidos, no anémicos como #e2e8f0) */
+  --color-border: #d4d4d2;         /* Default border */
+  --color-border-strong: #a8a8a6;  /* Énfasis estructural */
+  --color-border-soft: #e8e8e6;    /* Sutil, dividers */
+
+  /* Sidebar v2 LIGHT (cambio dirección 2026-05-09 — fondos claros).
+     Estilo Linear/Notion: superficie casi blanca, borde derecho fuerte para
+     separar del canvas, texto ink sobre claro, acento brand para item activo.
+     Mantiene los nombres `--color-sidebar-*` por compat con todos los usos. */
+  --color-sidebar-bg: #fafaf7;          /* Off-white cálido (papel, igual que canvas) */
+  --color-sidebar-bg-edge: #f0f0eb;     /* Hover items + dividers */
+  --color-sidebar-text: #1a1a1a;        /* Casi negro - items normales */
+  --color-sidebar-text-muted: #6b7280;  /* Group labels, items inactivos */
+
+  /* === Acento de marca committed (stack-blue del favicon UNSL ~ #185FA5) ===
+     CTAs primarios. Reemplaza el blue-600 default. Honra el favicon Stack Blue. */
+  --color-accent-brand: oklch(0.43 0.13 245);
+  --color-accent-brand-deep: oklch(0.36 0.13 245);
+  --color-accent-brand-soft: oklch(0.90 0.08 245);
+
+  /* === Severidad semántica (success/warning/danger) ===
+     Centralizadas aquí (antes vivían duplicadas en cada index.css de cada frontend).
+     Más profundas que las anteriores - "doctoral severity" no "Stripe alert toast". */
+  --color-success: oklch(0.55 0.15 145);
+  --color-success-soft: oklch(0.95 0.04 145);
+  --color-warning: oklch(0.60 0.14 65);
+  --color-warning-soft: oklch(0.96 0.05 75);
+  --color-danger: oklch(0.55 0.22 27);
+  --color-danger-soft: oklch(0.95 0.05 27);
+  --color-neutral: oklch(0.55 0.02 250);
+
+  /* === Modelo N4 - pedagogia (ajustado a paleta sobria) ===
+     Single source of truth de la jerarquia N1-N4 + meta. N2 cohesiona con brand
+     (mismo hue 245) - "Stack Blue es la columna del sistema, N2 está en su core". */
+  --color-level-n1: oklch(0.62 0.16 145);  /* Verde sobrio - lectura inicial */
+  --color-level-n2: oklch(0.43 0.13 245);  /* Stack Blue - lectura activa (cohesión brand) */
+  --color-level-n3: oklch(0.65 0.15 90);   /* Mostaza - reescritura */
+  --color-level-n4: oklch(0.55 0.18 50);   /* Terracota - apropiación */
+  --color-level-meta: oklch(0.55 0.02 250); /* Slate - apertura, cierre, sistema */
+
+  /* === Apropiacion (resultado classifier, ADR-022) === */
+  --color-appropriation-reflexiva: oklch(0.65 0.18 145);
+  --color-appropriation-superficial: oklch(0.78 0.16 75);
+  --color-appropriation-delegacion: oklch(0.61 0.20 27);
+
+  /* === Adversarial (ADR-019, RN-129) ===
+     Categorias de guardrail. Tokens consumidos por cualquier frontend que
+     clasifique eventos adversariales (web-teacher CohortAdversarialView hoy).
+     Cada categoria con su hue propio para separacion visual sin recurrir
+     solo a labels textuales. Coincidencia deliberada con apropiacion en
+     -delegacion/-superficial: dominios disjuntos, nunca aparecen juntos. */
+  --color-adversarial-jailbreak-indirect: oklch(0.66 0.22 305);
+  --color-adversarial-jailbreak-substitution: oklch(0.61 0.20 27);
+  --color-adversarial-jailbreak-fiction: oklch(0.74 0.13 215);
+  --color-adversarial-persuasion-urgency: oklch(0.78 0.16 75);
+  --color-adversarial-prompt-injection: oklch(0.39 0.16 27);
+
+  /* === Severidad ordinal 1-5 (rampa) ===
+     Tokens consumidos por frontends que clasifiquen severidades ordinales
+     (web-teacher CohortAdversarialView hoy). Rampa visual de neutro a
+     critico, NO usar como acento decorativo. */
+  --color-severity-1: oklch(0.71 0.03 250);
+  --color-severity-2: oklch(0.83 0.16 85);
+  --color-severity-3: oklch(0.74 0.18 55);
+  --color-severity-4: oklch(0.63 0.22 27);
+  --color-severity-5: oklch(0.39 0.16 27);
+}

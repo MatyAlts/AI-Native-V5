@@ -1,0 +1,114 @@
+{
+  "realm": "demo_uni",
+  "displayName": "Demo University",
+  "enabled": true,
+  "sslRequired": "external",
+  "registrationAllowed": false,
+  "loginWithEmailAllowed": true,
+  "duplicateEmailsAllowed": false,
+  "resetPasswordAllowed": true,
+  "editUsernameAllowed": false,
+  "bruteForceProtected": true,
+  "accessTokenLifespan": 900,
+  "refreshTokenMaxReuse": 0,
+  "attributes": {
+    "frontendUrl": "http://localhost:8180"
+  },
+  "roles": {
+    "realm": [
+      { "name": "superadmin", "description": "Administrador global de la plataforma" },
+      { "name": "docente_admin", "description": "Administrador institucional (universidad)" },
+      { "name": "docente", "description": "Docente de una o más comisiones" },
+      { "name": "estudiante", "description": "Estudiante inscripto" }
+    ]
+  },
+  "clients": [
+    {
+      "clientId": "web-admin",
+      "enabled": true,
+      "publicClient": true,
+      "standardFlowEnabled": true,
+      "directAccessGrantsEnabled": false,
+      "redirectUris": ["http://localhost:5173/*"],
+      "webOrigins": ["http://localhost:5173"],
+      "attributes": {
+        "pkce.code.challenge.method": "S256"
+      }
+    },
+    {
+      "clientId": "web-teacher",
+      "enabled": true,
+      "publicClient": true,
+      "standardFlowEnabled": true,
+      "redirectUris": ["http://localhost:5174/*"],
+      "webOrigins": ["http://localhost:5174"],
+      "attributes": {
+        "pkce.code.challenge.method": "S256"
+      }
+    },
+    {
+      "clientId": "web-student",
+      "enabled": true,
+      "publicClient": true,
+      "standardFlowEnabled": true,
+      "redirectUris": ["http://localhost:5175/*"],
+      "webOrigins": ["http://localhost:5175"],
+      "attributes": {
+        "pkce.code.challenge.method": "S256"
+      }
+    },
+    {
+      "clientId": "platform-backend",
+      "enabled": true,
+      "bearerOnly": true,
+      "description": "Cliente que los servicios backend usan para validar JWTs"
+    }
+  ],
+  "users": [
+    {
+      "username": "admin@demo-uni.edu",
+      "email": "admin@demo-uni.edu",
+      "firstName": "Admin",
+      "lastName": "Demo",
+      "enabled": true,
+      "emailVerified": true,
+      "credentials": [
+        { "type": "password", "value": "admin123", "temporary": false }
+      ],
+      "realmRoles": ["docente_admin"],
+      "attributes": {
+        "tenant_id": ["00000000-0000-0000-0000-000000000001"]
+      }
+    },
+    {
+      "username": "docente@demo-uni.edu",
+      "email": "docente@demo-uni.edu",
+      "firstName": "Docente",
+      "lastName": "Demo",
+      "enabled": true,
+      "emailVerified": true,
+      "credentials": [
+        { "type": "password", "value": "docente123", "temporary": false }
+      ],
+      "realmRoles": ["docente"],
+      "attributes": {
+        "tenant_id": ["00000000-0000-0000-0000-000000000001"]
+      }
+    },
+    {
+      "username": "estudiante@demo-uni.edu",
+      "email": "estudiante@demo-uni.edu",
+      "firstName": "Estudiante",
+      "lastName": "Demo",
+      "enabled": true,
+      "emailVerified": true,
+      "credentials": [
+        { "type": "password", "value": "estudiante123", "temporary": false }
+      ],
+      "realmRoles": ["estudiante"],
+      "attributes": {
+        "tenant_id": ["00000000-0000-0000-0000-000000000001"]
+      }
+    }
+  ]
+}

@@ -1,0 +1,83 @@
+{
+  "annotations": {"list": []},
+  "description": "Audiencia: auditor del piloto + comité doctoral. Integridad criptográfica del CTR (cadena SHA-256, attestations Ed25519). Refresh 15s.",
+  "editable": true,
+  "fiscalYearStartMonth": 0,
+  "graphTooltip": 0,
+  "id": null,
+  "links": [],
+  "liveNow": true,
+  "panels": [
+    {
+      "datasource": {"type": "prometheus", "uid": "prometheus"},
+      "fieldConfig": {"defaults": {"unit": "ops"}, "overrides": []},
+      "gridPos": {"h": 10, "w": 24, "x": 0, "y": 0},
+      "id": 1,
+      "options": {"legend": {"displayMode": "list", "placement": "bottom", "showLegend": true}, "tooltip": {"mode": "multi"}},
+      "targets": [{"expr": "sum by (partition) (rate(ctr_events_total{tenant_id=~\"$tenant\"}[1m]))", "legendFormat": "partition {{partition}}", "refId": "A"}],
+      "title": "Events written por partición (1m rate, 8 stacked)",
+      "type": "timeseries"
+    },
+    {
+      "datasource": {"type": "prometheus", "uid": "prometheus"},
+      "fieldConfig": {"defaults": {"unit": "short", "thresholds": {"mode": "absolute", "steps": [{"color": "green", "value": null}, {"color": "yellow", "value": 100}, {"color": "red", "value": 1000}]}}, "overrides": []},
+      "gridPos": {"h": 8, "w": 12, "x": 0, "y": 10},
+      "id": 2,
+      "options": {"colorMode": "value", "graphMode": "area", "justifyMode": "auto", "orientation": "horizontal", "reduceOptions": {"calcs": ["lastNotNull"], "fields": "", "values": false}, "textMode": "auto"},
+      "targets": [{"expr": "ctr_worker_xpending_count", "legendFormat": "partition {{partition}}", "refId": "A"}],
+      "title": "Worker lag (XPENDING count) por partición",
+      "type": "stat"
+    },
+    {
+      "datasource": {"type": "prometheus", "uid": "prometheus"},
+      "fieldConfig": {
+        "defaults": {"color": {"mode": "thresholds"}, "thresholds": {"mode": "absolute", "steps": [{"color": "green", "value": null}, {"color": "red", "value": 1}]}, "mappings": [{"options": {"from": 1, "result": {"text": "INVESTIGAR I01", "color": "red"}, "to": 999999}, "type": "range"}]},
+        "overrides": []
+      },
+      "gridPos": {"h": 8, "w": 12, "x": 12, "y": 10},
+      "id": 3,
+      "options": {"colorMode": "background", "graphMode": "none", "justifyMode": "center", "orientation": "auto", "reduceOptions": {"calcs": ["lastNotNull"], "fields": "", "values": false}, "textMode": "auto"},
+      "targets": [{"expr": "sum(increase(ctr_episodes_integrity_compromised_total{tenant_id=~\"$tenant\"}[24h]))", "refId": "A"}],
+      "title": "integrity_compromised events (últimas 24h, target 0)",
+      "type": "stat"
+    },
+    {
+      "datasource": {"type": "prometheus", "uid": "prometheus"},
+      "fieldConfig": {"defaults": {"unit": "s"}, "overrides": []},
+      "gridPos": {"h": 8, "w": 12, "x": 0, "y": 18},
+      "id": 4,
+      "options": {"legend": {"displayMode": "list", "placement": "bottom", "showLegend": false}, "tooltip": {"mode": "single"}},
+      "targets": [{"expr": "histogram_quantile(0.99, sum(rate(ctr_self_hash_compute_seconds_bucket[5m])) by (le))", "legendFormat": "p99", "refId": "A"}],
+      "title": "self_hash compute latency (p99, expected < 50ms)",
+      "type": "timeseries"
+    },
+    {
+      "datasource": {"type": "prometheus", "uid": "prometheus"},
+      "fieldConfig": {"defaults": {"unit": "short"}, "overrides": []},
+      "gridPos": {"h": 8, "w": 12, "x": 12, "y": 18},
+      "id": 5,
+      "options": {"colorMode": "value", "graphMode": "area", "justifyMode": "auto", "orientation": "horizontal", "reduceOptions": {"calcs": ["lastNotNull"], "fields": "", "values": false}, "textMode": "auto"},
+      "targets": [
+        {"expr": "sum(ctr_attestations_emitted_total)", "legendFormat": "emitidas", "refId": "A"},
+        {"expr": "sum(ctr_attestations_pending_count)", "legendFormat": "pendientes", "refId": "B"}
+      ],
+      "title": "Attestations Ed25519 emitidas / pendientes (RN-128)",
+      "type": "stat"
+    }
+  ],
+  "refresh": "15s",
+  "schemaVersion": 39,
+  "tags": ["ctr", "integridad", "piloto-unsl"],
+  "templating": {
+    "list": [
+      {"current": {"selected": false, "text": "All", "value": "$__all"}, "datasource": {"type": "prometheus", "uid": "prometheus"}, "definition": "label_values(ctr_events_total, tenant_id)", "hide": 0, "includeAll": true, "multi": false, "name": "tenant", "options": [], "query": {"query": "label_values(ctr_events_total, tenant_id)", "refId": "StandardVariableQuery"}, "refresh": 1, "regex": "", "skipUrlSync": false, "sort": 0, "type": "query"}
+    ]
+  },
+  "time": {"from": "now-30m", "to": "now"},
+  "timepicker": {},
+  "timezone": "browser",
+  "title": "CTR — integridad",
+  "uid": "ctr-integridad",
+  "version": 1,
+  "weekStart": ""
+}

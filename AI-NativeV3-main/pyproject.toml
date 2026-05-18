@@ -1,0 +1,195 @@
+[project]
+name = "platform-monorepo"
+version = "0.1.0"
+description = "Plataforma académica multi-universidad - raíz del monorepo Python"
+requires-python = ">=3.12,<3.13"
+
+[tool.uv.workspace]
+members = [
+    "apps/api-gateway",
+    # identity-service deprecated por ADR-041 (2026-05-07): auth movida a api-gateway.
+    # enrollment-service deprecated por ADR-030 (2026-04-29): bulk-import en academic-service.
+    # Ambos servicios borrados del workspace (los ADRs documentan el detalle).
+    "apps/academic-service",
+    "apps/evaluation-service",
+    "apps/analytics-service",
+    "apps/tutor-service",
+    "apps/ctr-service",
+    "apps/classifier-service",
+    "apps/content-service",
+    "apps/governance-service",
+    "apps/ai-gateway",
+    "apps/integrity-attestation-service",
+    "packages/contracts",
+    "packages/test-utils",
+    "packages/observability",
+    "packages/platform-ops",
+]
+
+[tool.uv.sources]
+platform-contracts = { workspace = true }
+platform-test-utils = { workspace = true }
+platform-observability = { workspace = true }
+platform-ops = { workspace = true }
+
+[tool.ruff]
+target-version = "py312"
+line-length = 100
+extend-exclude = [".venv", "migrations", "dist"]
+
+[tool.ruff.lint]
+select = [
+    "E",    # pycodestyle errors
+    "W",    # pycodestyle warnings
+    "F",    # pyflakes
+    "I",    # isort
+    "B",    # flake8-bugbear
+    "C4",   # flake8-comprehensions
+    "UP",   # pyupgrade
+    "N",    # pep8-naming
+    "S",    # flake8-bandit (security)
+    "A",    # flake8-builtins
+    "RUF",  # ruff-specific
+    "PL",   # pylint
+    "SIM",  # flake8-simplify
+]
+ignore = [
+    "E501",    # line too long (handled by formatter)
+    "S101",    # use of assert (OK in tests)
+    "PLR0913", # too many arguments
+    "B008",    # function-call-in-default-argument (FastAPI Depends() es idiomatic)
+    "B904",    # raise-without-from-inside-except (estilo, no introduce bug)
+    "PLC0415", # import-outside-top-level (lazy imports a propósito)
+    "RUF001",  # ambiguous-unicode-character-string (docstrings en español)
+    "RUF002",  # ambiguous-unicode-character-docstring (docstrings en español)
+    "RUF003",  # ambiguous-unicode-character-comment (comentarios en español)
+    "RUF043",  # pytest-raises-ambiguous-pattern
+    "PLR2004", # magic-value-comparison (ruido en tests + dataclasses)
+    "PLW0603", # global-statement (singletons + cache patrón del repo)
+    "PLC2401", # non-ascii-name (variables en español a propósito)
+    "N811",    # constant-imported-as-non-constant (false positives sqlalchemy)
+    "N802",    # invalid-function-name (camelCase en algunos APIs)
+    "N806",    # non-lowercase-variable-in-function (consts dentro de funciones)
+    "E402",    # module-level imports below: path manipulation legítima en monorepo
+    "RUF012",  # mutable-class-default: false positive con SQLAlchemy MetaData/JSONB defaults
+    "S311",    # non-crypto random: usado solo en notebooks de análisis y seeds
+    "S105",    # hardcoded-password-string: fixtures/tenants demo
+    "S106",    # hardcoded-password-func-arg: tenant_onboarding admin_password_temp es legítimo
+    "S110",    # try-except-pass: legítimo en cleanup paths del worker / observability
+    "S112",    # try-except-continue: legítimo en pipelines de extracción
+    "S310",    # url-open: scripts de eval con URLs configuradas internamente
+    "S608",    # hardcoded-sql: seeds con table names estáticos, no input externo
+    "PLW1510", # subprocess.run sin check: ok en chequeos best-effort de docker availability
+    "S607",    # start-process-with-partial-path: ok para `docker info` en chequeos
+    "B017",    # assert-raises-exception: blanket OK en RLS test contra Postgres
+    "SIM108",  # if-else-block-instead-of-if-exp: ternarios largos prefieren if/else
+    "SIM102",  # collapsible-if: legibilidad sobre concisión
+    "E701",    # multiple-statements-on-one-line: aceptado en notebooks Jupyter
+    "E741",    # ambiguous-variable-name: notebook con `l` para línea
+    "A001",    # builtin-shadowing: legacy carve-out (los servicios donde aplicaba ya no existen — dejar safety net)
+    "A004",    # builtin-import-shadowing: ditto, scope contained
+]
+
+[tool.ruff.lint.per-file-ignores]
+"**/tests/**" = ["S101", "S105", "S106", "S108", "S110", "S311", "S608", "PLC0415"]
+"**/migrations/**" = ["E501", "N806"]
+"**/alembic/**" = ["E501", "N806"]
+"scripts/**" = ["S603", "S607"]
+
+[tool.ruff.format]
+quote-style = "double"
+indent-style = "space"
+
+[tool.mypy]
+python_version = "3.12"
+# strict relajado: el repo originalmente arrancó sin types completos.
+# Mantenemos checks valiosos (no-implicit-optional, no-untyped-call,
+# warn-redundant-casts) y opt-in al strict por módulo cuando aplique.
+strict = false
+warn_return_any = false
+warn_unused_configs = true
+disallow_untyped_defs = false
+disallow_untyped_calls = false
+disallow_any_generics = false
+warn_redundant_casts = true
+warn_unused_ignores = true
+no_implicit_optional = true
+check_untyped_defs = true
+plugins = ["pydantic.mypy"]
+explicit_package_bases = true
+namespace_packages = true
+ignore_missing_imports = true
+disable_error_code = ["import-not-found", "import-untyped"]
+exclude = [
+    "migrations/",
+    "\\.venv/",
+    "dist/",
+    "apps/.*/tests/",            # tests por servicio: no aplican strict
+    "apps/.*/alembic/",           # migraciones de cada servicio (env.py homónimos)
+    "packages/.*/tests/",        # ditto
+    "scripts/",                  # scripts dev/CI
+    "docs/",                     # notebooks + ejemplos
+    "examples/",                 # ejemplos runnable
+]
+mypy_path = [
+    "packages/contracts/src",
+    "packages/observability/src",
+    "packages/platform-ops/src",
+    "packages/test-utils/src",
+]
+
+# Libs externas sin stubs / namespace packages que mypy no resuelve. Las
+# silenciamos para que no genere falsos positivos.
+[[tool.mypy.overrides]]
+module = [
+    "opentelemetry",
+    "opentelemetry.*",
+    "sentry_sdk",
+    "sentry_sdk.*",
+    "casbin",
+    "casbin.*",
+    "pandas",
+    "boto3",
+    "boto3.*",
+    "botocore.*",
+    "pgvector",
+    "pgvector.*",
+    "testcontainers",
+    "testcontainers.*",
+    "ldap3",
+    "ldap3.*",
+    "weasyprint",
+    "weasyprint.*",
+    "tinycss2.*",
+    "fakeredis",
+    "fakeredis.*",
+    "pyodide",
+    "pyodide.*",
+    "redis.asyncio",
+]
+ignore_missing_imports = true
+disable_error_code = ["import-not-found", "import-untyped"]
+
+[tool.pytest.ini_options]
+minversion = "8.0"
+testpaths = ["tests"]
+asyncio_mode = "auto"
+addopts = "-ra --strict-markers --strict-config --import-mode=importlib"
+markers = [
+    "integration: integration tests (require testcontainers)",
+    "adversarial: adversarial tests against the tutor (informative)",
+    "slow: slow tests (>5s)",
+]
+
+[tool.coverage.run]
+branch = true
+source = ["src"]
+omit = ["tests/*", "**/migrations/*"]
+
+[tool.coverage.report]
+exclude_lines = [
+    "pragma: no cover",
+    "raise NotImplementedError",
+    "if TYPE_CHECKING:",
+    "if __name__ == .__main__.:",
+]

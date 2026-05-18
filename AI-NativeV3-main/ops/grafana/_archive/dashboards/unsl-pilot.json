@@ -1,0 +1,304 @@
+{
+  "title": "UNSL Pilot — Metrics",
+  "uid": "unsl-pilot",
+  "tags": ["platform", "unsl", "pilot"],
+  "timezone": "browser",
+  "refresh": "1m",
+  "schemaVersion": 38,
+  "version": 1,
+  "time": { "from": "now-30d", "to": "now" },
+  "templating": {
+    "list": [
+      {
+        "name": "comision",
+        "label": "Comisión",
+        "type": "custom",
+        "query": "P1 : Programación 1, P2 : Programación 2, TSU : TSU en IA",
+        "current": { "text": "Programación 2", "value": "P2" },
+        "includeAll": false
+      },
+      {
+        "name": "tenant_id",
+        "label": "Tenant",
+        "type": "constant",
+        "current": { "value": "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa" },
+        "hide": 2
+      }
+    ]
+  },
+  "panels": [
+    {
+      "id": 1,
+      "title": "Episodios del día",
+      "type": "stat",
+      "gridPos": { "h": 4, "w": 4, "x": 0, "y": 0 },
+      "targets": [
+        {
+          "expr": "sum(increase(ctr_episodes_opened_total{tenant_id=\"$tenant_id\", comision=\"$comision\"}[24h]))",
+          "legendFormat": "Episodios"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "thresholds" },
+          "thresholds": {
+            "steps": [
+              { "color": "red", "value": null },
+              { "color": "yellow", "value": 5 },
+              { "color": "green", "value": 20 }
+            ]
+          }
+        }
+      }
+    },
+    {
+      "id": 2,
+      "title": "Estudiantes activos hoy",
+      "type": "stat",
+      "gridPos": { "h": 4, "w": 4, "x": 4, "y": 0 },
+      "targets": [
+        {
+          "expr": "count(count by (student_pseudonym) (ctr_events_total{tenant_id=\"$tenant_id\", comision=\"$comision\", event_type=\"episodio_abierto\"}[24h]))",
+          "legendFormat": "Estudiantes"
+        }
+      ]
+    },
+    {
+      "id": 3,
+      "title": "Duración media de episodio",
+      "type": "stat",
+      "gridPos": { "h": 4, "w": 4, "x": 8, "y": 0 },
+      "targets": [
+        {
+          "expr": "avg(ctr_episode_duration_seconds{tenant_id=\"$tenant_id\", comision=\"$comision\"})",
+          "legendFormat": "Duración (s)"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": { "unit": "s" }
+      }
+    },
+    {
+      "id": 4,
+      "title": "Código ejecutado por episodio",
+      "type": "stat",
+      "gridPos": { "h": 4, "w": 4, "x": 12, "y": 0 },
+      "targets": [
+        {
+          "expr": "avg(rate(ctr_events_total{event_type=\"codigo_ejecutado\",tenant_id=\"$tenant_id\",comision=\"$comision\"}[1h]))",
+          "legendFormat": "Promedio"
+        }
+      ]
+    },
+    {
+      "id": 5,
+      "title": "⚠ Integridad CTR",
+      "type": "stat",
+      "gridPos": { "h": 4, "w": 8, "x": 16, "y": 0 },
+      "targets": [
+        {
+          "expr": "sum(ctr_episodes_integrity_compromised_total{tenant_id=\"$tenant_id\"})",
+          "legendFormat": "Eventos con cadena rota"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "thresholds" },
+          "thresholds": {
+            "steps": [
+              { "color": "green", "value": null },
+              { "color": "red", "value": 1 }
+            ]
+          }
+        }
+      }
+    },
+
+    {
+      "id": 10,
+      "title": "Distribución N4 — cohorte actual",
+      "type": "piechart",
+      "gridPos": { "h": 8, "w": 8, "x": 0, "y": 4 },
+      "targets": [
+        {
+          "expr": "sum by (appropriation) (classifier_classifications_current{tenant_id=\"$tenant_id\", comision=\"$comision\"})",
+          "legendFormat": "{{appropriation}}"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "palette-classic" },
+          "mappings": [
+            {
+              "type": "value",
+              "options": {
+                "delegacion_pasiva": { "color": "red" },
+                "apropiacion_superficial": { "color": "yellow" },
+                "apropiacion_reflexiva": { "color": "green" }
+              }
+            }
+          ]
+        }
+      }
+    },
+
+    {
+      "id": 11,
+      "title": "Evolución de las 3 categorías N4 (diaria)",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 16, "x": 8, "y": 4 },
+      "targets": [
+        {
+          "expr": "sum by (appropriation) (rate(classifier_classifications_total{tenant_id=\"$tenant_id\",comision=\"$comision\"}[1d]))",
+          "legendFormat": "{{appropriation}}"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "fillOpacity": 30,
+            "stacking": { "mode": "percent" }
+          },
+          "color": { "mode": "palette-classic" }
+        }
+      }
+    },
+
+    {
+      "id": 20,
+      "title": "Net progression ratio (diaria)",
+      "description": "(mejorando - empeorando) / total. Ideal: >0.3 para cohortes saludables.",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 12 },
+      "targets": [
+        {
+          "expr": "classifier_cohort_net_progression_ratio{tenant_id=\"$tenant_id\", comision=\"$comision\"}",
+          "legendFormat": "Net progression"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "min": -1,
+          "max": 1,
+          "thresholds": {
+            "steps": [
+              { "color": "red", "value": -0.5 },
+              { "color": "yellow", "value": 0 },
+              { "color": "green", "value": 0.3 }
+            ]
+          },
+          "custom": {
+            "drawStyle": "line",
+            "lineWidth": 2,
+            "fillOpacity": 20,
+            "thresholdsStyle": { "mode": "area" }
+          }
+        }
+      }
+    },
+
+    {
+      "id": 21,
+      "title": "Kappa inter-rater (última evaluación)",
+      "description": "Agreement entre clasificador y docentes. Umbral aceptable: >=0.6 (sustancial).",
+      "type": "gauge",
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 12 },
+      "targets": [
+        {
+          "expr": "classifier_kappa_last_evaluation{tenant_id=\"$tenant_id\", comision=\"$comision\"}",
+          "legendFormat": "κ"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "min": 0,
+          "max": 1,
+          "thresholds": {
+            "steps": [
+              { "color": "red", "value": null },
+              { "color": "orange", "value": 0.41 },
+              { "color": "yellow", "value": 0.61 },
+              { "color": "green", "value": 0.81 }
+            ]
+          }
+        }
+      }
+    },
+
+    {
+      "id": 30,
+      "title": "Episodios sin clasificar (backlog)",
+      "type": "stat",
+      "gridPos": { "h": 4, "w": 6, "x": 0, "y": 20 },
+      "targets": [
+        {
+          "expr": "sum(ctr_episodes_closed_total{tenant_id=\"$tenant_id\",comision=\"$comision\"}) - sum(classifier_classifications_total{tenant_id=\"$tenant_id\",comision=\"$comision\"})"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "thresholds" },
+          "thresholds": {
+            "steps": [
+              { "color": "green", "value": null },
+              { "color": "yellow", "value": 20 },
+              { "color": "red", "value": 100 }
+            ]
+          }
+        }
+      }
+    },
+
+    {
+      "id": 31,
+      "title": "Reclasificaciones (últimos 30d)",
+      "description": "Indica que se actualizó el reference_profile o un docente forzó reclasificación.",
+      "type": "stat",
+      "gridPos": { "h": 4, "w": 6, "x": 6, "y": 20 },
+      "targets": [
+        {
+          "expr": "sum(increase(classifier_reclassifications_total{tenant_id=\"$tenant_id\"}[30d]))"
+        }
+      ]
+    },
+
+    {
+      "id": 32,
+      "title": "Exports académicos generados",
+      "type": "stat",
+      "gridPos": { "h": 4, "w": 6, "x": 12, "y": 20 },
+      "targets": [
+        {
+          "expr": "sum(increase(analytics_export_jobs_total{status=\"succeeded\",tenant_id=\"$tenant_id\"}[30d]))"
+        }
+      ]
+    },
+
+    {
+      "id": 33,
+      "title": "LLM budget usado hoy",
+      "type": "gauge",
+      "gridPos": { "h": 4, "w": 6, "x": 18, "y": 20 },
+      "targets": [
+        {
+          "expr": "ai_gateway_tokens_used{tenant_id=\"$tenant_id\"} / ai_gateway_tokens_budget{tenant_id=\"$tenant_id\"}",
+          "legendFormat": "Fracción del budget"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "min": 0,
+          "max": 1,
+          "unit": "percentunit",
+          "thresholds": {
+            "steps": [
+              { "color": "green", "value": null },
+              { "color": "yellow", "value": 0.7 },
+              { "color": "red", "value": 0.9 }
+            ]
+          }
+        }
+      }
+    }
+  ]
+}

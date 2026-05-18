@@ -1,0 +1,78 @@
+name: Deploy
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: "Ambiente destino"
+        required: true
+        default: "staging"
+        type: choice
+        options:
+          - staging
+          - production
+
+jobs:
+  deploy-staging:
+    if: github.ref == 'refs/heads/main' && (github.event.inputs.environment == 'staging' || github.event_name == 'push')
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    environment: staging
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup kubectl and helm
+        uses: azure/setup-kubectl@v4
+      - uses: azure/setup-helm@v4
+
+      - name: Configure kubeconfig
+        run: echo "${{ secrets.KUBECONFIG_STAGING }}" | base64 -d > kubeconfig
+
+      - name: Helm upgrade
+        env:
+          KUBECONFIG: kubeconfig
+        run: |
+          helm upgrade --install platform infrastructure/helm/platform \
+            --namespace platform-staging \
+            --create-namespace \
+            --set image.tag=${{ github.sha }} \
+            --values infrastructure/helm/platform/values.staging.yaml \
+            --wait --timeout 10m
+
+      - name: Smoke tests
+        run: scripts/smoke-tests.sh https://staging.plataforma.ar
+
+      - name: Notify
+        if: failure()
+        run: echo "Deploy a staging falló — revisar"
+
+  deploy-production:
+    if: github.event.inputs.environment == 'production'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    environment: production  # requiere approval manual
+    needs: []
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Require 24h in staging
+        run: scripts/check-staging-stability.sh 24
+
+      - name: Setup tools
+        uses: azure/setup-helm@v4
+
+      - name: Configure kubeconfig
+        run: echo "${{ secrets.KUBECONFIG_PRODUCTION }}" | base64 -d > kubeconfig
+
+      - name: Helm upgrade blue-green
+        env:
+          KUBECONFIG: kubeconfig
+        run: |
+          # Ver ADR-015 para la estrategia
+          helm upgrade --install platform infrastructure/helm/platform \
+            --namespace platform-prod \
+            --set image.tag=${{ github.sha }} \
+            --values infrastructure/helm/platform/values.production.yaml \
+            --wait --timeout 20m

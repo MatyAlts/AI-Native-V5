@@ -1,0 +1,144 @@
+name: E2E Smoke (API)
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+  # Corre en cada PR contra main + pushes a main. Para que sea efectivamente
+  # obligatorio (bloquee merges si falla) hay que marcarlo como `Required check`
+  # en GitHub Settings -> Branches -> main -> Branch protection rules.
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+env:
+  PYTHON_VERSION: "3.12"
+  EMBEDDER: mock
+  RERANKER: identity
+  STORAGE: mock
+  LLM_PROVIDER: mock
+
+jobs:
+  smoke:
+    name: Smoke E2E API
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    services:
+      postgres:
+        image: pgvector/pgvector:pg16
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 10
+
+      redis:
+        image: redis:7-alpine
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 10
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v3
+        with:
+          enable-cache: true
+
+      - name: Setup Python
+        run: uv python install ${{ env.PYTHON_VERSION }}
+
+      - name: Install Python deps
+        run: uv sync --all-packages
+
+      - name: Crear las 4 bases logicas
+        run: |
+          export PGPASSWORD=postgres
+          for db in academic_main ctr_store classifier_db content_db; do
+            psql -h 127.0.0.1 -U postgres -c "CREATE DATABASE ${db};" || true
+          done
+
+      - name: Aplicar migrations en las 4 bases
+        env:
+          ACADEMIC_DB_URL: postgresql+asyncpg://postgres:postgres@127.0.0.1:5432/academic_main
+          CTR_STORE_URL: postgresql+asyncpg://postgres:postgres@127.0.0.1:5432/ctr_store
+          CTR_DB_URL: postgresql+asyncpg://postgres:postgres@127.0.0.1:5432/ctr_store
+          CLASSIFIER_DB_URL: postgresql+asyncpg://postgres:postgres@127.0.0.1:5432/classifier_db
+          CONTENT_DB_URL: postgresql+asyncpg://postgres:postgres@127.0.0.1:5432/content_db
+        run: bash scripts/migrate-all.sh
+
+      - name: Seed Casbin policies
+        env:
+          ACADEMIC_DB_URL: postgresql+asyncpg://postgres:postgres@127.0.0.1:5432/academic_main
+        run: uv run python -m academic_service.seeds.casbin_policies
+
+      - name: Seed 3 comisiones (datos demo)
+        env:
+          ACADEMIC_DB_URL: postgresql+asyncpg://postgres:postgres@127.0.0.1:5432/academic_main
+          CTR_STORE_URL: postgresql+asyncpg://postgres:postgres@127.0.0.1:5432/ctr_store
+          CLASSIFIER_DB_URL: postgresql+asyncpg://postgres:postgres@127.0.0.1:5432/classifier_db
+        run: uv run python scripts/seed-3-comisiones.py
+
+      - name: Levantar 11 servicios + workers en background
+        env:
+          REDIS_URL: redis://127.0.0.1:6379
+          ACADEMIC_DB_URL: postgresql+asyncpg://postgres:postgres@127.0.0.1:5432/academic_main
+          CTR_STORE_URL: postgresql+asyncpg://postgres:postgres@127.0.0.1:5432/ctr_store
+          CTR_DB_URL: postgresql+asyncpg://postgres:postgres@127.0.0.1:5432/ctr_store
+          CLASSIFIER_DB_URL: postgresql+asyncpg://postgres:postgres@127.0.0.1:5432/classifier_db
+          CONTENT_DB_URL: postgresql+asyncpg://postgres:postgres@127.0.0.1:5432/content_db
+          PROMPTS_REPO_PATH: ${{ github.workspace }}/ai-native-prompts
+          # NOTA: BYOK_MASTER_KEY queda sin setear a proposito — el smoke
+          # test_create_revoke_flow se skippea, los demas BYOK tests siguen
+          # cubriendo el SET LOCAL bug (que es lo critico).
+        run: |
+          mkdir -p /tmp/piloto-logs
+          bash scripts/dev-start-all.sh
+          echo "Esperando que los servicios respondan..."
+          for i in $(seq 1 30); do
+            if curl -sf http://127.0.0.1:8000/health > /dev/null && \
+               curl -sf http://127.0.0.1:8002/health > /dev/null && \
+               curl -sf http://127.0.0.1:8005/health > /dev/null && \
+               curl -sf http://127.0.0.1:8007/health > /dev/null; then
+              echo "Servicios listos."
+              exit 0
+            fi
+            sleep 2
+          done
+          echo "Timeout esperando servicios — chequear .dev-logs/"
+          for f in .dev-logs/*.log; do
+            echo "=== $f ==="
+            tail -30 "$f"
+          done
+          exit 1
+
+      - name: Run smoke suite
+        env:
+          SMOKE_PG_DSN: postgresql://postgres:postgres@127.0.0.1:5432
+          SMOKE_API_BASE_URL: http://127.0.0.1:8000
+        run: make test-smoke
+
+      - name: Subir logs como artifact (si fallo)
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: piloto-logs
+          path: |
+            .dev-logs/
+            /tmp/piloto-logs/
+          if-no-files-found: ignore
+          retention-days: 7

@@ -1,0 +1,28 @@
+{
+  "_meta": {
+    "purpose": "Plantilla de etiquetado intercoder para Cohen's kappa (OBJ-13). Ver docs/pilot/kappa-workflow.md.",
+    "categories_allowed": [
+      "delegacion_pasiva",
+      "apropiacion_superficial",
+      "apropiacion_reflexiva"
+    ],
+    "rules": [
+      "RN-096: human_label DEBE ser exactamente uno de categories_allowed. null o typo rechaza el batch entero (HTTP 422).",
+      "Cada docente trabaja sobre su propia copia. NO compartir notas durante el tagging.",
+      "NO mirar la etiqueta del classifier-service antes de tagear (evitar sesgo de confirmación).",
+      "Excluir episodios con integrity_compromised=true."
+    ]
+  },
+  "cohort_id": "00000000-0000-0000-0000-000000000000",
+  "tenant_id": "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa",
+  "sample_date": "2026-MM-DD",
+  "sample_strategy": "stratified_by_classifier_label | stratified_by_tarea_practica | random",
+  "sample_seed": 0,
+  "rater_id": "<uuid del docente que rellena este archivo>",
+  "rater_role": "rater_a | rater_b",
+  "selected_episodes": [
+    {"episode_id": "00000000-0000-0000-0000-000000000001", "tarea_practica_id": "00000000-0000-0000-0000-000000000000", "human_label": null},
+    {"episode_id": "00000000-0000-0000-0000-000000000002", "tarea_practica_id": "00000000-0000-0000-0000-000000000000", "human_label": null},
+    {"episode_id": "00000000-0000-0000-0000-000000000003", "tarea_practica_id": "00000000-0000-0000-0000-000000000000", "human_label": null}
+  ]
+}

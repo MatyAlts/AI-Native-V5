@@ -1,0 +1,123 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+.venv/
+venv/
+env/
+ENV/
+*.egg-info/
+.eggs/
+dist/
+build/
+.mypy_cache/
+.ruff_cache/
+.pytest_cache/
+.coverage
+htmlcov/
+coverage.xml
+*.cover
+
+# UV
+uv.lock
+
+# Node
+node_modules/
+.pnpm-store/
+pnpm-debug.log*
+npm-debug.log*
+.next/
+.turbo/
+
+# Vite
+.vite/
+dist/
+
+# Testing
+.playwright/
+.playwright-mcp/
+playwright-report/
+test-results/
+tests/e2e/playwright-report/
+tests/e2e/test-results/
+.dev-logs/e2e-artifacts/
+.dev-logs/e2e-shared/
+.hypothesis/
+
+# Tooling caches (orchestrator skill registry, runtime logs por servicio)
+.atl/
+.dev-logs/
+
+# Screenshots accidentales en raiz — si tienen valor, mover a docs/screenshots/
+/*.png
+
+# IDE
+.vscode/
+!.vscode/extensions.json
+!.vscode/settings.json.template
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+
+# Logs
+*.log
+logs/
+
+# Secretos y configs locales
+.env
+.env.local
+.env.*.local
+*.pem
+*.key
+!*.example.key
+*.crt
+!*.example.crt
+
+# Excepciones: dev keys de attestation (ADR-021) — DEV ONLY, publicas, deben commitearse
+# para que `make dev` y los tests funcionen sin coordinacion institucional.
+# Documentado en apps/integrity-attestation-service/dev-keys/README.md.
+!apps/integrity-attestation-service/dev-keys/dev-private.pem
+!apps/integrity-attestation-service/dev-keys/dev-public.pem
+
+# Attestation logs locales (ADR-021): NO commitearse, son output de runs.
+apps/integrity-attestation-service/attestations/
+attestations/
+
+# Storage local
+storage/
+uploads/
+tmp/
+
+# Database local (Docker volumes ya están fuera del repo)
+*.db
+*.sqlite
+*.sqlite3
+
+# Docker
+.docker/
+
+# Observability
+.grafana/
+.prometheus/
+
+# Python package artifacts
+pip-log.txt
+pip-delete-this-directory.txt
+
+# Jupyter
+.ipynb_checkpoints/
+
+# OS
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+
+# Misc
+.cache/
+
+# Claude Code local settings (per-developer permissions, no debe compartirse)
+.claude/settings.local.json

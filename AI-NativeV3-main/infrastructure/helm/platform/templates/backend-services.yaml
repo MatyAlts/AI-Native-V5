@@ -1,0 +1,107 @@
+{{- range $name, $cfg := .Values.services }}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ $name }}
+  labels:
+    app.kubernetes.io/name: {{ $name }}
+    app.kubernetes.io/part-of: platform
+    app.kubernetes.io/component: backend
+spec:
+  replicas: {{ $cfg.replicas | default 1 }}
+  strategy:
+    {{- if eq ($cfg.strategy | default "rolling") "rolling" }}
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0
+    {{- else }}
+    type: Recreate  # blue-green lo orquesta el deploy workflow, no el Deployment directo
+    {{- end }}
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: {{ $name }}
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: {{ $name }}
+        app.kubernetes.io/part-of: platform
+    spec:
+      containers:
+        - name: {{ $name }}
+          image: "{{ $.Values.global.imageRegistry }}/{{ $name }}:{{ $.Values.image.tag }}"
+          imagePullPolicy: {{ $.Values.global.imagePullPolicy }}
+          ports:
+            - containerPort: {{ $cfg.port }}
+              name: http
+          env:
+            - name: SERVICE_NAME
+              value: {{ $name }}
+            - name: ENVIRONMENT
+              value: {{ $.Values.global.env }}
+            - name: OTEL_EXPORTER_OTLP_ENDPOINT
+              value: "http://{{ $.Values.observability.otelEndpoint }}"
+            - name: OTEL_SERVICE_NAME
+              value: {{ $name }}
+          envFrom:
+            - secretRef:
+                name: platform-secrets  # provisto fuera del chart
+          livenessProbe:
+            httpGet:
+              path: /health/live
+              port: http
+            initialDelaySeconds: 15
+            periodSeconds: 10
+          readinessProbe:
+            httpGet:
+              path: /health/ready
+              port: http
+            initialDelaySeconds: 5
+            periodSeconds: 5
+          resources:
+            {{- toYaml ($cfg.resources | default $.Values.defaultResources) | nindent 12 }}
+          securityContext:
+            runAsNonRoot: true
+            runAsUser: 65532
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ $name }}
+  labels:
+    app.kubernetes.io/name: {{ $name }}
+spec:
+  type: ClusterIP
+  ports:
+    - port: {{ $cfg.port }}
+      targetPort: http
+      name: http
+  selector:
+    app.kubernetes.io/name: {{ $name }}
+{{- if $.Values.autoscaling.enabled }}
+---
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: {{ $name }}
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: {{ $name }}
+  minReplicas: {{ $.Values.autoscaling.minReplicas }}
+  maxReplicas: {{ $.Values.autoscaling.maxReplicas }}
+  metrics:
+    - type: Resource
+      resource:
+        name: cpu
+        target:
+          type: Utilization
+          averageUtilization: {{ $.Values.autoscaling.targetCPUUtilizationPercentage }}
+{{- end }}
+{{- end }}

@@ -1,0 +1,134 @@
+# Golden queries para Programación 2.
+#
+# Conjunto curado de preguntas típicas que los estudiantes hacen al tutor,
+# con los chunks esperados del material de cátedra. Se usa en CI nocturno
+# para validar que cambios en chunker, embedder o retrieval no degraden
+# la calidad.
+#
+# Formato:
+#   - query: texto que entra al retrieval
+#   - expected_contains_any: lista de substrings; se espera que AL MENOS UNO
+#     aparezca en los top-5 chunks recuperados
+#   - min_score: score mínimo del primer chunk (0-1, con identity reranker debería ser ~1)
+#   - comision: código de comisión de test a usar
+#
+# Para regenerar baselines, correr:
+#   make eval-retrieval > docs/golden-queries/baseline-$(date +%Y%m%d).txt
+
+comision: "prog2-test"
+
+queries:
+  # ── Recursión ────────────────────────────────────────────────
+  - query: "cómo funciona la recursión en Python"
+    expected_contains_any:
+      - "recursión"
+      - "recursiva"
+      - "llamada a sí misma"
+      - "caso base"
+    min_score: 0.4
+
+  - query: "caso base en funciones recursivas"
+    expected_contains_any:
+      - "caso base"
+      - "condición de terminación"
+      - "stack overflow"
+    min_score: 0.4
+
+  - query: "factorial recursivo ejemplo"
+    expected_contains_any:
+      - "factorial"
+      - "n * factorial(n-1)"
+    min_score: 0.4
+
+  # ── List comprehensions ──────────────────────────────────────
+  - query: "qué es una list comprehension"
+    expected_contains_any:
+      - "comprehension"
+      - "comprensión de lista"
+      - "[x for x in"
+    min_score: 0.4
+
+  - query: "sintaxis de comprensión de listas con condición"
+    expected_contains_any:
+      - "if"
+      - "condición"
+      - "filter"
+    min_score: 0.3
+
+  # ── Manejo de excepciones ────────────────────────────────────
+  - query: "cómo capturar excepciones"
+    expected_contains_any:
+      - "try"
+      - "except"
+      - "excepción"
+    min_score: 0.4
+
+  - query: "cuándo usar finally"
+    expected_contains_any:
+      - "finally"
+      - "limpieza"
+      - "recursos"
+    min_score: 0.3
+
+  # ── Clases y objetos ─────────────────────────────────────────
+  - query: "cómo definir una clase"
+    expected_contains_any:
+      - "class "
+      - "__init__"
+      - "constructor"
+      - "atributo"
+    min_score: 0.4
+
+  - query: "qué es self en Python"
+    expected_contains_any:
+      - "self"
+      - "instancia"
+      - "primera parámetro"
+    min_score: 0.4
+
+  - query: "herencia entre clases"
+    expected_contains_any:
+      - "herencia"
+      - "hereda"
+      - "superclase"
+      - "class Subclase(Superclase)"
+    min_score: 0.4
+
+  # ── Testing ──────────────────────────────────────────────────
+  - query: "cómo escribir un test unitario"
+    expected_contains_any:
+      - "pytest"
+      - "assert"
+      - "test_"
+      - "unittest"
+    min_score: 0.4
+
+  - query: "fixtures en pytest"
+    expected_contains_any:
+      - "fixture"
+      - "@pytest.fixture"
+    min_score: 0.4
+
+  # ── Estructuras de datos ─────────────────────────────────────
+  - query: "diferencia entre lista y tupla"
+    expected_contains_any:
+      - "lista"
+      - "tupla"
+      - "inmutable"
+      - "mutable"
+    min_score: 0.4
+
+  - query: "cómo funciona un diccionario"
+    expected_contains_any:
+      - "diccionario"
+      - "dict"
+      - "key"
+      - "clave"
+    min_score: 0.4
+
+  - query: "cuándo usar un conjunto"
+    expected_contains_any:
+      - "set"
+      - "conjunto"
+      - "elementos únicos"
+    min_score: 0.3

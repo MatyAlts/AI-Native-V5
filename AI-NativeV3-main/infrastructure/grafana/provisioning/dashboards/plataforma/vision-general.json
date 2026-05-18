@@ -1,0 +1,102 @@
+{
+  "annotations": {"list": []},
+  "description": "Audiencia: comité doctoral + DI UNSL. Estado vivo de la plataforma — servicios up, throughput CTR, integridad. Refresh 30s.",
+  "editable": true,
+  "fiscalYearStartMonth": 0,
+  "graphTooltip": 0,
+  "id": null,
+  "links": [],
+  "liveNow": false,
+  "panels": [
+    {
+      "datasource": {"type": "prometheus", "uid": "prometheus"},
+      "fieldConfig": {
+        "defaults": {"color": {"mode": "thresholds"}, "mappings": [{"options": {"0": {"color": "red", "text": "Down"}, "1": {"color": "green", "text": "Up"}}, "type": "value"}], "thresholds": {"mode": "absolute", "steps": [{"color": "red", "value": null}, {"color": "green", "value": 1}]}},
+        "overrides": []
+      },
+      "gridPos": {"h": 6, "w": 24, "x": 0, "y": 0},
+      "id": 1,
+      "options": {"colorMode": "background", "graphMode": "none", "justifyMode": "auto", "orientation": "horizontal", "reduceOptions": {"calcs": ["lastNotNull"], "fields": "", "values": false}, "textMode": "value_and_name"},
+      "pluginVersion": "11.3.0",
+      "targets": [{"expr": "up{job=\"otel-collector\"}", "legendFormat": "{{service_name}}", "refId": "A"}],
+      "title": "Servicios up (12 esperados)",
+      "type": "stat"
+    },
+    {
+      "datasource": {"type": "prometheus", "uid": "prometheus"},
+      "fieldConfig": {"defaults": {"unit": "ops"}, "overrides": []},
+      "gridPos": {"h": 8, "w": 12, "x": 0, "y": 6},
+      "id": 2,
+      "options": {"legend": {"displayMode": "list", "placement": "bottom", "showLegend": true}, "tooltip": {"mode": "multi", "sort": "desc"}},
+      "targets": [{"expr": "sum by (event_type) (rate(ctr_events_total{tenant_id=~\"$tenant\"}[1m]))", "legendFormat": "{{event_type}}", "refId": "A"}],
+      "title": "CTR events/sec (por event_type)",
+      "type": "timeseries"
+    },
+    {
+      "datasource": {"type": "prometheus", "uid": "prometheus"},
+      "fieldConfig": {
+        "defaults": {"color": {"mode": "thresholds"}, "thresholds": {"mode": "absolute", "steps": [{"color": "green", "value": null}, {"color": "red", "value": 1}]}, "unit": "short"},
+        "overrides": []
+      },
+      "gridPos": {"h": 8, "w": 12, "x": 12, "y": 6},
+      "id": 3,
+      "options": {"colorMode": "background", "graphMode": "none", "justifyMode": "center", "orientation": "auto", "reduceOptions": {"calcs": ["lastNotNull"], "fields": "", "values": false}, "textMode": "value"},
+      "targets": [{"expr": "sum(ctr_episodes_integrity_compromised_total{tenant_id=~\"$tenant\"})", "refId": "A"}],
+      "title": "integrity_compromised total (target: 0)",
+      "type": "stat"
+    },
+    {
+      "datasource": {"type": "prometheus", "uid": "prometheus"},
+      "fieldConfig": {"defaults": {"unit": "ops"}, "overrides": []},
+      "gridPos": {"h": 8, "w": 24, "x": 0, "y": 14},
+      "id": 4,
+      "options": {"legend": {"displayMode": "list", "placement": "bottom", "showLegend": true}, "tooltip": {"mode": "single"}},
+      "targets": [
+        {"expr": "sum(rate(ctr_events_total{event_type=\"episodio_abierto\", tenant_id=~\"$tenant\"}[5m]))", "legendFormat": "abiertos", "refId": "A"},
+        {"expr": "sum(rate(ctr_events_total{event_type=\"episodio_cerrado\", tenant_id=~\"$tenant\"}[5m]))", "legendFormat": "cerrados", "refId": "B"},
+        {"expr": "sum(rate(ctr_events_total{event_type=\"episodio_abandonado\", tenant_id=~\"$tenant\"}[5m]))", "legendFormat": "abandonados", "refId": "C"}
+      ],
+      "title": "Episodios abiertos vs cerrados vs abandonados (5m rate)",
+      "type": "timeseries"
+    },
+    {
+      "datasource": {"type": "prometheus", "uid": "prometheus"},
+      "fieldConfig": {"defaults": {"unit": "s"}, "overrides": []},
+      "gridPos": {"h": 8, "w": 12, "x": 0, "y": 22},
+      "id": 5,
+      "options": {"legend": {"displayMode": "list", "placement": "bottom", "showLegend": true}, "tooltip": {"mode": "multi"}},
+      "targets": [
+        {"expr": "histogram_quantile(0.5, sum(rate(ctr_episode_duration_seconds_bucket{tenant_id=~\"$tenant\"}[10m])) by (le))", "legendFormat": "p50", "refId": "A"},
+        {"expr": "histogram_quantile(0.95, sum(rate(ctr_episode_duration_seconds_bucket{tenant_id=~\"$tenant\"}[10m])) by (le))", "legendFormat": "p95", "refId": "B"}
+      ],
+      "title": "Episode duration p50/p95",
+      "type": "timeseries"
+    },
+    {
+      "datasource": {"type": "prometheus", "uid": "prometheus"},
+      "fieldConfig": {"defaults": {"unit": "ops"}, "overrides": []},
+      "gridPos": {"h": 8, "w": 12, "x": 12, "y": 22},
+      "id": 6,
+      "options": {"calculate": false, "cellGap": 1, "color": {"exponent": 0.5, "fill": "dark-orange", "mode": "scheme", "scheme": "Oranges", "steps": 64}, "filterValues": {"le": 1e-9}, "legend": {"show": true}, "rowsFrame": {"layout": "auto"}, "tooltip": {"show": true, "yHistogram": false}, "yAxis": {"axisPlacement": "left", "reverse": false}},
+      "targets": [{"expr": "sum by (service_name) (rate(http_server_requests_total{http_status_code=~\"5..\"}[5m]))", "format": "heatmap", "legendFormat": "{{service_name}}", "refId": "A"}],
+      "title": "Error rate 5xx por servicio (5m)",
+      "type": "heatmap"
+    }
+  ],
+  "refresh": "30s",
+  "schemaVersion": 39,
+  "tags": ["plataforma", "piloto-unsl"],
+  "templating": {
+    "list": [
+      {"current": {"selected": false, "text": "All", "value": "$__all"}, "datasource": {"type": "prometheus", "uid": "prometheus"}, "definition": "label_values(ctr_events_total, tenant_id)", "hide": 0, "includeAll": true, "multi": false, "name": "tenant", "options": [], "query": {"query": "label_values(ctr_events_total, tenant_id)", "refId": "StandardVariableQuery"}, "refresh": 1, "regex": "", "skipUrlSync": false, "sort": 0, "type": "query"},
+      {"current": {"selected": false, "text": "All", "value": "$__all"}, "datasource": {"type": "prometheus", "uid": "prometheus"}, "definition": "label_values(up, service_name)", "hide": 0, "includeAll": true, "multi": true, "name": "service", "options": [], "query": {"query": "label_values(up, service_name)", "refId": "StandardVariableQuery"}, "refresh": 1, "regex": "", "skipUrlSync": false, "sort": 0, "type": "query"}
+    ]
+  },
+  "time": {"from": "now-1h", "to": "now"},
+  "timepicker": {},
+  "timezone": "browser",
+  "title": "Plataforma — visión general",
+  "uid": "plataforma-vision-general",
+  "version": 1,
+  "weekStart": ""
+}

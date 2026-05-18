@@ -1,0 +1,144 @@
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: platform-slo-alerts
+  labels:
+    app.kubernetes.io/name: platform-slos
+    prometheus: platform
+spec:
+  groups:
+    # ── Tutor latency ──────────────────────────────────────────────────
+    - name: tutor-latency
+      interval: 30s
+      rules:
+        - alert: TutorFirstTokenLatencyP95High
+          expr: |
+            histogram_quantile(0.95,
+              sum(rate(http_server_duration_seconds_bucket{
+                service_name="tutor-service",
+                http_route=~"/api/v1/episodes/.+/message"
+              }[5m])) by (le)
+            ) > 3
+          for: 10m
+          labels:
+            severity: warning
+            slo: tutor-latency-p95
+          annotations:
+            summary: "Tutor P95 de primer token > 3s por 10min"
+            description: >
+              El SLO objetivo es P95 < 3s. Actualmente está en
+              {{ $value | humanizeDuration }}. Investigar: saturación del
+              ai-gateway, lentitud del retrieval, o problemas del LLM provider.
+
+        - alert: TutorFirstTokenLatencyP99Critical
+          expr: |
+            histogram_quantile(0.99,
+              sum(rate(http_server_duration_seconds_bucket{
+                service_name="tutor-service",
+                http_route=~"/api/v1/episodes/.+/message"
+              }[5m])) by (le)
+            ) > 8
+          for: 5m
+          labels:
+            severity: critical
+            slo: tutor-latency-p99
+          annotations:
+            summary: "Tutor P99 > 8s — degradación severa"
+            description: >
+              UX gravemente degradada. Posible incidente del LLM provider
+              o de infra upstream.
+
+    # ── CTR integrity ──────────────────────────────────────────────────
+    - name: ctr-integrity
+      interval: 1m
+      rules:
+        - alert: CTRNewIntegrityCompromised
+          expr: |
+            increase(ctr_episodes_integrity_compromised_total[15m]) > 0
+          for: 1m
+          labels:
+            severity: critical
+            slo: ctr-integrity
+          annotations:
+            summary: "Nuevos episodios marcados integrity_compromised"
+            description: >
+              Se detectaron episodios con cadena criptográfica rota. Esto
+              es un evento de seguridad crítico. Verificar logs del
+              integrity-checker y del partition worker.
+
+        - alert: CTRDLQGrowing
+          expr: |
+            increase(ctr_dlq_size[30m]) > 5
+          for: 5m
+          labels:
+            severity: warning
+            slo: ctr-throughput
+          annotations:
+            summary: "CTR DLQ creciendo"
+            description: >
+              Más de 5 eventos en DLQ en los últimos 30 min. Investigar
+              causa (schema drift, DB down, event malformado).
+
+        - alert: CTRWorkerBacklog
+          expr: |
+            redis_stream_length{stream=~"ctr\\.p.*"} > 1000
+          for: 10m
+          labels:
+            severity: warning
+            slo: ctr-throughput
+          annotations:
+            summary: "CTR stream con backlog > 1000 eventos"
+            description: >
+              Worker {{ $labels.stream }} no está consumiendo al ritmo del
+              productor. Escalar workers o investigar lentitud de DB.
+
+    # ── Budget enforcement ─────────────────────────────────────────────
+    - name: ai-gateway-budget
+      interval: 1m
+      rules:
+        - alert: AIBudgetNearExhausted
+          expr: |
+            aigw_budget_used_usd / aigw_budget_limit_usd > 0.8
+          for: 1m
+          labels:
+            severity: warning
+          annotations:
+            summary: "Budget AI > 80% consumido"
+            description: >
+              Tenant {{ $labels.tenant_id }} feature {{ $labels.feature }}
+              lleva $($value * 100)%% del budget mensual. A 100% se rechazan
+              requests nuevos.
+
+    # ── Classification throughput ──────────────────────────────────────
+    - name: classifier-health
+      interval: 1m
+      rules:
+        - alert: ClassifierBacklogGrowing
+          expr: |
+            (sum(rate(tutor_episodes_closed_total[1h]))
+             - sum(rate(classifier_classifications_total[1h]))) > 10
+          for: 30m
+          labels:
+            severity: warning
+          annotations:
+            summary: "Backlog de clasificación > 10/h"
+            description: >
+              Se cerraron más episodios de los que el classifier alcanzó
+              a procesar. Los docentes no van a ver los indicadores N4
+              en tiempo.
+
+    # ── Error rates generales ──────────────────────────────────────────
+    - name: platform-errors
+      interval: 30s
+      rules:
+        - alert: ServiceErrorRateHigh
+          expr: |
+            sum by (service_name) (rate(http_server_requests_total{http_status_code=~"5.."}[5m]))
+            / sum by (service_name) (rate(http_server_requests_total[5m])) > 0.01
+          for: 10m
+          labels:
+            severity: warning
+          annotations:
+            summary: "{{ $labels.service_name }} error rate > 1%"
+            description: >
+              Superando el SLO de error rate. Valor actual: {{ $value | humanizePercentage }}.

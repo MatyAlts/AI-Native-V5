@@ -1,0 +1,29 @@
+# Grafana provisioning — auto-load de dashboards y datasources.
+#
+# Montar este directorio en el contenedor Grafana en:
+#   /etc/grafana/provisioning/
+#
+# Estructura esperada:
+#   /etc/grafana/provisioning/datasources/prometheus.yaml
+#   /etc/grafana/provisioning/dashboards/platform.yaml
+#   /var/lib/grafana/dashboards/*.json  (los JSON de cada dashboard)
+#
+# En docker-compose.dev:
+#   volumes:
+#     - ./ops/grafana/provisioning:/etc/grafana/provisioning:ro
+#     - ./ops/grafana/dashboards:/var/lib/grafana/dashboards:ro
+
+apiVersion: 1
+
+providers:
+  - name: "Platform dashboards"
+    orgId: 1
+    folder: "Platform"
+    folderUid: "platform"
+    type: file
+    disableDeletion: false
+    updateIntervalSeconds: 30
+    allowUiUpdates: true
+    options:
+      path: /var/lib/grafana/dashboards
+      foldersFromFilesStructure: false

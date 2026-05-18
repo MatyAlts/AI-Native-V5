@@ -1,0 +1,73 @@
+# ── Local caches / temporales ─────────────────────────────────────────
+.playwright-mcp/
+*.tmp
+.env.tmp
+
+# ── Screenshots de validación / testing (no son artefactos del repo) ──
+*.png
+*.jpg
+*.jpeg
+!**/public/**/*.png
+!**/public/**/*.jpg
+!**/public/**/*.svg
+!**/.claude/**/*.png
+
+# ── Logs de desarrollo ────────────────────────────────────────────────
+.dev-logs/
+*.log
+
+# ── Build artifacts ───────────────────────────────────────────────────
+node_modules/
+**/node_modules/
+dist/
+**/dist/
+build/
+**/build/
+.next/
+.turbo/
+.vite/
+
+# ── Python ────────────────────────────────────────────────────────────
+__pycache__/
+**/__pycache__/
+*.pyc
+*.pyo
+*.egg-info/
+**/*.egg-info/
+.venv/
+**/.venv/
+venv/
+
+# ── Editor / OS ───────────────────────────────────────────────────────
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+
+# ── Env files (NUNCA commitear secretos) ──────────────────────────────
+.env
+.env.local
+.env.*.local
+**/.env
+!**/.env.example
+
+# ── Documentos Word temporales de Office ──────────────────────────────
+~$*.docx
+~$*.doc
+~$*.xlsx
+
+# ── Test outputs ──────────────────────────────────────────────────────
+coverage/
+.coverage
+htmlcov/
+.pytest_cache/
+**/.pytest_cache/
+playwright-report/
+test-results/
+
+# ── Mypy / ruff caches ────────────────────────────────────────────────
+.mypy_cache/
+.ruff_cache/
+
+# ── Claude Code / agente ──────────────────────────────────────────────
+.claude/projects/

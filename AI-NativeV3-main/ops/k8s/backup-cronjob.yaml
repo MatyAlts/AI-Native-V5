@@ -1,0 +1,108 @@
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: platform-db-backup
+  labels:
+    app.kubernetes.io/name: platform-db-backup
+    app.kubernetes.io/part-of: platform
+spec:
+  # Todos los días a las 03:00 UTC (00:00 Argentina)
+  schedule: "0 3 * * *"
+  concurrencyPolicy: Forbid
+  successfulJobsHistoryLimit: 7  # retener 1 semana
+  failedJobsHistoryLimit: 14
+  startingDeadlineSeconds: 1800
+
+  jobTemplate:
+    spec:
+      backoffLimit: 2
+      ttlSecondsAfterFinished: 604800  # 7 días
+      template:
+        spec:
+          restartPolicy: OnFailure
+          serviceAccountName: platform-db-backup
+          containers:
+            - name: backup
+              image: platform/db-backup:latest
+              imagePullPolicy: IfNotPresent
+              command: ["/scripts/backup.sh", "/backups/$(date +%Y-%m-%d)"]
+              env:
+                - name: PG_HOST
+                  value: "postgres.platform.svc.cluster.local"
+                - name: PG_BACKUP_USER
+                  value: "backup_user"
+                - name: PG_BACKUP_PASSWORD
+                  valueFrom:
+                    secretKeyRef:
+                      name: postgres-backup-credentials
+                      key: password
+              volumeMounts:
+                - name: backup-volume
+                  mountPath: /backups
+              resources:
+                requests:
+                  cpu: "200m"
+                  memory: "512Mi"
+                limits:
+                  cpu: "1000m"
+                  memory: "2Gi"
+          volumes:
+            - name: backup-volume
+              persistentVolumeClaim:
+                claimName: platform-backups
+---
+# Sidecar container que sube los backups a S3 glacier encriptados
+# (se implementa en el mismo pod con rclone + age, o como job separado).
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: platform-backups
+spec:
+  accessModes: ["ReadWriteMany"]
+  resources:
+    requests:
+      storage: 50Gi
+  storageClassName: standard
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: platform-db-backup
+---
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: platform-backup-alerts
+  labels:
+    prometheus: platform
+spec:
+  groups:
+    - name: platform-backup
+      rules:
+        - alert: PlatformBackupJobFailed
+          expr: kube_job_failed{job_name=~"platform-db-backup.*"} > 0
+          for: 1h
+          labels:
+            severity: critical
+          annotations:
+            summary: "Backup diario de plataforma falló"
+            description: >
+              El backup nocturno falló. Sin backup no hay recovery posible
+              en caso de pérdida de datos. Investigar logs del pod y
+              estado del volumen platform-backups.
+            runbook_url: "https://wiki.platform/runbooks/backup-failure"
+
+        - alert: PlatformBackupMissing
+          # No hubo un job completado exitoso en las últimas 26h (1h de margen)
+          expr: |
+            (time() - kube_job_status_completion_time{
+              job_name=~"platform-db-backup.*", condition="Complete"
+            }) > 26 * 3600
+          for: 30m
+          labels:
+            severity: warning
+          annotations:
+            summary: "No hay backup de plataforma en las últimas 26h"
+            description: >
+              El último backup exitoso fue hace más de 26h. Puede indicar
+              que el CronJob está suspendido o con errores continuos.

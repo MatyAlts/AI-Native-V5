@@ -1,0 +1,265 @@
+name: CI
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+env:
+  PYTHON_VERSION: "3.12"
+  NODE_VERSION: "20"
+  PNPM_VERSION: "9.12"
+
+jobs:
+  lint-python:
+    name: Lint Python
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v3
+        with:
+          enable-cache: true
+
+      - name: Setup Python
+        run: uv python install ${{ env.PYTHON_VERSION }}
+
+      - name: Install deps
+        run: uv sync --all-packages
+
+      - name: Ruff check
+        run: uv run ruff check .
+
+      - name: Ruff format check
+        run: uv run ruff format --check .
+
+  check-docs:
+    name: Docs drift (CLAUDE.md)
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+
+      - name: Check CLAUDE.md numeric claims vs code
+        run: python scripts/check-claude-md.py
+
+      - name: Check vite.config UUIDs vs seed-3-comisiones
+        # A24: detecta drift entre los UUIDs hardcoded en apps/web-*/vite.config.ts
+        # (header x-user-id para dev mode sin Keycloak) y los UUIDs creados por
+        # scripts/seed-3-comisiones.py. Sin este gate, un seed que no crea esos
+        # UUIDs deja al frontend dev mudo silenciosamente (TareaSelector vacio).
+        run: python scripts/check-vite-seed-sync.py
+
+  typecheck-python:
+    name: Typecheck Python
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v3
+        with:
+          enable-cache: true
+
+      - name: Setup Python
+        run: uv python install ${{ env.PYTHON_VERSION }}
+
+      - name: Install deps
+        run: uv sync --all-packages
+
+      - name: mypy
+        run: uv run mypy .
+
+  lint-frontend:
+    name: Lint frontend
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: ${{ env.PNPM_VERSION }}
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: pnpm
+
+      - run: pnpm install --frozen-lockfile
+
+      - run: pnpm turbo lint typecheck
+
+  test-unit:
+    name: Unit tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v3
+        with:
+          enable-cache: true
+
+      - name: Setup Python
+        run: uv python install ${{ env.PYTHON_VERSION }}
+
+      - name: Install deps
+        run: uv sync --all-packages
+
+      - name: Pytest (unit)
+        # Coverage gate (GAP-9): documented target is 80% global, 85% pedagogy
+        # (tutor/ctr/classifier) per CLAUDE.md > "Convenciones".
+        # Current measured floor (sesión 2026-04-21): tutor=60%, ctr=63%,
+        # classifier=85%. Gate is set at the global floor of 60% so CI is
+        # actually enforced today; ratchet plan documented in BUGS-PILOTO.md
+        # (GAP-9). If CI fails here, ADD TESTS — do NOT lower this number.
+        run: uv run pytest -m "not integration" --cov --cov-report=xml --cov-fail-under=60
+
+      - name: Upload coverage
+        uses: codecov/codecov-action@v4
+        if: always()
+        with:
+          files: ./coverage.xml
+          fail_ci_if_error: false
+
+  test-integration:
+    name: Integration tests (testcontainers)
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v3
+        with:
+          enable-cache: true
+
+      - name: Setup Python
+        run: uv python install ${{ env.PYTHON_VERSION }}
+
+      - name: Install deps
+        run: uv sync --all-packages
+
+      - name: Pytest (integration)
+        run: uv run pytest -m "integration"
+
+  test-rls:
+    name: RLS isolation tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v3
+
+      - name: Setup Python
+        run: uv python install ${{ env.PYTHON_VERSION }}
+
+      - name: Install deps
+        run: uv sync --all-packages
+
+      - name: Run RLS tests
+        run: uv run pytest -m "integration" -k "rls or tenant"
+
+  migrations-dry-run:
+    name: Migrations dry-run
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    services:
+      postgres:
+        image: pgvector/pgvector:pg16
+        env:
+          POSTGRES_PASSWORD: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v3
+
+      - name: Setup Python
+        run: uv python install ${{ env.PYTHON_VERSION }}
+
+      - name: Install deps
+        run: uv sync --all-packages
+
+      - name: Init DBs
+        run: PGPASSWORD=postgres psql -h localhost -U postgres -f infrastructure/postgres/init-dbs.sql
+
+      - name: Alembic upgrade academic
+        working-directory: apps/academic-service
+        env:
+          ACADEMIC_DB_URL: postgresql+asyncpg://academic_user:academic_pass@localhost:5432/academic_main
+        run: uv run alembic upgrade head || echo "No migrations yet (expected in F0)"
+
+  build:
+    name: Build Docker images
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    needs: [lint-python, typecheck-python, lint-frontend, test-unit]
+    strategy:
+      matrix:
+        service:
+          - academic-service
+          - ai-gateway
+          - analytics-service
+          - api-gateway
+          - classifier-service
+          - content-service
+          - ctr-service
+          - evaluation-service
+          - governance-service
+          - tutor-service
+          # NOTE: integrity-attestation-service excluded (no Dockerfile yet,
+          # ADR-021 — infra institucional separada en piloto, vive en VPS UNSL).
+          # NOTE: identity-service deprecated (ADR-041) — auth via api-gateway + Casbin.
+          # NOTE: enrollment-service deprecated (ADR-030) — bulk-import en academic-service.
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: docker/setup-buildx-action@v3
+
+      - name: Build image
+        uses: docker/build-push-action@v5
+        with:
+          context: apps/${{ matrix.service }}
+          push: false
+          tags: platform/${{ matrix.service }}:${{ github.sha }}
+          cache-from: type=gha,scope=${{ matrix.service }}
+          cache-to: type=gha,mode=max,scope=${{ matrix.service }}
+
+  security-scan:
+    name: Security scan
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Trivy filesystem scan
+        uses: aquasecurity/trivy-action@master
+        with:
+          scan-type: "fs"
+          severity: "HIGH,CRITICAL"
+          exit-code: "1"
+          ignore-unfixed: true

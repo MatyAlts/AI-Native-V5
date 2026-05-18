@@ -1,0 +1,10 @@
+apiVersion: v2
+name: platform
+description: Plataforma académica multi-universidad con núcleo AI-Native N4
+type: application
+version: 0.1.0
+appVersion: "0.1.0"
+
+maintainers:
+  - name: Alberto Cortez
+    email: alberto@platform.edu

@@ -1,0 +1,30 @@
+global:
+  env: production
+  imagePullPolicy: IfNotPresent
+
+ingress:
+  hosts:
+    - host: api.plataforma.ar
+      paths: ["/"]
+    - host: admin.plataforma.ar
+      paths: ["/"]
+    - host: app.plataforma.ar
+      paths: ["/"]
+  tls:
+    - hosts:
+        - api.plataforma.ar
+        - admin.plataforma.ar
+        - app.plataforma.ar
+      secretName: platform-prod-tls
+
+# HA completa
+autoscaling:
+  minReplicas: 3
+  maxReplicas: 20
+
+# En producción PostgreSQL y Redis son managed externos
+postgres:
+  enabled: false
+
+redis:
+  enabled: false
