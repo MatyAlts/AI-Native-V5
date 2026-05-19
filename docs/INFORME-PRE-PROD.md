@@ -33,7 +33,7 @@ Este documento sintetiza el estado del piloto antes de migrarlo al VPS instituci
 | **CTR append-only** | SHA-256 self_hash + chain_hash encadenados | `make test-smoke` (suite E2E, <2s) |
 | **Tampering detection** | Verify endpoint recomputa hashes y reporta `failing_seq` | Validado manualmente con `UPDATE events SET self_hash='deadbeef...'` |
 | **`classifier_config_hash` determinista** | Función pura sobre `(tree_version, profile)` | Re-clasificar el mismo episodio → mismo hash |
-| **5 coherencias separadas** (CT, CCD_mean, CCD_orphan_ratio, CII_stability, CII_evolution) | Persistidas en columnas distintas de `classifications` | Schema enforza separación |
+| **3 coherencias separadas en 5 métricas** (CT, CCD_mean, CCD_orphan_ratio, CII_stability, CII_evolution) | Persistidas en columnas distintas de `classifications` | Schema enforza separación |
 | **Multi-tenant RLS** | Postgres FORCE ROW LEVEL SECURITY en todas las tablas con `tenant_id` | Cross-tenant leak test: GET con header swap → 404 |
 | **K-anonymity N≥5 en cuartiles** | Guard explícito en `cii_alerts.py` | Endpoint `/cohort/{id}/cii-quartiles` devuelve `insufficient_data` |
 | **Eventos excluidos del classifier** | `_EXCLUDED_FROM_FEATURES` frozenset | Test golden en `test_pipeline_reproducibility.py` |

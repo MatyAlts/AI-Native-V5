@@ -6,7 +6,7 @@ Expone la capa de análisis empírico del piloto: Cohen's κ inter-rater, A/B te
 
 ## 2. Rol en la arquitectura
 
-Pertenece al **plano académico-operacional**. Materializa el componente "Servicio de analítica" descrito en el Capítulo 6 de la tesis (arquitectura C4 del sistema AI-Native), cuyas responsabilidades nominales son: producir los indicadores empíricos que sostienen los resultados publicables de la tesis (κ ≥ 0.6 como meta, progresión longitudinal de cohortes, calibración del árbol N4) y ofrecer los datasets anonymizados que el investigador entrega al comité de ética UNSL.
+Pertenece al **plano académico-operacional**. Materializa el componente "Servicio de analítica" descrito en el Capítulo 6 de la tesis (arquitectura C4 del sistema AI-Native), cuyas responsabilidades nominales son: producir los indicadores empíricos que sostienen los resultados publicables de la tesis (κ ≥ 0.70 como meta — ADR-046, progresión longitudinal de cohortes, calibración del árbol N4) y ofrecer los datasets anonymizados que el investigador entrega al comité de ética UNSL.
 
 Es el único servicio del repo que lee **cross-base** (`ctr_store` + `classifier_db`) — y lo hace con sesiones separadas, cada una con su propio `SET LOCAL app.current_tenant` (RN-108).
 
@@ -116,7 +116,7 @@ Estado en memoria del proceso:
 
 El analytics-service produce los **indicadores empíricos que sostienen los resultados publicables** de la tesis. Tres afirmaciones que materializa:
 
-1. **Cohen's κ como gate de calidad del clasificador** (Capítulo 8 de la tesis, RN-095/RN-096): la meta de la tesis es κ ≥ 0.6 contra etiquetado intercoder de dos docentes sobre 50 episodios. El endpoint `/kappa` y el workflow en `docs/pilot/kappa-workflow.md` son la implementación directa. Si κ < 0.6, la calibración del árbol es insuficiente y el A/B de profiles (`/ab-test-profiles`) es el siguiente paso para refinar umbrales.
+1. **Cohen's κ como gate de calidad del clasificador** (Capítulo 8 de la tesis, RN-095/RN-096): la meta de la tesis es κ ≥ 0.70 (ADR-046, alineación con paper) contra etiquetado intercoder de dos docentes sobre 50 episodios. El endpoint `/kappa` y el workflow en `docs/pilot/kappa-workflow.md` son la implementación directa. Si κ < 0.70, la calibración del árbol es insuficiente y el A/B de profiles (`/ab-test-profiles`) es el siguiente paso para refinar umbrales.
 
 2. **Progresión longitudinal como evidencia pedagógica** (Capítulo 9): el indicador `net_progression_ratio` por cohorte — fracción de estudiantes que mejoran menos los que empeoran sobre el total con datos suficientes — es una métrica agregada directamente referenciable en discusión de resultados. El cálculo por terciles (primer tercio vs último tercio de episodios del estudiante) permite detectar mejora temporal sin confundirla con ruido de episodios aislados.
 

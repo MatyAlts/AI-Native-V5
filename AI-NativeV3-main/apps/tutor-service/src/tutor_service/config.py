@@ -59,7 +59,7 @@ class Settings(BaseSettings):
     # `TutorRespondioPayload.socratic_compliance` persiste como None y
     # `violations` como lista vacía, preservando la garantía de ADR-027 ("el
     # campo queda None hasta que la calibración con docentes valide el cálculo").
-    # Activación bloqueada hasta validación intercoder κ ≥ 0.6 sobre 50+
+    # Activación bloqueada hasta validación intercoder κ ≥ 0.70 sobre 50+ (ADR-046)
     # respuestas etiquetadas por 2 docentes independientes. El esqueleto
     # técnico (detector + score + tests) vive en
     # `tutor_service.services.postprocess_socratic`.

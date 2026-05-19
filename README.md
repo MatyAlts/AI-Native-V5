@@ -56,7 +56,7 @@ Un alumno de programación I entra a su materia, elige una unidad temática, abr
 - **Pyodide** ejecuta su Python en el browser (sin servidor).
 - Un **tutor socrático con LLM real** (Mistral / OpenAI / Anthropic / Gemini via BYOK) lo guía con preguntas — **NO le da la respuesta**.
 - Cada evento (lectura, edición, ejecución, pregunta al tutor, respuesta del tutor) se persiste en una **cadena criptográfica append-only SHA-256** (Cognitive Traceability Record, CTR).
-- Al cerrar, un **clasificador determinista** evalúa **5 coherencias separadas** (CT, CCD_mean, CCD_orphan_ratio, CII_stability, CII_evolution) y emite un diagnóstico cognitivo N4.
+- Al cerrar, un **clasificador determinista** evalúa **3 coherencias separadas** (Temporal, Código-Discurso, Inter-Iteración) operacionalizadas en 5 métricas internas (CT, CCD_mean, CCD_orphan_ratio, CII_stability, CII_evolution) y emite un diagnóstico cognitivo N4.
 
 El docente ve dashboards con la **progresión de la cohorte** (con k-anonymity N≥5 sobre cuartiles), puede armar TPs vinculando ejercicios del banco, generar ejercicios nuevos con IA, y verificar la integridad criptográfica de cada episodio.
 
@@ -268,7 +268,7 @@ DOCENTE (5174)                              ALUMNO (5175)
                                                     (sub_branch: extreme | classic)
 ```
 
-**Concepto clave de la tesis**: las 5 coherencias NUNCA se colapsan en un score único — el análisis es multidimensional.
+**Concepto clave de la tesis**: las 3 coherencias (en sus 5 métricas internas) NUNCA se colapsan en un score único — el análisis es multidimensional.
 
 ---
 
@@ -310,7 +310,7 @@ Estas NO son sugerencias — están verificadas por tests y fundamentan la acept
 |---|---|---|
 | **CTR append-only** (`UPDATE`/`DELETE` prohibidos) | Test smoke + verify chain SHA-256 | ADR-010 |
 | **`classifier_config_hash` determinista** | `test_pipeline_reproducibility.py` re-clasifica y compara hash | ADR-020 |
-| **Las 5 coherencias SEPARADAS** | `Classification` schema con 5 columnas, nunca un score único | ADR-018 |
+| **Las 3 coherencias SEPARADAS (en 5 métricas)** | `Classification` schema con 5 columnas (CT, CCD_mean, CCD_orphan_ratio, CII_stability, CII_evolution), nunca un score único | ADR-018 |
 | **k-anonymity N≥5 sobre cuartiles** | `MIN_STUDENTS_FOR_QUARTILES=5` en `cii_alerts.py` | ADR-022/RN-131 |
 | **Multi-tenant RLS forzado** | `make check-rls` en CI | ADR-001 |
 | **Attestation Ed25519 post-cierre** | `integrity-attestation-service` firma con SLO 24h | ADR-021/RN-128 |

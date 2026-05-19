@@ -105,7 +105,7 @@ Frontend — sin persistencia propia. State local con `useState` + `useEffect` (
 
 El web-teacher es la UI donde se ejecutan **dos de los tres experimentos empíricos** que sostienen los resultados publicables:
 
-1. **Rating intercoder para κ** (`KappaRatingView`): es la operacionalización UI del workflow descrito en `docs/pilot/kappa-workflow.md`. Dos docentes etiquetan independientemente los mismos 50 episodios, el frontend arma el batch `{episode_id, rater_a, rater_b}` y pega a analytics-service. κ ≥ 0.6 es la meta de la tesis (Capítulo 8). Si κ < 0.6, el profile del árbol N4 debe recalibrarse — el A/B testing de profiles (hoy API-only) es el siguiente paso.
+1. **Rating intercoder para κ** (`KappaRatingView`): es la operacionalización UI del workflow descrito en `docs/pilot/kappa-workflow.md`. Dos docentes etiquetan independientemente los mismos 50 episodios, el frontend arma el batch `{episode_id, rater_a, rater_b}` y pega a analytics-service. κ ≥ 0.70 (ADR-046) es la meta de la tesis (Capítulo 8). Si κ < 0.70, el profile del árbol N4 debe recalibrarse — el A/B testing de profiles (hoy API-only) es el siguiente paso.
 
 2. **Progresión longitudinal** (`ProgressionView`): la narrativa empírica de "los estudiantes mejoran con el tutor socrático" o "no mejoran" sale de esta vista. El `net_progression_ratio` de una cohorte es la cifra que aparece en el capítulo de resultados. El SVG nativo es deliberado — la tesis prefiere que la visualización sea reproducible y auditable (SVG simple > Recharts opaco).
 

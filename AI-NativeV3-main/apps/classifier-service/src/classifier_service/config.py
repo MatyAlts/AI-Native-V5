@@ -39,7 +39,7 @@ class Settings(BaseSettings):
     # las mismas etiquetas que la heuristica temporal v1.1.0 (preserva
     # reproducibilidad bit-a-bit del classifier_config_hash sobre todas las
     # classifications historicas del piloto-1). Activacion bloqueada hasta
-    # validacion intercoder kappa >= 0.6 sobre 50+ anotaciones etiquetadas
+    # validacion intercoder kappa >= 0.70 sobre 50+ anotaciones etiquetadas (ADR-046)
     # por 2 docentes independientes (mismo gate humano que ADR-027 / ADR-044).
     # El esqueleto tecnico vive en
     # `classifier_service.services.event_labeler_lexical`.

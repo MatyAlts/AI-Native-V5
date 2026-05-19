@@ -1287,7 +1287,7 @@ Ventana de 60 segundos; principal = `user_id` si hay JWT, si no `tenant_id`, si 
 
 Si `p_e == 1.0` (convergencia trivial), se reporta `kappa=1.0` por convención.
 
-**Justificación**: Escala estándar de la literatura de investigación educativa; objetivo de la tesis κ ≥ 0.6.
+**Justificación**: Escala estándar de la literatura de investigación educativa; objetivo de la tesis κ ≥ 0.70 (ADR-046, alineación con paper).
 
 **Verificación**: `packages/platform-ops/src/platform_ops/kappa_analysis.py::KappaResult.interpretation`.
 

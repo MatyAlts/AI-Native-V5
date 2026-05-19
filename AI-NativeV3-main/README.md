@@ -238,7 +238,7 @@ platform/
 │   ├── analytics-service/             # Kappa, progresión, longitudinal, alertas, governance UI
 │   ├── tutor-service/                 # Orquestador socrático (SSE) + reflexión + abandonment worker
 │   ├── ctr-service/                   # CTR append-only SHA-256 + alias /audit/* (ADR-031)
-│   ├── classifier-service/            # Árbol N4 + 5 coherencias + labeler v1.2.0
+│   ├── classifier-service/            # Árbol N4 + 3 coherencias en 5 métricas + labeler v1.2.0
 │   ├── content-service/               # Materiales + RAG (pgvector + chunker estratificado)
 │   ├── governance-service/            # Prompts versionados (FS Git) + tp_generator/v1.0.0
 │   ├── ai-gateway/                    # LLM proxy + BYOK multi-provider (ADRs 038-040) + Mistral
@@ -378,9 +378,9 @@ por tests automatizados. **Al modificar código, respetar**:
   servicios internos confían en los headers X-* del gateway.
 - **Hash determinista del classifier_config_hash** — reproducibilidad
   bit a bit verificada con test de integración.
-- **Preservar las 5 coherencias separadas** (CT, CCD_mean,
-  CCD_orphan_ratio, CII_stability, CII_evolution) — nunca colapsar en
-  un score único.
+- **Preservar las 3 coherencias separadas en sus 5 métricas** (CT,
+  CCD_mean, CCD_orphan_ratio, CII_stability, CII_evolution) — nunca
+  colapsar en un score único.
 - **Write-only al CTR desde tutor-service**, excepto `codigo_ejecutado`
   que usa el `user_id` del estudiante autenticado.
 - **Salt mínimo 16 chars** en export académico, `include_prompts=False`

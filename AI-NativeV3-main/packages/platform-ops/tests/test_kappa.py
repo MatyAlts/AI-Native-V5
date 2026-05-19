@@ -107,7 +107,7 @@ def test_acuerdo_sustancial_clasificador_vs_humano() -> None:
         + [("apropiacion_superficial", "delegacion_pasiva")] * 1  # error
     )
     result = compute_cohen_kappa(ratings)
-    assert result.kappa > 0.6
+    assert result.kappa > 0.70
     assert result.interpretation in ("sustancial", "casi perfecto")
 
 

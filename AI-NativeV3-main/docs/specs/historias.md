@@ -69,7 +69,7 @@
 | Operador (Ops) | Responsable de infraestructura y confiabilidad. Opera Helm, monitoriza Grafana, ejecuta runbook de incidentes, administra backups. |
 | Auditor Académico | Verifica integridad de la cadena CTR, monitorea Kappa y detecta anomalías de seguridad o de manipulación. |
 | Tutor-Service (service-account) | Emite eventos CTR, consulta contenido, invoca ai-gateway para LLM. |
-| Classifier-Worker (service-account) | Consume episodios, calcula las cinco coherencias y genera clasificación N4. |
+| Classifier-Worker (service-account) | Consume episodios, calcula las tres coherencias agregadas (operacionalizadas en cinco métricas) y genera clasificación N4. |
 | Sistema / Plataforma | Conjunto de invariantes transversales que la propia plataforma debe mantener sin intervención humana. |
 
 ---
@@ -909,14 +909,14 @@ Como plataforma, quiero que las clasificaciones se registren como inserts append
 
 ---
 
-### HU-047 — Cálculo de las cinco coherencias separadas
+### HU-047 — Cálculo de las tres coherencias agregadas en cinco métricas separadas
 **Actor**: Sistema
 **Fase**: F3
 **Servicio(s)**: classifier-service
 **Prioridad**: Crítica
 
 **Historia**:
-Como plataforma, quiero calcular las cinco coherencias (CT, CCD_mean, CCD_orphan_ratio, CII_stability, CII_evolution) y mantenerlas SEPARADAS, para no colapsar el análisis multidimensional que fundamenta la tesis.
+Como plataforma, quiero calcular las tres coherencias agregadas (Temporal, Código-Discurso, Inter-Iteración) operacionalizadas en cinco métricas (CT, CCD_mean, CCD_orphan_ratio, CII_stability, CII_evolution) y mantenerlas SEPARADAS, para no colapsar el análisis multidimensional que fundamenta la tesis.
 
 **Criterios de aceptación**:
 - CT se calcula por ventanas con pausas mayores a cinco minutos.

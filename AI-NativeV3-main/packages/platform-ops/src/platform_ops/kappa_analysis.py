@@ -11,9 +11,10 @@ Interpretación (Landis & Koch, 1977):
   0.61–0.80  Acuerdo sustancial
   0.81–1.00  Acuerdo casi perfecto
 
-Para la tesis: el objetivo es κ ≥ 0.6 (acuerdo sustancial). Si el
-clasificador cae por debajo, hay que refinar el árbol de decisión o
-los umbrales del reference_profile.
+Para la tesis: el objetivo es κ ≥ 0.70 (cómodamente en rango sustancial
+Landis-Koch). Decisión vigente por ADR-046 (2026-05-10) alineando código
+con el paper. Si el clasificador cae por debajo, hay que refinar el árbol
+de decisión o los umbrales del reference_profile.
 
 Uso:
     ratings = [

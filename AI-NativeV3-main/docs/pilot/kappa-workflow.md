@@ -2,11 +2,11 @@
 
 Workflow operativo para que dos docentes etiqueten independientemente un set de episodios y se calcule κ contra el clasificador automático N4. Es la evidencia empírica de **OBJ-13 (intercoder reliability)** del piloto UNSL.
 
-> Referencias canónicas: **RN-095** (interpretación Landis & Koch + objetivo κ ≥ 0.6), **RN-096** (3 categorías estrictas), **RN-111** (gold standard humano obligatorio para A/B). Endpoint: `POST /api/v1/analytics/kappa` (`apps/analytics-service/src/analytics_service/routes/analytics.py`). Implementación: `packages/platform-ops/src/platform_ops/kappa_analysis.py::compute_cohen_kappa`.
+> Referencias canónicas: **RN-095** (interpretación Landis & Koch + objetivo κ ≥ 0.70 — ADR-046), **RN-096** (3 categorías estrictas), **RN-111** (gold standard humano obligatorio para A/B). Endpoint: `POST /api/v1/analytics/kappa` (`apps/analytics-service/src/analytics_service/routes/analytics.py`). Implementación: `packages/platform-ops/src/platform_ops/kappa_analysis.py::compute_cohen_kappa`.
 
 ## 1. Objetivo
 
-La tesis sostiene que el clasificador N4 mide apropiación cognitiva de manera consistente con el juicio docente. Sin κ ≥ 0.6 ese sostén se cae: cualquier afirmación posterior sobre trayectorias o A/B de profiles queda sin base. Por eso el etiquetado intercoder debe ejecutarse **antes** de abrir el piloto a los estudiantes, y repetirse en cada iteración del `reference_profile`.
+La tesis sostiene que el clasificador N4 mide apropiación cognitiva de manera consistente con el juicio docente. Sin κ ≥ 0.70 (ADR-046, alineación con paper) ese sostén se cae: cualquier afirmación posterior sobre trayectorias o A/B de profiles queda sin base. Por eso el etiquetado intercoder debe ejecutarse **antes** de abrir el piloto a los estudiantes, y repetirse en cada iteración del `reference_profile`.
 
 ## 2. Pre-requisitos
 
@@ -90,7 +90,7 @@ Escala Landis & Koch 1977 (RN-095, idéntica a `KappaResult.interpretation`):
 | 0.61 – 0.80 | sustancial |
 | 0.81 – 1.00 | casi perfecto |
 
-**Objetivo de la tesis: κ ≥ 0.6** (acuerdo sustancial).
+**Objetivo de la tesis: κ ≥ 0.70** (cómodamente en rango sustancial Landis-Koch; ADR-046).
 
 Leer también `per_class_agreement`: si una clase queda < 0.5 mientras κ global está OK, hay un problema localizado en esa categoría que toca refinar.
 
@@ -98,8 +98,8 @@ Leer también `per_class_agreement`: si una clase queda < 0.5 mientras κ global
 
 | Caso | Acción |
 |---|---|
-| κ ≥ 0.6 | Declarar reliability. Documentar en `docs/pilot/kappa-tuning/kappa-baseline-YYYY-MM-DD.md`: `kappa`, `n_episodes`, matriz de confusión, IDs de docentes, fecha. Adjuntar el response JSON. Habilita el piloto. |
-| 0.4 ≤ κ < 0.6 | Reunión de calibración: revisar los desacuerdos episodio por episodio, refinar criterios escritos de las 3 categorías, **muestrear 50 episodios distintos** y volver a tagear. No reusar la misma muestra (sesgo de ajuste). |
+| κ ≥ 0.70 | Declarar reliability. Documentar en `docs/pilot/kappa-tuning/kappa-baseline-YYYY-MM-DD.md`: `kappa`, `n_episodes`, matriz de confusión, IDs de docentes, fecha. Adjuntar el response JSON. Habilita el piloto. |
+| 0.4 ≤ κ < 0.70 | Reunión de calibración: revisar los desacuerdos episodio por episodio, refinar criterios escritos de las 3 categorías, **muestrear 50 episodios distintos** y volver a tagear. No reusar la misma muestra (sesgo de ajuste). |
 | κ < 0.4 | Disparar **I04** del runbook: revisar el `reference_profile` del clasificador, no sólo los criterios docentes. El gap puede estar en los thresholds, no en la subjetividad humana. |
 
 ## 9. Pitfalls comunes

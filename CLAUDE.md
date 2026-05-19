@@ -85,7 +85,7 @@ Stack: **11 servicios Python activos** (FastAPI 0.100+ / SQLAlchemy 2.0 async / 
 Dos planos desacoplados por bus Redis Streams particionado (8 shards):
 
 - **Plano académico-operacional**: `academic-service` (CRUDs + bulk-import de inscripciones), `evaluation-service` (entregas + calificaciones, ADR del epic `tp-entregas-correccion`), `analytics-service` (kappa, progresión cohorte, alertas predictivas, export académico anonimizado).
-- **Plano pedagógico-evaluativo (núcleo de la tesis)**: `tutor-service` (SSE socrático con guardrails ADR-019/043), `ctr-service` + 8 workers (cadena criptográfica SHA-256 append-only, una partición por worker), `classifier-service` (N4 + 5 coherencias + LABELER_VERSION=1.2.0), `content-service` (RAG pgvector), `governance-service` (prompts versionados internos, NO expuesto en ROUTE_MAP).
+- **Plano pedagógico-evaluativo (núcleo de la tesis)**: `tutor-service` (SSE socrático con guardrails ADR-019/043), `ctr-service` + 8 workers (cadena criptográfica SHA-256 append-only, una partición por worker), `classifier-service` (N4 + 3 coherencias agregadas en 5 métricas + LABELER_VERSION=1.2.0), `content-service` (RAG pgvector), `governance-service` (prompts versionados internos, NO expuesto en ROUTE_MAP).
 - **Transversales**: `api-gateway` (único punto de auth — emite JWT RS256 e inyecta `X-Tenant-Id`/`X-User-Id`/`X-User-Roles` a servicios internos; cualquier endpoint público requiere entrada en `ROUTE_MAP`), `ai-gateway` (LLM proxy con BYOK por tenant — todo LLM/embedding pasa por acá), `integrity-attestation-service` (Ed25519 post-cierre, vive en VPS UNSL, 503 by design en dev local).
 
 **4 bases lógicas separadas** sin joins cross-base: `academic_main`, `ctr_store`, `classifier_db`, `content_db`. Los servicios se comunican por eventos Redis Streams o HTTP via api-gateway, nunca por queries cross-base.
@@ -102,7 +102,7 @@ Estas NO son sugerencias — están verificadas por tests y fundamentan la acept
 |---|---|---|
 | **CTR append-only** | Nunca `UPDATE`/`DELETE` de eventos. Reclasificar = `is_current=false` viejo + INSERT nuevo. | ADR-010 |
 | **`classifier_config_hash` determinista** | Reproducibilidad bit-a-bit. Tocar sort_keys/separators/ensure_ascii/exclusiones rompe la tesis. | ADR-020 |
-| **5 coherencias SEPARADAS** | `CT`, `CCD_mean`, `CCD_orphan_ratio`, `CII_stability`, `CII_evolution`. Nunca colapsar en score único. | ADR-018 |
+| **3 coherencias agregadas en 5 métricas SEPARADAS** | 3 coherencias conceptuales (Temporal, Código-Discurso, Inter-Iteración) operacionalizadas en 5 columnas independientes: `CT`, `CCD_mean`, `CCD_orphan_ratio`, `CII_stability`, `CII_evolution`. Nunca colapsar en score único. | ADR-018 |
 | **k-anonymity** | `MIN_STUDENTS_FOR_QUARTILES=5` (cuartiles cohorte) y `MIN_EPISODES_FOR_LONGITUDINAL=3` (slope longitudinal por template). | ADR-022/RN-131 |
 | **Multi-tenant RLS forzado** | Toda tabla con `tenant_id` tiene policy RLS. `make check-rls` en CI. | ADR-001 |
 | **api-gateway único source de identidad** | Servicios internos confían en headers `X-Tenant-Id`/`X-User-Id`/`X-User-Roles` (plural). No re-verificar JWT aguas abajo. | — |
@@ -125,7 +125,7 @@ Las cifras que siguen son un snapshot estable, no la verdad de hoy — para el c
 
 **Plan ejecutado (`plan-accion.md`)**: 23/26 acciones cerradas + 7 mejoras adicionales (F1-F7) + alineamiento paper/código por ADR-046. Quedan A15/A16/A18/A20 (riesgosos o de cierre) + 4 externos (A1 DB real, A2 intercoder, A3 Keycloak DI UNSL, A5 defensa). **Consultar la tabla de estado al inicio del archivo** antes de retomar — sub-agents pueden haber cerrado más acciones desde este snapshot.
 
-**Paper consolidado (`paper-draft.md`)**: 10/10 decisiones académicas resueltas en dos pasadas — Camino 1 + protocolo dual para κ ≥ 0,70 (formalizado en ADR-046) y 4 decisiones temáticas (aclaración 3→5 coherencias, mención única "AI-Native N4" como proyecto, párrafo único con extensiones operativas referenciando ADRs, suavización "inspirado en" para Caliper/xAPI).
+**Paper consolidado (`paper-draft.md`)**: 10/10 decisiones académicas resueltas en dos pasadas — Camino 1 + protocolo dual para κ ≥ 0,70 (formalizado en ADR-046) y 4 decisiones temáticas (presentación canónica como 3 coherencias agregadas con 5 métricas internas alineada a UI, mención única "AI-Native N4" como proyecto, párrafo único con extensiones operativas referenciando ADRs, suavización "inspirado en" para Caliper/xAPI).
 
 **Stack operacional (última verificación end-to-end)**: 11 servicios HTTP healthy en :8000-:8011 (excepto :8012 integrity-attestation que es 503 by design en dev local — vive en VPS UNSL), 8 ctr-workers consumiendo streams Redis, 3 frontends Vite en :5173/5174/5175. End-to-end verificado: api-gateway → analytics-service → DB devuelve clasificaciones reales del seed (3 comisiones, 18 estudiantes, 106 classifications). Bugfix Windows aplicado a `asyncio.add_signal_handler` no implementado en `ProactorEventLoop` — workers ahora arrancan limpios en Windows. **Para verificar el estado vigente del stack levantado**: `cd AI-NativeV3-main && bash scripts/check-health.sh`.
 

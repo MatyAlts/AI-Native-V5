@@ -1056,7 +1056,7 @@ Ordenados por prioridad (los primeros bloquean el siguiente onboarding en Window
 - `docs/pilot/kappa-tuning/gold-standard-example.json` — ejemplo rellenado de referencia.
 - Cross-links en `docs/pilot/runbook.md` (incidente I04) y `CLAUDE.md` (sección "Dónde buscar contexto").
 
-**Target documentado**: κ ≥ 0.6 (acuerdo sustancial), sourced de **RN-095** (`reglas.md:1259-1276`) y del docstring de `packages/platform-ops/src/platform_ops/kappa_analysis.py:14`.
+**Target documentado**: κ ≥ 0.70 (ADR-046, alineación con paper; cómodamente sustancial Landis-Koch), sourced de **RN-095** (`reglas.md:1259-1276`) y del docstring de `packages/platform-ops/src/platform_ops/kappa_analysis.py:14`.
 
 **Decisiones humanas pendientes** (no resueltas en esta sesión):
 - Quién designa formalmente a los 2 docentes raters (¿comité del piloto? ¿director de tesis?). El workflow asume que queda registrado en acta.

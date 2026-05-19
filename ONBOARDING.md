@@ -10,7 +10,7 @@
 
 Lo que estás por testear es la plataforma **AI-Native N4**, la implementación de la tesis doctoral de Alberto Alejandro Cortez en UNSL. Es un sistema de tutoría socrática con trazabilidad cognitiva criptográfica para enseñanza de programación universitaria. En cristiano: un alumno escribe código Python en el browser, un tutor con LLM real lo guía con preguntas (sin darle la respuesta), y **cada evento del proceso queda anclado en una cadena SHA-256 append-only** que después permite auditar bit-a-bit cómo aprendió.
 
-Lo que **NO es**: un producto comercial, una herramienta lista para venderse, ni un MVP con UX pulida. Es un **piloto académico** cuya aceptabilidad doctoral depende de invariantes criptográficas (append-only, reproducibilidad bit-a-bit, k-anonymity N≥5) y de poder defenderse frente a un comité. Eso explica decisiones que de afuera parecen sobre-ingeniería: el CTR, las 5 coherencias separadas, el `classifier_config_hash`, el bus Redis Streams particionado, los tests smoke E2E que blindan invariantes.
+Lo que **NO es**: un producto comercial, una herramienta lista para venderse, ni un MVP con UX pulida. Es un **piloto académico** cuya aceptabilidad doctoral depende de invariantes criptográficas (append-only, reproducibilidad bit-a-bit, k-anonymity N≥5) y de poder defenderse frente a un comité. Eso explica decisiones que de afuera parecen sobre-ingeniería: el CTR, las 3 coherencias agregadas en 5 métricas separadas, el `classifier_config_hash`, el bus Redis Streams particionado, los tests smoke E2E que blindan invariantes.
 
 Lo que se te pide como tester: **encontrar el lugar donde el modelo se rompe**. No reportar errores de tipografía ni gustos de UI — reportar comportamientos que invaliden la promesa académica. Cross-tenant leaks. Episodios que se cierran sin clasificación. Cadenas CTR que dejan de validar. Datos que aparecen en una universidad que pertenecen a otra. Errores 500 en consola del navegador. Hashes que cambian entre dos clasificaciones del mismo episodio. Si encontrás algo de eso, anotalo y reportalo siguiendo la sección 6 de este documento.
 
@@ -146,7 +146,7 @@ Cada escenario tiene **objetivo**, **pasos** y **criterio de éxito**. Si el cri
 **Criterio de éxito**:
 - El tutor responde **en streaming** (SSE) con LLM real (Mistral/OpenAI/Anthropic/Gemini según BYOK del tenant).
 - Las respuestas del tutor son **socráticas** (preguntas, no spoiler de la solución).
-- Al cerrar el episodio, aparece un **diagnóstico N4** con las 5 coherencias separadas: CT, CCD_mean, CCD_orphan_ratio, CII_stability, CII_evolution.
+- Al cerrar el episodio, aparece un **diagnóstico N4** con las 3 coherencias agregadas operacionalizadas en sus 5 métricas: CT (Temporal), CCD_mean + CCD_orphan_ratio (Código-Discurso), CII_stability + CII_evolution (Inter-Iteración).
 - El diagnóstico incluye una `appropriation`: `autonomo` / `superficial` / `delegacion_pasiva` / `delegacion_extrema` / `regresivo`.
 - En consola del navegador, **cero errores 500 ni 4xx** durante todo el flujo.
 
@@ -203,7 +203,7 @@ Si ves alguna de estas situaciones, **es bug crítico, reportar inmediato**:
 - **`is_valid: true` después de tampering manual**: si modificás `self_hash` o `chain_hash` y verify NO detecta el cambio, está roto el invariante append-only criptográfico — eso invalida la tesis entera.
 - **Clasificaciones con `classifier_config_hash` distinto** entre dos clasificaciones del mismo episodio idéntico: rompe reproducibilidad bit-a-bit.
 - **TenantSelector que no propaga el cambio**: cambiar de uni y seguir viendo datos de la anterior.
-- **Las 5 coherencias colapsadas en un score único** en el frontend: la tesis exige que se muestren separadas.
+- **Las 3 coherencias (en sus 5 métricas) colapsadas en un score único** en el frontend: la tesis exige que se muestren separadas.
 - **`reflexion_completada`, `tp_entregada` o `tp_calificada` afectando la clasificación**: están explícitamente excluidos del feature extraction (ADR-027/044). Si una clasificación cambia al emitir uno de estos, está contaminado el classifier.
 
 ---

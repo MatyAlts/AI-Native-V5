@@ -27,7 +27,7 @@ Integración con el classifier (CRÍTICO, ADR-027 línea 38, ADR-044):
   en el contract desde F8 con valores default `None` y `[]` respectivamente.
 - El `classifier-service` IGNORA estos campos en su feature extraction. El
   `classifier_config_hash` permanece estable. Validación intercoder κ con
-  docentes (50 respuestas, target κ ≥ 0.6, ADR-044) es la condición que
+  docentes (50 respuestas, target κ ≥ 0.70, ADR-046) es la condición que
   destrabaría considerar incorporarlos al árbol — hasta entonces, son
   metadata de auditoría operativa pedagógica, no input del clasificador.
 

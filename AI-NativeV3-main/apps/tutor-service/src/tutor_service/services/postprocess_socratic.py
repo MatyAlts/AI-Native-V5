@@ -9,7 +9,7 @@ ESTADO: la activación en runtime está bloqueada por la feature flag
 el campo `TutorRespondioPayload.socratic_compliance` sigue persistiendo
 `None` y `violations` queda como lista vacía, preservando la garantía del
 ADR-027: el campo queda `None` hasta que la calibración con docentes valide
-el cálculo (κ ≥ 0.6 sobre 50+ respuestas etiquetadas por 2 docentes).
+el cálculo (κ ≥ 0.70 sobre 50+ respuestas etiquetadas por 2 docentes; ADR-046).
 
 ADR-044 (2026-05-09) formaliza el cierre parcial de la Mejora 4 del plan
 post-piloto-1: el esqueleto técnico (detector, score, hooks, persistencia,

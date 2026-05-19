@@ -5,7 +5,7 @@ Objetivo: aplicar k-means (k=3) sobre las 5 coherencias y comparar los
 clusters emergentes con la categorización del árbol de decisión.
 
 Si los clusters emergentes coinciden con las tres categorías del árbol
-(matching alto, κ ≥ 0.6), hay **validez convergente** del árbol con un
+(matching alto, κ ≥ 0.70 — ADR-046), hay **validez convergente** del árbol con un
 approach guiado por los datos.
 Si divergen sistemáticamente, el árbol opera con umbrales que no reflejan
 agrupaciones naturales en el espacio de coherencias — vale revisarlo.
@@ -188,7 +188,7 @@ def main() -> int:
         print(f"  inertia: {result.inertia:.3f}")
         print(f"  iterations: {result.iterations}")
         print(f"  kappa (clusters vs tree synthetic): {kappa:.3f}")
-        if kappa > 0.6:
+        if kappa > 0.70:
             print("  -> convergencia esperada (sintetico): clusters coinciden con arbol")
         return 0
 

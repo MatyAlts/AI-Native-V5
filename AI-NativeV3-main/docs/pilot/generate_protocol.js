@@ -225,7 +225,7 @@ const section2 = [
   P("Evaluar la factibilidad, usabilidad y validez del Modelo AI-Native con Trazabilidad Cognitiva N4 como dispositivo pedagógico en contextos reales de enseñanza universitaria de programación."),
 
   H2("2.2. Objetivos específicos"),
-  Numbered([new TextRun({ text: "OE1: ", bold: true }), new TextRun("Validar que el clasificador automático N4 reproduce el juicio experto con acuerdo sustancial (κ ≥ 0,6 en Kappa de Cohen) sobre un subconjunto etiquetado por docentes.")]),
+  Numbered([new TextRun({ text: "OE1: ", bold: true }), new TextRun("Validar que el clasificador automático N4 reproduce el juicio experto con acuerdo sustancial (κ ≥ 0,70 en Kappa de Cohen — ADR-046) sobre un subconjunto etiquetado por docentes.")]),
   Numbered([new TextRun({ text: "OE2: ", bold: true }), new TextRun("Medir la progresión longitudinal de la apropiación cognitiva a lo largo del cuatrimestre, verificando si la razón neta de progresión (net progression ratio) supera el umbral de 0,3 en cohortes que completan el piloto.")]),
   Numbered([new TextRun({ text: "OE3: ", bold: true }), new TextRun("Caracterizar los patrones de interacción con la IA según las cinco coherencias (CT, CCD_mean, CCD_orphan, CII_stability, CII_evolution) y determinar cuáles predicen mejor el desempeño en las evaluaciones formales de la cátedra.")]),
   Numbered([new TextRun({ text: "OE4: ", bold: true }), new TextRun("Identificar obstáculos de adopción institucional (integración con SSO, LDAP, requisitos de infraestructura) mediante la observación del proceso de onboarding de UNSL como primer tenant del piloto.")]),
@@ -233,7 +233,7 @@ const section2 = [
 
   H2("2.3. Hipótesis de trabajo"),
   P([Bold("H1 (principal): "), new TextRun("La utilización sostenida de la plataforma AI-Native durante un cuatrimestre induce una progresión significativa desde apropiación superficial o pasiva hacia apropiación reflexiva, medible mediante el clasificador N4.")]),
-  P([Bold("H2: "), new TextRun("El clasificador automático basado en árbol de decisión explícito y las cinco coherencias computadas sobre el CTR alcanza un acuerdo sustancial con el juicio experto humano (κ ≥ 0,6).")]),
+  P([Bold("H2: "), new TextRun("El clasificador automático basado en árbol de decisión explícito y las cinco coherencias computadas sobre el CTR alcanza un acuerdo sustancial con el juicio experto humano (κ ≥ 0,70 — ADR-046).")]),
   P([Bold("H3: "), new TextRun("Los estudiantes con mayor estabilidad (CII_stability) y evolución (CII_evolution) a lo largo de sus episodios muestran mejores resultados académicos en las evaluaciones regulares de la cátedra.")]),
 ];
 
@@ -311,7 +311,7 @@ const section4 = [
   H2("4.1. Métricas primarias"),
   makeTable([
     ["Métrica", "Hipótesis", "Umbral de éxito", "Obtenida mediante"],
-    ["Cohen's κ (modelo vs humano)", "H2", "κ ≥ 0,6 (sustancial)", "POST /analytics/kappa sobre 60 episodios validatorios"],
+    ["Cohen's κ (modelo vs humano)", "H2", "κ ≥ 0,70 (cómodamente sustancial; ADR-046)", "POST /analytics/kappa sobre 60 episodios validatorios"],
     ["Net progression ratio", "H1", "≥ 0,3 en al menos 2 de 3 cátedras", "GET /cohort/{id}/progression"],
     ["% de estudiantes que alcanzan apropiacion_reflexiva en algún episodio", "H1", "≥ 40 %", "Agregación de max_appropriation_reached"],
   ], [2800, 1500, 2500, 2560]),
@@ -527,7 +527,7 @@ const annexB = [
     ["Coherencia código-discurso (CCD)", "Alineación entre el código que el estudiante ejecuta y las consultas textuales que formula al tutor."],
     ["CCD orphan ratio", "Fracción de código ejecutado sin discusión previa o de prompts sin código asociado. Proxies de delegación pasiva."],
     ["Coherencia inter-iteración (CII)", "Dos componentes: CII_stability (persistencia del enfoque entre interacciones sucesivas) y CII_evolution (calidad relativa de cada iteración respecto de la anterior)."],
-    ["Cohen's κ", "Coeficiente de acuerdo inter-observador que corrige por el acuerdo esperado por azar. Rango [−1, +1]. Interpretación de Landis & Koch: ≥ 0,6 sustancial, ≥ 0,8 casi perfecto."],
+    ["Cohen's κ", "Coeficiente de acuerdo inter-observador que corrige por el acuerdo esperado por azar. Rango [−1, +1]. Interpretación de Landis & Koch: ≥ 0,6 sustancial (objetivo de la tesis: κ ≥ 0,70 — ADR-046), ≥ 0,8 casi perfecto."],
     ["Net progression ratio", "(nº estudiantes mejorando − nº estudiantes empeorando) / nº con datos suficientes. Indicador agregado de progresión de una cohorte."],
     ["reference_profile", "Conjunto de umbrales del árbol de decisión N4. Versionado en Git con hash determinista; permite A/B testing."],
     ["Tenant", "Organización cliente de la plataforma (en este piloto, UNSL). Aislada mediante Row-Level Security de Postgres."],
