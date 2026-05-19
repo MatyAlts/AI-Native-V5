@@ -15,7 +15,16 @@ class Settings(BaseSettings):
     log_level: str = "info"
     log_format: str = "json"
 
-    cors_origins: list[str] = Field(default_factory=lambda: ["*"])
+    # CORS: default = solo frontends de dev local. Producción DEBE override via
+    # env var CORS_ORIGINS con la lista explícita de dominios del piloto.
+    # Nunca usar ["*"] junto con allow_credentials=True (bypass de origin check).
+    cors_origins: list[str] = Field(
+        default_factory=lambda: [
+            "http://localhost:5173",
+            "http://localhost:5174",
+            "http://localhost:5175",
+        ]
+    )
     otel_endpoint: str = "http://127.0.0.1:4317"
     sentry_dsn: str = ""
 
@@ -51,7 +60,11 @@ class Settings(BaseSettings):
         ""  # ej "http://keycloak:8080/realms/demo_uni/protocol/openid-connect/certs"
     )
     jwt_jwks_cache_ttl: int = 300
-    dev_trust_headers: bool = True  # en prod esto debe ser False
+    # SAFETY: default False — auth via JWT obligatorio. Para dev local sin
+    # Keycloak setear DEV_TRUST_HEADERS=true explicito en .env (los frontends
+    # mandan X-User-Id / X-Tenant-Id / X-User-Roles via Vite proxy). En piloto-2
+    # PROD esto NUNCA debe ir a True — habilitaria impersonacion sin credenciales.
+    dev_trust_headers: bool = False
 
 
 @lru_cache

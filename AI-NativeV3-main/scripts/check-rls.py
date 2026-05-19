@@ -67,6 +67,8 @@ async def check_database(name: str, dsn: str) -> list[str]:
 
 
 async def main() -> int:
+    # Las 4 bases logicas separadas (ADR-003). Cada una tiene su helper
+    # apply_tenant_rls definido por infrastructure/postgres/init-dbs.sql.
     databases = {
         "academic_main": os.environ.get(
             "ACADEMIC_DB_URL",
@@ -75,6 +77,14 @@ async def main() -> int:
         "ctr_store": os.environ.get(
             "CTR_DB_URL",
             "postgresql+asyncpg://ctr_user:ctr_pass@localhost:5432/ctr_store",
+        ),
+        "classifier_db": os.environ.get(
+            "CLASSIFIER_DB_URL",
+            "postgresql+asyncpg://classifier_user:classifier_pass@localhost:5432/classifier_db",
+        ),
+        "content_db": os.environ.get(
+            "CONTENT_DB_URL",
+            "postgresql+asyncpg://content_user:content_pass@localhost:5432/content_db",
         ),
     }
 

@@ -13,6 +13,7 @@ guardar.
 
 from __future__ import annotations
 
+import asyncio
 import json
 import logging
 import time
@@ -252,9 +253,15 @@ async def generate_ejercicio(
         {"role": "user", "content": user_message},
     ]
 
-    # 5. Pegar al ai-gateway con retry
-    ai = AIGatewayClient(settings.ai_gateway_url)
-    max_attempts = 2
+    # 5. Pegar al ai-gateway con retry + backoff exponencial.
+    # QA 2026-05-18: el primer intento user ocasionalmente devolvía 502 mientras
+    # el ai-gateway sí había procesado la request con tokens. Causa probable:
+    # primera resolución BYOK + cold path del LLM provider con respuesta cortada
+    # / JSON malformado. Subimos max_attempts 2→3 y agregamos backoff para no
+    # machacar al gateway si está saturado. Logueamos tipo de exception para
+    # diagnosticar si el patrón vuelve.
+    ai = AIGatewayClient(settings.ai_gateway_url, timeout=90.0)
+    max_attempts = 3
     parsed: dict[str, Any] = {}
     result = None
     t0 = time.perf_counter()
@@ -272,12 +279,18 @@ async def generate_ejercicio(
                 response_format={"type": "json_object"},
             )
         except httpx.HTTPError as exc:
-            logger.error("ai_gateway_call_failed: %s", exc)
+            logger.error(
+                "ai_gateway_call_failed attempt=%d exc_type=%s detail=%s",
+                attempt,
+                type(exc).__name__,
+                str(exc)[:200],
+            )
             if attempt < max_attempts - 1:
+                await asyncio.sleep(0.5 * (2 ** attempt))  # 0.5s, 1.0s
                 continue
             raise HTTPException(
                 status_code=status.HTTP_502_BAD_GATEWAY,
-                detail="ai-gateway no respondió correctamente",
+                detail="ai-gateway no respondió correctamente tras 3 intentos",
             ) from exc
 
         # Parsear JSON
@@ -315,7 +328,11 @@ async def generate_ejercicio(
 
         break
 
-    assert result is not None
+    if result is None:
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail="LLM no respondio tras agotar reintentos",
+        )
     latency_ms = int((time.perf_counter() - t0) * 1000)
 
     if "error" in parsed:

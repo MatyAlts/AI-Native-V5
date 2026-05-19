@@ -244,6 +244,7 @@ async def generate_tarea_practica(
       - 502 si el ai-gateway falla o el LLM devuelve JSON invalido.
       - 403 (Casbin) si el caller es estudiante.
     """
+    import asyncio
     import json
     import time
 
@@ -316,9 +317,12 @@ async def generate_tarea_practica(
         {"role": "user", "content": user_message},
     ]
 
-    # 4. Pegar al ai-gateway (con retry si el LLM devuelve error)
-    ai = AIGatewayClient(settings.ai_gateway_url)
-    max_attempts = 2
+    # 4. Pegar al ai-gateway con retry + backoff exponencial.
+    # QA 2026-05-18: mismo patron que ejercicios.py — 502 transitorios en el
+    # primer attempt mientras el ai-gateway sí procesa el LLM. Subimos 2→3
+    # y agregamos backoff para no machacar al gateway.
+    ai = AIGatewayClient(settings.ai_gateway_url, timeout=90.0)
+    max_attempts = 3
     parsed: dict = {}
     result = None
     t0 = time.perf_counter()
@@ -336,12 +340,18 @@ async def generate_tarea_practica(
                 response_format={"type": "json_object"},
             )
         except httpx.HTTPError as exc:
-            logger.error("ai_gateway_call_failed: %s", exc)
+            logger.error(
+                "ai_gateway_call_failed attempt=%d exc_type=%s detail=%s",
+                attempt,
+                type(exc).__name__,
+                str(exc)[:200],
+            )
             if attempt < max_attempts - 1:
+                await asyncio.sleep(0.5 * (2 ** attempt))
                 continue
             raise HTTPException(
                 status_code=status.HTTP_502_BAD_GATEWAY,
-                detail="ai-gateway no respondio correctamente",
+                detail="ai-gateway no respondio correctamente tras 3 intentos",
             ) from exc
 
         # 5. Parsear JSON
@@ -374,7 +384,11 @@ async def generate_tarea_practica(
 
         break
 
-    assert result is not None
+    if result is None:
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail="LLM no respondio tras agotar reintentos",
+        )
     latency_ms = int((time.perf_counter() - t0) * 1000)
 
     if "error" in parsed:

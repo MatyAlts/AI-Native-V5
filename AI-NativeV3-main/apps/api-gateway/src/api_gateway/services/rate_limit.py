@@ -52,10 +52,10 @@ DEFAULT_LIMIT = RateLimitConfig(window_seconds=60, max_requests=300)
 
 # Override por path prefix (del más específico al más genérico)
 PATH_LIMITS: list[tuple[str, RateLimitConfig]] = [
-    ("/api/v1/episodes", RateLimitConfig(window_seconds=60, max_requests=30)),
+    ("/api/v1/episodes", RateLimitConfig(window_seconds=60, max_requests=1000)),
     # episodes incluye /message, /close, POST /episodes — todos consumen LLM o CTR
-    ("/api/v1/retrieve", RateLimitConfig(window_seconds=60, max_requests=60)),
-    ("/api/v1/classify_episode", RateLimitConfig(window_seconds=60, max_requests=20)),
+    ("/api/v1/retrieve", RateLimitConfig(window_seconds=60, max_requests=1000)),
+    ("/api/v1/classify_episode", RateLimitConfig(window_seconds=60, max_requests=1000)),
 ]
 
 
