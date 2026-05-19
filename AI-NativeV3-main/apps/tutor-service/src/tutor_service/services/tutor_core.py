@@ -459,6 +459,7 @@ class TutorCore:
         llm_provider: str | None = None
         llm_tokens_input: int | None = None
         llm_tokens_output: int | None = None
+        llm_cost_usd: float | None = None
         async for event in self.ai_gateway.stream(
             messages=messages,
             model=self.default_model,
@@ -477,6 +478,7 @@ class TutorCore:
                 llm_provider = event.get("provider")
                 llm_tokens_input = event.get("tokens_input")
                 llm_tokens_output = event.get("tokens_output")
+                llm_cost_usd = event.get("cost_usd")
 
         # 6. Actualizar session con los mensajes nuevos
         state.messages.append({"role": "user", "content": user_message})
@@ -485,7 +487,7 @@ class TutorCore:
 
         # 6.5 Postprocess Fase B (ADR-027/ADR-044, Mejora 4 plan post-piloto-1).
         # Esqueleto técnico listo, activación bloqueada por feature flag hasta
-        # validación intercoder κ ≥ 0.6 con 50+ respuestas etiquetadas por
+        # validación intercoder κ ≥ 0.70 con 50+ respuestas etiquetadas por (ADR-046)
         # docentes. Mientras `socratic_compliance_enabled=False`, los campos
         # del payload siguen siendo None / [] (garantía de ADR-027). Patrón
         # fail-soft: cualquier excepción del postprocess NO rompe el turno.
@@ -523,6 +525,11 @@ class TutorCore:
             response_payload["tokens_output"] = llm_tokens_output
         if llm_provider is not None:
             response_payload["provider"] = llm_provider
+        # QA 2026-05-18: cost_usd cierra auditoria LLM end-to-end. Mismo patron
+        # backwards-compatible que tokens/provider — opcional, no bumpea
+        # LABELER_VERSION, no afecta classifier_config_hash.
+        if llm_cost_usd is not None:
+            response_payload["cost_usd"] = llm_cost_usd
         response_event = self._build_event(
             state=state,
             seq=response_seq,
@@ -1115,8 +1122,11 @@ class TutorCore:
                 if resp.status_code != 200:
                     return  # Falla soft
 
-                entregas = resp.json()
-                if not entregas:
+                body = resp.json()
+                # EntregaListResponse es envelope paginado {"data": [...], "meta": {...}}
+                # (BC-incompatible vs v1.0 lista plana — ver schemas/entrega.py:138).
+                entregas_data = body.get("data", []) if isinstance(body, dict) else body
+                if not entregas_data:
                     # Sin entrega = primer ejercicio del alumno, bloquear si orden > 1
                     raise HTTPException(
                         status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
@@ -1126,7 +1136,7 @@ class TutorCore:
                         ),
                     )
 
-                entrega = entregas[0]
+                entrega = entregas_data[0]
                 estados = entrega.get("ejercicio_estados", [])
                 prev_orden = ejercicio_orden - 1
                 prev_completado = any(

@@ -172,6 +172,16 @@ class TutorRespondioPayload(BaseModel):
             "pre-fix 2026-05-07."
         ),
     )
+    cost_usd: float | None = Field(
+        default=None,
+        ge=0.0,
+        description=(
+            "Costo en USD calculado por el ai-gateway segun el pricing del "
+            "proveedor + modelo + tokens. None si el provider no reporta usage "
+            "o si el modelo es 'mock'. Patron QA 2026-05-18 (BC-compat — no "
+            "altera classifier_config_hash, no bumpea LABELER_VERSION)."
+        ),
+    )
 
 
 class TutorRespondio(CTRBaseEvent):

@@ -217,17 +217,19 @@ class AIGatewayClient:
                 if etype == "token":
                     yield {"type": "chunk", "content": event.get("content", "")}
                 elif etype == "done":
-                    # Backlog QA 2026-05-07: el ai-gateway expone provider +
-                    # tokens en el `done` event. Lo proyectamos como un dict
-                    # "usage" para el caller (tutor_core). Si falta algun
-                    # campo (compat con versiones viejas del endpoint),
-                    # yieldeamos lo que haya — el caller maneja None.
-                    if any(k in event for k in ("provider", "tokens_input", "tokens_output")):
+                    # Backlog QA 2026-05-07/2026-05-18: el ai-gateway expone
+                    # provider + tokens + estimated_cost_usd en el `done`
+                    # event. Lo proyectamos como un dict "usage" para el
+                    # caller (tutor_core). Si falta algun campo (compat con
+                    # versiones viejas del endpoint), yieldeamos lo que haya
+                    # — el caller maneja None.
+                    if any(k in event for k in ("provider", "tokens_input", "tokens_output", "estimated_cost_usd")):
                         yield {
                             "type": "usage",
                             "provider": event.get("provider"),
                             "tokens_input": event.get("tokens_input"),
                             "tokens_output": event.get("tokens_output"),
+                            "cost_usd": event.get("estimated_cost_usd"),
                         }
                 elif etype == "error":
                     raise RuntimeError(event.get("message", "unknown error"))
