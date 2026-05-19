@@ -169,5 +169,11 @@ export function kappaToDocente(kappa: number): {
 }
 
 export function studentShortLabel(pseudonym: string): string {
-  return `Est. ${pseudonym.slice(0, 6)}`
+  // Los pseudonyms del seed tienen patron tipo `c1c1c1c1-0001-...-000000000001`
+  // donde los PRIMEROS chars son la marca de la comision (identicos para todos)
+  // y la entropia esta en los ULTIMOS chars. Usar los ultimos 6 garantiza
+  // unicidad visual en cohortes < 1000 estudiantes tambien para UUIDs aleatorios
+  // de produccion.
+  const tail = pseudonym.replace(/-/g, "").slice(-6)
+  return `Est. ${tail}`
 }

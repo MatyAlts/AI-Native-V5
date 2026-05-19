@@ -118,6 +118,11 @@ def compute_student_alerts(
     mean = cohort_stats["mean"]
     stdev = cohort_stats["stdev"]
 
+    # Mensajes redactados en lenguaje docente (no estadistico). Los datos
+    # tecnicos (slope, sigma, z, Q1) quedan al final entre parentesis para que
+    # investigadores y auditores puedan reproducir el calculo sin perder
+    # accesibilidad para el docente que recibe la alerta.
+
     # 1. Regresión vs cohorte (audit G7 explícito)
     if stdev > 0:
         z_score = (student_slope - mean) / stdev
@@ -126,11 +131,14 @@ def compute_student_alerts(
                 {
                     "code": "regresion_vs_cohorte",
                     "severity": "high",
-                    "title": "Regresión severa vs. cohorte",
+                    "title": "Muy lejos del ritmo del resto de la comisión",
                     "detail": (
-                        f"Slope del estudiante ({student_slope:+.3f}) está más de 2σ "
-                        f"debajo de la media de cohorte ({mean:+.3f}, σ={stdev:.3f}, "
-                        f"z={z_score:+.2f}). Sugerir intervención pedagógica focalizada."
+                        "Este estudiante está bastante atrás del avance general de la "
+                        "comisión. Sugerimos tomar contacto pedagógico focalizado pronto — "
+                        "una charla individual para entender qué lo está trabando suele "
+                        "ayudar antes de que la distancia se haga mayor. "
+                        f"(Datos para investigación: slope {student_slope:+.3f}, "
+                        f"media cohorte {mean:+.3f}, σ={stdev:.3f}, z={z_score:+.2f}.)"
                     ),
                     "threshold_used": "-2σ",
                     "z_score": round(z_score, 3),
@@ -141,11 +149,14 @@ def compute_student_alerts(
                 {
                     "code": "regresion_vs_cohorte",
                     "severity": "medium",
-                    "title": "Por debajo de la media de cohorte",
+                    "title": "Avanza notablemente más despacio que la mayoría",
                     "detail": (
-                        f"Slope del estudiante ({student_slope:+.3f}) está más de 1σ "
-                        f"debajo de la media de cohorte ({mean:+.3f}, σ={stdev:.3f}, "
-                        f"z={z_score:+.2f}). Considerar contacto pedagógico."
+                        "El ritmo de progreso del estudiante está claramente por debajo "
+                        "del de sus compañeros. Buen momento para una charla rápida e "
+                        "identificar si hay algo que lo está frenando antes de que se "
+                        "aleje más. "
+                        f"(Datos para investigación: slope {student_slope:+.3f}, "
+                        f"media cohorte {mean:+.3f}, σ={stdev:.3f}, z={z_score:+.2f}.)"
                     ),
                     "threshold_used": "-1σ",
                     "z_score": round(z_score, 3),
@@ -159,10 +170,14 @@ def compute_student_alerts(
             {
                 "code": "bottom_quartile",
                 "severity": "low",
-                "title": "Cuartil inferior de la cohorte",
+                "title": "Va más despacio que la mayoría de la comisión",
                 "detail": (
-                    f"El estudiante está en Q1 (peor 25%) — slope {student_slope:+.3f}, "
-                    f"Q1 ≤ {cohort_stats['q1']:+.3f}. Informativo; no toda Q1 requiere intervención."
+                    "Está entre el 25% de la comisión que avanza más despacio. "
+                    "No siempre indica un problema — puede ser un ritmo personal "
+                    "de aprendizaje. Si te llama la atención, vale la pena conversar "
+                    "con el estudiante para entender cómo se siente con la materia. "
+                    f"(Datos para investigación: slope {student_slope:+.3f}, "
+                    f"umbral del cuartil inferior Q1 ≤ {cohort_stats['q1']:+.3f}.)"
                 ),
                 "threshold_used": "Q1",
             }
@@ -174,10 +189,15 @@ def compute_student_alerts(
             {
                 "code": "slope_negativo_significativo",
                 "severity": "medium",
-                "title": "Empeoramiento sostenido",
+                "title": "Está retrocediendo episodio a episodio",
                 "detail": (
-                    f"Slope absoluto {student_slope:+.3f} indica retroceso de "
-                    f">0.3 categorías ordinales por episodio. Revisar trayectoria."
+                    "En vez de avanzar, el estudiante está empeorando: cada episodio "
+                    "nuevo lo clasifica peor que el anterior. Conviene revisar su "
+                    "trayectoria y conversar con él — puede haber un obstáculo puntual "
+                    "(un tema que no entendió, un mal momento personal) que necesita "
+                    "atención. "
+                    f"(Datos para investigación: slope {student_slope:+.3f}, "
+                    "retroceso > 0.3 categorías ordinales por episodio.)"
                 ),
                 "threshold_used": "slope < -0.3",
             }

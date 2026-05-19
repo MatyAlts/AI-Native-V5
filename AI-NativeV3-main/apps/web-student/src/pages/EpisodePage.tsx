@@ -248,7 +248,13 @@ export function EpisodeView({ episodeId, onExit, ejercicioContext }: EpisodeView
     )
   }
 
-  if (classification) {
+  // Importante: gateamos por `reflectionTargetId === null` para que el
+  // ReflectionModal (renderizado en el return principal, línea 566) tenga
+  // tiempo de aparecer antes de saltar al ClassificationPanel. Sin este
+  // guard, el classify async terminaba en ~2s y el component swap dejaba al
+  // modal huérfano (montado por 1 frame y desaparecido). ADR-035 declara la
+  // reflexion metacognitiva como señal canónica N4 — no opcional saltearla.
+  if (classification && reflectionTargetId === null) {
     return (
       <ClassificationPanel
         classification={classification}
@@ -374,7 +380,7 @@ export function EpisodeView({ episodeId, onExit, ejercicioContext }: EpisodeView
           />
           <EnunciadoPanel
             tarea={tarea}
-            episodeId={episodeId}
+            episodeId={closed ? null : episodeId}
             ejercicioOrden={ejercicioContext?.ejercicioOrden ?? null}
           />
         </section>
@@ -689,6 +695,13 @@ function formatElapsed(seconds: number): string {
  * backend cada `flushMs` o al unmount. Señal observable canónica de N1. */
 function useReadingTimeReporter(episodeId: string | null, enabled: boolean, flushMs = 30_000) {
   const elementRef = useRef<HTMLDivElement | null>(null)
+  // Track el valor actual de enabled para que el cleanup del useEffect pueda
+  // decidir si emitir el "último flush" o saltearlo. Evita 409 Conflict del
+  // CTR append-only cuando el episodio se cierra y este componente transita
+  // enabled=true→false: sin este guard el cleanup viejo (closure con enabled
+  // viejo) emite lectura_enunciado después del close del episodio.
+  const enabledRef = useRef(enabled)
+  enabledRef.current = enabled
 
   useEffect(() => {
     if (!enabled) return
@@ -749,7 +762,12 @@ function useReadingTimeReporter(episodeId: string | null, enabled: boolean, flus
       io.disconnect()
       document.removeEventListener("visibilitychange", onVisibility)
       window.clearInterval(flushTimer)
-      void flush()
+      // Skip el último flush si el componente se está deshabilitando
+      // (típicamente: episodio cerrado). El CTR es append-only y rechaza
+      // eventos post-close con 409 Conflict.
+      if (enabledRef.current) {
+        void flush()
+      }
     }
   }, [episodeId, enabled, flushMs])
 

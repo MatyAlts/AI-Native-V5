@@ -168,10 +168,29 @@ export function OpeningStage({
           </p>
         )}
 
+        {errorMessage && (
+          <div
+            data-testid="opening-error-panel"
+            className="mt-6 rounded-md border border-danger bg-danger-soft p-4 text-sm"
+          >
+            <p className="font-medium text-danger mb-1">
+              No pudimos abrir el episodio
+            </p>
+            <p className="text-body break-words font-mono text-xs">
+              {errorMessage}
+            </p>
+            {humanizeErrorHint(errorMessage) && (
+              <p className="text-body mt-2 text-sm">
+                {humanizeErrorHint(errorMessage)}
+              </p>
+            )}
+          </div>
+        )}
+
         {errorMessage && (onRetry || onCancel) && (
           <div
             data-testid="opening-error-actions"
-            className="mt-8 flex flex-wrap items-center gap-3"
+            className="mt-4 flex flex-wrap items-center gap-3"
           >
             {onRetry && (
               <button
@@ -196,6 +215,31 @@ export function OpeningStage({
       </div>
     </div>
   )
+}
+
+/** Traduce mensajes de error tecnicos a texto humano accionable.
+ * Devuelve null si no hay traduccion conocida — el panel solo muestra el mensaje raw. */
+function humanizeErrorHint(message: string): string | null {
+  const m = message.toLowerCase()
+  if (m.includes("429") || m.includes("too many requests") || m.includes("rate limit")) {
+    return "El servidor recibio muchas solicitudes en poco tiempo. Espera unos segundos y reintenta."
+  }
+  if (m.includes("404") || m.includes("not found")) {
+    return "La tarea o el ejercicio no se encontro. Volve a la lista y refresca."
+  }
+  if (m.includes("422") || m.includes("unprocessable")) {
+    return "Hay una validacion pendiente. Si el TP requiere ejercicios previos, completa el anterior primero."
+  }
+  if (m.includes("403") || m.includes("forbidden")) {
+    return "No tenes permiso para abrir este episodio en esta comision. Verifica con tu docente."
+  }
+  if (m.includes("500") || m.includes("502") || m.includes("503") || m.includes("504")) {
+    return "El backend tuvo un error inesperado. Reintenta en unos segundos; si persiste, avisale al docente."
+  }
+  if (m.includes("network") || m.includes("failed to fetch")) {
+    return "Problema de conexion. Verifica tu red y reintenta."
+  }
+  return null
 }
 
 function StepRow({ step, onShowError }: { step: Step; onShowError?: () => void }) {

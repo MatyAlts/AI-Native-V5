@@ -360,16 +360,33 @@ export function StudentLongitudinalView({ getToken, initialComisionId, initialSt
               </>
             ) : data.evolution_per_template.length === 0 ? (
               <div className="rounded-xl border border-dashed border-border bg-surface p-8 text-center text-sm text-muted">
-                <div className="font-semibold text-ink">
-                  {isDocente
-                    ? "Todavia no hay datos suficientes."
-                    : "Sin templates ni unidades con clasificaciones."}
-                </div>
-                <div className="mt-1">
-                  {isDocente
-                    ? "El alumno necesita completar mas trabajos practicos para ver su evolucion."
-                    : "El estudiante no tiene episodios cerrados. Asigna TPs a Unidades para habilitar el analisis por tema."}
-                </div>
+                {data.n_episodes_total === 0 ? (
+                  <>
+                    <div className="font-semibold text-ink">
+                      {isDocente
+                        ? "Este alumno todavia no empezo."
+                        : "Sin episodios cerrados."}
+                    </div>
+                    <div className="mt-1">
+                      {isDocente
+                        ? "Cuando complete su primer trabajo practico, va a aparecer aca su evolucion."
+                        : "El estudiante no tiene episodios cerrados. Asigna TPs a Unidades para habilitar el analisis por tema."}
+                    </div>
+                  </>
+                ) : (
+                  <>
+                    <div className="font-semibold text-ink">
+                      {isDocente
+                        ? `Hizo ${data.n_episodes_total} trabajo${data.n_episodes_total !== 1 ? "s" : ""}, pero no podemos calcular su evolucion.`
+                        : `${data.n_episodes_total} episodios sin agrupar.`}
+                    </div>
+                    <div className="mt-1">
+                      {isDocente
+                        ? "Los TPs que hizo no estan vinculados a una plantilla canonica ni agrupados en unidades. Sin agrupacion no podemos comparar episodios analogos para ver si mejora o no. Asigna template_id o unidad a esas TPs."
+                        : "Las TPs de este estudiante no tienen template_id ni unidad_id. Sin agrupacion canonica no hay episodios analogos para slope longitudinal (RN-130)."}
+                    </div>
+                  </>
+                )}
               </div>
             ) : isDocente ? (
               <DocenteTemplateTable entries={data.evolution_per_template} colors={scoreColors} />

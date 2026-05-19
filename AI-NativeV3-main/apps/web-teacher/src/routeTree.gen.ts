@@ -21,6 +21,7 @@ import { Route as ExportRouteImport } from './routes/export'
 import { Route as EpisodeNLevelRouteImport } from './routes/episode-n-level'
 import { Route as EjerciciosRouteImport } from './routes/ejercicios'
 import { Route as CorreccionesRouteImport } from './routes/correcciones'
+import { Route as CohortQuartilesRouteImport } from './routes/cohort-quartiles'
 import { Route as CohortAdversarialRouteImport } from './routes/cohort-adversarial'
 import { Route as IndexRouteImport } from './routes/index'
 
@@ -84,6 +85,11 @@ const CorreccionesRoute = CorreccionesRouteImport.update({
   path: '/correcciones',
   getParentRoute: () => rootRouteImport,
 } as any)
+const CohortQuartilesRoute = CohortQuartilesRouteImport.update({
+  id: '/cohort-quartiles',
+  path: '/cohort-quartiles',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const CohortAdversarialRoute = CohortAdversarialRouteImport.update({
   id: '/cohort-adversarial',
   path: '/cohort-adversarial',
@@ -98,6 +104,7 @@ const IndexRoute = IndexRouteImport.update({
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/cohort-adversarial': typeof CohortAdversarialRoute
+  '/cohort-quartiles': typeof CohortQuartilesRoute
   '/correcciones': typeof CorreccionesRoute
   '/ejercicios': typeof EjerciciosRoute
   '/episode-n-level': typeof EpisodeNLevelRoute
@@ -114,6 +121,7 @@ export interface FileRoutesByFullPath {
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/cohort-adversarial': typeof CohortAdversarialRoute
+  '/cohort-quartiles': typeof CohortQuartilesRoute
   '/correcciones': typeof CorreccionesRoute
   '/ejercicios': typeof EjerciciosRoute
   '/episode-n-level': typeof EpisodeNLevelRoute
@@ -131,6 +139,7 @@ export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
   '/cohort-adversarial': typeof CohortAdversarialRoute
+  '/cohort-quartiles': typeof CohortQuartilesRoute
   '/correcciones': typeof CorreccionesRoute
   '/ejercicios': typeof EjerciciosRoute
   '/episode-n-level': typeof EpisodeNLevelRoute
@@ -149,6 +158,7 @@ export interface FileRouteTypes {
   fullPaths:
     | '/'
     | '/cohort-adversarial'
+    | '/cohort-quartiles'
     | '/correcciones'
     | '/ejercicios'
     | '/episode-n-level'
@@ -165,6 +175,7 @@ export interface FileRouteTypes {
   to:
     | '/'
     | '/cohort-adversarial'
+    | '/cohort-quartiles'
     | '/correcciones'
     | '/ejercicios'
     | '/episode-n-level'
@@ -181,6 +192,7 @@ export interface FileRouteTypes {
     | '__root__'
     | '/'
     | '/cohort-adversarial'
+    | '/cohort-quartiles'
     | '/correcciones'
     | '/ejercicios'
     | '/episode-n-level'
@@ -198,6 +210,7 @@ export interface FileRouteTypes {
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
   CohortAdversarialRoute: typeof CohortAdversarialRoute
+  CohortQuartilesRoute: typeof CohortQuartilesRoute
   CorreccionesRoute: typeof CorreccionesRoute
   EjerciciosRoute: typeof EjerciciosRoute
   EpisodeNLevelRoute: typeof EpisodeNLevelRoute
@@ -298,6 +311,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof CorreccionesRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/cohort-quartiles': {
+      id: '/cohort-quartiles'
+      path: '/cohort-quartiles'
+      fullPath: '/cohort-quartiles'
+      preLoaderRoute: typeof CohortQuartilesRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/cohort-adversarial': {
       id: '/cohort-adversarial'
       path: '/cohort-adversarial'
@@ -318,6 +338,7 @@ declare module '@tanstack/react-router' {
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   CohortAdversarialRoute: CohortAdversarialRoute,
+  CohortQuartilesRoute: CohortQuartilesRoute,
   CorreccionesRoute: CorreccionesRoute,
   EjerciciosRoute: EjerciciosRoute,
   EpisodeNLevelRoute: EpisodeNLevelRoute,

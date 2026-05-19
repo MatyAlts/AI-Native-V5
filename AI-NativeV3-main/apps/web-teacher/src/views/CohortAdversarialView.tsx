@@ -1,5 +1,6 @@
 import { Badge, PageContainer, StateMessage } from "@platform/ui"
 import { Link } from "@tanstack/react-router"
+import { ChevronRight, ExternalLink, Info } from "lucide-react"
 import { useEffect, useMemo, useState } from "react"
 import { useViewMode } from "../hooks/useViewMode"
 import {
@@ -9,6 +10,10 @@ import {
 } from "../lib/api"
 import { ADVERSARIAL_DOCENTE, SEVERITY_DOCENTE, studentShortLabel } from "../utils/docenteLabels"
 import { helpContent } from "../utils/helpContent"
+
+// Umbral minimo de eventos para hacer afirmaciones de "% concentrado".
+// Con N<5 cualquier proporcion (50%, 100%) es estadisticamente engañosa.
+const MIN_EVENTS_FOR_CONCENTRATION_INSIGHT = 5
 
 interface Props {
   getToken: () => Promise<string | null>
@@ -61,6 +66,29 @@ function resolveCssVar(varName: string, fallback: string): string {
   return v || fallback
 }
 
+/**
+ * Resuelve un label legible para una categoria, con fallbacks robustos.
+ *
+ * Caso real: el seed `seed-utn-prog1-cohorte-30.py` siembra `category: "jailbreak"`
+ * generico (sin subtipo), y los mappings completos solo tienen las variantes
+ * especificas (`jailbreak_substitution`, `jailbreak_fiction`, etc.). En vez de
+ * mostrar el code raw al docente, devolvemos una etiqueta razonable por prefijo.
+ */
+function resolveCategoryLabel(category: string, isDocente: boolean): string {
+  const labels = isDocente ? ADVERSARIAL_DOCENTE : CATEGORY_LABELS
+  if (labels[category]) return labels[category] as string
+  if (category.startsWith("jailbreak")) {
+    return isDocente ? "Intento de manipular al tutor" : "Jailbreak (sin subcategoria)"
+  }
+  if (category.includes("injection")) {
+    return isDocente ? "Intento de inyectar instrucciones" : "Prompt injection (generica)"
+  }
+  if (category.includes("persuasion")) {
+    return isDocente ? "Intento de persuadir al tutor" : "Persuasion (generica)"
+  }
+  return category
+}
+
 function CategoryBars({
   counts,
   colors,
@@ -80,7 +108,6 @@ function CategoryBars({
       </div>
     )
   }
-  const labels = isDocente ? ADVERSARIAL_DOCENTE : CATEGORY_LABELS
   const max = Math.max(...entries.map(([, v]) => v))
   return (
     <div className="space-y-2.5">
@@ -88,7 +115,9 @@ function CategoryBars({
         const ratio = max > 0 ? count / max : 0
         return (
           <div key={cat} className="flex items-center gap-3">
-            <div className="w-56 shrink-0 text-sm text-ink truncate">{labels[cat] ?? cat}</div>
+            <div className="w-56 shrink-0 text-sm text-ink truncate">
+              {resolveCategoryLabel(cat, isDocente)}
+            </div>
             <div className="flex-1 h-5 rounded-full bg-border overflow-hidden">
               <div
                 className="h-full rounded-full"
@@ -115,10 +144,42 @@ function SeverityBars({
   colors: Record<string, string>
   isDocente: boolean
 }) {
+  const allLevels = ["1", "2", "3", "4", "5"] as const
+  const nonZeroLevels = allLevels.filter((s) => (counts[s] ?? 0) > 0)
+  // Si hay 1 o 2 niveles con datos, mostrar solo esos como chips compactos en
+  // vez de la grid de 5 barras (la mayoria vacias se ven feas con N chico).
+  const compact = isDocente && nonZeroLevels.length > 0 && nonZeroLevels.length <= 2
+  if (compact) {
+    return (
+      <div className="flex flex-wrap gap-2">
+        {nonZeroLevels.map((sev) => (
+          <div
+            key={sev}
+            className="inline-flex items-center gap-2 rounded-full border border-border bg-canvas px-3 py-1.5"
+          >
+            <span
+              aria-hidden="true"
+              className="inline-block w-2.5 h-2.5 rounded-full"
+              style={{ backgroundColor: colors[sev] }}
+            />
+            <span className="text-sm text-ink">
+              {SEVERITY_DOCENTE[sev] ?? `Sev. ${sev}`}
+            </span>
+            <span className="text-sm font-semibold text-ink">{counts[sev] ?? 0}</span>
+          </div>
+        ))}
+        {isDocente && nonZeroLevels.length < 5 && (
+          <span className="inline-flex items-center text-xs text-muted px-1">
+            (Sin casos en los otros niveles)
+          </span>
+        )}
+      </div>
+    )
+  }
   const max = Math.max(...Object.values(counts), 1)
   return (
     <div className="grid grid-cols-5 gap-3">
-      {(["1", "2", "3", "4", "5"] as const).map((sev) => {
+      {allLevels.map((sev) => {
         const count = counts[sev] ?? 0
         const ratio = count / max
         return (
@@ -144,12 +205,30 @@ function SeverityBars({
 }
 
 function topStudentInsight(data: CohortAdversarialEvents): string | null {
-  if (data.top_students_by_n_events.length === 0 || data.n_events_total === 0) return null
+  // Con menos de 5 eventos cualquier proporcion (50%, 100%) es engañosa:
+  // "1 de 2 = 50%" no significa nada estadisticamente. Evitamos hablar de
+  // concentracion hasta tener volumen suficiente.
+  if (data.n_events_total < MIN_EVENTS_FOR_CONCENTRATION_INSIGHT) return null
+  if (data.top_students_by_n_events.length === 0) return null
   const top = data.top_students_by_n_events[0]
   if (!top) return null
   const pct = Math.round((top.n_events / data.n_events_total) * 100)
   if (pct < 30) return null
   return `Un alumno concentra el ${pct}% de los intentos. Considerá hablar con el/ella.`
+}
+
+function lowVolumeNotice(data: CohortAdversarialEvents, isDocente: boolean): string | null {
+  if (data.n_events_total === 0) return null
+  if (data.n_events_total >= MIN_EVENTS_FOR_CONCENTRATION_INSIGHT) return null
+  // Con pocos eventos no se pueden sacar conclusiones de cohorte, pero igual
+  // vale la pena informar al docente del volumen.
+  if (!isDocente) return null
+  const plural = data.n_events_total !== 1
+  return (
+    `Se detectaron ${data.n_events_total} intento${plural ? "s" : ""} en total. ` +
+    "Con tan pocos casos no se pueden sacar conclusiones de la comisión — " +
+    "miralos uno por uno abajo si querés conversar con esos estudiantes."
+  )
 }
 
 export function CohortAdversarialView({ getToken, initialComisionId }: Props) {
@@ -267,9 +346,7 @@ export function CohortAdversarialView({ getToken, initialComisionId }: Props) {
                           style={{ backgroundColor: catColors[cat] ?? "#64748b" }}
                         />
                         <span className="font-medium text-ink">{count}</span>{" "}
-                        {isDocente
-                          ? (ADVERSARIAL_DOCENTE[cat] ?? cat)
-                          : (CATEGORY_LABELS[cat] ?? cat)}
+                        {resolveCategoryLabel(cat, isDocente)}
                       </span>
                     ))}
                 </div>
@@ -280,11 +357,24 @@ export function CohortAdversarialView({ getToken, initialComisionId }: Props) {
               data.n_events_total > 0 &&
               (() => {
                 const insight = topStudentInsight(data)
-                return insight ? (
-                  <div className="rounded-xl border border-warning/30 bg-warning-soft px-6 py-4 text-sm text-warning">
-                    {insight}
-                  </div>
-                ) : null
+                if (insight) {
+                  return (
+                    <div className="rounded-xl border border-warning/30 bg-warning-soft px-6 py-4 text-sm text-warning flex items-start gap-2.5">
+                      <Info className="h-5 w-5 flex-shrink-0 mt-0.5" />
+                      <span>{insight}</span>
+                    </div>
+                  )
+                }
+                const lowVolume = lowVolumeNotice(data, isDocente)
+                if (lowVolume) {
+                  return (
+                    <div className="rounded-xl border border-border bg-canvas px-6 py-4 text-sm text-muted flex items-start gap-2.5">
+                      <Info className="h-5 w-5 flex-shrink-0 mt-0.5" />
+                      <span>{lowVolume}</span>
+                    </div>
+                  )
+                }
+                return null
               })()}
 
             <div className="rounded-xl border border-border bg-white p-6 space-y-5">
@@ -339,9 +429,10 @@ export function CohortAdversarialView({ getToken, initialComisionId }: Props) {
                               {s.n_events}{" "}
                               {isDocente ? `intento${s.n_events !== 1 ? "s" : ""}` : "ev."}
                             </Badge>
-                            <span aria-hidden="true" className="text-border">
-                              ›
-                            </span>
+                            <ChevronRight
+                              aria-hidden="true"
+                              className="h-4 w-4 text-muted"
+                            />
                           </span>
                         </Link>
                       ) : (
@@ -397,44 +488,58 @@ export function CohortAdversarialView({ getToken, initialComisionId }: Props) {
 
             {isDocente && data.recent_events.length > 0 && (
               <div className="overflow-hidden rounded-xl border border-border bg-white">
-                <div className="border-b border-border bg-canvas px-6 py-3 text-xs font-semibold text-ink uppercase tracking-wider">
-                  Ultimos intentos ({data.recent_events.length})
+                <div className="border-b border-border bg-canvas px-6 py-3 flex items-center justify-between gap-2">
+                  <span className="text-xs font-semibold text-ink uppercase tracking-wider">
+                    Ultimos intentos ({data.recent_events.length})
+                  </span>
+                  <span className="text-xs text-muted hidden sm:inline">
+                    Click en cada uno para ver el episodio completo
+                  </span>
                 </div>
                 <ul className="divide-y divide-[#EAEAEA]">
                   {data.recent_events.map((ev, idx) => (
-                    <li
-                      key={`${ev.episode_id}-${idx}`}
-                      className="px-6 py-3 hover:bg-canvas transition-colors"
-                    >
-                      <div className="flex items-center justify-between gap-4">
-                        <div className="flex items-center gap-3 min-w-0">
-                          <span
-                            aria-hidden="true"
-                            className="inline-block w-2.5 h-2.5 rounded-full shrink-0"
-                            style={{ backgroundColor: catColors[ev.category] ?? "#64748b" }}
-                          />
-                          <div className="min-w-0">
-                            <div className="text-sm text-ink">
-                              {ADVERSARIAL_DOCENTE[ev.category] ?? ev.category}
-                            </div>
-                            <div className="text-xs text-muted">
-                              {studentShortLabel(ev.student_pseudonym)} · {ev.ts.slice(0, 10)}
+                    <li key={`${ev.episode_id}-${idx}`}>
+                      <Link
+                        to="/episode-n-level"
+                        search={{ episodeId: ev.episode_id }}
+                        className="block px-6 py-3 hover:bg-canvas transition-colors"
+                      >
+                        <div className="flex items-start justify-between gap-4">
+                          <div className="flex items-start gap-3 min-w-0 flex-1">
+                            <span
+                              aria-hidden="true"
+                              className="inline-block w-2.5 h-2.5 rounded-full shrink-0 mt-1.5"
+                              style={{ backgroundColor: catColors[ev.category] ?? "#64748b" }}
+                            />
+                            <div className="min-w-0 flex-1">
+                              <div className="text-sm text-ink font-medium">
+                                {resolveCategoryLabel(ev.category, true)}
+                              </div>
+                              <div className="text-xs text-muted mt-0.5">
+                                {studentShortLabel(ev.student_pseudonym)} · {ev.ts.slice(0, 10)}
+                                <span className="mx-1.5">·</span>
+                                Riesgo: {SEVERITY_DOCENTE[String(ev.severity)] ?? ev.severity}
+                              </div>
+                              {ev.matched_text && (
+                                <div className="mt-2 text-xs text-muted bg-canvas border border-border rounded-md px-2.5 py-1.5 font-mono break-words">
+                                  <span className="text-[10px] uppercase tracking-wider text-muted/70 mr-1">
+                                    Texto detectado:
+                                  </span>
+                                  "
+                                  {ev.matched_text.length > 200
+                                    ? ev.matched_text.slice(0, 200) + "…"
+                                    : ev.matched_text}
+                                  "
+                                </div>
+                              )}
                             </div>
                           </div>
+                          <div className="shrink-0 flex items-center gap-1 text-xs text-[var(--color-accent-brand)] mt-1">
+                            ver sesión
+                            <ExternalLink className="h-3.5 w-3.5" />
+                          </div>
                         </div>
-                        <div className="flex items-center gap-3 shrink-0">
-                          <span className="text-xs text-muted">
-                            Riesgo: {SEVERITY_DOCENTE[String(ev.severity)] ?? ev.severity}
-                          </span>
-                          <Link
-                            to="/episode-n-level"
-                            search={{ episodeId: ev.episode_id }}
-                            className="text-xs text-[var(--color-accent-brand)] hover:underline"
-                          >
-                            ver sesion →
-                          </Link>
-                        </div>
-                      </div>
+                      </Link>
                     </li>
                   ))}
                 </ul>

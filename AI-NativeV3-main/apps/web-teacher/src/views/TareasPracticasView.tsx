@@ -758,8 +758,8 @@ function TareaFormModal({
 
   const handleSubmit = async () => {
     setFormError(null)
-    if (!codigo.trim() || !titulo.trim() || !enunciado.trim()) {
-      setFormError("Codigo, titulo y enunciado son obligatorios")
+    if (!codigo.trim() || !titulo.trim()) {
+      setFormError("Codigo y titulo son obligatorios")
       return
     }
     if (showDriftBanner && !driftAck) {
@@ -775,12 +775,19 @@ function TareaFormModal({
         return
       }
     }
+    // ADR-047: post-banco-de-ejercicios el enunciado de la TP es fallback.
+    // Si el docente deja vacio, pasamos un placeholder claro para el alumno
+    // (y para el backend, que actualmente lo exige no-vacio). Cuando el
+    // backend haga el campo nullable, este placeholder se quita.
+    const enunciadoFinal = enunciado.trim()
+      ? enunciado.trim()
+      : "(Esta TP se compone con ejercicios del banco. El detalle de cada ejercicio se muestra al abrir el episodio.)"
     setSubmitting(true)
     try {
       await onSubmit({
         codigo: codigo.trim(),
         titulo: titulo.trim(),
-        enunciado: enunciado.trim(),
+        enunciado: enunciadoFinal,
         fecha_inicio: localInputToIso(fechaInicio),
         fecha_fin: localInputToIso(fechaFin),
         peso,
@@ -843,8 +850,11 @@ function TareaFormModal({
 
         <div className="grid grid-cols-2 gap-3">
           <div>
-            <label className="block text-xs text-muted mb-1">Codigo</label>
+            <label htmlFor="tp-codigo" className="block text-xs text-muted mb-1">Codigo</label>
             <input
+              id="tp-codigo"
+              name="codigo"
+              data-testid="tp-form-codigo"
               type="text"
               value={codigo}
               onChange={(e) => setCodigo(e.target.value)}
@@ -853,9 +863,13 @@ function TareaFormModal({
             />
           </div>
           <div>
-            <label className="block text-xs text-muted mb-1">Peso (0-1)</label>
+            <label htmlFor="tp-peso" className="block text-xs text-muted mb-1">Peso (0-1)</label>
             <input
+              id="tp-peso"
+              name="peso"
+              data-testid="tp-form-peso"
               type="text"
+              inputMode="decimal"
               value={peso}
               onChange={(e) => setPeso(e.target.value)}
               className="w-full border border-border rounded px-2 py-1 text-sm font-mono"
@@ -864,8 +878,11 @@ function TareaFormModal({
         </div>
 
         <div>
-          <label className="block text-xs text-muted mb-1">Titulo</label>
+          <label htmlFor="tp-titulo" className="block text-xs text-muted mb-1">Titulo</label>
           <input
+            id="tp-titulo"
+            name="titulo"
+            data-testid="tp-form-titulo"
             type="text"
             value={titulo}
             onChange={(e) => setTitulo(e.target.value)}
@@ -874,20 +891,43 @@ function TareaFormModal({
           />
         </div>
 
+        <div className="rounded-lg border border-accent-brand/30 bg-accent-brand-soft p-3 text-xs">
+          <strong className="text-ink">Flujo recomendado:</strong>{" "}
+          <span className="text-muted">
+            componer la TP con ejercicios del banco. Después de guardar, abrí el modal
+            &quot;Composición&quot; desde la card para asociar ejercicios. Los ejercicios viven
+            en <code>/ejercicios</code> y son reusables entre TPs (ADR-047).
+          </span>
+        </div>
+
         <div>
-          <label className="block text-xs text-muted mb-1">Enunciado (markdown)</label>
+          <label htmlFor="tp-enunciado" className="block text-xs text-muted mb-1">
+            Enunciado introductorio (opcional)
+          </label>
           <textarea
+            id="tp-enunciado"
+            name="enunciado"
+            data-testid="tp-form-enunciado"
             value={enunciado}
             onChange={(e) => setEnunciado(e.target.value)}
             rows={6}
+            placeholder="Dejalo vacío si vas a componer la TP con ejercicios del banco."
             className="w-full border border-border rounded px-2 py-1 text-sm font-mono"
           />
+          <p className="mt-1 text-xs text-muted leading-snug">
+            Sólo si esta TP <em>no</em> va a usar ejercicios del banco. Si la componés con
+            ejercicios, el alumno verá el enunciado de cada ejercicio y este campo queda
+            ignorado en runtime (fallback histórico pre-ADR-047).
+          </p>
         </div>
 
         <div className="grid grid-cols-2 gap-3">
           <div>
-            <label className="block text-xs text-muted mb-1">Fecha inicio</label>
+            <label htmlFor="tp-fecha-inicio" className="block text-xs text-muted mb-1">Fecha inicio</label>
             <input
+              id="tp-fecha-inicio"
+              name="fecha_inicio"
+              data-testid="tp-form-fecha-inicio"
               type="datetime-local"
               value={fechaInicio}
               onChange={(e) => setFechaInicio(e.target.value)}
@@ -895,8 +935,11 @@ function TareaFormModal({
             />
           </div>
           <div>
-            <label className="block text-xs text-muted mb-1">Fecha fin</label>
+            <label htmlFor="tp-fecha-fin" className="block text-xs text-muted mb-1">Fecha fin</label>
             <input
+              id="tp-fecha-fin"
+              name="fecha_fin"
+              data-testid="tp-form-fecha-fin"
               type="datetime-local"
               value={fechaFin}
               onChange={(e) => setFechaFin(e.target.value)}
@@ -906,20 +949,17 @@ function TareaFormModal({
         </div>
 
         <div>
-          <label className="block text-xs text-muted mb-1">Rubrica (JSON, opcional)</label>
+          <label htmlFor="tp-rubrica" className="block text-xs text-muted mb-1">Rubrica (JSON, opcional)</label>
           <textarea
+            id="tp-rubrica"
+            name="rubrica"
+            data-testid="tp-form-rubrica"
             value={rubricaRaw}
             onChange={(e) => setRubricaRaw(e.target.value)}
             rows={4}
             className="w-full border border-border rounded px-2 py-1 text-xs font-mono"
             placeholder='{"criterios": [{"nombre": "...", "puntaje_max": 1.0}]}'
           />
-        </div>
-
-        <div className="rounded-lg border border-border-soft bg-surface-alt p-3 text-xs text-muted">
-          <strong className="text-ink">Composicion de ejercicios:</strong> al guardar la TP, abri
-          el modal &quot;Composicion&quot; desde la card para asociar ejercicios del banco. Los
-          ejercicios viven en /ejercicios y son reusables entre TPs (ADR-047).
         </div>
 
         <div className="flex justify-end gap-2 pt-3 border-t border-border">

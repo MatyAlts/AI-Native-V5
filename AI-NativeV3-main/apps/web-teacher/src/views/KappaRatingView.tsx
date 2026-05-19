@@ -184,42 +184,86 @@ function EpisodeRatingCard({
   categoryLabels: Record<string, string>
   isDocente: boolean
 }) {
-  return (
-    <div className="rounded-xl border border-border bg-white p-4">
-      <div className="flex items-start justify-between gap-4 mb-3">
-        <div className="min-w-0 flex-1">
-          <div className="font-mono text-xs text-muted">
-            {isDocente ? episode.episode_id.slice(0, 8) : episode.episode_id.slice(0, 12)}
-          </div>
-          <p className="text-sm mt-1 line-clamp-2">{episode.summary}</p>
-        </div>
-        <div className="text-xs text-right shrink-0">
-          <div className="text-muted">{isDocente ? "El sistema evaluo:" : "Modelo dijo:"}</div>
-          <div className="font-medium">
-            {categoryLabels[episode.classifier_label] ?? episode.classifier_label}
-          </div>
-        </div>
-      </div>
+  const agreement = currentLabel
+    ? currentLabel === episode.classifier_label
+      ? "match"
+      : "diff"
+    : null
 
-      <div className="flex gap-2">
-        {CATEGORIES.map((cat) => {
-          const selected = currentLabel === cat
-          return (
-            <button
-              key={cat}
-              type="button"
-              onClick={() => onLabel(cat)}
-              className={`flex-1 px-3 py-2 rounded text-white text-xs font-medium transition ${CATEGORY_COLORS[cat]} ${
-                selected ? "ring-2 ring-offset-2 ring-[#111111]" : "opacity-70"
+  return (
+    <div
+      className={`rounded-xl border bg-white p-4 transition-colors ${
+        agreement === "match"
+          ? "border-green-300 bg-green-50/30"
+          : agreement === "diff"
+            ? "border-amber-300 bg-amber-50/30"
+            : "border-border"
+      }`}
+    >
+      <div className="mb-3">
+        <div className="flex items-center gap-2 mb-2">
+          <span className="font-mono text-[11px] text-muted-soft uppercase tracking-wider">
+            Episodio {isDocente ? episode.episode_id.slice(0, 8) : episode.episode_id.slice(0, 12)}
+          </span>
+          {agreement && (
+            <span
+              className={`text-[11px] font-semibold px-2 py-0.5 rounded-full ${
+                agreement === "match"
+                  ? "bg-green-100 text-green-800"
+                  : "bg-amber-100 text-amber-800"
               }`}
             >
-              {categoryLabels[cat] ?? cat}
-            </button>
-          )
-        })}
+              {agreement === "match" ? "✓ Coincidís" : "△ Diferís"}
+            </span>
+          )}
+        </div>
+        <p className="text-sm leading-relaxed text-ink">{episode.summary}</p>
+      </div>
+
+      <div className="rounded-lg bg-canvas border border-border-soft px-3 py-2 mb-3 flex items-center gap-2 text-xs">
+        <span className="text-muted shrink-0">
+          {isDocente ? "El sistema evaluó:" : "Clasificador automático:"}
+        </span>
+        <span
+          aria-hidden="true"
+          className="inline-block w-2 h-2 rounded-full"
+          style={{ backgroundColor: appropriationDotColor(episode.classifier_label) }}
+        />
+        <span className="font-semibold text-ink">
+          {categoryLabels[episode.classifier_label] ?? episode.classifier_label}
+        </span>
+      </div>
+
+      <div>
+        <div className="text-[11px] font-semibold text-muted mb-1.5 uppercase tracking-wider">
+          {isDocente ? "¿Cómo lo evaluarías vos?" : "Tu rating"}
+        </div>
+        <div className="flex gap-2">
+          {CATEGORIES.map((cat) => {
+            const selected = currentLabel === cat
+            return (
+              <button
+                key={cat}
+                type="button"
+                onClick={() => onLabel(cat)}
+                className={`flex-1 px-3 py-2 rounded text-white text-xs font-medium transition ${CATEGORY_COLORS[cat]} ${
+                  selected ? "ring-2 ring-offset-2 ring-[#111111]" : "opacity-70 hover:opacity-100"
+                }`}
+              >
+                {categoryLabels[cat] ?? cat}
+              </button>
+            )
+          })}
+        </div>
       </div>
     </div>
   )
+}
+
+function appropriationDotColor(label: AppropriationLabel): string {
+  if (label === "apropiacion_reflexiva") return "#16a34a"
+  if (label === "apropiacion_superficial") return "#f59e0b"
+  return "#dc2626" // delegacion_pasiva
 }
 
 function DocenteResultPanel({
