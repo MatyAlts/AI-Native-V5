@@ -6,6 +6,31 @@ cada incidente debe quedar registrado en el Google Sheet
 `pilot-incidents` para el análisis post-mortem que irá al capítulo
 de discusión de la tesis.
 
+## Stack target
+
+Este runbook asume que la stack corre con `docker-compose.prod.yml` en VPS UNSL
+(piloto-2 ampliado). Los snippets `kubectl` que sobrevivan en este documento
+son legacy del despliegue K8s pre-piloto y se traducen al equivalente Docker
+Compose con la tabla de abajo. Si en algún incidente ves un `kubectl ...` sin
+traducir, usá el equivalente directo.
+
+### Cheatsheet kubectl → docker compose
+
+| Acción | Comando K8s (legacy) | Comando Docker Compose (piloto-2 VPS) |
+|---|---|---|
+| Logs últimos N | `kubectl logs -n platform -l app=tutor-service --tail=100` | `docker compose -f infrastructure/docker-compose.prod.yml logs --tail=100 tutor-service` |
+| Logs en vivo | `kubectl logs -f -n platform deploy/tutor-service` | `docker compose -f infrastructure/docker-compose.prod.yml logs -f tutor-service` |
+| Estado de pods/containers | `kubectl get pods -n platform` | `docker compose -f infrastructure/docker-compose.prod.yml ps` |
+| Ejecutar comando dentro | `kubectl exec -n platform redis-0 -- redis-cli ping` | `docker exec platform-prod-redis redis-cli -a $REDIS_PASSWORD ping` |
+| Restart de un servicio | `kubectl rollout restart deploy/classifier-service -n platform` | `docker compose -f infrastructure/docker-compose.prod.yml restart classifier-service` |
+| Pause de canary | `kubectl argo rollouts pause tutor-service -n platform` | `docker compose -f infrastructure/docker-compose.prod.yml stop tutor-service` (no hay canary en VPS) |
+| Inspect del backup CronJob | `kubectl describe cronjob platform-db-backup -n platform` | `systemctl status platform-backup.timer` |
+| Logs del backup job | `kubectl logs -n platform -l job-name=platform-db-backup --tail=200` | `journalctl -u platform-backup.service -n 200` |
+
+**Variables que asume el cheatsheet**: `$REDIS_PASSWORD` en el shell del operador
+(viene de `infrastructure/.env.prod`). Para SQL directo, conectarse con:
+`docker exec -it platform-prod-postgres psql -U postgres -d <base>`.
+
 ## Índice de incidentes
 
 | Código | Síntoma | Severidad | Sección |
@@ -34,10 +59,16 @@ de discusión de la tesis.
 
 **Accion inmediata**:
 
-1. **Pausar el canary si hay uno en progreso**:
+1. **Pausar el canary si hay uno en progreso (K8s legacy)** o **detener el
+   tutor-service en el VPS** mientras se investiga:
    ```bash
+   # K8s legacy:
    kubectl argo rollouts pause tutor-service -n platform
+   # VPS piloto-2:
+   docker compose -f infrastructure/docker-compose.prod.yml stop tutor-service
    ```
+   Detener el tutor previene que ingresen MÁS eventos posiblemente
+   inconsistentes mientras se diagnostica.
 
 2. **Verificar qué episodios están afectados**:
    ```sql
@@ -95,12 +126,12 @@ de discusión de la tesis.
 
 2. **¿Es el retrieval RAG?**
    ```bash
-   kubectl logs -n platform -l app=content-service --tail=100 | grep retrieval
+   docker compose -f infrastructure/docker-compose.prod.yml logs --tail=100 content-service | grep retrieval
    ```
 
 3. **¿Es Redis (session manager) saturado?**
    ```bash
-   kubectl exec -n platform redis-0 -- redis-cli INFO stats | grep instantaneous_ops_per_sec
+   docker exec platform-prod-redis redis-cli -a "$REDIS_PASSWORD" INFO stats | grep instantaneous_ops_per_sec
    ```
 
 **Acción**:
@@ -125,19 +156,20 @@ de discusión de la tesis.
 
 1. **¿El worker está vivo?**
    ```bash
-   kubectl get pods -n platform -l app=classifier-service
-   kubectl logs -n platform -l app=classifier-service --tail=50
+   docker compose -f infrastructure/docker-compose.prod.yml ps classifier-service
+   docker compose -f infrastructure/docker-compose.prod.yml logs --tail=50 classifier-service
    ```
 
 2. **¿Hay eventos del ctr-service que el worker no puede consumir?**
    ```bash
-   kubectl exec redis-0 -- redis-cli XLEN ctr-stream
-   kubectl exec redis-0 -- redis-cli XINFO GROUPS ctr-stream
+   docker exec platform-prod-redis redis-cli -a "$REDIS_PASSWORD" XLEN ctr.p0
+   docker exec platform-prod-redis redis-cli -a "$REDIS_PASSWORD" XINFO GROUPS ctr.p0
+   # Repetir para particiones ctr.p1..ctr.p7 si hace falta inspeccionar todas
    ```
 
 **Acción**:
 
-- **Worker crasheado**: `kubectl rollout restart deploy/classifier-service -n platform`.
+- **Worker crasheado**: `docker compose -f infrastructure/docker-compose.prod.yml restart classifier-service` (o `kubectl rollout restart deploy/classifier-service -n platform` en K8s legacy).
 - **Evento con payload inválido atascando el consumer**: identificar el
   `event_uuid`, moverlo a DLQ manualmente:
   ```sql
@@ -184,7 +216,7 @@ inferior a 0.4, se revisa el árbol de decisión antes de continuar.
      -d @ab-request.json | jq .
    ```
 
-4. Si algún candidato supera κ=0.6, committear el profile al repo con
+4. Si algún candidato supera κ=0.70 (ADR-046), committear el profile al repo con
    nuevo hash, correr alembic migration con el `classifier_config_hash`
    nuevo, y **reclasificar** los episodios del piloto con el profile
    nuevo (los viejos quedan `is_current=false`, auditable).
@@ -273,7 +305,7 @@ En todos los casos, documentar.
 1. Leer el campo `error` del status response.
 2. Ver logs del analytics-service:
    ```bash
-   kubectl logs -n platform -l app=analytics-service | grep export_failed
+   docker compose -f infrastructure/docker-compose.prod.yml logs analytics-service | grep export_failed
    ```
 
 **Causas comunes**:
@@ -339,28 +371,43 @@ nuevos episodios.
 
 ## I10. Backup diario falló  <a id="i10"></a>
 
-**Alerta**: `PlatformBackupJobFailed` o `PlatformBackupMissing` desde
-PrometheusRule del `ops/k8s/backup-cronjob.yaml`.
+**Alerta**: `PlatformBackupJobFailed` o `PlatformBackupMissing` desde Prometheus
+(en VPS piloto-2, viene del `alertmanager.yml` standalone). En K8s legacy
+correspondía al PrometheusRule del `ops/k8s/backup-cronjob.yaml`.
 
-**Diagnóstico**:
+**Diagnóstico (piloto-2 VPS con docker compose + systemd)**:
 
 ```bash
-kubectl logs -n platform -l job-name=platform-db-backup --tail=200
-kubectl describe cronjob platform-db-backup -n platform
+# Estado del timer
+sudo systemctl status platform-backup.timer
+sudo systemctl list-timers platform-backup.timer
+
+# Logs de la última ejecución
+sudo journalctl -u platform-backup.service -n 200 --no-pager
+
+# Verificar que los archivos del día existan
+ls -lh /var/backups/platform/$(date +%Y-%m-%d)/
 ```
 
 **Causas típicas**:
-- PVC `platform-backups` lleno → expandir PVC o limpiar backups viejos.
-- Credenciales de `PG_BACKUP_PASSWORD` expiraron en el Secret.
-- pg_dump timeout → la DB creció y el backup toma más que el deadline;
-  subir `startingDeadlineSeconds` del CronJob.
+- Disco `/var/backups/platform/` lleno → expandir volumen o ajustar retención
+  (el `ExecStartPost` del service borra a 30 días — bajar si hace falta).
+- `PG_BACKUP_PASSWORD` en `/etc/platform/backup.env` no coincide con la
+  contraseña real del user `backup_user` en Postgres.
+- `ATTESTATIONS_DIR` (`/var/lib/platform/attestations`) no es accesible al
+  user `ops` que corre el systemd service.
+- pg_dump timeout → la DB creció y el backup toma más que el `TimeoutStartSec`
+  del service (30 min default). Subir el timeout o particionar el backup por
+  base.
 
 **Acción inmediata**: correr el backup manualmente para no quedar sin
 fallback mientras se diagnostica:
 
 ```bash
-cd platform/
-PG_BACKUP_PASSWORD="$PG_BACKUP_PASSWORD" ./scripts/backup.sh
+cd /opt/platform/ai-native-n4/AI-NativeV3-main
+sudo systemctl start platform-backup.service
+# o equivalente directo:
+sudo -u ops PG_BACKUP_PASSWORD="..." bash scripts/backup.sh
 ```
 
 ---

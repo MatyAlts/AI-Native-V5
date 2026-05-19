@@ -1,5 +1,5 @@
 #!/bin/bash
-# Backup de las 3 bases de datos de la plataforma.
+# Backup de las 4 bases de datos de la plataforma (ADR-003) + attestations Ed25519.
 #
 # Uso:
 #   ./backup.sh [target_dir]
@@ -8,9 +8,12 @@
 #
 # Variables de entorno (sobrescribir si hace falta):
 #   PG_HOST, PG_PORT, PG_BACKUP_USER, PG_BACKUP_PASSWORD
+#   ATTESTATIONS_DIR (default /var/lib/platform/attestations) — directorio con
+#                    los archivos attestations-YYYY-MM-DD.jsonl firmados con Ed25519
+#                    (evidencia criptografica de la tesis, ADR-021).
 #
-# En producción corre como K8s CronJob (ver ops/k8s/backup-cronjob.yaml).
-# Los backups se encriptan con age antes de subirlos a S3 glacier.
+# Para piloto-2 (VPS UNSL sin K8s) corre via systemd timer diario.
+# Ver infrastructure/systemd/platform-backup.{service,timer} y docs/VPS-DEPLOY.md.
 
 set -euo pipefail
 
@@ -18,14 +21,20 @@ PG_HOST="${PG_HOST:-postgres}"
 PG_PORT="${PG_PORT:-5432}"
 PG_BACKUP_USER="${PG_BACKUP_USER:-backup_user}"
 PG_BACKUP_PASSWORD="${PG_BACKUP_PASSWORD:?PG_BACKUP_PASSWORD es requerido}"
+ATTESTATIONS_DIR="${ATTESTATIONS_DIR:-/var/lib/platform/attestations}"
 
 TARGET_DIR="${1:-/var/backups/platform/$(date +%Y-%m-%d)}"
 TIMESTAMP="$(date +%Y%m%d-%H%M%S)"
 
+# Las 4 bases logicas separadas (ADR-003). content_db agregada en 2026-05-19
+# (estaba ausente — gap detectado en auditoria pre-prod, materiales del piloto
+# vivian en content_db sin estrategia de backup). identity_realms removida
+# (ADR-041: identity-service deprecated, auth movida a api-gateway).
 BASES=(
   "academic_main"
   "ctr_store"
-  "identity_realms"
+  "classifier_db"
+  "content_db"
 )
 
 mkdir -p "$TARGET_DIR"
@@ -58,15 +67,38 @@ for base in "${BASES[@]}"; do
   echo "  ✓ $size"
 done
 
+# ── Attestations Ed25519 (evidencia criptografica del piloto, ADR-021) ──
+# Estos JSONL son la cadena de custodia firmada por integrity-attestation-service.
+# Perderlos invalida la cadena criptografica del piloto — son insustituibles.
+if [ -d "$ATTESTATIONS_DIR" ]; then
+  attestations_archive="$TARGET_DIR/attestations-${TIMESTAMP}.tar.gz"
+  echo
+  echo "Archivando attestations Ed25519 desde $ATTESTATIONS_DIR"
+  files=$(cd "$ATTESTATIONS_DIR" && ls -1 attestations-*.jsonl 2>/dev/null || true)
+  if [ -n "$files" ]; then
+    tar -czf "$attestations_archive" -C "$ATTESTATIONS_DIR" $files
+    size=$(du -h "$attestations_archive" | cut -f1)
+    echo "  ✓ $attestations_archive ($size)"
+  else
+    echo "  WARN: no se encontraron archivos attestations-*.jsonl"
+    echo "        Si es el primer dia del piloto-2 es normal. Si no, investigar urgente."
+  fi
+else
+  echo
+  echo "WARN: ATTESTATIONS_DIR no existe ($ATTESTATIONS_DIR) — saltando backup de attestations"
+fi
+
 # Generar manifiesto con checksums para verificación post-restore
 manifest="$TARGET_DIR/manifest-${TIMESTAMP}.txt"
 {
   echo "Platform backup manifest"
   echo "Timestamp: $TIMESTAMP"
   echo "Host: $PG_HOST:$PG_PORT"
+  echo "Attestations source: $ATTESTATIONS_DIR"
   echo ""
   echo "Files (SHA-256):"
-  (cd "$TARGET_DIR" && sha256sum *-"${TIMESTAMP}".sql.gz)
+  (cd "$TARGET_DIR" && sha256sum *-"${TIMESTAMP}".sql.gz 2>/dev/null || true)
+  (cd "$TARGET_DIR" && sha256sum attestations-"${TIMESTAMP}".tar.gz 2>/dev/null || true)
 } > "$manifest"
 
 echo

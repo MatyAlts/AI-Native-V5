@@ -1,0 +1,16 @@
+[Unit]
+Description=AI-Native N4 — disparador diario del backup (03:00 hora del VPS)
+Documentation=file:///opt/platform/ai-native-n4/AI-NativeV3-main/docs/VPS-DEPLOY.md
+Requires=platform-backup.service
+
+[Timer]
+# Diario a las 03:00 hora local. Si el VPS estaba apagado, recupera la corrida.
+OnCalendar=*-*-* 03:00:00
+Persistent=true
+
+# Anti-thundering-herd: pequeno offset aleatorio (hasta 5 min) para que multiples
+# instancias no peguen al storage al mismo tiempo.
+RandomizedDelaySec=300
+
+[Install]
+WantedBy=timers.target

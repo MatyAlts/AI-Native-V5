@@ -1,0 +1,151 @@
+# Reglas de alerta criticas para piloto-2 ampliado UNSL.
+#
+# Portado desde ops/prometheus/slo-rules.yaml (PrometheusRule de K8s) a formato
+# standalone — cargado por Prometheus via 'rule_files' en prometheus.yml.
+#
+# Solo las alertas mas criticas estan acá. Para SLOs completos (latencia P95/P99,
+# error rates, etc.) ver el archivo K8s original que se preserva como referencia.
+
+groups:
+  # ══════════════════════════════════════════════════════════════════════
+  # GRUPO 1 — Integridad criptográfica del CTR (academicamente crítico)
+  # ══════════════════════════════════════════════════════════════════════
+  - name: ctr-integrity
+    interval: 1m
+    rules:
+      - alert: CTRNewIntegrityCompromised
+        expr: increase(ctr_episodes_integrity_compromised_total[15m]) > 0
+        for: 1m
+        labels:
+          severity: critical
+          slo: ctr-integrity
+          team: platform
+        annotations:
+          summary: "Nuevos episodios con cadena CTR rota (piloto-2)"
+          description: |
+            Detectamos {{ $value }} episodios con `integrity_compromised=true`
+            en los ultimos 15 min. Esto invalida la cadena criptográfica del
+            piloto — evento de seguridad crítico.
+
+            Acciones inmediatas:
+            1. Pausar tutor-service (ver runbook §I01)
+            2. Identificar episodios afectados (SELECT con `integrity_compromised=true`)
+            3. Notificar al investigador principal
+
+      - alert: CTRDLQGrowing
+        expr: increase(ctr_dlq_size[30m]) > 5
+        for: 5m
+        labels:
+          severity: warning
+          slo: ctr-throughput
+          team: platform
+        annotations:
+          summary: "CTR DLQ creciendo (> 5 eventos en 30 min)"
+          description: |
+            La dead-letter queue del CTR esta acumulando eventos. Causas
+            tipicas: schema drift, DB down, evento malformado. Investigar
+            con logs del partition-worker.
+
+      - alert: CTRWorkerBacklog
+        expr: redis_stream_length{stream=~"ctr\\.p.*"} > 1000
+        for: 10m
+        labels:
+          severity: warning
+          slo: ctr-throughput
+          team: platform
+        annotations:
+          summary: "Worker CTR con backlog (> 1000 eventos)"
+          description: |
+            Stream {{ $labels.stream }} con backlog. El worker no esta
+            consumiendo al ritmo del productor. Escalar workers o
+            investigar lentitud de DB.
+
+  # ══════════════════════════════════════════════════════════════════════
+  # GRUPO 2 — Tutor SSE (UX-critico para los alumnos)
+  # ══════════════════════════════════════════════════════════════════════
+  - name: tutor-latency
+    interval: 30s
+    rules:
+      - alert: TutorFirstTokenLatencyP95High
+        expr: |
+          histogram_quantile(0.95,
+            sum(rate(http_server_duration_seconds_bucket{
+              service_name="tutor-service",
+              http_route=~"/api/v1/episodes/.+/message"
+            }[5m])) by (le)
+          ) > 3
+        for: 10m
+        labels:
+          severity: warning
+          slo: tutor-latency-p95
+          team: platform
+        annotations:
+          summary: "Tutor P95 primer token > 3s (sostenido 10 min)"
+          description: |
+            UX degradada para los alumnos. Investigar: saturacion del
+            ai-gateway, lentitud del retrieval (content-service), o
+            problemas del LLM provider externo.
+
+      - alert: TutorFirstTokenLatencyP99Critical
+        expr: |
+          histogram_quantile(0.99,
+            sum(rate(http_server_duration_seconds_bucket{
+              service_name="tutor-service",
+              http_route=~"/api/v1/episodes/.+/message"
+            }[5m])) by (le)
+          ) > 8
+        for: 5m
+        labels:
+          severity: critical
+          slo: tutor-latency-p99
+          team: platform
+        annotations:
+          summary: "Tutor P99 > 8s — degradacion severa"
+          description: |
+            UX gravemente degradada. Posible incidente del LLM provider
+            o de infra upstream. Considerar fallback a otro provider via
+            BYOK del tenant afectado.
+
+  # ══════════════════════════════════════════════════════════════════════
+  # GRUPO 3 — Health del stack (containers down)
+  # ══════════════════════════════════════════════════════════════════════
+  - name: service-health
+    interval: 30s
+    rules:
+      - alert: ServiceDown
+        expr: up{job=~"otel-collector|api-gateway|tutor-service|ctr-service|classifier-service"} == 0
+        for: 2m
+        labels:
+          severity: critical
+          team: platform
+        annotations:
+          summary: "Servicio {{ $labels.job }} caido (>2 min)"
+          description: |
+            El healthcheck de Prometheus contra {{ $labels.job }} fallo
+            por mas de 2 min. Probablemente el container esta crasheado
+            o no arranca.
+
+            Diagnostico:
+              docker compose -f infrastructure/docker-compose.prod.yml ps {{ $labels.job }}
+              docker compose -f infrastructure/docker-compose.prod.yml logs --tail=100 {{ $labels.job }}
+
+  # ══════════════════════════════════════════════════════════════════════
+  # GRUPO 4 — k-anonymity (privacidad de cohortes pequenas)
+  # ══════════════════════════════════════════════════════════════════════
+  - name: privacy
+    interval: 5m
+    rules:
+      - alert: KAnonymityBypassDetected
+        expr: increase(analytics_quartiles_below_threshold_total[1h]) > 0
+        for: 1m
+        labels:
+          severity: critical
+          team: platform
+        annotations:
+          summary: "Endpoint devolvio cuartiles con N < 5"
+          description: |
+            Se detecto al menos una respuesta de endpoint de cuartiles
+            que viola k-anonymity (N < MIN_STUDENTS_FOR_QUARTILES=5).
+            Esto es regresion de la invariante ADR-022/RN-131. Auditar
+            urgente — datos del piloto podrian estar exponiendo
+            estudiantes en cohortes chicas.

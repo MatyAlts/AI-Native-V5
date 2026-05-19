@@ -1,0 +1,458 @@
+# Infraestructura prod-like para piloto-2 ampliado UNSL.
+#
+# DIFERENCIAS CON dev:
+#   - Credenciales via ${VAR} desde .env.prod (NO hardcoded admin/admin)
+#   - Los 10 servicios Python corren en containers (build .) — no en host
+#   - Solo api-gateway, Grafana y Keycloak admin exponen puertos al host
+#   - Red interna platform-prod aislada
+#   - dev_trust_headers=false por contrato (api-gateway exige JWT real)
+#   - integrity-attestation-service NO está acá (vive en VPS UNSL aparte, ADR-021)
+#
+# Uso:
+#   cp infrastructure/.env.prod.example infrastructure/.env.prod
+#   # editar .env.prod con secrets reales
+#   docker compose -f infrastructure/docker-compose.prod.yml --env-file infrastructure/.env.prod up -d
+#
+# Validar:
+#   bash scripts/check-health.sh
+#   make test-rls
+#
+# Levantar solo deps (postgres + redis + keycloak) para tests:
+#   docker compose -f infrastructure/docker-compose.prod.yml up -d postgres redis keycloak minio
+#
+# Ver docs/VPS-DEPLOY.md para guia completa de bootstrap + troubleshooting.
+
+name: platform-prod
+
+x-service-defaults: &service-defaults
+  restart: unless-stopped
+  networks:
+    - default
+  environment:
+    LOG_LEVEL: ${LOG_LEVEL:-info}
+    LOG_FORMAT: json
+    OTEL_EXPORTER_OTLP_ENDPOINT: http://otel-collector:4317
+    OTEL_SERVICE_NAME_PREFIX: platform
+
+services:
+  # ════════════════════════════════════════════════════════════════════
+  # CAPA DE INFRA — bases, mensajeria, storage, observabilidad
+  # ════════════════════════════════════════════════════════════════════
+
+  postgres:
+    image: pgvector/pgvector:pg16
+    container_name: platform-prod-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD requerido}
+      POSTGRES_DB: postgres
+    volumes:
+      - pg_data:/var/lib/postgresql/data
+      - ./postgres/init-dbs.sql:/docker-entrypoint-initdb.d/01-init-dbs.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    networks:
+      - default
+    # Sin ports exposes — solo accesible desde la red interna.
+
+  keycloak-db:
+    image: postgres:16-alpine
+    container_name: platform-prod-keycloak-db
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: keycloak
+      POSTGRES_USER: keycloak
+      POSTGRES_PASSWORD: ${KEYCLOAK_DB_PASSWORD:?KEYCLOAK_DB_PASSWORD requerido}
+    volumes:
+      - kc_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U keycloak"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    networks:
+      - default
+
+  keycloak:
+    image: quay.io/keycloak/keycloak:25.0
+    container_name: platform-prod-keycloak
+    restart: unless-stopped
+    command:
+      - start
+      - --import-realm
+      - --optimized
+      - --hostname-strict=false
+    environment:
+      KC_DB: postgres
+      KC_DB_URL: jdbc:postgresql://keycloak-db:5432/keycloak
+      KC_DB_USERNAME: keycloak
+      KC_DB_PASSWORD: ${KEYCLOAK_DB_PASSWORD:?KEYCLOAK_DB_PASSWORD requerido}
+      KEYCLOAK_ADMIN: ${KEYCLOAK_ADMIN_USER:?KEYCLOAK_ADMIN_USER requerido}
+      KEYCLOAK_ADMIN_PASSWORD: ${KEYCLOAK_ADMIN_PASSWORD:?KEYCLOAK_ADMIN_PASSWORD requerido}
+      KC_HOSTNAME: ${KEYCLOAK_HOSTNAME:-localhost}
+      KC_HTTP_ENABLED: "true"
+      KC_HEALTH_ENABLED: "true"
+      KC_PROXY_HEADERS: xforwarded
+    volumes:
+      - ./keycloak/realm-templates:/opt/keycloak/data/import:ro
+    ports:
+      # Expuesto al host solo si vas a configurar realms desde admin UI.
+      # En VPS detras de TLS reverse-proxy, considerar quitar el bind externo.
+      - "${KEYCLOAK_BIND:-127.0.0.1:8180}:8080"
+    depends_on:
+      keycloak-db:
+        condition: service_healthy
+    networks:
+      - default
+
+  redis:
+    image: redis:7-alpine
+    container_name: platform-prod-redis
+    restart: unless-stopped
+    command: >
+      redis-server
+      --appendonly yes
+      --maxmemory ${REDIS_MAXMEMORY:-2gb}
+      --maxmemory-policy noeviction
+      --requirepass ${REDIS_PASSWORD:?REDIS_PASSWORD requerido}
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "-a", "${REDIS_PASSWORD}", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+    networks:
+      - default
+
+  minio:
+    image: minio/minio:RELEASE.2025-09-07T16-13-09Z
+    container_name: platform-prod-minio
+    restart: unless-stopped
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER:?MINIO_ROOT_USER requerido}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:?MINIO_ROOT_PASSWORD requerido}
+    volumes:
+      - minio_data:/data
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - default
+    # Sin ports exposes — content-service accede por la red interna.
+
+  # ── Observabilidad ────────────────────────────────────────────────
+
+  otel-collector:
+    image: otel/opentelemetry-collector-contrib:0.150.1
+    container_name: platform-prod-otel-collector
+    restart: unless-stopped
+    command: ["--config=/etc/otel-collector-config.yaml"]
+    volumes:
+      - ./observability/otel-collector-config.yaml:/etc/otel-collector-config.yaml:ro
+    depends_on:
+      - jaeger
+      - prometheus
+      - loki
+    networks:
+      - default
+
+  jaeger:
+    image: jaegertracing/all-in-one:1.62.0
+    container_name: platform-prod-jaeger
+    restart: unless-stopped
+    environment:
+      COLLECTOR_OTLP_ENABLED: "true"
+    networks:
+      - default
+    # Sin ports exposes. Para acceder al UI usar SSH tunnel:
+    # ssh -L 16686:localhost:16686 vps-unsl
+
+  prometheus:
+    image: prom/prometheus:v2.55.0
+    container_name: platform-prod-prometheus
+    restart: unless-stopped
+    command:
+      - "--config.file=/etc/prometheus/prometheus.yml"
+      - "--storage.tsdb.retention.time=90d"
+      - "--web.enable-lifecycle"
+    volumes:
+      - ./observability/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - ./observability/alerts:/etc/prometheus/alerts:ro
+      - prom_data:/prometheus
+    networks:
+      - default
+
+  alertmanager:
+    image: prom/alertmanager:v0.28.0
+    container_name: platform-prod-alertmanager
+    restart: unless-stopped
+    command:
+      - "--config.file=/etc/alertmanager/alertmanager.yml"
+      - "--storage.path=/alertmanager"
+    volumes:
+      - ./observability/alertmanager.yml:/etc/alertmanager/alertmanager.yml:ro
+      - alertmanager_data:/alertmanager
+    networks:
+      - default
+
+  loki:
+    image: grafana/loki:3.7.1
+    container_name: platform-prod-loki
+    restart: unless-stopped
+    command: -config.file=/etc/loki/local-config.yaml
+    networks:
+      - default
+
+  grafana:
+    image: grafana/grafana:11.3.0
+    container_name: platform-prod-grafana
+    restart: unless-stopped
+    environment:
+      GF_SECURITY_ADMIN_USER: ${GRAFANA_ADMIN_USER:?GRAFANA_ADMIN_USER requerido}
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD:?GRAFANA_ADMIN_PASSWORD requerido}
+      GF_USERS_ALLOW_SIGN_UP: "false"
+      GF_SERVER_ROOT_URL: ${GRAFANA_ROOT_URL:-http://localhost:3000}
+    volumes:
+      - ./grafana/provisioning/datasources:/etc/grafana/provisioning/datasources:ro
+      - ./grafana/provisioning/dashboards:/etc/grafana/provisioning/dashboards:ro
+      - grafana_data:/var/lib/grafana
+    ports:
+      - "${GRAFANA_BIND:-127.0.0.1:3000}:3000"
+    depends_on:
+      - prometheus
+      - loki
+      - jaeger
+    networks:
+      - default
+
+  # ════════════════════════════════════════════════════════════════════
+  # CAPA DE APLICACION — 10 servicios Python
+  # integrity-attestation-service NO esta aca (vive en VPS UNSL aparte, ADR-021)
+  # ════════════════════════════════════════════════════════════════════
+
+  api-gateway:
+    <<: *service-defaults
+    container_name: platform-prod-api-gateway
+    build:
+      context: ..
+      dockerfile: apps/api-gateway/Dockerfile
+    environment:
+      LOG_LEVEL: ${LOG_LEVEL:-info}
+      LOG_FORMAT: json
+      OTEL_EXPORTER_OTLP_ENDPOINT: http://otel-collector:4317
+      OTEL_SERVICE_NAME_PREFIX: platform
+      # SAFETY: dev_trust_headers MUST be false en prod.
+      DEV_TRUST_HEADERS: "false"
+      JWT_ISSUER: ${JWT_ISSUER:?JWT_ISSUER requerido para prod}
+      JWT_AUDIENCE: ${JWT_AUDIENCE:-platform-backend}
+      JWT_JWKS_URI: ${JWT_JWKS_URI:?JWT_JWKS_URI requerido para prod}
+      CORS_ORIGINS: ${CORS_ORIGINS:?CORS_ORIGINS requerido, lista separada por coma}
+      RATE_LIMIT_REDIS_URL: redis://:${REDIS_PASSWORD}@redis:6379/4
+      RATE_LIMIT_ENABLED: "true"
+      # Service discovery (red interna)
+      ACADEMIC_SERVICE_URL: http://academic-service:8002
+      EVALUATION_SERVICE_URL: http://evaluation-service:8004
+      ANALYTICS_SERVICE_URL: http://analytics-service:8005
+      TUTOR_SERVICE_URL: http://tutor-service:8006
+      CTR_SERVICE_URL: http://ctr-service:8007
+      CLASSIFIER_SERVICE_URL: http://classifier-service:8008
+      CONTENT_SERVICE_URL: http://content-service:8009
+      GOVERNANCE_SERVICE_URL: http://governance-service:8010
+      AI_GATEWAY_URL: http://ai-gateway:8011
+    ports:
+      - "${API_GATEWAY_BIND:-0.0.0.0:8000}:8000"
+    depends_on:
+      - redis
+      - keycloak
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health/ready"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+
+  academic-service:
+    <<: *service-defaults
+    container_name: platform-prod-academic-service
+    build:
+      context: ..
+      dockerfile: apps/academic-service/Dockerfile
+    environment:
+      LOG_LEVEL: ${LOG_LEVEL:-info}
+      LOG_FORMAT: json
+      OTEL_EXPORTER_OTLP_ENDPOINT: http://otel-collector:4317
+      OTEL_SERVICE_NAME_PREFIX: platform
+      ACADEMIC_DB_URL: postgresql+asyncpg://academic_user:${ACADEMIC_DB_PASSWORD:?ACADEMIC_DB_PASSWORD requerido}@postgres:5432/academic_main
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  evaluation-service:
+    <<: *service-defaults
+    container_name: platform-prod-evaluation-service
+    build:
+      context: ..
+      dockerfile: apps/evaluation-service/Dockerfile
+    environment:
+      LOG_LEVEL: ${LOG_LEVEL:-info}
+      LOG_FORMAT: json
+      OTEL_EXPORTER_OTLP_ENDPOINT: http://otel-collector:4317
+      OTEL_SERVICE_NAME_PREFIX: platform
+      ACADEMIC_DB_URL: postgresql+asyncpg://academic_user:${ACADEMIC_DB_PASSWORD}@postgres:5432/academic_main
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  analytics-service:
+    <<: *service-defaults
+    container_name: platform-prod-analytics-service
+    build:
+      context: ..
+      dockerfile: apps/analytics-service/Dockerfile
+    environment:
+      LOG_LEVEL: ${LOG_LEVEL:-info}
+      LOG_FORMAT: json
+      OTEL_EXPORTER_OTLP_ENDPOINT: http://otel-collector:4317
+      OTEL_SERVICE_NAME_PREFIX: platform
+      ACADEMIC_DB_URL: postgresql+asyncpg://academic_user:${ACADEMIC_DB_PASSWORD}@postgres:5432/academic_main
+      CTR_STORE_URL: postgresql+asyncpg://ctr_user:${CTR_DB_PASSWORD:?CTR_DB_PASSWORD requerido}@postgres:5432/ctr_store
+      CLASSIFIER_DB_URL: postgresql+asyncpg://classifier_user:${CLASSIFIER_DB_PASSWORD:?CLASSIFIER_DB_PASSWORD requerido}@postgres:5432/classifier_db
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  tutor-service:
+    <<: *service-defaults
+    container_name: platform-prod-tutor-service
+    build:
+      context: ..
+      dockerfile: apps/tutor-service/Dockerfile
+    environment:
+      LOG_LEVEL: ${LOG_LEVEL:-info}
+      LOG_FORMAT: json
+      OTEL_EXPORTER_OTLP_ENDPOINT: http://otel-collector:4317
+      OTEL_SERVICE_NAME_PREFIX: platform
+      REDIS_URL: redis://:${REDIS_PASSWORD}@redis:6379/0
+      AI_GATEWAY_URL: http://ai-gateway:8011
+      ACADEMIC_SERVICE_URL: http://academic-service:8002
+      CTR_SERVICE_URL: http://ctr-service:8007
+      CONTENT_SERVICE_URL: http://content-service:8009
+      GOVERNANCE_SERVICE_URL: http://governance-service:8010
+      PROMPTS_REPO_PATH: /var/lib/platform/prompts
+    volumes:
+      - ./prompts:/var/lib/platform/prompts:ro
+    depends_on:
+      - redis
+
+  ctr-service:
+    <<: *service-defaults
+    container_name: platform-prod-ctr-service
+    build:
+      context: ..
+      dockerfile: apps/ctr-service/Dockerfile
+    environment:
+      LOG_LEVEL: ${LOG_LEVEL:-info}
+      LOG_FORMAT: json
+      OTEL_EXPORTER_OTLP_ENDPOINT: http://otel-collector:4317
+      OTEL_SERVICE_NAME_PREFIX: platform
+      CTR_STORE_URL: postgresql+asyncpg://ctr_user:${CTR_DB_PASSWORD}@postgres:5432/ctr_store
+      REDIS_URL: redis://:${REDIS_PASSWORD}@redis:6379/0
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  classifier-service:
+    <<: *service-defaults
+    container_name: platform-prod-classifier-service
+    build:
+      context: ..
+      dockerfile: apps/classifier-service/Dockerfile
+    environment:
+      LOG_LEVEL: ${LOG_LEVEL:-info}
+      LOG_FORMAT: json
+      OTEL_EXPORTER_OTLP_ENDPOINT: http://otel-collector:4317
+      OTEL_SERVICE_NAME_PREFIX: platform
+      CLASSIFIER_DB_URL: postgresql+asyncpg://classifier_user:${CLASSIFIER_DB_PASSWORD}@postgres:5432/classifier_db
+      CTR_STORE_URL: postgresql+asyncpg://ctr_user:${CTR_DB_PASSWORD}@postgres:5432/ctr_store
+      REDIS_URL: redis://:${REDIS_PASSWORD}@redis:6379/0
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  content-service:
+    <<: *service-defaults
+    container_name: platform-prod-content-service
+    build:
+      context: ..
+      dockerfile: apps/content-service/Dockerfile
+    environment:
+      LOG_LEVEL: ${LOG_LEVEL:-info}
+      LOG_FORMAT: json
+      OTEL_EXPORTER_OTLP_ENDPOINT: http://otel-collector:4317
+      OTEL_SERVICE_NAME_PREFIX: platform
+      CONTENT_DB_URL: postgresql+asyncpg://content_user:${CONTENT_DB_PASSWORD:?CONTENT_DB_PASSWORD requerido}@postgres:5432/content_db
+      MINIO_ENDPOINT: minio:9000
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD}
+      AI_GATEWAY_URL: http://ai-gateway:8011
+    depends_on:
+      postgres:
+        condition: service_healthy
+      minio:
+        condition: service_healthy
+
+  governance-service:
+    <<: *service-defaults
+    container_name: platform-prod-governance-service
+    build:
+      context: ..
+      dockerfile: apps/governance-service/Dockerfile
+    environment:
+      LOG_LEVEL: ${LOG_LEVEL:-info}
+      LOG_FORMAT: json
+      OTEL_EXPORTER_OTLP_ENDPOINT: http://otel-collector:4317
+      OTEL_SERVICE_NAME_PREFIX: platform
+      PROMPTS_REPO_PATH: /var/lib/platform/prompts
+    volumes:
+      - ./prompts:/var/lib/platform/prompts:ro
+
+  ai-gateway:
+    <<: *service-defaults
+    container_name: platform-prod-ai-gateway
+    build:
+      context: ..
+      dockerfile: apps/ai-gateway/Dockerfile
+    environment:
+      LOG_LEVEL: ${LOG_LEVEL:-info}
+      LOG_FORMAT: json
+      OTEL_EXPORTER_OTLP_ENDPOINT: http://otel-collector:4317
+      OTEL_SERVICE_NAME_PREFIX: platform
+      # BYOK master key — encripta BYOKKey.encrypted_value (AES-256-GCM).
+      # Generar con: openssl rand -base64 32. NUNCA loggear, NUNCA versionar.
+      BYOK_MASTER_KEY: ${BYOK_MASTER_KEY:?BYOK_MASTER_KEY requerido (32 bytes base64)}
+      ACADEMIC_DB_URL: postgresql+asyncpg://academic_user:${ACADEMIC_DB_PASSWORD}@postgres:5432/academic_main
+      REDIS_URL: redis://:${REDIS_PASSWORD}@redis:6379/0
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+volumes:
+  pg_data:
+  kc_data:
+  redis_data:
+  minio_data:
+  prom_data:
+  alertmanager_data:
+  grafana_data:
+
+networks:
+  default:
+    name: platform-prod

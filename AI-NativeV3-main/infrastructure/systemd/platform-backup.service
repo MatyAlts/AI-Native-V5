@@ -1,0 +1,38 @@
+[Unit]
+Description=AI-Native N4 — backup diario de las 4 bases logicas + attestations Ed25519
+Documentation=file:///opt/platform/ai-native-n4/AI-NativeV3-main/docs/VPS-DEPLOY.md
+Wants=network-online.target
+After=network-online.target
+
+[Service]
+Type=oneshot
+User=ops
+Group=ops
+WorkingDirectory=/opt/platform/ai-native-n4/AI-NativeV3-main
+
+# Variables — ajustar segun el .env.prod del despliegue
+Environment=PG_HOST=127.0.0.1
+Environment=PG_PORT=5432
+Environment=PG_BACKUP_USER=backup_user
+Environment=ATTESTATIONS_DIR=/var/lib/platform/attestations
+EnvironmentFile=/etc/platform/backup.env
+
+# El script crea /var/backups/platform/YYYY-MM-DD/ y guarda ahi.
+ExecStart=/bin/bash /opt/platform/ai-native-n4/AI-NativeV3-main/scripts/backup.sh
+
+# Retencion: mantener 30 dias de backups, borrar mas viejos
+ExecStartPost=/usr/bin/find /var/backups/platform -mindepth 1 -maxdepth 1 -type d -mtime +30 -exec rm -rf {} +
+
+# Si falla, journald lo registra y systemd notifica via OnFailure
+StandardOutput=journal
+StandardError=journal
+
+# Si el dump tarda mas de 30 min, kill (algo anda muy mal con la base)
+TimeoutStartSec=1800
+
+# Limites de recursos para no afectar al stack en vivo
+Nice=10
+IOSchedulingClass=idle
+
+[Install]
+WantedBy=multi-user.target

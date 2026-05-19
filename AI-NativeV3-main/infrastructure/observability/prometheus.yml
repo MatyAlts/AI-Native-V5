@@ -2,6 +2,20 @@ global:
   scrape_interval: 15s
   evaluation_interval: 15s
 
+# ── Alertas (piloto-2 ampliado UNSL) ───────────────────────────────────
+# Carga las reglas desde alerts/*.yml y envia a alertmanager standalone.
+# Solo activo cuando alertmanager existe (docker-compose.prod.yml lo levanta).
+# En dev compose el bloque alertmanagers no resuelve y Prometheus arranca igual.
+rule_files:
+  - "alerts/*.yml"
+
+alerting:
+  alertmanagers:
+    - static_configs:
+        - targets:
+            # alertmanager corre en la misma red Docker (platform-prod)
+            - alertmanager:9093
+
 scrape_configs:
   # El Collector expone las métricas OTLP convertidas a Prometheus en :8889
   - job_name: "otel-collector"

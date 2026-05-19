@@ -1,0 +1,101 @@
+# Alertmanager standalone para piloto-2 ampliado UNSL.
+#
+# Reemplaza al PrometheusOperator-Alertmanager de K8s. Recibe las alertas de
+# Prometheus y notifica por email al equipo tecnico.
+#
+# Las variables ${ALERTS_*} vienen de infrastructure/.env.prod via Docker Compose.
+# Si necesitas Slack/Discord/webhook custom, agregar otro receiver.
+
+global:
+  # Tiempo despues del cual una alerta se resuelve si no se reenvia.
+  resolve_timeout: 5m
+
+  # SMTP relay institucional (UNSL). Si el SMTP requiere auth, definir
+  # ALERTS_SMTP_USER y ALERTS_SMTP_PASSWORD en .env.prod.
+  smtp_smarthost: '${ALERTS_SMTP_HOST}:${ALERTS_SMTP_PORT}'
+  smtp_from: '${ALERTS_SMTP_FROM}'
+  # smtp_auth_username: '${ALERTS_SMTP_USER}'
+  # smtp_auth_password: '${ALERTS_SMTP_PASSWORD}'
+  smtp_require_tls: true
+
+# ──────────────────────────────────────────────────────────────────────
+# Routing
+# ──────────────────────────────────────────────────────────────────────
+route:
+  # Agrupar por alertname + tenant si esta disponible, para no spammear
+  # con multiples alertas del mismo incidente.
+  group_by: ['alertname', 'tenant_id']
+
+  # Esperar 30s desde la primera alerta antes de enviar (permite agrupar
+  # alertas que llegan casi simultaneamente).
+  group_wait: 30s
+
+  # Despues de un grupo enviado, esperar 5min antes de enviar otro del mismo grupo.
+  group_interval: 5m
+
+  # Renotificar cada 4h si la alerta sigue firing.
+  repeat_interval: 4h
+
+  # Default receiver — todo lo no clasificado va aca.
+  receiver: equipo-tecnico-email
+
+  # Override por severidad — critical va a un canal mas urgente (si lo configuras).
+  routes:
+    - matchers:
+        - severity = "critical"
+      receiver: equipo-tecnico-email-urgente
+      repeat_interval: 1h  # renotificar critical cada hora
+
+# ──────────────────────────────────────────────────────────────────────
+# Receivers
+# ──────────────────────────────────────────────────────────────────────
+receivers:
+  - name: equipo-tecnico-email
+    email_configs:
+      - to: '${ALERTS_EMAIL_TO}'
+        send_resolved: true
+        headers:
+          Subject: '[AI-Native N4] {{ .GroupLabels.alertname }} ({{ .Status }})'
+        html: |
+          <h2>{{ .GroupLabels.alertname }}</h2>
+          <p><b>Estado:</b> {{ .Status }}</p>
+          <p><b>Severidad:</b> {{ if .CommonLabels.severity }}{{ .CommonLabels.severity }}{{ else }}desconocida{{ end }}</p>
+          <hr>
+          {{ range .Alerts }}
+            <h3>{{ .Annotations.summary }}</h3>
+            <pre>{{ .Annotations.description }}</pre>
+            <p><b>Labels:</b> {{ range .Labels.SortedPairs }}{{ .Name }}={{ .Value }} {{ end }}</p>
+            <p><b>Inicio:</b> {{ .StartsAt }}</p>
+          {{ end }}
+          <hr>
+          <p>Runbook: <code>docs/pilot/runbook.md</code></p>
+
+  - name: equipo-tecnico-email-urgente
+    email_configs:
+      - to: '${ALERTS_EMAIL_TO}'
+        send_resolved: true
+        headers:
+          Subject: '[URGENTE - AI-Native N4] {{ .GroupLabels.alertname }}'
+          X-Priority: '1'
+        html: |
+          <h2 style="color: red;">URGENTE: {{ .GroupLabels.alertname }}</h2>
+          <p><b>Estado:</b> {{ .Status }}</p>
+          <hr>
+          {{ range .Alerts }}
+            <h3>{{ .Annotations.summary }}</h3>
+            <pre>{{ .Annotations.description }}</pre>
+          {{ end }}
+          <hr>
+          <p><b>Accion requerida:</b> consultar <code>docs/pilot/runbook.md</code> seccion correspondiente.</p>
+          <p><b>Contactos de escalamiento:</b> ver tabla al final del runbook.</p>
+
+# ──────────────────────────────────────────────────────────────────────
+# Inhibition rules — evitar spam cuando una alerta superior cubre otra
+# ──────────────────────────────────────────────────────────────────────
+inhibit_rules:
+  # Si el servicio entero esta caido, no notificar tambien sobre latencia alta
+  - source_matchers:
+      - alertname = "ServiceDown"
+    target_matchers:
+      - severity =~ "warning|critical"
+    equal: ['job']
