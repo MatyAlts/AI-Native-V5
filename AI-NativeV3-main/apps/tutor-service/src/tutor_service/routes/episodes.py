@@ -618,6 +618,128 @@ async def emit_anotacion_creada(
     return {"status": "accepted", "seq": str(seq)}
 
 
+# ── Integridad: foco y clipboard ────────────────────────────────────────
+
+
+class PestanaPerdidaRequest(BaseModel):
+    """Disparada por el frontend cuando el alumno cambia de pestaña/blur."""
+
+    trigger: Literal["visibilitychange", "blur"] = Field(
+        description="Evento DOM que disparo la deteccion"
+    )
+
+
+@router.post(
+    "/{episode_id}/events/pestana_perdida",
+    status_code=status.HTTP_202_ACCEPTED,
+)
+async def emit_pestana_perdida(
+    episode_id: UUID,
+    req: PestanaPerdidaRequest,
+    user: User = Depends(require_role("estudiante", "docente", "docente_admin", "superadmin")),
+) -> dict[str, str]:
+    """Emite evento pestana_perdida al CTR.
+
+    El frontend lo dispara con `document.visibilitychange` o `window.blur`.
+    NO se puede bloquear desde browser — esto es solo registro side-channel.
+    El worker de abandono cierra el episodio si supera el umbral configurado.
+    """
+    tutor = _get_tutor()
+    try:
+        seq = await tutor.record_pestana_perdida(
+            episode_id=episode_id,
+            user_id=user.id,
+            trigger=req.trigger,
+        )
+    except ValueError as e:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(e))
+    return {"status": "accepted", "seq": str(seq)}
+
+
+class PestanaRecuperadaRequest(BaseModel):
+    tiempo_fuera_segundos: float = Field(ge=0, le=86400)
+
+
+@router.post(
+    "/{episode_id}/events/pestana_recuperada",
+    status_code=status.HTTP_202_ACCEPTED,
+)
+async def emit_pestana_recuperada(
+    episode_id: UUID,
+    req: PestanaRecuperadaRequest,
+    user: User = Depends(require_role("estudiante", "docente", "docente_admin", "superadmin")),
+) -> dict[str, str]:
+    """Emite evento pestana_recuperada al CTR."""
+    tutor = _get_tutor()
+    try:
+        seq = await tutor.record_pestana_recuperada(
+            episode_id=episode_id,
+            user_id=user.id,
+            tiempo_fuera_segundos=req.tiempo_fuera_segundos,
+        )
+    except ValueError as e:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(e))
+    return {"status": "accepted", "seq": str(seq)}
+
+
+class CopiaIntentadaRequest(BaseModel):
+    seleccion_chars: int = Field(ge=0)
+    metodo: Literal["shortcut", "menu_contextual"] = "shortcut"
+
+
+@router.post(
+    "/{episode_id}/events/copia_intentada",
+    status_code=status.HTTP_202_ACCEPTED,
+)
+async def emit_copia_intentada(
+    episode_id: UUID,
+    req: CopiaIntentadaRequest,
+    user: User = Depends(require_role("estudiante", "docente", "docente_admin", "superadmin")),
+) -> dict[str, str]:
+    """Emite evento copia_intentada al CTR (la UI bloquea la accion)."""
+    tutor = _get_tutor()
+    try:
+        seq = await tutor.record_copia_intentada(
+            episode_id=episode_id,
+            user_id=user.id,
+            seleccion_chars=req.seleccion_chars,
+            metodo=req.metodo,
+        )
+    except ValueError as e:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(e))
+    return {"status": "accepted", "seq": str(seq)}
+
+
+class PegaIntentadaRequest(BaseModel):
+    contenido_longitud: int = Field(ge=0)
+    contenido_preview: str = Field(max_length=200)
+    metodo: Literal["shortcut", "menu_contextual", "drag_drop"] = "shortcut"
+
+
+@router.post(
+    "/{episode_id}/events/pega_intentada",
+    status_code=status.HTTP_202_ACCEPTED,
+)
+async def emit_pega_intentada(
+    episode_id: UUID,
+    req: PegaIntentadaRequest,
+    user: User = Depends(require_role("estudiante", "docente", "docente_admin", "superadmin")),
+) -> dict[str, str]:
+    """Emite evento pega_intentada al CTR (la UI bloquea la accion)."""
+    tutor = _get_tutor()
+    try:
+        seq = await tutor.record_pega_intentada(
+            episode_id=episode_id,
+            user_id=user.id,
+            contenido_longitud=req.contenido_longitud,
+            contenido_preview=req.contenido_preview,
+            metodo=req.metodo,
+        )
+    except ValueError as e:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(e))
+    return {"status": "accepted", "seq": str(seq)}
+
+
 class RunTestsRequest(BaseModel):
     """Conteos de la corrida de tests Pyodide (ADR-033/034, Sec 9 epic).
 

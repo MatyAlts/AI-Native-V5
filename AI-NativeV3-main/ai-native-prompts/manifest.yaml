@@ -24,7 +24,7 @@
 #   - v1.0.0 sigue accesible en disco para reproducibilidad historica del piloto.
 active:
   default:
-    tutor: v1.1.0
+    tutor: v1.2.0
     classifier: v1.0.0
     reflection: v1.0.0
     tp_generator: v1.0.0

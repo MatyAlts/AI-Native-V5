@@ -395,3 +395,70 @@ class TpCalificada(CTRBaseEvent):
 
     event_type: Literal["tp_calificada"] = "tp_calificada"
     payload: TpCalificadaPayload
+
+
+# ── Integridad del episodio: foco y clipboard ──────────────────────────
+# Eventos que registran intentos del estudiante de evadir el contexto del
+# episodio (cambio de pestaña, copy/paste). Conviven con los guardrails
+# de prompt (ADR-019) — todos como evidencia side-channel para auditoría
+# academica. El cambio de pestaña SOLO se detecta (los browsers no
+# permiten bloquearlo); copy/paste si se bloquean en Monaco.
+
+
+class PestanaPerdidaPayload(BaseModel):
+    """El alumno cambio de pestaña, ventana o minimizo el browser."""
+
+    trigger: Literal["visibilitychange", "blur"] = Field(
+        description="Evento DOM que disparo la deteccion"
+    )
+
+
+class PestanaPerdida(CTRBaseEvent):
+    event_type: Literal["pestana_perdida"] = "pestana_perdida"
+    payload: PestanaPerdidaPayload
+
+
+class PestanaRecuperadaPayload(BaseModel):
+    """El alumno volvio a la pestaña del episodio."""
+
+    tiempo_fuera_segundos: float = Field(
+        ge=0,
+        description="Segundos transcurridos desde la ultima pestana_perdida",
+    )
+
+
+class PestanaRecuperada(CTRBaseEvent):
+    event_type: Literal["pestana_recuperada"] = "pestana_recuperada"
+    payload: PestanaRecuperadaPayload
+
+
+class CopiaIntentadaPayload(BaseModel):
+    """Intento de copiar contenido del editor Monaco (bloqueado por la UI)."""
+
+    seleccion_chars: int = Field(ge=0, description="Caracteres seleccionados al intentar copiar")
+    metodo: Literal["shortcut", "menu_contextual"] = Field(
+        description="Como dispararon la accion"
+    )
+
+
+class CopiaIntentada(CTRBaseEvent):
+    event_type: Literal["copia_intentada"] = "copia_intentada"
+    payload: CopiaIntentadaPayload
+
+
+class PegaIntentadaPayload(BaseModel):
+    """Intento de pegar contenido en el editor Monaco (bloqueado por la UI)."""
+
+    contenido_longitud: int = Field(ge=0, description="Longitud en chars del contenido pegado")
+    contenido_preview: str = Field(
+        max_length=200,
+        description="Primeros 200 chars del clipboard (truncado) para audit",
+    )
+    metodo: Literal["shortcut", "menu_contextual", "drag_drop"] = Field(
+        description="Como dispararon la accion"
+    )
+
+
+class PegaIntentada(CTRBaseEvent):
+    event_type: Literal["pega_intentada"] = "pega_intentada"
+    payload: PegaIntentadaPayload

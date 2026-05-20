@@ -26,8 +26,8 @@ import { useEffect, useState } from "react"
 const LS_AUDIT_HASH_KEY = "audit-classifier-hash"
 const LS_AUDIT_CHAIN_KEY = "audit-chain-state"
 
-const PROMPT_VERSION = "tutor/v1.0.0"
-const LABELER_VERSION = "1.1.0"
+const PROMPT_VERSION = "tutor/v1.2.0"
+const LABELER_VERSION = "1.2.0"
 
 interface ChainState {
   events: number

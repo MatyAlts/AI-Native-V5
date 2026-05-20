@@ -33,6 +33,7 @@ from ai_gateway.providers.base import (
     BaseProvider,
     CompletionRequest,
     MistralProvider,
+    OpenAIProvider,
     get_provider,
 )
 from ai_gateway.services.budget_and_cache import BudgetTracker, ResponseCache
@@ -146,6 +147,8 @@ def _make_provider(provider_name: str, api_key: str) -> BaseProvider:
         return AnthropicProvider(api_key=api_key)
     if provider_name == "mistral":
         return MistralProvider(api_key=api_key)
+    if provider_name == "openai":
+        return OpenAIProvider(api_key=api_key)
     return AnthropicProvider(api_key=api_key)
 
 

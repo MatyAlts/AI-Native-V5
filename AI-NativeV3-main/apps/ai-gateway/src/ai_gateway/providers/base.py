@@ -212,6 +212,95 @@ class MistralProvider(BaseProvider):
                 yield chunk
 
 
+class OpenAIProvider(BaseProvider):
+    """Provider de OpenAI (gpt-4o, gpt-4o-mini, etc.).
+
+    Soporta `OPENAI_BASE_URL` env var para apuntar a un endpoint compatible
+    distinto del oficial (ej. copilot-api proxy local, LM Studio, Ollama,
+    Azure OpenAI). Cuando se usa un proxy, la `api_key` puede ser cualquier
+    string no-vacio (el proxy no la valida).
+    """
+
+    name = "openai"
+
+    PRICING = {
+        # Precios oficiales OpenAI a 2026-05 (en USD por 1M tokens).
+        # Si el provider corre via copilot-api u otro proxy, los costos son
+        # contables pero no reales — la cuota la consume Copilot, no esta key.
+        "gpt-4o": {"input": 2.5, "output": 10.0},
+        "gpt-4o-mini": {"input": 0.15, "output": 0.6},
+        "gpt-4-turbo": {"input": 10.0, "output": 30.0},
+        "gpt-3.5-turbo": {"input": 0.5, "output": 1.5},
+        "o1-mini": {"input": 3.0, "output": 12.0},
+        "o1-preview": {"input": 15.0, "output": 60.0},
+    }
+
+    def __init__(self, api_key: str | None = None) -> None:
+        self.api_key = api_key or os.environ.get("OPENAI_API_KEY", "")
+        # OPENAI_BASE_URL permite apuntar a un proxy compatible (copilot-api,
+        # LM Studio, Ollama, Azure). Default = endpoint oficial OpenAI.
+        self.base_url = os.environ.get("OPENAI_BASE_URL", "").strip() or None
+        self._client: Any = None
+
+    def _ensure_client(self) -> Any:
+        if self._client is None:
+            from openai import AsyncOpenAI
+
+            kwargs: dict[str, Any] = {"api_key": self.api_key or "sk-no-key-needed"}
+            if self.base_url:
+                kwargs["base_url"] = self.base_url
+            self._client = AsyncOpenAI(**kwargs)
+        return self._client
+
+    async def complete(self, request: CompletionRequest) -> CompletionResponse:
+        client = self._ensure_client()
+
+        kwargs: dict[str, Any] = {
+            "model": request.model,
+            "messages": request.messages,
+            "temperature": request.temperature,
+            "max_tokens": request.max_tokens,
+        }
+        if request.response_format:
+            kwargs["response_format"] = request.response_format
+
+        result = await client.chat.completions.create(**kwargs)
+
+        choice = result.choices[0]
+        content = choice.message.content or ""
+        input_tok = result.usage.prompt_tokens if result.usage else 0
+        output_tok = result.usage.completion_tokens if result.usage else 0
+        pricing = self.PRICING.get(request.model, {"input": 1.0, "output": 3.0})
+        cost = (input_tok * pricing["input"] + output_tok * pricing["output"]) / 1_000_000
+
+        return CompletionResponse(
+            content=content,
+            model=request.model,
+            provider="openai",
+            input_tokens=input_tok,
+            output_tokens=output_tok,
+            cost_usd=cost,
+        )
+
+    async def stream_complete(self, request: CompletionRequest) -> AsyncIterator[str]:
+        client = self._ensure_client()
+
+        stream = await client.chat.completions.create(
+            model=request.model,
+            messages=request.messages,
+            temperature=request.temperature,
+            max_tokens=request.max_tokens,
+            stream=True,
+        )
+
+        async for chunk in stream:
+            if not chunk.choices:
+                continue
+            delta = chunk.choices[0].delta
+            if delta and delta.content:
+                yield delta.content
+
+
 @lru_cache(maxsize=1)
 def get_provider(name: str = "") -> BaseProvider:
     """Factory de providers. name='mock' para tests.
@@ -243,6 +332,8 @@ def get_provider(name: str = "") -> BaseProvider:
         return AnthropicProvider()
     if which == "mistral":
         return MistralProvider()
+    if which == "openai":
+        return OpenAIProvider()
     if from_runtime_config:
         import logging
 

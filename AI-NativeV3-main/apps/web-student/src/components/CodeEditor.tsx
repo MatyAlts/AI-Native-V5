@@ -54,6 +54,18 @@ export interface CodeEditorProps {
     diffChars: number,
     origin: "student_typed" | "pasted_external",
   ) => void
+  /** Disparado cuando el alumno intenta pegar. La accion fue bloqueada
+   * por el editor — solo registrar en CTR + mostrar feedback. */
+  onPasteAttempt?: (payload: {
+    contenidoLongitud: number
+    contenidoPreview: string
+    metodo: "shortcut" | "menu_contextual" | "drag_drop"
+  }) => void
+  /** Disparado cuando el alumno intenta copiar. La accion fue bloqueada. */
+  onCopyAttempt?: (payload: {
+    seleccionChars: number
+    metodo: "shortcut" | "menu_contextual"
+  }) => void
   language?: "python" // en F6+ extendible a más lenguajes
 }
 
@@ -63,6 +75,8 @@ export function CodeEditor({
   initialCode = "# Escribí tu código Python acá\n\ndef factorial(n):\n    pass\n",
   onCodeExecuted,
   onEditDebounced,
+  onPasteAttempt,
+  onCopyAttempt,
   language = "python",
 }: CodeEditorProps): ReactNode {
   const editorContainerRef = useRef<HTMLDivElement>(null)
@@ -74,6 +88,22 @@ export function CodeEditor({
   const [error, setError] = useState<string | null>(null)
   const [loading, setLoading] = useState(true)
   const [running, setRunning] = useState(false)
+  // Toast naranja cuando el alumno intenta copiar/pegar; auto-oculta en 4s.
+  const [clipboardWarning, setClipboardWarning] = useState<string | null>(null)
+  // Refs estables para los callbacks de clipboard (evita re-mount del editor).
+  const onPasteAttemptRef = useRef<typeof onPasteAttempt>(onPasteAttempt)
+  const onCopyAttemptRef = useRef<typeof onCopyAttempt>(onCopyAttempt)
+  useEffect(() => {
+    onPasteAttemptRef.current = onPasteAttempt
+  }, [onPasteAttempt])
+  useEffect(() => {
+    onCopyAttemptRef.current = onCopyAttempt
+  }, [onCopyAttempt])
+
+  function flashClipboardWarning(message: string) {
+    setClipboardWarning(message)
+    window.setTimeout(() => setClipboardWarning(null), 4000)
+  }
 
   // Debounce de edicion_codigo: timeout pendiente + último snapshot emitido.
   // El delta se calcula como (len(snapshotActual) - len(snapshotEmitidoAnterior)),
@@ -123,6 +153,89 @@ export function CodeEditor({
         pasteSinceLastFlushRef.current = true
       })
 
+      // ── Bloqueo de clipboard (paste/copy/cut) ──────────────────────────
+      // Sobrescribir los keybindings nativos de Monaco. addCommand reemplaza
+      // el handler default. Codigos en https://microsoft.github.io/monaco-editor/
+      const ctrl = monaco.KeyMod.CtrlCmd
+      // Ctrl+V → paste bloqueado
+      editor.addCommand(ctrl | monaco.KeyCode.KeyV, () => {
+        onPasteAttemptRef.current?.({
+          contenidoLongitud: 0,
+          contenidoPreview: "",
+          metodo: "shortcut",
+        })
+        flashClipboardWarning("Pegar está bloqueado. Escribí el código vos mismo. Quedó registrado.")
+      })
+      // Ctrl+C → copy bloqueado
+      editor.addCommand(ctrl | monaco.KeyCode.KeyC, () => {
+        const seleccion = editor.getModel()?.getValueInRange(editor.getSelection()!) ?? ""
+        onCopyAttemptRef.current?.({
+          seleccionChars: seleccion.length,
+          metodo: "shortcut",
+        })
+        flashClipboardWarning("Copiar está bloqueado. Quedó registrado en la trazabilidad.")
+      })
+      // Ctrl+X → cut bloqueado (es copy + delete, lo tratamos como copy)
+      editor.addCommand(ctrl | monaco.KeyCode.KeyX, () => {
+        const seleccion = editor.getModel()?.getValueInRange(editor.getSelection()!) ?? ""
+        onCopyAttemptRef.current?.({
+          seleccionChars: seleccion.length,
+          metodo: "shortcut",
+        })
+        flashClipboardWarning("Cortar está bloqueado. Quedó registrado.")
+      })
+
+      // Listeners DOM para cubrir menu contextual y eventos no atrapados
+      // por addCommand (drag&drop, paste via clipboard API en algunos browsers).
+      const containerEl = editorContainerRef.current
+      if (containerEl) {
+        const onPasteDom = (ev: ClipboardEvent) => {
+          ev.preventDefault()
+          ev.stopPropagation()
+          const text = ev.clipboardData?.getData("text") ?? ""
+          onPasteAttemptRef.current?.({
+            contenidoLongitud: text.length,
+            contenidoPreview: text.slice(0, 200),
+            metodo: "menu_contextual",
+          })
+          flashClipboardWarning("Pegar está bloqueado. Quedó registrado en la trazabilidad.")
+        }
+        const onCopyDom = (ev: ClipboardEvent) => {
+          const sel = window.getSelection()?.toString() ?? ""
+          ev.preventDefault()
+          ev.stopPropagation()
+          onCopyAttemptRef.current?.({
+            seleccionChars: sel.length,
+            metodo: "menu_contextual",
+          })
+          flashClipboardWarning("Copiar está bloqueado. Quedó registrado.")
+        }
+        const onCutDom = (ev: ClipboardEvent) => {
+          ev.preventDefault()
+          ev.stopPropagation()
+          onCopyAttemptRef.current?.({
+            seleccionChars: 0,
+            metodo: "menu_contextual",
+          })
+          flashClipboardWarning("Cortar está bloqueado. Quedó registrado.")
+        }
+        const onContextMenu = (ev: MouseEvent) => {
+          // No bloqueamos el menu (Monaco lo necesita) — solo registramos
+          // que esta proximo a usarlo. Los listeners de paste/copy van a
+          // capturar la accion final.
+        }
+        containerEl.addEventListener("paste", onPasteDom, true)
+        containerEl.addEventListener("copy", onCopyDom, true)
+        containerEl.addEventListener("cut", onCutDom, true)
+        containerEl.addEventListener("contextmenu", onContextMenu)
+        ;(editor as unknown as { __clipboardListeners?: () => void }).__clipboardListeners = () => {
+          containerEl.removeEventListener("paste", onPasteDom, true)
+          containerEl.removeEventListener("copy", onCopyDom, true)
+          containerEl.removeEventListener("cut", onCutDom, true)
+          containerEl.removeEventListener("contextmenu", onContextMenu)
+        }
+      }
+
       editor.onDidChangeModelContent(() => {
         const value = editor.getValue()
         setCode(value)
@@ -160,6 +273,11 @@ export function CodeEditor({
         window.clearTimeout(editTimeoutRef.current)
         editTimeoutRef.current = null
       }
+      // Cleanup de los listeners DOM de clipboard (instalados en el effect).
+      const cleanup = (
+        editorRef.current as unknown as { __clipboardListeners?: () => void } | null
+      )?.__clipboardListeners
+      cleanup?.()
       editorRef.current?.dispose?.()
     }
   }, [language])
@@ -236,7 +354,7 @@ export function CodeEditor({
   }
 
   return (
-    <div className="flex flex-col h-full">
+    <div className="flex flex-col h-full relative">
       <div className="flex items-center justify-between border-b border-border-soft px-4 py-2">
         <h2 className="text-sm font-medium">Código ({language})</h2>
         <button
@@ -248,6 +366,17 @@ export function CodeEditor({
           {loading ? "Cargando Python..." : running ? "Ejecutando..." : "▶ Ejecutar"}
         </button>
       </div>
+
+      {/* Toast naranja cuando se intenta usar el clipboard (auto-oculta en 4s). */}
+      {clipboardWarning && (
+        <div
+          role="alert"
+          data-testid="clipboard-blocked-toast"
+          className="absolute top-12 left-1/2 -translate-x-1/2 z-20 bg-amber-500 text-amber-950 px-4 py-2 rounded-lg shadow-lg text-sm font-medium border border-amber-700"
+        >
+          🚫 {clipboardWarning}
+        </div>
+      )}
 
       <div ref={editorContainerRef} className="flex-1 min-h-[200px]" />
 

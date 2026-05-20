@@ -69,7 +69,7 @@ const STEP_DEFS: Array<Pick<Step, "key" | "label" | "detail">> = [
   {
     key: "tutor",
     label: "Tutor inicializando con prompt",
-    detail: "tutor/v1.0.0 (cargando contexto)",
+    detail: "tutor/v1.2.0 (cargando contexto)",
   },
 ]
 

@@ -25,6 +25,12 @@ SESSION_TTL = 6 * 3600  # 6 horas
 # El worker de abandono escanea con MATCH sobre este prefijo + "*".
 SESSION_KEY_PREFIX = "tutor:session:"
 
+# Distraction tracking: cuando el alumno pierde foco de la pestaña, guardamos
+# el timestamp UTC en una key separada. El distraction_worker (server-side)
+# la barre cada few seconds y cierra el episodio si supera el umbral.
+DISTRACTION_KEY_PREFIX = "tutor:distraction:"
+DISTRACTION_TTL = 30 * 60  # 30 min sanity cap
+
 
 @dataclass
 class SessionState:
@@ -166,5 +172,49 @@ class SessionManager:
                 state = await self.get(episode_id)
                 if state is not None:
                     yield state
+            if cursor == 0:
+                break
+
+    # ── Distraction tracking ────────────────────────────────────────────
+
+    def _distraction_key(self, episode_id: UUID) -> str:
+        return f"{DISTRACTION_KEY_PREFIX}{episode_id}"
+
+    async def mark_distraction(self, episode_id: UUID, started_at: float) -> None:
+        """Guarda el timestamp en que el alumno perdió foco de la pestaña."""
+        await self.redis.setex(
+            self._distraction_key(episode_id),
+            DISTRACTION_TTL,
+            str(started_at),
+        )
+
+    async def clear_distraction(self, episode_id: UUID) -> None:
+        """Borra la marca de distracción (alumno volvió a la pestaña)."""
+        await self.redis.delete(self._distraction_key(episode_id))
+
+    async def iter_distractions(self) -> AsyncIterator[tuple[UUID, float]]:
+        """Itera (episode_id, started_at) de todas las distracciones activas."""
+        cursor = 0
+        while True:
+            cursor, keys = await self.redis.scan(
+                cursor=cursor,
+                match=f"{DISTRACTION_KEY_PREFIX}*",
+                count=100,
+            )
+            for key in keys:
+                key_str = key.decode("utf-8") if isinstance(key, bytes) else key
+                episode_id_str = key_str[len(DISTRACTION_KEY_PREFIX) :]
+                try:
+                    episode_id = UUID(episode_id_str)
+                except ValueError:
+                    continue
+                raw = await self.redis.get(self._distraction_key(episode_id))
+                if raw is None:
+                    continue
+                try:
+                    started_at = float(raw)
+                except (TypeError, ValueError):
+                    continue
+                yield (episode_id, started_at)
             if cursor == 0:
                 break

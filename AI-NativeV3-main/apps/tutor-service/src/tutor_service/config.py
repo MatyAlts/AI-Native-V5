@@ -37,8 +37,11 @@ class Settings(BaseSettings):
     # (orienta preguntas socraticas sin revelar criterios ni puntajes).
     # ai-native-prompts/manifest.yaml expone esta version via /active_configs.
     default_prompt_name: str = "tutor"
-    default_prompt_version: str = "v1.1.0"
-    default_model: str = "mistral-small-latest"
+    default_prompt_version: str = "v1.2.0"
+    # Cambiado 2026-05-19: default a gpt-4o-mini para usar copilot-api proxy
+    # (Mistral free tier saturado, ver SESSION-LOG). Restaurar a
+    # mistral-small-latest si se vuelve a usar la BYOK key de Mistral.
+    default_model: str = "gpt-4o-mini"
     opus_model: str = "claude-opus-4-7"
 
     # Feature flags por tenant (F6)
@@ -52,6 +55,13 @@ class Settings(BaseSettings):
     episode_idle_timeout_seconds: int = 30 * 60  # 30 min de inactividad
     abandonment_check_interval_seconds: int = 60  # sweep cada 1 min
     enable_abandonment_worker: bool = True  # apagable para tests / dev
+
+    # Worker de distraccion: cierra episodios cuando el alumno cambio de
+    # pestaña y no volvio en `distraction_threshold_seconds`. NO se puede
+    # bloquear desde el browser — esta es la respuesta server-side.
+    distraction_threshold_seconds: int = 30  # 30 segundos fuera de la pestaña
+    distraction_check_interval_seconds: int = 5  # sweep cada 5s (alta resolucion)
+    enable_distraction_worker: bool = True
 
     # ADR-027 / ADR-044 (Mejora 4 plan post-piloto-1): Fase B de guardrails —
     # postprocesamiento de respuestas del tutor + cálculo de socratic_compliance.

@@ -13,6 +13,7 @@ from tutor_service.config import settings
 from tutor_service.observability import setup_observability
 from tutor_service.routes import episodes, health
 from tutor_service.services.abandonment_worker import run_abandonment_worker
+from tutor_service.services.distraction_worker import run_distraction_worker
 
 logger = logging.getLogger(__name__)
 
@@ -24,6 +25,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     # ADR-025 (G10-A): worker de abandono por timeout. Arranca despues
     # del setup de observabilidad para que sus logs/traces queden capturados.
     worker_task: asyncio.Task[None] | None = None
+    distraction_task: asyncio.Task[None] | None = None
     if settings.enable_abandonment_worker:
         tutor = episodes._get_tutor()
         worker_task = asyncio.create_task(
@@ -35,14 +37,26 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
             ),
             name="tutor.abandonment_worker",
         )
+    if settings.enable_distraction_worker:
+        tutor = episodes._get_tutor()
+        distraction_task = asyncio.create_task(
+            run_distraction_worker(
+                sessions=tutor.sessions,
+                tutor=tutor,
+                distraction_threshold_seconds=settings.distraction_threshold_seconds,
+                check_interval_seconds=settings.distraction_check_interval_seconds,
+            ),
+            name="tutor.distraction_worker",
+        )
 
     try:
         yield
     finally:
-        if worker_task is not None:
-            worker_task.cancel()
-            with contextlib.suppress(asyncio.CancelledError):
-                await worker_task
+        for task in (worker_task, distraction_task):
+            if task is not None:
+                task.cancel()
+                with contextlib.suppress(asyncio.CancelledError):
+                    await task
 
 
 app = FastAPI(

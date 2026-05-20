@@ -1149,6 +1149,55 @@ export async function getCohortAdversarialEvents(
   return r.json()
 }
 
+// ── Integridad del episodio (foco + clipboard) ────────────────────────
+
+export type IntegrityEventType =
+  | "pestana_perdida"
+  | "pestana_recuperada"
+  | "copia_intentada"
+  | "pega_intentada"
+
+export interface IntegrityRecentEvent {
+  episode_id: string
+  student_pseudonym: string
+  ts: string
+  event_type: IntegrityEventType
+  // Shape específico por event_type — el componente formatea según el tipo.
+  payload: {
+    trigger?: "visibilitychange" | "blur"
+    tiempo_fuera_segundos?: number
+    seleccion_chars?: number
+    contenido_longitud?: number
+    contenido_preview?: string
+    metodo?: "shortcut" | "menu_contextual" | "drag_drop"
+  }
+}
+
+export interface IntegrityTopStudent {
+  student_pseudonym: string
+  n_events: number
+}
+
+export interface CohortIntegrityEvents {
+  comision_id: string
+  n_events_total: number
+  counts_by_type: Record<string, number>
+  counts_by_student: Record<string, number>
+  top_students_by_n_events: IntegrityTopStudent[]
+  recent_events: IntegrityRecentEvent[]
+}
+
+export async function getCohortIntegrityEvents(
+  comisionId: string,
+  getToken?: TokenGetter,
+): Promise<CohortIntegrityEvents> {
+  const r = await fetch(`/api/v1/analytics/cohort/${comisionId}/integrity-events`, {
+    headers: await authHeaders(getToken),
+  })
+  await throwIfNotOk(r)
+  return r.json()
+}
+
 // ── ADR-022: drill-down navegacional + cuartiles + alertas ────────────
 
 export interface StudentEpisode {

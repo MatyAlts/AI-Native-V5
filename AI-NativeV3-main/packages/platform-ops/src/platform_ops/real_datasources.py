@@ -279,6 +279,72 @@ class RealLongitudinalDataSource:
 
         return out[:limit_recent] if limit_recent else out
 
+    async def list_integrity_events_by_comision(
+        self,
+        comision_id: UUID,
+        limit_recent: int = 50,
+    ) -> list[dict]:
+        """Lista eventos de integridad del episodio (foco + clipboard) de una comisión.
+
+        Cubre los 4 event_types side-channel del epic Tab Focus & Clipboard:
+          - `pestana_perdida` / `pestana_recuperada` (cambio de foco del browser)
+          - `copia_intentada` / `pega_intentada` (clipboard bloqueado en Monaco)
+
+        A diferencia de `intento_adverso_detectado` (prompt-based, ADR-019),
+        estos eventos NO tienen `category`/`severity`/`pattern_id` — cada uno
+        tiene su propio shape de payload. Devuelve dicts con el payload crudo
+        para que el frontend lo formatee según el tipo.
+        """
+        from ctr_service.models import Episode, Event
+
+        INTEGRITY_EVENT_TYPES = (
+            "pestana_perdida",
+            "pestana_recuperada",
+            "copia_intentada",
+            "pega_intentada",
+        )
+
+        ep_stmt = (
+            select(Episode.id, Episode.student_pseudonym)
+            .where(Episode.comision_id == comision_id)
+            .where(Episode.tenant_id == self.tenant_id)
+        )
+        ep_result = await self.ctr.execute(ep_stmt)
+        ep_to_student: dict[UUID, UUID] = {row.id: row.student_pseudonym for row in ep_result.all()}
+        if not ep_to_student:
+            return []
+
+        ev_stmt = (
+            select(Event)
+            .where(Event.event_type.in_(INTEGRITY_EVENT_TYPES))
+            .where(Event.tenant_id == self.tenant_id)
+            .where(Event.episode_id.in_(ep_to_student.keys()))
+            .order_by(Event.ts.desc())
+        )
+        ev_result = await self.ctr.execute(ev_stmt)
+
+        out: list[dict] = []
+        for ev in ev_result.scalars().all():
+            student_pseudo = ep_to_student.get(ev.episode_id)
+            if student_pseudo is None:
+                continue
+            student_id = (
+                self.pseudonymize_fn(student_pseudo)
+                if self.pseudonymize_fn
+                else str(student_pseudo)
+            )
+            out.append(
+                {
+                    "episode_id": str(ev.episode_id),
+                    "student_pseudonym": student_id,
+                    "ts": ev.ts.isoformat().replace("+00:00", "Z") if ev.ts else None,
+                    "event_type": ev.event_type,
+                    "payload": ev.payload or {},
+                }
+            )
+
+        return out[:limit_recent] if limit_recent else out
+
     async def list_episodes_with_classifications_for_student(
         self,
         student_pseudonym: UUID,

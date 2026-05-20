@@ -6,7 +6,10 @@ import { useViewMode } from "../hooks/useViewMode"
 import {
   type AdversarialRecentEvent,
   type CohortAdversarialEvents,
+  type CohortIntegrityEvents,
+  type IntegrityRecentEvent,
   getCohortAdversarialEvents,
+  getCohortIntegrityEvents,
 } from "../lib/api"
 import { ADVERSARIAL_DOCENTE, SEVERITY_DOCENTE, studentShortLabel } from "../utils/docenteLabels"
 import { helpContent } from "../utils/helpContent"
@@ -231,11 +234,15 @@ function lowVolumeNotice(data: CohortAdversarialEvents, isDocente: boolean): str
   )
 }
 
+type ActiveTab = "adversarial" | "integridad"
+
 export function CohortAdversarialView({ getToken, initialComisionId }: Props) {
   const comisionId = initialComisionId ?? null
   const [data, setData] = useState<CohortAdversarialEvents | null>(null)
+  const [integrityData, setIntegrityData] = useState<CohortIntegrityEvents | null>(null)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [activeTab, setActiveTab] = useState<ActiveTab>("adversarial")
   const [viewMode] = useViewMode()
   const isDocente = viewMode === "docente"
 
@@ -263,14 +270,20 @@ export function CohortAdversarialView({ getToken, initialComisionId }: Props) {
   useEffect(() => {
     if (!comisionId) {
       setData(null)
+      setIntegrityData(null)
       return
     }
     setLoading(true)
     setError(null)
     let cancelled = false
-    getCohortAdversarialEvents(comisionId, getToken)
-      .then((d) => {
-        if (!cancelled) setData(d)
+    Promise.all([
+      getCohortAdversarialEvents(comisionId, getToken),
+      getCohortIntegrityEvents(comisionId, getToken),
+    ])
+      .then(([adv, integ]) => {
+        if (cancelled) return
+        setData(adv)
+        setIntegrityData(integ)
       })
       .catch((e) => {
         if (!cancelled) setError(String(e))
@@ -320,7 +333,49 @@ export function CohortAdversarialView({ getToken, initialComisionId }: Props) {
           <StateMessage variant="error" title="Error consultando la cohorte" description={error} />
         )}
 
-        {data && !loading && (
+        {/* Tabs: Adversariales (prompt-based, ADR-019) vs Integridad (foco/clipboard) */}
+        {comisionId && !loading && (
+          <div className="border-b border-border flex gap-1" role="tablist">
+            <button
+              type="button"
+              role="tab"
+              aria-selected={activeTab === "adversarial"}
+              data-testid="tab-adversarial"
+              onClick={() => setActiveTab("adversarial")}
+              className={`px-4 py-2 text-sm font-medium border-b-2 transition-colors ${
+                activeTab === "adversarial"
+                  ? "border-ink text-ink"
+                  : "border-transparent text-muted hover:text-ink"
+              }`}
+            >
+              {isDocente ? "Manipulación del tutor" : "Adversariales (prompt)"}
+              {data && data.n_events_total > 0 && (
+                <Badge className="ml-2 bg-ink/10 text-ink">{data.n_events_total}</Badge>
+              )}
+            </button>
+            <button
+              type="button"
+              role="tab"
+              aria-selected={activeTab === "integridad"}
+              data-testid="tab-integridad"
+              onClick={() => setActiveTab("integridad")}
+              className={`px-4 py-2 text-sm font-medium border-b-2 transition-colors ${
+                activeTab === "integridad"
+                  ? "border-ink text-ink"
+                  : "border-transparent text-muted hover:text-ink"
+              }`}
+            >
+              {isDocente ? "Distracción y trampa" : "Integridad (foco + clipboard)"}
+              {integrityData && integrityData.n_events_total > 0 && (
+                <Badge className="ml-2 bg-warning text-warning-soft">
+                  {integrityData.n_events_total}
+                </Badge>
+              )}
+            </button>
+          </div>
+        )}
+
+        {activeTab === "adversarial" && data && !loading && (
           <>
             <div className="rounded-xl border border-border bg-white px-6 py-4">
               <div className="flex flex-wrap gap-x-8 gap-y-3 items-start">
@@ -571,8 +626,203 @@ export function CohortAdversarialView({ getToken, initialComisionId }: Props) {
             )}
           </>
         )}
+
+        {activeTab === "integridad" && integrityData && !loading && (
+          <IntegrityTab data={integrityData} comisionId={comisionId} isDocente={isDocente} />
+        )}
       </div>
     </PageContainer>
+  )
+}
+
+// ── Tab Integridad: foco + clipboard ──────────────────────────────────
+
+function formatIntegrityEvent(ev: IntegrityRecentEvent, isDocente: boolean): {
+  label: string
+  detail: string
+  badgeColor: string
+} {
+  switch (ev.event_type) {
+    case "pestana_perdida":
+      return {
+        label: isDocente ? "Cambió de pestaña" : "Pestaña perdida",
+        detail: ev.payload.trigger === "blur" ? "Cambio de ventana" : "Cambio de pestaña",
+        badgeColor: "bg-amber-100 text-amber-900 border-amber-300",
+      }
+    case "pestana_recuperada":
+      return {
+        label: isDocente ? "Volvió a la pestaña" : "Pestaña recuperada",
+        detail: `Estuvo fuera ${(ev.payload.tiempo_fuera_segundos ?? 0).toFixed(1)}s`,
+        badgeColor: "bg-blue-100 text-blue-900 border-blue-300",
+      }
+    case "copia_intentada":
+      return {
+        label: isDocente ? "Intentó copiar código" : "Copy bloqueado",
+        detail: `Selección: ${ev.payload.seleccion_chars ?? 0} chars · método: ${ev.payload.metodo ?? "?"}`,
+        badgeColor: "bg-orange-100 text-orange-900 border-orange-300",
+      }
+    case "pega_intentada":
+      return {
+        label: isDocente ? "Intentó pegar código" : "Paste bloqueado",
+        detail: `${ev.payload.contenido_longitud ?? 0} chars · método: ${ev.payload.metodo ?? "?"}`,
+        badgeColor: "bg-red-100 text-red-900 border-red-300",
+      }
+    default:
+      return { label: ev.event_type, detail: "", badgeColor: "bg-gray-100 text-gray-900" }
+  }
+}
+
+function IntegrityTab({
+  data,
+  comisionId,
+  isDocente,
+}: {
+  data: CohortIntegrityEvents
+  comisionId: string | null
+  isDocente: boolean
+}) {
+  if (data.n_events_total === 0) {
+    return (
+      <div className="rounded-xl border border-green-200 bg-green-50 p-6 text-center">
+        <div className="text-green-800 font-semibold">
+          {isDocente
+            ? "Tus alumnos se mantuvieron enfocados en el episodio."
+            : "Sin eventos de integridad detectados."}
+        </div>
+        <div className="mt-2 text-sm text-green-700">
+          {isDocente
+            ? "No detectamos cambios de pestaña ni intentos de copy/paste durante los episodios."
+            : "No se registraron cambios de foco ni intentos de clipboard durante los episodios de esta cohorte."}
+        </div>
+      </div>
+    )
+  }
+  return (
+    <div className="space-y-5">
+      <div className="rounded-xl border border-border bg-white px-6 py-4">
+        <div className="flex flex-wrap gap-x-8 gap-y-3 items-start">
+          <div>
+            <div className="text-3xl font-semibold text-ink">{data.n_events_total}</div>
+            <div className="text-xs text-muted mt-0.5">
+              eventos de integridad detectados
+            </div>
+          </div>
+          <div className="flex flex-wrap gap-x-4 gap-y-2 items-center pt-1">
+            {Object.entries(data.counts_by_type)
+              .sort((a, b) => b[1] - a[1])
+              .map(([type, count]) => {
+                const fake = {
+                  event_type: type as IntegrityRecentEvent["event_type"],
+                  payload: {},
+                } as IntegrityRecentEvent
+                const formatted = formatIntegrityEvent(fake, isDocente)
+                return (
+                  <span
+                    key={type}
+                    className="inline-flex items-center gap-1.5 text-xs text-muted"
+                  >
+                    <span className="font-medium text-ink">{count}</span> {formatted.label}
+                  </span>
+                )
+              })}
+          </div>
+        </div>
+      </div>
+
+      {data.top_students_by_n_events.length > 0 && (
+        <div className="rounded-xl border border-border bg-white overflow-hidden">
+          <div className="border-b border-border px-6 py-3">
+            <span className="text-xs font-semibold text-ink uppercase tracking-wider">
+              {isDocente ? "Alumnos con más intentos de evasión" : "Top estudiantes por integridad"}
+            </span>
+          </div>
+          <ul className="divide-y divide-[#EAEAEA]">
+            {data.top_students_by_n_events.map((s) => (
+              <li key={s.student_pseudonym}>
+                {comisionId ? (
+                  <Link
+                    to="/student-longitudinal"
+                    search={{ comisionId, studentId: s.student_pseudonym }}
+                    className="flex items-center justify-between px-6 py-3 hover:bg-canvas transition-colors"
+                  >
+                    <span className="font-mono text-xs text-muted">
+                      {isDocente
+                        ? studentShortLabel(s.student_pseudonym)
+                        : `${s.student_pseudonym.slice(0, 8)}...${s.student_pseudonym.slice(-4)}`}
+                    </span>
+                    <span className="flex items-center gap-2">
+                      <Badge className="bg-warning text-warning-soft">{s.n_events} eventos</Badge>
+                      <ChevronRight aria-hidden="true" className="h-4 w-4 text-muted" />
+                    </span>
+                  </Link>
+                ) : (
+                  <div className="flex items-center justify-between px-6 py-3">
+                    <span className="font-mono text-xs text-muted">
+                      {studentShortLabel(s.student_pseudonym)}
+                    </span>
+                    <Badge className="bg-warning text-warning-soft">{s.n_events} eventos</Badge>
+                  </div>
+                )}
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+
+      <div className="overflow-hidden rounded-xl border border-border bg-white">
+        <div className="border-b border-border bg-canvas px-6 py-3 flex items-center justify-between gap-2">
+          <span className="text-xs font-semibold text-ink uppercase tracking-wider">
+            Eventos recientes ({data.recent_events.length})
+          </span>
+          <span className="text-xs text-muted hidden sm:inline">
+            Click en cada uno para ver el episodio completo
+          </span>
+        </div>
+        <ul className="divide-y divide-[#EAEAEA]">
+          {data.recent_events.map((ev, idx) => {
+            const formatted = formatIntegrityEvent(ev, isDocente)
+            return (
+              <li key={`${ev.episode_id}-${idx}`}>
+                <Link
+                  to="/episode-n-level"
+                  search={{ episodeId: ev.episode_id }}
+                  className="block px-6 py-3 hover:bg-canvas transition-colors"
+                  data-testid="integrity-event-link"
+                >
+                  <div className="flex items-start justify-between gap-4">
+                    <div className="flex items-start gap-3 min-w-0 flex-1">
+                      <span
+                        className={`inline-flex items-center px-2 py-0.5 rounded-md text-xs font-medium border shrink-0 ${formatted.badgeColor}`}
+                      >
+                        {formatted.label}
+                      </span>
+                      <div className="min-w-0 flex-1">
+                        <div className="text-xs text-muted">
+                          {studentShortLabel(ev.student_pseudonym)} · {ev.ts.slice(0, 19).replace("T", " ")}
+                        </div>
+                        <div className="text-sm text-ink mt-0.5">{formatted.detail}</div>
+                        {ev.payload.contenido_preview && ev.payload.contenido_preview.length > 0 && (
+                          <div className="mt-2 text-xs text-muted bg-canvas border border-border rounded-md px-2.5 py-1.5 font-mono break-words">
+                            <span className="text-[10px] uppercase tracking-wider text-muted/70 mr-1">
+                              Contenido intentado pegar:
+                            </span>
+                            "{ev.payload.contenido_preview}"
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                    <div className="shrink-0 flex items-center gap-1 text-xs text-[var(--color-accent-brand)] mt-1">
+                      ver sesión
+                      <ExternalLink className="h-3.5 w-3.5" />
+                    </div>
+                  </div>
+                </Link>
+              </li>
+            )
+          })}
+        </ul>
+      </div>
+    </div>
   )
 }
 

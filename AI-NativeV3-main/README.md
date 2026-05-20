@@ -19,6 +19,9 @@ análisis empírico, privacidad, y toda la operación.
 | Packages compartidos | 7 |
 | Migraciones Alembic | 17 |
 | ADRs | 43 |
+| Prompt activo del tutor | **v1.2.0** (4 movimientos socráticos, 9/10 guardarrailes — ver `ai-native-prompts/manifest.yaml`) |
+
+**¿Solo querés ver la plataforma en accion?** Saltá a [Demo rápida](#demo-rapida-grabacion-de-video-o-presentacion) — un script único deja todo listo en ~30 segundos.
 
 ## Arquitectura en un vistazo
 
@@ -213,6 +216,111 @@ En desarrollo, el api-gateway corre con `dev_trust_headers=True`. Los frontends 
 `X-User-Id`, `X-Tenant-Id`, `X-User-Email`, `X-User-Roles` automaticamente via el proxy de Vite.
 No necesitas onboardear Keycloak para desarrollo local.
 
+**Importante**: `dev_trust_headers=True` es un override de runtime, no un default. Cuando arranques
+el api-gateway con `dev-start-all.sh`, queda con `dev_trust_headers=False` y los frontends devuelven
+401. Hay dos formas de resolverlo:
+
+1. Exportar la variable antes de arrancar:
+   ```bash
+   export DEV_TRUST_HEADERS=true
+   bash scripts/dev-start-all.sh
+   ```
+2. Usar `scripts/start-video-ready.sh` (ver "Demo rapida" mas abajo), que reinicia el api-gateway
+   con la flag y lo deja listo.
+
+### Demo rapida (grabacion de video o presentacion)
+
+Para escenarios de demo end-to-end con un alumno usando el tutor socratico v1.2.0 con contexto
+pedagogico completo (banco de preguntas N1-N4, misconceptions, anti-patrones, rubrica privada),
+el repo incluye un script todo-en-uno: **`scripts/start-video-ready.sh`**.
+
+**Prerequisito externo**: `copilot-api` corriendo en `:4141` (proxy local que expone GitHub
+Copilot como API compatible con OpenAI). Sin esto el tutor no responde:
+
+```bash
+# Primera vez (auth con tu cuenta de GitHub):
+npx -y copilot-api@latest auth
+
+# Cada vez que vas a usar la plataforma (en una terminal aparte):
+npx -y copilot-api@latest start --port 4141
+```
+
+Alternativa: si tenes una API key real de OpenAI/Anthropic/Mistral, podes setearla en el `.env`
+del root (`OPENAI_API_KEY`, etc.) y modificar `LLM_PROVIDER` en consecuencia. Ver
+[`apps/ai-gateway/src/ai_gateway/config.py`](apps/ai-gateway/src/ai_gateway/config.py) para los
+providers soportados.
+
+**Una vez que copilot-api esta arriba:**
+
+```bash
+bash scripts/start-video-ready.sh
+```
+
+El script es idempotente y hace 8 cosas en orden (~30s la primera vez, ~10s en sucesivas):
+
+1. Verifica infra Docker (postgres, redis, keycloak, etc.); la levanta si esta apagada.
+2. Verifica que `copilot-api` responda en `:4141`.
+3. Apaga backends previos (idempotente).
+4. Levanta los 11 backends Python + 8 ctr-workers (`scripts/dev-start-all.sh`).
+5. Reinicia api-gateway con `DEV_TRUST_HEADERS=true`.
+6. Switchea ai-gateway + tutor-service a `copilot-api` con `gpt-4o-mini` como modelo default
+   (`scripts/dev-use-copilot-api.sh`).
+7. Verifica que el ejercicio canonico del demo exista en la DB; si no, aplica
+   `scripts/seed-video-ejercicio.sql`.
+8. Levanta los 3 frontends Vite (`make dev`).
+
+El **prompt activo del tutor** durante esta demo es `v1.2.0` (configurado en
+`ai-native-prompts/manifest.yaml` y `apps/tutor-service/src/tutor_service/config.py`). Esta
+version implementa los cuatro movimientos socraticos clasicos (ironia, mayeutica, elenchos,
+aporia) y cubre 9/10 guardarrailes formales de la tesis (Capitulo 8).
+
+#### Flujo del demo
+
+Una vez el script termina, abrir `http://localhost:5175` (web-student) y seguir:
+
+1. Click en la materia **"Programacion I"** -> "Entrar"
+2. Click en la unidad **"test #99"** (creada por `seed-video-ejercicio.sql`)
+3. Click en **"TP-EDAD-01"** -> "Empezar"
+4. Click en **"Ejercicio 1: Categoria por edad"** -> "Empezar"
+5. El episodio abre con los 3 paneles (Consigna / Editor + Pyodide / Tutor con SSE)
+
+El ejercicio canonico cargado es la clasificacion por edad
+(nino < 12 / adolescente [12,18) / adulto joven [18,30) / adulto >= 30), con casos borde
+explicitos (11, 12, 17, 18, 29, 30) para forzar al tutor a aplicar mayeutica escalonada sobre
+limites `<` vs `<=`.
+
+#### Limitaciones conocidas del demo
+
+- **`input()` no funciona en el editor**: Pyodide en el browser no tiene stdin interactivo. Usar
+  valores hardcodeados (`edad = 15`) y variarlos manualmente.
+- **El editor muestra un placeholder generico** (`def factorial(n): pass`) en lugar del
+  `inicial_codigo` del ejercicio del banco. Workaround: borrar el placeholder y tipear desde
+  cero.
+- **El chip "Mistral"** en el panel del tutor es hardcodeado en el frontend; durante la demo el
+  modelo real es `gpt-4o-mini` via copilot-api.
+- **El stream SSE ocasionalmente se corta** despues de 1-2 oraciones. Si pasa en el video,
+  cortar en edicion o reenviar el mensaje.
+
+#### Apagar todo
+
+```bash
+bash scripts/dev-stop-all.sh    # apaga backends + ctr-workers
+pkill -f "vite"                  # apaga frontends Vite (make dev no instala signal handler)
+```
+
+La infra Docker queda viva. Para apagar tambien la infra:
+
+```bash
+docker compose -f infrastructure/docker-compose.dev.yml stop
+```
+
+Para destruir todo (incluyendo volumenes con la DB seedeada — proxima corrida del script
+re-aplica `seed-video-ejercicio.sql` automaticamente):
+
+```bash
+docker compose -f infrastructure/docker-compose.dev.yml down -v
+```
+
 ### Gotchas en Windows
 
 - Usar **Git Bash** o **WSL** — el Makefile requiere bash.
@@ -287,6 +395,21 @@ platform/
 ```
 
 ## Workflows comunes
+
+### Levantar el stack para una demo o grabacion
+
+```bash
+# Terminal 1 — proxy LLM gratuito (autenticar con tu cuenta GitHub la primera vez)
+npx -y copilot-api@latest start --port 4141
+
+# Terminal 2 — repo
+bash scripts/start-video-ready.sh
+```
+
+Deja el stack 100% operativo (11 backends + 8 ctr-workers + 3 frontends), con el tutor `v1.2.0`
+activo, `api-gateway` con `DEV_TRUST_HEADERS=true`, LLM real via `gpt-4o-mini` y el ejercicio
+canonico "Categoria por edad" seedeado en la unidad "test". Ver
+["Demo rapida"](#demo-rapida-grabacion-de-video-o-presentacion) para detalles del flujo.
 
 ### Crear un tenant nuevo (ej. UNSL)
 

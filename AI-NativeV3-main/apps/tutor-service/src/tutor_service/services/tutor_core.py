@@ -820,6 +820,120 @@ class TutorCore:
         await self._record_overuse_non_prompt_event(event)
         return seq
 
+    # ── Integridad: foco y clipboard ────────────────────────────────────
+
+    async def record_pestana_perdida(
+        self,
+        episode_id: UUID,
+        user_id: UUID,
+        trigger: str,
+    ) -> int:
+        """Registra que el alumno cambió de pestaña / perdió foco del browser.
+
+        El frontend dispara este evento via document.visibilitychange o
+        window.blur. NO se puede bloquear desde el browser — solo se
+        registra como evidencia auditable. El worker de abandono
+        server-side decide si cerrar el episodio cuando supera el umbral.
+        """
+        state = await self.sessions.get(episode_id)
+        if state is None:
+            raise ValueError(f"Episode {episode_id} no existe, está cerrado o expiró")
+
+        seq = await self.sessions.next_seq(state)
+        event = self._build_event(
+            state=state,
+            seq=seq,
+            event_type="pestana_perdida",
+            payload={"trigger": trigger},
+        )
+        await self.ctr.publish_event(event, state.tenant_id, user_id)
+        await self._record_overuse_non_prompt_event(event)
+        # Marcar inicio de distraccion para que el worker server-side
+        # detecte el umbral de cierre automatico.
+        await self.sessions.mark_distraction(episode_id, time.time())
+        return seq
+
+    async def record_pestana_recuperada(
+        self,
+        episode_id: UUID,
+        user_id: UUID,
+        tiempo_fuera_segundos: float,
+    ) -> int:
+        """Registra que el alumno volvió a la pestaña del episodio."""
+        state = await self.sessions.get(episode_id)
+        if state is None:
+            raise ValueError(f"Episode {episode_id} no existe, está cerrado o expiró")
+
+        seq = await self.sessions.next_seq(state)
+        event = self._build_event(
+            state=state,
+            seq=seq,
+            event_type="pestana_recuperada",
+            payload={"tiempo_fuera_segundos": tiempo_fuera_segundos},
+        )
+        await self.ctr.publish_event(event, state.tenant_id, user_id)
+        await self._record_overuse_non_prompt_event(event)
+        # Cancelar el tracking de distraccion — el alumno volvio antes de
+        # superar el umbral, no cerramos el episodio.
+        await self.sessions.clear_distraction(episode_id)
+        return seq
+
+    async def record_copia_intentada(
+        self,
+        episode_id: UUID,
+        user_id: UUID,
+        seleccion_chars: int,
+        metodo: str,
+    ) -> int:
+        """Registra intento de copiar contenido del editor Monaco (bloqueado en UI)."""
+        state = await self.sessions.get(episode_id)
+        if state is None:
+            raise ValueError(f"Episode {episode_id} no existe, está cerrado o expiró")
+
+        seq = await self.sessions.next_seq(state)
+        event = self._build_event(
+            state=state,
+            seq=seq,
+            event_type="copia_intentada",
+            payload={"seleccion_chars": seleccion_chars, "metodo": metodo},
+        )
+        await self.ctr.publish_event(event, state.tenant_id, user_id)
+        await self._record_overuse_non_prompt_event(event)
+        return seq
+
+    async def record_pega_intentada(
+        self,
+        episode_id: UUID,
+        user_id: UUID,
+        contenido_longitud: int,
+        contenido_preview: str,
+        metodo: str,
+    ) -> int:
+        """Registra intento de pegar contenido en el editor Monaco (bloqueado en UI).
+
+        El contenido se trunca a 200 chars en el payload por el schema —
+        evita guardar payloads gigantes cuando el alumno pega un archivo
+        entero. El preview es suficiente para auditoría académica.
+        """
+        state = await self.sessions.get(episode_id)
+        if state is None:
+            raise ValueError(f"Episode {episode_id} no existe, está cerrado o expiró")
+
+        seq = await self.sessions.next_seq(state)
+        event = self._build_event(
+            state=state,
+            seq=seq,
+            event_type="pega_intentada",
+            payload={
+                "contenido_longitud": contenido_longitud,
+                "contenido_preview": contenido_preview[:200],
+                "metodo": metodo,
+            },
+        )
+        await self.ctr.publish_event(event, state.tenant_id, user_id)
+        await self._record_overuse_non_prompt_event(event)
+        return seq
+
     # ── Tests ejecutados (ADR-033/034, sandbox client-side) ──────────────
 
     async def emit_tests_ejecutados(

@@ -1317,6 +1317,117 @@ async def get_cohort_adversarial_events(
     return CohortAdversarialEventsOut(comision_id=str(comision_id), **aggregated)
 
 
+# ── Integridad del episodio (foco + clipboard) ─────────────────────────
+
+
+class IntegrityRecentEventOut(BaseModel):
+    """Un evento de integridad (cambio de pestaña / clipboard bloqueado)."""
+
+    episode_id: str
+    student_pseudonym: str
+    ts: str
+    event_type: str  # "pestana_perdida" | "pestana_recuperada" | "copia_intentada" | "pega_intentada"
+    payload: dict  # shape específico por event_type — el frontend formatea
+
+
+class IntegrityTopStudentOut(BaseModel):
+    student_pseudonym: str
+    n_events: int
+
+
+class CohortIntegrityEventsOut(BaseModel):
+    """Agregado de eventos de integridad para una cohorte."""
+
+    comision_id: str
+    n_events_total: int
+    counts_by_type: dict[str, int]
+    counts_by_student: dict[str, int]
+    top_students_by_n_events: list[IntegrityTopStudentOut]
+    recent_events: list[IntegrityRecentEventOut]
+
+
+@router.get(
+    "/cohort/{comision_id}/integrity-events",
+    response_model=CohortIntegrityEventsOut,
+)
+async def get_cohort_integrity_events(
+    comision_id: UUID,
+    tenant_id: UUID = Depends(get_tenant_id),
+    user_id: UUID = Depends(get_user_id),
+) -> CohortIntegrityEventsOut:
+    """Agregado de eventos de integridad del episodio (foco + clipboard).
+
+    Cubre los 4 event_types side-channel:
+      - `pestana_perdida` / `pestana_recuperada` (foco del browser)
+      - `copia_intentada` / `pega_intentada` (clipboard bloqueado en Monaco)
+
+    A diferencia de `intento_adverso_detectado` (prompt-based, ADR-019),
+    no hay categoria/severity uniformes — cada tipo tiene su payload.
+    El frontend renderiza por tipo.
+    """
+    from analytics_service.services.export import _real_data_source_enabled
+
+    empty = {
+        "n_events_total": 0,
+        "counts_by_type": {},
+        "counts_by_student": {},
+        "top_students_by_n_events": [],
+        "recent_events": [],
+    }
+    if not _real_data_source_enabled():
+        return CohortIntegrityEventsOut(comision_id=str(comision_id), **empty)
+
+    from platform_ops import RealLongitudinalDataSource, set_tenant_rls
+    from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
+
+    from analytics_service.config import settings
+
+    ctr_engine = create_async_engine(settings.ctr_store_url, pool_size=2)
+    cls_engine = create_async_engine(settings.classifier_db_url, pool_size=2)
+    try:
+        async with (
+            async_sessionmaker(ctr_engine, expire_on_commit=False)() as ctr_s,
+            async_sessionmaker(cls_engine, expire_on_commit=False)() as cls_s,
+        ):
+            await set_tenant_rls(ctr_s, tenant_id)
+            await set_tenant_rls(cls_s, tenant_id)
+            ds = RealLongitudinalDataSource(ctr_s, cls_s, tenant_id)
+            events = await ds.list_integrity_events_by_comision(comision_id)
+    finally:
+        await ctr_engine.dispose()
+        await cls_engine.dispose()
+
+    # Agregacion inline (simpler than the adversarial one — solo 4 types).
+    counts_by_type: dict[str, int] = {}
+    counts_by_student: dict[str, int] = {}
+    for ev in events:
+        counts_by_type[ev["event_type"]] = counts_by_type.get(ev["event_type"], 0) + 1
+        sp = ev["student_pseudonym"]
+        counts_by_student[sp] = counts_by_student.get(sp, 0) + 1
+
+    top_students = [
+        IntegrityTopStudentOut(student_pseudonym=sp, n_events=n)
+        for sp, n in sorted(counts_by_student.items(), key=lambda x: -x[1])[:10]
+    ]
+
+    logger.info(
+        "cohort_integrity_events_computed tenant_id=%s user_id=%s "
+        "comision_id=%s n_events=%d",
+        tenant_id,
+        user_id,
+        comision_id,
+        len(events),
+    )
+    return CohortIntegrityEventsOut(
+        comision_id=str(comision_id),
+        n_events_total=len(events),
+        counts_by_type=counts_by_type,
+        counts_by_student=counts_by_student,
+        top_students_by_n_events=top_students,
+        recent_events=[IntegrityRecentEventOut(**ev) for ev in events],
+    )
+
+
 # ── A/B testing de profiles (F7) ───────────────────────────────────────
 
 

@@ -341,6 +341,71 @@ export async function emitLecturaEnunciado(
   return (await r.json()) as EventEmitResponse
 }
 
+/** Emite pestana_perdida al CTR cuando el alumno cambia de pestaña o pierde
+ * foco del browser. El worker server-side decide si cerrar el episodio. */
+export async function emitPestanaPerdida(
+  episodeId: string,
+  payload: { trigger: "visibilitychange" | "blur" },
+  getToken?: TokenGetter,
+): Promise<EventEmitResponse> {
+  const r = await fetch(`/api/v1/episodes/${episodeId}/events/pestana_perdida`, {
+    method: "POST",
+    headers: await authHeaders(getToken),
+    body: JSON.stringify(payload),
+  })
+  if (!r.ok) throw new Error(`emit pestana_perdida failed: ${r.status}`)
+  return (await r.json()) as EventEmitResponse
+}
+
+/** Emite pestana_recuperada al CTR cuando el alumno vuelve a la pestaña. */
+export async function emitPestanaRecuperada(
+  episodeId: string,
+  payload: { tiempo_fuera_segundos: number },
+  getToken?: TokenGetter,
+): Promise<EventEmitResponse> {
+  const r = await fetch(`/api/v1/episodes/${episodeId}/events/pestana_recuperada`, {
+    method: "POST",
+    headers: await authHeaders(getToken),
+    body: JSON.stringify(payload),
+  })
+  if (!r.ok) throw new Error(`emit pestana_recuperada failed: ${r.status}`)
+  return (await r.json()) as EventEmitResponse
+}
+
+/** Emite copia_intentada al CTR (el editor Monaco bloquea la accion). */
+export async function emitCopiaIntentada(
+  episodeId: string,
+  payload: { seleccion_chars: number; metodo: "shortcut" | "menu_contextual" },
+  getToken?: TokenGetter,
+): Promise<EventEmitResponse> {
+  const r = await fetch(`/api/v1/episodes/${episodeId}/events/copia_intentada`, {
+    method: "POST",
+    headers: await authHeaders(getToken),
+    body: JSON.stringify(payload),
+  })
+  if (!r.ok) throw new Error(`emit copia_intentada failed: ${r.status}`)
+  return (await r.json()) as EventEmitResponse
+}
+
+/** Emite pega_intentada al CTR (el editor Monaco bloquea la accion). */
+export async function emitPegaIntentada(
+  episodeId: string,
+  payload: {
+    contenido_longitud: number
+    contenido_preview: string
+    metodo: "shortcut" | "menu_contextual" | "drag_drop"
+  },
+  getToken?: TokenGetter,
+): Promise<EventEmitResponse> {
+  const r = await fetch(`/api/v1/episodes/${episodeId}/events/pega_intentada`, {
+    method: "POST",
+    headers: await authHeaders(getToken),
+    body: JSON.stringify(payload),
+  })
+  if (!r.ok) throw new Error(`emit pega_intentada failed: ${r.status}`)
+  return (await r.json()) as EventEmitResponse
+}
+
 /** Emite un evento anotacion_creada al CTR. El backend valida que
  * `contenido` tenga entre 1 y 5000 chars (responde 422 si no).
  */
