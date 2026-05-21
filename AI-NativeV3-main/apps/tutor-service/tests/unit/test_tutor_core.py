@@ -105,6 +105,9 @@ class FakeAIGatewayClient:
     ) -> AsyncIterator[dict]:
         # Capturar materia_id para tests que verifican propagación ADR-040
         self.last_materia_id = materia_id
+        # Capturar mensajes completos para tests que verifican inyección de
+        # contexto (rubrica, current_code, RAG).
+        self.last_messages = messages
         for chunk in self.response_chunks:
             yield {"type": "chunk", "content": chunk}
         if self.usage is not None:
@@ -920,3 +923,114 @@ def test_nuevo_tutor_respondio_payload_acepta_tokens_y_provider() -> None:
     assert parsed.tokens_input == 42
     assert parsed.tokens_output == 15
     assert parsed.provider == "anthropic"
+
+
+@pytest.mark.asyncio
+async def test_record_edicion_codigo_guarda_snapshot_en_session(
+    tutor: TutorCore,
+) -> None:
+    """2026-05-21: tras record_edicion_codigo, el state.current_code refleja
+    el último snapshot. Permite que el siguiente prompt al tutor reciba el
+    código como contexto."""
+    tenant_id = uuid4()
+    student_id = uuid4()
+    episode_id = await tutor.open_episode(
+        tenant_id=tenant_id,
+        comision_id=uuid4(),
+        student_pseudonym=student_id,
+        problema_id=uuid4(),
+        curso_config_hash="c" * 64,
+        classifier_config_hash="b" * 64,
+    )
+
+    await tutor.record_edicion_codigo(
+        episode_id=episode_id,
+        snapshot="def foo():\n    return 42\n",
+        diff_chars=25,
+        language="python",
+        user_id=student_id,
+    )
+
+    state = await tutor.sessions.get(episode_id)
+    assert state is not None
+    assert state.current_code == "def foo():\n    return 42\n"
+
+    # Segundo snapshot sobrescribe el primero (cache del editor, no historial)
+    await tutor.record_edicion_codigo(
+        episode_id=episode_id,
+        snapshot="def foo():\n    return 43\n",
+        diff_chars=1,
+        language="python",
+        user_id=student_id,
+    )
+    state2 = await tutor.sessions.get(episode_id)
+    assert state2 is not None
+    assert state2.current_code == "def foo():\n    return 43\n"
+
+
+@pytest.mark.asyncio
+async def test_interact_inyecta_current_code_con_numeros_de_linea(
+    tutor: TutorCore, fake_ai: FakeAIGatewayClient
+) -> None:
+    """2026-05-21: si la sesión tiene current_code, el tutor recibe el código
+    con números de línea como mensaje `system` antes del prompt del alumno.
+    Esto permite que el tutor responda 'en la línea 7 tenés X'."""
+    tenant_id = uuid4()
+    student_id = uuid4()
+    episode_id = await tutor.open_episode(
+        tenant_id=tenant_id,
+        comision_id=uuid4(),
+        student_pseudonym=student_id,
+        problema_id=uuid4(),
+        curso_config_hash="c" * 64,
+        classifier_config_hash="b" * 64,
+    )
+
+    await tutor.record_edicion_codigo(
+        episode_id=episode_id,
+        snapshot="edad = 25\nif edad < 18:\n    print('menor')\n",
+        diff_chars=40,
+        language="python",
+        user_id=student_id,
+    )
+
+    async for _ in tutor.interact(episode_id, "¿qué pasa si edad es 18?"):
+        pass
+
+    # Verificar que el código del editor llegó al LLM como system message
+    sys_msgs = [m for m in fake_ai.last_messages if m["role"] == "system"]
+    code_msg = next(
+        (m for m in sys_msgs if "Código que el alumno tiene actualmente" in m["content"]),
+        None,
+    )
+    assert code_msg is not None, "current_code no se inyectó como system message"
+    # Verificar numerado de líneas
+    assert "  1  edad = 25" in code_msg["content"]
+    assert "  2  if edad < 18:" in code_msg["content"]
+    assert "  3      print('menor')" in code_msg["content"]
+
+
+@pytest.mark.asyncio
+async def test_interact_sin_current_code_no_inyecta_mensaje(
+    tutor: TutorCore, fake_ai: FakeAIGatewayClient
+) -> None:
+    """Sanity: si el alumno no tipeó nada todavía (current_code=None), el
+    prompt al tutor NO incluye el system message de código."""
+    tenant_id = uuid4()
+    episode_id = await tutor.open_episode(
+        tenant_id=tenant_id,
+        comision_id=uuid4(),
+        student_pseudonym=uuid4(),
+        problema_id=uuid4(),
+        curso_config_hash="c" * 64,
+        classifier_config_hash="b" * 64,
+    )
+
+    async for _ in tutor.interact(episode_id, "no entiendo el enunciado"):
+        pass
+
+    code_msgs = [
+        m for m in fake_ai.last_messages
+        if m["role"] == "system" and "Código que el alumno tiene actualmente" in m["content"]
+    ]
+    assert code_msgs == [], "no debería inyectar system de código cuando current_code=None"

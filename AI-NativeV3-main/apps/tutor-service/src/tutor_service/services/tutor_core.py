@@ -444,6 +444,28 @@ class TutorCore:
                 }
             )
 
+        # 4.quater (2026-05-21): inyectar el código actual del editor como
+        # contexto al tutor. Le da awareness para responder preguntas que
+        # referencian el código del alumno ("en la línea 7 tengo un error",
+        # "¿está bien mi while?"). El tutor sigue siendo socrático — la
+        # instrucción es que USE este contexto SIN dar la solución.
+        if state.current_code and state.current_code.strip():
+            numbered = "\n".join(
+                f"{i + 1:3d}  {line}"
+                for i, line in enumerate(state.current_code.splitlines())
+            )
+            messages.append(
+                {
+                    "role": "system",
+                    "content": (
+                        "Código que el alumno tiene actualmente en su editor "
+                        "(con número de línea — referite a líneas específicas "
+                        "cuando ayudes; NO le des la solución completa):\n"
+                        f"```\n{numbered}\n```"
+                    ),
+                }
+            )
+
         # 4.ter (tutor-context-rag-rubrica): inyectar rubrica de evaluacion como
         # contexto separado del RAG. El tutor usa esta informacion para orientar
         # sus preguntas socraticas hacia los criterios, sin revelarlos al alumno.
@@ -749,6 +771,13 @@ class TutorCore:
         # Publicar como el estudiante, no como el service account
         await self.ctr.publish_event(event, state.tenant_id, user_id)
         await self._record_overuse_non_prompt_event(event)
+        # 2026-05-21 — guardar el snapshot actual en la sesión para que el
+        # próximo prompt al tutor pueda inyectarlo como contexto (permite
+        # respuestas que se refieran a líneas específicas: "en la línea 7
+        # estás declarando X..."). next_seq() ya persistió la sesión arriba,
+        # así que actualizamos y volvemos a persistir.
+        state.current_code = snapshot
+        await self.sessions.set(state)
         return seq
 
     # ── Evento anotacion_creada (AnotacionCreada — reflexión explícita) ──

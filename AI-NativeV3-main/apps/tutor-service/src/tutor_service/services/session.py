@@ -66,6 +66,12 @@ class SessionState:
     # resuelve al abrir el episodio y se cachea aqui (best-effort; None = no
     # se pudo resolver o la TP no tiene rubrica).
     rubrica_context: str | None = None
+    # 2026-05-21 — código actual del editor del alumno. Se actualiza con cada
+    # evento `edicion_codigo` que llega al CTR. Se inyecta como `system`
+    # message en el siguiente prompt al tutor para que pueda referirse a
+    # líneas específicas ("en la línea 7 estás haciendo X"). None = el alumno
+    # no escribió nada todavía en este episodio.
+    current_code: str | None = None
 
 
 class SessionManager:
@@ -106,6 +112,8 @@ class SessionManager:
             ejercicio_orden=data.get("ejercicio_orden"),
             # tutor-context-rag-rubrica: sesiones legacy no tienen rubrica_context.
             rubrica_context=data.get("rubrica_context"),
+            # Sesiones legacy no tienen current_code — default None.
+            current_code=data.get("current_code"),
         )
 
     async def set(self, state: SessionState) -> None:
@@ -131,6 +139,7 @@ class SessionManager:
             "ejercicio_id": str(state.ejercicio_id) if state.ejercicio_id else None,
             "ejercicio_orden": state.ejercicio_orden,
             "rubrica_context": state.rubrica_context,
+            "current_code": state.current_code,
         }
         await self.redis.setex(self._key(state.episode_id), SESSION_TTL, json.dumps(data))
 
