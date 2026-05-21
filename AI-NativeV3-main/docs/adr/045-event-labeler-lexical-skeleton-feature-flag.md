@@ -5,7 +5,7 @@
 - **Deciders**: Alberto Cortez, director de tesis
 - **Tags**: classifier, instrumentación, labeler, mejora-3-plan-post-piloto-1, eje-b-preparacion
 - **Supersede PARCIAL**: ADR-023. La sección "G8b sigue como agenda" del ADR-023 se cierra técnicamente; G8c (semántico vía embeddings) sigue siendo agenda Eje B post-defensa, fuera de scope.
-- **Cierra parcialmente**: Mejora 3 del plan documentado en `mejoras.docx` (sub-componente G8b léxico; sub-componente G8c semántico queda fuera de scope).
+- **Cierra parcialmente**: Mejora 3 del plan documentado en `documentos/borradores-paper/mejoras.docx` (sub-componente G8b léxico; sub-componente G8c semántico queda fuera de scope).
 
 ## Contexto y problema
 
@@ -13,7 +13,7 @@ ADR-023 cerró el sesgo sistemático del labeler v1.0.0 sobre `anotacion_creada`
 
 La sub-mejora **G8b** descrita en ADR-023 sección "G8b — heurístico léxico" propone reglas regex sobre el contenido de la anotación: patrones tipo "estoy leyendo" / "el enunciado pide" → N1; patrones tipo "ahora entiendo" / "tras la respuesta" → N4. ADR-023 la descartó para pre-defensa con la justificación textual: *"requiere validación κ contra juicio docente sobre subset etiquetado a mano (mismo protocolo que el clasificador N4, Capítulo 14). Sin esa validación el corpus regex es decisión arbitraria con apariencia de rigor — peor que declararlo como heurística temporal honesta."*
 
-El plan de mejoras post-piloto-1 (`mejoras.docx`) ataca esta limitación como Mejora 3 del orden recomendado. G8b tiene un gate humano explícito (validación intercoder κ ≥ 0,6 sobre 50+ anotaciones etiquetadas por 2 docentes independientes); G8c tiene **además** un gate arquitectónico (endpoint nuevo en `ai-gateway`, integración con embeddings, decisiones de modelo). Ambos sub-componentes no son ejecutables completamente sin coordinación humana.
+El plan de mejoras post-piloto-1 (`documentos/borradores-paper/mejoras.docx`) ataca esta limitación como Mejora 3 del orden recomendado. G8b tiene un gate humano explícito (validación intercoder κ ≥ 0,6 sobre 50+ anotaciones etiquetadas por 2 docentes independientes); G8c tiene **además** un gate arquitectónico (endpoint nuevo en `ai-gateway`, integración con embeddings, decisiones de modelo). Ambos sub-componentes no son ejecutables completamente sin coordinación humana.
 
 El presente ADR materializa la decisión de **implementar el esqueleto técnico de G8b con activación bloqueada por feature flag OFF**, replicando exactamente el patrón ya validado por ADR-044 (Fase B socratic_compliance, Mejora 4 del mismo plan). La activación real depende del corpus humano de calibración, idéntica restricción que ADR-027/ADR-044. **G8c queda fuera de scope** del presente ADR — el esqueleto-OFF aplica a soluciones cuya activación es flag-flip, no a soluciones que requieren arquitectura nueva.
 
@@ -168,7 +168,7 @@ Cuando estas condiciones se cumplan, el procedimiento de activación es:
 - ADR-009 — patrón canónico de corpus hashes.
 - Tesis Tabla 4.1 — asignación pedagógica de las anotaciones a N1/N4 según contexto.
 - Tesis Sección 19.5 — gap pendiente del override por contenido (reflejado por este ADR como sub-componente cerrado en G8b técnico).
-- `mejoras.docx` — plan post-piloto-1 con orden de mejoras.
+- `documentos/borradores-paper/mejoras.docx` — plan post-piloto-1 con orden de mejoras.
 - `docs/limitaciones-declaradas.md` — Limitación 3 actualizada al estado post-ADR-045.
 - `apps/classifier-service/src/classifier_service/services/event_labeler_lexical.py` — implementación.
 - `apps/classifier-service/tests/unit/test_event_labeler_lexical.py` — tests deterministas.

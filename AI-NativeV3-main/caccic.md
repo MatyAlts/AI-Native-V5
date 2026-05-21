@@ -1,7 +1,7 @@
 # Informe de cotejo: paper CACIC 2026 versus código del proyecto
 
 **Fecha del análisis**: 2026-05-08
-**Documento auditado**: `paper.docx` (CACIC 2026 · Workshop de Tecnología Informática Aplicada en Educación, autores Cortez y Garis)
+**Documento auditado**: `documentos/borradores-paper/paper.docx` (CACIC 2026 · Workshop de Tecnología Informática Aplicada en Educación, autores Cortez y Garis)
 **Repositorio auditado**: `AI-NativeV3-main` (rama de trabajo, commit del día)
 **Alcance**: verificación bidireccional entre las afirmaciones técnicas del paper y el estado vigente del código, los ADRs aceptados, el catálogo de reglas de negocio y la bitácora de sesiones.
 

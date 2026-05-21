@@ -5,7 +5,7 @@
 - **Deciders**: Alberto Cortez, director de tesis
 - **Tags**: tutor, guardrails, fase-b, mejora-4-plan-post-piloto-1, eje-c-preparacion
 - **Supersede PARCIAL**: ADR-027. La decisión de DIFERIR la activación se mantiene; lo que este ADR cierra es la disponibilidad del esqueleto técnico listo para activación post-validación intercoder.
-- **Cierra parcialmente**: Mejora 4 del plan documentado en `mejoras.docx` (componente técnico; el componente humano sigue abierto).
+- **Cierra parcialmente**: Mejora 4 del plan documentado en `documentos/borradores-paper/mejoras.docx` (componente técnico; el componente humano sigue abierto).
 
 ## Contexto y problema
 
@@ -13,7 +13,7 @@ ADR-027 documentó la decisión doctoral explícita de **DIFERIR** la Fase B de 
 
 La justificación operativa central del ADR-027 es: *"Un score mal calculado es peor que ninguno. El campo queda como `None` en eventos hasta que la calibración con docentes valide el cálculo."* Esta cláusula impide activar la Fase B en runtime hasta que la validación humana exista — y la validación humana no es accionable por el equipo técnico solo.
 
-El plan de mejoras post-piloto-1 (`mejoras.docx`) propuso atacar esta limitación como Mejora 4 del orden recomendado. Sin la calibración intercoder, no se puede prender el postprocess en producción. Pero el código técnico — detector regex sobre la respuesta, fórmula provisoria del score, integración en el flow del tutor, hash determinista del corpus, batería de tests — sí es accionable autónomamente y, una vez listo, reduce el lead-time de activación cuando la validación esté disponible (de "varias semanas de implementación + tests" a "días de calibración del threshold final + flag flip").
+El plan de mejoras post-piloto-1 (`documentos/borradores-paper/mejoras.docx`) propuso atacar esta limitación como Mejora 4 del orden recomendado. Sin la calibración intercoder, no se puede prender el postprocess en producción. Pero el código técnico — detector regex sobre la respuesta, fórmula provisoria del score, integración en el flow del tutor, hash determinista del corpus, batería de tests — sí es accionable autónomamente y, una vez listo, reduce el lead-time de activación cuando la validación esté disponible (de "varias semanas de implementación + tests" a "días de calibración del threshold final + flag flip").
 
 El presente ADR materializa la decisión de **implementar el esqueleto técnico de la Fase B con activación bloqueada por feature flag** durante el período entre el cierre de v1.0.0 del piloto y la disponibilidad del corpus de validación intercoder con docentes.
 
@@ -143,7 +143,7 @@ Cuando las tres se cumplan, el procedimiento de activación es:
 - ADR-009 — `prompt_system_hash` y patrón canónico de corpus hashes.
 - Tesis Sección 8.5.1 — diseño del tutor con postprocesamiento.
 - Tesis Sección 19.5 — gap declarado.
-- `mejoras.docx` — plan post-piloto-1 con orden de mejoras.
+- `documentos/borradores-paper/mejoras.docx` — plan post-piloto-1 con orden de mejoras.
 - `docs/limitaciones-declaradas.md` — Limitación 4 actualizada al estado post-ADR-044.
 - `apps/tutor-service/src/tutor_service/services/postprocess_socratic.py` — implementación.
 - `apps/tutor-service/tests/unit/test_postprocess_socratic.py` — tests deterministas.

@@ -17,7 +17,7 @@ ADR-045 (2026-05-09) formaliza el cierre parcial de la sub-mejora G8b del
 plan post-piloto-1: el esqueleto tecnico (corpus lexico, hash determinista,
 funcion pura, tests) queda implementado y listo. La activacion real depende
 de validacion intercoder kappa >= 0.70 (alineacion con paper Cortez & Garis,
-ppcona.docx Sec 7; ADR-046 supersede parcial sobre ADRs 027/044) sobre el
+documentos/borradores-paper/ppcona.docx Sec 7; ADR-046 supersede parcial sobre ADRs 027/044) sobre el
 protocolo dual: 200 eventos estratificados 50 por nivel N1-N4 (Protocolo A,
 validacion del etiquetador) + 50 episodios para categorias de apropiacion
 (Protocolo B, validacion del arbol de decision). Etiquetadores: 2 docentes

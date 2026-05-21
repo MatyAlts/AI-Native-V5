@@ -417,7 +417,7 @@ Sesión de continuación del plan post-piloto-1. Tras cerrar la Mejora 5 (overus
 
 ## 2026-05-09 — Mejora 5 del plan post-piloto-1: detección de sobreuso (overuse) implementada
 
-Sesión de ejecución del plan documentado en `mejoras.docx`. Tras la verificación profunda de las cinco limitaciones declaradas del sistema y la confirmación de que las cinco son ciertas y respaldadas por ADRs, el usuario pidió ejecutar el plan en el orden recomendado. Se arrancó por la **Mejora 5 (overuse)** por ser la de menor complejidad técnica, self-contained en `guardrails.py`, y sin requerir validación intercoder con docentes — sirve como calentamiento del patrón antes de las mejoras 4 y 3 que comparten el mismo dominio pero son más grandes.
+Sesión de ejecución del plan documentado en `documentos/borradores-paper/mejoras.docx`. Tras la verificación profunda de las cinco limitaciones declaradas del sistema y la confirmación de que las cinco son ciertas y respaldadas por ADRs, el usuario pidió ejecutar el plan en el orden recomendado. Se arrancó por la **Mejora 5 (overuse)** por ser la de menor complejidad técnica, self-contained en `guardrails.py`, y sin requerir validación intercoder con docentes — sirve como calentamiento del patrón antes de las mejoras 4 y 3 que comparten el mismo dominio pero son más grandes.
 
 ### Pasos ejecutados (en orden)
 

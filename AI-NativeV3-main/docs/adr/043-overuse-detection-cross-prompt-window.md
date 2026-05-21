@@ -5,13 +5,13 @@
 - **Deciders**: Alberto Cortez, director de tesis
 - **Tags**: tutor, guardrails, ctr, mejora-5-plan-post-piloto-1, eje-a-cierre
 - **Supersede**: la cláusula del ADR-019 que declaraba `overuse` como agenda futura. La supersesión es PARCIAL: el ADR-019 sigue siendo la decisión vigente sobre las cinco categorías regex de la Fase A; este ADR agrega la sexta categoría con un mecanismo de detección distinto.
-- **Cierra**: Mejora 5 del plan documentado en `mejoras.docx`.
+- **Cierra**: Mejora 5 del plan documentado en `documentos/borradores-paper/mejoras.docx`.
 
 ## Contexto y problema
 
 El ADR-019 cerró la Fase A de los guardrails con cinco categorías de detección regex aplicadas como función pura sobre cada prompt individual: `jailbreak_indirect`, `jailbreak_substitution`, `jailbreak_fiction`, `persuasion_urgency` y `prompt_injection`. La Sección 8.5.3 de la tesis describe una sexta categoría de comportamiento adverso, denominada **sobreuso intencional** (`overuse`), que el ADR-019 declaró explícitamente fuera del alcance de la versión v1.0.0 con la justificación textual de que "requiere ventana temporal cross-prompt sobre múltiples prompts del mismo episodio (no es una decisión por-prompt)" (ADR-019 línea 112). El docstring del módulo `apps/tutor-service/src/tutor_service/services/guardrails.py:21` documenta la misma limitación.
 
-El plan de mejoras post-piloto-1 (`mejoras.docx`) propuso convertir esta limitación en mejora sustancial mediante un detector que mantiene estado por episodio y razona sobre múltiples prompts. El presente ADR materializa la decisión de implementación, los umbrales elegidos, el mecanismo de persistencia del estado y las garantías de no regresión sobre el sistema vigente.
+El plan de mejoras post-piloto-1 (`documentos/borradores-paper/mejoras.docx`) propuso convertir esta limitación en mejora sustancial mediante un detector que mantiene estado por episodio y razona sobre múltiples prompts. El presente ADR materializa la decisión de implementación, los umbrales elegidos, el mecanismo de persistencia del estado y las garantías de no regresión sobre el sistema vigente.
 
 ## Decisión
 
@@ -122,6 +122,6 @@ Un análisis empírico ex-post sobre los datos del piloto-1 puede refinar estos 
 - `apps/tutor-service/src/tutor_service/services/tutor_core.py` — integración del hook.
 - `apps/tutor-service/tests/unit/test_overuse_detector.py` — tests del detector.
 - `apps/tutor-service/tests/unit/test_guardrails.py` — golden hash actualizado y test de versión.
-- `mejoras.docx` — plan de mejoras post-piloto-1, sección 5 (Mejora 5).
+- `documentos/borradores-paper/mejoras.docx` — plan de mejoras post-piloto-1, sección 5 (Mejora 5).
 - Tesis Sección 8.5.3 — descripción del comportamiento adverso de sobreuso.
 - Tesis Sección 17.8 — análisis empírico de eventos adversos del piloto.
