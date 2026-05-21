@@ -155,7 +155,16 @@ def _build_window(events: list[dict]) -> WorkWindow:
     first_ts = _parse_ts(events[0]["ts"])
     last_ts = _parse_ts(events[-1]["ts"])
     prompts = sum(1 for e in events if e["event_type"] == "prompt_enviado")
-    execs = sum(1 for e in events if e["event_type"] == "codigo_ejecutado")
+    # `execution_count` cuenta ejecuciones que el alumno hace contra el código:
+    # tanto el run libre (`codigo_ejecutado`) como la corrida de tests
+    # (`tests_ejecutados`) son actos de ejecución sobre su solución, y ambos
+    # cuentan para el `prompt_exec_ratio` (balance prompts ↔ acción). Antes
+    # solo se contaba `codigo_ejecutado` y los alumnos que usaban tests pero
+    # no run libre caían en `prompt_exec_ratio = 1.0` (balance = 0), forzando
+    # `ct_summary = 0.5` constante.
+    execs = sum(
+        1 for e in events if e["event_type"] in ("codigo_ejecutado", "tests_ejecutados")
+    )
     reflections = sum(1 for e in events if e["event_type"] == "anotacion_creada")
     return WorkWindow(
         start=first_ts,
