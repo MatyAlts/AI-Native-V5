@@ -18,16 +18,16 @@ from pathlib import Path
 from tutor_service.config import Settings
 
 
-def test_default_prompt_version_es_v101_post_g12_activation() -> None:
-    """ADR-009 + G12 (2026-04-29): la version activa del prompt tutor es v1.1.0.
+def test_default_prompt_version_es_v120_post_g12_activation() -> None:
+    """ADR-009 + G12 (2026-04-29): la version activa del prompt tutor es v1.2.0.
 
-    El manifest global (`ai-native-prompts/manifest.yaml`) declara `default.tutor: v1.1.0`.
+    El manifest global (`ai-native-prompts/manifest.yaml`) declara `default.tutor: v1.2.0`.
     Esta config debe coincidir.
     """
     s = Settings()
-    assert s.default_prompt_version == "v1.1.0", (
+    assert s.default_prompt_version == "v1.2.0", (
         f"tutor-service.default_prompt_version='{s.default_prompt_version}' "
-        f"pero el manifest global del repo apunta a v1.1.0. ALINEAR los dos "
+        f"pero el manifest global del repo apunta a v1.2.0. ALINEAR los dos "
         f"lados — ver `ai-native-prompts/manifest.yaml` y "
         f"`apps/tutor-service/src/tutor_service/config.py`."
     )
@@ -50,12 +50,12 @@ def test_manifest_yaml_existe_y_se_parsea() -> None:
     assert manifest.exists(), (
         f"ai-native-prompts/manifest.yaml debe existir post-G12-activation; "
         f"si fue borrado, el endpoint /active_configs devuelve el default v1.0.0 "
-        f"hardcodeado mientras el tutor usa v1.1.0 — desalineacion silenciosa."
+        f"hardcodeado mientras el tutor usa v1.2.0 — desalineacion silenciosa."
     )
     text = manifest.read_text(encoding="utf-8")
     # Sanity check minimo — no parseamos YAML completo aca, solo verificamos
     # que la version declarada coincide con el config del tutor.
-    assert "tutor: v1.1.0" in text, (
-        f"manifest.yaml debe declarar 'tutor: v1.1.0' bajo active.default; "
+    assert "tutor: v1.2.0" in text, (
+        f"manifest.yaml debe declarar 'tutor: v1.2.0' bajo active.default; "
         f"contenido actual no incluye esa linea."
     )

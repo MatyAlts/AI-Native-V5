@@ -195,6 +195,7 @@ async def test_ai_gateway_stream_yields_usage_event() -> None:
             "provider": "anthropic",
             "tokens_input": 42,
             "tokens_output": 15,
+            "cost_usd": 0.0007,
         },
     ]
 
