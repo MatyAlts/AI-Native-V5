@@ -71,16 +71,27 @@ def classify(
 
     # ── Árbol de decisión ─────────────────────────────────────────────
     #
-    # Rama 1: DELEGACIÓN PASIVA
-    # Dos condiciones independientes cualquiera de las cuales gatilla:
-    #   (a) orphan_ratio extremadamente alto (>0.8): el estudiante actúa
-    #       casi siempre sin verbalizar, sin importar el ritmo temporal.
-    #       Patrón clásico de "copy-paste del tutor".
+    # Rama 1: DELEGACIÓN PASIVA (tree_version v2.0.0)
+    # Dos sub-condiciones AND, cualquiera de las cuales gatilla — pero
+    # AMBAS requieren dos dimensiones, no una sola. Cambio respecto a
+    # v1.0.0: la condición (a) "extrema" requería SOLO orphan_ratio >=
+    # 0.8, sin mirar coherencia temporal. Esto generaba falsos positivos
+    # cuando un alumno reflexivo trabajaba sostenido pero sin pausa para
+    # verbalizar (codeaba su propia idea de corrido).
+    #   (a) orphan_ratio extremo (>=0.8) Y coherencia temporal baja (<0.5):
+    #       el estudiante actúa sin verbalizar Y con ritmo errático/fragmentado.
+    #       Patrón clásico de "copy-paste del tutor" sin trabajo sostenido.
     #   (b) orphan_ratio alto (>= th) combinado con coherencia temporal
-    #       baja: patrón erratico + sin reflexión.
+    #       muy baja (< th["ct_low"]): patrón errático + sin reflexión.
     EXTREME_ORPHAN_THRESHOLD = 0.8
+    # Calibrado: con 0.65 capturamos casos de delegación real con pausas
+    # erráticas mezcladas (ct intermedio) y al mismo tiempo dejamos pasar
+    # al alumno reflexivo que trabaja sostenido (ct >= 0.65).
+    EXTREME_CT_THRESHOLD = 0.65
 
-    is_extreme_delegation = ccd_orphan >= EXTREME_ORPHAN_THRESHOLD
+    is_extreme_delegation = (
+        ccd_orphan >= EXTREME_ORPHAN_THRESHOLD and ct_summary < EXTREME_CT_THRESHOLD
+    )
     is_classic_delegation = ccd_orphan >= th["ccd_orphan_high"] and ct_summary < th["ct_low"]
     if is_extreme_delegation or is_classic_delegation:
         trigger = "extrema (sin verbalizaciones)" if is_extreme_delegation else "clásica"

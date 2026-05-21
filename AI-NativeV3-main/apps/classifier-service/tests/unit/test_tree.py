@@ -22,6 +22,37 @@ def test_delegacion_pasiva_si_alta_orphan_y_baja_ct() -> None:
     assert "delegación" in r.reason.lower() or "delegacion" in r.reason.lower()
 
 
+def test_orphan_extremo_pero_ct_alto_NO_es_delegacion_v2() -> None:
+    """tree v2.0.0: alumno con orphan=1.00 pero trabajo temporal sostenido
+    NO debe caer en delegación.
+
+    Caso: alumno reflexivo que codea su propia idea de corrido sin pausa
+    para verbalizar. En v1.0.0 caía en `delegacion_pasiva` por la condición
+    unilateral `ccd_orphan_ratio >= 0.8`. En v2.0.0 requiere también
+    coherencia temporal baja (`ct_summary < 0.5`)."""
+    ct = {"ct_summary": 0.7}  # trabajo sostenido (>= 0.65)
+    ccd = {"ccd_mean": 0.5, "ccd_orphan_ratio": 1.0}  # 100% huérfanas
+    cii = {"cii_stability": 0.4, "cii_evolution": 0.5}
+
+    r = classify(ct, ccd, cii)
+    assert r.appropriation != "delegacion_pasiva", (
+        f"v2.0.0: ct_summary={ct['ct_summary']} alto debería rescatar del fallo "
+        f"unilateral por orphan_ratio. Got: {r.appropriation}"
+    )
+
+
+def test_orphan_extremo_con_ct_intermedio_es_delegacion_v2() -> None:
+    """tree v2.0.0: alumno que copia del tutor con pausas erráticas
+    sigue siendo delegación. ct_summary < 0.65 (no llegó a trabajo
+    sostenido) + orphan_ratio extremo → delegación."""
+    ct = {"ct_summary": 0.4}  # patrón errático con pausas
+    ccd = {"ccd_mean": 0.1, "ccd_orphan_ratio": 0.9}
+    cii = {"cii_stability": 0.3, "cii_evolution": 0.3}
+
+    r = classify(ct, ccd, cii)
+    assert r.appropriation == "delegacion_pasiva"
+
+
 def test_apropiacion_reflexiva_si_buenos_valores_en_las_3() -> None:
     ct = {"ct_summary": 0.8}
     ccd = {"ccd_mean": 0.75, "ccd_orphan_ratio": 0.15}
