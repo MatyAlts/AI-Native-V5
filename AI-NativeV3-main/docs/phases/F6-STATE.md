@@ -1,7 +1,7 @@
 # Estado del repositorio — F6 completado
 
 F6 convierte la plataforma multi-tenant de F5 en una plataforma **lista
-para el piloto en UNSL**: integración SSO/LDAP institucional, eventos
+para el piloto en UTN**: integración SSO/LDAP institucional, eventos
 `codigo_ejecutado` cerrando el loop con Pyodide, exportación académica
 anonymizada para investigadores, análisis Kappa inter-rater para la
 validación empírica de la tesis, auditoría de accesos sospechosos, y
@@ -146,12 +146,12 @@ federation LDAP en un realm Keycloak:
 - Mappers de grupo LDAP → rol del realm (ej grupo `cn=docentes,...` →
   role `docente`)
 
-Ejemplo config UNSL:
+Ejemplo config UTN:
 ```python
 LDAPConfig(
-    connection_url="ldaps://ldap.unsl.edu.ar:636",
-    bind_dn="cn=admin,dc=unsl,dc=edu,dc=ar",
-    users_dn="ou=people,dc=unsl,dc=edu,dc=ar",
+    connection_url="ldaps://ldap.utn.edu.ar:636",
+    bind_dn="cn=admin,dc=utn,dc=edu,dc=ar",
+    users_dn="ou=people,dc=utn,dc=edu,dc=ar",
     use_tls=True,
 )
 ```
@@ -208,7 +208,7 @@ Delta F6: +50 tests nuevos (12 academic_export + 10 kappa + 11 audit
 
 ## Propiedades críticas añadidas por F6
 
-1. **Identidad federada institucional**: los usuarios UNSL se
+1. **Identidad federada institucional**: los usuarios UTN se
    autentican con su cuenta institucional existente (LDAP) — no hay que
    re-registrar a cientos de estudiantes.
 
@@ -258,12 +258,12 @@ curl -X POST http://localhost:8005/api/v1/analytics/kappa \
     {"episode_id": "ep2", "rater_a": "apropiacion_superficial", "rater_b": "apropiacion_reflexiva"}
   ]}'
 
-# Setup LDAP federation para UNSL
+# Setup LDAP federation para UTN
 KEYCLOAK_ADMIN_PASSWORD=xxx LDAP_BIND_PASSWORD=yyy python -c "
 import asyncio
 from platform_ops import LDAPFederator, LDAPFederationSpec, LDAPConfig, LDAPGroupMapping
 from uuid import UUID
-# ... (ver examples/unsl_ldap_setup.py)
+# ... (ver examples/utn_ldap_setup.py)
 "
 ```
 
@@ -278,7 +278,7 @@ naturales:
   a S3 firmado queda para implementación real post-piloto.
 - **Export streaming Parquet** para datasets grandes.
 - **SIEM integration**: enviar los `SuspiciousAccess` findings a Splunk
-  o ELK del departamento de seguridad de UNSL.
+  o ELK del departamento de seguridad de UTN.
 - **Análisis longitudinal** de evolución N4 por estudiante (actualmente
   tenemos timeseries a nivel comisión).
 - **A/B testing del árbol N4**: múltiples `reference_profile` corriendo
@@ -299,7 +299,7 @@ Con F0-F6 completos, la plataforma contiene:
 - Dashboards de SLOs + canary deployments ✓
 - Privacy controls GDPR/Ley 25.326 ✓
 
-El siguiente paso del plan de tesis es el **piloto real en UNSL con
+El siguiente paso del plan de tesis es el **piloto real en UTN con
 tres cátedras** (Programación 1, Programación 2, TSU en IA), usando
 esta plataforma. Los resultados del piloto alimentan el capítulo
 empírico de la tesis.

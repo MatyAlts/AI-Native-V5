@@ -165,7 +165,7 @@ export function ExportView({ getToken, comisionIdDefault = "" }: Props) {
                       </li>
                       <li>
                         <strong>Alias de cohorte:</strong> Nombre libre para identificar el archivo
-                        (ej. UNSL_2026_P2).
+                        (ej. UTN_2026_P2).
                       </li>
                       <li>
                         <strong>Incluir prompts:</strong> Activa con precaucion: riesgo de
@@ -200,7 +200,7 @@ export function ExportView({ getToken, comisionIdDefault = "" }: Props) {
                   type="text"
                   value={salt}
                   onChange={(e) => setSalt(e.target.value)}
-                  placeholder="mi-investigacion-unsl-2026-xxxxx"
+                  placeholder="mi-investigacion-utn-2026-xxxxx"
                   className={`w-full px-3 py-2 border rounded font-mono text-sm bg-transparent ${
                     salt.length > 0 && !saltValid
                       ? "border-danger/40"
@@ -237,7 +237,7 @@ export function ExportView({ getToken, comisionIdDefault = "" }: Props) {
                   type="text"
                   value={cohortAlias}
                   onChange={(e) => setCohortAlias(e.target.value)}
-                  placeholder="UNSL_2026_P2"
+                  placeholder="UTN_2026_P2"
                   className="w-full px-3 py-2 border border-border dark:border-sidebar-bg-edge rounded text-sm bg-transparent"
                 />
               </label>

@@ -3,7 +3,7 @@
 - **Estado**: Accepted
 - **Fecha**: 2026-04-27 (propuesto), 2026-05-08 (promovido a Accepted tras verificación bidireccional tesis-código)
 - **Deciders**: Alberto Alejandro Cortez, director de tesis
-- **Tags**: clasificador, analytics, tesis, piloto-UNSL
+- **Tags**: clasificador, analytics, tesis, piloto-UTN
 
 ## Contexto y problema
 
@@ -55,7 +55,7 @@ Ventajas:
 - Defendible academicamente: el slope es la operacionalización más simple de "evolución" sobre datos ordinales.
 
 Desventajas declaradas:
-- Episodios sin `template_id` (TPs huérfanas) NO entran. Para el piloto inicial UNSL **es aceptable**: los TPs nuevos se crean desde templates (ADR-016 lo documenta como flujo principal). TPs huérfanas legacy del periodo de transición no contribuyen a CII longitudinal.
+- Episodios sin `template_id` (TPs huérfanas) NO entran. Para el piloto inicial UTN **es aceptable**: los TPs nuevos se crean desde templates (ADR-016 lo documenta como flujo principal). TPs huérfanas legacy del periodo de transición no contribuyen a CII longitudinal.
 - N=3 es mínimo arbitrario pero defensible (tesis dice "longitudinal" sin especificar mínimo; con N=2 el slope es trivial).
 - Slope cardinal sobre datos ordinales es operacionalización conservadora — el ADR lo declara como tal, no como verdad académica.
 

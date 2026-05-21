@@ -1,7 +1,7 @@
 import type { ReactNode } from "react"
 
 export interface BreadcrumbItem {
-  /** Etiqueta principal a mostrar (ej: "UNSL"). */
+  /** Etiqueta principal a mostrar (ej: "UTN"). */
   label: string
   /** Texto pequeño descriptivo del nivel (ej: "Universidad"). */
   context?: string
@@ -15,7 +15,7 @@ interface BreadcrumbProps {
  * Migaja de navegación stateless que muestra el contexto académico actual.
  *
  * Ejemplo:
- *   Universidad: UNSL  /  Facultad: Cs. Físicas  /  Carrera: Lic. Sistemas
+ *   Universidad: UTN  /  Facultad: Cs. Físicas  /  Carrera: Lic. Sistemas
  *
  * El último item se renderiza en negrita; los anteriores son slate-600.
  */

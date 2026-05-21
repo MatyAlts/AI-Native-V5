@@ -1,24 +1,24 @@
-"""Ejemplo runnable: onboarding completo del tenant UNSL para el piloto.
+"""Ejemplo runnable: onboarding completo del tenant UTN para el piloto.
 
-Ejecuta los 3 pasos en secuencia para preparar UNSL como tenant de la
+Ejecuta los 3 pasos en secuencia para preparar UTN como tenant de la
 plataforma:
 
   1. Crear realm + client + admin user en Keycloak (tenant_onboarding)
-  2. Federar el LDAP institucional de UNSL
+  2. Federar el LDAP institucional de UTN
   3. Configurar feature flags del piloto
 
 Uso (requiere Keycloak corriendo):
 
     export KEYCLOAK_ADMIN_PASSWORD=<admin-pw>
     export LDAP_BIND_PASSWORD=<ldap-pw>
-    export TENANT_ADMIN_EMAIL=admin@unsl.edu.ar
-    python examples/unsl_onboarding.py
+    export TENANT_ADMIN_EMAIL=admin@utn.edu.ar
+    python examples/utn_onboarding.py
 
 En dev local con keycloak en docker-compose:
 
     export KEYCLOAK_ADMIN_PASSWORD=admin
     export LDAP_BIND_PASSWORD=dev
-    python examples/unsl_onboarding.py
+    python examples/utn_onboarding.py
 """
 
 from __future__ import annotations
@@ -39,10 +39,10 @@ ROOT = Path(__file__).parent.parent
 sys.path.insert(0, str(ROOT / "packages/platform-ops/src"))
 
 
-# ── Config del tenant UNSL ───────────────────────────────────────────
+# ── Config del tenant UTN ───────────────────────────────────────────
 
-UNSL_TENANT_UUID = UUID("aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa")
-UNSL_REALM_NAME = "unsl"
+UTN_TENANT_UUID = UUID("aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa")
+UTN_REALM_NAME = "utn"
 KEYCLOAK_URL = os.environ.get("KEYCLOAK_URL", "http://localhost:8180")
 
 
@@ -71,14 +71,14 @@ async def step1_keycloak_onboarding():
 
     spec = TenantSpec(
         name="Universidad Nacional de San Luis",
-        uuid=UNSL_TENANT_UUID,
-        realm_name=UNSL_REALM_NAME,
-        admin_email=os.environ.get("TENANT_ADMIN_EMAIL", "admin@unsl.edu.ar"),
+        uuid=UTN_TENANT_UUID,
+        realm_name=UTN_REALM_NAME,
+        admin_email=os.environ.get("TENANT_ADMIN_EMAIL", "admin@utn.edu.ar"),
         admin_password_temp="ChangeMeAtFirstLogin!",
         allowed_origins=[
-            "https://plataforma.unsl.edu.ar",
-            "https://plataforma.unsl.edu.ar/admin",
-            "https://plataforma.unsl.edu.ar/tutor",
+            "https://plataforma.utn.edu.ar",
+            "https://plataforma.utn.edu.ar/admin",
+            "https://plataforma.utn.edu.ar/tutor",
         ],
     )
 
@@ -106,25 +106,25 @@ async def step2_ldap_federation(spec):
     ldap_spec = LDAPFederationSpec(
         realm_name=spec.realm_name,
         tenant_uuid=spec.uuid,
-        display_name="LDAP Institucional UNSL",
+        display_name="LDAP Institucional UTN",
         ldap=LDAPConfig(
-            connection_url=os.environ.get("LDAP_URL", "ldaps://ldap.unsl.edu.ar:636"),
-            bind_dn="cn=admin,dc=unsl,dc=edu,dc=ar",
+            connection_url=os.environ.get("LDAP_URL", "ldaps://ldap.utn.edu.ar:636"),
+            bind_dn="cn=admin,dc=utn,dc=edu,dc=ar",
             bind_credential=ldap_password,
-            users_dn="ou=people,dc=unsl,dc=edu,dc=ar",
+            users_dn="ou=people,dc=utn,dc=edu,dc=ar",
             use_tls=True,
         ),
         group_mappings=[
             LDAPGroupMapping(
-                ldap_group_dn="cn=docentes,ou=grupos,dc=unsl,dc=edu,dc=ar",
+                ldap_group_dn="cn=docentes,ou=grupos,dc=utn,dc=edu,dc=ar",
                 realm_role="docente",
             ),
             LDAPGroupMapping(
-                ldap_group_dn="cn=administradores,ou=grupos,dc=unsl,dc=edu,dc=ar",
+                ldap_group_dn="cn=administradores,ou=grupos,dc=utn,dc=edu,dc=ar",
                 realm_role="docente_admin",
             ),
             LDAPGroupMapping(
-                ldap_group_dn="cn=estudiantes,ou=grupos,dc=unsl,dc=edu,dc=ar",
+                ldap_group_dn="cn=estudiantes,ou=grupos,dc=utn,dc=edu,dc=ar",
                 realm_role="estudiante",
             ),
         ],
@@ -162,8 +162,8 @@ def step3_feature_flags():
     logger.info("=== Paso 3: Feature flags del piloto ===")
 
     flags_yaml = """\
-# Feature flags del piloto UNSL
-# Generado por unsl_onboarding.py
+# Feature flags del piloto UTN
+# Generado por utn_onboarding.py
 
 default:
   enable_code_execution: false
@@ -174,11 +174,11 @@ default:
 
 tenants:
   aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa:
-    # UNSL piloto — features del piloto activadas
+    # UTN piloto — features del piloto activadas
     enable_code_execution: true
     enable_claude_opus: false  # usamos Sonnet para el piloto (costos)
     max_episodes_per_day: 200
-    welcome_message: Bienvenido al piloto de la plataforma en UNSL
+    welcome_message: Bienvenido al piloto de la plataforma en UTN
     show_n4_to_students: true  # el piloto muestra N4 al estudiante
 """
 

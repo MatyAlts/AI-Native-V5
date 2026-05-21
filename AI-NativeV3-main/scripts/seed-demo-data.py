@@ -1,4 +1,4 @@
-"""Seed determinista de data demo para el piloto UNSL.
+"""Seed determinista de data demo para el piloto UTN.
 
 Propósito
 ---------
@@ -239,9 +239,9 @@ async def seed_academic(academic_url: str) -> None:
                 ),
                 {
                     "id": str(UNIVERSIDAD_ID),
-                    "nombre": "UNSL demo",
-                    "codigo": "UNSL-DEMO",
-                    "dominio": "unsl.edu.ar",
+                    "nombre": "UTN demo",
+                    "codigo": "UTN-DEMO",
+                    "dominio": "utn.edu.ar",
                     "realm": "demo_uni",
                 },
             )

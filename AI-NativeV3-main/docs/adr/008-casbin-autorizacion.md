@@ -10,7 +10,7 @@
 Keycloak (ADR-002) provee autenticación y roles base (`superadmin`, `docente_admin`, `docente`, `estudiante`), pero RBAC puro es insuficiente para nuestra matriz de permisos:
 
 - Un usuario es "docente" pero solo en **ciertas comisiones**.
-- Un `docente_admin` de UNSL no puede gestionar nada de UNCuyo aunque ambos tengan el mismo rol nominal (esto lo cubre RLS, pero necesitamos también impedirlo a nivel de API antes de llegar a la base).
+- Un `docente_admin` de UTN no puede gestionar nada de UNCuyo aunque ambos tengan el mismo rol nominal (esto lo cubre RLS, pero necesitamos también impedirlo a nivel de API antes de llegar a la base).
 - Algunos permisos son **condicionales**: "puede editar una rúbrica si le pertenece y el período está abierto".
 
 Necesitamos un engine de autorización que combine RBAC (rol) con ABAC (atributos del recurso y contexto).

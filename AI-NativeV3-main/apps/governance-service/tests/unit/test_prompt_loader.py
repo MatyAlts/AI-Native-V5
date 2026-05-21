@@ -94,10 +94,10 @@ def test_active_configs_con_manifest(tmp_path: Path) -> None:
         "    tutor: v1.0.0\n"
         "    classifier: v1.0.0\n"
         "  aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa:\n"
-        "    tutor: v1.1.0-unsl\n"
+        "    tutor: v1.1.0-utn\n"
     )
     loader = PromptLoader(tmp_path)
     cfg = loader.active_configs()
     assert "active" in cfg
     assert cfg["active"]["default"]["tutor"] == "v1.0.0"
-    assert cfg["active"]["aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa"]["tutor"] == "v1.1.0-unsl"
+    assert cfg["active"]["aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa"]["tutor"] == "v1.1.0-utn"

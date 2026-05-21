@@ -8,7 +8,7 @@ Consume el stream Redis `attestation.requests` que el [ctr-service](./ctr-servic
 
 Pertenece al **plano pedagógico-evaluativo / auditoría transversal**. Materializa el componente "Registro externo Ed25519" descrito en [ADR-021](../adr/021-attestation-ed25519.md) y RN-128, cuyas responsabilidades nominales son: garantizar que la cadena de hashes del CTR puede ser verificada por un auditor externo (comité doctoral, institución externa, lectores académicos del paper publicado) **sin requerir trust en el operador de la plataforma** ni en el doctorando.
 
-En piloto real vive en **VPS UNSL separado del cluster del piloto** (infra institucional de la universidad). En dev local se levanta en el mismo monorepo con dev-keys commiteadas (Ed25519 de juguete). El failsafe arranca el servicio si `pubkey activa == dev-key Y environment == "production"` para evitar deploys accidentales con clave de juguete.
+En piloto real vive en **VPS UTN separado del cluster del piloto** (infra institucional de la universidad). En dev local se levanta en el mismo monorepo con dev-keys commiteadas (Ed25519 de juguete). El failsafe arranca el servicio si `pubkey activa == dev-key Y environment == "production"` para evitar deploys accidentales con clave de juguete.
 
 ## 3. Responsabilidades
 
@@ -64,7 +64,7 @@ Response `201`:
   "total_events": 12,
   "ts_episode_closed": "2026-04-24T14:32:11.842Z",
   "ts_attested": "2026-04-24T14:32:13.119Z",
-  "signer_pubkey_id": "unsl-2026-pri",
+  "signer_pubkey_id": "utn-2026-pri",
   "signature": "base64url-ed25519-signature",
   "schema_version": "v1.0.0"
 }
@@ -75,7 +75,7 @@ Response `201`:
 **Depende de (infraestructura):**
 - Redis — DB index **0** (compartida con el ctr-service para el stream `attestation.requests`).
 - Filesystem — directorio `attestation_log_dir` (default `./attestations/` en dev; en prod, mount a bucket institucional MinIO o filesystem del VPS).
-- Clave Ed25519 — `attestation_private_key_path` (default `dev-keys/dev-private.pem` en dev; en prod, override por env apuntando al PEM del VPS institucional generado por el director de informática UNSL).
+- Clave Ed25519 — `attestation_private_key_path` (default `dev-keys/dev-private.pem` en dev; en prod, override por env apuntando al PEM del VPS institucional generado por el director de informática UTN).
 
 **Depende de (otros servicios):** ninguno HTTP. Es **hoja**.
 
@@ -115,8 +115,8 @@ Response `201`:
 - `scripts/verify-attestations.py` (raíz) — herramienta del auditor para verificar firmas bit-exact.
 - `scripts/smoke-test-attestation.sh` (raíz) — smoke test end-to-end.
 - `docs/pilot/auditabilidad-externa.md` — protocolo de auditoría externa.
-- `docs/pilot/attestation-deploy-checklist.md` — checklist operativo de 10 pasos para que el director de informática UNSL deploye el servicio en VPS institucional separado.
-- `docs/pilot/attestation-pubkey.pem.PLACEHOLDER` — slot reservado para la pubkey institucional cuando DI UNSL la entregue.
+- `docs/pilot/attestation-deploy-checklist.md` — checklist operativo de 10 pasos para que el director de informática UTN deploye el servicio en VPS institucional separado.
+- `docs/pilot/attestation-pubkey.pem.PLACEHOLDER` — slot reservado para la pubkey institucional cuando DI UTN la entregue.
 
 ## 9. Configuración y gotchas
 
@@ -134,10 +134,10 @@ Response `201`:
 
 - **Buffer canónico bit-exact**: cualquier cambio en la serialización del buffer (orden de campos, separadores, encoding) ROMPE la verificación de auditores externos. La fórmula está congelada en `services/signing.py::compute_canonical_buffer` con `SCHEMA_VERSION = "v1.0.0"`. Cualquier modificación requiere bumpear `SCHEMA_VERSION` y procesar attestations viejas con la fórmula vieja.
 - **`ts_episode_closed` con sufijo `Z`**: el formato debe ser ISO-8601 UTC con sufijo `Z` (no `+00:00`). El validador rechaza con 400 si no termina en `Z`. Misma regla que el CTR (`canonicalize()` del ctr-service).
-- **Hardware key generation NO requiere doctorando** (D3 del [ADR-021](../adr/021-attestation-ed25519.md)): la generación de la clave Ed25519 institucional es procedimiento del director de informática UNSL en hardware separado. El doctorando NO tiene acceso a la clave privada — sólo recibe la pubkey commiteada al repo como prueba reproducible del período del piloto.
+- **Hardware key generation NO requiere doctorando** (D3 del [ADR-021](../adr/021-attestation-ed25519.md)): la generación de la clave Ed25519 institucional es procedimiento del director de informática UTN en hardware separado. El doctorando NO tiene acceso a la clave privada — sólo recibe la pubkey commiteada al repo como prueba reproducible del período del piloto.
 - **Failsafe production + dev-key**: si arranca con `environment=production` y detecta que la pubkey activa coincide con `dev-keys/dev-public.pem`, el servicio falla a startup. Defensa contra deploy accidental.
 - **El servicio puede estar caído sin afectar al ctr-service**: los items se acumulan en el stream Redis hasta SLO 24h. Si la backlog crece más allá de eso, alertar — la métrica `attestation_stream_lag` lo mide.
-- **`integrity-attestation-service:8012` no está levantado en local en uso normal**: en piloto real vive en VPS UNSL separado. Para tests locales se levanta con `uv run uvicorn integrity_attestation_service.main:app --port 8012 --reload`. Verificado 2026-05-07: el stream `attestation.requests` se está disparando real con `XLEN = 20` cuando los cierres pasan por API.
+- **`integrity-attestation-service:8012` no está levantado en local en uso normal**: en piloto real vive en VPS UTN separado. Para tests locales se levanta con `uv run uvicorn integrity_attestation_service.main:app --port 8012 --reload`. Verificado 2026-05-07: el stream `attestation.requests` se está disparando real con `XLEN = 20` cuando los cierres pasan por API.
 - **Path traversal protegido**: el GET por día valida formato `YYYY-MM-DD` con regex + checks numéricos antes de buscar el archivo.
 - **Auditores usan `scripts/verify-attestations.py`** (raíz del repo): la herramienta toma la pubkey + JSONL + buffer canónico recomputado del CTR original, y verifica firma. Si falla, hay tampering o serialización rota.
 - **No hay JWT/Casbin**: por diseño. La auth del POST es por IP allowlist a nivel red; los GETs son públicos para que auditores externos no necesiten credenciales. Cualquier intento de agregar JWT acá rompe la propiedad de auditabilidad pública.
@@ -152,22 +152,22 @@ La defensa doctoral exige que el comité pueda **independientemente** confirmar 
 
 1. **Auditabilidad criptográfica externa**: con la pubkey + el JSONL del período + el buffer canónico recomputado del CTR, cualquier auditor puede verificar bit-exact que `Ed25519.verify(pubkey, signature, canonical_buffer) == True` para cada attestation.
 
-2. **Hardware key institucional**: la clave privada Ed25519 NO es generada por el doctorando — la genera el director de informática UNSL en hardware separado del cluster del piloto (D3 del ADR). El doctorando recibe la pubkey commiteada al repo como snapshot reproducible del período. Esto cierra la objeción "el doctorando podría haber firmado attestations falsas".
+2. **Hardware key institucional**: la clave privada Ed25519 NO es generada por el doctorando — la genera el director de informática UTN en hardware separado del cluster del piloto (D3 del ADR). El doctorando recibe la pubkey commiteada al repo como snapshot reproducible del período. Esto cierra la objeción "el doctorando podría haber firmado attestations falsas".
 
-3. **Independencia operativa**: el servicio vive en VPS institucional separado del cluster del piloto (infra UNSL). Si el cluster del piloto fuera comprometido, las attestations Ed25519 ya emitidas siguen siendo verificables — quedan en el filesystem del VPS institucional, fuera del alcance del operador del piloto.
+3. **Independencia operativa**: el servicio vive en VPS institucional separado del cluster del piloto (infra UTN). Si el cluster del piloto fuera comprometido, las attestations Ed25519 ya emitidas siguen siendo verificables — quedan en el filesystem del VPS institucional, fuera del alcance del operador del piloto.
 
 **Por qué eventualmente consistente con SLO 24h**: el ctr-service NO debe bloquear cierres de episodios por la disponibilidad del attestation service. Si una caída de red corta la conectividad VPS↔plataforma por 4h, los items se acumulan en el stream Redis y se procesan al volver online. La SLO de 24h es tolerable porque la verificación sólo importa para episodios cerrados; episodios en progreso no requieren attestation.
 
 **Por qué buffer canónico bit-exact**: cualquier auditor debe poder reproducir exactamente el buffer que se firmó. Si la serialización tiene ambigüedad (orden de campos, espacios, encoding), un auditor puede recibir el mismo input lógico pero generar bytes distintos al firmar/verificar — y la verificación falla. La regla de canonización es idéntica al `canonicalize()` del ctr-service por una razón: las dos cadenas de evidencia (cadena CTR interna + attestation Ed25519 externa) deben ser **complementarias**, no contradictorias.
 
-**Discrepancia declarada**: la generación de clave hardware en VPS institucional es **procedimiento operativo del DI UNSL**, no automatizado. El checklist `docs/pilot/attestation-deploy-checklist.md` documenta los 10 pasos. Si la coordinación con DI UNSL falla, el piloto queda con dev-keys en local (auditable internamente pero NO públicamente — el comité doctoral debe confiar en que no hubo deploy con dev-keys en producción).
+**Discrepancia declarada**: la generación de clave hardware en VPS institucional es **procedimiento operativo del DI UTN**, no automatizado. El checklist `docs/pilot/attestation-deploy-checklist.md` documenta los 10 pasos. Si la coordinación con DI UTN falla, el piloto queda con dev-keys en local (auditable internamente pero NO públicamente — el comité doctoral debe confiar en que no hubo deploy con dev-keys en producción).
 
 ## 11. Estado de madurez
 
 **Tests**: smoke test E2E en `scripts/smoke-test-attestation.sh`. Tests unit del buffer canónico y signing en `apps/integrity-attestation-service/tests/`.
 
 **Known gaps**:
-- En piloto-1 vive en VPS institucional UNSL separado — el deploy depende de coordinación con DI UNSL (Paso 2 del checklist `attestation-deploy-checklist.md`). Si la coordinación falla, queda en dev-keys.
+- En piloto-1 vive en VPS institucional UTN separado — el deploy depende de coordinación con DI UTN (Paso 2 del checklist `attestation-deploy-checklist.md`). Si la coordinación falla, queda en dev-keys.
 - Stream lag metric no monitoreada por default — alertar si supera SLO 24h es operacional.
 - Sin GUI para visualizar attestations por día — el JSONL crudo es la única interfaz para auditores.
 - Recovery de attestations corruptas (filesystem corrupt o JSONL truncado) requiere backup external.
@@ -181,7 +181,7 @@ La defensa doctoral exige que el comité pueda **independientemente** confirmar 
 
 **Operación esperada en piloto real**:
 
-1. DI UNSL despliega el servicio en VPS institucional separado siguiendo `docs/pilot/attestation-deploy-checklist.md`.
+1. DI UTN despliega el servicio en VPS institucional separado siguiendo `docs/pilot/attestation-deploy-checklist.md`.
 2. La pubkey institucional reemplaza al placeholder `docs/pilot/attestation-pubkey.pem.PLACEHOLDER` y se commitea al repo como snapshot reproducible.
 3. ctr-service en cluster del piloto apunta su `REDIS_URL` para que el stream `attestation.requests` sea visible al consumer institucional (bridge Redis si los clusters están separados).
 4. Auditores externos (comité doctoral) reciben URL canónica del servicio + commit del repo como mirror — ambos deben coincidir bit-a-bit en pubkey y JSONL.

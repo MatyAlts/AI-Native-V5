@@ -1,4 +1,4 @@
-# Reglas de alerta criticas para piloto-2 ampliado UNSL.
+# Reglas de alerta criticas para piloto-2 ampliado UTN.
 #
 # Portado desde ops/prometheus/slo-rules.yaml (PrometheusRule de K8s) a formato
 # standalone — cargado por Prometheus via 'rule_files' en prometheus.yml.

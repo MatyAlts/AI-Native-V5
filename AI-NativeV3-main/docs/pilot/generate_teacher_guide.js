@@ -1,5 +1,5 @@
 /**
- * Guía de capacitación para los 3 docentes participantes del piloto UNSL.
+ * Guía de capacitación para los 3 docentes participantes del piloto UTN.
  * Material de onboarding pedagógico para las 2 sesiones pre-piloto.
  */
 const fs = require("fs");
@@ -122,7 +122,7 @@ const cover = [
     spacing: { after: 1600 },
   }),
   new Paragraph({
-    children: [new TextRun({ text: "Piloto UNSL · Primer cuatrimestre 2026", size: 24 })],
+    children: [new TextRun({ text: "Piloto UTN · Primer cuatrimestre 2026", size: 24 })],
     alignment: AlignmentType.CENTER,
     spacing: { after: 240 },
   }),
@@ -137,7 +137,7 @@ const cover = [
     spacing: { after: 80 },
   }),
   new Paragraph({
-    children: [new TextRun({ text: "Doctorando · UNSL", size: 20, italics: true })],
+    children: [new TextRun({ text: "Doctorando · UTN", size: 20, italics: true })],
     alignment: AlignmentType.CENTER,
   }),
   PageBreakP(),
@@ -189,7 +189,7 @@ const section2 = [
   P("Para entender qué vas a analizar, primero veamos qué hace un estudiante durante un episodio de trabajo."),
 
   H2("2.1. El flujo de un episodio"),
-  Numbered([Bold("Entra al sitio "), new TextRun("student.plataforma.unsl.edu.ar y se loguea con su cuenta institucional (LDAP UNSL).")]),
+  Numbered([Bold("Entra al sitio "), new TextRun("student.plataforma.utn.edu.ar y se loguea con su cuenta institucional (LDAP UTN).")]),
   Numbered([Bold("Selecciona un problema "), new TextRun("del listado que vos cargaste en tu comisión.")]),
   Numbered([Bold("Abre un episodio "), new TextRun("— desde ese momento todo queda registrado: prompts al tutor, respuestas, código ejecutado.")]),
   Numbered([Bold("Trabaja con el tutor "), new TextRun("en un panel de chat. El tutor es un LLM con un prompt de estilo socrático — no da la respuesta directa, guía con preguntas.")]),
@@ -221,7 +221,7 @@ const section2 = [
 const section3 = [
   PageBreakP(),
   H1("3. Las tres vistas de tu panel docente"),
-  P("Entrás a teacher.plataforma.unsl.edu.ar con tu cuenta UNSL (misma credencial). Tu panel tiene 3 tabs:"),
+  P("Entrás a teacher.plataforma.utn.edu.ar con tu cuenta UTN (misma credencial). Tu panel tiene 3 tabs:"),
 
   H2("3.1. Vista Progresión"),
   P("La tab más importante durante el cuatrimestre. Muestra cómo va cada estudiante."),
@@ -383,7 +383,7 @@ const section6 = [
   P("Podés SUGERIR que usen la plataforma para resolver tal o cual TP, pero no podés hacerlo OBLIGATORIO sin ofrecer una alternativa equivalente. El piloto no es excluyente — un estudiante debe poder aprobar la materia sin tocar la plataforma si así lo decide."),
 
   H3("¿Los estudiantes ven su clasificación N4?"),
-  P("Sí. El feature flag `show_n4_to_students` está activado para UNSL por decisión pedagógica (transparencia). Los estudiantes ven en su propio dashboard cuál es su clasificación actual. No es sanción, es autoconocimiento."),
+  P("Sí. El feature flag `show_n4_to_students` está activado para UTN por decisión pedagógica (transparencia). Los estudiantes ven en su propio dashboard cuál es su clasificación actual. No es sanción, es autoconocimiento."),
 
   H3("¿Cuánto LLM budget gasta cada estudiante?"),
   P("Aproximadamente 500 tokens por prompt (envío + respuesta). Un episodio típico tiene 10-15 prompts → 7500 tokens. Con 180 estudiantes haciendo 8 episodios cada uno a lo largo del cuatrimestre = ~11 millones de tokens. En Claude Sonnet esto cuesta alrededor de $30-50 USD total para todo el piloto."),
@@ -454,10 +454,10 @@ const contactSection = [
 
   makeTable([
     ["Canal", "Para qué", "Tiempo de respuesta"],
-    ["Slack / Teams #piloto-unsl-2026", "Dudas operativas, bugs menores, preguntas del día a día", "Mismo día"],
+    ["Slack / Teams #piloto-utn-2026", "Dudas operativas, bugs menores, preguntas del día a día", "Mismo día"],
     ["Mail a Alberto", "Cuestiones pedagógicas o de investigación", "24-48h"],
     ["Reunión mensual (30 min)", "Revisión de progreso y ajustes", "Programada"],
-    ["Emergencia técnica (Bug crítico)", "Celular de Alberto o TI UNSL", "2-4h"],
+    ["Emergencia técnica (Bug crítico)", "Celular de Alberto o TI UTN", "2-4h"],
   ], [2800, 4000, 2560]),
 
   P(""),
@@ -470,7 +470,7 @@ const contactSection = [
 
 const headerP = new Header({
   children: [new Paragraph({
-    children: [new TextRun({ text: "Guía de capacitación docente — Piloto UNSL", size: 18, italics: true, color: "808080" })],
+    children: [new TextRun({ text: "Guía de capacitación docente — Piloto UTN", size: 18, italics: true, color: "808080" })],
     alignment: AlignmentType.RIGHT,
   })],
 });
@@ -478,7 +478,7 @@ const headerP = new Header({
 const footerP = new Footer({
   children: [new Paragraph({
     children: [
-      new TextRun({ text: "Alberto A. Cortez — Tesis Doctoral UNSL     Página ", size: 18, color: "808080" }),
+      new TextRun({ text: "Alberto A. Cortez — Tesis Doctoral UTN     Página ", size: 18, color: "808080" }),
       new TextRun({ children: [PageNumber.CURRENT], size: 18, color: "808080" }),
       new TextRun({ text: " de ", size: 18, color: "808080" }),
       new TextRun({ children: [PageNumber.TOTAL_PAGES], size: 18, color: "808080" }),
@@ -503,7 +503,7 @@ const allChildren = [
 
 const doc = new Document({
   creator: "Alberto Alejandro Cortez",
-  title: "Guía de capacitación docente — Piloto UNSL",
+  title: "Guía de capacitación docente — Piloto UTN",
   styles,
   numbering: {
     config: [

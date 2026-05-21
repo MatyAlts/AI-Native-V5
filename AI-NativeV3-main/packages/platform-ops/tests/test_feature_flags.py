@@ -11,7 +11,7 @@ from platform_ops.feature_flags import (
     FeatureNotDeclaredError,
 )
 
-UNSL_UUID = UUID("aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa")
+UTN_UUID = UUID("aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa")
 
 
 SAMPLE_CONFIG = """\
@@ -49,9 +49,9 @@ def flags(flags_file: Path) -> FeatureFlags:
 
 
 def test_tenant_con_override_devuelve_el_override(flags: FeatureFlags) -> None:
-    assert flags.is_enabled(UNSL_UUID, "enable_code_execution") is True
-    assert flags.is_enabled(UNSL_UUID, "enable_claude_opus") is True
-    assert flags.get_value(UNSL_UUID, "max_episodes_per_day") == 200
+    assert flags.is_enabled(UTN_UUID, "enable_code_execution") is True
+    assert flags.is_enabled(UTN_UUID, "enable_claude_opus") is True
+    assert flags.get_value(UTN_UUID, "max_episodes_per_day") == 200
 
 
 def test_tenant_sin_override_cae_al_default(flags: FeatureFlags) -> None:
@@ -75,7 +75,7 @@ def test_override_parcial_completa_con_default(flags: FeatureFlags) -> None:
 
 def test_feature_no_declarada_levanta_error(flags: FeatureFlags) -> None:
     with pytest.raises(FeatureNotDeclaredError, match="enable_quantum_mode"):
-        flags.is_enabled(UNSL_UUID, "enable_quantum_mode")
+        flags.is_enabled(UTN_UUID, "enable_quantum_mode")
 
 
 # ── Tipado ─────────────────────────────────────────────────────────────
@@ -84,7 +84,7 @@ def test_feature_no_declarada_levanta_error(flags: FeatureFlags) -> None:
 def test_is_enabled_sobre_valor_no_booleano_falla(flags: FeatureFlags) -> None:
     """is_enabled debe ser estricto: si el valor no es bool, error claro."""
     with pytest.raises(TypeError, match="no es booleana"):
-        flags.is_enabled(UNSL_UUID, "max_episodes_per_day")
+        flags.is_enabled(UTN_UUID, "max_episodes_per_day")
 
 
 def test_valores_de_distintos_tipos_se_parsean_bien(flags: FeatureFlags) -> None:
@@ -98,7 +98,7 @@ def test_valores_de_distintos_tipos_se_parsean_bien(flags: FeatureFlags) -> None
 
 
 def test_get_all_devuelve_merge_default_con_override(flags: FeatureFlags) -> None:
-    all_flags = flags.get_all_for_tenant(UNSL_UUID)
+    all_flags = flags.get_all_for_tenant(UTN_UUID)
     assert all_flags["enable_code_execution"] is True  # del override
     assert all_flags["max_episodes_per_day"] == 200  # del override
     assert all_flags["welcome_message"] == "Bienvenido por default"  # del default
@@ -122,7 +122,7 @@ def test_archivo_ausente_no_crashea_pero_todas_las_features_fallan(tmp_path: Pat
     flags = FeatureFlags(tmp_path / "no-existe.yaml", reload_interval_seconds=0)
     # Cualquier feature → no declarada
     with pytest.raises(FeatureNotDeclaredError):
-        flags.is_enabled(UNSL_UUID, "enable_code_execution")
+        flags.is_enabled(UTN_UUID, "enable_code_execution")
 
 
 # ── Reload ─────────────────────────────────────────────────────────────
@@ -130,11 +130,11 @@ def test_archivo_ausente_no_crashea_pero_todas_las_features_fallan(tmp_path: Pat
 
 def test_cambio_en_archivo_se_recarga(flags_file: Path) -> None:
     flags = FeatureFlags(flags_file, reload_interval_seconds=0)
-    assert flags.get_value(UNSL_UUID, "max_episodes_per_day") == 200
+    assert flags.get_value(UTN_UUID, "max_episodes_per_day") == 200
 
     # Modificar el archivo
     flags_file.write_text(
         SAMPLE_CONFIG.replace("max_episodes_per_day: 200", "max_episodes_per_day: 500")
     )
     # Con reload_interval_seconds=0, la próxima consulta recarga
-    assert flags.get_value(UNSL_UUID, "max_episodes_per_day") == 500
+    assert flags.get_value(UTN_UUID, "max_episodes_per_day") == 500

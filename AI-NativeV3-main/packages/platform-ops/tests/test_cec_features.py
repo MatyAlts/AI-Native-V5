@@ -6,7 +6,7 @@ Validan que las 3 sub-coherencias se computan correctamente y que
 
 IMPORTANTE: las constantes (FUNCTION_GRANULARITY_MIN_LINES = 5, MAX_LINES = 30,
 DEPTH_VARIANCE_NORM = 4.0) son operacionalizaciones iniciales. Si se calibran
-empiricamente con docentes UNSL, estos tests deben actualizarse en paralelo.
+empiricamente con docentes UTN, estos tests deben actualizarse en paralelo.
 """
 
 from __future__ import annotations

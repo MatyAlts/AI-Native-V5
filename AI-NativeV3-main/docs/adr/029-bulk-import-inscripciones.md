@@ -9,13 +9,13 @@
 
 ## Contexto y problema
 
-El piloto UNSL requiere inscribir entre 50 y 200 estudiantes por cuatrimestre. El estado pre-iter-2 era:
+El piloto UTN requiere inscribir entre 50 y 200 estudiantes por cuatrimestre. El estado pre-iter-2 era:
 
 - **No había endpoint individual** para crear inscripciones (`POST /api/v1/inscripciones`). El docstring de [`comisiones.py:117-118`](../../apps/academic-service/src/academic_service/routes/comisiones.py#L117-L118) referenciaba ese endpoint pero **no existía** — vaporware documental.
 - **`bulk-import` de academic-service NO incluía `inscripciones`** en `SUPPORTED_ENTITIES` ([`bulk_import.py:62-70`](../../apps/academic-service/src/academic_service/services/bulk_import.py#L62-L70)). Soportaba 7 entidades: facultades, carreras, planes, materias, periodos, comisiones, tareas_practicas.
 - **`enrollment-service` tenía endpoints de import** ([`POST /api/v1/imports`](../../apps/enrollment-service/src/enrollment_service/routes/imports.py)) pero ningún frontend los consumía y el commit tenía un TODO sin resolver: *"commit (TODO: integrate academic-service)"*.
 
-Consecuencia operativa: **el piloto sólo podía cargar inscripciones via SQL manual o seed scripts** (`scripts/seed-3-comisiones.py`). Para uso real con UNSL sin DBA dedicado, esto era bloqueante.
+Consecuencia operativa: **el piloto sólo podía cargar inscripciones via SQL manual o seed scripts** (`scripts/seed-3-comisiones.py`). Para uso real con UTN sin DBA dedicado, esto era bloqueante.
 
 ## Drivers de la decisión
 

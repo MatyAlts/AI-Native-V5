@@ -12,7 +12,7 @@
 #                    los archivos attestations-YYYY-MM-DD.jsonl firmados con Ed25519
 #                    (evidencia criptografica de la tesis, ADR-021).
 #
-# Para piloto-2 (VPS UNSL sin K8s) corre via systemd timer diario.
+# Para piloto-2 (VPS UTN sin K8s) corre via systemd timer diario.
 # Ver infrastructure/systemd/platform-backup.{service,timer} y docs/VPS-DEPLOY.md.
 
 set -euo pipefail

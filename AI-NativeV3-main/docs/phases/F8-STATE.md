@@ -65,8 +65,8 @@ Propiedades críticas verificadas con tests:
 
 ### Punto 3 — Dashboards Grafana del piloto
 
-`ops/grafana/dashboards/unsl-pilot.json` — dashboard con 12 paneles
-específicos del piloto UNSL:
+`ops/grafana/dashboards/utn-pilot.json` — dashboard con 12 paneles
+específicos del piloto UTN:
 
 - **Fila 1** (stats de salud diaria): episodios del día, estudiantes
   activos, duración media, código ejecutado por episodio, integridad
@@ -92,9 +92,9 @@ de tenant si en el futuro se corre el piloto en otras universidades.
 
 ### Punto 4 — Protocolo del piloto (DOCX)
 
-`docs/pilot/protocolo-piloto-unsl.docx` (23 KB, 306 párrafos, validación
+`docs/pilot/protocolo-piloto-utn.docx` (23 KB, 306 párrafos, validación
 docx OK) — documento académico formal para:
-1. Someter al Comité de Ética de la Investigación de UNSL
+1. Someter al Comité de Ética de la Investigación de UTN
 2. Presentar al jurado como parte del capítulo de metodología
 3. Entregar a los docentes participantes como manual del piloto
 
@@ -148,7 +148,7 @@ F7: 310 → F8: 320
    o papers — todo desde 3 tabs del web-teacher, sin tickets al equipo
    técnico.
 
-3. **Observabilidad del piloto en vivo**: el dashboard UNSL Pilot es
+3. **Observabilidad del piloto en vivo**: el dashboard UTN Pilot es
    el "tablero de mando" del estudio. Alberto lo revisa 1×/día durante
    el piloto; si alguna métrica se desvía (integridad CTR, κ bajo,
    backlog alto) interviene antes de que afecte resultados.
@@ -167,7 +167,7 @@ F7: 310 → F8: 320
 ```bash
 cd platform/infrastructure
 docker compose -f docker-compose.dev.yml up grafana prometheus
-# → http://localhost:3000 (admin/admin) → Dashboards → Platform → UNSL Pilot
+# → http://localhost:3000 (admin/admin) → Dashboards → Platform → UTN Pilot
 ```
 
 ### Activar adaptadores DB reales
@@ -175,7 +175,7 @@ docker compose -f docker-compose.dev.yml up grafana prometheus
 ```bash
 export CTR_STORE_URL="postgresql+asyncpg://..."
 export CLASSIFIER_DB_URL="postgresql+asyncpg://..."
-export EXPORT_WORKER_SALT="unsl-pilot-2026-$(openssl rand -hex 16)"
+export EXPORT_WORKER_SALT="utn-pilot-2026-$(openssl rand -hex 16)"
 
 # Arrancar analytics-service
 cd apps/analytics-service
@@ -199,7 +199,7 @@ pnpm dev
 cd docs/pilot
 npm install -g docx
 node generate_protocol.js
-python3 /path/to/docx-skill/scripts/office/validate.py protocolo-piloto-unsl.docx
+python3 /path/to/docx-skill/scripts/office/validate.py protocolo-piloto-utn.docx
 ```
 
 ## Qué queda
@@ -210,7 +210,7 @@ sigue son tareas de escalamiento operacional (no técnicas fundamentales):
 - Migración del export a Parquet + S3 firmado cuando los datasets
   superen los 100 MB (hoy JSON inline alcanza).
 - Retention automática (cron de `cleanup_old()` en el ExportJobStore).
-- Segundo tenant del piloto (otra facultad de UNSL o universidad
+- Segundo tenant del piloto (otra facultad de UTN o universidad
   adyacente) para validar que el modelo generaliza.
-- Integración real con el sistema de calificaciones de UNSL para el
+- Integración real con el sistema de calificaciones de UTN para el
   análisis de H3 (correlación CII vs rendimiento académico).

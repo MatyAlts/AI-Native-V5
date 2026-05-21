@@ -2,7 +2,7 @@
  * Root layout del web-teacher (ADR-022, shape docente 2026-05-04).
  *
  * Layout vertical del chrome:
- *   header global (Plataforma N4 · UNSL) + ComisionSelectorRouted + email
+ *   header global (Plataforma N4 · UTN) + ComisionSelectorRouted + email
  *   [sidebar | main scrollable]
  *   AuditFooter compartido (mismo patron que web-student)
  *
@@ -122,7 +122,7 @@ function RootLayout() {
             style={{ backgroundColor: "var(--color-accent-brand)" }}
           />
           <h1 className="text-sm font-semibold tracking-tight text-ink">
-            Plataforma N4 <span className="text-muted mx-1">·</span> UNSL
+            Plataforma N4 <span className="text-muted mx-1">·</span> UTN
           </h1>
         </div>
         <div className="flex items-center gap-3 shrink-0">

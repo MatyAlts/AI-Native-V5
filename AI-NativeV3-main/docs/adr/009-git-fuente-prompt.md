@@ -45,7 +45,7 @@ ai-native-prompts/
 │       │   ├── jailbreak_rules.md # reglas regex de pre-check
 │       │   ├── invariants.yaml    # lo que no puede removerse en MINOR
 │       │   └── CHANGELOG.md
-│       ├── v1.1.0-unsl/           # MINOR específico UNSL
+│       ├── v1.1.0-utn/           # MINOR específico UTN
 │       └── manifest.yaml          # qué versiones son activas por tenant
 ├── reference_profiles/
 │   └── cs1_easy/v1.0.0.yaml

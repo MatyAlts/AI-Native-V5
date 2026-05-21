@@ -25,7 +25,7 @@ schema Pydantic correspondiente):
   rol (regular|oyente|reinscripcion, default regular),
   estado (activa|cursando|aprobado|desaprobado|abandono, default activa),
   nota_final (opcional), fecha_cierre (opcional). ADR-029 (B.1) — destraba
-  el alta masiva de estudiantes para el piloto UNSL.
+  el alta masiva de estudiantes para el piloto UTN.
 """
 
 from __future__ import annotations
@@ -59,7 +59,7 @@ from academic_service.services.materia_service import MateriaService
 from academic_service.services.plan_service import PlanService
 from academic_service.services.tarea_practica_service import TareaPracticaService
 
-# Tope superior del payload CSV. El piloto UNSL importa Materias/Comisiones
+# Tope superior del payload CSV. El piloto UTN importa Materias/Comisiones
 # para 1 carrera (≈ 30-50 filas máx), así que 5 MB cubre con holgura cualquier
 # caso legítimo. Evita que un upload patológico (ej. 100 MB) entre entero a
 # memoria — la verificación se hace en parse_csv (servicio) y en la ruta antes

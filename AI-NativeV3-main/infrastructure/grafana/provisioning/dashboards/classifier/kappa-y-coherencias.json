@@ -61,7 +61,7 @@
   ],
   "refresh": "5m",
   "schemaVersion": 39,
-  "tags": ["classifier", "kappa", "piloto-unsl", "tesis"],
+  "tags": ["classifier", "kappa", "piloto-utn", "tesis"],
   "templating": {
     "list": [
       {"current": {"selected": false, "text": "All", "value": "$__all"}, "datasource": {"type": "prometheus", "uid": "prometheus"}, "definition": "label_values(classifier_classifications_total, tenant_id)", "hide": 0, "includeAll": true, "multi": false, "name": "tenant", "options": [], "query": {"query": "label_values(classifier_classifications_total, tenant_id)", "refId": "StandardVariableQuery"}, "refresh": 1, "regex": "", "skipUrlSync": false, "sort": 0, "type": "query"},

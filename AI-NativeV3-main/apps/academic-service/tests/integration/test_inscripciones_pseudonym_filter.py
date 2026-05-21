@@ -57,7 +57,7 @@ def _user(uid: UUID, tenant: UUID, *roles: str) -> User:
     return User(
         id=uid,
         tenant_id=tenant,
-        email=f"{uid}@unsl.edu.ar",
+        email=f"{uid}@utn.edu.ar",
         roles=frozenset(roles),
         realm=str(tenant),
     )

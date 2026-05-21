@@ -1,4 +1,4 @@
-# Alertmanager standalone para piloto-2 ampliado UNSL.
+# Alertmanager standalone para piloto-2 ampliado UTN.
 #
 # Reemplaza al PrometheusOperator-Alertmanager de K8s. Recibe las alertas de
 # Prometheus y notifica por email al equipo tecnico.
@@ -10,7 +10,7 @@ global:
   # Tiempo despues del cual una alerta se resuelve si no se reenvia.
   resolve_timeout: 5m
 
-  # SMTP relay institucional (UNSL). Si el SMTP requiere auth, definir
+  # SMTP relay institucional (UTN). Si el SMTP requiere auth, definir
   # ALERTS_SMTP_USER y ALERTS_SMTP_PASSWORD en .env.prod.
   smtp_smarthost: '${ALERTS_SMTP_HOST}:${ALERTS_SMTP_PORT}'
   smtp_from: '${ALERTS_SMTP_FROM}'

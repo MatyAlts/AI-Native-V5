@@ -8,7 +8,7 @@
 
 ## Contexto y problema
 
-La auditoria comparativa entre el paper "Modelo N4 de trazabilidad cognitiva para la ensenanza universitaria de programacion con asistentes de IA generativa" (Cortez & Garis, UTN-FRM + UNSL) y la implementacion del proyecto identifico dos divergencias operacionalmente relevantes (ver `ppconarev.md` 2026-05-10):
+La auditoria comparativa entre el paper "Modelo N4 de trazabilidad cognitiva para la ensenanza universitaria de programacion con asistentes de IA generativa" (Cortez & Garis, UTN-FRM + UTN) y la implementacion del proyecto identifico dos divergencias operacionalmente relevantes (ver `ppconarev.md` 2026-05-10):
 
 1. **Umbral kappa**: el paper publica `κ ≥ 0,70` consistentemente (Resumen, H3 §6.1, Tabla 5, §7, Tabla 6) citando Landis y Koch (1977) como "acuerdo sustancial". El codigo documentaba `κ ≥ 0,6` en 4 ADRs (027, 032, 044, 045), `event_labeler_lexical.py:19`, `KappaRatingView.tsx:95`, y `docs/limitaciones-declaradas.md:107-108`. Diferencia operativa relevante de cara a la validacion intercoder pendiente (A2 del `plan-accion.md`).
 
@@ -34,7 +34,7 @@ Adoptamos:
 
 ## Drivers de la decision
 
-- **D1**: Defendibilidad academica ante tribunal doctoral UNSL. El paper es el ancla publica del proyecto; modificarlo post-publicacion es mas costoso que modificar el codigo.
+- **D1**: Defendibilidad academica ante tribunal doctoral UTN. El paper es el ancla publica del proyecto; modificarlo post-publicacion es mas costoso que modificar el codigo.
 - **D2**: Alineamiento con literatura del campo. Evidence-centered design (Mislevy/Steinberg/Almond 2003, citado en el paper), AERA/APA/NCME (2014) y la convencion de educational measurement rigurosa usan 0,70 como umbral minimo para clasificacion de constructos cognitivos.
 - **D3**: Margen de seguridad ante varianza muestral. Con N=50-200 muestras el kappa estimado tiene varianza del orden de ±0,06; un umbral mas alto deja margen ante oscilaciones.
 - **D4**: Eliminacion del bug semantico "0,6 = sustancial".
@@ -125,7 +125,7 @@ Subir el umbral pero unificar a un solo protocolo de validacion (etiquetador o a
 - Landis, J. R., & Koch, G. G. (1977). The measurement of observer agreement for categorical data. Biometrics, 33(1), 159-174.
 - Mislevy, R. J., Steinberg, L. S., & Almond, R. G. (2003). Focus article: On the structure of educational assessments. Measurement: Interdisciplinary Research and Perspectives, 1(1), 3-62.
 - AERA, APA, & NCME (2014). Standards for educational and psychological testing. American Educational Research Association.
-- Paper Cortez & Garis — "Modelo N4 de trazabilidad cognitiva para la ensenanza universitaria de programacion con asistentes de IA generativa" (UTN-FRM + UNSL).
+- Paper Cortez & Garis — "Modelo N4 de trazabilidad cognitiva para la ensenanza universitaria de programacion con asistentes de IA generativa" (UTN-FRM + UTN).
 - `ppconarev.md` (2026-05-10) — auditoria comparativa paper ↔ codigo que motiva este ADR.
 - `plan-accion.md` A2 — validacion intercoder pendiente, ahora calibrada al protocolo dual.
 - `docs/limitaciones-declaradas.md` — entrada 2026-05-10 sobre el cambio de umbral.

@@ -199,7 +199,7 @@ function EmptyState() {
           <div className="inline-flex items-center gap-2 mb-4 px-3 py-1 rounded-full bg-accent-brand-soft border border-accent-brand/20">
             <Sparkles className="h-3.5 w-3.5 text-accent-brand" />
             <span className="text-[10px] font-mono uppercase tracking-[0.12em] text-accent-brand-deep font-semibold">
-              UNSL · Plataforma del piloto
+              UTN · Plataforma del piloto
             </span>
           </div>
           <h1 className="text-3xl font-semibold leading-tight tracking-tight text-ink mb-4">

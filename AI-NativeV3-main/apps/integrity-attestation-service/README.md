@@ -23,7 +23,7 @@ Side-channel **eventually consistent** con SLO 24h:
 
 ## Donde corre
 
-- **Piloto UNSL**: VPS institucional separado del cluster del piloto. Director de informatica UNSL custodia la clave Ed25519 privada.
+- **Piloto UTN**: VPS institucional separado del cluster del piloto. Director de informatica UTN custodia la clave Ed25519 privada.
 - **Dev local**: NO se levanta. Los eventos se acumulan en `attestation.requests` hasta que el consumer institucional viene online. Verificado 2026-05-07: con 108 episodios cerrados, `XLEN ctr.attestation.requests = 20` (reflejaba cierres pasados por la API real, no seeds).
 - **Failsafe**: si la pubkey activa coincide con la dev key Y `environment=production`, el servicio **rechaza arrancar** (proteccion contra deploy accidental con clave de juguete).
 

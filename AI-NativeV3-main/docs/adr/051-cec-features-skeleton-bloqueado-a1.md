@@ -28,7 +28,7 @@ Se implementa CEC como **utilidad de análisis offline en `platform-ops`** sin c
    - `naming_consistency(code: str) -> float` — heurística por regex de homogeneidad lexical (snake/camel/pascal) entre identificadores definidos.
    - `compute_cec(snapshots, final_code=None) -> CECResult` — agregador que combina las tres en `cec_summary ∈ [0, 1]`.
 
-2. **Versión `CEC_VERSION = "1.0.0"`**. Sin sufijo `-draft` porque las funciones son matemáticamente determinadas (no contenido textual sujeto a revisión académica). Lo provisional son **las constantes de calibración**: `FUNCTION_GRANULARITY_MIN_LINES = 5`, `MAX_LINES = 30`, `DEPTH_VARIANCE_NORM = 4.0`. Estos rangos pedagógicos son operacionalización inicial — calibrar con docentes UNSL post-A1.
+2. **Versión `CEC_VERSION = "1.0.0"`**. Sin sufijo `-draft` porque las funciones son matemáticamente determinadas (no contenido textual sujeto a revisión académica). Lo provisional son **las constantes de calibración**: `FUNCTION_GRANULARITY_MIN_LINES = 5`, `MAX_LINES = 30`, `DEPTH_VARIANCE_NORM = 4.0`. Estos rangos pedagógicos son operacionalización inicial — calibrar con docentes UTN post-A1.
 
 3. **NO conectado al pipeline**:
    - `apps/classifier-service/src/classifier_service/services/pipeline.py` no importa este módulo.
@@ -41,7 +41,7 @@ Se implementa CEC como **utilidad de análisis offline en `platform-ops`** sin c
 5. **Activación bloqueada hasta**:
    - **Gate A — A1 ejecutado**: las 106 classifications históricas re-clasificadas con el `classifier_config_hash` actual (post-LABELER 1.2.0). Corpus consistente disponible.
    - **Gate B — Validación empírica de no-redundancia**: computar CEC sobre las 106 históricas + cruzar con `appropriation`. Si correlación pearson o spearman entre `cec_summary` y `APPROPRIATION_ORDINAL[appropriation]` es > 0.85, CEC es redundante con CT/CCD/CII y se descarta (cierra el experimento). Si < 0.70, CEC aporta señal ortogonal y se procede a Gate C.
-   - **Gate C — Calibración de rangos pedagógicos**: dirección + docentes UNSL revisan los rangos `MIN_LINES`, `MAX_LINES`, `DEPTH_VARIANCE_NORM` sobre código real del piloto. Ajustar si corresponde, bumpear `CEC_VERSION`.
+   - **Gate C — Calibración de rangos pedagógicos**: dirección + docentes UTN revisan los rangos `MIN_LINES`, `MAX_LINES`, `DEPTH_VARIANCE_NORM` sobre código real del piloto. Ajustar si corresponde, bumpear `CEC_VERSION`.
    - **Gate D — Decisión de incorporación**: ADR-NNN posterior que decide **Opción A** (sexta entrada del árbol — requiere Protocolo C intercoder) o **Opción B** (campo paralelo `code_structural_quality` sin afectar appropriation — no requiere Protocolo C). El `design-sexta-coherencia-estructural.md` recomienda Opción B para piloto-2.
 
 ## Drivers de la decisión

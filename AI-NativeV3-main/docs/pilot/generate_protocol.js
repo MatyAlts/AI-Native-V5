@@ -1,5 +1,5 @@
 /**
- * Genera el Protocolo del Piloto UNSL como documento Word.
+ * Genera el Protocolo del Piloto UTN como documento Word.
  * Destinado al capítulo empírico de la tesis de Alberto Cortez.
  */
 const fs = require("fs");
@@ -212,7 +212,7 @@ const section1 = [
   ]),
   P([
     Bold("Instrumento principal: "),
-    new TextRun("plataforma AI-Native desplegada específicamente para UNSL, con registro auditable de cada interacción estudiante-IA mediante el Cuaderno de Trabajo Reflexivo criptográfico."),
+    new TextRun("plataforma AI-Native desplegada específicamente para UTN, con registro auditable de cada interacción estudiante-IA mediante el Cuaderno de Trabajo Reflexivo criptográfico."),
   ]),
 ];
 
@@ -228,7 +228,7 @@ const section2 = [
   Numbered([new TextRun({ text: "OE1: ", bold: true }), new TextRun("Validar que el clasificador automático N4 reproduce el juicio experto con acuerdo sustancial (κ ≥ 0,70 en Kappa de Cohen — ADR-046) sobre un subconjunto etiquetado por docentes.")]),
   Numbered([new TextRun({ text: "OE2: ", bold: true }), new TextRun("Medir la progresión longitudinal de la apropiación cognitiva a lo largo del cuatrimestre, verificando si la razón neta de progresión (net progression ratio) supera el umbral de 0,3 en cohortes que completan el piloto.")]),
   Numbered([new TextRun({ text: "OE3: ", bold: true }), new TextRun("Caracterizar los patrones de interacción con la IA según las cinco coherencias (CT, CCD_mean, CCD_orphan, CII_stability, CII_evolution) y determinar cuáles predicen mejor el desempeño en las evaluaciones formales de la cátedra.")]),
-  Numbered([new TextRun({ text: "OE4: ", bold: true }), new TextRun("Identificar obstáculos de adopción institucional (integración con SSO, LDAP, requisitos de infraestructura) mediante la observación del proceso de onboarding de UNSL como primer tenant del piloto.")]),
+  Numbered([new TextRun({ text: "OE4: ", bold: true }), new TextRun("Identificar obstáculos de adopción institucional (integración con SSO, LDAP, requisitos de infraestructura) mediante la observación del proceso de onboarding de UTN como primer tenant del piloto.")]),
   Numbered([new TextRun({ text: "OE5: ", bold: true }), new TextRun("Recoger retroalimentación cualitativa de estudiantes y docentes sobre la experiencia de uso, mediante entrevistas semiestructuradas al final del cuatrimestre.")]),
 
   H2("2.3. Hipótesis de trabajo"),
@@ -278,9 +278,9 @@ const section3 = [
   P("La intervención se estructura en cuatro fases:"),
 
   H3("Fase 0 — Preparación (febrero 2026, 4 semanas)"),
-  Bullet("Onboarding de UNSL como tenant de la plataforma (script unsl_onboarding.py)."),
+  Bullet("Onboarding de UTN como tenant de la plataforma (script utn_onboarding.py)."),
   Bullet("Federación del LDAP institucional contra Keycloak."),
-  Bullet("Configuración del feature flag enable_code_execution=true para UNSL."),
+  Bullet("Configuración del feature flag enable_code_execution=true para UTN."),
   Bullet("Capacitación de los 3 docentes (2 sesiones de 90 min)."),
   Bullet("Reclutamiento y firma del consentimiento informado con los estudiantes."),
 
@@ -376,7 +376,7 @@ const section5 = [
   H2("5.3. Herramientas"),
   Bullet([Bold("Endpoint del analytics-service: "), new TextRun("para cómputos reproducibles de κ y net_progression.")]),
   Bullet([Bold("Dataset exportado: "), new TextRun("análisis con Python (pandas, scipy, scikit-learn) en notebooks versionados en Git.")]),
-  Bullet([Bold("Grafana UNSL Pilot Dashboard: "), new TextRun("monitoreo en vivo de las métricas a lo largo del cuatrimestre.")]),
+  Bullet([Bold("Grafana UTN Pilot Dashboard: "), new TextRun("monitoreo en vivo de las métricas a lo largo del cuatrimestre.")]),
   Bullet([Bold("Atlas.ti: "), new TextRun("para codificación cualitativa de las entrevistas.")]),
 ];
 
@@ -385,7 +385,7 @@ const section5 = [
 const section6 = [
   PageBreakP(),
   H1("6. Consideraciones éticas"),
-  P("El estudio se ajusta a las disposiciones de la Ley Argentina 25.326 de Protección de Datos Personales, al Reglamento General de Protección de Datos (GDPR, aplicable por comparación), y a los principios éticos para la investigación en seres humanos establecidos en la Declaración de Helsinki (2013). La investigación se someterá al Comité de Ética de la Investigación de la UNSL antes de su inicio."),
+  P("El estudio se ajusta a las disposiciones de la Ley Argentina 25.326 de Protección de Datos Personales, al Reglamento General de Protección de Datos (GDPR, aplicable por comparación), y a los principios éticos para la investigación en seres humanos establecidos en la Declaración de Helsinki (2013). La investigación se someterá al Comité de Ética de la Investigación de la UTN antes de su inicio."),
 
   H2("6.1. Consentimiento informado"),
   P("Todos los participantes firmarán un consentimiento informado que incluye:"),
@@ -429,7 +429,7 @@ const section7 = [
   P("El piloto se extiende a lo largo de 20 semanas desde la preparación hasta el reporte final:"),
   makeTable([
     ["Semana", "Fase", "Actividad principal", "Producto"],
-    ["−4 a −1", "Preparación", "Onboarding UNSL + LDAP + capacitación docente", "Tenant configurado; 3 docentes capacitados"],
+    ["−4 a −1", "Preparación", "Onboarding UTN + LDAP + capacitación docente", "Tenant configurado; 3 docentes capacitados"],
     ["1", "Línea base", "Episodio de diagnóstico (palíndromos)", "Clasificación N4 inicial"],
     ["2–15", "Intervención", "Uso habitual; mínimo 8 episodios/estudiante", "~1.440 episodios esperados"],
     ["8", "Check intermedio", "Primer cómputo de κ sobre 30 episodios", "Informe de validez intermedio"],
@@ -449,7 +449,7 @@ const section8 = [
   Numbered("Paper para congreso internacional (target: ICALT 2026 o SITE 2026) reportando la validación del clasificador N4."),
   Numbered("Ponencia en WICC 2026 reportando resultados preliminares del piloto."),
 
-  H2("8.2. Productos para UNSL"),
+  H2("8.2. Productos para UTN"),
   Numbered("Informe interno con recomendaciones para la adopción institucional de la plataforma."),
   Numbered("Documentación de instalación y operación (ya incluida en el repositorio como docs/onboarding.md)."),
   Numbered("Capacitación de docentes (2 sesiones grabadas disponibles para futuras cohortes)."),
@@ -467,9 +467,9 @@ const annexes = [
   H1("Anexo A — Modelo de consentimiento informado"),
   P([Italic("El siguiente texto se entregará a cada participante antes del inicio del piloto. La firma es requisito para el uso de la plataforma en el contexto del estudio.")]),
   P(""),
-  P([Bold("TÍTULO DEL ESTUDIO: "), new TextRun("Modelo AI-Native con Trazabilidad Cognitiva N4 para la Formación en Programación Universitaria — Estudio Piloto UNSL 2026.")]),
-  P([Bold("INVESTIGADOR PRINCIPAL: "), new TextRun("Alberto Alejandro Cortez · Doctorando en Ciencias de la Computación · UNSL.")]),
-  P([Bold("COMITÉ DE ÉTICA: "), new TextRun("Comité de Ética de la Investigación de UNSL. Contacto: cei@unsl.edu.ar.")]),
+  P([Bold("TÍTULO DEL ESTUDIO: "), new TextRun("Modelo AI-Native con Trazabilidad Cognitiva N4 para la Formación en Programación Universitaria — Estudio Piloto UTN 2026.")]),
+  P([Bold("INVESTIGADOR PRINCIPAL: "), new TextRun("Alberto Alejandro Cortez · Doctorando en Ciencias de la Computación · UTN.")]),
+  P([Bold("COMITÉ DE ÉTICA: "), new TextRun("Comité de Ética de la Investigación de UTN. Contacto: cei@utn.edu.ar.")]),
   P(""),
   H3("¿En qué consiste el estudio?"),
   P("Se te invita a utilizar, durante el cuatrimestre, una plataforma de tutoría por inteligencia artificial específicamente diseñada para acompañar tu aprendizaje de programación. La plataforma registra tus interacciones con la IA (preguntas, código ejecutado, respuestas recibidas) y las organiza en un cuaderno digital que tu docente puede revisar. Un sistema automático clasifica cómo estás interactuando con la IA en tres niveles: delegación pasiva (pedir soluciones sin reflexionar), apropiación superficial (usar la IA para avanzar sin construir comprensión profunda) y apropiación reflexiva (usar la IA como andamio para construir tu propio conocimiento)."),
@@ -487,7 +487,7 @@ const annexes = [
   Bullet("Datos biométricos o de geolocalización precisa."),
 
   H3("¿Cómo se protegen mis datos?"),
-  Bullet("La plataforma almacena tus datos en servidores de UNSL con cifrado en tránsito y reposo."),
+  Bullet("La plataforma almacena tus datos en servidores de UTN con cifrado en tránsito y reposo."),
   Bullet("Tu identidad se separa técnicamente de las interacciones: en las bases de análisis solo figura un identificador opaco (pseudónimo)."),
   Bullet("Las publicaciones académicas derivadas del estudio reportan agregados o casos ilustrativos completamente anonimizados."),
   Bullet("Si el investigador comparte el dataset con otros investigadores, se entrega con un hash adicional que impide identificarte incluso conociéndote."),
@@ -496,7 +496,7 @@ const annexes = [
   Bullet([Bold("Retirarte del estudio en cualquier momento "), new TextRun("sin necesidad de justificar motivos y sin consecuencias académicas. Tu calificación final no se verá afectada por tu decisión.")]),
   Bullet([Bold("Acceder a tus datos "), new TextRun("en cualquier momento. Podés solicitar al investigador una descarga completa de todos tus registros.")]),
   Bullet([Bold("Solicitar la anonimización "), new TextRun("(\"derecho al olvido\"). Tu identidad se desvincula de tus datos; los datos agregados quedan en el estudio porque su eliminación rompería la trazabilidad del CTR exigida por la arquitectura. Quedás imposibilitado de re-ligarte a esos datos.")]),
-  Bullet([Bold("Presentar una queja "), new TextRun("ante el Comité de Ética de UNSL (cei@unsl.edu.ar) o ante la Agencia de Acceso a la Información Pública.")]),
+  Bullet([Bold("Presentar una queja "), new TextRun("ante el Comité de Ética de UTN (cei@utn.edu.ar) o ante la Agencia de Acceso a la Información Pública.")]),
 
   H3("¿Qué pasa si no quiero participar?"),
   P("Si decidís no firmar este consentimiento, seguís cursando la materia con normalidad utilizando los materiales y clases regulares. No se registrará información tuya en la plataforma. Esta decisión no afecta tu calificación ni tu relación con la cátedra."),
@@ -506,7 +506,7 @@ const annexes = [
   P([new TextRun("He leído y comprendido este documento. Tuve la oportunidad de hacer preguntas y recibí respuestas satisfactorias. Otorgo mi consentimiento libre, voluntario e informado para participar en el estudio en las condiciones descritas.")]),
   P(""),
   P([new TextRun({ text: "Nombre y apellido: __________________________________________", size: 22 })]),
-  P([new TextRun({ text: "DNI: _______________________    Legajo UNSL: ________________", size: 22 })]),
+  P([new TextRun({ text: "DNI: _______________________    Legajo UTN: ________________", size: 22 })]),
   P([new TextRun({ text: "Correo electrónico: __________________________________________", size: 22 })]),
   P([new TextRun({ text: "Fecha: _____/_____/2026           Firma: __________________________", size: 22 })]),
 ];
@@ -530,7 +530,7 @@ const annexB = [
     ["Cohen's κ", "Coeficiente de acuerdo inter-observador que corrige por el acuerdo esperado por azar. Rango [−1, +1]. Interpretación de Landis & Koch: ≥ 0,6 sustancial (objetivo de la tesis: κ ≥ 0,70 — ADR-046), ≥ 0,8 casi perfecto."],
     ["Net progression ratio", "(nº estudiantes mejorando − nº estudiantes empeorando) / nº con datos suficientes. Indicador agregado de progresión de una cohorte."],
     ["reference_profile", "Conjunto de umbrales del árbol de decisión N4. Versionado en Git con hash determinista; permite A/B testing."],
-    ["Tenant", "Organización cliente de la plataforma (en este piloto, UNSL). Aislada mediante Row-Level Security de Postgres."],
+    ["Tenant", "Organización cliente de la plataforma (en este piloto, UTN). Aislada mediante Row-Level Security de Postgres."],
     ["RLS", "Row-Level Security. Mecanismo de Postgres que filtra filas automáticamente por un valor de sesión (app.current_tenant)."],
     ["Salt de investigación", "Cadena secreta de ≥16 caracteres utilizada para pseudonimizar determinísticamente los student_pseudonym en el dataset exportado."],
   ], [2000, 7360]),
@@ -542,7 +542,7 @@ const headerP = new Header({
   children: [new Paragraph({
     children: [
       new TextRun({
-        text: "Protocolo del Piloto UNSL — Modelo AI-Native N4",
+        text: "Protocolo del Piloto UTN — Modelo AI-Native N4",
         size: 18, italics: true, color: "808080",
       }),
     ],
@@ -553,7 +553,7 @@ const headerP = new Header({
 const footerP = new Footer({
   children: [new Paragraph({
     children: [
-      new TextRun({ text: "Alberto A. Cortez — Tesis Doctoral UNSL       Página ", size: 18, color: "808080" }),
+      new TextRun({ text: "Alberto A. Cortez — Tesis Doctoral UTN       Página ", size: 18, color: "808080" }),
       new TextRun({ children: [PageNumber.CURRENT], size: 18, color: "808080" }),
       new TextRun({ text: " de ", size: 18, color: "808080" }),
       new TextRun({ children: [PageNumber.TOTAL_PAGES], size: 18, color: "808080" }),
@@ -580,7 +580,7 @@ const allChildren = [
 
 const doc = new Document({
   creator: "Alberto Alejandro Cortez",
-  title: "Protocolo del Piloto UNSL — Modelo AI-Native N4",
+  title: "Protocolo del Piloto UTN — Modelo AI-Native N4",
   description: "Protocolo del estudio piloto para la tesis doctoral",
   styles,
   numbering: {
@@ -621,7 +621,7 @@ const doc = new Document({
 });
 
 Packer.toBuffer(doc).then((buffer) => {
-  const outPath = "protocolo-piloto-unsl.docx";
+  const outPath = "protocolo-piloto-utn.docx";
   fs.writeFileSync(outPath, buffer);
   console.log(`Generado: ${outPath} (${buffer.length} bytes)`);
 });

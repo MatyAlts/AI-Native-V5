@@ -3,7 +3,7 @@
 Estos archivos reemplazan al `ops/k8s/backup-cronjob.yaml` (que requiere
 Kubernetes) cuando la stack corre en un VPS con `docker-compose.prod.yml`.
 
-## Instalacion en el VPS UNSL
+## Instalacion en el VPS UTN
 
 ```bash
 # 1. Copiar los archivos al systemd del sistema

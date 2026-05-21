@@ -27,7 +27,7 @@ encriptar at-rest. Tres opciones:
 - **Auditabilidad doctoral**: el comite necesita ver que las keys estan
   encriptadas at-rest (defensa: AES-256-GCM con master key separada de
   la DB).
-- **Migracion futura**: si compliance UNSL pide Vault en piloto-2, se
+- **Migracion futura**: si compliance UTN pide Vault en piloto-2, se
   migra (la API publica de `crypto.py` no cambia — el adapter detras
   cambia).
 

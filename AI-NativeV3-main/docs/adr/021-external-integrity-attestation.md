@@ -2,8 +2,8 @@
 
 - **Estado**: Aceptado (2026-04-27 — ver "Decisiones tomadas" al final)
 - **Fecha**: 2026-04-27
-- **Deciders**: Alberto Alejandro Cortez, director de tesis, **director de informática UNSL** (deciders adicionales por la responsabilidad institucional sobre la clave de firma)
-- **Tags**: integridad, criptografía, tesis, piloto-UNSL, CTR, auditoría
+- **Deciders**: Alberto Alejandro Cortez, director de tesis, **director de informática UTN** (deciders adicionales por la responsabilidad institucional sobre la clave de firma)
+- **Tags**: integridad, criptografía, tesis, piloto-UTN, CTR, auditoría
 
 ## Contexto y problema
 
@@ -35,7 +35,7 @@ Fuerzas en juego:
 - **D4** — Verificación pública por terceros: la clave pública se commitea al repo + se distribuye vía endpoint público.
 - **D5** — Buffer de firma canónico, documentado bit-exact, testeable. Mismo nivel de cuidado que `chunks_used_hash` (RN-026) o `classifier_config_hash` (ADR-009).
 - **D6** — Modo dev funciona sin clave real: clave de juguete commiteada para que `make dev` no requiera ceremonial.
-- **D7** — No introducir dependencias exóticas (blockchain, smart contracts, sidecars) que el comité doctoral o un auditor de UNSL no entiendan.
+- **D7** — No introducir dependencias exóticas (blockchain, smart contracts, sidecars) que el comité doctoral o un auditor de UTN no entiendan.
 
 ## Opciones consideradas
 
@@ -48,7 +48,7 @@ Un servicio nuevo `integrity-attestation-service` (puerto :8012) que:
 - Expone clave pública vía `GET /api/v1/attestations/pubkey`.
 - Expone log diario vía `GET /api/v1/attestations/{date}` para auditores.
 
-**Deploy**: en VPS institucional separado del cluster del piloto. Si UNSL no tiene VPS, fallback a **bucket MinIO institucional con write-only IAM para el attestation service** (no append-en-cliente, sí PUT inmutable).
+**Deploy**: en VPS institucional separado del cluster del piloto. Si UTN no tiene VPS, fallback a **bucket MinIO institucional con write-only IAM para el attestation service** (no append-en-cliente, sí PUT inmutable).
 
 Ventajas:
 - Implementación trivial (~400 LOC total).
@@ -193,14 +193,14 @@ Permite que en el futuro la institución rote la clave: log queda con el viejo `
 | Ambiente | Privada | Pública |
 |---|---|---|
 | Dev (laptop) | `attestation-keys/dev-private.pem` (commiteada al repo, **no es secreto** — clave de juguete) | `attestation-keys/dev-public.pem` (commiteada) |
-| Piloto UNSL | env var `ATTESTATION_PRIVATE_KEY_PEM` o path a archivo en filesystem del VPS institucional. Generada por el director de informática UNSL **sin participación del doctorando**. | Commit en `docs/pilot/attestation-pubkey.pem` + endpoint público |
+| Piloto UTN | env var `ATTESTATION_PRIVATE_KEY_PEM` o path a archivo en filesystem del VPS institucional. Generada por el director de informática UTN **sin participación del doctorando**. | Commit en `docs/pilot/attestation-pubkey.pem` + endpoint público |
 
 La separación dev/piloto es la línea entre "sistema funciona end-to-end en cualquier laptop" y "auditabilidad institucional real". El dev key tiene el mismo formato y algoritmo, pero un valor conocido — útil para tests y nada más.
 
 ### Deploy
 
 - **Dev local** (`make dev`): el integrity-attestation-service corre en el mismo `docker-compose.dev.yml`, puerto 8012. Usa la dev key. Logs van a `./attestations/` (gitignored). Permite que `make test` end-to-end funcione sin red.
-- **Piloto UNSL**: deploy en **VPS institucional separado** del cluster del piloto, propiedad del director de informática UNSL. Si UNSL no provee VPS, fallback a **bucket MinIO institucional** con IAM `s3:PutObject` solo para el service y `s3:GetObject` solo para auditores listados.
+- **Piloto UTN**: deploy en **VPS institucional separado** del cluster del piloto, propiedad del director de informática UTN. Si UTN no provee VPS, fallback a **bucket MinIO institucional** con IAM `s3:PutObject` solo para el service y `s3:GetObject` solo para auditores listados.
 - **Helm**: chart separado `infrastructure/helm/integrity-attestation/` (NO incluido en el chart unificado del piloto, justamente por D3). Values mínimos: `pubkey_id`, `private_key_secret_name`, `log_dir`.
 
 ### ⚠ CRÍTICO — `replicas: 1` para el consumer
@@ -238,9 +238,9 @@ GET  /healthz                          (sin auth, para k8s probes)
 ### Negativas / trade-offs
 
 - **Servicio nuevo + infraestructura nueva**: ~400 LOC del servicio + cliente/worker en ctr-service + helm + tool CLI = ~600-800 LOC totales. No trivial.
-- **Dependencia institucional UNSL**: si UNSL no provee VPS o bucket separado, fallback a MinIO compartido reduce la propiedad de "registro externo independiente". **Aceptable para piloto-1, declarado como tal**. La opción C (blockchain) sería el escape si UNSL no coopera, pero se descarta por las razones de arriba.
-- **Single point of trust en la institución**: si UNSL pierde el JSONL (catástrofe del VPS), se pierde toda evidencia. Mitigación: replicación nightly a otro VPS, responsabilidad institucional. **No es responsabilidad del doctorando**.
-- **Velocidad de attestation**: si el integrity-attestation-service procesa con la dev key (latencia ~1ms) o con HSM (latencia ~10ms por firma), no es bottleneck. Pero si la clave vive en un HSM remoto con 100ms RTT, hay que dimensionar el throughput. Para el piloto UNSL (5 comisiones × ~30 episodios = 150 episodios/semana, ~1 attestation/hora pico), está sobredimensionado por órdenes de magnitud.
+- **Dependencia institucional UTN**: si UTN no provee VPS o bucket separado, fallback a MinIO compartido reduce la propiedad de "registro externo independiente". **Aceptable para piloto-1, declarado como tal**. La opción C (blockchain) sería el escape si UTN no coopera, pero se descarta por las razones de arriba.
+- **Single point of trust en la institución**: si UTN pierde el JSONL (catástrofe del VPS), se pierde toda evidencia. Mitigación: replicación nightly a otro VPS, responsabilidad institucional. **No es responsabilidad del doctorando**.
+- **Velocidad de attestation**: si el integrity-attestation-service procesa con la dev key (latencia ~1ms) o con HSM (latencia ~10ms por firma), no es bottleneck. Pero si la clave vive en un HSM remoto con 100ms RTT, hay que dimensionar el throughput. Para el piloto UTN (5 comisiones × ~30 episodios = 150 episodios/semana, ~1 attestation/hora pico), está sobredimensionado por órdenes de magnitud.
 - **El verificador CLI vive en `scripts/`**, no en una herramienta separada distribuida. Para piloto-1 alcanza; producción podría querer una librería separada.
 
 ### Neutras
@@ -254,21 +254,21 @@ GET  /healthz                          (sin auth, para k8s probes)
 
 Las 5 preguntas que originalmente quedaron pendientes fueron resueltas el 2026-04-27. El ADR pasa de **Propuesto** a **Aceptado**:
 
-1. ✅ **VPS institucional separado**: UNSL provee VPS dedicado. Se descarta el fallback de MinIO con bucket aislado — la garantía de "registro externo independiente" para la tesis es más fuerte con VPS separado.
+1. ✅ **VPS institucional separado**: UTN provee VPS dedicado. Se descarta el fallback de MinIO con bucket aislado — la garantía de "registro externo independiente" para la tesis es más fuerte con VPS separado.
 
-2. ✅ **Custodia de la clave privada: Director de informática UNSL** — sin participación del doctorando. Cumple el driver D3 (independencia institucional). El procedimiento operativo está en `docs/pilot/attestation-deploy-checklist.md`.
+2. ✅ **Custodia de la clave privada: Director de informática UTN** — sin participación del doctorando. Cumple el driver D3 (independencia institucional). El procedimiento operativo está en `docs/pilot/attestation-deploy-checklist.md`.
 
 3. ✅ **Presupuesto adicional aprobado** para el VPS dedicado.
 
 4. ✅ **SLO de attestation: 24 horas** con alerta a Grafana. 1h sería overkill operacional (ruido); 7d laxo si la auditoría es mensual. 24h da margen para caída de fin de semana sin perder evidencia. Cuando se implemente la métrica `attestation_pending_count` (agenda futura), la alerta se dispara si supera 24h sin atestar.
 
-5. ✅ **Pubkey en ambos lugares**: URL pública institucional (`GET /api/v1/attestations/pubkey` del servicio en VPS UNSL) como **fuente canónica rotable**, + commit en `docs/pilot/attestation-pubkey.pem` como **snapshot reproducible** del período del piloto. Auditores deben verificar que ambas coinciden — discrepancia indica rotación o manipulación.
+5. ✅ **Pubkey en ambos lugares**: URL pública institucional (`GET /api/v1/attestations/pubkey` del servicio en VPS UTN) como **fuente canónica rotable**, + commit en `docs/pilot/attestation-pubkey.pem` como **snapshot reproducible** del período del piloto. Auditores deben verificar que ambas coinciden — discrepancia indica rotación o manipulación.
 
 ### Próximos pasos operativos
 
-1. Director de informática UNSL ejecuta `docs/pilot/attestation-deploy-checklist.md` (genera clave Ed25519 en el VPS, distribuye solo la pubkey al doctorando, despliega el servicio).
+1. Director de informática UTN ejecuta `docs/pilot/attestation-deploy-checklist.md` (genera clave Ed25519 en el VPS, distribuye solo la pubkey al doctorando, despliega el servicio).
 2. Doctorando recibe la pubkey, la committea como `docs/pilot/attestation-pubkey.pem`, y verifica con `scripts/verify-attestations.py` apuntando al primer JSONL del día.
-3. El `ctr-service` del piloto se configura para emitir XADD al stream Redis del VPS UNSL (env var `ATTESTATION_REDIS_URL` apuntando al VPS).
+3. El `ctr-service` del piloto se configura para emitir XADD al stream Redis del VPS UTN (env var `ATTESTATION_REDIS_URL` apuntando al VPS).
 
 ## API BC-breaks
 
@@ -296,7 +296,7 @@ Ninguno respecto a contratos existentes. El `EpisodioCerrado` event no cambia. L
 1. `scripts/verify-attestations.py`: toma `--jsonl-dir`, `--pubkey-pem`. Itera líneas, verifica firmas, devuelve exit 0 si todo OK / 1 si alguna falla. Reporte por línea.
 2. Smoke test end-to-end: arrancar dev stack, abrir+cerrar episodio, esperar 5s, leer JSONL del día, verificar con la tool.
 3. `CLAUDE.md`: bumpear ADR count (17 → 18), bumpear "numerar 022+", agregar invariante "Cada episodio cerrado emite attestation Ed25519 a registro externo (eventual, SLO 24h). Buffer canónico documentado en ADR-021. Su ausencia NO bloquea el cierre".
-4. `docs/pilot/protocolo-piloto-unsl.docx`: sección nueva "Auditabilidad externa" con instrucciones para el auditor (cómo descargar el JSONL, dónde está la pubkey, cómo correr la herramienta).
+4. `docs/pilot/protocolo-piloto-utn.docx`: sección nueva "Auditabilidad externa" con instrucciones para el auditor (cómo descargar el JSONL, dónde está la pubkey, cómo correr la herramienta).
 5. `reglas.md`: agregar `RN-128` (atestación externa).
 6. `docs/SESSION-LOG.md`: entrada con la fecha de implementación.
 

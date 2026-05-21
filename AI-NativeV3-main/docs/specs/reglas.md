@@ -1,4 +1,4 @@
-# Reglas de Negocio — Plataforma AI-Native N4 (Piloto UNSL)
+# Reglas de Negocio — Plataforma AI-Native N4 (Piloto UTN)
 
 > Este documento captura las reglas de negocio del sistema: restricciones, invariantes, cálculos, políticas y umbrales que el sistema DEBE cumplir. Complementa `historias.md` (que captura capacidades desde la perspectiva del actor). Las reglas acá son verificables por tests automáticos o revisión operacional.
 
@@ -12,7 +12,7 @@
 - [F3 — Motor Pedagógico (CTR, tutor, governance, ai-gateway, clasificador)](#f3--motor-pedagógico-ctr-tutor-governance-ai-gateway-clasificador)
 - [F4 — Hardening y Observabilidad](#f4--hardening-y-observabilidad)
 - [F5 — Multi-tenant, JWT, privacidad](#f5--multi-tenant-jwt-privacidad)
-- [F6 — Piloto UNSL (LDAP, código ejecutado, Kappa, canary)](#f6--piloto-unsl-ldap-código-ejecutado-kappa-canary)
+- [F6 — Piloto UTN (LDAP, código ejecutado, Kappa, canary)](#f6--piloto-utn-ldap-código-ejecutado-kappa-canary)
 - [F7 — Pipeline empírico (longitudinal, A/B, export async)](#f7--pipeline-empírico-longitudinal-ab-export-async)
 - [F8 — Integración DB real y protocolo](#f8--integración-db-real-y-protocolo)
 - [F9 — Preflight operacional](#f9--preflight-operacional)
@@ -1206,7 +1206,7 @@ Ventana de 60 segundos; principal = `user_id` si hay JWT, si no `tenant_id`, si 
 
 ---
 
-## F6 — Piloto UNSL (LDAP, código ejecutado, Kappa, canary)
+## F6 — Piloto UTN (LDAP, código ejecutado, Kappa, canary)
 
 ### RN-090 — LDAP federation: `editMode = READ_ONLY`
 **Categoría**: Privacidad
@@ -1216,7 +1216,7 @@ Ventana de 60 segundos; principal = `user_id` si hay JWT, si no `tenant_id`, si 
 
 **Regla**: `LDAPFederator._ldap_config_to_kc_config()` setea siempre `"editMode": ["READ_ONLY"]` en el config del provider Keycloak. Complementariamente, `"syncRegistrations": ["false"]`.
 
-**Justificación**: Condición del convenio con UNSL — la plataforma nunca modifica el directorio institucional. Cambiarlo requiere nuevo convenio.
+**Justificación**: Condición del convenio con UTN — la plataforma nunca modifica el directorio institucional. Cambiarlo requiere nuevo convenio.
 
 **Verificación**: `packages/platform-ops/src/platform_ops/ldap_federation.py::_ldap_config_to_kc_config`.
 
@@ -1435,11 +1435,11 @@ Criterios de rollback automático:
 **Servicio(s)**: Grafana
 **Severidad**: Media
 
-**Regla**: El panel "net_progression_ratio time-series" en `unsl-pilot.json` usa thresholds visuales: rojo < 0, amarillo 0–0.3, verde > 0.3.
+**Regla**: El panel "net_progression_ratio time-series" en `utn-pilot.json` usa thresholds visuales: rojo < 0, amarillo 0–0.3, verde > 0.3.
 
 **Justificación**: Lectura rápida por parte del investigador durante el piloto.
 
-**Verificación**: `ops/grafana/dashboards/unsl-pilot.json`.
+**Verificación**: `ops/grafana/dashboards/utn-pilot.json`.
 
 ### RN-107 — A/B profile determinista: mismo profile dos veces = mismas predicciones
 **Categoría**: Invariante
@@ -1553,13 +1553,13 @@ Criterios de rollback automático:
 
 **Verificación**: `real_datasources.py::RealLongitudinalDataSource`.
 
-### RN-116 — Protocolo UNSL es DOCX regenerable desde docx-js
+### RN-116 — Protocolo UTN es DOCX regenerable desde docx-js
 **Categoría**: Auditoría
 **Fase origen**: F8
 **Servicio(s)**: docs/pilot
 **Severidad**: Alta
 
-**Regla**: `docs/pilot/protocolo-piloto-unsl.docx` se genera desde `docs/pilot/generate_protocol.js` con `make generate-protocol`. La fuente es el JS, no el binario. Cambios al protocolo editan el JS + regeneran.
+**Regla**: `docs/pilot/protocolo-piloto-utn.docx` se genera desde `docs/pilot/generate_protocol.js` con `make generate-protocol`. La fuente es el JS, no el binario. Cambios al protocolo editan el JS + regeneran.
 
 **Justificación**: Revisiones del comité de ética deben ser versionables; el binario no lo es.
 
@@ -1573,9 +1573,9 @@ Criterios de rollback automático:
 
 **Regla**: El Anexo A del protocolo (consentimiento informado) DEBE declarar explícitamente los 4 derechos del estudiante: (1) retiro, (2) acceso a sus datos, (3) olvido (anonymize), (4) queja ante autoridad de aplicación (Ley 25.326).
 
-**Justificación**: Requerimiento del Comité de Ética de UNSL + GDPR compatibility.
+**Justificación**: Requerimiento del Comité de Ética de UTN + GDPR compatibility.
 
-**Verificación**: `docs/pilot/protocolo-piloto-unsl.docx` sección Anexo A.
+**Verificación**: `docs/pilot/protocolo-piloto-utn.docx` sección Anexo A.
 
 ### RN-118 — Stopping rules documentadas en sección 4
 **Categoría**: Auditoría
@@ -1587,7 +1587,7 @@ Criterios de rollback automático:
 
 **Justificación**: Científicamente obligatorio para estudio humano de 16 semanas.
 
-**Verificación**: `docs/pilot/protocolo-piloto-unsl.docx` sección 4.
+**Verificación**: `docs/pilot/protocolo-piloto-utn.docx` sección 4.
 
 ---
 
@@ -1985,7 +1985,7 @@ RN-009, RN-022, RN-069.
 | RN-103 | F7 | Cálculo | `longitudinal.py::APPROPRIATION_ORDINAL` |
 | RN-104 | F7 | Cálculo | `longitudinal.py::progression_label` |
 | RN-105 | F7 | Cálculo | `longitudinal.py::net_progression_ratio` |
-| RN-106 | F8 | Operación | `ops/grafana/dashboards/unsl-pilot.json` |
+| RN-106 | F8 | Operación | `ops/grafana/dashboards/utn-pilot.json` |
 | RN-107 | F7 | Invariante | `tests/test_ab_integration.py` |
 | RN-108 | F7 | Persistencia | `export_worker.py::ExportWorker.run_forever` |
 | RN-109 | F7 | Operación | `analytics-service/main.py` lifespan |
@@ -1996,7 +1996,7 @@ RN-009, RN-022, RN-069.
 | RN-114 | F8 | Seguridad | `real_datasources.py` queries |
 | RN-115 | F8 | Operación | `real_datasources.py::RealLongitudinalDataSource` |
 | RN-116 | F8 | Auditoría | `Makefile::generate-protocol` |
-| RN-117 | F8 | Privacidad | `docs/pilot/protocolo-piloto-unsl.docx` Anexo A |
+| RN-117 | F8 | Privacidad | `docs/pilot/protocolo-piloto-utn.docx` Anexo A |
 | RN-118 | F8 | Auditoría | protocolo sección 4 |
 | RN-119 | F9 | Seguridad | migraciones F9 con FORCE |
 | RN-120 | F9 | Seguridad | `test_rls_postgres.py::sin_set_local` |

@@ -2,7 +2,7 @@
 
 El web-admin tiene las páginas CRUD de la jerarquía institucional (Facultades, Materias, Comisiones, Periodos, Carreras, Planes) y bulk import para 8 entidades, pero le faltan piezas clave para que un administrador opere el piloto de punta a punta: no hay UI para BYOK (las keys se gestionan solo por API), no hay forma individual de asignar docentes a comisiones ni inscribir alumnos (solo CSV masivo), y las páginas CRUD existentes necesitan polish para producción (filtros, paginación, estados vacíos, confirmaciones de borrado).
 
-Sin esto, el onboarding del piloto UNSL depende de curl + CSV para operaciones que deberían ser 3 clicks en un panel.
+Sin esto, el onboarding del piloto UTN depende de curl + CSV para operaciones que deberían ser 3 clicks en un panel.
 
 ## What Changes
 

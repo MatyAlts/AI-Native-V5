@@ -2,8 +2,8 @@
 
 Cierra parcialmente P0-3 del PlanMejora.md (la parte que SI es codigo: el
 checklist de deploy ya existe en docs/pilot/attestation-deploy-checklist.md
-para que DI UNSL lo ejecute). Este script corre desde la maquina del doctorando
-contra el VPS UNSL y verifica que el servicio sigue procesando attestations
+para que DI UTN lo ejecute). Este script corre desde la maquina del doctorando
+contra el VPS UTN y verifica que el servicio sigue procesando attestations
 correctamente.
 
 Chequeos
@@ -20,18 +20,18 @@ Chequeos
 Uso
 ---
     # Healthcheck basico
-    python scripts/verify-attestation-deployment.py --service-url https://attestation.unsl.edu.ar
+    python scripts/verify-attestation-deployment.py --service-url https://attestation.utn.edu.ar
 
     # Healthcheck + verificacion bit-exacta de un dia
     python scripts/verify-attestation-deployment.py \\
-        --service-url https://attestation.unsl.edu.ar \\
+        --service-url https://attestation.utn.edu.ar \\
         --day 2026-05-15 \\
         --expected-pubkey-path /path/to/attestation-pubkey.pem
 
     # Con check de consumer lag (requiere acceso al Redis del piloto)
     CTR_REDIS_URL=redis://localhost:6379/0 \\
         python scripts/verify-attestation-deployment.py \\
-        --service-url https://attestation.unsl.edu.ar
+        --service-url https://attestation.utn.edu.ar
 
 Exit codes
 ----------
@@ -126,7 +126,7 @@ async def check_pubkey(
                         False,
                         f"MISMATCH! El VPS sirve una pubkey distinta a la esperada. "
                         f"signer_id={signer_id}. Esto es CRITICO: alguien rotó la clave "
-                        "sin redistribuir. Verificar con DI UNSL.",
+                        "sin redistribuir. Verificar con DI UTN.",
                     ),
                     served_pem,
                 )
@@ -316,7 +316,7 @@ async def main(
 
 def _parse_args() -> argparse.Namespace:
     p = argparse.ArgumentParser(
-        description="Verificar deploy del integrity-attestation-service en VPS UNSL (A3)."
+        description="Verificar deploy del integrity-attestation-service en VPS UTN (A3)."
     )
     p.add_argument(
         "--service-url",
@@ -328,7 +328,7 @@ def _parse_args() -> argparse.Namespace:
     p.add_argument(
         "--expected-pubkey-path",
         default=os.environ.get("ATTESTATION_EXPECTED_PUBKEY_PATH"),
-        help="Path a la PEM publica que el doctorando recibio del DI UNSL (Paso 2 del checklist).",
+        help="Path a la PEM publica que el doctorando recibio del DI UTN (Paso 2 del checklist).",
     )
     p.add_argument(
         "--redis-url",

@@ -156,7 +156,7 @@ export function Hero() {
         className="absolute right-6 top-6 z-20 flex items-center gap-2 font-mono text-[11px] uppercase tracking-wider text-muted md:right-10 md:top-10"
       >
         <PulseDot />
-        <span>Tesis doctoral · UNSL · 2026</span>
+        <span>Tesis doctoral · UTN · 2026</span>
       </motion.div>
 
       {/* Contenedor parallaxed con todo el contenido del hero. */}

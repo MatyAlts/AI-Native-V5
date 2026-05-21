@@ -984,7 +984,7 @@ export const entregasApi = {
 // ============================================================================
 // INSTRUMENTOS DEL DISENO CUASI-EXPERIMENTAL (ADR-053)
 // P2-1 (pretest), P2-2 (cuestionario IA), P2-3 (transferencia) del PlanMejora.md.
-// Contenido pendiente de validacion coautoral con Ana Garis + comite etico UNSL.
+// Contenido pendiente de validacion coautoral con Ana Garis + comite etico UTN.
 // ============================================================================
 
 export interface InstrumentoCatalogoItem {

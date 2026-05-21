@@ -3,11 +3,11 @@
 - **Estado**: Propuesto
 - **Fecha**: 2026-04-23
 - **Deciders**: Alberto Alejandro Cortez, director de tesis
-- **Tags**: datos, académico, tesis, piloto-UNSL, CTR, casbin
+- **Tags**: datos, académico, tesis, piloto-UTN, CTR, casbin
 
 ## Contexto y problema
 
-El piloto UNSL tiene una cátedra con **múltiples comisiones** de la misma Materia y Período (típicamente 2–4 comisiones de "Programación 1 — 2026-S1"). Hoy la entidad `TareaPractica` (en adelante **TP**) vive **a nivel de Comisión**:
+El piloto UTN tiene una cátedra con **múltiples comisiones** de la misma Materia y Período (típicamente 2–4 comisiones de "Programación 1 — 2026-S1"). Hoy la entidad `TareaPractica` (en adelante **TP**) vive **a nivel de Comisión**:
 
 - Modelo: `apps/academic-service/src/academic_service/models/operacional.py:154-217`.
 - FK: `TareaPractica.comision_id → comisiones.id`.

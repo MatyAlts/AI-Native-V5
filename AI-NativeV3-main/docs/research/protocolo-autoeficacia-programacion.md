@@ -37,7 +37,7 @@ Aplicación de una escala de autoeficacia adaptada de Bandura (1997) calibrada p
 
 Si no hay adaptación rioplatense validada:
 - Traducción inversa por dos traductores independientes.
-- Pilotaje cognitivo con 3-5 estudiantes UNSL (think-aloud sobre cómo interpretan cada ítem).
+- Pilotaje cognitivo con 3-5 estudiantes UTN (think-aloud sobre cómo interpretan cada ítem).
 - Análisis preliminar de consistencia interna (Cronbach α ≥ 0,8 esperado sobre n=30).
 
 ---

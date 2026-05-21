@@ -29,18 +29,18 @@ def federator() -> LDAPFederator:
 @pytest.fixture
 def ldap_spec() -> LDAPFederationSpec:
     return LDAPFederationSpec(
-        realm_name="unsl",
+        realm_name="utn",
         tenant_uuid=UUID("aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa"),
-        display_name="LDAP UNSL",
+        display_name="LDAP UTN",
         ldap=LDAPConfig(
-            connection_url="ldaps://ldap.unsl.edu.ar:636",
-            bind_dn="cn=admin,dc=unsl,dc=edu,dc=ar",
+            connection_url="ldaps://ldap.utn.edu.ar:636",
+            bind_dn="cn=admin,dc=utn,dc=edu,dc=ar",
             bind_credential="ldap-pw-from-secret",
-            users_dn="ou=people,dc=unsl,dc=edu,dc=ar",
+            users_dn="ou=people,dc=utn,dc=edu,dc=ar",
         ),
         group_mappings=[
             LDAPGroupMapping(
-                ldap_group_dn="cn=docentes,ou=grupos,dc=unsl,dc=edu,dc=ar",
+                ldap_group_dn="cn=docentes,ou=grupos,dc=utn,dc=edu,dc=ar",
                 realm_role="docente",
             ),
         ],
@@ -54,7 +54,7 @@ def ldap_spec() -> LDAPFederationSpec:
 async def test_crea_provider_nuevo(federator, ldap_spec) -> None:
     async with respx.mock(base_url=KC_BASE, assert_all_called=False) as router:
         # GET components (no existe el provider)
-        router.get(f"{KC_BASE}/admin/realms/unsl/components").mock(
+        router.get(f"{KC_BASE}/admin/realms/utn/components").mock(
             side_effect=[
                 Response(200, json=[]),  # list providers → vacío
                 Response(200, json=[]),  # list mappers del provider nuevo → vacío
@@ -63,9 +63,9 @@ async def test_crea_provider_nuevo(federator, ldap_spec) -> None:
             ]
         )
         # POST para crear provider
-        provider_create = router.post(f"{KC_BASE}/admin/realms/unsl/components").mock(
+        provider_create = router.post(f"{KC_BASE}/admin/realms/utn/components").mock(
             return_value=Response(
-                201, headers={"location": f"{KC_BASE}/admin/realms/unsl/components/new-prov-id"}
+                201, headers={"location": f"{KC_BASE}/admin/realms/utn/components/new-prov-id"}
             ),
         )
 
@@ -81,9 +81,9 @@ async def test_actualiza_provider_si_ya_existe(federator, ldap_spec) -> None:
     """Idempotencia: si el provider ya existe, se actualiza en lugar de duplicar."""
     async with respx.mock(base_url=KC_BASE, assert_all_called=False) as router:
         # Primer GET: provider ya existe
-        router.get(f"{KC_BASE}/admin/realms/unsl/components").mock(
+        router.get(f"{KC_BASE}/admin/realms/utn/components").mock(
             side_effect=[
-                Response(200, json=[{"id": "existing-prov", "name": "LDAP UNSL"}]),
+                Response(200, json=[{"id": "existing-prov", "name": "LDAP UTN"}]),
                 # Mappers existentes incluye todos los mappers para que no se dupliquen
                 Response(
                     200,
@@ -100,11 +100,11 @@ async def test_actualiza_provider_si_ya_existe(federator, ldap_spec) -> None:
             ]
         )
         # PUT para update
-        update_put = router.put(f"{KC_BASE}/admin/realms/unsl/components/existing-prov").mock(
+        update_put = router.put(f"{KC_BASE}/admin/realms/utn/components/existing-prov").mock(
             return_value=Response(204)
         )
         # NO debe haber POSTs de creación
-        create_posts = router.post(f"{KC_BASE}/admin/realms/unsl/components").mock(
+        create_posts = router.post(f"{KC_BASE}/admin/realms/utn/components").mock(
             return_value=Response(500)  # si lo llaman, explota
         )
 
@@ -123,7 +123,7 @@ async def test_config_ldap_pasa_valores_correctos_a_keycloak(federator, ldap_spe
     captured_bodies: list[dict] = []
 
     async with respx.mock(base_url=KC_BASE, assert_all_called=False) as router:
-        router.get(f"{KC_BASE}/admin/realms/unsl/components").mock(
+        router.get(f"{KC_BASE}/admin/realms/utn/components").mock(
             side_effect=[
                 Response(200, json=[]),
                 Response(200, json=[]),
@@ -137,10 +137,10 @@ async def test_config_ldap_pasa_valores_correctos_a_keycloak(federator, ldap_spe
 
             captured_bodies.append(json.loads(request.content))
             return Response(
-                201, headers={"location": f"{KC_BASE}/admin/realms/unsl/components/xxx"}
+                201, headers={"location": f"{KC_BASE}/admin/realms/utn/components/xxx"}
             )
 
-        router.post(f"{KC_BASE}/admin/realms/unsl/components").mock(side_effect=capture)
+        router.post(f"{KC_BASE}/admin/realms/utn/components").mock(side_effect=capture)
 
         await federator.configure(ldap_spec)
 
@@ -148,9 +148,9 @@ async def test_config_ldap_pasa_valores_correctos_a_keycloak(federator, ldap_spe
     provider_body = captured_bodies[0]
     assert provider_body["providerId"] == "ldap"
     config = provider_body["config"]
-    assert config["connectionUrl"] == ["ldaps://ldap.unsl.edu.ar:636"]
-    assert config["usersDn"] == ["ou=people,dc=unsl,dc=edu,dc=ar"]
-    assert config["bindDn"] == ["cn=admin,dc=unsl,dc=edu,dc=ar"]
+    assert config["connectionUrl"] == ["ldaps://ldap.utn.edu.ar:636"]
+    assert config["usersDn"] == ["ou=people,dc=utn,dc=edu,dc=ar"]
+    assert config["bindDn"] == ["cn=admin,dc=utn,dc=edu,dc=ar"]
     # CRÍTICO: editMode READ_ONLY (nunca modificamos el LDAP)
     assert config["editMode"] == ["READ_ONLY"]
 
@@ -164,15 +164,15 @@ async def test_crea_mappers_estandar(federator, ldap_spec) -> None:
 
     async with respx.mock(base_url=KC_BASE, assert_all_called=False) as router:
         # Provider existe
-        router.get(f"{KC_BASE}/admin/realms/unsl/components").mock(
+        router.get(f"{KC_BASE}/admin/realms/utn/components").mock(
             side_effect=[
-                Response(200, json=[{"id": "prov-1", "name": "LDAP UNSL"}]),
+                Response(200, json=[{"id": "prov-1", "name": "LDAP UTN"}]),
                 Response(200, json=[]),  # mappers: vacío → crear los 3
                 Response(200, json=[]),  # tenant_id check vacío → crear
                 Response(200, json=[]),  # group check vacío → crear
             ]
         )
-        router.put(f"{KC_BASE}/admin/realms/unsl/components/prov-1").mock(
+        router.put(f"{KC_BASE}/admin/realms/utn/components/prov-1").mock(
             return_value=Response(204)
         )
 
@@ -183,7 +183,7 @@ async def test_crea_mappers_estandar(federator, ldap_spec) -> None:
             mapper_posts.append(body)
             return Response(201)
 
-        router.post(f"{KC_BASE}/admin/realms/unsl/components").mock(
+        router.post(f"{KC_BASE}/admin/realms/utn/components").mock(
             side_effect=capture_mapper,
         )
 
@@ -203,9 +203,9 @@ async def test_tenant_id_mapper_tiene_uuid_correcto(federator, ldap_spec) -> Non
     captured_mappers: list[dict] = []
 
     async with respx.mock(base_url=KC_BASE, assert_all_called=False) as router:
-        router.get(f"{KC_BASE}/admin/realms/unsl/components").mock(
+        router.get(f"{KC_BASE}/admin/realms/utn/components").mock(
             side_effect=[
-                Response(200, json=[{"id": "prov-1", "name": "LDAP UNSL"}]),
+                Response(200, json=[{"id": "prov-1", "name": "LDAP UTN"}]),
                 Response(
                     200,
                     json=[
@@ -218,7 +218,7 @@ async def test_tenant_id_mapper_tiene_uuid_correcto(federator, ldap_spec) -> Non
                 Response(200, json=[]),
             ]
         )
-        router.put(f"{KC_BASE}/admin/realms/unsl/components/prov-1").mock(
+        router.put(f"{KC_BASE}/admin/realms/utn/components/prov-1").mock(
             return_value=Response(204)
         )
 
@@ -228,7 +228,7 @@ async def test_tenant_id_mapper_tiene_uuid_correcto(federator, ldap_spec) -> Non
             captured_mappers.append(json.loads(request.content))
             return Response(201)
 
-        router.post(f"{KC_BASE}/admin/realms/unsl/components").mock(side_effect=capture)
+        router.post(f"{KC_BASE}/admin/realms/utn/components").mock(side_effect=capture)
 
         await federator.configure(ldap_spec)
 

@@ -10,7 +10,7 @@ Fuentes originales:
   - condi.docx — TP2 Estructuras Condicionales (10 ejercicios)
   - mixtos.docx — TP Integrador (5 ejercicios)
 
-Total: 25 ejercicios canonicos del piloto UNSL.
+Total: 25 ejercicios canonicos del piloto UTN.
 
 Ejecucion
 ---------

@@ -3,7 +3,7 @@
 ADR-021 — registro externo auditable. La separacion dev/produccion es central:
 - Dev: clave Ed25519 de juguete commiteada al repo en `dev-keys/`. Permite que
   `make test` y el dev loop funcionen sin claves reales ni red.
-- Produccion (piloto UNSL): clave generada por director de informatica UNSL,
+- Produccion (piloto UTN): clave generada por director de informatica UTN,
   vive en infraestructura institucional separada del cluster del piloto. Si la
   pubkey activa coincide con la dev key Y `environment=production`, el servicio
   rechaza arrancar (failsafe contra deploy accidental con clave de juguete).

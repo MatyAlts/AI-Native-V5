@@ -1,6 +1,6 @@
 ## Context
 
-El piloto UNSL llega a defensa doctoral con dos categorías de deuda visible al comité:
+El piloto UTN llega a defensa doctoral con dos categorías de deuda visible al comité:
 
 1. **Documental**: la "Agenda Cap 20" del CLAUDE.md ya tiene ADRs redactados para G6 (ADR-028) y G3-Fase-B (ADR-027), pero **G7-ML** (alertas predictivas con modelo entrenado sobre baseline individual del estudiante) sigue sin un ADR propio. El MVP estadístico (z-score vs cohorte) vive dentro de ADR-022, pero el comité va a preguntar específicamente por la versión >1σ vs trayecto propio mencionada en `audi1.md` G7. Sin un ADR único al que apuntar, la decisión sigue siendo "deuda silenciosa".
 2. **Frontend visible**: tras el minimalist-ui pass, quedan cuatro papercuts pegados a la demo (HomePage sin métricas reales, subtítulos con UUID raw, tildes faltantes, sidebar sin separador). Ninguno bloquea funcionalidad, pero todos son pegan en la primera impresión del comité.

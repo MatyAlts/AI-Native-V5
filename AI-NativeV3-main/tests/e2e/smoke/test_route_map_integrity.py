@@ -38,13 +38,13 @@ from api_gateway.routes.proxy import ROUTE_MAP  # type: ignore[import-not-found]
 # local (viven en infra institucional separada). Si alguno de estos está en
 # el dict, lo skipeamos con mensaje claro — NO falla el smoke.
 #
-# `integrity-attestation-service` (:8012) corre en VPS UNSL en piloto real.
+# `integrity-attestation-service` (:8012) corre en VPS UTN en piloto real.
 # RN-128 declara la attestation eventualmente consistente y no bloqueante.
 # Hoy NO está en el ROUTE_MAP (verificado), pero si alguien lo agrega, el
 # skip aplicará automáticamente por puerto.
 SKIP_TARGETS_BY_PORT: dict[int, str] = {
     8012: (
-        "integrity-attestation-service vive en VPS UNSL en piloto real "
+        "integrity-attestation-service vive en VPS UTN en piloto real "
         "(RN-128, ADR-021). No se levanta en local."
     ),
 }

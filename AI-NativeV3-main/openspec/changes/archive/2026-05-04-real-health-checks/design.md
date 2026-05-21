@@ -1,6 +1,6 @@
 ## Context
 
-El piloto UNSL corre 12 servicios FastAPI en Kubernetes con `livenessProbe` (`/health/live`) y `readinessProbe` (`/health/ready`) wireadas en `infrastructure/helm/platform/templates/backend-services.yaml` (líneas 50-61). Hoy, 11 de los 12 endpoints `/health/ready` devuelven `200 {"status":"ready","checks":{}}` **hardcoded** desde `apps/<svc>/src/<svc_snake>/routes/health.py` (con un `# TODO: chequear dependencias reales` literal). Solo `ctr-service` chequea DB + Redis con timeout (`apps/ctr-service/src/ctr_service/routes/health.py:_check_db()` y `_check_redis()`).
+El piloto UTN corre 12 servicios FastAPI en Kubernetes con `livenessProbe` (`/health/live`) y `readinessProbe` (`/health/ready`) wireadas en `infrastructure/helm/platform/templates/backend-services.yaml` (líneas 50-61). Hoy, 11 de los 12 endpoints `/health/ready` devuelven `200 {"status":"ready","checks":{}}` **hardcoded** desde `apps/<svc>/src/<svc_snake>/routes/health.py` (con un `# TODO: chequear dependencias reales` literal). Solo `ctr-service` chequea DB + Redis con timeout (`apps/ctr-service/src/ctr_service/routes/health.py:_check_db()` y `_check_redis()`).
 
 Resultado operativo: un pod con Postgres caído o Redis muerto sigue marcado **Ready** y sigue recibiendo tráfico. K8s nunca lo saca de rotación. Para el piloto doctoral (4 meses, defensa cerca, comité busca historia operacional defendible), esto convierte fallas claras de infra en 500s opacos.
 
@@ -8,7 +8,7 @@ El contrato actual de `HealthResponse` (`packages/contracts`) ya tiene `checks: 
 
 **Stakeholders:**
 - Doctorando (Alberto Cortez): defensa pronto; necesita poder mostrar al comité que las probes son reales.
-- Director de informática UNSL: opera el clúster en piloto; cualquier cambio en `/health` afecta sus alertas.
+- Director de informática UTN: opera el clúster en piloto; cualquier cambio en `/health` afecta sus alertas.
 - Auditores externos del CTR: leen el runbook del piloto; "los servicios chequean sus deps" es claim que tiene que cerrar.
 
 **Constraints:**
@@ -198,6 +198,6 @@ Cada PR:
 
 - **Cache TTL global vs per-URL**: el dict in-memory comparte TTL=5s para todas las URLs. Si en el futuro un downstream necesita TTL distinto (ej. `ai-gateway` con TTL=30s porque su provider HTTP es lento), refactorear. Por ahora 5s sirve para los 3 casos del piloto. **Resolución prevista**: dejar como está; revisar si emerge un caso operacional concreto.
 
-- **`integrity-attestation-service` private key path**: el ADR-021 menciona que en piloto vive en infra institucional separada. El check de readability del key path asume que el path es absoluto y resuelve dentro del filesystem del pod. Si en piloto el key vive en un secret montado, el path cambia. **Resolución prevista**: el helper recibe el path por env var (`INTEGRITY_PRIVATE_KEY_PATH`); el deploy en infra institucional configura el path apropiado. Smoke del director de informática UNSL valida.
+- **`integrity-attestation-service` private key path**: el ADR-021 menciona que en piloto vive en infra institucional separada. El check de readability del key path asume que el path es absoluto y resuelve dentro del filesystem del pod. Si en piloto el key vive en un secret montado, el path cambia. **Resolución prevista**: el helper recibe el path por env var (`INTEGRITY_PRIVATE_KEY_PATH`); el deploy en infra institucional configura el path apropiado. Smoke del director de informática UTN valida.
 
 - **`make check-health` con un solo servicio caído**: hoy reporta exit 1 si cualquier servicio falla. Con health real, durante dev local con DB caída todos fallan — ¿el script debería distinguir "infra caída" vs "servicio individual crash"? **Resolución prevista**: out-of-scope para este change; abrir issue separado si emerge dolor.

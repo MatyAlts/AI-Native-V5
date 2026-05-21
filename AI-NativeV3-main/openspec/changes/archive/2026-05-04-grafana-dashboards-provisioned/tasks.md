@@ -106,7 +106,7 @@
 - [x] 9.3 `ai-gateway/costos-y-latencia.json`: 5 paneles (Tokens stacked, Budget USD stat, Request latency p50/p99 por provider, Fallback 24h, Cache hit rate gauge %). Variables `$tenant`. Refresh 1m.
 - [x] 9.4 `tutor/engagement.json`: 5 paneles (Episodios opened/closed/abandoned 1m rate, Tutor latency p50/p99 con threshold lines 3s/8s, intento_adverso_detectado por categoría, prompt_kind donut, Sesiones activas). Variables `$tenant`, `$cohort`. Refresh 30s.
 - [x] 9.5 `classifier/kappa-y-coherencias.json`: 5 paneles (κ rolling 7d con threshold lines 0.4/0.6, n_level distribution % stacked, CCD orphan por cohorte, CII slope histogram, Reproducibility config_hash count target=1). Variables `$tenant`, `$cohort`, `$template_id`. Refresh 5m.
-- [x] 9.6 Audiencia declarada en `description` de cada dashboard (comité doctoral, auditor, doctorando + DI UNSL, pedagogía + demo, tesis evidencia central).
+- [x] 9.6 Audiencia declarada en `description` de cada dashboard (comité doctoral, auditor, doctorando + DI UTN, pedagogía + demo, tesis evidencia central).
 
 ## 10. Archivar dashboards heredados
 

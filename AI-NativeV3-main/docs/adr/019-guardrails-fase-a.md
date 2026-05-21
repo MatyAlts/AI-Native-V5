@@ -3,7 +3,7 @@
 - **Estado**: Accepted
 - **Fecha**: 2026-04-27 (propuesto), 2026-05-08 (promovido a Accepted tras verificación bidireccional tesis-código)
 - **Deciders**: Alberto Alejandro Cortez, director de tesis
-- **Tags**: seguridad, tesis, piloto-UNSL, CTR, tutor
+- **Tags**: seguridad, tesis, piloto-UTN, CTR, tutor
 
 ## Contexto y problema
 

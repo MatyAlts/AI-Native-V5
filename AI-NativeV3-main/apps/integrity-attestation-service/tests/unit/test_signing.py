@@ -252,7 +252,7 @@ def test_load_keypair_failsafe_dev_key_en_dev_es_ok() -> None:
 
 
 def test_load_keypair_failsafe_dev_key_en_production_falla() -> None:
-    """Defensa contra deploy accidental del dev key en piloto UNSL."""
+    """Defensa contra deploy accidental del dev key en piloto UTN."""
     with pytest.raises(DevKeyInProductionError, match="dev key"):
         load_keypair_with_failsafe(
             private_path=_DEV_PRIVATE,

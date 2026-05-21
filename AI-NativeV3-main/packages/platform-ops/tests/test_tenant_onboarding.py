@@ -29,12 +29,12 @@ ADMIN_TOKEN = "fake-admin-token"
 @pytest.fixture
 def tenant_spec() -> TenantSpec:
     return TenantSpec(
-        name="UNSL",
+        name="UTN",
         uuid=UUID("aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa"),
-        realm_name="unsl",
-        admin_email="admin@unsl.edu.ar",
+        realm_name="utn",
+        admin_email="admin@utn.edu.ar",
         admin_password_temp="TempPass123!",
-        allowed_origins=["https://unsl.platform.ar"],
+        allowed_origins=["https://utn.platform.ar"],
     )
 
 
@@ -64,7 +64,7 @@ async def test_onboarding_de_tenant_nuevo(kc_client, tenant_spec) -> None:
         _mock_admin_login(router)
 
         # Realm no existe
-        router.get(f"{KC_BASE}/admin/realms/unsl").mock(
+        router.get(f"{KC_BASE}/admin/realms/utn").mock(
             return_value=Response(404),
         )
         # Crear realm
@@ -75,58 +75,58 @@ async def test_onboarding_de_tenant_nuevo(kc_client, tenant_spec) -> None:
         # GET /clients:
         #   1ra llamada (create_client check): [] → crear
         #   2da llamada (mapper lookup): [{id: internal}] → saltearse creación
-        router.get(f"{KC_BASE}/admin/realms/unsl/clients").mock(
+        router.get(f"{KC_BASE}/admin/realms/utn/clients").mock(
             side_effect=[
                 Response(200, json=[]),
                 Response(200, json=[{"id": "internal-client-id", "clientId": "platform-backend"}]),
             ],
         )
-        client_create = router.post(f"{KC_BASE}/admin/realms/unsl/clients").mock(
+        client_create = router.post(f"{KC_BASE}/admin/realms/utn/clients").mock(
             return_value=Response(201),
         )
 
         # Mapper: ninguno existe
         mappers_url = (
-            f"{KC_BASE}/admin/realms/unsl/clients/internal-client-id/protocol-mappers/models"
+            f"{KC_BASE}/admin/realms/utn/clients/internal-client-id/protocol-mappers/models"
         )
         router.get(mappers_url).mock(return_value=Response(200, json=[]))
         mapper_create = router.post(mappers_url).mock(return_value=Response(201))
 
         # Roles: ninguno existe → crear los 4. El último GET de docente_admin
         # (para asignarlo al user) sí devuelve 200.
-        router.get(f"{KC_BASE}/admin/realms/unsl/roles/estudiante").mock(
+        router.get(f"{KC_BASE}/admin/realms/utn/roles/estudiante").mock(
             return_value=Response(404),
         )
-        router.get(f"{KC_BASE}/admin/realms/unsl/roles/docente").mock(
+        router.get(f"{KC_BASE}/admin/realms/utn/roles/docente").mock(
             return_value=Response(404),
         )
         # docente_admin: primera llamada (check al crear) = 404,
         # segunda llamada (lookup para assign) = 200
-        router.get(f"{KC_BASE}/admin/realms/unsl/roles/docente_admin").mock(
+        router.get(f"{KC_BASE}/admin/realms/utn/roles/docente_admin").mock(
             side_effect=[
                 Response(404),
                 Response(200, json={"id": "role-id", "name": "docente_admin"}),
             ],
         )
-        router.get(f"{KC_BASE}/admin/realms/unsl/roles/superadmin").mock(
+        router.get(f"{KC_BASE}/admin/realms/utn/roles/superadmin").mock(
             return_value=Response(404),
         )
-        roles_create = router.post(f"{KC_BASE}/admin/realms/unsl/roles").mock(
+        roles_create = router.post(f"{KC_BASE}/admin/realms/utn/roles").mock(
             return_value=Response(201),
         )
 
         # User: no existe → crear
         router.get(
-            f"{KC_BASE}/admin/realms/unsl/users",
+            f"{KC_BASE}/admin/realms/utn/users",
             params={"email": tenant_spec.admin_email, "exact": "true"},
         ).mock(return_value=Response(200, json=[]))
-        user_create = router.post(f"{KC_BASE}/admin/realms/unsl/users").mock(
+        user_create = router.post(f"{KC_BASE}/admin/realms/utn/users").mock(
             return_value=Response(
                 201,
-                headers={"location": f"{KC_BASE}/admin/realms/unsl/users/new-user-id"},
+                headers={"location": f"{KC_BASE}/admin/realms/utn/users/new-user-id"},
             ),
         )
-        router.post(f"{KC_BASE}/admin/realms/unsl/users/new-user-id/role-mappings/realm").mock(
+        router.post(f"{KC_BASE}/admin/realms/utn/users/new-user-id/role-mappings/realm").mock(
             return_value=Response(204),
         )
 
@@ -135,7 +135,7 @@ async def test_onboarding_de_tenant_nuevo(kc_client, tenant_spec) -> None:
 
     # Assertions
     assert report.tenant_uuid == tenant_spec.uuid
-    assert report.realm_name == "unsl"
+    assert report.realm_name == "utn"
     assert report.admin_user_id == "new-user-id"
     assert any("creado" in a.lower() for a in report.actions)
     assert realm_create.called
@@ -151,14 +151,14 @@ async def test_mapper_injecta_tenant_id_correcto(kc_client, tenant_spec) -> None
     async with respx.mock(base_url=KC_BASE, assert_all_called=False) as router:
         _mock_admin_login(router)
 
-        router.get(f"{KC_BASE}/admin/realms/unsl").mock(return_value=Response(200))
-        router.get(f"{KC_BASE}/admin/realms/unsl/clients").mock(
+        router.get(f"{KC_BASE}/admin/realms/utn").mock(return_value=Response(200))
+        router.get(f"{KC_BASE}/admin/realms/utn/clients").mock(
             return_value=Response(
                 200, json=[{"id": "internal-id", "clientId": "platform-backend"}]
             ),
         )
 
-        mappers_url = f"{KC_BASE}/admin/realms/unsl/clients/internal-id/protocol-mappers/models"
+        mappers_url = f"{KC_BASE}/admin/realms/utn/clients/internal-id/protocol-mappers/models"
         router.get(mappers_url).mock(return_value=Response(200, json=[]))
 
         mapper_post = router.post(mappers_url).mock(return_value=Response(201))
@@ -184,24 +184,24 @@ async def test_onboarding_idempotente_no_recrea_realm(kc_client, tenant_spec) ->
         _mock_admin_login(router)
 
         # Realm ya existe
-        router.get(f"{KC_BASE}/admin/realms/unsl").mock(return_value=Response(200))
+        router.get(f"{KC_BASE}/admin/realms/utn").mock(return_value=Response(200))
 
         realm_create = router.post(f"{KC_BASE}/admin/realms").mock(
             return_value=Response(201),
         )
 
         # Clients: existe platform-backend
-        router.get(f"{KC_BASE}/admin/realms/unsl/clients").mock(
+        router.get(f"{KC_BASE}/admin/realms/utn/clients").mock(
             return_value=Response(
                 200, json=[{"id": "existing-id", "clientId": "platform-backend"}]
             ),
         )
-        client_create = router.post(f"{KC_BASE}/admin/realms/unsl/clients").mock(
+        client_create = router.post(f"{KC_BASE}/admin/realms/utn/clients").mock(
             return_value=Response(201),
         )
 
         # Mapper ya existe
-        mappers_url = f"{KC_BASE}/admin/realms/unsl/clients/existing-id/protocol-mappers/models"
+        mappers_url = f"{KC_BASE}/admin/realms/utn/clients/existing-id/protocol-mappers/models"
         router.get(mappers_url).mock(
             return_value=Response(200, json=[{"name": "tenant_id"}]),
         )
@@ -209,21 +209,21 @@ async def test_onboarding_idempotente_no_recrea_realm(kc_client, tenant_spec) ->
 
         # Roles ya existen todos
         for role in ("estudiante", "docente", "docente_admin", "superadmin"):
-            router.get(f"{KC_BASE}/admin/realms/unsl/roles/{role}").mock(
+            router.get(f"{KC_BASE}/admin/realms/utn/roles/{role}").mock(
                 return_value=Response(200, json={"name": role, "id": f"{role}-id"}),
             )
-        roles_create = router.post(f"{KC_BASE}/admin/realms/unsl/roles").mock(
+        roles_create = router.post(f"{KC_BASE}/admin/realms/utn/roles").mock(
             return_value=Response(201),
         )
 
         # User ya existe
         router.get(
-            f"{KC_BASE}/admin/realms/unsl/users",
+            f"{KC_BASE}/admin/realms/utn/users",
             params={"email": tenant_spec.admin_email, "exact": "true"},
         ).mock(
             return_value=Response(200, json=[{"id": "existing-user-id"}]),
         )
-        user_create = router.post(f"{KC_BASE}/admin/realms/unsl/users").mock(
+        user_create = router.post(f"{KC_BASE}/admin/realms/utn/users").mock(
             return_value=Response(201),
         )
 
@@ -251,21 +251,21 @@ async def test_admin_user_se_crea_con_password_temporal(kc_client, tenant_spec) 
         _mock_admin_login(router)
 
         router.get(
-            f"{KC_BASE}/admin/realms/unsl/users",
+            f"{KC_BASE}/admin/realms/utn/users",
             params={"email": tenant_spec.admin_email, "exact": "true"},
         ).mock(
             return_value=Response(200, json=[]),
         )
 
-        user_create = router.post(f"{KC_BASE}/admin/realms/unsl/users").mock(
+        user_create = router.post(f"{KC_BASE}/admin/realms/utn/users").mock(
             return_value=Response(
-                201, headers={"location": f"{KC_BASE}/admin/realms/unsl/users/uid-xyz"}
+                201, headers={"location": f"{KC_BASE}/admin/realms/utn/users/uid-xyz"}
             ),
         )
-        router.get(f"{KC_BASE}/admin/realms/unsl/roles/docente_admin").mock(
+        router.get(f"{KC_BASE}/admin/realms/utn/roles/docente_admin").mock(
             return_value=Response(200, json={"id": "r1", "name": "docente_admin"}),
         )
-        router.post(f"{KC_BASE}/admin/realms/unsl/users/uid-xyz/role-mappings/realm").mock(
+        router.post(f"{KC_BASE}/admin/realms/utn/users/uid-xyz/role-mappings/realm").mock(
             return_value=Response(204),
         )
 

@@ -79,7 +79,7 @@ Dejar `identity-service` en el workspace y helm como esta hoy.
 
 ### Negativas / trade-offs
 
-- **Si UNSL pide flow institucional que requiera Keycloak Admin API server-side** (ej. scim provisioning, password reset administrativo, gestion de roles batch que el gateway no cubra), va a haber que revivir el servicio o agregar la funcionalidad al api-gateway. **Mitigacion**: el README documenta los 5 pasos exactos de revival, y el directorio sigue versionado.
+- **Si UTN pide flow institucional que requiera Keycloak Admin API server-side** (ej. scim provisioning, password reset administrativo, gestion de roles batch que el gateway no cubra), va a haber que revivir el servicio o agregar la funcionalidad al api-gateway. **Mitigacion**: el README documenta los 5 pasos exactos de revival, y el directorio sigue versionado.
 - **Cosmetica residual**: si quedaran settings dormidas (`identity_service_url` o similar) en algun config, no afectan runtime — son inertes. (Verificacion `rg "identity[-_]service|identity_service_url" apps/api-gateway/` devolvio vacio post-cambios, confirmando que no hay este tipo de residuo.)
 
 ### Neutras

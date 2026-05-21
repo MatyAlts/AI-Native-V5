@@ -1,4 +1,4 @@
-# Infraestructura prod-like para piloto-2 ampliado UNSL.
+# Infraestructura prod-like para piloto-2 ampliado UTN.
 #
 # DIFERENCIAS CON dev:
 #   - Credenciales via ${VAR} desde .env.prod (NO hardcoded admin/admin)
@@ -6,7 +6,7 @@
 #   - Solo api-gateway, Grafana y Keycloak admin exponen puertos al host
 #   - Red interna platform-prod aislada
 #   - dev_trust_headers=false por contrato (api-gateway exige JWT real)
-#   - integrity-attestation-service NO está acá (vive en VPS UNSL aparte, ADR-021)
+#   - integrity-attestation-service NO está acá (vive en VPS UTN aparte, ADR-021)
 #
 # Uso:
 #   cp infrastructure/.env.prod.example infrastructure/.env.prod
@@ -173,7 +173,7 @@ services:
     networks:
       - default
     # Sin ports exposes. Para acceder al UI usar SSH tunnel:
-    # ssh -L 16686:localhost:16686 vps-unsl
+    # ssh -L 16686:localhost:16686 vps-utn
 
   prometheus:
     image: prom/prometheus:v2.55.0
@@ -235,7 +235,7 @@ services:
 
   # ════════════════════════════════════════════════════════════════════
   # CAPA DE APLICACION — 10 servicios Python
-  # integrity-attestation-service NO esta aca (vive en VPS UNSL aparte, ADR-021)
+  # integrity-attestation-service NO esta aca (vive en VPS UTN aparte, ADR-021)
   # ════════════════════════════════════════════════════════════════════
 
   api-gateway:

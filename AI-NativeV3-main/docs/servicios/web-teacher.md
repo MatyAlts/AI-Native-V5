@@ -109,7 +109,7 @@ El web-teacher es la UI donde se ejecutan **dos de los tres experimentos empíri
 
 2. **Progresión longitudinal** (`ProgressionView`): la narrativa empírica de "los estudiantes mejoran con el tutor socrático" o "no mejoran" sale de esta vista. El `net_progression_ratio` de una cohorte es la cifra que aparece en el capítulo de resultados. El SVG nativo es deliberado — la tesis prefiere que la visualización sea reproducible y auditable (SVG simple > Recharts opaco).
 
-3. **Export académico** (`ExportView`): la entrega del dataset al comité de ética UNSL pasa por acá. El formulario fuerza `salt ≥ 16 chars`, `include_prompts=False` por default, y el `cohort_alias` identifica la cohorte en los datasets publicables sin revelar identidad institucional. Es el punto de cumplimiento formal del convenio.
+3. **Export académico** (`ExportView`): la entrega del dataset al comité de ética UTN pasa por acá. El formulario fuerza `salt ≥ 16 chars`, `include_prompts=False` por default, y el `cohort_alias` identifica la cohorte en los datasets publicables sin revelar identidad institucional. Es el punto de cumplimiento formal del convenio.
 
 Las vistas de `TareasPracticasView` y `TemplatesView` materializan [ADR-016](../adr/016-tp-template-instance.md) — fan-out automático de plantillas en instancias por comisión, con `has_drift` para instancias editadas manualmente. Sin la UI, ADR-016 sería un modelo teórico del backend; con la UI, un docente con 3 comisiones puede mantener un enunciado único sin copiar-pegar manualmente.
 

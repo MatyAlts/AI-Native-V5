@@ -26,7 +26,7 @@ obtiene **exactamente las mismas claves**. Eso garantiza:
 2. El `signer_pubkey_id` es estable entre máquinas.
 3. Si alguien las modifica accidentalmente, regenerar restaura el estado.
 
-## Producción (piloto UNSL)
+## Producción (piloto UTN)
 
 En producción, el deploy debe:
 
@@ -36,7 +36,7 @@ En producción, el deploy debe:
 
 El servicio en startup verifica que la pubkey activa **NO sea la dev key** cuando `environment=production`. Si lo es, falla fast — protección contra deploy accidental con clave de juguete.
 
-La clave institucional la genera el director de informática UNSL, sin participación del doctorando (D3 del ADR-021 — independencia institucional).
+La clave institucional la genera el director de informática UTN, sin participación del doctorando (D3 del ADR-021 — independencia institucional).
 
 ## Por qué Ed25519
 

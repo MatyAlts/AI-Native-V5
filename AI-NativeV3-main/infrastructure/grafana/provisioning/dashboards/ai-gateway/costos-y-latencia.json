@@ -1,6 +1,6 @@
 {
   "annotations": {"list": []},
-  "description": "Audiencia: doctorando + DI UNSL para budget tracking. Tokens consumidos, gasto, latencia, fallback rate, cache hit rate. Refresh 1m.",
+  "description": "Audiencia: doctorando + DI UTN para budget tracking. Tokens consumidos, gasto, latencia, fallback rate, cache hit rate. Refresh 1m.",
   "editable": true,
   "fiscalYearStartMonth": 0,
   "graphTooltip": 0,
@@ -64,7 +64,7 @@
   ],
   "refresh": "1m",
   "schemaVersion": 39,
-  "tags": ["ai-gateway", "costos", "piloto-unsl"],
+  "tags": ["ai-gateway", "costos", "piloto-utn"],
   "templating": {
     "list": [
       {"current": {"selected": false, "text": "All", "value": "$__all"}, "datasource": {"type": "prometheus", "uid": "prometheus"}, "definition": "label_values(ai_gateway_tokens_total, tenant_id)", "hide": 0, "includeAll": true, "multi": false, "name": "tenant", "options": [], "query": {"query": "label_values(ai_gateway_tokens_total, tenant_id)", "refId": "StandardVariableQuery"}, "refresh": 1, "regex": "", "skipUrlSync": false, "sort": 0, "type": "query"}

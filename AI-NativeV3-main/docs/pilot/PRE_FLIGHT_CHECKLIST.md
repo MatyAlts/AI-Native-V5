@@ -1,11 +1,11 @@
-# Pre-flight checklist — despliegue UNSL
+# Pre-flight checklist — despliegue UTN
 
 Checklist accionable para verificar que todo está listo **antes** de que
 el primer estudiante toque la plataforma. Un ítem no verificado ≠ ítem
 aprobado — se marca con `[✗]` y se bloquea el deploy.
 
 El documento está ordenado por dependencia: verificar en orden.
-Responsables: `TEC` = equipo técnico de UNSL · `INV` = Alberto ·
+Responsables: `TEC` = equipo técnico de UTN · `INV` = Alberto ·
 `DOC` = docentes participantes.
 
 ---
@@ -17,10 +17,10 @@ Responsables: `TEC` = equipo técnico de UNSL · `INV` = Alberto ·
 - [ ] **Servidor dedicado o VM con al menos 8 CPU / 16 GB RAM / 200 GB SSD** (`TEC`)
   - Justificación: CTR + pgvector del content-service + Redis + Keycloak pueden demandar memoria en picos de uso (100+ estudiantes simultáneos).
 - [ ] **Dominio público con TLS válido** (`TEC`)
-  - Ej: `plataforma.unsl.edu.ar` con certificado Let's Encrypt renovable.
-  - Subdominios para los 3 frontends: `student.plataforma.unsl.edu.ar`, `teacher.`, `admin.`.
+  - Ej: `plataforma.utn.edu.ar` con certificado Let's Encrypt renovable.
+  - Subdominios para los 3 frontends: `student.plataforma.utn.edu.ar`, `teacher.`, `admin.`.
 - [ ] **Firewall abierto solo en 443 (HTTPS) y 22 (SSH restringido a IPs del equipo)** (`TEC`)
-- [ ] **DNS resuelve desde red de UNSL y desde internet** (`TEC`)
+- [ ] **DNS resuelve desde red de UTN y desde internet** (`TEC`)
 
 ### Databases
 
@@ -42,16 +42,16 @@ Responsables: `TEC` = equipo técnico de UNSL · `INV` = Alberto ·
 ## Fase 2 — Identidad y autenticación (T-3 semanas)
 
 - [ ] **Keycloak corriendo y accesible en puerto interno 8180** (`TEC`)
-- [ ] **Realm `unsl` creado** con `python examples/unsl_onboarding.py` (`TEC` + `INV`)
-  - Verificar: `curl https://keycloak/realms/unsl/.well-known/openid-configuration` responde 200.
+- [ ] **Realm `utn` creado** con `python examples/utn_onboarding.py` (`TEC` + `INV`)
+  - Verificar: `curl https://keycloak/realms/utn/.well-known/openid-configuration` responde 200.
 - [ ] **Client `platform-backend` con `tenant_id` claim mapper** configurado (`TEC`)
   - Verificar: decoded de un JWT de prueba debe contener `"tenant_id": "aaaaaaaa-..."`.
 - [ ] **4 roles creados**: `estudiante`, `docente`, `docente_admin`, `superadmin` (`TEC`)
-- [ ] **LDAP federation funcionando** si UNSL usará LDAP institucional (`TEC` + `INV`)
-  - Test: `kcadm.sh create users-storage --realm unsl ...` → usuario del LDAP aparece en Keycloak sin sync manual.
+- [ ] **LDAP federation funcionando** si UTN usará LDAP institucional (`TEC` + `INV`)
+  - Test: `kcadm.sh create users-storage --realm utn ...` → usuario del LDAP aparece en Keycloak sin sync manual.
   - **Verificar editMode = READ_ONLY** (crítico: la plataforma nunca modifica el LDAP institucional).
 - [ ] **JWKS endpoint accesible desde los servicios backend** (`TEC`)
-  - Desde el contenedor de api-gateway: `curl http://keycloak:8180/realms/unsl/protocol/openid-connect/certs` responde 200.
+  - Desde el contenedor de api-gateway: `curl http://keycloak:8180/realms/utn/protocol/openid-connect/certs` responde 200.
 
 ---
 
@@ -59,8 +59,8 @@ Responsables: `TEC` = equipo técnico de UNSL · `INV` = Alberto ·
 
 ### Secretos
 
-- [ ] **`ANTHROPIC_API_KEY` de UNSL configurada** (como env var o K8s Secret) (`TEC` + `INV`)
-  - UNSL debería tener su propia cuenta Anthropic con budget dedicado al piloto.
+- [ ] **`ANTHROPIC_API_KEY` de UTN configurada** (como env var o K8s Secret) (`TEC` + `INV`)
+  - UTN debería tener su propia cuenta Anthropic con budget dedicado al piloto.
 - [ ] **`KEYCLOAK_ADMIN_PASSWORD` no es `admin`** (`TEC`)
 - [ ] **`POSTGRES_PASSWORD` no es default** (`TEC`)
 - [ ] **`EXPORT_WORKER_SALT` generado con `openssl rand -hex 32`** y guardado en vault (`INV`)
@@ -69,7 +69,7 @@ Responsables: `TEC` = equipo técnico de UNSL · `INV` = Alberto ·
 ### Feature flags
 
 - [ ] **`feature_flags.yaml` desplegado** con config del piloto (`TEC`)
-  - `enable_code_execution: true` para UNSL
+  - `enable_code_execution: true` para UTN
   - `show_n4_to_students: true` (decisión pedagógica: los estudiantes ven su propia clasificación)
   - `max_episodes_per_day: 200` (holgura para exploración)
 
@@ -91,8 +91,8 @@ Responsables: `TEC` = equipo técnico de UNSL · `INV` = Alberto ·
 
 - [ ] **Prometheus scrappeando las 12 métricas de servicios** (`TEC`)
   - Verificar en `http://prometheus:9090/targets` que todos estén `UP`.
-- [ ] **Grafana con el dashboard UNSL Pilot auto-cargado** (`TEC`)
-  - Abrir `https://grafana.plataforma.unsl.edu.ar` → Dashboards → Platform → UNSL Pilot.
+- [ ] **Grafana con el dashboard UTN Pilot auto-cargado** (`TEC`)
+  - Abrir `https://grafana.plataforma.utn.edu.ar` → Dashboards → Platform → UTN Pilot.
 - [ ] **Alertas críticas configuradas**:
   - [ ] `PlatformBackupJobFailed` (backup nocturno falló) → email a `TEC + INV`
   - [ ] `CTRIntegrityCompromised` (cadena criptográfica rota) → PagerDuty o equivalente
@@ -108,7 +108,7 @@ Ejecutar el happy path completo con una cuenta de prueba **antes** de
 que ningún estudiante real toque el sistema.
 
 - [ ] **Login con usuario de LDAP funciona** (`TEC` + `INV`)
-  - Crear usuario test en LDAP UNSL → login en `student.plataforma.unsl.edu.ar` → debe ver el dashboard.
+  - Crear usuario test en LDAP UTN → login en `student.plataforma.utn.edu.ar` → debe ver el dashboard.
 - [ ] **El JWT tiene `tenant_id` correcto** (`TEC`)
   - Decodificar `Authorization` header en DevTools del browser → verificar payload.
 - [ ] **Abrir un episodio → tutor responde via SSE** (`INV`)
@@ -123,7 +123,7 @@ que ningún estudiante real toque el sistema.
   - `POST /api/v1/classify_episode/{id}` → debe volver clasificación N4 con las 5 coherencias.
   - Verificar hash del classifier config es determinista.
 - [ ] **Verificar integridad del CTR** (`TEC`)
-  - `python scripts/verify_ctr_integrity.py --tenant unsl` debe pasar.
+  - `python scripts/verify_ctr_integrity.py --tenant utn` debe pasar.
 
 ---
 
@@ -143,7 +143,7 @@ que ningún estudiante real toque el sistema.
 
 ## Fase 7 — Ética y consentimiento (T-1 semana)
 
-- [ ] **Protocolo aprobado por el Comité de Ética de UNSL** (`INV`)
+- [ ] **Protocolo aprobado por el Comité de Ética de UTN** (`INV`)
   - Tener el dictamen por escrito (mail oficial o resolución) antes de reclutar.
 - [ ] **Formulario de consentimiento informado impreso** (`INV`)
   - 180 copias listas (una por estudiante potencial).
@@ -182,7 +182,7 @@ que ningún estudiante real toque el sistema.
 ## Post-piloto (T+16 semanas)
 
 - [ ] **Exportar dataset final** con salt del grupo de investigación
-- [ ] **Backup del CTR del período completo** con naming `unsl_piloto_2026_Q1`
+- [ ] **Backup del CTR del período completo** con naming `utn_piloto_2026_Q1`
 - [ ] **Retention: mantener datos 5 años** según política del comité de ética
 - [ ] **Publicar salt_hash** (no el salt) en el paper para reproducibilidad
 - [ ] **Baja graceful**: desactivar `enable_code_execution` si el piloto termina y no continúa la plataforma en esa cohorte

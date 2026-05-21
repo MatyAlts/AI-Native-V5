@@ -48,7 +48,7 @@ def _auth_headers() -> dict[str, str]:
     return {
         "X-User-Id": str(DOCENTE_USER_ID),
         "X-Tenant-Id": str(TENANT_ID),
-        "X-User-Email": "docente@unsl.test",
+        "X-User-Email": "docente@utn.test",
         "X-User-Roles": "docente",
     }
 

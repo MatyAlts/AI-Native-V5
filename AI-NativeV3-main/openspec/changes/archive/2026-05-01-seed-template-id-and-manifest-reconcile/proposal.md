@@ -1,6 +1,6 @@
 ## Why
 
-Tres bugs chicos pero visibles bloquean la demo del piloto UNSL para defensa doctoral:
+Tres bugs chicos pero visibles bloquean la demo del piloto UTN para defensa doctoral:
 
 1. **`scripts/seed-3-comisiones.py` rompe la promesa de `template_id` que la tesis defiende**: los 94 episodios sembrados apuntan a `problema_id=99999999-9999-9999-9999-999999999999` (constante hardcodeada que NO existe como `TareaPractica` real en la base). El seed crea correctamente 2 templates + 6 instancias con `template_id` poblado, pero los `Episode.problema_id` jamas son redirigidos a esas instancias. Resultado: `GET /api/v1/analytics/student/{id}/cii-evolution-longitudinal` y `/cohort/{id}/cii-quartiles` devuelven `insufficient_data: true` aunque haya datos suficientes — se rompe el JOIN `episodes.problema_id -> tareas_practicas.id -> tareas_practicas_templates.id`. **Esto es el corazon de ADR-018 / RN-130** (CII evolution longitudinal por `template_id`) y la prueba mas visible de la propiedad multidimensional N4 ante el comite.
 
@@ -50,7 +50,7 @@ Tres bugs chicos pero visibles bloquean la demo del piloto UNSL para defensa doc
 
 - **Re-ejecutar `seed-3-comisiones.py` es destructivo** — borra tenant `aaaa...` y rehace todo el estado academico/CTR/classifications. Si alguien inserto data demo manual post-seed, se pierde. Documentar en docstring + en `docs/SESSION-LOG.md` la fecha de re-corrida. NO pisar bases de profesores reales (mitigado: el seed esta scopeado a `TENANT_ID = aaaa...` y siempre fue asi).
 - **Migracion `comisiones.nombre NOT NULL`**: con backfill desde `codigo` para filas existentes, no hay nulls. Validar que no haya tests de la suite que asumen el shape viejo de `ComisionOut` sin `nombre` — si los hay, actualizarlos en el mismo PR (testeo obligatorio en PRs por convencion CLAUDE.md).
-- **Prompt version bump del seed NO regenera classifications historicas** — los episodios viejos del piloto (si los hubiera) seguirian con `v1.0.0`. En el piloto UNSL aun no hay data real produccion; aplicable solo a la data demo. No hay riesgo de ROMPER cadenas SHA-256 porque el seed reconstruye todo desde cero (idempotente).
+- **Prompt version bump del seed NO regenera classifications historicas** — los episodios viejos del piloto (si los hubiera) seguirian con `v1.0.0`. En el piloto UTN aun no hay data real produccion; aplicable solo a la data demo. No hay riesgo de ROMPER cadenas SHA-256 porque el seed reconstruye todo desde cero (idempotente).
 - **No se toca el prompt body de v1.0.1** — su `manifest.yaml` ya tiene el sha256 firmado y system.md presente. Si en el futuro se decide cambiar el cuerpo del prompt, eso es OTRO change (otro ADR).
 
 ### Non-goals (explicitamente fuera de scope)
@@ -60,7 +60,7 @@ Tres bugs chicos pero visibles bloquean la demo del piloto UNSL para defensa doc
 - **NO tocar migraciones del CTR ni del classifier** — el cambio del seed reescribe las filas pero no toca el schema de `ctr_store` ni `classifier_db`.
 - **NO modificar `LABELER_VERSION` del classifier** (sigue en `1.1.0`, ADR-023).
 - **NO incorporar `nombre` al UNIQUE constraint** `uq_comision_codigo` — la unicidad sigue siendo `(tenant_id, materia_id, periodo_id, codigo)`. `nombre` es etiqueta humana, no clave.
-- **NO refactorizar `seed-demo-data.py`** (el seed mas chico) — solo `seed-3-comisiones.py` (el que usa el piloto UNSL para defensa).
+- **NO refactorizar `seed-demo-data.py`** (el seed mas chico) — solo `seed-3-comisiones.py` (el que usa el piloto UTN para defensa).
 
 ### Acceptance criteria (verificables, ejecutables)
 

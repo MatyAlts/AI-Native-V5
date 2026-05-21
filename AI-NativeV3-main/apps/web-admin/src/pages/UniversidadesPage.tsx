@@ -190,11 +190,11 @@ function UniversidadForm({
                   Nacional de San Luis).
                 </li>
                 <li>
-                  <strong>Codigo:</strong> Identificador corto unico (ej. unsl). Solo letras,
+                  <strong>Codigo:</strong> Identificador corto unico (ej. utn). Solo letras,
                   numeros, guiones. Inmutable una vez creado.
                 </li>
                 <li>
-                  <strong>Dominio email:</strong> Opcional. Dominio institucional (ej. unsl.edu.ar).
+                  <strong>Dominio email:</strong> Opcional. Dominio institucional (ej. utn.edu.ar).
                 </li>
                 <li>
                   <strong>Keycloak realm:</strong> Nombre del realm en Keycloak. Debe existir o
@@ -228,7 +228,7 @@ function UniversidadForm({
             required
             pattern="[A-Za-z0-9_-]+"
             className={inputClass}
-            placeholder="unsl"
+            placeholder="utn"
           />
         </Field>
 
@@ -238,7 +238,7 @@ function UniversidadForm({
             value={form.dominio_email ?? ""}
             onChange={(e) => setForm({ ...form, dominio_email: e.target.value })}
             className={inputClass}
-            placeholder="unsl.edu.ar"
+            placeholder="utn.edu.ar"
           />
         </Field>
 
@@ -249,7 +249,7 @@ function UniversidadForm({
             onChange={(e) => setForm({ ...form, keycloak_realm: e.target.value })}
             required
             className={inputClass}
-            placeholder="unsl"
+            placeholder="utn"
           />
         </Field>
       </div>

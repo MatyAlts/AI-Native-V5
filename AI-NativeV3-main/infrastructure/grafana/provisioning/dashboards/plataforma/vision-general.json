@@ -1,6 +1,6 @@
 {
   "annotations": {"list": []},
-  "description": "Audiencia: comité doctoral + DI UNSL. Estado vivo de la plataforma — servicios up, throughput CTR, integridad. Refresh 30s.",
+  "description": "Audiencia: comité doctoral + DI UTN. Estado vivo de la plataforma — servicios up, throughput CTR, integridad. Refresh 30s.",
   "editable": true,
   "fiscalYearStartMonth": 0,
   "graphTooltip": 0,
@@ -85,7 +85,7 @@
   ],
   "refresh": "30s",
   "schemaVersion": 39,
-  "tags": ["plataforma", "piloto-unsl"],
+  "tags": ["plataforma", "piloto-utn"],
   "templating": {
     "list": [
       {"current": {"selected": false, "text": "All", "value": "$__all"}, "datasource": {"type": "prometheus", "uid": "prometheus"}, "definition": "label_values(ctr_events_total, tenant_id)", "hide": 0, "includeAll": true, "multi": false, "name": "tenant", "options": [], "query": {"query": "label_values(ctr_events_total, tenant_id)", "refId": "StandardVariableQuery"}, "refresh": 1, "regex": "", "skipUrlSync": false, "sort": 0, "type": "query"},

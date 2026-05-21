@@ -27,7 +27,7 @@ def tenant_b_id() -> UUID:
 
 @pytest.fixture
 def user_docente_admin_a(tenant_a_id: UUID) -> User:
-    """Docente-admin del tenant A (UNSL demo).
+    """Docente-admin del tenant A (UTN demo).
 
     Mismo shape que el fixture inline de `test_facultades_crud.py`. Se
     centraliza acá para que `test_comision_periodo_cerrado.py` y
@@ -36,7 +36,7 @@ def user_docente_admin_a(tenant_a_id: UUID) -> User:
     return User(
         id=uuid4(),
         tenant_id=tenant_a_id,
-        email="admin-a@unsl.edu.ar",
+        email="admin-a@utn.edu.ar",
         roles=frozenset({"docente_admin"}),
         realm=str(tenant_a_id),
     )

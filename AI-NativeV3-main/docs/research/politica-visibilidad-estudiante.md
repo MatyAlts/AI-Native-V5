@@ -68,7 +68,7 @@ Configuración de tenant, BYOK keys, bulk-import de inscripciones, gestión de u
 
 **B1. Pérdida de metacognición**: la investigación contemporánea (Flavell 1979, Schraw 1998, Veenman 2006) muestra que la metacognición se entrena haciendo visible al estudiante el patrón de su propio pensamiento. Esconder los datos al productor de esos datos es renunciar a la mitad del potencial formativo.
 
-**B2. El docente como único intérprete no escala**: en una comisión de 30 estudiantes, el docente UNSL no va a leer 30 progresiones longitudinales con 5 coherencias cada una. Las alertas predictivas funcionan como filtro, pero el estudiante "que no dispara alertas" queda invisibilizado por su propia regularidad —incluso si esa regularidad es estancamiento.
+**B2. El docente como único intérprete no escala**: en una comisión de 30 estudiantes, el docente UTN no va a leer 30 progresiones longitudinales con 5 coherencias cada una. Las alertas predictivas funcionan como filtro, pero el estudiante "que no dispara alertas" queda invisibilizado por su propia regularidad —incluso si esa regularidad es estancamiento.
 
 **B3. Pedagogía implícita de "objeto vs sujeto"**: el contrato actual le enseña al estudiante que él es la fuente del dato y que el saber sobre su pensamiento vive en otro. Eso es una pedagogía, no es neutral, no aparece tematizada en el paper.
 

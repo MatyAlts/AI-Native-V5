@@ -37,9 +37,9 @@ def _user(roles: frozenset[str]) -> User:
     return User(
         id=uuid4(),
         tenant_id=uuid4(),
-        email="docente@unsl.edu.ar",
+        email="docente@utn.edu.ar",
         roles=roles,
-        realm="unsl",
+        realm="utn",
     )
 
 

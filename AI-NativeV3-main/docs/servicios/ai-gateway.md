@@ -320,7 +320,7 @@ El ai-gateway no es un componente que la tesis describa en sus propios términos
 
 1. **Auditabilidad del provider** (Capítulo 7 de la tesis): cada evento `prompt_enviado`/`tutor_respondio` queda con su `prompt_system_hash` y los mensajes exactos — pero la identidad del proveedor (`"anthropic"` vs `"openai"` vs `"mock"`) y la versión del modelo sólo son trazables si hay un punto único que los registre. El ai-gateway lo hace: `CompletionResponse.provider` queda en logs estructurados + Grafana.
 
-2. **Control de costos del piloto**: el protocolo UNSL tiene un presupuesto acotado. Si un bug en el tutor genera un loop infinito de prompts, el budget tracker detiene el sangrado a nivel tenant antes de que la factura se dispare. Es una condición operativa del convenio.
+2. **Control de costos del piloto**: el protocolo UTN tiene un presupuesto acotado. Si un bug en el tutor genera un loop infinito de prompts, el budget tracker detiene el sangrado a nivel tenant antes de que la factura se dispare. Es una condición operativa del convenio.
 
 3. **Fallback y reproducibilidad**: [ADR-004](../adr/004-ai-gateway-propio.md) prevé que si un provider cae (ej. Anthropic outage), el gateway pueda rutear al otro. Para tests y análisis retrospectivo, el `MockProvider` determinista permite re-correr pipelines sin gastar en LLM real.
 
@@ -362,6 +362,6 @@ El ai-gateway no es un componente que la tesis describa en sus propios términos
 **Recomendaciones operativas del piloto** (no documentadas formalmente):
 
 1. Monitorear `GET /api/v1/budget?feature=tutor` en Grafana — alerta cuando `used_usd / limit_usd > 0.8`.
-2. Correr el piloto con `LLM_PROVIDER=anthropic` + `DEFAULT_MONTHLY_BUDGET_USD` ajustado al presupuesto del convenio UNSL.
+2. Correr el piloto con `LLM_PROVIDER=anthropic` + `DEFAULT_MONTHLY_BUDGET_USD` ajustado al presupuesto del convenio UTN.
 3. Para análisis retrospectivos (re-correr clasificación sobre episodios viejos), usar `LLM_PROVIDER=mock` salvo que la clasificación semántica se active — el mock es free y determinista.
 4. Si Anthropic sube precios, actualizar `PRICING` en `providers/base.py` y deployar — el costo histórico queda con los precios del momento de la invocación (structlog persiste el valor, no una referencia).

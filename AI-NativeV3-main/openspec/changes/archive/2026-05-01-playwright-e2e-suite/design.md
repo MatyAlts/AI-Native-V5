@@ -1,10 +1,10 @@
 ## Context
 
-Hoy la torre de tests del repo es: `vitest + RTL` para componentes (con `fetch` mockeado), `pytest` para 12 servicios Python, smoke por `curl` (`make check-health`), y `make eval-retrieval` para el RAG. **Ningún test conduce un browser real**. El piloto UNSL para defensa doctoral expone 3 frontends + 12 servicios y la pasada minimalist UI mergeó sin red de seguridad — cualquier regresión visual o de integración (Vite proxy, header injection del dev mode, SSE del tutor, navegación TanStack, drift seed↔frontend) queda invisible hasta que un humano la pisa.
+Hoy la torre de tests del repo es: `vitest + RTL` para componentes (con `fetch` mockeado), `pytest` para 12 servicios Python, smoke por `curl` (`make check-health`), y `make eval-retrieval` para el RAG. **Ningún test conduce un browser real**. El piloto UTN para defensa doctoral expone 3 frontends + 12 servicios y la pasada minimalist UI mergeó sin red de seguridad — cualquier regresión visual o de integración (Vite proxy, header injection del dev mode, SSE del tutor, navegación TanStack, drift seed↔frontend) queda invisible hasta que un humano la pisa.
 
 **Contexto operativo**: Playwright 1.59.1 ya está en `devDependencies` raíz (instalado en sesión previa), `@platform/ui` ya tiene componentes con tests vitest, los 3 frontends ya inyectan headers `X-User-Id`/`X-Tenant-Id`/`X-User-Roles` via `vite.config.ts` en dev mode (sin Bearer JWT — `dev_trust_headers=True` default). Los 12 servicios + 8 CTR workers corren en background via `scripts/dev-start-all.sh`. Seeds del piloto (`seed-3-comisiones.py`) son idempotentes y producen UUIDs estables.
 
-**Stakeholders**: doctorando (defensa); director de tesis (puede ver la suite verde como evidencia de calidad operativa); DI UNSL (recibe el repo y debe poder correr `make test-e2e` sin instalar 12 cosas más).
+**Stakeholders**: doctorando (defensa); director de tesis (puede ver la suite verde como evidencia de calidad operativa); DI UTN (recibe el repo y debe poder correr `make test-e2e` sin instalar 12 cosas más).
 
 **Constraints duros**:
 - NO romper invariantes doctorales (CTR append-only, RLS, hashing determinista). La suite es read-only sobre el sistema; el único side-effect es escribir un episodio nuevo en el journey 4.
@@ -110,7 +110,7 @@ Si cualquier check falla, el setup imprime un mensaje accionable con el `make` o
 - **[Riesgo] Drift seed↔fixture** -> Mitigation: `seeded-ids.ts` centralizado + comentario en `seed-3-comisiones.py` advirtiendo que cualquier cambio de UUIDs requiere actualizar el fixture (será una task explicita).
 - **[Riesgo] Selectors frágiles ante refactor visual** -> Mitigation: D3 (role-first), code review de cualquier locator nuevo.
 - **[Riesgo] Re-seedear borra data en vivo del dev** -> Mitigation: target `test-e2e-clean` separado (no es default), advertencia en docstring + README.
-- **[Trade-off] Solo Chromium** -> Acepto: defensa doctoral no usa Firefox/WebKit. Re-evaluar post-piloto si DI UNSL pide cobertura cruzada.
+- **[Trade-off] Solo Chromium** -> Acepto: defensa doctoral no usa Firefox/WebKit. Re-evaluar post-piloto si DI UTN pide cobertura cruzada.
 - **[Trade-off] No cubre Bearer JWT flow** -> Acepto: F9 lo destrabará. El test cubre la realidad operativa del piloto (dev_trust_headers=True).
 - **[Trade-off] No CI integration en este change** -> Acepto: requiere infra de runners con Postgres + Redis + browsers; merece un change dedicado.
 

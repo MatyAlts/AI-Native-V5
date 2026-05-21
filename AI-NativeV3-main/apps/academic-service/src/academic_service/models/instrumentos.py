@@ -2,7 +2,7 @@
 
 Cierran P2-1, P2-2, P2-3 del PlanMejora.md como ESQUELETO TECNICO. El
 contenido academico (items, escalas, problemas) queda como placeholder
-hasta revision coautoral con Ana Garis + comite etico UNSL.
+hasta revision coautoral con Ana Garis + comite etico UTN.
 
 Referencia conceptual:
 - Cuestionario IA: paper Cortez & Garis §6.2 Tabla 4 (control "experiencia previa con IA")

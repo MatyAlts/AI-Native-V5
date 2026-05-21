@@ -69,7 +69,7 @@ GC3 (no contenido ofensivo)           <- safety layer de Anthropic / OpenAI
 
 Hallazgo: este prompt v1.0.0 cubre 4/10 guardarrailes formales explicitamente.
 La tesis (Cap 8) lo reconoce como intencionalmente minimalista. Los pendientes
-GP5 + GC1/GC2/GC4/GC5 son agenda confirmatoria para v1.1.0-unsl o posterior.
+GP5 + GC1/GC2/GC4/GC5 son agenda confirmatoria para v1.1.0-utn o posterior.
 ================================================================================
 -->
 

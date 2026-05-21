@@ -6,7 +6,7 @@ product
 
 ## Users
 
-**Audiencia primaria de la defensa (one-shot, 2026-Q2)**: comité doctoral UNSL — académicos senior expertos en educación universitaria y/o tecnología educativa. Auditan rigor metodológico (modelo N4, kappa, reproducibilidad bit-a-bit), defendibilidad criptográfica del CTR, y honestidad técnica del piloto.
+**Audiencia primaria de la defensa (one-shot, 2026-Q2)**: comité doctoral UTN — académicos senior expertos en educación universitaria y/o tecnología educativa. Auditan rigor metodológico (modelo N4, kappa, reproducibilidad bit-a-bit), defendibilidad criptográfica del CTR, y honestidad técnica del piloto.
 
 **Audiencia primaria del producto (post-defensa, escala N facultades)**:
 
@@ -22,7 +22,7 @@ Plataforma AI-Native con **Trazabilidad Cognitiva N4** para la formación univer
 
 **Éxito en defensa**: el comité ve el sistema funcionando en vivo y concluye que el modelo N4 es defendible y que la implementación honra el modelo.
 
-**Éxito post-defensa**: la plataforma se adopta primero en otra facultad de UNSL, después escala a otras universidades públicas argentinas, y eventualmente se vuelve infraestructura compartida del sistema universitario nacional.
+**Éxito post-defensa**: la plataforma se adopta primero en otra facultad de UTN, después escala a otras universidades públicas argentinas, y eventualmente se vuelve infraestructura compartida del sistema universitario nacional.
 
 ## Brand Personality
 
@@ -61,7 +61,7 @@ Plataforma AI-Native con **Trazabilidad Cognitiva N4** para la formación univer
 
 ## Accessibility & Inclusion
 
-- **WCAG 2.1 AA** como piso mínimo (universidad pública argentina, ley 26.653 de Acceso a la Información Pública). Pendiente confirmar con DI UNSL si hay requisitos institucionales más estrictos.
+- **WCAG 2.1 AA** como piso mínimo (universidad pública argentina, ley 26.653 de Acceso a la Información Pública). Pendiente confirmar con DI UTN si hay requisitos institucionales más estrictos.
 - **Keyboard navigation completa** en flujos críticos (docente recorriendo episodios, estudiante abriendo TP). Nada de menus que requieren mouse exclusivo.
 - **Color blindness safe**: pares N1-N4 nunca diferenciados solo por color (también forma + label). Pensamiento estructural, no decorativo.
 - **Reduced motion respetado** (`prefers-reduced-motion`): comité doctoral con presbicia y baja tolerancia a animaciones gratuitas.

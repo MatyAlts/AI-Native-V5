@@ -328,7 +328,7 @@ El filtro doble (RLS + WHERE `comision_id`) materializa el principio de **aislam
 
 **Por qué el `chunks_used_hash` es por conjunto y no por secuencia**: si el tutor reordena los chunks al componer el prompt (ej. poner el más relevante al final para el "recency bias" del LLM), el hash debe seguir siendo el mismo — lo que importa auditar es **qué material se presentó**, no el orden. Ordenar los IDs antes de hashear lo garantiza.
 
-La decisión de usar **pgvector dentro de Postgres** (vs. una vector DB externa) viene de [ADR-011](../adr/011-pgvector-rag.md): un solo sistema de persistencia, mismas garantías RLS, mismas migraciones Alembic, y suficiente escala para el piloto UNSL (<100 comisiones, <10k materiales).
+La decisión de usar **pgvector dentro de Postgres** (vs. una vector DB externa) viene de [ADR-011](../adr/011-pgvector-rag.md): un solo sistema de persistencia, mismas garantías RLS, mismas migraciones Alembic, y suficiente escala para el piloto UTN (<100 comisiones, <10k materiales).
 
 **Gap declarado**: el reranking con cross-encoder local está arquitecturalmente previsto pero el default dev es `IdentityReranker` (no-op). La calidad del retrieval hoy depende del score vectorial puro. `make eval-retrieval` con las `golden-queries` es el gate — si el reranker real mejora resultados y se activa, la misma suite lo valida.
 

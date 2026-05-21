@@ -1,6 +1,6 @@
 # Diseño del test de transfer (CS11)
 
-**Versión**: 1.0.0 — DRAFT pendiente revisión coautoral + docentes UNSL (validez de contenido) + comité ético.
+**Versión**: 1.0.0 — DRAFT pendiente revisión coautoral + docentes UTN (validez de contenido) + comité ético.
 **Fecha**: 2026-05-16.
 **Origen**: `plan1Socra.md` CS11 (P1, antes de submisión final). Recomendación C1.3 del `informeSocra1.md`. Necesario para operacionalizar H2 del paper.
 
@@ -58,7 +58,7 @@ Después de cada problema, espacio de 50-150 caracteres para que el estudiante e
 
 ### 2.1 Procedimiento de validación
 
-Los 5 problemas pasan por validación de contenido con **3 docentes UNSL** independientes:
+Los 5 problemas pasan por validación de contenido con **3 docentes UTN** independientes:
 - Califican cada análogo según (a) distancia estructural al original (1-5), (b) dificultad esperada (1-5), (c) claridad del enunciado (1-5).
 - Los análogos con distancia estructural < 2 o > 4 se reemplazan.
 - Los análogos con dificultad esperada < 2 (muy fácil) o > 4 (muy difícil) se calibran.
@@ -149,10 +149,10 @@ Sección §8.X (Validación criterial). Estos resultados operacionalizan H2 del 
 
 ## 5. Decisiones pendientes
 
-1. **Validación de contenido**: agendar sesión con 3 docentes UNSL para revisar los 5 análogos. Esfuerzo: 4-6 h sesión + 2-3 h por docente.
+1. **Validación de contenido**: agendar sesión con 3 docentes UTN para revisar los 5 análogos. Esfuerzo: 4-6 h sesión + 2-3 h por docente.
 2. **Pilotaje**: reclutar 5-10 voluntarios. Esfuerzo: 2-3 h coordinación + 1 h ejecución cada uno.
 3. **Implementación técnica**: endpoint + tabla + UI. Esfuerzo: 24-32 h.
-4. **Aprobación ética**: aplicación de instrumento adicional ante comité UNSL. Esfuerzo: 2-3 h redacción.
+4. **Aprobación ética**: aplicación de instrumento adicional ante comité UTN. Esfuerzo: 2-3 h redacción.
 5. **Asignación de score por docente**: codificación de 5 problemas × N estudiantes. Si N=50, son 250 codificaciones. Esfuerzo: ~10 h codificación + sesión de calibración entre dos docentes para κ.
 
 ---

@@ -86,7 +86,7 @@ Separar en dos cálculos distintos:
 
 - **Ventana de aplicabilidad:** la CII solo es calculable con N≥2 episodios del mismo estudiante en topic análogo. En las primeras 2-3 semanas del curso, el indicador no es informativo. El classifier debe devolver `cii_longitudinal: null` o `insufficient_data=true` con explicación clara.
 
-- **Coordinación con el análisis empírico:** la hipótesis H2 de la tesis (asociación entre coherencia estructural y juicio docente) se hace observable longitudinalmente recién después de ~4–6 episodios por estudiante. El protocolo piloto actual (en `docs/pilot/protocolo-piloto-unsl.docx`) debe contemplar esto.
+- **Coordinación con el análisis empírico:** la hipótesis H2 de la tesis (asociación entre coherencia estructural y juicio docente) se hace observable longitudinalmente recién después de ~4–6 episodios por estudiante. El protocolo piloto actual (en `docs/pilot/protocolo-piloto-utn.docx`) debe contemplar esto.
 
 ### ADR asociado
 
@@ -240,7 +240,7 @@ Nuevo componente: `integrity-attestation-service` (puerto :8012). Responsabilida
 
 Tres implementaciones posibles, en orden de costo:
 
-1. **Registro institucional compartido.** Un endpoint en infraestructura UNSL (no del laboratorio del doctorando) que acepta tuplas `(episode_id, hash_final, tenant_id, ts, docente_id)` via API autenticada y las appendea a un log. Implementación mínima con un archivo `.jsonl` rotado diariamente + firma con clave institucional. No requiere blockchain ni herramientas exóticas. Auditables por cualquier tercero con acceso al archivo + clave pública.
+1. **Registro institucional compartido.** Un endpoint en infraestructura UTN (no del laboratorio del doctorando) que acepta tuplas `(episode_id, hash_final, tenant_id, ts, docente_id)` via API autenticada y las appendea a un log. Implementación mínima con un archivo `.jsonl` rotado diariamente + firma con clave institucional. No requiere blockchain ni herramientas exóticas. Auditables por cualquier tercero con acceso al archivo + clave pública.
 
 2. **Certificate transparency-style log.** Log Merkle-treed externo, con `sparse merkle tree` para eficiencia. Mayor complejidad, mayor garantía criptográfica.
 
@@ -250,7 +250,7 @@ Tres implementaciones posibles, en orden de costo:
 
 ### Impacto
 
-- Nuevo servicio + nueva dependencia infraestructural (el "registro externo" necesita existir). Para el piloto UNSL se puede usar un VPS institucional separado.
+- Nuevo servicio + nueva dependencia infraestructural (el "registro externo" necesita existir). Para el piloto UTN se puede usar un VPS institucional separado.
 - El `ctr-service` emite POST al nuevo servicio en el cierre de cada episodio (`EpisodioCerrado`). Fire-and-retry con cola local si el registro externo está caído — NO debe bloquear la operación del tutor.
 - Nuevo dashboard docente: "integridad del CTR verificable externamente".
 

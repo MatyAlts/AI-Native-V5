@@ -293,14 +293,14 @@ async def test_export_no_filtra_uuids_crudos_de_estudiantes_ni_episodios() -> No
     """OBJ-10 / RN-085: el JSON serializado NO debe contener ningún UUID
     crudo de estudiante o episodio. Toda PII debe pasar por _pseudonymize.
 
-    Esta es la propiedad central del compromiso ético del piloto UNSL:
+    Esta es la propiedad central del compromiso ético del piloto UTN:
     el dataset exportado a investigadores no permite re-identificación
     sin el salt.
     """
     import json
 
     ds, comision_id = _build_sample_cohort()
-    exporter = AcademicExporter(ds, salt="pilot_unsl_salt_strong_2026")
+    exporter = AcademicExporter(ds, salt="pilot_utn_salt_strong_2026")
     dataset = await exporter.export_cohort(comision_id, include_prompts=True)
     serialized = json.dumps(dataset.to_dict(), ensure_ascii=False)
 
@@ -320,7 +320,7 @@ async def test_export_no_filtra_uuids_crudos_de_estudiantes_ni_episodios() -> No
         )
 
     # Y el salt en claro tampoco debe aparecer (sólo su hash truncado)
-    assert "pilot_unsl_salt_strong_2026" not in serialized
+    assert "pilot_utn_salt_strong_2026" not in serialized
     assert dataset.salt_hash in serialized
 
 

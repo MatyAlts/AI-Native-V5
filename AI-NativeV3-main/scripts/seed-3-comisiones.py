@@ -479,9 +479,9 @@ async def seed_academic(academic_url: str) -> dict[UUID, list[UUID]]:
                 ),
                 {
                     "id": str(UNIVERSIDAD_ID),
-                    "nombre": "UNSL demo",
-                    "codigo": "UNSL-DEMO",
-                    "dominio": "unsl.edu.ar",
+                    "nombre": "UTN demo",
+                    "codigo": "UTN-DEMO",
+                    "dominio": "utn.edu.ar",
                     "realm": "demo_uni",
                 },
             )

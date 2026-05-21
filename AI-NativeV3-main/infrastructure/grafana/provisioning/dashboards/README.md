@@ -46,7 +46,7 @@ piloto son una **lista cerrada**:
 
 | Label | Cardinalidad esperada | Notas |
 |-------|----------------------|-------|
-| `tenant_id` | ~5 (piloto-1 single-tenant UNSL + dev) | UUID del tenant |
+| `tenant_id` | ~5 (piloto-1 single-tenant UTN + dev) | UUID del tenant |
 | `service_name` | 12 | Nombre del servicio Python |
 | `event_type` | ~15 | Enum CTR (episodio_abierto, prompt_enviado, etc.) |
 | `partition` | 8 | Sharding del CTR (0-7) |

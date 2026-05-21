@@ -1,11 +1,11 @@
 # Plataforma AI-Native con Trazabilidad Cognitiva N4
 
 Monorepo integrado para la tesis doctoral de **Alberto Alejandro Cortez**
-(UNSL) — _"Modelo AI-Native con Trazabilidad Cognitiva N4 para la
+(UTN) — _"Modelo AI-Native con Trazabilidad Cognitiva N4 para la
 Formación en Programación Universitaria"_.
 
 Este repositorio contiene **la plataforma completa** que ejecuta el
-estudio piloto en UNSL: servicios backend, frontends, observabilidad,
+estudio piloto en UTN: servicios backend, frontends, observabilidad,
 análisis empírico, privacidad, y toda la operación.
 
 ## Estado
@@ -160,7 +160,7 @@ PROMPTS_REPO_PATH="$(pwd)/ai-native-prompts" uv run uvicorn governance_service.m
 # ai-gateway (incluye BYOK resolver — ADRs 038/039/040)
 uv run uvicorn ai_gateway.main:app --port 8011 --reload
 
-# integrity-attestation-service (ADR-021 — en piloto vive en VPS UNSL separado;
+# integrity-attestation-service (ADR-021 — en piloto vive en VPS UTN separado;
 # en local es opcional, los eventos se acumulan en el stream Redis hasta drenarse)
 uv run uvicorn integrity_attestation_service.main:app --port 8012 --reload
 ```
@@ -379,13 +379,13 @@ platform/
 │   ├── specs/                         # historias.md, reglas.md, bulk-import-csv-format.md
 │   ├── research/                      # audi1/2.md, BUGS-PILOTO.md, CHANGELOGs, plan-b2-jwt-...
 │   ├── phases/                        # F0–F9 STATE.md (log incremental de fases)
-│   ├── pilot/                         # Protocolo UNSL (DOCX), runbook, analysis-template.ipynb
+│   ├── pilot/                         # Protocolo UTN (DOCX), runbook, analysis-template.ipynb
 │   ├── golden-queries/                # Queries de evaluación RAG
 │   ├── onboarding.md                  # Guía para nuevos devs
 │   └── SESSION-LOG.md                 # Bitácora narrativa cross-sesión
 │
 ├── ai-native-prompts/                 # Prompts versionados (consumidos por governance-service)
-├── examples/                          # Scripts runnable de bootstrap UNSL
+├── examples/                          # Scripts runnable de bootstrap UTN
 ├── scripts/                           # bash + python (migrate-all, backup, eval-retrieval, etc.)
 ├── tests/                             # Smoke E2E (epic tests-smoke)
 ├── CLAUDE.md                          # Verdades operativas + invariantes (source of truth)
@@ -411,13 +411,13 @@ activo, `api-gateway` con `DEV_TRUST_HEADERS=true`, LLM real via `gpt-4o-mini` y
 canonico "Categoria por edad" seedeado en la unidad "test". Ver
 ["Demo rapida"](#demo-rapida-grabacion-de-video-o-presentacion) para detalles del flujo.
 
-### Crear un tenant nuevo (ej. UNSL)
+### Crear un tenant nuevo (ej. UTN)
 
 ```bash
 export KEYCLOAK_ADMIN_PASSWORD=admin
 export LDAP_BIND_PASSWORD=secret
-export TENANT_ADMIN_EMAIL=admin@unsl.edu.ar
-make onboard-unsl
+export TENANT_ADMIN_EMAIL=admin@utn.edu.ar
+make onboard-utn
 ```
 
 ### Análisis empírico del piloto
@@ -446,7 +446,7 @@ make restore DIR=/var/backups/platform/2026-04-20
 
 ```bash
 make generate-protocol
-# → docs/pilot/protocolo-piloto-unsl.docx
+# → docs/pilot/protocolo-piloto-utn.docx
 ```
 
 ### Correr un análisis estadístico sobre los datos del piloto
@@ -458,7 +458,7 @@ jupyter notebook docs/pilot/analysis-template.ipynb
 
 ## Documentación por rol
 
-### Si sos **docente participante** del piloto UNSL
+### Si sos **docente participante** del piloto UTN
 
 1. Leer [`docs/pilot/README.md`](docs/pilot/README.md) — operativa diaria
 2. Entrar a http://localhost:5174 — panel docente
@@ -475,7 +475,7 @@ jupyter notebook docs/pilot/analysis-template.ipynb
 
 ### Si sos **investigador** analizando los datos
 
-1. Leer [`docs/pilot/protocolo-piloto-unsl.docx`](docs/pilot/protocolo-piloto-unsl.docx)
+1. Leer [`docs/pilot/protocolo-piloto-utn.docx`](docs/pilot/protocolo-piloto-utn.docx)
 2. Descargar dataset: `make export-academic` o desde la UI docente
 3. Usar [`docs/pilot/analysis-template.ipynb`](docs/pilot/analysis-template.ipynb)
 
@@ -523,7 +523,7 @@ El monorepo se construyó incrementalmente en 10 fases (F0–F9) más epics post
 | F3 | ctr-service (cadena cripto) + classifier + tutor + ai-gateway |
 | F4 | Hardening: SLOs, rate limiting, integrity checker |
 | F5 | Multi-tenant producción: JWT, onboarding, privacy, Pyodide |
-| F6 | Piloto UNSL: feature flags runtime, Kappa, audit, LDAP, canary |
+| F6 | Piloto UTN: feature flags runtime, Kappa, audit, LDAP, canary |
 | F7 | Empírico: longitudinal, A/B profiles, export worker |
 | F8 | Adaptadores DB reales + frontend docente + Grafana + protocolo DOCX |
 | F9 | Preflight operacional: RLS migrations, runbook, notebook |
@@ -544,6 +544,6 @@ Ver [`LICENSE`](LICENSE).
 
 ## Contacto
 
-- **Investigador principal**: Alberto Alejandro Cortez · UNSL
+- **Investigador principal**: Alberto Alejandro Cortez · UTN
 - **Dudas del código**: issues del repo
-- **Comité de ética UNSL**: cei@unsl.edu.ar
+- **Comité de ética UTN**: cei@utn.edu.ar

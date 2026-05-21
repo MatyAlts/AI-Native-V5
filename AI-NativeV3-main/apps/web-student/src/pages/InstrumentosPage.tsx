@@ -3,7 +3,7 @@
  *
  * Cierran P2-1 (pretest), P2-2 (cuestionario IA), P2-3 (transferencia)
  * del PlanMejora.md como ESQUELETO TECNICO. El contenido academico esta
- * pendiente de validacion coautoral con Ana Garis + comite etico UNSL.
+ * pendiente de validacion coautoral con Ana Garis + comite etico UTN.
  *
  * Estructura:
  * - Card 1: Cuestionario sobre experiencia previa con IA (1 vez por ciclo)
@@ -111,7 +111,7 @@ export function InstrumentosPage({
             >
               <strong>Aviso:</strong> los instrumentos estan en version DRAFT v0.1.0 pendiente de
               validacion coautoral. Los items son placeholders para validar el flujo de la
-              aplicacion; el contenido final llega cuando el comite etico UNSL apruebe el protocolo.
+              aplicacion; el contenido final llega cuando el comite etico UTN apruebe el protocolo.
             </div>
             {allDone && (
               <div
@@ -626,9 +626,9 @@ function CardLoading({ title, isExpanded }: { title: string; isExpanded: boolean
  * Quita los prefijos [PLACEHOLDER ...] del texto que ve el alumno.
  *
  * El catalogo viene del backend con marcadores DRAFT v0.1.0 tipo
- * "[PLACEHOLDER GARIS] ...", "[PLACEHOLDER CATEDRA UNSL — TP-1] ...",
+ * "[PLACEHOLDER GARIS] ...", "[PLACEHOLDER CATEDRA UTN — TP-1] ...",
  * "[PLACEHOLDER GARIS — Lishinski 2016 #5] ...". Esos marcadores son
- * para los autores (Garis, catedra UNSL) y son ruido visual para el alumno.
+ * para los autores (Garis, catedra UTN) y son ruido visual para el alumno.
  *
  * El texto original se preserva en `data-original-*` para que sea inspeccionable
  * desde admin/teacher si hace falta. Cuando el comite etico apruebe el contenido

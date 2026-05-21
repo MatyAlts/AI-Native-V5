@@ -131,7 +131,7 @@ const KNOWN_LIMITATIONS: ReadonlyArray<KnownLimitation> = [
   },
   {
     what: "integrity-attestation-service:8012 responde 503",
-    why: "by design en dev local, vive en VPS UNSL",
+    why: "by design en dev local, vive en VPS UTN",
   },
   {
     what: 'Hashes ceremoniales "c".repeat(64) cuando falla bootstrap',
@@ -397,14 +397,14 @@ export function ParaNeyen() {
               <span className="text-muted">Doctorando</span>
               <span className="mx-2 text-border">·</span>
               <span className="text-bg">
-                Alberto Alejandro Cortez · cortez@unsl.edu.ar
+                Alberto Alejandro Cortez · cortez@utn.edu.ar
               </span>
             </li>
             <li>
               <span className="text-muted">Co-directora</span>
               <span className="mx-2 text-border">·</span>
               <span className="text-bg">
-                Daniela Carbonari · carbonari@unsl.edu.ar
+                Daniela Carbonari · carbonari@utn.edu.ar
               </span>
             </li>
             <li>

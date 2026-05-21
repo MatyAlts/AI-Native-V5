@@ -81,7 +81,7 @@ La tesis (Cap 6.3) declara **7 contenedores C4** (C2.1-C2.7). El código tiene *
 ### 2.4. integrity-attestation-service (Anexo F + ADR-021)
 - **Existe**: `apps/integrity-attestation-service/` ✓ — estructura completa: `routes/{attestations,health}.py`, `services/{signing,journal}.py`, `workers/attestation_consumer.py`, dev-keys, tests unit + integration.
 - **Firma Ed25519 con failsafe**: ✓ `signing.py:120-144` rechaza arrancar en `environment=production` con dev key.
-- **Clave institucional UNSL**: ⚠ NO desplegada todavía. `docs/pilot/attestation-pubkey.pem.PLACEHOLDER` sigue en placeholder. Hoy sólo opera la dev key. La D3 ("custodia DI UNSL sin participación del doctorando") **no está cumplida en el deploy actual**, sólo declarada.
+- **Clave institucional UTN**: ⚠ NO desplegada todavía. `docs/pilot/attestation-pubkey.pem.PLACEHOLDER` sigue en placeholder. Hoy sólo opera la dev key. La D3 ("custodia DI UTN sin participación del doctorando") **no está cumplida en el deploy actual**, sólo declarada.
 - **Journal JSONL append-only rotado diariamente**: ✓ `journal.py:53-74`.
 - **CLI `verify-attestations.py`**: ✓ `scripts/verify-attestations.py:1-43` reusa el módulo del servicio (bit-exact garantizado).
 - **Buffer canónico bit-exact en ADR-021**: ✓ documentado L123-143; implementación en `signing.py:49-73` matchea.
@@ -276,18 +276,18 @@ La tesis Sec 7.3 + 20.5.1 afirma **el Eje D está CERRADO**. Verifiqué punto po
 |---|---|---|---|
 | AT-1 | Servicio existe | ✓ | `apps/integrity-attestation-service/` con estructura completa: `routes/`, `services/`, `workers/`, `dev-keys/`, tests unit + integration |
 | AT-2 | Firma Ed25519 funcional | ✓ | `signing.py:120-144` con failsafe (rechaza prod con dev key) |
-| AT-3 | Clave institucional UNSL desplegada (D3) | ⚠ **NO** | `docs/pilot/attestation-pubkey.pem.PLACEHOLDER` sigue en placeholder. Sólo opera dev key (seed `AI-NativeV3-DEV-ATTESTATION-KEY1`). El procedimiento de generación sin participación del doctorando está documentado en `docs/pilot/attestation-deploy-checklist.md` pero **no ejecutado** |
+| AT-3 | Clave institucional UTN desplegada (D3) | ⚠ **NO** | `docs/pilot/attestation-pubkey.pem.PLACEHOLDER` sigue en placeholder. Sólo opera dev key (seed `AI-NativeV3-DEV-ATTESTATION-KEY1`). El procedimiento de generación sin participación del doctorando está documentado en `docs/pilot/attestation-deploy-checklist.md` pero **no ejecutado** |
 | AT-4 | Journal JSONL append-only rotado diariamente | ✓ | `journal.py:53-74` con `O_APPEND`, rotación `attestations-YYYY-MM-DD.jsonl` |
 | AT-5 | CLI `scripts/verify-attestations.py` | ✓ | Existe, reusa módulo del servicio (bit-exact garantizado) |
 | AT-6 | Buffer canónico bit-exact en ADR-021 | ✓ | `docs/adr/021-external-integrity-attestation.md:123-143` documenta exhaustivamente |
 | AT-7 | Stream Redis `attestation.requests` desde ctr-service | ⚠ parcial | Existe en código (`AttestationProducer` + `partition_worker.py:74-76`) pero es **opcional** — si el deploy no instancia el producer, los cierres pasan sin emitir |
-| AT-8 | Smoke real (¿se está disparando?) | ⚠ | XLEN `attestation.requests = 29`. Episodios cerrados en DB = 117. **Sólo 25%** de los cierres dispararon attestation. Gap operacional: 88 episodios cerrados nunca generaron XADD. La diferencia es entre cierres por seeds (no instancian producer) y cierres por API real (sí lo instancian). El consumer institucional (puerto 8012) no está corriendo en local — vive en VPS UNSL en piloto real, así que los 29 mensajes están acumulados sin atestar |
+| AT-8 | Smoke real (¿se está disparando?) | ⚠ | XLEN `attestation.requests = 29`. Episodios cerrados en DB = 117. **Sólo 25%** de los cierres dispararon attestation. Gap operacional: 88 episodios cerrados nunca generaron XADD. La diferencia es entre cierres por seeds (no instancian producer) y cierres por API real (sí lo instancian). El consumer institucional (puerto 8012) no está corriendo en local — vive en VPS UTN en piloto real, así que los 29 mensajes están acumulados sin atestar |
 
 ### Conclusión sobre Eje D
 **La tesis afirma "cerrado" pero la realidad es "cerrado a nivel diseño + dev, NO cerrado en deploy de pilotaje"**. Concretamente:
 
 1. ✓ Toda la infra técnica existe y es correcta (firma, journal, CLI, buffer).
-2. ✗ Clave institucional UNSL NO desplegada (Paso 2 del checklist no ejecutado).
+2. ✗ Clave institucional UTN NO desplegada (Paso 2 del checklist no ejecutado).
 3. ⚠ Producer es opcional → 75% de cierres pasan sin emitir.
 4. ⚠ Service consumidor (8012) no está running en local; los XADDs se acumulan pendientes.
 
@@ -376,7 +376,7 @@ La tesis Sec 7.3 + 20.5.1 afirma **el Eje D está CERRADO**. Verifiqué punto po
 **Decisión**: arreglar `packages/contracts/.../ctr/hashing.py` agregando `ensure_ascii=False` + agregar test `compute_self_hash` con evento que tenga "ñ"/tilde.
 
 #### A.3 — Eje D no está cerrado en deploy ⚠ CRÍTICO operacional
-**Tesis Sec 20.5.1**: "Eje D. Auditabilidad externa efectiva. Estado en v1.0.0: cerrado mediante el integrity-attestation-service con firma Ed25519, journal JSONL append-only rotado diariamente, custodia de clave por la dirección de informática de UNSL".
+**Tesis Sec 20.5.1**: "Eje D. Auditabilidad externa efectiva. Estado en v1.0.0: cerrado mediante el integrity-attestation-service con firma Ed25519, journal JSONL append-only rotado diariamente, custodia de clave por la dirección de informática de UTN".
 **Código + ops**: clave institucional NO desplegada (placeholder), producer opcional (25% emisión real), consumer no running.
 **Decisión**: mover Eje D de "cerrado" a "agenda confirmatoria con criterio cuantificable" (100% de cierres con XADD + pubkey institucional desplegada), o ejecutar checklist operativo antes de defensa.
 
@@ -481,19 +481,19 @@ La tesis Sec 7.3 + 20.5.1 afirma **el Eje D está CERRADO**. Verifiqué punto po
 #### CRÍTICO
 
 ##### ⚠ B1 — Decidir narrativa del Eje D (auditabilidad externa)
-**Estado real**: clave institucional UNSL **NO desplegada** (placeholder vigente en `docs/pilot/attestation-pubkey.pem.PLACEHOLDER`); `AttestationProducer` opcional → solo 25% de los cierres dispararon attestation (29 XADDs vs 117 episodios cerrados); consumer no running en local.
+**Estado real**: clave institucional UTN **NO desplegada** (placeholder vigente en `docs/pilot/attestation-pubkey.pem.PLACEHOLDER`); `AttestationProducer` opcional → solo 25% de los cierres dispararon attestation (29 XADDs vs 117 episodios cerrados); consumer no running en local.
 **Tesis afirma**: "Eje D cerrado" en Sec 20.5.1.
 **Discrepancia**: la tesis se adelanta al estado real del deploy.
 **Dos opciones**:
 - **Opción A — Atemperar tesis** (30 min de redacción):
-  - Editar Sec 7.3, 20.5.1 Eje D para decir: *"diseño y dev key cerrados; deploy con clave institucional UNSL pendiente como condición operacional, criterio cuantificable: 100% de `episodio_cerrado` con XADD correspondiente y pubkey institucional desplegada antes del cierre del piloto"*.
+  - Editar Sec 7.3, 20.5.1 Eje D para decir: *"diseño y dev key cerrados; deploy con clave institucional UTN pendiente como condición operacional, criterio cuantificable: 100% de `episodio_cerrado` con XADD correspondiente y pubkey institucional desplegada antes del cierre del piloto"*.
   - Beneficio: defensa segura sin dependencia externa.
-- **Opción B — Cerrar deploy real** (1-2 días con DI UNSL):
+- **Opción B — Cerrar deploy real** (1-2 días con DI UTN):
   - Ejecutar `docs/pilot/attestation-deploy-checklist.md` (10 pasos).
   - Generar y desplegar pubkey institucional. Renombrar `attestation-pubkey.pem.PLACEHOLDER` → `attestation-pubkey.pem`. Commit.
   - Hacer obligatoria la inyección de `AttestationProducer` en producción (ver B6).
   - Validar 100% emission rate con un script `scripts/audit-attestation-coverage.py`.
-- **Recomendación**: empezar por Opción A para defensa, ejecutar Opción B en paralelo si DI UNSL responde a tiempo.
+- **Recomendación**: empezar por Opción A para defensa, ejecutar Opción B en paralelo si DI UTN responde a tiempo.
 
 ##### ⚠ B2 — Drift de versiones del prompt (4 fuentes inconsistentes)
 **Fuentes hoy**:
@@ -628,11 +628,11 @@ Eventos en código no listados en la tabla:
 
 **Total Fase 2**: ~5.5 horas.
 
-### Fase 3 — Cierre del Eje D (opcional, 1-2 días con DI UNSL)
+### Fase 3 — Cierre del Eje D (opcional, 1-2 días con DI UTN)
 
 Si se eligió Opción B del item B1:
 
-1. Coordinar con DI UNSL para ejecutar `docs/pilot/attestation-deploy-checklist.md` (10 pasos).
+1. Coordinar con DI UTN para ejecutar `docs/pilot/attestation-deploy-checklist.md` (10 pasos).
 2. Generar par de claves Ed25519 institucional sin participación del doctorando (Paso 2 del checklist — D3 del ADR-021).
 3. Renombrar `docs/pilot/attestation-pubkey.pem.PLACEHOLDER` → `docs/pilot/attestation-pubkey.pem` con la pubkey real.
 4. Configurar nginx con IP allowlist + systemd unit con `replicas: 1`.
@@ -646,7 +646,7 @@ Antes de declarar "tesis impecable":
 
 1. Re-ejecutar este informe (mismos 4 sub-agentes paralelos) para validar que las afirmaciones de la tesis ahora coinciden con el código.
 2. Generar `docs/SESSION-LOG.md` entry con resumen del cierre.
-3. Generar el DOCX del protocolo UNSL con `make generate-protocol` (toma los nuevos hashes y configs).
+3. Generar el DOCX del protocolo UTN con `make generate-protocol` (toma los nuevos hashes y configs).
 4. Imprimir un PDF de la tesis actualizada y verificar visualmente.
 
 ---
@@ -668,7 +668,7 @@ Antes de declarar "tesis impecable":
 **Riesgo técnico de auditoría cerrado** ✓ — el comentario de GENESIS_HASH ya no miente, y el helper auditor del package es bit-exact con el runtime para todos los caracteres del piloto (incluyendo el español).
 
 **Pendientes de cierre** (organizados en Fase 1-4 de la Sec 12):
-- 1 cambio operacional grande: deploy de attestation institucional (Eje D) — coordinación con DI UNSL.
+- 1 cambio operacional grande: deploy de attestation institucional (Eje D) — coordinación con DI UTN.
 - 1 cambio de código de tamaño medio: `AttestationProducer` obligatorio en prod.
 - 1 cambio de versionado del prompt: crear v1.0.1 con HTML comment corregido + alinear las 4 fuentes (manifest, config, env, archivo).
 - ~10 cambios de redacción de tesis: documentar lo que el código tiene de más (override v1.1.0, eventos extra, Unidad, BYOK, fragmentación arquitectónica) + atemperar 2-3 afirmaciones que el deploy no respalda todavía.
@@ -680,7 +680,7 @@ Antes de declarar "tesis impecable":
   - Fase 2 redacción tesis: 5.5 horas.
   - Fase 4 validación: 30 min.
 - **Ideal (con cierre operacional del Eje D)**: 2-3 días:
-  - Lo anterior + Fase 3 con DI UNSL: 1-2 días extra.
+  - Lo anterior + Fase 3 con DI UTN: 1-2 días extra.
 
 ### Lectura para próximo dev / director
 

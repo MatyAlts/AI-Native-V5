@@ -1,6 +1,6 @@
 # Protocolo de aplicación MAI — Metacognitive Awareness Inventory (CS10)
 
-**Versión**: 1.0.0 — DRAFT pendiente revisión coautoral + comité ético UNSL + búsqueda de adaptación validada al castellano.
+**Versión**: 1.0.0 — DRAFT pendiente revisión coautoral + comité ético UTN + búsqueda de adaptación validada al castellano.
 **Fecha**: 2026-05-16.
 **Origen**: `plan1Socra.md` CS10 (P1). Recomendación C1.2 del `informeSocra1.md`.
 
@@ -36,7 +36,7 @@ Buscar adaptaciones validadas al castellano:
 - Huertas, Vesga & Galindo (2014, Colombia) — adaptación del MAI completo, n=350 universitarios.
 - Sandoval, Pérez & López (2018, México) — adaptación del Jr. MAI, n=200 secundaria.
 
-Si no hay adaptación rioplatense específica, documentar adaptación propia con pilotaje previo sobre 5-10 estudiantes UNSL antes de aplicación masiva. Reportar cualquier ajuste en la sección de método del paper.
+Si no hay adaptación rioplatense específica, documentar adaptación propia con pilotaje previo sobre 5-10 estudiantes UTN antes de aplicación masiva. Reportar cualquier ajuste en la sección de método del paper.
 
 ---
 
@@ -49,7 +49,7 @@ Si no hay adaptación rioplatense específica, documentar adaptación propia con
 
 ### 2.2 Cómo
 
-- Formulario web hospedado en UNSL (no Google Forms — datos académicos).
+- Formulario web hospedado en UTN (no Google Forms — datos académicos).
 - Acceso vía link único en el LMS del curso o por email.
 - Identificación: `student_pseudonym` del estudiante (UUID), no nombre ni email.
 - Persistencia: tabla nueva `metacog_responses` en `academic_main`:
@@ -68,7 +68,7 @@ Texto sugerido para consentimiento adicional al del piloto:
 
 > "Al inicio y al final del cuatrimestre vamos a invitarte a responder un cuestionario sobre cómo aprendés (no sobre el contenido del curso). Tarda unos 15 minutos al inicio y 10 al final. Tus respuestas son pseudonimizadas. ¿Estás de acuerdo en participar?"
 
-Aprobación previa del comité ético UNSL.
+Aprobación previa del comité ético UTN.
 
 ---
 
@@ -98,7 +98,7 @@ Sección §8.X del paper Cortez & Garis (post-piloto-2). Si la correlación es �
 
 1. **Opción A vs B vs híbrida** del instrumento.
 2. **Búsqueda de adaptación castellana validada** o decisión de adaptación propia.
-3. **Aprobación del comité ético UNSL** + consentimiento adicional.
+3. **Aprobación del comité ético UTN** + consentimiento adicional.
 4. **Implementación técnica**: formulario + tabla. Esfuerzo: 12-16 h.
 5. **Manejo de no-respondedores**: si <60% del grupo experimental responde el post-test, los análisis convergentes pierden potencia. Estrategias de incentivo a discutir con dirección.
 

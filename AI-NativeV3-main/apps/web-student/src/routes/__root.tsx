@@ -43,7 +43,7 @@ function RootLayout() {
             style={{ backgroundColor: "var(--color-accent-brand)" }}
           />
           <h1 className="text-sm font-semibold tracking-tight text-ink">
-            Plataforma N4 <span className="text-muted-soft mx-1">·</span> UNSL
+            Plataforma N4 <span className="text-muted-soft mx-1">·</span> UTN
           </h1>
         </div>
         <div className="flex items-center gap-3">

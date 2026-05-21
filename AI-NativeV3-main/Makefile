@@ -2,7 +2,7 @@
         test-e2e test-e2e-clean test-e2e-headed test-smoke test-smoke-local \
         lint lint-fix typecheck migrate migrate-new setup-dev-perms setup-rls-user clean clean-all \
         check-health check-rls check-claude-md generate-service seed-casbin seed-smoke eval-retrieval backup restore \
-        onboard-unsl kappa progression export-academic generate-protocol status build check-tools
+        onboard-utn kappa progression export-academic generate-protocol status build check-tools
 
 SHELL := /bin/bash
 .DEFAULT_GOAL := help
@@ -20,7 +20,7 @@ export LLM_PROVIDER ?= mock
 
 
 help: ## Muestra esta ayuda
-	@awk 'BEGIN {FS = ":.*##"; printf "\nMonorepo de la plataforma AI-Native N4 - Tesis UNSL\n\nUso: make \033[36m<target>\033[0m\n\n"} \
+	@awk 'BEGIN {FS = ":.*##"; printf "\nMonorepo de la plataforma AI-Native N4 - Tesis UTN\n\nUso: make \033[36m<target>\033[0m\n\n"} \
 	/^## / { gsub("^## ", ""); printf "\n\033[1m%s\033[0m\n", $$0 } \
 	/^[a-zA-Z_-]+:.*?##/ { printf "  \033[36m%-22s\033[0m %s\n", $$1, $$2 }' $(MAKEFILE_LIST)
 
@@ -189,9 +189,9 @@ restore: ## Restore desde backup. Uso: make restore DIR=/path/to/backup
 
 ## Onboarding de tenants
 
-onboard-unsl: ## Onboarding UNSL (Keycloak + LDAP + feature flags)
+onboard-utn: ## Onboarding UTN (Keycloak + LDAP + feature flags)
 	@test -n "$$KEYCLOAK_ADMIN_PASSWORD" || (echo "Setear KEYCLOAK_ADMIN_PASSWORD" && exit 1)
-	$(UV) run python examples/unsl_onboarding.py
+	$(UV) run python examples/utn_onboarding.py
 
 
 ## Analisis del piloto
@@ -220,7 +220,7 @@ export-academic: ## Export academico. Uso: make export-academic COMISION=<uuid> 
 generate-protocol: ## Regenera el DOCX del protocolo del piloto
 	@command -v node >/dev/null || (echo "node no encontrado" && exit 1)
 	cd docs/pilot && node generate_protocol.js
-	@echo "Generado: docs/pilot/protocolo-piloto-unsl.docx"
+	@echo "Generado: docs/pilot/protocolo-piloto-utn.docx"
 
 generate-teacher-guide: ## Regenera el DOCX de la guia de capacitacion docente
 	@command -v node >/dev/null || (echo "node no encontrado" && exit 1)

@@ -122,7 +122,7 @@ Base lógica: **`academic_main`** (compartida). Migraciones Alembic propias en `
 
 ## 10. Relación con la tesis doctoral
 
-El evaluation-service no implementa componentes centrales del modelo N4. Su rol es **soporte operativo** del flujo evaluativo tradicional para que el piloto UNSL pueda capturar las notas docentes (variable de control en el análisis correlacional con N4):
+El evaluation-service no implementa componentes centrales del modelo N4. Su rol es **soporte operativo** del flujo evaluativo tradicional para que el piloto UTN pueda capturar las notas docentes (variable de control en el análisis correlacional con N4):
 
 - La tesis (Capítulo 8) plantea como pregunta exploratoria: *"¿hay correlación entre la categoría N4 del clasificador (apropiación reflexiva) y la nota docente tradicional?"*. Para responderla, hay que tener ambas señales persistidas.
 - La nota docente la persiste evaluation-service en `calificaciones.nota`; la categoría N4 la persiste classifier-service en `classifications.appropriation`. Analytics-service puede correlacionarlas cross-base por `(tarea_practica_id, student_pseudonym)`.

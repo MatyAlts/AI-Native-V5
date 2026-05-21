@@ -1,6 +1,6 @@
-# Protocolo de entrevistas semi-estructuradas para el piloto UNSL 2026
+# Protocolo de entrevistas semi-estructuradas para el piloto UTN 2026
 
-**Versión**: 1.0.0 — DRAFT pendiente revisión coautoral (Ana Garis) + comité ético UNSL + pilotaje con 2-3 estudiantes.
+**Versión**: 1.0.0 — DRAFT pendiente revisión coautoral (Ana Garis) + comité ético UTN + pilotaje con 2-3 estudiantes.
 **Fecha**: 2026-05-17.
 **Origen**: cierre de P2-4 del `PlanMejora.md` (root del wrapper `AI-Native-V4-main/`). Materializa la triangulación cualitativa de MI1 y MI2 documentada en ADR-053 y la mitigación del confound intervención-medición R2 documentada en `docs/limitaciones-declaradas.md`. Cumple instrumento "Reconstrucción del proceso por el estudiante" + "juicio docente sobre trayectoria" de la Tabla 4 del paper Cortez & Garis (`paper_conaiisi.pdf`, versión 2026-05-16, §6.2).
 
@@ -160,8 +160,8 @@ Documento escrito con:
 - Propósito del estudio.
 - Carácter voluntario + derecho a retirarse en cualquier momento sin consecuencias.
 - Uso de los datos (análisis académico, posibles citas anónimas en tesis y paper).
-- Almacenamiento: audio + transcripción en servidor UNSL durante 5 años; anonimización antes de publicación.
-- Contacto del comité ético UNSL para reclamos.
+- Almacenamiento: audio + transcripción en servidor UTN durante 5 años; anonimización antes de publicación.
+- Contacto del comité ético UTN para reclamos.
 - Firma del estudiante + del entrevistador.
 
 ---
@@ -244,7 +244,7 @@ El paper §4.3 define MI2 como horizonte que el sistema instrumental captura med
 
 - Reporte completo: tesis doctoral + apéndice del paper.
 - Citas anonimizadas: paper Cortez & Garis si el espacio del paper lo permite, en sección "Hallazgos preliminares" o equivalente.
-- Dataset: el audio y la transcripción quedan en servidor UNSL durante 5 años, no se publican. Tabla de pseudonyms se destruye al cierre del estudio (post-defensa + 5 años).
+- Dataset: el audio y la transcripción quedan en servidor UTN durante 5 años, no se publican. Tabla de pseudonyms se destruye al cierre del estudio (post-defensa + 5 años).
 
 ---
 
@@ -253,7 +253,7 @@ El paper §4.3 define MI2 como horizonte que el sistema instrumental captura med
 | Fase | Cuándo | Dependencias |
 |---|---|---|
 | Revisión coautoral del protocolo | Junio 2026 | Garis disponible |
-| Revisión por comité ético UNSL | Julio 2026 | Documento de consentimiento informado finalizado |
+| Revisión por comité ético UTN | Julio 2026 | Documento de consentimiento informado finalizado |
 | Pilotaje con 2-3 estudiantes voluntarios | Agosto 2026 | Final ciclo lectivo del cuatrimestre |
 | Aplicación al grupo principal | Noviembre-diciembre 2026 | Cierre TPs del cuatrimestre |
 | Transcripción | Noviembre 2026 - enero 2027 | Concurrente con aplicación |
@@ -282,4 +282,4 @@ El cronograma se sincroniza con la agenda confirmatoria del paper §8 y con el c
 
 | Fecha | Cambio |
 |---|---|
-| 2026-05-17 | Versión inicial 1.0.0 — DRAFT. Crea el protocolo desde cero como cierre de P2-4 del `PlanMejora.md`. Estructura: marco metodológico Braun & Clarke (análisis temático reflexivo), muestreo estratificado por perfil tipológico × pretest × experiencia previa IA, guía de entrevista de 3 bloques (reconstrucción episodio + percepción tutor + percepción IA), procesamiento y análisis temático en 6 fases, triangulación explícita con MI1 y MI2 del ADR-053, gates de calidad sin kappa sobre temas (siguiendo Braun & Clarke 2019). Pendiente: revisión coautoral con Garis + comité ético UNSL + pilotaje con 2-3 estudiantes voluntarios. |
+| 2026-05-17 | Versión inicial 1.0.0 — DRAFT. Crea el protocolo desde cero como cierre de P2-4 del `PlanMejora.md`. Estructura: marco metodológico Braun & Clarke (análisis temático reflexivo), muestreo estratificado por perfil tipológico × pretest × experiencia previa IA, guía de entrevista de 3 bloques (reconstrucción episodio + percepción tutor + percepción IA), procesamiento y análisis temático en 6 fases, triangulación explícita con MI1 y MI2 del ADR-053, gates de calidad sin kappa sobre temas (siguiendo Braun & Clarke 2019). Pendiente: revisión coautoral con Garis + comité ético UTN + pilotaje con 2-3 estudiantes voluntarios. |

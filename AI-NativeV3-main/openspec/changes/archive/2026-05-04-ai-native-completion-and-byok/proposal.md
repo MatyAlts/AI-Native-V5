@@ -1,6 +1,6 @@
 ## Why
 
-El piloto UNSL tiene el núcleo AI-Native funcional (tutor socrático + CTR + classifier N4 + RAG + guardrails Fase A) pero faltan cinco piezas para cerrar el loop pedagógico institucional: el alumno no puede auto-validar su código contra tests, no se captura su reflexión metacognitiva al cierre del episodio, el docente arma TPs a mano sin asistencia IA, el admin institucional no tiene UI para auditar gobernanza cross-comisión, y todas las llamadas LLM usan claves globales por env var (sin separación por facultad/materia ni UX de admin para BYOK). Sin BYOK la demo institucional muestra "el admin le pide al sysadmin que rote la key" — UX inaceptable para defensa doctoral.
+El piloto UTN tiene el núcleo AI-Native funcional (tutor socrático + CTR + classifier N4 + RAG + guardrails Fase A) pero faltan cinco piezas para cerrar el loop pedagógico institucional: el alumno no puede auto-validar su código contra tests, no se captura su reflexión metacognitiva al cierre del episodio, el docente arma TPs a mano sin asistencia IA, el admin institucional no tiene UI para auditar gobernanza cross-comisión, y todas las llamadas LLM usan claves globales por env var (sin separación por facultad/materia ni UX de admin para BYOK). Sin BYOK la demo institucional muestra "el admin le pide al sysadmin que rote la key" — UX inaceptable para defensa doctoral.
 
 ## What Changes
 

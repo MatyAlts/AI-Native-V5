@@ -232,7 +232,7 @@ jobs:
           - governance-service
           - tutor-service
           # NOTE: integrity-attestation-service excluded (no Dockerfile yet,
-          # ADR-021 — infra institucional separada en piloto, vive en VPS UNSL).
+          # ADR-021 — infra institucional separada en piloto, vive en VPS UTN).
           # NOTE: identity-service deprecated (ADR-041) — auth via api-gateway + Casbin.
           # NOTE: enrollment-service deprecated (ADR-030) — bulk-import en academic-service.
     steps:

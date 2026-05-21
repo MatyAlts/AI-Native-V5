@@ -1,14 +1,14 @@
 # Resumen ejecutivo — sesión 2026-04-27
 
-**Autor**: Alberto Alejandro Cortez (doctorando, UNSL)
-**Destinatarios**: director de tesis, director de informática UNSL
+**Autor**: Alberto Alejandro Cortez (doctorando, UTN)
+**Destinatarios**: director de tesis, director de informática UTN
 **Contexto**: cierre de 3 de los 7 cambios grandes detectados en auditoría del repositorio del piloto AI-Native (`audi1.md`).
 
 ---
 
 ## Resumen en 30 segundos
 
-Se implementaron **G3 mínimo + G4 + G5** del modelo híbrido honesto acordado: cumplen las promesas de las Secciones 4.3, 6.4, 7.3 y 8.5 de la tesis con código auditable y reproducible. **~3000 líneas de código nuevas, 274 tests automatizados, 4 ADRs documentando cada decisión, cero regresiones**. Existe **un bloqueante institucional** en G5 (registro externo auditable) que requiere coordinación con UNSL antes del deploy al piloto.
+Se implementaron **G3 mínimo + G4 + G5** del modelo híbrido honesto acordado: cumplen las promesas de las Secciones 4.3, 6.4, 7.3 y 8.5 de la tesis con código auditable y reproducible. **~3000 líneas de código nuevas, 274 tests automatizados, 4 ADRs documentando cada decisión, cero regresiones**. Existe **un bloqueante institucional** en G5 (registro externo auditable) que requiere coordinación con UTN antes del deploy al piloto.
 
 ---
 
@@ -64,19 +64,19 @@ Las 5 preguntas que originalmente bloqueaban el deploy fueron resueltas. El ADR-
 
 | # | Decisión | Estado |
 |---|---|---|
-| 1 | VPS institucional separado para el `integrity-attestation-service` | ✅ **SÍ** — UNSL provee VPS dedicado. Se descarta el fallback de MinIO. |
-| 2 | Custodia de la clave privada Ed25519 | ✅ **Director de informática UNSL**, sin participación del doctorando. |
+| 1 | VPS institucional separado para el `integrity-attestation-service` | ✅ **SÍ** — UTN provee VPS dedicado. Se descarta el fallback de MinIO. |
+| 2 | Custodia de la clave privada Ed25519 | ✅ **Director de informática UTN**, sin participación del doctorando. |
 | 3 | Presupuesto adicional para VPS | ✅ **APROBADO** |
 | 4 | SLO de attestation con alerta a Grafana | ✅ **24 horas** (default recomendado). |
 | 5 | Pubkey: URL pública canónica + commit como snapshot | ✅ **Ambos** (default recomendado). |
 
 ### Próximos pasos operativos (desbloqueados)
 
-1. **Director de informática UNSL** ejecuta `docs/pilot/attestation-deploy-checklist.md` para provisionar el VPS, generar la clave Ed25519, y desplegar el servicio.
+1. **Director de informática UTN** ejecuta `docs/pilot/attestation-deploy-checklist.md` para provisionar el VPS, generar la clave Ed25519, y desplegar el servicio.
 2. **Doctorando** recibe la pubkey institucional, la committea en `docs/pilot/attestation-pubkey.pem`, y verifica con `scripts/verify-attestations.py`.
 3. **`ctr-service` del piloto** se configura para emitir attestation requests al Redis del VPS institucional (env var del despliegue).
 
-**Tiempo estimado de provisioning del VPS + setup del servicio**: ~1-2 días de trabajo del DI UNSL siguiendo el checklist.
+**Tiempo estimado de provisioning del VPS + setup del servicio**: ~1-2 días de trabajo del DI UTN siguiendo el checklist.
 
 ---
 
@@ -93,7 +93,7 @@ Las 5 preguntas que originalmente bloqueaban el deploy fueron resueltas. El ADR-
 
 | Plazo | Acción | Responsable |
 |---|---|---|
-| Próximos días | Director de informática UNSL ejecuta `docs/pilot/attestation-deploy-checklist.md`: provisiona el VPS, genera la clave Ed25519 institucional, despliega el `integrity-attestation-service`. | DI UNSL |
+| Próximos días | Director de informática UTN ejecuta `docs/pilot/attestation-deploy-checklist.md`: provisiona el VPS, genera la clave Ed25519 institucional, despliega el `integrity-attestation-service`. | DI UTN |
 | Tras Paso 1 | Doctorando recibe la pubkey institucional, la committea como `docs/pilot/attestation-pubkey.pem`, valida con `scripts/verify-attestations.py`. | Doctorando |
 | Próximas 2 semanas | Doctorando lee los 4 ADRs nuevos (019, 020, 021, 016) y corre la suite de tests local para internalizar las decisiones. | Doctorando |
 | Decisión paralela | Implementar **G2 versión mínima** (~3-4 días) o declararla como agenda Cap 20 según calendario de la defensa. | Director de tesis + Doctorando |

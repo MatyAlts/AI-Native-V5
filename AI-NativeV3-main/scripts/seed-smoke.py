@@ -317,9 +317,9 @@ async def seed_academic(academic_url: str) -> None:
                 ),
                 {
                     "id": str(UNIVERSIDAD_ID),
-                    "nombre": "UNSL smoke",
-                    "codigo": "UNSL-SMOKE",
-                    "dominio": "unsl.edu.ar",
+                    "nombre": "UTN smoke",
+                    "codigo": "UTN-SMOKE",
+                    "dominio": "utn.edu.ar",
                     "realm": "smoke_uni",
                 },
             )

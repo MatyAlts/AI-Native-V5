@@ -62,7 +62,7 @@ Primera regla matching gana:
 | 6 | `n_temprana / n_prompts ≥ 0.5` (ventana 180s) | `consulta_temprana` |
 | 7 | default | `mixto` |
 
-Los umbrales (0.5, 180s, 5 eventos mínimos) son operacionalización inicial — calibrar empíricamente con docentes UNSL cuando se ejecute el gate A.
+Los umbrales (0.5, 180s, 5 eventos mínimos) son operacionalización inicial — calibrar empíricamente con docentes UTN cuando se ejecute el gate A.
 
 ## Drivers de la decisión
 

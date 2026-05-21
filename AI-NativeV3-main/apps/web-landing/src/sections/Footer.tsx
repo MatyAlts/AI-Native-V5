@@ -76,7 +76,7 @@ export function Footer() {
                 <span className="text-muted">Universidad</span>
                 <span className="mx-2 text-border">·</span>
                 <span className="text-bg">
-                  UNSL — Doctorado en Ingeniería Informática
+                  UTN — Doctorado en Ingeniería Informática
                 </span>
               </li>
             </ul>

@@ -1,6 +1,6 @@
 # Protocolo de aplicación NASA-TLX (CS09)
 
-**Versión**: 1.0.0 — DRAFT pendiente revisión coautoral + comité ético UNSL.
+**Versión**: 1.0.0 — DRAFT pendiente revisión coautoral + comité ético UTN.
 **Fecha**: 2026-05-16.
 **Origen**: `plan1Socra.md` CS09 (P1, antes de submisión final). Recomendación C1.1 del `informeSocra1.md`.
 **Estado**: propuesta para piloto-2. NO aplicar antes de revisión.
@@ -93,7 +93,7 @@ Sección §8.X del paper Cortez & Garis (post-piloto-2): tabla con correlaciones
 ## 4. Decisiones pendientes (requieren participación humana)
 
 1. **Versión exacta del instrumento**: Paas 1992 (1 ítem) vs NASA-TLX completo (6 dimensiones) vs híbrido (Paas en 80% + NASA-TLX completo en 20% adicional). Dirección + Ana Garis.
-2. **Aprobación del consentimiento adicional** por comité ético UNSL.
+2. **Aprobación del consentimiento adicional** por comité ético UTN.
 3. **Adaptación al castellano rioplatense** del ítem único. Calibrar con 3-5 estudiantes piloto antes de aplicación masiva.
 4. **Implementación técnica del `CognitiveLoadModal`** y la tabla `cognitive_load_responses`. Esfuerzo estimado: 8-12 h coordinadas con frontend + back-end.
 

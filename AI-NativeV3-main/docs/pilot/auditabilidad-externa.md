@@ -1,8 +1,8 @@
-# Auditabilidad externa del CTR — protocolo del piloto UNSL
+# Auditabilidad externa del CTR — protocolo del piloto UTN
 
 **Referencias**: ADR-021, RN-128, tesis Sección 7.3.
 
-> **Nota operativa**: este documento es la **fuente Markdown editable** del contenido que va al `protocolo-piloto-unsl.docx` (sección "Auditabilidad externa"). El `.docx` se regenera con `make generate-protocol`. Cuando se regenere por cualquier motivo, el contenido de aquí debe promoverse al `generate_protocol.js`.
+> **Nota operativa**: este documento es la **fuente Markdown editable** del contenido que va al `protocolo-piloto-utn.docx` (sección "Auditabilidad externa"). El `.docx` se regenera con `make generate-protocol`. Cuando se regenere por cualquier motivo, el contenido de aquí debe promoverse al `generate_protocol.js`.
 
 ---
 
@@ -80,9 +80,9 @@ Algoritmo de firma: **Ed25519** (RFC 8032). Justificación en ADR-021.
 
 Tres fuentes válidas, en orden de preferencia:
 
-1. **Endpoint del servicio**: `GET https://attestation.unsl.edu.ar/api/v1/attestations/pubkey`
+1. **Endpoint del servicio**: `GET https://attestation.utn.edu.ar/api/v1/attestations/pubkey`
 2. **Commit en el repo**: `docs/pilot/attestation-pubkey.pem` (snapshot del período del piloto)
-3. **Director de informática UNSL** (canal institucional fuera de banda)
+3. **Director de informática UTN** (canal institucional fuera de banda)
 
 Las tres deben coincidir. Discrepancias indican rotación o manipulación.
 
@@ -91,7 +91,7 @@ Las tres deben coincidir. Discrepancias indican rotación o manipulación.
 ```bash
 # Para cada día YYYY-MM-DD del período:
 curl -o attestations-YYYY-MM-DD.jsonl \
-    https://attestation.unsl.edu.ar/api/v1/attestations/YYYY-MM-DD
+    https://attestation.utn.edu.ar/api/v1/attestations/YYYY-MM-DD
 ```
 
 O coordinar con el director de informática para acceder al storage institucional directamente.
@@ -150,9 +150,9 @@ Cualquier discrepancia indica manipulación de la DB del piloto **después** del
 
 1. **Pérdida de attestations en caída de Redis**: si el stream Redis estuvo caído, los attestations de episodios cerrados durante esa ventana **no se emiten**. La DB del CTR sigue íntegra, pero no hay registro externo de esos episodios. Mitigación: reconciliation job futuro (declarado como agenda en ADR-021).
 
-2. **Pérdida del journal institucional**: si UNSL pierde el archivo JSONL (incendio del VPS, error humano), se pierde toda la evidencia externa. Es responsabilidad institucional replicar a otro VPS o storage. La tesis declara esto explícitamente.
+2. **Pérdida del journal institucional**: si UTN pierde el archivo JSONL (incendio del VPS, error humano), se pierde toda la evidencia externa. Es responsabilidad institucional replicar a otro VPS o storage. La tesis declara esto explícitamente.
 
-3. **Confianza centralizada en la institución**: todo el modelo asume que UNSL custodia la clave privada y el journal de buena fe. Si UNSL coordinara con el doctorando para falsear evidencia, la propiedad se rompe. Mitigación: la separación de roles (clave generada por director de informática, journal en VPS institucional, código del doctorando) hace ese coordinamiento operacionalmente difícil pero no imposible. Para garantías criptográficas independientes de la institución, el ADR-021 deja como agenda futura migrar a OpenTimestamps (anclar a Bitcoin) o Certificate Transparency log.
+3. **Confianza centralizada en la institución**: todo el modelo asume que UTN custodia la clave privada y el journal de buena fe. Si UTN coordinara con el doctorando para falsear evidencia, la propiedad se rompe. Mitigación: la separación de roles (clave generada por director de informática, journal en VPS institucional, código del doctorando) hace ese coordinamiento operacionalmente difícil pero no imposible. Para garantías criptográficas independientes de la institución, el ADR-021 deja como agenda futura migrar a OpenTimestamps (anclar a Bitcoin) o Certificate Transparency log.
 
 4. **Patrones regex de buffer canónico no validados por terceros**: un auditor que reimplemente la verificación en Go o Rust debe seguir bit-exact las reglas del ADR-021. Una desviación (ej. cambiar `|` por `,` o reordenar campos) invalida la verificación. Mitigación: tests golden con firma reproducible (`6333bee9...ad1606`) en `apps/integrity-attestation-service/tests/unit/test_signing.py`.
 

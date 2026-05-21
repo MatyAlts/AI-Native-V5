@@ -19,7 +19,7 @@ Pertenece al **plano académico-operacional**. Materializa el componente "Servic
 - Validar integridad del árbol: `carrera.facultad_id` coincide con `carrera.universidad_id`, `comision.codigo` único por `(materia_id, periodo_id)`, `comision` no puede crearse en `Periodo.estado = "cerrado"` (RN verificada por `test_comision_periodo_cerrado.py`).
 - Exponer `GET /api/v1/comisiones/mis` que el web-teacher y el web-admin usan para listar "mis comisiones" (los docentes via JOIN a `usuarios_comision`).
 - Registrar `AuditLog` en la misma transacción que la operación principal (rollback solidario).
-- Exponer `POST /api/v1/bulk` para import masivo via CSV/JSON (usado en onboarding UNSL y para carga de padrones e inscripciones).
+- Exponer `POST /api/v1/bulk` para import masivo via CSV/JSON (usado en onboarding UTN y para carga de padrones e inscripciones).
 
 ## 4. Qué NO hace (anti-responsabilidades)
 
@@ -179,7 +179,7 @@ Tres afirmaciones de la tesis que este servicio sostiene operativamente:
 **Fase de consolidación**:
 - F1 — schema inicial + matriz Casbin básica (`docs/F1-STATE.md`).
 - F5 — extensión de Casbin con permisos por comisión específica.
-- F6 — onboarding UNSL (realm Keycloak, federación LDAP, feature flags).
+- F6 — onboarding UTN (realm Keycloak, federación LDAP, feature flags).
 - F8 — entidad `TareaPractica` con versionado inmutable.
 - F9 — `TareaPracticaTemplate` (ADR-016), RLS migrations review.
 - 2026-04-29 — bulk-import de `inscripciones` consolidado (ADR-029); `enrollment-service` deprecado (ADR-030).

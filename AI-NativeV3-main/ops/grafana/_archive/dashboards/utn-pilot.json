@@ -1,7 +1,7 @@
 {
-  "title": "UNSL Pilot — Metrics",
-  "uid": "unsl-pilot",
-  "tags": ["platform", "unsl", "pilot"],
+  "title": "UTN Pilot — Metrics",
+  "uid": "utn-pilot",
+  "tags": ["platform", "utn", "pilot"],
   "timezone": "browser",
   "refresh": "1m",
   "schemaVersion": 38,

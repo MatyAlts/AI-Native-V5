@@ -1,8 +1,8 @@
-# Piloto UNSL — Guía de operación
+# Piloto UTN — Guía de operación
 
-Este directorio contiene los artefactos del estudio piloto en la UNSL:
+Este directorio contiene los artefactos del estudio piloto en la UTN:
 
-- `protocolo-piloto-unsl.docx` — protocolo formal (20 páginas) con
+- `protocolo-piloto-utn.docx` — protocolo formal (20 páginas) con
   objetivos, hipótesis, metodología, consentimiento y cronograma.
   Diseñado para presentación al Comité de Ética y al jurado de tesis.
 - `generate_protocol.js` — fuente que genera el DOCX. Permite regenerarlo
@@ -29,14 +29,14 @@ Al arrancar:
 
 ```bash
 docker compose -f docker-compose.dev.yaml up grafana
-# Luego ir a http://localhost:3000 → Dashboards → Platform → UNSL Pilot
+# Luego ir a http://localhost:3000 → Dashboards → Platform → UTN Pilot
 ```
 
 ## Cronograma operativo del piloto
 
 | Semana | Fase | Responsable | Producto |
 |---|---|---|---|
-| −4 a −1 | Preparación | Alberto + equipo técnico UNSL | Tenant UNSL configurado |
+| −4 a −1 | Preparación | Alberto + equipo técnico UTN | Tenant UTN configurado |
 | 1 | Línea base | Docentes de cada cátedra | Clasificación N4 inicial |
 | 2–15 | Intervención | Todos | ~1440 episodios esperados |
 | 8 | Check intermedio | Alberto | Primer cómputo de κ |
@@ -45,7 +45,7 @@ docker compose -f docker-compose.dev.yaml up grafana
 
 ## Métricas a monitorear en vivo
 
-Desde el Grafana UNSL Pilot Dashboard:
+Desde el Grafana UTN Pilot Dashboard:
 
 1. **Episodios del día** — verifica que haya uso sostenido
 2. **Estudiantes activos** — identifica abandono temprano
@@ -63,7 +63,7 @@ Desde el Grafana UNSL Pilot Dashboard:
 ```bash
 # Desde la UI del web-teacher: tab "Inter-rater" → etiquetar ≥30 episodios → Calcular Kappa.
 # Alternativa API:
-curl -X POST https://plataforma.unsl.edu.ar/api/v1/analytics/kappa \
+curl -X POST https://plataforma.utn.edu.ar/api/v1/analytics/kappa \
   -H "Authorization: Bearer $TOKEN" \
   -H "X-Tenant-Id: aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa" \
   -H "X-User-Id: 11111111-1111-1111-1111-111111111111" \
@@ -75,7 +75,7 @@ curl -X POST https://plataforma.unsl.edu.ar/api/v1/analytics/kappa \
 ```bash
 # Desde la UI del web-teacher: tab "Exportar" → completar form → descargar JSON.
 # Alternativa API:
-curl -X POST https://plataforma.unsl.edu.ar/api/v1/analytics/cohort/export \
+curl -X POST https://plataforma.utn.edu.ar/api/v1/analytics/cohort/export \
   -H "Authorization: Bearer $TOKEN" \
   -H "X-Tenant-Id: aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa" \
   -H "X-User-Id: 11111111-1111-1111-1111-111111111111" \
@@ -83,8 +83,8 @@ curl -X POST https://plataforma.unsl.edu.ar/api/v1/analytics/cohort/export \
     "comision_id": "...",
     "period_days": 120,
     "include_prompts": false,
-    "salt": "unsl-research-2026-alberto-secret",
-    "cohort_alias": "UNSL_2026_P2"
+    "salt": "utn-research-2026-alberto-secret",
+    "cohort_alias": "UTN_2026_P2"
   }'
 ```
 
@@ -103,11 +103,11 @@ Si κ cae por debajo de 0,4 en el check intermedio:
 cd docs/pilot/
 npm install -g docx
 node generate_protocol.js
-python3 /path/to/validate.py protocolo-piloto-unsl.docx
+python3 /path/to/validate.py protocolo-piloto-utn.docx
 ```
 
 ## Contactos
 
 - **Investigador principal**: Alberto Alejandro Cortez
-- **Comité de Ética UNSL**: cei@unsl.edu.ar
+- **Comité de Ética UTN**: cei@utn.edu.ar
 - **Soporte técnico de la plataforma**: [mailing list interna]

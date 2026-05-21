@@ -31,7 +31,7 @@ Esto crea una decisión sobre cómo el CTR identifica al ejercicio de un episodi
 
 **Contexto crítico — reproducibilidad bit-a-bit**: el CLAUDE.md del proyecto declara como invariante que el `classifier_config_hash` debe ser reproducible bit-a-bit sobre los eventos del piloto. Modificar el shape de `EpisodioAbiertoPayload` cambia el `self_hash` de eventos nuevos (porque la fórmula es `sha256(json.dumps(payload, sort_keys=True, ensure_ascii=False, separators=(",", ":")))`). En BD con eventos legacy, esto rompe el invariante.
 
-**Contexto que destraba la decisión**: la BD piloto local está limpia para el refactor (ADR-047 explica el verificado empírico). El piloto real UNSL aún no corrió contra el sistema actual con `ejercicio_orden` poblado — todos los episodios del seed apuntan a TPs monolíticas (`ejercicio_orden = NULL`). Por lo tanto **no hay eventos históricos con `ejercicio_orden` no-nulo que el cambio de schema invalide**.
+**Contexto que destraba la decisión**: la BD piloto local está limpia para el refactor (ADR-047 explica el verificado empírico). El piloto real UTN aún no corrió contra el sistema actual con `ejercicio_orden` poblado — todos los episodios del seed apuntan a TPs monolíticas (`ejercicio_orden = NULL`). Por lo tanto **no hay eventos históricos con `ejercicio_orden` no-nulo que el cambio de schema invalide**.
 
 ## Drivers de la decisión
 
@@ -110,7 +110,7 @@ Semántica:
 
 La modificación del payload cambia el `self_hash` de los eventos `episodio_abierto` futuros respecto a la fórmula actual aplicada a payloads sin el campo `ejercicio_id`. Esto **NO rompe la cadena** de ningún episodio: cada episodio tiene su propia cadena criptográfica independiente. Lo que cambia es el shape canónico del payload.
 
-Como la BD piloto local está limpia para el refactor (no hay eventos `episodio_abierto` con `ejercicio_orden` poblado en el seed actual — verificado contra `seed-3-comisiones.py`), y el piloto real UNSL todavía no corrió este shape, **el cambio se hace antes de que existan eventos históricos que invaliden**.
+Como la BD piloto local está limpia para el refactor (no hay eventos `episodio_abierto` con `ejercicio_orden` poblado en el seed actual — verificado contra `seed-3-comisiones.py`), y el piloto real UTN todavía no corrió este shape, **el cambio se hace antes de que existan eventos históricos que invaliden**.
 
 El piloto real, cuando se corra, lo hará con el shape nuevo desde el día cero. La reproducibilidad bit-a-bit del `classifier_config_hash` se evalúa contra los eventos del piloto real — todos producidos con el shape nuevo. **El invariante se preserva.**
 
@@ -176,7 +176,7 @@ Frontends (web-student principalmente) se actualizan para enviar `ejercicio_id`.
 
 ### Negativas / trade-offs
 
-- **Cambia el shape canónico del payload de `episodio_abierto`**: el `self_hash` de eventos nuevos es diferente al de cualquier evento hipotético con el shape viejo. **Mitigación**: aplicado mientras la BD está limpia. El piloto real UNSL corre solo con shape nuevo. Documentado explícitamente como decisión consciente.
+- **Cambia el shape canónico del payload de `episodio_abierto`**: el `self_hash` de eventos nuevos es diferente al de cualquier evento hipotético con el shape viejo. **Mitigación**: aplicado mientras la BD está limpia. El piloto real UTN corre solo con shape nuevo. Documentado explícitamente como decisión consciente.
 - **Drift teórico entre payload y `tp_ejercicios`**: si después de un episodio alguien edita `tp_ejercicios.orden` (cambio del orden de un ejercicio en una TP), el payload del evento conserva el orden viejo. Esto es **correcto y deseable** (es snapshot), pero hay que documentarlo. La tabla `tp_ejercicios` es la verdad del estado actual; los payloads son la verdad histórica del momento.
 - **Frontends y servicios deben actualizarse coordinadamente**: el endpoint `POST /episodes` cambia de aceptar `ejercicio_orden` a aceptar `ejercicio_id`. Frontends viejos que envíen `ejercicio_orden` deben seguir funcionando durante una transición acotada (ver "Migration path").
 - **Riesgo de inconsistencia entre `ejercicio_id` y `ejercicio_orden` en el payload**: si el productor (tutor-service) no calcula bien la consistencia, queda un evento con campos contradictorios. **Mitigación**: assert explícito en el productor; test unit que cubre el caso.

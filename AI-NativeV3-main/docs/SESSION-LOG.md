@@ -24,7 +24,7 @@ Sesión de ejecución del `PlanMejora.md` (root del wrapper `AI-Native-V4-main/`
 7. **Modelos SQLAlchemy**: `apps/academic-service/src/academic_service/models/instrumentos.py` con 3 clases heredando de `Base, TenantMixin`. Registradas en `models/__init__.py`.
 8. **Schemas Pydantic**: `apps/academic-service/src/academic_service/schemas/instrumentos.py` — 6 schemas (Create + Out por instrumento) con `Literal["experimental", "comparison"]` para group_assignment.
 9. **Routes**: `apps/academic-service/src/academic_service/routes/instrumentos.py` — 3 sub-routers (cuestionario_ia, pretest, transferencia) con POST/GET/me/catalogo + endpoints `/summary` con k-anonymity gate `MIN_STUDENTS_FOR_COHORT_SUMMARY=5`. Idempotencia 409 + validación 422. Registrados en `main.py`.
-10. **Contenido placeholder**: `apps/academic-service/src/academic_service/services/instrumentos_content.py` — catálogos de items con marcadores `[PLACEHOLDER GARIS]` / `[PLACEHOLDER CATEDRA UNSL]` explícitos para que cuando Garis y la cátedra validen, sólo saquen el marker. Funciones `validate_*_responses()` + `compute_pretest_autoeficacia_scores()` (total + sub-escalas por promedio) + `evaluate_test_transferencia_answer()` (devuelve False por default — placeholder hasta que cátedra apruebe patrones).
+10. **Contenido placeholder**: `apps/academic-service/src/academic_service/services/instrumentos_content.py` — catálogos de items con marcadores `[PLACEHOLDER GARIS]` / `[PLACEHOLDER CATEDRA UTN]` explícitos para que cuando Garis y la cátedra validen, sólo saquen el marker. Funciones `validate_*_responses()` + `compute_pretest_autoeficacia_scores()` (total + sub-escalas por promedio) + `evaluate_test_transferencia_answer()` (devuelve False por default — placeholder hasta que cátedra apruebe patrones).
 11. **Casbin**: `apps/academic-service/src/academic_service/seeds/casbin_policies.py` — +21 policies (3 recursos × 7 acciones cada uno: 3 superadmin C/R/D + 1 docente_admin R + 1 docente R + 2 estudiante C/R). Total recurso = 205 (era 184).
 12. **Tests unitarios**: `apps/academic-service/tests/unit/test_instrumentos.py` — cobertura de schemas + validación + scoring + catálogo. Incluye `test_catalogo_tiene_marcadores_placeholder` que asegura que ningún item del esqueleto se cuela como contenido validado.
 13. **API client web-student**: `apps/web-student/src/lib/api.ts` — 9 funciones nuevas (3 por instrumento: catalogo + submit + me) + namespace `instrumentosApi`.
@@ -59,10 +59,10 @@ Sesión de ejecución del `PlanMejora.md` (root del wrapper `AI-Native-V4-main/`
 
 ### Lo que NO se ejecutó (por restricciones reales no flojera)
 
-- **P0-1** (re-clasificar 106 históricos): requiere DB piloto UNSL real, no disponible en este entorno.
+- **P0-1** (re-clasificar 106 históricos): requiere DB piloto UTN real, no disponible en este entorno.
 - **P0-2** (validación intercoder κ≥0.70): requiere 2 docentes humanos × semanas de etiquetado.
-- **P0-3** (attestation Ed25519 en VPS): requiere credenciales del VPS UNSL.
-- **P2-1/2/3 contenido académico final**: requiere revisión coautoral con Garis + aprobación comité ético UNSL. El esqueleto técnico arriba está listo para recibir el contenido aprobado sin tocar plumbing.
+- **P0-3** (attestation Ed25519 en VPS): requiere credenciales del VPS UTN.
+- **P2-1/2/3 contenido académico final**: requiere revisión coautoral con Garis + aprobación comité ético UTN. El esqueleto técnico arriba está listo para recibir el contenido aprobado sin tocar plumbing.
 - **P3 (Caliper/xAPI, Pyodide, features con flag OFF)**: el paper §5.1 los declara explícitamente como agenda; no urgentes para defensa.
 
 ### Decisiones técnicas no obvias
@@ -73,7 +73,7 @@ Sesión de ejecución del `PlanMejora.md` (root del wrapper `AI-Native-V4-main/`
 - **Biome a11y exige `<fieldset><legend>` sobre `<div><label>`** para inputs agrupados (radio, checkbox). `<label><span>...</span><select>...</select></label>` es OK para selects solo.
 - **`func.cast(boolean → int)`** en SQLAlchemy NO funciona directo — usar `case((cond, 1), else_=0).cast(Integer)` para contar booleanos como int.
 - **Anti-reificación se aplica al label dinámico del episodio (donde se atribuye categoría)** + disclaimer en vista cohortal investigador. NO se aplica a leyendas hardcoded del código de colores (que explican el color en abstracto, no atribuyen al estudiante).
-- **Placeholders académicos como string literal `[PLACEHOLDER GARIS]` / `[PLACEHOLDER CATEDRA UNSL]`** (no comments) para que `test_catalogo_tiene_marcadores_placeholder` los pueda verificar. Cuando Garis aprueba un item, le saca el marker manualmente.
+- **Placeholders académicos como string literal `[PLACEHOLDER GARIS]` / `[PLACEHOLDER CATEDRA UTN]`** (no comments) para que `test_catalogo_tiene_marcadores_placeholder` los pueda verificar. Cuando Garis aprueba un item, le saca el marker manualmente.
 
 ### Artefactos del wrapper (no commiteados al repo)
 
@@ -83,10 +83,10 @@ Sesión de ejecución del `PlanMejora.md` (root del wrapper `AI-Native-V4-main/`
 
 Cierre del código que destraba dependencias externas (P0-1, P0-3 parcial) + agenda explícita P3-1 del paper §5.1:
 
-19. **`scripts/reclassify-legacy-106.py`** — script batch que re-clasifica las classifications con `classifier_config_hash` legacy (~106). Estrategia: calcula el hash vigente con `compute_classifier_config_hash(DEFAULT_REFERENCE_PROFILE, "v1.0.0")`, lista current con hash distinto via SQL directo al CLASSIFIER_DB, y para cada episode_id hace `POST /api/v1/classify_episode/{id}` con headers de service-account `classifier_worker`. El endpoint ya es idempotente (A12 cumplida) — re-correr el script es seguro. Modo `--dry-run` para reportar sin persistir. Cuando Cortez tenga acceso a DB del piloto UNSL, corre el script y cierra P0-1.
-20. **`scripts/verify-attestation-deployment.py`** — chequeo continuo del deploy del `integrity-attestation-service` en VPS UNSL. 4 chequeos: HTTP health, pubkey match con PEM esperada (mismatch = clave rotada sin avisar), consumer lag del stream `attestation.requests` en Redis, verificación bit-exacta de un journal day con la pubkey servida. Exit codes distintivos (0/1/2/3) según severidad. Complementa el checklist existente `docs/pilot/attestation-deploy-checklist.md` que ya cubre deploy inicial; este script es para monitoring continuo (cron semanal del doctorando contra VPS).
+19. **`scripts/reclassify-legacy-106.py`** — script batch que re-clasifica las classifications con `classifier_config_hash` legacy (~106). Estrategia: calcula el hash vigente con `compute_classifier_config_hash(DEFAULT_REFERENCE_PROFILE, "v1.0.0")`, lista current con hash distinto via SQL directo al CLASSIFIER_DB, y para cada episode_id hace `POST /api/v1/classify_episode/{id}` con headers de service-account `classifier_worker`. El endpoint ya es idempotente (A12 cumplida) — re-correr el script es seguro. Modo `--dry-run` para reportar sin persistir. Cuando Cortez tenga acceso a DB del piloto UTN, corre el script y cierra P0-1.
+20. **`scripts/verify-attestation-deployment.py`** — chequeo continuo del deploy del `integrity-attestation-service` en VPS UTN. 4 chequeos: HTTP health, pubkey match con PEM esperada (mismatch = clave rotada sin avisar), consumer lag del stream `attestation.requests` en Redis, verificación bit-exacta de un journal day con la pubkey servida. Exit codes distintivos (0/1/2/3) según severidad. Complementa el checklist existente `docs/pilot/attestation-deploy-checklist.md` que ya cubre deploy inicial; este script es para monitoring continuo (cron semanal del doctorando contra VPS).
 21. **Caliper Analytics 1.2 + xAPI 1.0.3 exporter MVP** (cierra P3-1 — el paper §5.1 lo declara como "agenda de extension del sistema instrumental"):
-    - `apps/analytics-service/src/analytics_service/services/caliper_xapi_exporter.py` — funciones puras `to_caliper(events, context)` (envelope IMS Caliper 1.2) y `to_xapi(events, context)` (lista xAPI 1.0.3 statements). Mapeo de 10 tipos de eventos CTR a verbos/types estandar + IRIs custom bajo namespace `https://ai-native.unsl.edu.ar/vocab/v1/` para términos del Modelo N4 sin equivalente. Hashes versionados (`self_hash`, `chain_hash`, `prompt_system_hash`, `chunks_used_hash`, `labeler_version`) preservados en `extensions` para auditoría externa.
+    - `apps/analytics-service/src/analytics_service/services/caliper_xapi_exporter.py` — funciones puras `to_caliper(events, context)` (envelope IMS Caliper 1.2) y `to_xapi(events, context)` (lista xAPI 1.0.3 statements). Mapeo de 10 tipos de eventos CTR a verbos/types estandar + IRIs custom bajo namespace `https://ai-native.utn.edu.ar/vocab/v1/` para términos del Modelo N4 sin equivalente. Hashes versionados (`self_hash`, `chain_hash`, `prompt_system_hash`, `chunks_used_hash`, `labeler_version`) preservados en `extensions` para auditoría externa.
     - `apps/analytics-service/src/analytics_service/routes/export_standards.py` — endpoints `GET /api/v1/export/caliper/{episode_id}` y `GET /api/v1/export/xapi/{episode_id}` pull-based on-demand. Fetch eventos del `ctr_store` con `set_tenant_rls`.
     - Registrado en `main.py`.
     - Tests unit `apps/analytics-service/tests/unit/test_caliper_xapi_exporter.py` con cobertura de envelope shape, actor mapping (student=Person/Agent, tutor=SoftwareApplication/Agent+account), event-type mapping parametrizado, extensions preservadas, result mapping para tests_ejecutados (success=True si failed=0).
@@ -200,7 +200,7 @@ Sesión de continuación tras cerrar el análisis pedagógico socrático (inform
 
 - **Sesión coautoral con Ana Garis** post-consolidación: revisión de las 7 ediciones consolidadas en paper y tesis16mayo, decisión de reformular o aprobar tal como están. Material de la sesión: `revision-coautoral-paper-2026-05-16.md`.
 - **A1 cierre** (re-clasificación de 106 históricas con classifier_config_hash post-LABELER 1.2.0): pre-condición de los 4 scripts P2 (sensitivity, EFA, IRT, clustering).
-- **Aplicación de instrumentos P1** en piloto-2: requiere aprobación de comité ético UNSL.
+- **Aplicación de instrumentos P1** en piloto-2: requiere aprobación de comité ético UTN.
 - **Resolución de inconsistencias residuales `tesis §15.6`**: el código (ccd.py docstring) y `01-fixes-codigo-chicos.md` referencian "tesis §15.6 / §19.5" — esa numeración era de una versión anterior de la tesis. tesis16mayo.docx tiene §15.4 Coherencia estructural y §19.x sobre limitaciones. Decidir si actualizar las referencias del código o aclarar contexto histórico.
 
 ---
@@ -220,7 +220,7 @@ A partir del informe el usuario pidió ejecutar todas las recomendaciones implem
    - **Error 2**: afirmar "el tutor responde la reflexión". Verificación de `ReflectionModal.tsx` + tests del backend mostró que el componente solo persiste 3 strings; **no hay streaming ni respuesta del tutor**.
    - R2 anulado como "reconciliación 3→5" (12-16h) y reemplazado por R2-corregido: actualización del README del wrapper para alinear con paper + código (3 categorías). Correcciones marcadas explícitamente en `informeSoc.md` §0, §3.4, §5(c), tabla P0.
 
-3. **R1 — Manual del etiquetador N4** (`docs/research/manual-etiquetador-N4.md`, ~470 líneas). Criterios operacionales por nivel N1-N4, casos límite resueltos (anotación a los 119s vs 121s, tests pasando a 59s vs 60s, etc.), formato yaml de fichas para Protocolo A y dossiers para Protocolo B, protocolo de **pre-calibración interna con dir + co-dir sobre 20 eventos + 5 episodios** antes de invitar a los dos docentes UNSL al estudio intercoder formal de ADR-046. P0 absoluto: ejecutar pre-calibración antes de invertir ~50 h docente.
+3. **R1 — Manual del etiquetador N4** (`docs/research/manual-etiquetador-N4.md`, ~470 líneas). Criterios operacionales por nivel N1-N4, casos límite resueltos (anotación a los 119s vs 121s, tests pasando a 59s vs 60s, etc.), formato yaml de fichas para Protocolo A y dossiers para Protocolo B, protocolo de **pre-calibración interna con dir + co-dir sobre 20 eventos + 5 episodios** antes de invitar a los dos docentes UTN al estudio intercoder formal de ADR-046. P0 absoluto: ejecutar pre-calibración antes de invertir ~50 h docente.
 
 4. **R4 — Prompt v1.2.0 DRAFT** (`ai-native-prompts/prompts/tutor/v1.2.0/system.md`, no activado en manifest). Incorpora los cuatro movimientos socráticos como secciones explícitas: ironía (suspender el saber del tutor), mayéutica como **secuencia de 4 pasos** (explicitar creencia → probar con caso → mostrar consecuencia → pedir reformulación), elenchos (poner al estudiante en contradicción consigo mismo, no con compilador ni con tutor), aporía productiva (validar el desconcierto en vez de simplificar el problema). Cobertura 9/10 guardarrailes formales (vs 4/10 en v1.1.0): agrega GP3, GC1, GC2, GC4, GC5. Activación bloqueada hasta revisión coautoral con Ana Garis + decisión de dir/co-dir + bumpeo coordinado de `default_prompt_version` en `config.py`.
 
@@ -479,7 +479,7 @@ Sesión posterior al cierre AM/PM del epic `ai-native-completion-and-byok`. El u
    - Bug `compute_chain_hash` divergente: `packages/contracts/.../ctr/hashing.py:46` invertido a `f"{self_hash}{prev}"` (ahora coincide con ctr-service y los 470 events íntegros de la DB). Test cross-package nuevo `packages/contracts/tests/test_chain_hash_canonical_formula.py` con 3 tests + 4 fixtures bit-exact extraídos de un episodio real. Sin este fix, un auditor doctoral que use el helper "oficial" para verificar la cadena obtenía falsos failures sobre cadenas íntegras.
 4. **Mejora estructural #2 — Smoke E2E** (sub-agente dedicado, ~13 min): suite `tests/e2e/smoke/` con 32 tests + 1 skipped (BYOK_MASTER_KEY) — health × 12 + flujo pedagógico (open episode → emit event → close → verify) + BYOK CRUD + analytics (kappa, longitudinal, cuartiles, alertas) + audit alias ADR-031 + chain_e2e (recompute SHA-256 con helper de contracts contra DB real) + governance/ai-gateway. **32/32 passed en <2s**. CI workflow skeleton en `.github/workflows/e2e-smoke.yml` (workflow_dispatch por ahora). `make test-smoke` target nuevo. Atrapa exactamente la clase de bugs que escapan a tests con DB mockeada.
 5. **Skill `impeccable` instalada global**: `npx skills add pbakaus/impeccable` falló por input interactivo; instalación manual a `~/.claude/skills/impeccable/` (SKILL.md + 35 reference files + 4 scripts). Resueltos placeholders `{{scripts_path}}`/`{{command_prefix}}` con script Python (23 archivos, 18 + 45 ocurrencias). Registrada en `~/.claude/CLAUDE.md` global como auto-load para cualquier tarea de UI. Filosofía respetada: gates obligatorios PRODUCT.md + DESIGN.md + shape brief NO se saltean.
-6. **`PRODUCT.md` escrito** al root del repo (decisión: audiencia primaria de la defensa = comité doctoral, audiencia primaria del producto = docentes/alumnos UNSL escalando a N facultades). 5 design principles: (1) modelo N4 visible, (2) auditabilidad visible no oculta, (3) densidad académica > whitespace SaaS, (4) escala como first-class, (5) honestidad técnica explícita. 5 anti-references: Moodle, Coursera marketing, SaaS dashboard genérico, EdTech gamificado, SIU Guaraní. Voice: *riguroso · transparente · pedagógico*.
+6. **`PRODUCT.md` escrito** al root del repo (decisión: audiencia primaria de la defensa = comité doctoral, audiencia primaria del producto = docentes/alumnos UTN escalando a N facultades). 5 design principles: (1) modelo N4 visible, (2) auditabilidad visible no oculta, (3) densidad académica > whitespace SaaS, (4) escala como first-class, (5) honestidad técnica explícita. 5 anti-references: Moodle, Coursera marketing, SaaS dashboard genérico, EdTech gamificado, SIU Guaraní. Voice: *riguroso · transparente · pedagógico*.
 7. **`DESIGN.md` escrito** al root (sub-agente, ~12 min, formato Stitch). 32 colors / 6 typography roles / 16 components extraídos de los 3 frontends + `packages/ui`. Estrategia detectada: **Restrained con vocabulario semántico extendido**. Hallazgo importante: **N1-N4 NO son tokens `@theme`**, viven hardcoded en componentes JS (`EpisodeNLevelView::LEVEL_COLORS`, etc.). Bug visual genuino documentado en Don'ts: `StudentLongitudinalView.tsx:251` usa `border-l-4 border-amber-400` (side-stripe banneado por la skill `impeccable`).
 8. **CLAUDE.md corregido** (cirugía mínima sobre las falsedades verificadas): `X-Role` → `X-User-Roles` plural (2 ocurrencias), aclaración del sharding CTR (Redis Streams, NO Postgres), warning del path attestation no disparándose, caveat de HelpButton missing en G7, disambiguation `EpisodioCerrado` vs `episodio_cerrado` (clase Pydantic vs event_type), nuevo gotcha `alembic/env.py` hardcoded a `academic_user`, **nueva sección "Auditoría 2026-05-04"** con highlights completos + reference a PRODUCT.md/DESIGN.md/skill `impeccable` como source of truth de UX/UI.
 9. **Cleanup limpio**: 12 uvicorn + 3 vite matados por PID, puertos del piloto libres, infra Docker (10 containers) sigue arriba como estaba.
@@ -546,7 +546,7 @@ Continuación de la sesión AM. El plan que dejamos al cierre AM se ejecutó com
 
 ### Lo que queda como `[~]` honesto post-archive
 
-Va al follow-up declarado en el archivo archivado de la epic. **Cuando llegue el deploy real del piloto en UNSL, abrir change nuevo** (sugerido: `byok-operational-frontend`) con scope acotado:
+Va al follow-up declarado en el archivo archivado de la epic. **Cuando llegue el deploy real del piloto en UTN, abrir change nuevo** (sugerido: `byok-operational-frontend`) con scope acotado:
 
 - UI BYOK keys page en web-admin.
 - UI Pyodide en web-student + botón "Correr tests".
@@ -683,7 +683,7 @@ Documentado en ADR-035. Test en `apps/classifier-service/tests/unit/test_pipelin
 
 ### Lo que NO entra en Fase 1 (queda como `[~]` honesto post-archive)
 
-Va al follow-up declarado en el archivo archivado de la epic. Cuando llegue el deploy real del piloto en UNSL, **abrir change nuevo** (sugerido: `byok-operational-frontend`) con scope acotado:
+Va al follow-up declarado en el archivo archivado de la epic. Cuando llegue el deploy real del piloto en UTN, **abrir change nuevo** (sugerido: `byok-operational-frontend`) con scope acotado:
 - UI BYOK keys page en web-admin.
 - UI Pyodide en web-student + botón "Correr tests".
 - Wizard TP-gen en web-teacher.
@@ -948,7 +948,7 @@ Tras cerrar la activación v1.0.1, el usuario pidió un análisis riguroso cross
 Nuevo archivo [`docs/plan-b2-jwt-comisiones-activas.md`](plan-b2-jwt-comisiones-activas.md) con:
 
 - Síntoma actual verificado contra código.
-- 3 dependencias externas que bloquean ejecución (Keycloak operacional, federación LDAP, coordinación DI UNSL — los 5 puntos pendientes de ADR-021).
+- 3 dependencias externas que bloquean ejecución (Keycloak operacional, federación LDAP, coordinación DI UTN — los 5 puntos pendientes de ADR-021).
 - Diseño propuesto con dos opciones (Java SPI vs groups-mapper estándar) — recomendación: groups-mapper para piloto-1.
 - Cambios concretos en Keycloak / api-gateway / academic-service / frontends / tests.
 - Estimación: ~210 LOC efectivo + tests E2E con Keycloak.
@@ -975,13 +975,13 @@ El test pre-existente `test_load_sin_manifest_calcula_hash` en governance-servic
 
 #### Notas para reportes empíricos del piloto
 
-- El bulk de inscripciones (ADR-029) habilita el alta masiva de estudiantes desde web-admin sin tocar SQL — desbloquea uso real con UNSL para el cuatrimestre vigente.
+- El bulk de inscripciones (ADR-029) habilita el alta masiva de estudiantes desde web-admin sin tocar SQL — desbloquea uso real con UTN para el cuatrimestre vigente.
 - La `AuditoriaPage` (ADR-031) es ATL clave para la defensa: el comité puede ver en vivo la verificación criptográfica de cualquier episodio del corpus del piloto-1.
-- B.2 sigue bloqueante para SSO real — hasta que Keycloak esté operacional con federación LDAP completa, los estudiantes reales no pueden loguearse fuera del modo dev. El plan está listo en `docs/plan-b2-jwt-comisiones-activas.md` para ejecución mecánica post-coordinación UNSL.
+- B.2 sigue bloqueante para SSO real — hasta que Keycloak esté operacional con federación LDAP completa, los estudiantes reales no pueden loguearse fuera del modo dev. El plan está listo en `docs/plan-b2-jwt-comisiones-activas.md` para ejecución mecánica post-coordinación UTN.
 
 #### Próximos pasos sugeridos (fuera de scope iter 2)
 
-- Coordinación institucional con DI UNSL: resolver los 5 puntos pendientes del ADR-021 + las preguntas del plan B.2.
+- Coordinación institucional con DI UTN: resolver los 5 puntos pendientes del ADR-021 + las preguntas del plan B.2.
 - Cleanup del bug pre-existente cp1252 en `test_load_sin_manifest_calcula_hash` (separar scope, PR aislado).
 - Drilldown navegacional `ClasificacionesPage → AuditoriaPage` con `episode_id` precargado (mejora UX, ~20 LOC).
 - Eventualmente, eliminar `apps/enrollment-service/` directorio físico si pasa el siguiente cuatrimestre sin caso de uso.
@@ -1049,17 +1049,17 @@ Sesión basada en el análisis del documento `audi1.md` (auditoría de 7 cambios
 - **Override por estudiante de `anotacion_creada.n_level`**: requiere UI en web-student + tabla paralela `event_labels` (Opción C del ADR-020). Diferido.
 - **G3 (Fase A guardrails)**, **G2 (CII longitudinal mínimo)**: próximos en el plan de "modelo híbrido honesto".
 
-### Decisiones pendientes (NO técnicas — requieren coordinación institucional UNSL)
+### Decisiones pendientes (NO técnicas — requieren coordinación institucional UTN)
 
-ADR-021 documenta 5 preguntas para el doctorando que requieren input del director de informática UNSL antes de deploy del piloto:
+ADR-021 documenta 5 preguntas para el doctorando que requieren input del director de informática UTN antes de deploy del piloto:
 
-1. ¿UNSL provee VPS institucional separado o vamos con MinIO compartido con bucket aparte?
+1. ¿UTN provee VPS institucional separado o vamos con MinIO compartido con bucket aparte?
 2. ¿Quién genera y custodia la clave privada Ed25519? (recomendado: director de informática, no el doctorando — D3 del ADR).
 3. ¿Hay budget para VPS adicional?
 4. ¿24h de SLO con alerta Grafana es aceptable?
 5. ¿La pubkey vive en el repo, en URL pública institucional, o ambas? (recomendado: ambas).
 
-El código del PR está completo y testeado en dev mode. El deploy a piloto requiere resolver las 5 preguntas + coordinar con UNSL. Recomendación: arrancar la conversación institucional ahora para no acumular código sin clave institucional confirmada.
+El código del PR está completo y testeado en dev mode. El deploy a piloto requiere resolver las 5 preguntas + coordinar con UTN. Recomendación: arrancar la conversación institucional ahora para no acumular código sin clave institucional confirmada.
 
 ### Validación final
 
@@ -1128,7 +1128,7 @@ Tras cerrar G3+G4+G5, se hizo una **revisión adversarial con 3 agentes en paral
 Mismo día, el doctorando confirmó las 5 preguntas pendientes del ADR-021:
 
 1. ✅ **VPS institucional separado**: SÍ. Se descarta el fallback de MinIO con bucket aislado.
-2. ✅ **Custodia de la clave privada**: Director de informática UNSL — sin participación del doctorando.
+2. ✅ **Custodia de la clave privada**: Director de informática UTN — sin participación del doctorando.
 3. ✅ **Presupuesto adicional**: aprobado.
 4. ✅ **SLO de attestation**: 24h (default).
 5. ✅ **Pubkey storage**: ambos (URL canónica + commit como snapshot).
@@ -1136,11 +1136,11 @@ Mismo día, el doctorando confirmó las 5 preguntas pendientes del ADR-021:
 **ADR-021 pasa de Propuesto a Aceptado** (sección "Decisiones tomadas (2026-04-27)" agregada).
 
 **Artefactos operativos creados**:
-- `docs/pilot/attestation-deploy-checklist.md` — checklist de 10 pasos para que el DI UNSL provisione el VPS, genere la clave Ed25519 (sin participación del doctorando, cumple D3), despliegue el servicio, configure nginx con IP allowlist, y haga smoke test end-to-end. Incluye runbook de fallas comunes.
-- `docs/pilot/attestation-pubkey.pem.PLACEHOLDER` — slot reservado para la pubkey institucional. Cuando el DI UNSL entregue la clave (Paso 2 del checklist), se renombra a `attestation-pubkey.pem` y se commitea como snapshot del período del piloto.
-- Resumen ejecutivo (`docs/RESUMEN-EJECUTIVO-2026-04-27.md`) actualizado: "Bloqueante institucional" → "Decisiones tomadas + próximos pasos operativos". Listo para enviar al director de tesis y al DI UNSL.
+- `docs/pilot/attestation-deploy-checklist.md` — checklist de 10 pasos para que el DI UTN provisione el VPS, genere la clave Ed25519 (sin participación del doctorando, cumple D3), despliegue el servicio, configure nginx con IP allowlist, y haga smoke test end-to-end. Incluye runbook de fallas comunes.
+- `docs/pilot/attestation-pubkey.pem.PLACEHOLDER` — slot reservado para la pubkey institucional. Cuando el DI UTN entregue la clave (Paso 2 del checklist), se renombra a `attestation-pubkey.pem` y se commitea como snapshot del período del piloto.
+- Resumen ejecutivo (`docs/RESUMEN-EJECUTIVO-2026-04-27.md`) actualizado: "Bloqueante institucional" → "Decisiones tomadas + próximos pasos operativos". Listo para enviar al director de tesis y al DI UTN.
 
-**El piloto puede arrancar** una vez que el DI UNSL ejecute el checklist (~1-2 días de trabajo de su lado, sin bloquear desarrollo del doctorando).
+**El piloto puede arrancar** una vez que el DI UTN ejecute el checklist (~1-2 días de trabajo de su lado, sin bloquear desarrollo del doctorando).
 
 ### G2 mínimo — CII evolution longitudinal (Sección 15.4)
 
@@ -1170,7 +1170,7 @@ Cierre del último ítem implementable del plan defensivo del modelo híbrido ho
 **✅ Implementado (defendible)**:
 - **G3 mínimo** (Fase A guardrails) — ADR-019, RN-129
 - **G4** (etiquetador N1-N4) — ADR-020
-- **G5** (registro externo Ed25519) — ADR-021, RN-128, decisiones institucionales tomadas, checklist DI UNSL
+- **G5** (registro externo Ed25519) — ADR-021, RN-128, decisiones institucionales tomadas, checklist DI UTN
 - **G2 mínimo** (CII evolution longitudinal) — ADR-018, RN-130
 
 **📋 Agenda Cap 20 (NO implementar, ADR redactado o por redactar)**:
@@ -1275,7 +1275,7 @@ Tras la /init review, se hizo una **auditoría de correspondencia frontend-backe
 - `identity-service` también es `/health` only pero **by-design** (auth via api-gateway + Casbin descentralizado). Distinto del caso de `evaluation-service` — acá la decisión es definitiva, no diferida.
 
 **Lo que NO se hizo en esta sesión** (queda pendiente):
-- **Refactor #2: UI de inscripciones** (CSV upload 2-pass) en `web-admin` — 1-2 días, gap operativo real para piloto UNSL. El backend ya está, falta el frontend. Pendiente decisión del doctorando si vale la pena hacerlo ahora o en F8/F9 cuando Keycloak federation traiga las inscripciones del LDAP automáticamente.
+- **Refactor #2: UI de inscripciones** (CSV upload 2-pass) en `web-admin` — 1-2 días, gap operativo real para piloto UTN. El backend ya está, falta el frontend. Pendiente decisión del doctorando si vale la pena hacerlo ahora o en F8/F9 cuando Keycloak federation traiga las inscripciones del LDAP automáticamente.
 - **Refactor #4: ADR-023** declarando explícitamente que el read/replay del CTR via `GET /api/v1/episodes/{id}` (CTR-service) y `POST /verify` están **deliberadamente ocultos** detrás del proxy del api-gateway, porque la auditoría se hace via attestations Ed25519 + classifications agregadas. Hoy es by-design implícito sin documentación.
 
 **Archivos modificados esta sesión** (refactor #1 + #3):
@@ -1311,7 +1311,7 @@ Sesión larga: arrancó con cleanups de bugs detectados en bring-up Windows, ter
 ### Auth en endpoints analytics (BC-incompatible)
 
 - **BUG-21 + BUG-22 cerrados**: endpoints de analytics ahora leen `X-Tenant-Id`/`X-User-Id` vía `Depends`. Confirmado el invariante: api-gateway es ÚNICO source of truth de identidad.
-- **BUG-26 cerrado (kappa endpoint auth)**: `POST /api/v1/analytics/kappa` ahora requiere `X-Tenant-Id` + `X-User-Id` y emite audit log structlog `kappa_computed` (mismo patrón que BUG-21/22 + HU-088). 11/11 tests pass. **BC-incompatible** — 8 curls en docs pilot/F6/F7-STATE/runbook/kappa-workflow actualizados con headers. `docs/pilot/protocolo-piloto-unsl.docx` (binary) pendiente de regenerar con `make generate-protocol`.
+- **BUG-26 cerrado (kappa endpoint auth)**: `POST /api/v1/analytics/kappa` ahora requiere `X-Tenant-Id` + `X-User-Id` y emite audit log structlog `kappa_computed` (mismo patrón que BUG-21/22 + HU-088). 11/11 tests pass. **BC-incompatible** — 8 curls en docs pilot/F6/F7-STATE/runbook/kappa-workflow actualizados con headers. `docs/pilot/protocolo-piloto-utn.docx` (binary) pendiente de regenerar con `make generate-protocol`.
 - **HU-088 audit log**: ratificada como structlog (no tabla persistente) — el endpoint AB emite event `ab_test_profiles_completed` con `tenant_id`, `user_id`, `kappa_per_profile`, `classifier_config_hash`. Si compliance team del piloto requiere tabla queryable, revisitable (S effort, 1-2h).
 - **AB endpoint requiere auth desde 2026-04-21**: `POST /api/v1/analytics/ab-test-profiles` ahora requiere `X-Tenant-Id` + `X-User-Id` (per HU-088 audit log). Cambio BC-incompatible — curls en `docs/F7-STATE.md:167-173` y posibles notebooks usando el endpoint necesitan headers.
 
@@ -1373,7 +1373,7 @@ El sistema asumía `Episode.problema_id` UUID **sin validación, sin tabla desti
 
 - **Bug descubierto regenerando el protocolo**: `make generate-protocol` falla en checkout limpio porque `docx` no está declarado como dep en ningún `package.json` del repo. Fix: `pnpm add -wD docx@^9.6.1` al root. Plus dos paths Linux hardcoded en los generadores: `docs/pilot/generate_protocol.js:624` y `docs/pilot/generate_teacher_guide.js:534` (`/home/claude/...` → relativo).
 - **Makefile extendido**: agregados `make generate-teacher-guide` (regenera la guía docente) y `make generate-docs` (atajo: corre los dos). `CLAUDE.md` actualizado en sección de comandos operacionales.
-- **DOCX regenerados**: `docs/pilot/protocolo-piloto-unsl.docx` (~23 KB) y `docs/pilot/guia-capacitacion-docente.docx` (~21 KB).
+- **DOCX regenerados**: `docs/pilot/protocolo-piloto-utn.docx` (~23 KB) y `docs/pilot/guia-capacitacion-docente.docx` (~21 KB).
 
 ### Sidebar colapsable en web-admin (pilot)
 
@@ -1501,7 +1501,7 @@ Al usar la UI en browser (user reportó 500 al clickear "Clasificaciones N4" en 
   - **Gated**: lista de comisiones + botón "Nueva comisión" se habilitan solo cuando `materia && periodo` están ambos seteados.
   - **Banner amber**: si `periodos.length === 0`, mensaje "Creá uno desde la página de Periodos" (sin CTA inline).
 - **Validación**: typecheck 0 / lint 0 / 0 biome-ignore nuevos.
-- **🔴 Blocker UX flagueado**: **NO existe `PeriodosPage` en el router**. El mensaje amber "Creá uno desde la página de Periodos" es aspiracional. Si un tenant arranca sin periodos seedeados, el usuario queda bloqueado — no puede crear comisiones porque no puede crear periodos. **Follow-up obligatorio**: crear `PeriodosPage.tsx` + entry en Sidebar + ruta en Router. Prioridad alta si piloto UNSL levanta con DB fresh sin seed. ✅ **Cerrado en el mismo día** — ver siguientes 2 secciones.
+- **🔴 Blocker UX flagueado**: **NO existe `PeriodosPage` en el router**. El mensaje amber "Creá uno desde la página de Periodos" es aspiracional. Si un tenant arranca sin periodos seedeados, el usuario queda bloqueado — no puede crear comisiones porque no puede crear periodos. **Follow-up obligatorio**: crear `PeriodosPage.tsx` + entry en Sidebar + ruta en Router. Prioridad alta si piloto UTN levanta con DB fresh sin seed. ✅ **Cerrado en el mismo día** — ver siguientes 2 secciones.
 
 ### PeriodosPage creada + wireada (resolución parcial del blocker)
 
@@ -1547,7 +1547,7 @@ Al usar la UI en browser (user reportó 500 al clickear "Clasificaciones N4" en 
 - `PeriodoService.create()` y `update()` ahora rechazan con **409 Conflict** si las fechas pisan a otro periodo soft-non-deleted del mismo tenant (RLS). Adyacencia permitida (`fecha_fin == fecha_inicio` es válido — cierre de uno coincide con inicio del otro).
 - **Query de overlap**: `WHERE fecha_inicio < :fin AND fecha_fin > :inicio [AND id != :exclude_id]`. RLS aplica el filtro de tenant automáticamente.
 - **Mensaje de error claro**: `"Las fechas solapan con periodo(s) existente(s): [codigo1, codigo2, ...]"`.
-- **NO hay constraint DB** — es validación en service. Para el piloto UNSL (baja concurrencia de admins) es aceptable. Follow-up si hace falta endurecer: `SELECT ... FOR UPDATE` o `EXCLUDE USING gist` con `btree_gist`.
+- **NO hay constraint DB** — es validación en service. Para el piloto UTN (baja concurrencia de admins) es aceptable. Follow-up si hace falta endurecer: `SELECT ... FOR UPDATE` o `EXCLUDE USING gist` con `btree_gist`.
 - **No hay RN explícita** en `reglas.md` sobre overlap — implementado como regla emergente del invariante CTR de la tesis. **No se tocó `reglas.md`** (decisión del user).
 - **4 tests nuevos** en `test_periodos_crud.py`: rechazo de overlap en create, adyacencia OK en create, rechazo de overlap en update, extensión sin overlap OK. Suite academic-service **112 → 116 passed**.
 

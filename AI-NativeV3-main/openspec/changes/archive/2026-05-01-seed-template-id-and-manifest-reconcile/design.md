@@ -1,12 +1,12 @@
 ## Context
 
-El piloto UNSL para defensa doctoral usa `scripts/seed-3-comisiones.py` como fuente unica de data demo (3 comisiones / 18 estudiantes / 94 episodios). Tres bugs chicos pero visibles desfasan la data demo de las invariantes que la tesis defiende:
+El piloto UTN para defensa doctoral usa `scripts/seed-3-comisiones.py` como fuente unica de data demo (3 comisiones / 18 estudiantes / 94 episodios). Tres bugs chicos pero visibles desfasan la data demo de las invariantes que la tesis defiende:
 
 1. `Episode.problema_id` apunta a una constante hardcodeada (`99999999-...`) en lugar de las 6 instancias reales de `TareaPractica` que el mismo seed crea con `template_id` poblado. Esto rompe el JOIN `episodes -> tareas_practicas -> tareas_practicas_templates` y deja a `cii-evolution-longitudinal` y `cii-quartiles` devolviendo `insufficient_data: true` aunque haya data suficiente.
 2. El seed registra eventos CTR con `prompt_system_version="v1.0.0"`, pero el runtime usa `v1.0.1` (`Settings.default_prompt_version` + `manifest.yaml`). Episodios viejos y nuevos no concuerdan (viola G12).
 3. La columna `nombre` no existe en la tabla `comisiones` — el modelo solo tiene `codigo`. El seed pasa `nombre` como key del dict pero nunca persiste, asi que los frontends solo muestran "A", "B", "C".
 
-**Stakeholders**: doctorando (defensa), comite doctoral (verifica criterios objetivos), DI UNSL (recibe la migracion). Constraint duro: NO romper hashes CTR ni reproducibilidad bit-a-bit (ADR-010).
+**Stakeholders**: doctorando (defensa), comite doctoral (verifica criterios objetivos), DI UTN (recibe la migracion). Constraint duro: NO romper hashes CTR ni reproducibilidad bit-a-bit (ADR-010).
 
 ## Goals / Non-Goals
 
@@ -17,7 +17,7 @@ El piloto UNSL para defensa doctoral usa `scripts/seed-3-comisiones.py` como fue
 - `make migrate && make test && make check-rls` siguen pasando.
 
 **Non-Goals:**
-- NO tocar `seed-demo-data.py` (el seed chico, fuera del piloto UNSL).
+- NO tocar `seed-demo-data.py` (el seed chico, fuera del piloto UTN).
 - NO denormalizar `materia_nombre` ni otros campos en el response de comisiones — solo `nombre`.
 - NO modificar el cuerpo de `prompts/tutor/v1.0.1/system.md` ni su manifest firmado.
 - NO incorporar `nombre` al UNIQUE constraint (sigue siendo `(tenant_id, materia_id, periodo_id, codigo)`).

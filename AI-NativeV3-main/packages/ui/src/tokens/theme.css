@@ -51,7 +51,7 @@
   --color-sidebar-text: #1a1a1a;        /* Casi negro - items normales */
   --color-sidebar-text-muted: #6b7280;  /* Group labels, items inactivos */
 
-  /* === Acento de marca committed (stack-blue del favicon UNSL ~ #185FA5) ===
+  /* === Acento de marca committed (stack-blue del favicon UTN ~ #185FA5) ===
      CTAs primarios. Reemplaza el blue-600 default. Honra el favicon Stack Blue. */
   --color-accent-brand: oklch(0.43 0.13 245);
   --color-accent-brand-deep: oklch(0.36 0.13 245);

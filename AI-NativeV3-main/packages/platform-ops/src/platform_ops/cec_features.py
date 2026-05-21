@@ -31,7 +31,7 @@ from typing import Any
 
 CEC_VERSION = "1.0.0"
 
-# Rangos pedagogicos sugeridos (calibrar con docentes UNSL antes de produccion).
+# Rangos pedagogicos sugeridos (calibrar con docentes UTN antes de produccion).
 # Operacionalizacion inicial — no validados empiricamente.
 FUNCTION_GRANULARITY_MIN_LINES = 5
 FUNCTION_GRANULARITY_MAX_LINES = 30

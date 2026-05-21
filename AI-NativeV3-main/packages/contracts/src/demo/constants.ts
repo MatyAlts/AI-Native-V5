@@ -1,5 +1,5 @@
 /**
- * Constantes del piloto demo (UNSL).
+ * Constantes del piloto demo (UTN).
  *
  * Estos UUIDs se usan tanto desde frontends en dev mode (cuando
  * Keycloak no tiene el realm onboardeado) como desde scripts/seeds.
@@ -11,7 +11,7 @@
  */
 
 /**
- * Comisión demo del piloto UNSL. Coincide con el UUID que crean
+ * Comisión demo del piloto UTN. Coincide con el UUID que crean
  * `scripts/seed-demo-data.py` y `scripts/seed-3-comisiones.py`
  * (comision A-Mañana). El selector real lo sobreescribe apenas el
  * backend devuelve `usuarios_comision` con datos.
@@ -19,7 +19,7 @@
 export const DEMO_COMISION_ID = "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa"
 
 /**
- * Tenant demo (UNSL) — coincide en string con la comisión por
+ * Tenant demo (UTN) — coincide en string con la comisión por
  * convención de los seeds, pero conceptualmente es distinto.
  * Mantener separado para que un futuro split de UUIDs no rompa nada.
  */

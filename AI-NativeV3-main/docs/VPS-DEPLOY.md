@@ -1,6 +1,6 @@
 # VPS Deploy — guía paso a paso
 
-Cómo levantar la stack AI-Native N4 en un VPS UNSL para piloto-2 ampliado.
+Cómo levantar la stack AI-Native N4 en un VPS UTN para piloto-2 ampliado.
 
 Esta guía asume que **todavía no hay VPS provisionado** y arrancás validando todo el flujo de manera local con `docker-compose.prod.yml`. Cuando tengas VPS, los pasos son idénticos — solo cambian los DNS/hostname/TLS.
 
@@ -37,10 +37,10 @@ make test-rls
 # 6. UI accesible en:
 #   - http://localhost:8000 (api-gateway — backend)
 #   - http://localhost:3000 (Grafana — observabilidad, admin/CAMBIAR)
-#   - http://localhost:8180 (Keycloak admin — para configurar realm UNSL)
+#   - http://localhost:8180 (Keycloak admin — para configurar realm UTN)
 ```
 
-Si todo arranca limpio, podés replicarlo en VPS UNSL — solo necesitás cambiar `KEYCLOAK_HOSTNAME`, `CORS_ORIGINS`, `JWT_ISSUER`, `JWT_JWKS_URI`, y poner un reverse proxy TLS al frente.
+Si todo arranca limpio, podés replicarlo en VPS UTN — solo necesitás cambiar `KEYCLOAK_HOSTNAME`, `CORS_ORIGINS`, `JWT_ISSUER`, `JWT_JWKS_URI`, y poner un reverse proxy TLS al frente.
 
 ---
 
@@ -81,7 +81,7 @@ echo "vm.overcommit_memory=1" | sudo tee -a /etc/sysctl.conf
 ### Paso 1 — Clonar el repo en el VPS
 
 ```bash
-ssh ops@vps-unsl
+ssh ops@vps-utn
 sudo mkdir -p /opt/platform
 sudo chown ops:ops /opt/platform
 cd /opt/platform
@@ -166,11 +166,11 @@ Esto carga las 205 policies Casbin (los 4 roles × N entidades).
 
 ### Paso 7 — Configurar Keycloak realm (única acción manual)
 
-1. Abrir consola admin: `http://localhost:8180` (o `https://keycloak.tu-dominio.unsl.edu.ar`)
+1. Abrir consola admin: `http://localhost:8180` (o `https://keycloak.tu-dominio.utn.edu.ar`)
 2. Login con `KEYCLOAK_ADMIN_USER` / `KEYCLOAK_ADMIN_PASSWORD`
 3. Importar realm desde `infrastructure/keycloak/realm-templates/demo_uni-realm.json` (ya montado en `/opt/keycloak/data/import` adentro del container)
 4. Crear usuarios iniciales (al menos 1 superadmin, 1 docente, 1 alumno para validar el flujo)
-5. **(Para VPS real con LDAP UNSL)**: configurar User Federation contra el LDAP institucional. Coordinación con DI UNSL — ver `docs/research/plan-b2-jwt-comisiones-activas.md`.
+5. **(Para VPS real con LDAP UTN)**: configurar User Federation contra el LDAP institucional. Coordinación con DI UTN — ver `docs/research/plan-b2-jwt-comisiones-activas.md`.
 
 ### Paso 8 — Validación end-to-end
 
@@ -260,10 +260,10 @@ El compose prod expone el api-gateway en `0.0.0.0:8000` y Grafana en `127.0.0.1:
 ```nginx
 server {
     listen 443 ssl http2;
-    server_name platform.tu-dominio.unsl.edu.ar;
+    server_name platform.tu-dominio.utn.edu.ar;
 
-    ssl_certificate /etc/letsencrypt/live/platform.tu-dominio.unsl.edu.ar/fullchain.pem;
-    ssl_certificate_key /etc/letsencrypt/live/platform.tu-dominio.unsl.edu.ar/privkey.pem;
+    ssl_certificate /etc/letsencrypt/live/platform.tu-dominio.utn.edu.ar/fullchain.pem;
+    ssl_certificate_key /etc/letsencrypt/live/platform.tu-dominio.utn.edu.ar/privkey.pem;
 
     # Frontends servidos como estáticos (build de pnpm) o detrás de Vite preview
     location /admin/  { proxy_pass http://localhost:5173/; }
@@ -328,11 +328,11 @@ docker exec platform-prod-redis redis-cli -a $REDIS_PASSWORD XLEN ctr.p0
 
 ## 6. Lo que falta cuando haya VPS real
 
-1. **DNS + TLS**: certbot/Let's Encrypt para `platform.tu-dominio.unsl.edu.ar`, `keycloak.*`, `grafana.*`.
+1. **DNS + TLS**: certbot/Let's Encrypt para `platform.tu-dominio.utn.edu.ar`, `keycloak.*`, `grafana.*`.
 2. **Reverse proxy** (nginx/Caddy) con SSE-friendly config — ver §4.
 3. **Backup automático**: ver `docs/pilot/runbook.md` sección "Backup" + el systemd timer en `infrastructure/systemd/`.
 4. **Alertmanager → Email del equipo**: configurado en `infrastructure/observability/alertmanager.yml` con `ALERTS_*` env vars.
-5. **Federation LDAP UNSL**: configurar User Federation en Keycloak contra el directorio institucional (coordinación con DI UNSL).
+5. **Federation LDAP UTN**: configurar User Federation en Keycloak contra el directorio institucional (coordinación con DI UTN).
 6. **Firewall del VPS**: cerrar todo excepto :443 (TLS), :22 (SSH desde IPs whitelisteadas). NO exponer :5432, :6379, :9000, :3000 externamente.
 
 ---
@@ -351,16 +351,16 @@ docker exec platform-prod-redis redis-cli -a $REDIS_PASSWORD XLEN ctr.p0
 
 ---
 
-## 8. Cuando tengas el VPS UNSL real
+## 8. Cuando tengas el VPS UTN real
 
 Pasos concretos:
 
 1. Reservar VPS (4 vCPU / 8 GB RAM / 80 GB disco mínimo para piloto-2)
 2. SSH access para `ops` user con clave pública
 3. Instalar Docker + Docker Compose plugin
-4. Reservar dominios (`platform.tu-dominio.unsl.edu.ar`, `keycloak.*`, `grafana.*`)
-5. Solicitar certificados TLS (Let's Encrypt o CA institucional UNSL)
-6. Coordinar con DI UNSL: LDAP federation + claim `comisiones_activas` (ver A3 en `docs/research/plan-accion.md`)
+4. Reservar dominios (`platform.tu-dominio.utn.edu.ar`, `keycloak.*`, `grafana.*`)
+5. Solicitar certificados TLS (Let's Encrypt o CA institucional UTN)
+6. Coordinar con DI UTN: LDAP federation + claim `comisiones_activas` (ver A3 en `docs/research/plan-accion.md`)
 7. Seguir esta guía desde §2 reemplazando `localhost` por los hostnames reales
 
 ---

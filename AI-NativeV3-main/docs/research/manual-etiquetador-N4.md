@@ -3,7 +3,7 @@
 **Versión**: 1.0.0 — borrador para pre-calibración interna
 **Fecha**: 2026-05-16
 **Autor**: derivado del análisis pedagógico `informeSoc.md` (R1) y del marco operacional de ADR-046.
-**Destinatarios**: dos docentes UNSL que ejecutarán los Protocolos A y B; director y co-director de tesis para pre-calibración.
+**Destinatarios**: dos docentes UTN que ejecutarán los Protocolos A y B; director y co-director de tesis para pre-calibración.
 
 ---
 
@@ -245,7 +245,7 @@ Idéntico al Protocolo A en estructura: pares de evaluadores, κ ≥ 0,70 en al 
 
 ## 3. Pre-calibración interna (R3 del informeSoc.md)
 
-**Antes de invitar a los dos docentes UNSL al estudio intercoder formal**, dirección y co-dirección de tesis deben pilotar el manual sobre 20 eventos (de los 200 del Protocolo A) y 5 episodios (de los 50 del Protocolo B). Objetivo: detectar ambigüedades operacionales antes de invertir 25-30 h docentes.
+**Antes de invitar a los dos docentes UTN al estudio intercoder formal**, dirección y co-dirección de tesis deben pilotar el manual sobre 20 eventos (de los 200 del Protocolo A) y 5 episodios (de los 50 del Protocolo B). Objetivo: detectar ambigüedades operacionales antes de invertir 25-30 h docentes.
 
 ### 3.1 Protocolo de pre-calibración
 
@@ -258,7 +258,7 @@ Idéntico al Protocolo A en estructura: pares de evaluadores, κ ≥ 0,70 en al 
    - Si es por ambigüedad: añadir un caso límite a la sección §1.3 o §2.3 que la resuelva.
 4. **Día 5**: re-etiquetar los 20 eventos y 5 episodios con el manual actualizado. Computar κ interno.
 5. **Decisión de avance**:
-   - κ_interno ≥ 0,70 → invitar a los dos docentes UNSL.
+   - κ_interno ≥ 0,70 → invitar a los dos docentes UTN.
    - κ_interno entre 0,40 y 0,70 → segunda iteración del manual + segunda ronda interna sobre 20 eventos nuevos.
    - κ_interno < 0,40 → revisar la operacionalización de fondo. **No invitar a los dos docentes hasta resolver**.
 

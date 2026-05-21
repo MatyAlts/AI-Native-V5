@@ -11,7 +11,7 @@ Estrategia de anonimización:
   - Contenido textual (prompts, respuestas) se incluye pero opcional.
     Por default se excluye para minimizar superficie de riesgo.
   - comision_id se preserva (necesaria para agrupar cohorts).
-  - tenant_id se reemplaza por alias corto ("UNSL_2026_P2") para
+  - tenant_id se reemplaza por alias corto ("UTN_2026_P2") para
     facilitar publicación sin exponer UUIDs.
 
 El resultado es un dict serializable a JSON o Parquet. En el pipeline
@@ -19,7 +19,7 @@ real (F7), un worker corre periódicamente y sube el dataset a un
 bucket de solo-lectura para investigadores acreditados.
 
 Uso:
-    exporter = AcademicExporter(data_source, salt="pilot_unsl_2026")
+    exporter = AcademicExporter(data_source, salt="pilot_utn_2026")
     dataset = await exporter.export_cohort(
         comision_id=UUID("..."),
         include_prompts=False,
@@ -82,7 +82,7 @@ class EpisodeRecord:
 class CohortDataset:
     """Dataset exportado de una cohorte."""
 
-    cohort_alias: str  # ej "UNSL_2026_P2_CA"
+    cohort_alias: str  # ej "UTN_2026_P2_CA"
     exported_at: str
     period: dict[str, str]  # {"from": iso, "to": iso}
     schema_version: str
@@ -156,7 +156,7 @@ class AcademicExporter:
         self,
         data_source: _CohortDataSource,
         salt: str,
-        cohort_alias: str = "UNSL_PILOT",
+        cohort_alias: str = "UTN_PILOT",
     ) -> None:
         if not salt or len(salt) < 16:
             raise ValueError("salt debe tener al menos 16 chars para anonimización robusta")

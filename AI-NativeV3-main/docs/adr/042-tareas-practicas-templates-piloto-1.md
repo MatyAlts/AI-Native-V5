@@ -134,7 +134,7 @@ def test_longitudinal_devuelve_slope_para_estudiante_narrativo():
         "X-Tenant-Id": TENANT_DEMO,
         "X-User-Id": DOCENTE_USER_ID,
         "X-User-Roles": "docente",
-        "X-User-Email": "smoke@unsl.edu.ar",
+        "X-User-Email": "smoke@utn.edu.ar",
     }
     r = httpx.get(
         f"http://127.0.0.1:8005/api/v1/analytics/student/{NARRATIVE_STUDENT_PSEUDONYM}/cii-evolution-longitudinal",

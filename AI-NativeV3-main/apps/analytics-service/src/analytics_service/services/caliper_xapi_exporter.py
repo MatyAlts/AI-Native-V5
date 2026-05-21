@@ -53,7 +53,7 @@ from uuid import UUID
 # IRIs de namespace AI-Native para terminos del Modelo N4 que no tienen
 # equivalente en Caliper/xAPI estandar. Permite que auditores externos
 # distingan terminos custom de terminos del vocabulario IMS/ADL.
-AI_NATIVE_VOCAB_BASE = "https://ai-native.unsl.edu.ar/vocab/v1/"
+AI_NATIVE_VOCAB_BASE = "https://ai-native.utn.edu.ar/vocab/v1/"
 
 # ============================================================================
 # CALIPER ANALYTICS 1.2 EXPORTER
@@ -261,7 +261,7 @@ def _build_xapi_actor(event: dict[str, Any], context: dict[str, Any]) -> dict[st
             "objectType": "Agent",
             "name": "tutor-service",
             "account": {
-                "homePage": "https://ai-native.unsl.edu.ar/",
+                "homePage": "https://ai-native.utn.edu.ar/",
                 "name": "tutor-service",
             },
         }
@@ -269,7 +269,7 @@ def _build_xapi_actor(event: dict[str, Any], context: dict[str, Any]) -> dict[st
     return {
         "objectType": "Agent",
         "account": {
-            "homePage": "https://ai-native.unsl.edu.ar/",
+            "homePage": "https://ai-native.utn.edu.ar/",
             "name": str(student_id),
         },
     }

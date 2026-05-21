@@ -80,7 +80,7 @@ async def get_cuestionario_ia_catalogo(
         "items": CUESTIONARIO_IA_ITEMS,
         "draft_notice": (
             "Este instrumento esta en estado DRAFT pendiente de validacion "
-            "coautoral (Ana Garis) + aprobacion comite etico UNSL. Los items "
+            "coautoral (Ana Garis) + aprobacion comite etico UTN. Los items "
             "actuales son placeholders para validar el flujo backend + frontend "
             "end-to-end."
         ),
@@ -178,7 +178,7 @@ async def get_pretest_catalogo(
         "draft_notice": (
             "Pretest basado en Lishinski et al. (2016) CS Self-Efficacy Scale, "
             "adaptacion al castellano rioplatense v0.1.0-draft. Items pendientes "
-            "de revision coautoral (Garis) + comite etico UNSL. La adaptacion "
+            "de revision coautoral (Garis) + comite etico UTN. La adaptacion "
             "completa son 28 items; este draft expone 12 para validar el flujo "
             "end-to-end."
         ),
@@ -275,7 +275,7 @@ async def get_transferencia_catalogo(
         "problems": sanitized,
         "draft_notice": (
             "Test de transferencia v0.1.0-draft. Contenido pendiente de validacion "
-            "por catedra UNSL. Esqueleto con 3 problemas placeholder para validar "
+            "por catedra UTN. Esqueleto con 3 problemas placeholder para validar "
             "flujo end-to-end; el set final son 5 problemas (ver "
             "docs/research/diseno-test-transfer.md)."
         ),

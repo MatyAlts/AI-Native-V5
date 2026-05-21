@@ -62,7 +62,7 @@ export const helpContent: HelpContentMap = {
           dominio email opcional.
         </li>
         <li>
-          <strong>Codigo:</strong> Identificador corto unico (ej. unsl). Solo letras, numeros,
+          <strong>Codigo:</strong> Identificador corto unico (ej. utn). Solo letras, numeros,
           guiones. Inmutable una vez creado.
         </li>
         <li>

@@ -2,7 +2,7 @@
 
 ## Purpose
 
-Capability that owns the deterministic data demo for the UNSL pilot — `scripts/seed-3-comisiones.py` materializes 3 comisiones (A-Manana / B-Tarde / C-Noche), 18 students with differentiated cohort patterns, 94 episodes with real `template_id` linkage, and 94 classifications. Used as the canonical fixture for doctoral defense and frontend smoke tests.
+Capability that owns the deterministic data demo for the UTN pilot — `scripts/seed-3-comisiones.py` materializes 3 comisiones (A-Manana / B-Tarde / C-Noche), 18 students with differentiated cohort patterns, 94 episodes with real `template_id` linkage, and 94 classifications. Used as the canonical fixture for doctoral defense and frontend smoke tests.
 
 ## Requirements
 

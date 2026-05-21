@@ -246,5 +246,5 @@ class TestTransferenciaCatalogo:
             )
 
     def test_evaluacion_default_devuelve_false(self) -> None:
-        """[PLACEHOLDER CATEDRA UNSL] hasta validacion, no inflar metricas."""
+        """[PLACEHOLDER CATEDRA UTN] hasta validacion, no inflar metricas."""
         assert evaluate_test_transferencia_answer("transfer-01", {"code": "x"}) is False

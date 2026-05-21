@@ -35,7 +35,7 @@ def test_export_encola_job_y_devuelve_job_id(client: TestClient) -> None:
             "period_days": 30,
             "include_prompts": False,
             "salt": "research_salt_16_chars_or_more",
-            "cohort_alias": "UNSL_2026_P2",
+            "cohort_alias": "UTN_2026_P2",
         },
         headers=AUTH_HEADERS,
     )

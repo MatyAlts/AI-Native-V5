@@ -1,6 +1,6 @@
 ---
 name: Plataforma AI-Native N4
-description: Sistema visual del piloto UNSL — riguroso, transparente, pedagógico
+description: Sistema visual del piloto UTN — riguroso, transparente, pedagógico
 colors:
   ink: "#0f172a"
   surface: "#ffffff"

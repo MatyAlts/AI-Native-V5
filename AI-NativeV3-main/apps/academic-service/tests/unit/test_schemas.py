@@ -30,8 +30,8 @@ class TestUniversidadSchema:
     def test_crea_minimo(self) -> None:
         u = UniversidadCreate(
             nombre="Universidad Nacional de San Luis",
-            codigo="unsl",
-            keycloak_realm="unsl",
+            codigo="utn",
+            keycloak_realm="utn",
         )
         assert u.nombre == "Universidad Nacional de San Luis"
         assert u.config == {}

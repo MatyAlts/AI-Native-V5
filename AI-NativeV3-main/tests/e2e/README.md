@@ -1,6 +1,6 @@
 # Suite Playwright E2E
 
-Suite top-level que ejecuta 5 journeys browser-driven contra los 3 frontends Vite reales y los 12 servicios Python reales del piloto UNSL. Es el unico lugar del repo con cobertura E2E hoy.
+Suite top-level que ejecuta 5 journeys browser-driven contra los 3 frontends Vite reales y los 12 servicios Python reales del piloto UTN. Es el unico lugar del repo con cobertura E2E hoy.
 
 ## Pre-requisitos
 
@@ -125,7 +125,7 @@ Fix: actualizar `tests/e2e/fixtures/seeded-ids.ts` con los codes/UUIDs nuevos.
 
 ## Limitaciones declaradas
 
-- **Solo Chromium**. Firefox/WebKit no son target del piloto. Re-evaluar post-piloto si DI UNSL pide cobertura cruzada.
+- **Solo Chromium**. Firefox/WebKit no son target del piloto. Re-evaluar post-piloto si DI UTN pide cobertura cruzada.
 - **No cubre Bearer JWT flow**. Los frontends en dev mode inyectan headers `X-User-Id`/`X-Tenant-Id` via `vite.config.ts`. Cuando F9 cierre (gap B.2 de CLAUDE.md), agregar journey de login real.
 - **Visual regression NO implementado**. Assertions son funcionales (texto presente, modal abierto, fila renderizada) — un cambio de Tailwind no debe romper la suite.
 - **Journey 4 crea data nueva** (1 episodio cerrado). Acceptable side-effect declarado en `proposal.md`.

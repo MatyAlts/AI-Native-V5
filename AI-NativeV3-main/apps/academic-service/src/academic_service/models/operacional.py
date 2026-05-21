@@ -211,7 +211,7 @@ class Unidad(Base, TenantMixin, TimestampMixin):
 class TareaPractica(Base, TenantMixin, TimestampMixin):
     """Trabajo Práctico (TP) asignado a una comisión.
 
-    Entidad central del piloto UNSL. Cada estudiante abre episodios CTR
+    Entidad central del piloto UTN. Cada estudiante abre episodios CTR
     referenciando un TP; el classifier agrupa resultados por TP. Las
     versiones publicadas son inmutables — una nueva versión crea una fila
     nueva con `version++` y `parent_tarea_id` apuntando a la predecesora.

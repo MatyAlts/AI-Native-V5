@@ -6,7 +6,7 @@ Expone la capa de análisis empírico del piloto: Cohen's κ inter-rater, A/B te
 
 ## 2. Rol en la arquitectura
 
-Pertenece al **plano académico-operacional**. Materializa el componente "Servicio de analítica" descrito en el Capítulo 6 de la tesis (arquitectura C4 del sistema AI-Native), cuyas responsabilidades nominales son: producir los indicadores empíricos que sostienen los resultados publicables de la tesis (κ ≥ 0.70 como meta — ADR-046, progresión longitudinal de cohortes, calibración del árbol N4) y ofrecer los datasets anonymizados que el investigador entrega al comité de ética UNSL.
+Pertenece al **plano académico-operacional**. Materializa el componente "Servicio de analítica" descrito en el Capítulo 6 de la tesis (arquitectura C4 del sistema AI-Native), cuyas responsabilidades nominales son: producir los indicadores empíricos que sostienen los resultados publicables de la tesis (κ ≥ 0.70 como meta — ADR-046, progresión longitudinal de cohortes, calibración del árbol N4) y ofrecer los datasets anonymizados que el investigador entrega al comité de ética UTN.
 
 Es el único servicio del repo que lee **cross-base** (`ctr_store` + `classifier_db`) — y lo hace con sesiones separadas, cada una con su propio `SET LOCAL app.current_tenant` (RN-108).
 
@@ -120,7 +120,7 @@ El analytics-service produce los **indicadores empíricos que sostienen los resu
 
 2. **Progresión longitudinal como evidencia pedagógica** (Capítulo 9): el indicador `net_progression_ratio` por cohorte — fracción de estudiantes que mejoran menos los que empeoran sobre el total con datos suficientes — es una métrica agregada directamente referenciable en discusión de resultados. El cálculo por terciles (primer tercio vs último tercio de episodios del estudiante) permite detectar mejora temporal sin confundirla con ruido de episodios aislados.
 
-3. **Export anonimizado como condición del convenio UNSL**: el protocolo del comité de ética UNSL exige que el dataset publicable no permita re-identificación de estudiantes. `salt ≥ 16 chars`, `student_pseudonym` ya opaco en origen, `include_prompts=False` por default son las tres defensas. [`docs/pilot/protocolo-piloto-unsl.docx`](../pilot/protocolo-piloto-unsl.docx) documenta el procedimiento formal.
+3. **Export anonimizado como condición del convenio UTN**: el protocolo del comité de ética UTN exige que el dataset publicable no permita re-identificación de estudiantes. `salt ≥ 16 chars`, `student_pseudonym` ya opaco en origen, `include_prompts=False` por default son las tres defensas. [`docs/pilot/protocolo-piloto-utn.docx`](../pilot/protocolo-piloto-utn.docx) documenta el procedimiento formal.
 
 El A/B testing de profiles (HU-118) es la operacionalización de la **calibración del árbol N4** descrita en la tesis: en vez de elegir umbrales a priori, se parte de un gold standard humano y se optimiza sobre κ contra ese gold. El `classifier_config_hash` de cada profile lo hace reproducible — el investigador puede correr el mismo A/B meses después y obtener la misma respuesta.
 

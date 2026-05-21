@@ -58,7 +58,7 @@ class PromptLoader:
 
         Args:
             name: ej. "tutor"
-            version: ej. "v1.0.0" o "v1.1.0-unsl"
+            version: ej. "v1.0.0" o "v1.1.0-utn"
 
         Returns:
             PromptConfig con contenido + hash recomputado.
@@ -135,7 +135,7 @@ class PromptLoader:
                 tutor: v1.0.0
                 classifier: v1.0.0
               <tenant_uuid>:
-                tutor: v1.1.0-unsl
+                tutor: v1.1.0-utn
         """
         manifest = self.repo_path / "manifest.yaml"
         if not manifest.exists():

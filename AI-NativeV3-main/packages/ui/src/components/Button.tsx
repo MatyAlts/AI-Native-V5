@@ -11,7 +11,7 @@ interface ButtonProps extends ButtonHTMLAttributes<HTMLButtonElement> {
 }
 
 /* Paleta v2 — "Stack Blue institucional".
-   primary: acento brand (#185FA5 OKLCH) — honra el favicon UNSL.
+   primary: acento brand (#185FA5 OKLCH) — honra el favicon UTN.
    secondary: surface-alt (off-white cálido) sobre ink — densidad académica, no SaaS.
    ghost: transparente con hover sutil sobre surface-alt.
    danger: severity profundo (no Tailwind red-600 saturado). */

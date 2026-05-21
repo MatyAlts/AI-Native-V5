@@ -163,7 +163,7 @@ def test_cohort_export_acepta_request_valido(client: TestClient) -> None:
             "period_days": 90,
             "include_prompts": False,
             "salt": "research_salt_16_chars_min_yes",
-            "cohort_alias": "UNSL_2026_P2",
+            "cohort_alias": "UTN_2026_P2",
         },
         headers=_AUTH_HEADERS,
     )

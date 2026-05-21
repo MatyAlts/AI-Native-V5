@@ -35,7 +35,7 @@ def _user(tenant_id: UUID, *, user_id: UUID | None = None, role: str = "docente"
     return User(
         id=user_id or uuid4(),
         tenant_id=tenant_id,
-        email=f"{role}@unsl.edu.ar",
+        email=f"{role}@utn.edu.ar",
         roles=frozenset({role}),
         realm=str(tenant_id),
     )

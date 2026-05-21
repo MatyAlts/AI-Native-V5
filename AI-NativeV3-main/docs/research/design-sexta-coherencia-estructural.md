@@ -160,7 +160,7 @@ Estimado del informeSoc.md original era 20-30 h. Refinado: 24-54 h dependiendo d
 ## 7. Decisiones pendientes (requieren participación humana)
 
 1. **Aprobar el approach** (Opción A vs Opción B) con dirección + co-dirección + Ana Garis.
-2. **Calibrar los rangos pedagógicos** (function_granularity 10-25? naming_consistency_ratio mínimo?) con docentes UNSL que enseñan programación I.
+2. **Calibrar los rangos pedagógicos** (function_granularity 10-25? naming_consistency_ratio mínimo?) con docentes UTN que enseñan programación I.
 3. **Decidir si Protocolo C** (intercoder sobre 50 episodios con CEC visible) se ejecuta antes de la defensa o queda como agenda piloto-2.
 
 ---

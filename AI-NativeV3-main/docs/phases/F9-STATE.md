@@ -2,7 +2,7 @@
 
 F9 es la fase de **preflight operacional** — todo lo que hay que
 tener listo antes de desplegar el piloto en Postgres productivo de
-UNSL. No agrega funcionalidad; agrega las capas de operación y
+UTN. No agrega funcionalidad; agrega las capas de operación y
 análisis que hacen que el piloto sea seguro y auditable.
 
 ## Entregables F9
@@ -148,7 +148,7 @@ F8: 320 → F9: 320 + 4 skipped RLS
 
 ## Cómo usar F9
 
-### Desplegar DB en UNSL (primera vez)
+### Desplegar DB en UTN (primera vez)
 
 ```bash
 # 1. Crear las 4 bases lógicas
@@ -231,6 +231,6 @@ Con F0-F9 la plataforma cubre **todo** lo necesario para el piloto:
 | F8 | DB adapters reales + frontend docente + Grafana + protocolo DOCX | ✅ |
 | F9 | Migraciones con RLS + runbook + notebook análisis | ✅ |
 
-**La plataforma está lista para el piloto UNSL**. Lo que queda es
+**La plataforma está lista para el piloto UTN**. Lo que queda es
 ejecutar el piloto (16 semanas) y escribir el capítulo empírico con
 los resultados.

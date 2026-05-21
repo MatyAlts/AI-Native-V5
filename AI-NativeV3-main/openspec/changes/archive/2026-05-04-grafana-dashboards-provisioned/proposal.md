@@ -1,6 +1,6 @@
 ## Why
 
-Hoy Grafana corre (`infrastructure/docker-compose.dev.yml:173-191`, puerto 3000) con datasources auto-provisionados (Prometheus, Loki, Jaeger), pero los dashboards visibles al login son **dos JSONs huérfanos** en `ops/grafana/dashboards/` que referencian métricas que **no se emiten hoy** (`ctr_episodes_opened_total`, `ctr_events_total`, `ctr_episode_duration_seconds`, `http_server_duration_seconds_bucket`, etc.). El comité doctoral va a ver paneles "No data" — defensible pero no memorable. El piloto UNSL va a tener 4 meses de operación sin un dashboard que el docente o el coordinador puedan abrir para ver "¿está vivo el sistema?".
+Hoy Grafana corre (`infrastructure/docker-compose.dev.yml:173-191`, puerto 3000) con datasources auto-provisionados (Prometheus, Loki, Jaeger), pero los dashboards visibles al login son **dos JSONs huérfanos** en `ops/grafana/dashboards/` que referencian métricas que **no se emiten hoy** (`ctr_episodes_opened_total`, `ctr_events_total`, `ctr_episode_duration_seconds`, `http_server_duration_seconds_bucket`, etc.). El comité doctoral va a ver paneles "No data" — defensible pero no memorable. El piloto UTN va a tener 4 meses de operación sin un dashboard que el docente o el coordinador puedan abrir para ver "¿está vivo el sistema?".
 
 La defensa gana enormemente con **evidencia en vivo** del CTR escribiendo eventos, del tutor respondiendo bajo SLO, del ai-gateway sin gastar de más, y del classifier sosteniendo κ. La inversión incremental es chica si lo aceptamos como **dashboards + instrumentación mínima** del subset que se grafica — no como observabilidad completa.
 
@@ -14,7 +14,7 @@ Antes de diseñar paneles, esta sesión verificó la pipeline real:
 - **`infrastructure/observability/prometheus.yml`**: scrape único contra `otel-collector:8889` (Prometheus exporter del Collector). NO scrapea los 12 servicios directo en `/metrics`.
 - **`infrastructure/observability/otel-collector-config.yaml`**: pipeline de métricas existe (`receivers: [otlp] → exporters: [prometheus]`) pero **nadie le manda métricas** porque ningún servicio tiene `MeterProvider` configurado — solo traces y logs.
 - **`apps/*/src/**`**: cero `prometheus_client.Counter`, cero `meter.create_counter`, cero endpoint `/metrics` real (solo aparece como ruta exempt en `api-gateway/middleware/{rate_limit,jwt_auth}.py` por defensa preventiva).
-- **`ops/grafana/dashboards/{platform-slos,unsl-pilot}.json`**: existen como artefactos heredados — referencian métricas auto-instrumentadas por OTel (`http_server_duration_seconds_bucket`, `http_server_requests_total`) y métricas custom de negocio (`ctr_episodes_opened_total`, `ctr_events_total`, `ctr_episode_duration_seconds`, `ai_gateway_tokens_*`, `classifier_kappa_*`) que **nunca se emitieron**. Los paneles van a renderizar pero todos los queries devuelven empty.
+- **`ops/grafana/dashboards/{platform-slos,utn-pilot}.json`**: existen como artefactos heredados — referencian métricas auto-instrumentadas por OTel (`http_server_duration_seconds_bucket`, `http_server_requests_total`) y métricas custom de negocio (`ctr_episodes_opened_total`, `ctr_events_total`, `ctr_episode_duration_seconds`, `ai_gateway_tokens_*`, `classifier_kappa_*`) que **nunca se emitieron**. Los paneles van a renderizar pero todos los queries devuelven empty.
 - **`ops/grafana/provisioning/dashboards/platform.yaml`**: provider de archivos ya wireado a `/var/lib/grafana/dashboards` con `updateIntervalSeconds: 30, allowUiUpdates: true`. El sidecar JSON-loop ya funciona — el issue es **qué JSON poner ahí**, no cómo cargarlo.
 
 **Conclusión**: la emisión de métricas es **partial / casi cero**. Sin instrumentación en este change, los dashboards quedan exclusivamente con paneles `up` (de service discovery) + tracing-derivado (Jaeger panel embebido). Eso NO cumple la promesa de la defensa. Por lo tanto:
@@ -27,7 +27,7 @@ Antes de diseñar paneles, esta sesión verificó la pipeline real:
 
 Cada uno como JSON en `infrastructure/grafana/provisioning/dashboards/<carpeta>/<slug>.json` (NUEVO path canónico, alineado con la convención de Grafana 11; los `ops/grafana/*` quedan como deprecated y se archivan en el mismo PR de aplicación).
 
-1. **Plataforma — visión general** (`folder: Plataforma`, refresh `30s`, audiencia: comité doctoral + DI UNSL).
+1. **Plataforma — visión general** (`folder: Plataforma`, refresh `30s`, audiencia: comité doctoral + DI UTN).
    - **Servicios up** (stat panel × 12) — `up{job="otel-collector"}` desagregado por `service_name`. Verde si todos los 12 = 1.
    - **CTR events/sec** (timeseries) — `sum(rate(ctr_events_total[1m]))` apilado por `event_type`.
    - **integrity_compromised counter** (stat con threshold rojo > 0) — `sum(ctr_episodes_integrity_compromised_total)`. Target: 0.
@@ -42,7 +42,7 @@ Cada uno como JSON en `infrastructure/grafana/provisioning/dashboards/<carpeta>/
    - **self_hash compute latency** (timeseries) — `histogram_quantile(0.99, sum(rate(ctr_self_hash_compute_seconds_bucket[5m])) by (le))`.
    - **Attestations Ed25519 emitidas / pendientes** (stat) — `ctr_attestations_emitted_total` vs `ctr_attestations_pending_count` (RN-128).
 
-3. **AI Gateway — costos y latencia** (`folder: AI Gateway`, refresh `1m`, audiencia: doctorando + DI UNSL para budget).
+3. **AI Gateway — costos y latencia** (`folder: AI Gateway`, refresh `1m`, audiencia: doctorando + DI UTN para budget).
    - **Tokens used por proveedor** (timeseries stacked) — `sum(rate(ai_gateway_tokens_total[5m])) by (provider, kind)` (`kind ∈ {input, output}`).
    - **Budget remaining $USD por tenant** (stat con threshold) — `ai_gateway_budget_remaining_usd{tenant=~"$tenant"}`.
    - **Request latency p50/p99** (timeseries) — `histogram_quantile(0.5|0.99, sum(rate(ai_gateway_request_duration_seconds_bucket[5m])) by (le, provider))`.
@@ -109,7 +109,7 @@ Ninguna — no hay specs previas en `openspec/specs/` (la dir está vacía). Est
   - `infrastructure/docker-compose.dev.yml`: cambiar volumes del servicio `grafana` para montar el nuevo path canónico (`infrastructure/grafana/provisioning/`) en vez de `ops/grafana/`.
   - `apps/ctr-service/`, `apps/ai-gateway/`, `apps/tutor-service/`, `apps/classifier-service/`: agregar `setup_metrics()` al `lifespan` + emisiones de métricas en hot path.
 - **Código archivado**:
-  - `ops/grafana/dashboards/{platform-slos,unsl-pilot}.json` → `ops/grafana/dashboards/_archive/` con README explicando que son aspiracionales y referenciaban métricas que no se emitían.
+  - `ops/grafana/dashboards/{platform-slos,utn-pilot}.json` → `ops/grafana/dashboards/_archive/` con README explicando que son aspiracionales y referenciaban métricas que no se emitían.
   - `ops/grafana/provisioning/` → archivado por el mismo motivo.
 - **Dependencias**:
   - `opentelemetry-sdk[metrics]` y `opentelemetry-exporter-otlp-proto-grpc` ya están instalados (vienen en el extra del SDK que ya usamos para tracing) — verificar versión y unblockear el grupo de métricas en el `pyproject.toml` de `packages/observability` si está pinned para excluirlas.
@@ -152,7 +152,7 @@ Ninguna — no hay specs previas en `openspec/specs/` (la dir está vacía). Est
 - [ ] Todos los paneles cargan en **< 3 segundos** desde el Refresh manual.
 - [ ] Los 4 servicios instrumentados (ctr-service, ai-gateway, tutor-service, classifier-service) emiten métricas verificables con `curl http://localhost:8889/metrics | grep ctr_events_total` (Prometheus exporter del Collector).
 - [ ] `make lint typecheck test check-rls` verde con la instrumentación nueva.
-- [ ] Los dashboards heredados (`ops/grafana/dashboards/{platform-slos,unsl-pilot}.json`) están movidos a `_archive/` con README explicando la decisión.
+- [ ] Los dashboards heredados (`ops/grafana/dashboards/{platform-slos,utn-pilot}.json`) están movidos a `_archive/` con README explicando la decisión.
 - [ ] `infrastructure/grafana/provisioning/dashboards/README.md` documenta: workflow export-from-UI → commit, política de labels (no `student_pseudonym`), naming convention OTel-friendly, comando para empezar limpio (`docker compose down -v`).
 - [ ] Cardinalidad de Prometheus después del flujo demo `< 5000 series`. Verificable con `curl http://localhost:9090/api/v1/label/__name__/values | jq 'length'`.
 

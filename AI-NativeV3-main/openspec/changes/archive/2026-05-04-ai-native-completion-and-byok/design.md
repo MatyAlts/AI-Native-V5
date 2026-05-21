@@ -1,10 +1,10 @@
 ## Context
 
-El piloto UNSL tiene el núcleo AI-Native funcional pre-defensa pero opera con **claves LLM globales por env var** (un solo proveedor por entorno) y le faltan cuatro piezas pedagógicas (sandbox de tests, reflexión metacognitiva, generación asistida de TPs, UI institucional de gobernanza). Esta epic cierra el loop AI-Native sin mover invariantes doctorales: CTR append-only SHA-256 (ADR-010), RLS multi-tenant (ADR-001), reproducibilidad bit-a-bit del classifier (ADR-003), `ai-gateway` como único proxy a LLMs.
+El piloto UTN tiene el núcleo AI-Native funcional pre-defensa pero opera con **claves LLM globales por env var** (un solo proveedor por entorno) y le faltan cuatro piezas pedagógicas (sandbox de tests, reflexión metacognitiva, generación asistida de TPs, UI institucional de gobernanza). Esta epic cierra el loop AI-Native sin mover invariantes doctorales: CTR append-only SHA-256 (ADR-010), RLS multi-tenant (ADR-001), reproducibilidad bit-a-bit del classifier (ADR-003), `ai-gateway` como único proxy a LLMs.
 
 **Stakeholders**:
 - **Doctorando**: defensa (necesita demo institucional creíble — no "el sysadmin rota la key").
-- **Docentes UNSL**: TP-gen + sandbox + reflexión.
+- **Docentes UTN**: TP-gen + sandbox + reflexión.
 - **Admin institucional**: BYOK + governance UI cross-comisión.
 - **Comité doctoral**: trazabilidad de uso de IA en TPs (`created_via_ai`) y exclusión de reflexión de features (preserva `classifier_config_hash`).
 
@@ -77,11 +77,11 @@ La página `/governance-events` del web-admin reusa el endpoint existente `/api/
 
 Tabla `byok_keys` en `academic_main` (no proliferar bases lógicas; RLS ya está armado). Encriptación AES-GCM via helper compartido `packages/platform-ops/src/platform_ops/crypto.py` que usa `cryptography` lib. Master key en env var `BYOK_MASTER_KEY` (32 bytes base64).
 
-**Por qué DB y no K8s SealedSecrets**: en UNSL no hay sysadmin dedicado al piloto. Que el admin academico rote keys desde la web es el req crítico de UX para defensa. SealedSecrets requiere kubectl/CLI — barrera de adopción.
+**Por qué DB y no K8s SealedSecrets**: en UTN no hay sysadmin dedicado al piloto. Que el admin academico rote keys desde la web es el req crítico de UX para defensa. SealedSecrets requiere kubectl/CLI — barrera de adopción.
 
 **Master key rotation**: procedimiento operacional documentado en `docs/pilot/runbook.md` (no ADR). Steps: (1) generar nueva master, (2) leer todas las keys con la vieja master, (3) re-encriptar con la nueva, (4) commit DB transaction, (5) rotar env var, (6) restart ai-gateway. Downtime aceptable (~30s) en ventana coordinada.
 
-**Alternativa descartada**: Vault/KMS. Infra extra para piloto-1. Migración a Vault en piloto-2 si compliance UNSL lo requiere.
+**Alternativa descartada**: Vault/KMS. Infra extra para piloto-1. Migración a Vault en piloto-2 si compliance UTN lo requiere.
 
 ### D6 — BYOK scope: multi-provider simultáneo por scope (ADR-039)
 
@@ -199,8 +199,8 @@ Instrumentación de las 8 métricas nuevas + dashboard Grafana provisionado. No 
 ## Open Questions
 
 1. **Pricing per-model**: ¿Hardcoded en `packages/contracts/.../pricing.py` o tabla DB editable por admin? Recomendación implícita: hardcoded en piloto-1 (PR para actualizar). Si admin quiere editar pricing en runtime, sube a piloto-2 con ADR.
-2. **Rate limiting per-BYOK-key**: hoy el budget es por mes en USD. ¿Hace falta también rate limit (req/min)? Provider lo aplica naturalmente con 429. **Resolución por defecto**: confiar en el rate limit del provider; si UNSL lo pide, agregar en piloto-2.
+2. **Rate limiting per-BYOK-key**: hoy el budget es por mes en USD. ¿Hace falta también rate limit (req/min)? Provider lo aplica naturalmente con 429. **Resolución por defecto**: confiar en el rate limit del provider; si UTN lo pide, agregar en piloto-2.
 3. **Visibilidad del costo por la facultad**: ¿el web-admin muestra costo acumulado a la facultad-admin, o solo al superadmin? Recomendación: solo superadmin en piloto-1 (privacidad inter-facultad). Endpoint usage filtra por scope_type permitido por rol.
-4. **Migración futura a Vault/KMS**: el ADR-038 declara env var como decisión piloto-1. ¿Cuándo se gatilla la migración? Criterio cuantificable: si UNSL/compliance pide auditoría de master key access > 1x/año, o si más de 50 keys activas, migrar a Vault.
+4. **Migración futura a Vault/KMS**: el ADR-038 declara env var como decisión piloto-1. ¿Cuándo se gatilla la migración? Criterio cuantificable: si UTN/compliance pide auditoría de master key access > 1x/año, o si más de 50 keys activas, migrar a Vault.
 5. **Reflexión: ¿el docente las puede ver agregadas o nominales?** Recomendación: agregadas (medias y nubes de palabras por comisión). Nominal solo en export con consentimiento. Endpoint analytics nuevo se redacta junto con la implementación.
 6. **TP-gen: ¿el alumno puede ver `created_via_ai=true`?** Decisión pedagógica: **sí** — transparencia del uso de IA es valor. Frontend muestra badge "Generada con IA" en `EpisodePage`. Confirmar con director de tesis antes de implementar.

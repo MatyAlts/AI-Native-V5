@@ -10,7 +10,7 @@ de verdad es un YAML en el governance-service (misma infra que prompts):
       max_episodes_per_day: 50
 
     tenants:
-      aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa:  # UNSL (pilot tenant)
+      aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa:  # UTN (pilot tenant)
         enable_code_execution: true
         enable_claude_opus: true
         max_episodes_per_day: 200

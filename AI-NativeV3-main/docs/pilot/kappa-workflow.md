@@ -1,6 +1,6 @@
 # Procedimiento intercoder para Cohen's kappa (OBJ-13)
 
-Workflow operativo para que dos docentes etiqueten independientemente un set de episodios y se calcule κ contra el clasificador automático N4. Es la evidencia empírica de **OBJ-13 (intercoder reliability)** del piloto UNSL.
+Workflow operativo para que dos docentes etiqueten independientemente un set de episodios y se calcule κ contra el clasificador automático N4. Es la evidencia empírica de **OBJ-13 (intercoder reliability)** del piloto UTN.
 
 > Referencias canónicas: **RN-095** (interpretación Landis & Koch + objetivo κ ≥ 0.70 — ADR-046), **RN-096** (3 categorías estrictas), **RN-111** (gold standard humano obligatorio para A/B). Endpoint: `POST /api/v1/analytics/kappa` (`apps/analytics-service/src/analytics_service/routes/analytics.py`). Implementación: `packages/platform-ops/src/platform_ops/kappa_analysis.py::compute_cohen_kappa`.
 
@@ -20,7 +20,7 @@ La tesis sostiene que el clasificador N4 mide apropiación cognitiva de manera c
 
 - **Tamaño**: 50 episodios (mínimo del protocolo §4.3; subir a 60–80 si hay desbalance fuerte de clases).
 - **Estrategia**: muestreo aleatorio **estratificado por la clasificación automática** del `classifier-service`, para asegurar representación de las 3 categorías N4 (`delegacion_pasiva`, `apropiacion_superficial`, `apropiacion_reflexiva`). Si el clasificador todavía no corrió, estratificar por `tarea_practica_id`.
-- **Criterio fijado por el investigador responsable** (Alberto Cortez para el piloto UNSL); el script de muestreo y la `seed` aleatoria se commitean en `docs/pilot/kappa-tuning/sample-YYYY-MM-DD.md` para reproducibilidad.
+- **Criterio fijado por el investigador responsable** (Alberto Cortez para el piloto UTN); el script de muestreo y la `seed` aleatoria se commitean en `docs/pilot/kappa-tuning/sample-YYYY-MM-DD.md` para reproducibilidad.
 - **Excluir** episodios con `integrity_compromised=true` (RN-039/RN-040) — no son evidencia válida.
 
 ## 4. Proceso de tagging

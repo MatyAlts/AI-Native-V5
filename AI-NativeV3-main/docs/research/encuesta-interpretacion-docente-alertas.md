@@ -3,7 +3,7 @@
 **Versión**: 1.0.0 — instrumento inicial
 **Fecha**: 2026-05-16
 **Autor**: derivado de informeSoc.md §7.4 (las alertas como diagnóstico de facto)
-**Objetivo**: medir si los docentes UNSL interpretan las tres alertas predictivas (`regresion_vs_cohorte`, `bottom_quartile`, `slope_negativo_significativo`) como guía pedagógica situada o como predicción de resultado académico final.
+**Objetivo**: medir si los docentes UTN interpretan las tres alertas predictivas (`regresion_vs_cohorte`, `bottom_quartile`, `slope_negativo_significativo`) como guía pedagógica situada o como predicción de resultado académico final.
 
 ---
 
@@ -27,7 +27,7 @@ Encuesta semi-estructurada de aplicación retrospectiva al final del primer cuat
 ### 1.2 Aplicación
 
 - **Cuándo**: 2 semanas después de la última clase del cuatrimestre. Antes de tener los promedios finales del semestre para evitar contaminación retrospectiva.
-- **A quién**: todos los docentes UNSL que usaron el panel `web-teacher` al menos 4 veces en el cuatrimestre (filtro de exposición mínima).
+- **A quién**: todos los docentes UTN que usaron el panel `web-teacher` al menos 4 veces en el cuatrimestre (filtro de exposición mínima).
 - **Cómo**: formulario Google Forms o equivalente. Tiempo estimado de respuesta: 20-25 minutos.
 - **Anonimato**: respuestas pseudonimizadas con `docente_pseudonym` (hash determinista del UUID con salt de la encuesta). Solo dirección de tesis tiene la tabla de mapeo.
 
@@ -35,7 +35,7 @@ Encuesta semi-estructurada de aplicación retrospectiva al final del primer cuat
 
 Antes del ítem 1 el docente lee:
 
-> "Esta encuesta es parte de la investigación del piloto AI-Native N4 (tesis doctoral UNSL, A. Cortez). Sus respuestas serán pseudonimizadas y analizadas en agregado. Los resultados aparecerán en la sección 6 del paper Cortez & Garis. Puede dejar la encuesta en cualquier momento. ¿Está de acuerdo en participar?"
+> "Esta encuesta es parte de la investigación del piloto AI-Native N4 (tesis doctoral UTN, A. Cortez). Sus respuestas serán pseudonimizadas y analizadas en agregado. Los resultados aparecerán en la sección 6 del paper Cortez & Garis. Puede dejar la encuesta en cualquier momento. ¿Está de acuerdo en participar?"
 
 Sin la marca afirmativa el formulario no avanza.
 
@@ -160,7 +160,7 @@ Resultados de este instrumento deberían aparecer en una sub-sección de la Secc
 
 1. **Aprobación del instrumento** por dirección + co-dirección + Ana Garis.
 2. **Selección de los 2 codificadores cualitativos**: ¿los mismos del intercoder o personas distintas? Lo deseable es **distintas** para evitar contaminación.
-3. **Plataforma de aplicación**: Google Forms (rápido pero terceros) vs LimeSurvey hospedado en UNSL (más seguro pero más fricción).
+3. **Plataforma de aplicación**: Google Forms (rápido pero terceros) vs LimeSurvey hospedado en UTN (más seguro pero más fricción).
 4. **Inclusión del instrumento en `paper-draft.md` antes o después de aplicar**: lo metodológicamente honesto es **antes** —pre-registrar las hipótesis del análisis evita HARKing.
 
 ---

@@ -73,7 +73,7 @@ export const helpContent: HelpContentMap = {
         </li>
         <li>
           <strong>Alias de cohorte:</strong> Nombre libre que identifica el dataset en el archivo
-          descargado (ej. UNSL_2026_P2).
+          descargado (ej. UTN_2026_P2).
         </li>
         <li>
           <strong>Incluir prompts:</strong> Incluye el texto de los prompts en el dataset. Activar

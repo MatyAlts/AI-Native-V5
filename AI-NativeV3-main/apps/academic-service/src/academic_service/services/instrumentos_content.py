@@ -2,7 +2,7 @@
 
 ================================================================================
 [PENDIENTE VALIDACION COAUTORAL — ANA GARIS]
-[PENDIENTE APROBACION COMITE ETICO UNSL]
+[PENDIENTE APROBACION COMITE ETICO UTN]
 ================================================================================
 
 Este archivo define el catalogo de items, escalas de respuesta y soluciones
@@ -10,7 +10,7 @@ canonicas para los 3 instrumentos del esqueleto tecnico que cierra P2-1, P2-2
 y P2-3 del PlanMejora.md.
 
 TODO el contenido academico esta marcado como version v0.1.0-draft y debe ser
-revisado coautoralmente con Ana Garis + aprobado por el comite etico UNSL
+revisado coautoralmente con Ana Garis + aprobado por el comite etico UTN
 antes de la aplicacion en el piloto real. Mientras tanto, sirve como:
 1. Esqueleto operacional para validar el flujo backend + frontend end-to-end.
 2. Plantilla concreta para que Garis pueda hacer review item-por-item.
@@ -345,13 +345,13 @@ def compute_pretest_autoeficacia_scores(
 
 # El draft `docs/research/diseno-test-transfer.md` propone 5 problemas
 # de 3-5 min cada uno. Aqui se materializan 3 placeholders para validar
-# el flujo end-to-end; los 5 finales los aprueba la catedra UNSL.
+# el flujo end-to-end; los 5 finales los aprueba la catedra UTN.
 TEST_TRANSFERENCIA_PROBLEMS: list[dict[str, Any]] = [
     {
         "test_id": "transfer-01",
-        "title": "[PLACEHOLDER CATEDRA UNSL — TP-1] Segundo mayor de una lista",
+        "title": "[PLACEHOLDER CATEDRA UTN — TP-1] Segundo mayor de una lista",
         "description": (
-            "[PLACEHOLDER CATEDRA UNSL] Dada una lista de enteros con al menos "
+            "[PLACEHOLDER CATEDRA UTN] Dada una lista de enteros con al menos "
             "2 elementos, devolver el segundo mayor. Asumir que puede haber repetidos en el maximo."
         ),
         "expected_type": "code",
@@ -360,9 +360,9 @@ TEST_TRANSFERENCIA_PROBLEMS: list[dict[str, Any]] = [
     },
     {
         "test_id": "transfer-02",
-        "title": "[PLACEHOLDER CATEDRA UNSL — TP-2] Invertir un diccionario",
+        "title": "[PLACEHOLDER CATEDRA UTN — TP-2] Invertir un diccionario",
         "description": (
-            "[PLACEHOLDER CATEDRA UNSL] Dado un dict {k: v} donde los valores "
+            "[PLACEHOLDER CATEDRA UTN] Dado un dict {k: v} donde los valores "
             "son unicos, devolver el dict inverso {v: k}."
         ),
         "expected_type": "code",
@@ -371,9 +371,9 @@ TEST_TRANSFERENCIA_PROBLEMS: list[dict[str, Any]] = [
     },
     {
         "test_id": "transfer-03",
-        "title": "[PLACEHOLDER CATEDRA UNSL — TP-3] Razonamiento sobre complejidad",
+        "title": "[PLACEHOLDER CATEDRA UTN — TP-3] Razonamiento sobre complejidad",
         "description": (
-            "[PLACEHOLDER CATEDRA UNSL] Dadas dos implementaciones de un mismo "
+            "[PLACEHOLDER CATEDRA UTN] Dadas dos implementaciones de un mismo "
             "algoritmo, elegir cual tiene menor complejidad temporal y justificar brevemente."
         ),
         "expected_type": "multiple_choice_with_justification",
@@ -394,7 +394,7 @@ def evaluate_test_transferencia_answer(
 ) -> bool:
     """Evalua si la respuesta del estudiante es correcta.
 
-    [PLACEHOLDER CATEDRA UNSL] La logica de evaluacion automatica (matching
+    [PLACEHOLDER CATEDRA UTN] La logica de evaluacion automatica (matching
     de patron, ejecucion de tests, comparacion semantica) se define cuando
     la catedra apruebe el contenido. Mientras tanto, devuelve False por defecto
     para no inflar metricas espureas en el dashboard.

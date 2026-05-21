@@ -15,9 +15,9 @@ un tenant existente, no duplica nada y reporta qué cambió.
 
 Uso:
     python -m platform_ops.tenant_onboarding \\
-        --tenant-name "UNSL" \\
+        --tenant-name "UTN" \\
         --tenant-uuid aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa \\
-        --admin-email admin@unsl.edu.ar \\
+        --admin-email admin@utn.edu.ar \\
         --keycloak-url http://localhost:8180 \\
         --keycloak-admin-password admin
 
@@ -46,9 +46,9 @@ logger = logging.getLogger(__name__)
 
 @dataclass
 class TenantSpec:
-    name: str  # "UNSL"
+    name: str  # "UTN"
     uuid: UUID  # tenant_id autoritativo
-    realm_name: str  # "unsl" (slug del name)
+    realm_name: str  # "utn" (slug del name)
     admin_email: str
     admin_password_temp: str = "ChangeMeAtFirstLogin!"
     default_locale: str = "es"
@@ -401,7 +401,7 @@ async def run_cli(args: argparse.Namespace) -> int:
 
 def main() -> None:
     parser = argparse.ArgumentParser(description="Onboarding de tenant nuevo")
-    parser.add_argument("--tenant-name", required=True, help="Nombre del tenant (ej UNSL)")
+    parser.add_argument("--tenant-name", required=True, help="Nombre del tenant (ej UTN)")
     parser.add_argument(
         "--tenant-uuid", required=True, help="UUID del tenant (tenant_id autoritativo)"
     )

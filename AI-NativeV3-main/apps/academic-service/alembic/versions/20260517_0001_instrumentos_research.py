@@ -8,7 +8,7 @@ Cierra P2-1 (pretest autoeficacia), P2-2 (cuestionario IA previa) y P2-3
 (test transferencia) del PlanMejora.md como ESQUELETO TECNICO. El contenido
 academico (ítems del cuestionario, ítems del pretest, problemas de transferencia)
 queda marcado en seeds y placeholders como `[PENDIENTE VALIDACION COAUTORAL —
-ANA GARIS]` hasta revision coautoral + comite etico UNSL.
+ANA GARIS]` hasta revision coautoral + comite etico UTN.
 
 Tablas:
 1. `respuestas_cuestionario_ia` — P2-2, cuestionario inicial sobre experiencia previa con IA

@@ -57,7 +57,7 @@ Acompañar con la limpieza documental: quitar el bloque "Gotcha conocido" de `RE
 +     image: grafana/grafana:11.3.0
 ```
 
-Las versiones específicas son las **vigentes en la fecha de bootstrapping del piloto**; verificar antes de mergear que coinciden con lo que tienen los tags actuales del entorno UNSL. El criterio es congelar las que ya están corriendo, no actualizar.
+Las versiones específicas son las **vigentes en la fecha de bootstrapping del piloto**; verificar antes de mergear que coinciden con lo que tienen los tags actuales del entorno UTN. El criterio es congelar las que ya están corriendo, no actualizar.
 
 **Tamaño:** 4 LOC.
 

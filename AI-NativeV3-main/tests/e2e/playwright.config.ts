@@ -1,7 +1,7 @@
 import { defineConfig, devices } from "@playwright/test"
 
 /**
- * Playwright config para la suite E2E del piloto UNSL.
+ * Playwright config para la suite E2E del piloto UTN.
  *
  * Decisiones (ver design.md de la change):
  *  - Solo Chromium MVP — defensa doctoral no usa Firefox/WebKit.

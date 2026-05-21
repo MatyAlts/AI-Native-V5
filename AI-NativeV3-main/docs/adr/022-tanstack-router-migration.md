@@ -3,7 +3,7 @@
 - **Estado**: Propuesto
 - **Fecha**: 2026-04-27
 - **Deciders**: Alberto Alejandro Cortez, director de tesis
-- **Tags**: frontend, routing, dashboard, tesis, piloto-UNSL
+- **Tags**: frontend, routing, dashboard, tesis, piloto-UTN
 
 ## Contexto y problema
 

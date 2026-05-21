@@ -1,6 +1,6 @@
 # Changelog del piloto Juani2so — corte 2026-05-04
 
-**Tesis**: Alberto Alejandro Cortez — *"Modelo AI-Native con Trazabilidad Cognitiva N4 para la Formación en Programación Universitaria"* (UNSL).
+**Tesis**: Alberto Alejandro Cortez — *"Modelo AI-Native con Trazabilidad Cognitiva N4 para la Formación en Programación Universitaria"* (UTN).
 
 Documento de cierre tras una serie de epics OpenSpec aplicadas al monorepo entre el 2026-05-01 y el 2026-05-04. Lista qué se agregó, qué quedó verificado, y el único frente pendiente.
 
@@ -39,7 +39,7 @@ Documento de cierre tras una serie de epics OpenSpec aplicadas al monorepo entre
 - Microcopy con tildes corregidas (cp1252 / Windows-friendly).
 - Sidebar topslot con separador visual.
 
-**Por qué importa**: ADR-032 cierra honestamente la pregunta del comité doctoral "¿van a tener ML predictivo verdadero?" — la respuesta es "no en piloto-1, sí cuando el dataset alcance el umbral". Los fixes frontend bajan friction percibido para los docentes/admins UNSL en la primera demo.
+**Por qué importa**: ADR-032 cierra honestamente la pregunta del comité doctoral "¿van a tener ML predictivo verdadero?" — la respuesta es "no en piloto-1, sí cuando el dataset alcance el umbral". Los fixes frontend bajan friction percibido para los docentes/admins UTN en la primera demo.
 
 ### 4. `2026-05-04-grafana-dashboards-provisioned`
 
@@ -82,7 +82,7 @@ Smokes operativos validados: stop Postgres → 5 servicios marcan `error` + 503 
 
 6. **Versioning hermético del plano pedagógico** — `LABELER_VERSION="1.1.0"` (ADR-023), `GUARDRAILS_CORPUS_VERSION` (ADR-019), `classifier_config_hash` SHA-256 determinista (ADR-009). Eventos viejos auditables con la versión que los procesó.
 
-7. **Attestation externa Ed25519** — `integrity-attestation-service` firma append-only JSONL `attestations-YYYY-MM-DD.jsonl` con clave institucional UNSL. Independiente del ctr-service, eventually consistent (SLO 24h, RN-128). Verificable por auditor externo con `scripts/verify-attestations.py`.
+7. **Attestation externa Ed25519** — `integrity-attestation-service` firma append-only JSONL `attestations-YYYY-MM-DD.jsonl` con clave institucional UTN. Independiente del ctr-service, eventually consistent (SLO 24h, RN-128). Verificable por auditor externo con `scripts/verify-attestations.py`.
 
 8. **Health checks reales en los 12 servicios** — JSON granular con `{ok, latency_ms, error}` por dependencia, mapeo correcto a HTTP status codes para que kubelet saque pods de rotación cuando una critical dep cae.
 

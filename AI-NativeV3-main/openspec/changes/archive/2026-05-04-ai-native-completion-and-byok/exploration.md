@@ -317,7 +317,7 @@ Este es el más complejo y bloqueante. Lo desgloso fino.
 | Opción | Pro | Contra |
 |---|---|---|
 | **A.** DB encriptada (`ai_api_keys` table) | UX admin nativa (formulario web), rotación on-line, audit log automático | Requiere helper crypto + master key management (¿KMS? ¿env var?) |
-| **B.** K8s SealedSecrets / mount filesystem | Reusa `tenant_secrets.py` existente, security industrial | UX horrible (admin tiene que pedirle al sysadmin que rote). En piloto UNSL no hay sysadmin dedicado |
+| **B.** K8s SealedSecrets / mount filesystem | Reusa `tenant_secrets.py` existente, security industrial | UX horrible (admin tiene que pedirle al sysadmin que rote). En piloto UTN no hay sysadmin dedicado |
 | **C.** Híbrido: DB con referencia a secret externo | Best-of-both, pero más complejo | Requiere infra adicional |
 
 **Recomendación**: **A**, con el master key en env var (`BYOK_MASTER_KEY` 32 bytes) en piloto, migrable a Vault/KMS post-piloto. Documentar en ADR que la rotación del master key requiere re-cifrado de todas las keys → procedimiento operacional documentado.

@@ -1,7 +1,7 @@
 """CII evolution longitudinal — slope ordinal de apropiacion entre episodios analogos (ADR-018).
 
 Implementa la version minima de la `cii_evolution_longitudinal` para
-el piloto UNSL: dado un estudiante con N>=3 episodios cerrados sobre el
+el piloto UTN: dado un estudiante con N>=3 episodios cerrados sobre el
 mismo `template_id` (problemas analogos definidos por ADR-016), calcula
 el slope de la regresion lineal sobre `APPROPRIATION_ORDINAL[appropriation]`
 ordenados por `classified_at`.

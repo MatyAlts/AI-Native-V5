@@ -30,9 +30,9 @@ def superadmin_user():
     return User(
         id=uuid4(),
         tenant_id=uuid4(),
-        email="root@unsl.edu.ar",
+        email="root@utn.edu.ar",
         roles=frozenset({"superadmin"}),
-        realm="unsl",
+        realm="utn",
     )
 
 
@@ -41,9 +41,9 @@ def docente_admin_user():
     return User(
         id=uuid4(),
         tenant_id=uuid4(),
-        email="admin@unsl.edu.ar",
+        email="admin@utn.edu.ar",
         roles=frozenset({"docente_admin"}),
-        realm="unsl",
+        realm="utn",
     )
 
 

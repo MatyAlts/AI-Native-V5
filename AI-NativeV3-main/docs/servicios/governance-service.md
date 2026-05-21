@@ -73,7 +73,7 @@ El campo `hash` es **recomputado al vuelo** cada vez que se sirve el prompt (`co
       "classifier": "v1.0.0"
     },
     "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa": {
-      "tutor": "v1.1.0-unsl"
+      "tutor": "v1.1.0-utn"
     }
   }
 }
@@ -105,7 +105,7 @@ Los tenants que no aparecen en el mapa caen al `default`. La clave es el `tenant
         ├── v1.0.0/
         │   ├── system.md         # el prompt en sí
         │   └── manifest.yaml     # hashes declarados (opcional)
-        └── v1.1.0-unsl/
+        └── v1.1.0-utn/
             ├── system.md
             └── manifest.yaml
 ```
@@ -118,7 +118,7 @@ active:
     tutor: v1.0.0
     classifier: v1.0.0
   aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa:
-    tutor: v1.1.0-unsl
+    tutor: v1.1.0-utn
 ```
 
 **Formato del `manifest.yaml` por versión** (opcional, pero habilita el fail-loud):
@@ -291,7 +291,7 @@ La redundancia no es accidental — RN-040 de `reglas.md` la exige explícitamen
 
 **Operación recomendada del repo de prompts** (no documentada formalmente en ADR — convención operativa del piloto):
 
-1. Cambios al prompt van en **nuevas versiones** (ej. `v1.1.0-unsl` al lado de `v1.0.0`), no in-place. El activo se cambia editando el `manifest.yaml` global.
+1. Cambios al prompt van en **nuevas versiones** (ej. `v1.1.0-utn` al lado de `v1.0.0`), no in-place. El activo se cambia editando el `manifest.yaml` global.
 2. Antes de activar una versión, correr `POST /prompts/{name}/{version}/verify` para confirmar que el manifest interno matchea el contenido.
 3. Los episodios **ya abiertos** siguen con la versión que estaba vigente al momento de `open_episode` — `SessionState.prompt_system_version` se congela en memoria, y el hash correspondiente va en todos los eventos. Cambiar el activo mientras un episodio está abierto no afecta a ese episodio.
 4. Al rotar a una versión nueva, actualizar `default_prompt_version` en el `Settings` de [tutor-service](./tutor-service.md) (o el `active_configs` por tenant) y reiniciar el tutor — el governance no notifica.

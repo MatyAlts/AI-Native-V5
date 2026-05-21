@@ -1,4 +1,4 @@
-# Runbook del Piloto UNSL
+# Runbook del Piloto UTN
 
 Qué hacer cuando algo falla durante las 16 semanas del piloto. Este
 runbook se usa por el equipo técnico y los docentes participantes;
@@ -8,7 +8,7 @@ de discusión de la tesis.
 
 ## Stack target
 
-Este runbook asume que la stack corre con `docker-compose.prod.yml` en VPS UNSL
+Este runbook asume que la stack corre con `docker-compose.prod.yml` en VPS UTN
 (piloto-2 ampliado). Los snippets `kubectl` que sobrevivan en este documento
 son legacy del despliegue K8s pre-piloto y se traducen al equivalente Docker
 Compose con la tabla de abajo. Si en algún incidente ves un `kubectl ...` sin
@@ -209,7 +209,7 @@ inferior a 0.4, se revisa el árbol de decisión antes de continuar.
 
 3. Correr A/B testing sobre los 60 episodios gold standard:
    ```bash
-   curl -X POST https://plataforma.unsl.edu.ar/api/v1/analytics/ab-test-profiles \
+   curl -X POST https://plataforma.utn.edu.ar/api/v1/analytics/ab-test-profiles \
      -H "Authorization: Bearer $TOKEN" \
      -H "X-Tenant-Id: aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa" \
      -H "X-User-Id: 11111111-1111-1111-1111-111111111111" \
@@ -323,21 +323,21 @@ En todos los casos, documentar.
 
 ## I08. LDAP no autentica a un usuario  <a id="i08"></a>
 
-**Síntomas**: estudiante reporta "no puedo entrar" con credenciales de UNSL.
+**Síntomas**: estudiante reporta "no puedo entrar" con credenciales de UTN.
 
 **Diagnóstico**:
 
-1. **¿El user existe en el LDAP de UNSL?**
+1. **¿El user existe en el LDAP de UTN?**
    ```bash
-   ldapsearch -x -H ldaps://ldap.unsl.edu.ar \
-     -D "cn=admin,dc=unsl,dc=edu,dc=ar" \
-     -b "ou=people,dc=unsl,dc=edu,dc=ar" \
+   ldapsearch -x -H ldaps://ldap.utn.edu.ar \
+     -D "cn=admin,dc=utn,dc=edu,dc=ar" \
+     -b "ou=people,dc=utn,dc=edu,dc=ar" \
      "uid=jperez"
    ```
 
 2. **¿Keycloak sincronizó?**
    ```bash
-   # Admin UI → Realm 'unsl' → User Federation → sync users
+   # Admin UI → Realm 'utn' → User Federation → sync users
    ```
 
 3. **¿El usuario tiene un rol asignado?** Si no, Keycloak autentica
@@ -416,7 +416,7 @@ sudo -u ops PG_BACKUP_PASSWORD="..." bash scripts/backup.sh
 
 | Severidad | Primer contacto | Segundo contacto | Tiempo máx respuesta |
 |---|---|---|---|
-| 🔴 Crítica | Alberto (WhatsApp) | Equipo técnico UNSL | 30 min |
+| 🔴 Crítica | Alberto (WhatsApp) | Equipo técnico UTN | 30 min |
 | 🟠 Alta | Email + Slack | — | 2 h |
 | 🟡 Media | Jira ticket + Slack | — | 24 h |
 | 🟢 Normal | Jira ticket | — | 72 h |

@@ -1,6 +1,6 @@
 # Estado del repositorio — F7 completado
 
-F7 es la fase de **extensiones empíricas para el piloto UNSL**. Cierra
+F7 es la fase de **extensiones empíricas para el piloto UTN**. Cierra
 los componentes que soportan directamente el capítulo empírico de la
 tesis: análisis longitudinal por estudiante, A/B testing del árbol N4
 contra gold standard humano, worker real de exportación académica, y
@@ -93,17 +93,17 @@ configurable.
 - `GET /api/v1/analytics/cohort/export/{job_id}/download` → payload JSON
   (en prod F8+ devolverá redirect a S3 firmado)
 
-### 4. Ejemplo runnable de onboarding UNSL
+### 4. Ejemplo runnable de onboarding UTN
 
-`examples/unsl_onboarding.py` — script ejecutable que encadena los 3
+`examples/utn_onboarding.py` — script ejecutable que encadena los 3
 pasos del setup completo:
 
 1. Onboarding Keycloak (realm + client + mapper tenant_id + roles + admin)
-2. LDAP federation institucional (usuarios UNSL + group mappings)
+2. LDAP federation institucional (usuarios UTN + group mappings)
 3. Feature flags YAML con la config del piloto
 
 Variables de entorno documentadas (`KEYCLOAK_ADMIN_PASSWORD`,
-`LDAP_BIND_PASSWORD`, etc.) — el equipo de UNSL puede correrlo como
+`LDAP_BIND_PASSWORD`, etc.) — el equipo de UTN puede correrlo como
 está con sus credenciales sin modificar código.
 
 ## Suite completa — 310/310 tests pasan
@@ -200,12 +200,12 @@ curl http://localhost:8005/api/v1/analytics/cohort/export/$JOB/download \
   > dataset.json
 ```
 
-### Onboarding de un nuevo tenant (ej UNSL)
+### Onboarding de un nuevo tenant (ej UTN)
 ```bash
 export KEYCLOAK_ADMIN_PASSWORD=xxx
 export LDAP_BIND_PASSWORD=yyy
-export TENANT_ADMIN_EMAIL=admin@unsl.edu.ar
-python examples/unsl_onboarding.py
+export TENANT_ADMIN_EMAIL=admin@utn.edu.ar
+python examples/utn_onboarding.py
 ```
 
 ## Estado del plan de tesis
@@ -216,7 +216,7 @@ python examples/unsl_onboarding.py
 2. ✓ Clasificador N4 con árbol auditable + reproducibilidad (F3)
 3. ✓ Hardening + observabilidad con SLOs (F4)
 4. ✓ Producción multi-tenant con SSO + privacy controls (F5)
-5. ✓ Integración UNSL + LDAP + canary deployments (F6)
+5. ✓ Integración UTN + LDAP + canary deployments (F6)
 6. ✓ **Pipeline empírico completo** — longitudinal + A/B + Kappa +
    export anonymizado (F7)
 

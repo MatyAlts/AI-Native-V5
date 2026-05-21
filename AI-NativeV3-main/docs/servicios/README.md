@@ -114,7 +114,7 @@ Representa quién llama a quién por HTTP (o import directo en el caso del acopl
 - El gateway (`api-gateway`) es la única entrada externa. Los clientes humanos (los 3 frontends) sólo conocen `:8000`. La auth (JWT RS256 + headers `X-Tenant-Id`, `X-User-Id`, `X-User-Roles`) se resuelve aquí; el `identity-service` original ([ADR-041](../adr/041-deprecate-identity-service.md)) quedó deprecado porque toda esa lógica ya vive en `api-gateway` + Casbin descentralizado.
 - `tutor-service` es el **orquestador** del plano pedagógico: pega a `academic` (validar TP), `content` (retrieval), `governance` (prompt), `ai-gateway` (LLM), y publica al `ctr-service` (eventos).
 - `ctr-service` es **hoja**: recibe eventos, persiste la cadena, y dispara XADD a Redis Stream `attestation.requests` post-cierre. NO llama a nadie HTTP directamente. Los hashes de configuración viajan embebidos desde el productor.
-- `integrity-attestation-service` (8012, ADR-021) consume el stream `attestation.requests` con `XREADGROUP`, firma con Ed25519 y appendea a JSONL append-only. **Eventualmente consistente** (SLO 24h); su ausencia NO bloquea el cierre del episodio. En piloto real vive en VPS UNSL separada; en dev se levanta localmente con dev-keys commiteadas.
+- `integrity-attestation-service` (8012, ADR-021) consume el stream `attestation.requests` con `XREADGROUP`, firma con Ed25519 y appendea a JSONL append-only. **Eventualmente consistente** (SLO 24h); su ausencia NO bloquea el cierre del episodio. En piloto real vive en VPS UTN separada; en dev se levanta localmente con dev-keys commiteadas.
 - `evaluation-service` (8004) maneja entregas y calificaciones — comparte la base `academic_main` con `academic-service` vía un engine independiente. La fusión de ambos en un solo servicio es deuda post-piloto (Fase 2 de restructure).
 - `classifier-service` **lee** del `ctr_store` para traer los eventos de un episodio vía HTTP (`GET /episodes/{id}` del ctr-service) y persiste su resultado en `classifier_db` propia.
 - `analytics-service` es el único que **lee cross-base** (ctr_store + classifier_db + academic_main) con sesiones separadas y RLS por tenant. Además tiene un acople intra-monorepo: importa `classifier_service.services.pipeline` para el A/B de profiles.
@@ -149,10 +149,10 @@ Representa quién llama a quién por HTTP (o import directo en el caso del acopl
    - `api-gateway.md` al final — es transversal, tiene sentido cuando se entiende qué está protegiendo.
 6. [`CONTRIBUTING.md`](../../CONTRIBUTING.md) — workflow de PRs, branches, tests obligatorios.
 
-### Docente participante del piloto UNSL
+### Docente participante del piloto UTN
 
 1. [`docs/pilot/README.md`](../pilot/README.md) — operativa diaria.
-2. [`docs/pilot/protocolo-piloto-unsl.docx`](../pilot/protocolo-piloto-unsl.docx) — protocolo formal del piloto.
+2. [`docs/pilot/protocolo-piloto-utn.docx`](../pilot/protocolo-piloto-utn.docx) — protocolo formal del piloto.
 3. [`docs/pilot/runbook.md`](../pilot/runbook.md) — 10 incidentes codificados (I01 integridad CTR es la más crítica).
 4. Este directorio, **sólo los MDs de las UIs que vas a usar**:
    - `web-teacher.md` si sos coordinador de cátedra o docente asignado (TPs, templates, materiales, progresión, κ, export, drill-downs G7).
@@ -161,7 +161,7 @@ Representa quién llama a quién por HTTP (o import directo en el caso del acopl
 
 ### Investigador académico (análisis de datos)
 
-1. [`docs/pilot/protocolo-piloto-unsl.docx`](../pilot/protocolo-piloto-unsl.docx) — marco metodológico.
+1. [`docs/pilot/protocolo-piloto-utn.docx`](../pilot/protocolo-piloto-utn.docx) — marco metodológico.
 2. [`docs/pilot/kappa-workflow.md`](../pilot/kappa-workflow.md) — procedimiento intercoder para κ (OBJ-13).
 3. Este directorio, en orden:
    - `analytics-service.md` — los 12 endpoints (κ, A/B profiles, progression, export, longitudinal, alertas, cuartiles, drill-downs G7) son las APIs que vas a consumir.

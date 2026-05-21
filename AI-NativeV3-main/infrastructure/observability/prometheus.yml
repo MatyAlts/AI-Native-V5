@@ -2,7 +2,7 @@ global:
   scrape_interval: 15s
   evaluation_interval: 15s
 
-# ── Alertas (piloto-2 ampliado UNSL) ───────────────────────────────────
+# ── Alertas (piloto-2 ampliado UTN) ───────────────────────────────────
 # Carga las reglas desde alerts/*.yml y envia a alertmanager standalone.
 # Solo activo cuando alertmanager existe (docker-compose.prod.yml lo levanta).
 # En dev compose el bloque alertmanagers no resuelve y Prometheus arranca igual.

@@ -1,6 +1,6 @@
 ## Context
 
-El piloto UNSL llega a defensa doctoral con Grafana operacional pero **mostrando paneles "No data"**: los 2 JSONs heredados de `ops/grafana/dashboards/` referencian métricas que ningún servicio emite. La causa raíz no es el provisioning (el sidecar funciona bien) sino que `packages/observability` configura `tracing OTLP + structlog + Sentry` pero **nunca instaló el `MeterProvider`** — cero métricas custom emitidas en los 12 servicios.
+El piloto UTN llega a defensa doctoral con Grafana operacional pero **mostrando paneles "No data"**: los 2 JSONs heredados de `ops/grafana/dashboards/` referencian métricas que ningún servicio emite. La causa raíz no es el provisioning (el sidecar funciona bien) sino que `packages/observability` configura `tracing OTLP + structlog + Sentry` pero **nunca instaló el `MeterProvider`** — cero métricas custom emitidas en los 12 servicios.
 
 Sin un cambio acá, la defensa abre Grafana y el comité doctoral ve un dashboard vacío. Aceptable técnicamente, pero pierde la evidencia visual del CTR escribiendo events en vivo, del tutor respondiendo bajo SLO, del ai-gateway sin gastar de más, y del classifier sosteniendo κ. Esa evidencia tangible es uno de los activos más fuertes que el modelo híbrido honesto puede mostrar — el comité no necesita confiar en logs textuales si ve series temporales subiendo en tiempo real.
 

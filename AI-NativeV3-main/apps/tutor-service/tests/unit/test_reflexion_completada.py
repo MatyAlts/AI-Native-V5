@@ -306,7 +306,7 @@ def _student_headers(user_id: UUID, tenant_id: UUID) -> dict[str, str]:
     return {
         "X-User-Id": str(user_id),
         "X-Tenant-Id": str(tenant_id),
-        "X-User-Email": "alumno@unsl.edu.ar",
+        "X-User-Email": "alumno@utn.edu.ar",
         "X-User-Roles": "estudiante",
     }
 

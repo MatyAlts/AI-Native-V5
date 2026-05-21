@@ -1,6 +1,6 @@
-# Checklist de deploy — `integrity-attestation-service` en VPS institucional UNSL
+# Checklist de deploy — `integrity-attestation-service` en VPS institucional UTN
 
-**Audiencia**: Director de informática UNSL.
+**Audiencia**: Director de informática UTN.
 **Doctorando**: Alberto Alejandro Cortez (cortezalberto@gmail.com).
 **Fecha del checklist**: 2026-04-27.
 **Referencias**: [ADR-021](../adr/021-external-integrity-attestation.md), [`reglas.md` RN-128](../../reglas.md), [`docs/pilot/auditabilidad-externa.md`](auditabilidad-externa.md).
@@ -27,7 +27,7 @@ Si en algún momento la clave privada pasa por las manos del doctorando (por err
    - **Recomendado**: instancia Redis dedicada del VPS institucional (no compartir con el cluster del piloto).
    - **Alternativa**: instancia Redis del piloto (requiere coordinación de network access).
 - [ ] IP pública del `ctr-service` del piloto identificada (para IP allowlist del Paso 5).
-- [ ] Hostname público para el servicio: sugerencia `attestation.unsl.edu.ar` o subdominio institucional.
+- [ ] Hostname público para el servicio: sugerencia `attestation.utn.edu.ar` o subdominio institucional.
 
 ---
 
@@ -234,11 +234,11 @@ El **POST a `/api/v1/attestations`** debe estar restringido al `ctr-service` del
 server {
     listen 80;
     listen 443 ssl;
-    server_name attestation.unsl.edu.ar;
+    server_name attestation.utn.edu.ar;
 
     # SSL — Let's Encrypt o cert institucional
-    ssl_certificate /etc/letsencrypt/live/attestation.unsl.edu.ar/fullchain.pem;
-    ssl_certificate_key /etc/letsencrypt/live/attestation.unsl.edu.ar/privkey.pem;
+    ssl_certificate /etc/letsencrypt/live/attestation.utn.edu.ar/fullchain.pem;
+    ssl_certificate_key /etc/letsencrypt/live/attestation.utn.edu.ar/privkey.pem;
 
     # GETs públicos (auditores descargan JSONL + pubkey)
     location /api/v1/attestations/pubkey {
@@ -283,14 +283,14 @@ curl http://127.0.0.1:8012/api/v1/attestations/pubkey
 
 Desde Internet (público):
 ```bash
-curl https://attestation.unsl.edu.ar/api/v1/attestations/pubkey
+curl https://attestation.utn.edu.ar/api/v1/attestations/pubkey
 # → mismo PEM, mismo pubkey_id
 ```
 
 Test de IP allowlist:
 ```bash
 # Desde una IP NO autorizada — debe devolver 403
-curl -X POST https://attestation.unsl.edu.ar/api/v1/attestations -H "Content-Type: application/json" -d '{}'
+curl -X POST https://attestation.utn.edu.ar/api/v1/attestations -H "Content-Type: application/json" -d '{}'
 # → 403 Forbidden (nginx)
 ```
 
@@ -307,7 +307,7 @@ Desde el cluster del piloto, setear la env var del `ctr-service`:
 
 ```bash
 # Apuntar al Redis del VPS institucional (no al Redis del piloto)
-ATTESTATION_REDIS_URL=redis://attestation.unsl.edu.ar:6379/0
+ATTESTATION_REDIS_URL=redis://attestation.utn.edu.ar:6379/0
 ```
 
 (O configurar conectividad de red entre el ctr-service del piloto y el Redis institucional vía VPN/private network.)
@@ -321,7 +321,7 @@ Si se prefiere que el ctr-service emita por HTTP en lugar de Redis (alternativa 
 
 ## Paso 9 — Monitoreo + backup
 
-- [ ] **Backup nightly** del directorio `/var/lib/attestation/logs/` a otro VPS o storage. Si UNSL pierde el JSONL, se pierde toda la evidencia externa del período. Sugerencia: rsync nightly a `backup-attestation.unsl.edu.ar` o storage S3.
+- [ ] **Backup nightly** del directorio `/var/lib/attestation/logs/` a otro VPS o storage. Si UTN pierde el JSONL, se pierde toda la evidencia externa del período. Sugerencia: rsync nightly a `backup-attestation.utn.edu.ar` o storage S3.
 - [ ] **Métrica Grafana**: `attestation_pending_count` (eventos en stream Redis sin consumir). Alerta si supera 0 por más de 24 horas (SLO confirmado en ADR-021).
   - Esta métrica todavía NO está implementada en el servicio (declarada como agenda futura). Si no está disponible, monitorear vía:
     ```bash
@@ -337,7 +337,7 @@ Cuando todo esté arriba:
 
 1. El **doctorando** descarga el JSONL del primer día con attestations:
    ```bash
-   curl https://attestation.unsl.edu.ar/api/v1/attestations/2026-XX-XX > attestations-2026-XX-XX.jsonl
+   curl https://attestation.utn.edu.ar/api/v1/attestations/2026-XX-XX > attestations-2026-XX-XX.jsonl
    ```
 
 2. Corre la verificación con la pubkey commiteada en el repo:

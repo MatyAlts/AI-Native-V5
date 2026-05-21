@@ -78,7 +78,7 @@ Rama agresiva: borrar `apps/enrollment-service/` por completo del repo.
 
 ### Negativas / trade-offs
 
-- **Pérdida de capacidad declarada para sync con SIS**: si UNSL pide sync con su sistema institucional (Guarani u otro), va a haber que revivir o re-arquitecturar. **Mitigación**: el README del directorio documenta cómo revivir; el código del esqueleto está intacto.
+- **Pérdida de capacidad declarada para sync con SIS**: si UTN pide sync con su sistema institucional (Guarani u otro), va a haber que revivir o re-arquitecturar. **Mitigación**: el README del directorio documenta cómo revivir; el código del esqueleto está intacto.
 - **`enrollment_service_url` queda como settings dormido**: cosmético, no afecta runtime.
 - **Si alguien intenta subir CSV al endpoint viejo**, recibe 404 del gateway. **Mitigación**: la UI del web-admin nunca expuso ese endpoint, así que no hay usuarios externos legítimos que se rompan.
 

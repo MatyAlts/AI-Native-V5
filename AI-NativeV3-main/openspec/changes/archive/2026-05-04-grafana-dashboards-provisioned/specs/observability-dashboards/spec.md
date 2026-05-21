@@ -61,7 +61,7 @@ Todos los paneles de los 5 dashboards SHALL cargar en **< 3 segundos** cuando el
 
 ### Requirement: Dashboards heredados SHALL be archived with deprecation README
 
-Los dashboards heredados en `ops/grafana/dashboards/{platform-slos,unsl-pilot}.json` y el provisioning bajo `ops/grafana/provisioning/` SHALL ser movidos a `ops/grafana/_archive/` en el mismo PR de apply. El directorio `_archive/` SHALL contener un `README.md` que documente:
+Los dashboards heredados en `ops/grafana/dashboards/{platform-slos,utn-pilot}.json` y el provisioning bajo `ops/grafana/provisioning/` SHALL ser movidos a `ops/grafana/_archive/` en el mismo PR de apply. El directorio `_archive/` SHALL contener un `README.md` que documente:
 
 - Que los JSONs son **aspiracionales** y referencian métricas que nunca se emitieron en el piloto.
 - Apunta al nuevo path canónico `infrastructure/grafana/provisioning/dashboards/`.

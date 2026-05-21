@@ -1,7 +1,7 @@
-# Historias de Usuario — Plataforma AI-Native N4 (Piloto UNSL)
+# Historias de Usuario — Plataforma AI-Native N4 (Piloto UTN)
 
 **Autor**: Alberto Alejandro Cortez
-**Contexto**: Tesis doctoral UNSL — "Modelo AI-Native con Trazabilidad Cognitiva N4 para la Formación en Programación Universitaria"
+**Contexto**: Tesis doctoral UTN — "Modelo AI-Native con Trazabilidad Cognitiva N4 para la Formación en Programación Universitaria"
 **Versión del documento**: 1.0
 **Fecha**: 2026-04-20
 
@@ -17,7 +17,7 @@
   - F3 (Motor Pedagógico): 18
   - F4 (Hardening + SLOs): 10
   - F5 (Producción Multi-tenant + Privacy + Pyodide): 12
-  - F6 (Integración UNSL + LDAP + Canary): 12
+  - F6 (Integración UTN + LDAP + Canary): 12
   - F7 (Empírico): 8
   - F8 (DB Reales + Frontend Docente + Grafana + Protocolo): 10
   - F9 (Preflight): 8
@@ -27,7 +27,7 @@
   - Estudiante: 18
   - Docente: 19
   - Docente Admin: 6
-  - Superadmin / Admin UNSL: 11
+  - Superadmin / Admin UTN: 11
   - Investigador / Tesista: 11
   - Operador (Ops): 17
   - Auditor Académico: 9
@@ -46,7 +46,7 @@
 - [Fase F3 — Motor Pedagógico](#fase-f3--motor-pedagógico)
 - [Fase F4 — Hardening + SLOs](#fase-f4--hardening--slos)
 - [Fase F5 — Producción Multi-tenant + Privacy + Pyodide](#fase-f5--producción-multi-tenant--privacy--pyodide)
-- [Fase F6 — Integración UNSL + LDAP + Canary](#fase-f6--integración-unsl--ldap--canary)
+- [Fase F6 — Integración UTN + LDAP + Canary](#fase-f6--integración-utn--ldap--canary)
 - [Fase F7 — Empírico](#fase-f7--empírico)
 - [Fase F8 — DB Reales + Frontend Docente + Grafana + Protocolo](#fase-f8--db-reales--frontend-docente--grafana--protocolo)
 - [Fase F9 — Preflight](#fase-f9--preflight)
@@ -60,11 +60,11 @@
 
 | Rol | Descripción |
 |-----|-------------|
-| Estudiante | Usuario final del piloto UNSL. Resuelve consignas con tutor socrático, ejecuta código Python en Pyodide dentro del navegador, visualiza su clasificación N4. |
+| Estudiante | Usuario final del piloto UTN. Resuelve consignas con tutor socrático, ejecuta código Python en Pyodide dentro del navegador, visualiza su clasificación N4. |
 | Docente | Responsable de cátedra de Programación. Observa progresión de la cohorte, etiqueta episodios para cálculo de Kappa, configura A/B testing de perfiles de referencia, exporta datasets. |
 | Docente Admin | Responsable de gestión académica de la universidad. Administra comisiones, inscripciones por CSV, correlatividades y períodos. |
 | Superadmin | Administrador global de la plataforma. Gestiona universidades, realms Keycloak, policies Casbin y configuración de tenants. |
-| Admin UNSL | Administrador institucional del piloto. Ejecuta onboarding del tenant UNSL, configura federación LDAP y activa feature flags pedagógicos. |
+| Admin UTN | Administrador institucional del piloto. Ejecuta onboarding del tenant UTN, configura federación LDAP y activa feature flags pedagógicos. |
 | Investigador / Tesista | Usa datasets anonimizados para análisis cuantitativos (κ de Cohen, progresión longitudinal, correlaciones) y contrasta hipótesis de la tesis. |
 | Operador (Ops) | Responsable de infraestructura y confiabilidad. Opera Helm, monitoriza Grafana, ejecuta runbook de incidentes, administra backups. |
 | Auditor Académico | Verifica integridad de la cadena CTR, monitorea Kappa y detecta anomalías de seguridad o de manipulación. |
@@ -275,7 +275,7 @@ Como operador, quiero que cada imagen Docker se escanee con Trivy en CI, para de
 **Prioridad**: Crítica
 
 **Historia**:
-Como plataforma, quiero modelar Universidad, Facultad, Carrera, PlanEstudios, Materia, Período, Comisión, Inscripción, UsuarioComisión, AuditLog y CasbinRule, para sostener el dominio académico del piloto UNSL.
+Como plataforma, quiero modelar Universidad, Facultad, Carrera, PlanEstudios, Materia, Período, Comisión, Inscripción, UsuarioComisión, AuditLog y CasbinRule, para sostener el dominio académico del piloto UTN.
 
 **Criterios de aceptación**:
 - Cada entidad tiene tabla SQLAlchemy 2.0 con `tenant_id` y policy RLS.
@@ -606,7 +606,7 @@ Como plataforma, quiero que toda query de retrieval aplique simultáneamente RLS
 **Prioridad**: Alta
 
 **Historia**:
-Como plataforma, quiero que la columna `embedding vector(1024)` tenga índice IVFFlat con `lists=100` y operador `<=>`, para que la búsqueda de similitud escale con la cohorte UNSL.
+Como plataforma, quiero que la columna `embedding vector(1024)` tenga índice IVFFlat con `lists=100` y operador `<=>`, para que la búsqueda de similitud escale con la cohorte UTN.
 
 **Criterios de aceptación**:
 - La migración crea el índice IVFFlat tras insertar datos suficientes.
@@ -785,13 +785,13 @@ Como plataforma, quiero un `BaseProvider` abstracto con implementaciones Mock y 
 ---
 
 ### HU-040 — BudgetTracker por tenant en Redis con TTL 35 días
-**Actor**: Admin UNSL
+**Actor**: Admin UTN
 **Fase**: F3
 **Servicio(s)**: ai-gateway
 **Prioridad**: Crítica
 
 **Historia**:
-Como admin UNSL, quiero que el presupuesto de tokens por tenant viva en Redis con TTL de 35 días y se incremente atómicamente con `INCRBYFLOAT`, para imponer un techo mensual por universidad.
+Como admin UTN, quiero que el presupuesto de tokens por tenant viva en Redis con TTL de 35 días y se incremente atómicamente con `INCRBYFLOAT`, para imponer un techo mensual por universidad.
 
 **Criterios de aceptación**:
 - La clave `budget:{tenant}:{yyyymm}` caduca a los 35 días.
@@ -1199,7 +1199,7 @@ Como plataforma, quiero que api-gateway valide JWTs RS256 con JWKS cacheada (con
 
 ---
 
-### HU-063 — Onboarding de tenant UNSL idempotente
+### HU-063 — Onboarding de tenant UTN idempotente
 **Actor**: Superadmin
 **Fase**: F5
 **Servicio(s)**: platform-ops, identity-service
@@ -1234,13 +1234,13 @@ Como plataforma, quiero un resolver de secretos que busque primero archivos K8s,
 ---
 
 ### HU-065 — Feature flags declarativos con YAML
-**Actor**: Admin UNSL
+**Actor**: Admin UTN
 **Fase**: F5
 **Servicio(s)**: platform-ops
 **Prioridad**: Crítica
 
 **Historia**:
-Como admin UNSL, quiero un archivo YAML con feature flags declarados (default + overrides por tenant), con API `is_enabled`, `get_value`, `get_all_for_tenant` y reload basado en hash, para activar capacidades por universidad sin deploys.
+Como admin UTN, quiero un archivo YAML con feature flags declarados (default + overrides por tenant), con API `is_enabled`, `get_value`, `get_all_for_tenant` y reload basado en hash, para activar capacidades por universidad sin deploys.
 
 **Criterios de aceptación**:
 - Una flag no declarada lanza `FeatureNotDeclaredError` (nunca silent false).
@@ -1270,13 +1270,13 @@ Como estudiante, quiero ejercer mi derecho a exportar mis datos (episodios, CTR,
 ---
 
 ### HU-067 — Anonimización de estudiante preservando CTR
-**Actor**: Admin UNSL
+**Actor**: Admin UTN
 **Fase**: F5
 **Servicio(s)**: platform-ops, privacy
 **Prioridad**: Crítica
 
 **Historia**:
-Como admin UNSL, quiero anonimizar un estudiante rotando su pseudónimo sin tocar la cadena CTR, para cumplir el derecho a retirarse del piloto preservando auditoría académica.
+Como admin UTN, quiero anonimizar un estudiante rotando su pseudónimo sin tocar la cadena CTR, para cumplir el derecho a retirarse del piloto preservando auditoría académica.
 
 **Criterios de aceptación**:
 - La operación rota el pseudónimo en `identity_store`.
@@ -1395,7 +1395,7 @@ Como plataforma, quiero rechazar exports cuyo `salt` tenga menos de 16 caractere
 
 ---
 
-## Fase F6 — Integración UNSL + LDAP + Canary
+## Fase F6 — Integración UTN + LDAP + Canary
 
 ### HU-074 — Observabilidad unificada con wrappers
 **Actor**: Sistema
@@ -1451,13 +1451,13 @@ Como plataforma, quiero que el evento `codigo_ejecutado` lleve el `user_id` del 
 ---
 
 ### HU-077 — Feature flag `enable_claude_opus` en runtime
-**Actor**: Admin UNSL
+**Actor**: Admin UTN
 **Fase**: F6
 **Servicio(s)**: tutor-service, platform-ops
 **Prioridad**: Alta
 
 **Historia**:
-Como admin UNSL, quiero activar `enable_claude_opus` por tenant y que el tutor elija `claude-opus-4-7` o `sonnet-4-6` en consecuencia, persistiendo el modelo elegido en `SessionState` y en el evento `EpisodioAbierto`, para habilitar A/B pedagógico sin redeploy.
+Como admin UTN, quiero activar `enable_claude_opus` por tenant y que el tutor elija `claude-opus-4-7` o `sonnet-4-6` en consecuencia, persistiendo el modelo elegido en `SessionState` y en el evento `EpisodioAbierto`, para habilitar A/B pedagógico sin redeploy.
 
 **Criterios de aceptación**:
 - La flag se consulta al abrir cada episodio.
@@ -1523,13 +1523,13 @@ Como auditor, quiero un motor con reglas BruteForceRule (5 fallos en 5 min), Cro
 ---
 
 ### HU-081 — Federación LDAP READ-ONLY
-**Actor**: Admin UNSL
+**Actor**: Admin UTN
 **Fase**: F6
 **Servicio(s)**: identity-service
 **Prioridad**: Crítica
 
 **Historia**:
-Como admin UNSL, quiero configurar la federación LDAP con `editMode: READ_ONLY`, mappers de email, first_name, last_name, mapper hardcoded de `tenant_id` y mapeo de grupo LDAP a rol, para cumplir la condición del convenio de no modificar el directorio institucional.
+Como admin UTN, quiero configurar la federación LDAP con `editMode: READ_ONLY`, mappers de email, first_name, last_name, mapper hardcoded de `tenant_id` y mapeo de grupo LDAP a rol, para cumplir la condición del convenio de no modificar el directorio institucional.
 
 **Criterios de aceptación**:
 - `LDAPFederator.configure` es idempotente.
@@ -1701,20 +1701,20 @@ Como plataforma, quiero que el exporter reciba su `data_source` por factory, par
 
 ---
 
-### HU-091 — unsl_onboarding.py runnable end-to-end
-**Actor**: Admin UNSL
+### HU-091 — utn_onboarding.py runnable end-to-end
+**Actor**: Admin UTN
 **Fase**: F7
 **Servicio(s)**: platform-ops, scripts
 **Prioridad**: Alta
 
 **Historia**:
-Como admin UNSL, quiero un script único que encadene Keycloak + LDAP + feature flags, para dejar listo el tenant UNSL en una sola corrida.
+Como admin UTN, quiero un script único que encadene Keycloak + LDAP + feature flags, para dejar listo el tenant UTN en una sola corrida.
 
 **Criterios de aceptación**:
 - El script es idempotente end-to-end.
 - Reporta cada paso con prefix `[onboarding]`.
 - Falla fast ante credenciales inválidas.
-- Corresponde al `make onboard-unsl` del Makefile.
+- Corresponde al `make onboard-utn` del Makefile.
 
 ---
 
@@ -1858,7 +1858,7 @@ Como docente, quiero una aplicación con tabs para Progresión, Kappa y Export, 
 
 ---
 
-### HU-100 — Dashboard Grafana unsl-pilot.json
+### HU-100 — Dashboard Grafana utn-pilot.json
 **Actor**: Operador (Ops)
 **Fase**: F8
 **Servicio(s)**: infrastructure/grafana
@@ -1875,7 +1875,7 @@ Como operador, quiero un dashboard con doce paneles (stats diarios, N4 pie + tim
 
 ---
 
-### HU-101 — Protocolo piloto-unsl.docx
+### HU-101 — Protocolo piloto-utn.docx
 **Actor**: Investigador / Tesista
 **Fase**: F8
 **Servicio(s)**: docs/pilot
@@ -2042,13 +2042,13 @@ Como plataforma, quiero que toda policy RLS tenga default vacío fail-safe, para
 ---
 
 ### HU-110 — Incidente I06: solicitud de borrado con CTR preservado
-**Actor**: Admin UNSL
+**Actor**: Admin UTN
 **Fase**: F9
 **Servicio(s)**: privacy, ctr-service
 **Prioridad**: Crítica
 
 **Historia**:
-Como admin UNSL, quiero que la solicitud de borrado siga el protocolo I06 (ejecutar `anonymize_student`, no tocar CTR, registrar AuditLog), para respetar el derecho del estudiante sin romper auditoría académica.
+Como admin UTN, quiero que la solicitud de borrado siga el protocolo I06 (ejecutar `anonymize_student`, no tocar CTR, registrar AuditLog), para respetar el derecho del estudiante sin romper auditoría académica.
 
 **Criterios de aceptación**:
 - El protocolo I06 invoca `anonymize_student` únicamente.
@@ -2122,7 +2122,7 @@ Como docente, quiero revisar mis etiquetados previos y poder re-etiquetar un epi
 **Prioridad**: Crítica
 
 **Historia**:
-Como superadmin, quiero registrar una nueva universidad emitiendo su realm, usuarios iniciales y policies Casbin, para expandir la plataforma más allá del piloto UNSL.
+Como superadmin, quiero registrar una nueva universidad emitiendo su realm, usuarios iniciales y policies Casbin, para expandir la plataforma más allá del piloto UTN.
 
 **Criterios de aceptación**:
 - El proceso es idempotente y reproducible.
@@ -2308,7 +2308,7 @@ Como plataforma, quiero que una consulta a una flag no declarada lance `FeatureN
 **Prioridad**: Crítica
 
 **Historia**:
-Como plataforma, quiero que `LDAPFederator.configure` deje `editMode=READ_ONLY` y el proceso verifique el estado final, para no violar la condición del convenio UNSL.
+Como plataforma, quiero que `LDAPFederator.configure` deje `editMode=READ_ONLY` y el proceso verifique el estado final, para no violar la condición del convenio UTN.
 
 **Criterios de aceptación**:
 - Tras configurar, el campo `editMode` vuelve a leerse y se compara.
@@ -2416,7 +2416,7 @@ Tabla de referencia HU → Fase → Servicio(s) → Tests o artefactos asociados
 | HU-088 | F7 | analytics-service + classifier-service | test compare_profiles |
 | HU-089 | F7 | analytics-service | test ExportWorker estados |
 | HU-090 | F7 | analytics-service | test data_source_factory |
-| HU-091 | F7 | platform-ops + scripts | test unsl_onboarding.py |
+| HU-091 | F7 | platform-ops + scripts | test utn_onboarding.py |
 | HU-092 | F7 | web-teacher + analytics-service | test progression frontend |
 | HU-093 | F7 | analytics-service | 44 tests F7 |
 | HU-094 | F8 | analytics-service | test RealCohortDataSource |
@@ -2425,7 +2425,7 @@ Tabla de referencia HU → Fase → Servicio(s) → Tests o artefactos asociados
 | HU-097 | F8 | web-teacher + analytics-service | KappaRatingView Vitest |
 | HU-098 | F8 | web-teacher + analytics-service | ExportView Vitest |
 | HU-099 | F8 | web-teacher | App tabbed tests |
-| HU-100 | F8 | infrastructure/grafana | dashboard unsl-pilot.json |
+| HU-100 | F8 | infrastructure/grafana | dashboard utn-pilot.json |
 | HU-101 | F8 | docs/pilot | `make generate-protocol` |
 | HU-102 | F8 | analytics-service | 10 tests F8 |
 | HU-103 | F8 | classifier-service + grafana | panel reclasificaciones |

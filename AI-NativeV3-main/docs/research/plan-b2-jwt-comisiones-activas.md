@@ -1,10 +1,10 @@
 # Plan operativo B.2 — JWT con `comisiones_activas` claim
 
-**Estado**: PAUSADO. Requiere Keycloak operacional + coordinación institucional UNSL.
+**Estado**: PAUSADO. Requiere Keycloak operacional + coordinación institucional UTN.
 
 **Origen**: gap B.2 de la auditoría de coherencia backend ↔ frontend (2026-04-29). Documentado como CRÍTICO bloqueante para uso real con SSO institucional.
 
-**Por qué este documento existe**: las recomendaciones priorizadas de la auditoría incluían B.2, pero NO es ejecutable sin Keycloak corriendo (que requiere coordinación con DI UNSL — los 5 puntos pendientes documentados en ADR-021 / `docs/RESUMEN-EJECUTIVO-2026-04-27.md`). Este plan deja la implementación lista para que, cuando se desbloquee la infra, alguien la ejecute mecánicamente sin tener que re-investigar el problema.
+**Por qué este documento existe**: las recomendaciones priorizadas de la auditoría incluían B.2, pero NO es ejecutable sin Keycloak corriendo (que requiere coordinación con DI UTN — los 5 puntos pendientes documentados en ADR-021 / `docs/RESUMEN-EJECUTIVO-2026-04-27.md`). Este plan deja la implementación lista para que, cuando se desbloquee la infra, alguien la ejecute mecánicamente sin tener que re-investigar el problema.
 
 ---
 
@@ -22,9 +22,9 @@ CLAUDE.md ya documenta esto como gap conocido pendiente F9.
 
 Tres dependencias externas sin las cuales el cambio no es testeable ni desplegable:
 
-1. **Keycloak con realm UNSL configurado** — el cambio toca claims del JWT. Sin Keycloak corriendo no se puede testear.
+1. **Keycloak con realm UTN configurado** — el cambio toca claims del JWT. Sin Keycloak corriendo no se puede testear.
 2. **Federación LDAP completa** — las inscripciones se cargan via bulk-import (ADR-029) con `student_pseudonym` derivado de la federación. Si el flow LDAP→pseudonym→inscripción no está cerrado, el claim `comisiones_activas` apunta a inscripciones huérfanas.
-3. **Coordinación con DI UNSL** — los 5 puntos pendientes del piloto (ADR-021 / RESUMEN-EJECUTIVO) están sin resolver. Avanzar B.2 sin esa coordinación es prematuro.
+3. **Coordinación con DI UTN** — los 5 puntos pendientes del piloto (ADR-021 / RESUMEN-EJECUTIVO) están sin resolver. Avanzar B.2 sin esa coordinación es prematuro.
 
 ## Diseño propuesto
 
@@ -71,9 +71,9 @@ Tres dependencias externas sin las cuales el cambio no es testeable ni desplegab
 
 ## Coordinación institucional necesaria
 
-Antes de implementar, resolver con DI UNSL:
+Antes de implementar, resolver con DI UTN:
 
-1. ¿Keycloak realm UNSL ya tiene configurada la federación LDAP completa?
+1. ¿Keycloak realm UTN ya tiene configurada la federación LDAP completa?
 2. ¿Hay un mecanismo de sincronización `inscripciones ↔ groups` o se hace por bulk import periódico?
 3. ¿La pseudonimización del estudiante se hace en Keycloak (custom mapper) o en api-gateway al recibir el sub?
 4. ¿Qué pasa si un estudiante se inscribe mid-cuatrimestre — su token activo no tiene la nueva comisión hasta el próximo refresh?
@@ -89,11 +89,11 @@ Estas son **decisiones académicas + arquitectónicas**, no técnicas puras.
 | academic-service: modificar `/comisiones/mis` | ~40 LOC + 3 tests | DB de pruebas con inscripciones |
 | frontends: ajustar fallback dev | ~10 LOC | — |
 | Tests E2E con Keycloak | ~80 LOC | docker-compose con Keycloak para CI |
-| **Total** | **~210 LOC** | **Keycloak + LDAP + DI UNSL** |
+| **Total** | **~210 LOC** | **Keycloak + LDAP + DI UTN** |
 
 ## Recomendación de timing
 
-Implementar B.2 en la **misma ventana** en que se cierre la coordinación institucional para el deploy del `integrity-attestation-service` (ADR-021) — son las dos tareas que dependen de DI UNSL y conviene encararlas juntas para no fragmentar la conversación institucional.
+Implementar B.2 en la **misma ventana** en que se cierre la coordinación institucional para el deploy del `integrity-attestation-service` (ADR-021) — son las dos tareas que dependen de DI UTN y conviene encararlas juntas para no fragmentar la conversación institucional.
 
 ## Cuando esté listo para ejecutar
 
@@ -102,7 +102,7 @@ Re-abrir esta tarea como una nueva entrada en `SESSION-LOG.md` con la fecha del 
 ## Referencias
 
 - Auditoría de coherencia backend ↔ frontend (2026-04-29) — gap B.2.
-- ADR-021 — Ed25519 attestation; los 5 puntos institucionales pendientes con DI UNSL.
+- ADR-021 — Ed25519 attestation; los 5 puntos institucionales pendientes con DI UTN.
 - `docs/RESUMEN-EJECUTIVO-2026-04-27.md` — coordinación institucional documentada.
 - `docs/pilot/attestation-deploy-checklist.md` — checklist operativo del piloto que comparte la misma ventana institucional.
 - CLAUDE.md "Brechas conocidas" — declaración del gap pre-iter-2.

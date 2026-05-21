@@ -40,9 +40,9 @@ con un solo comando:
 
 ```bash
 python -m platform_ops.tenant_onboarding \
-    --tenant-name "UNSL" \
+    --tenant-name "UTN" \
     --tenant-uuid aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa \
-    --admin-email admin@unsl.edu.ar \
+    --admin-email admin@utn.edu.ar \
     --keycloak-url https://keycloak.platform.ar
 ```
 
@@ -77,7 +77,7 @@ este orden:
 3. Env var global fallback: `ANTHROPIC_API_KEY`, `OPENAI_API_KEY`
 4. Si nada, `SecretNotFoundError` con mensaje accionable.
 
-Ventaja: tenants grandes (UNSL pilot) pueden tener su **propia cuenta
+Ventaja: tenants grandes (UTN pilot) pueden tener su **propia cuenta
 Anthropic** con su propio budget, mientras tenants más chicos pueden
 compartir la cuenta de la plataforma. Sin cambios en el ai-gateway.
 
@@ -252,9 +252,9 @@ PYTHONPATH=apps/academic-service/src:apps/content-service/src:apps/ctr-service/s
 
 # Onboarding de tenant nuevo (requiere Keycloak corriendo)
 KEYCLOAK_ADMIN_PASSWORD=admin python -m platform_ops.tenant_onboarding \
-    --tenant-name "UNSL" \
+    --tenant-name "UTN" \
     --tenant-uuid aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa \
-    --admin-email admin@unsl.edu.ar \
+    --admin-email admin@utn.edu.ar \
     --keycloak-url http://localhost:8180
 
 # Backup manual
@@ -285,9 +285,9 @@ CONFIRM=yes PG_ADMIN_PASSWORD=xxx ./scripts/restore.sh /tmp/platform-backup
 - **Exportación académica de datos para investigadores** (tesis): dump
   anonymizado del CTR + clasificaciones para análisis externo.
 
-## Próxima fase — F6 (meses 16-18): Piloto en UNSL
+## Próxima fase — F6 (meses 16-18): Piloto en UTN
 
-- Integración con la infraestructura existente de UNSL (SSO, LDAP)
+- Integración con la infraestructura existente de UTN (SSO, LDAP)
 - Piloto con 3 cátedras: Programación 1, Programación 2, TSU en IA
 - Métricas de adopción + refinamiento de árbol N4 con datos reales
 - Análisis inter-rater (Kappa) del clasificador vs etiquetado humano

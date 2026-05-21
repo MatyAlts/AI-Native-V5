@@ -1,6 +1,6 @@
 """Configuración de federación LDAP para tenants con directorio institucional.
 
-Permite que una universidad que ya tiene LDAP/AD (como UNSL) federe los
+Permite que una universidad que ya tiene LDAP/AD (como UTN) federe los
 usuarios a Keycloak sin duplicar la gestión. Los usuarios se autentican
 contra el LDAP institucional; Keycloak solo emite el JWT.
 
@@ -10,7 +10,7 @@ Flujo:
   2. Este script crea el User Federation provider en Keycloak.
   3. Configura mappers: username, email, first/last name, groups.
   4. Opcionalmente: mapper de `tenant_id` hardcoded + rol según grupo LDAP
-     (ej grupo "docentes-unsl" → rol `docente`).
+     (ej grupo "docentes-utn" → rol `docente`).
 
 Decisión arquitectónica: LDAP se configura POR REALM (por tenant), no
 global. Cada universidad tiene su propio LDAP y se conecta a su realm
@@ -32,10 +32,10 @@ logger = logging.getLogger(__name__)
 class LDAPConfig:
     """Config del LDAP institucional del tenant."""
 
-    connection_url: str  # "ldap://ldap.unsl.edu.ar:389" o "ldaps://..."
-    bind_dn: str  # "cn=admin,dc=unsl,dc=edu,dc=ar"
+    connection_url: str  # "ldap://ldap.utn.edu.ar:389" o "ldaps://..."
+    bind_dn: str  # "cn=admin,dc=utn,dc=edu,dc=ar"
     bind_credential: str  # password del bind DN (viene de secret)
-    users_dn: str  # "ou=people,dc=unsl,dc=edu,dc=ar"
+    users_dn: str  # "ou=people,dc=utn,dc=edu,dc=ar"
     username_attribute: str = "uid"
     email_attribute: str = "mail"
     first_name_attribute: str = "givenName"
@@ -56,9 +56,9 @@ class LDAPConfig:
 class LDAPGroupMapping:
     """Mapea un grupo LDAP a un rol del realm Keycloak.
 
-    Ejemplo típico UNSL:
+    Ejemplo típico UTN:
       LDAPGroupMapping(
-          ldap_group_dn="cn=docentes,ou=grupos,dc=unsl,dc=edu,dc=ar",
+          ldap_group_dn="cn=docentes,ou=grupos,dc=utn,dc=edu,dc=ar",
           realm_role="docente",
       )
     """

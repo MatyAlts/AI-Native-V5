@@ -63,7 +63,7 @@ ese patrón en `conftest.py::_headers_for_role`.
 Header crítico: `X-User-Roles` (PLURAL). Si mandás `X-Role` o `X-Roles`, el
 gateway los ignora y los servicios downstream no autorizan.
 
-Cuando el JWT validator real entre en producción (Keycloak con realm UNSL
+Cuando el JWT validator real entre en producción (Keycloak con realm UTN
 operacional), esta suite va a fallar con 401 — habría que generar un Bearer
 firmado con la clave del realm. Para piloto-1 dev, headers X-* es suficiente.
 

@@ -1,5 +1,5 @@
 /**
- * Landing page de AI-Native N4 — tesis doctoral UNSL.
+ * Landing page de AI-Native N4 — tesis doctoral UTN.
  *
  * Estructura (scroll vertical, full-width):
  *   1. Hero

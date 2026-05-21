@@ -20,7 +20,7 @@ La auditoría `PlanMejora.md` verificó que ninguno de los tres está documentad
 
 ## Drivers de la decisión
 
-- **D1**: Defendibilidad académica ante tribunal doctoral UNSL. El paper es el ancla pública; el repositorio debe poder mostrar formalización canónica de los conceptos que el paper introduce.
+- **D1**: Defendibilidad académica ante tribunal doctoral UTN. El paper es el ancla pública; el repositorio debe poder mostrar formalización canónica de los conceptos que el paper introduce.
 - **D2**: Trazabilidad bidireccional paper ↔ ADR ↔ código ↔ UI. La práctica del proyecto (verificable en ADR-046, ADR-035, ADR-027, entre otros) es que cada decisión académica del paper queda anclada a un ADR del repositorio.
 - **D3**: Discriminación entre las tres órdenes epistemológicas del paper §4.3 (eventos observables, indicadores derivados, constructos sintéticos). Sin marcos interpretativos documentados, la distinción se diluye en la lectura.
 - **D4**: Prevención de reificación individual de las categorías de apropiación. Sin marcador anti-reificación en UI + sin principio "no-etiquetado individual" documentado, el docente puede usar las categorías como atributos permanentes del estudiante — uso que el paper §4.4 y §7.3 explícitamente prohíben.

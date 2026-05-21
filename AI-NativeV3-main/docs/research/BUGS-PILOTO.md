@@ -1,6 +1,6 @@
 # Bugs detectados al levantar el piloto por primera vez en Windows
 
-> Reporte generado durante el bootstrap inicial de la plataforma AI-Native N4 (tesis UNSL) desde un entorno Windows limpio. Los 22 bugs que siguen fueron detectados en secuencia al correr el flujo `make init` + `make dev` + `make test`, y la mayoría fueron parcheados sobre la marcha para dejar el stack funcional. Este archivo sirve como insumo para abrir issues/PRs ordenados.
+> Reporte generado durante el bootstrap inicial de la plataforma AI-Native N4 (tesis UTN) desde un entorno Windows limpio. Los 22 bugs que siguen fueron detectados en secuencia al correr el flujo `make init` + `make dev` + `make test`, y la mayoría fueron parcheados sobre la marcha para dejar el stack funcional. Este archivo sirve como insumo para abrir issues/PRs ordenados.
 
 ## Resumen ejecutivo
 
@@ -298,7 +298,7 @@ docker exec platform-postgres psql -U postgres -c \
 ```
 
 **Recomendación para PR**:
-Mover ese `GRANT` a `infrastructure/postgres/init-dbs.sql` (corre como superuser en el init). Documentar en `ADR-001` (multi-tenancy RLS) la dependencia explícita de Postgres 15+ y este privilegio — hoy el ADR probablemente no lo menciona. Si el piloto quisiera soportar PG 14, habría que rediseñar el mecanismo de current_tenant (por ejemplo, `SET LOCAL` sin `ALTER DATABASE` persistente), pero para el piloto UNSL PG 16 ya está fijado en el docker-compose.
+Mover ese `GRANT` a `infrastructure/postgres/init-dbs.sql` (corre como superuser en el init). Documentar en `ADR-001` (multi-tenancy RLS) la dependencia explícita de Postgres 15+ y este privilegio — hoy el ADR probablemente no lo menciona. Si el piloto quisiera soportar PG 14, habría que rediseñar el mecanismo de current_tenant (por ejemplo, `SET LOCAL` sin `ALTER DATABASE` persistente), pero para el piloto UTN PG 16 ya está fijado en el docker-compose.
 
 ---
 
@@ -912,7 +912,7 @@ Commit titulado `test: fix BUG-29 — remove tests/__init__.py from apps/*/tests
 **Estado**: **Fix aplicado en sesión 2026-04-21**
 
 **Síntoma observado**:
-`POST /api/v1/analytics/kappa` no leía `X-Tenant-Id` ni `X-User-Id`, no rechazaba requests sin auth y no emitía audit log. Cualquier caller (incluso uno no autenticado por el api-gateway — ej. curl directo al puerto `:8005`) podía calcular Cohen's Kappa sin dejar huella académica de quién la calculó ni sobre qué tenant. Dado que κ es la métrica que valida la hipótesis de la tesis, el cálculo sin audit trail es inaceptable para el protocolo UNSL.
+`POST /api/v1/analytics/kappa` no leía `X-Tenant-Id` ni `X-User-Id`, no rechazaba requests sin auth y no emitía audit log. Cualquier caller (incluso uno no autenticado por el api-gateway — ej. curl directo al puerto `:8005`) podía calcular Cohen's Kappa sin dejar huella académica de quién la calculó ni sobre qué tenant. Dado que κ es la métrica que valida la hipótesis de la tesis, el cálculo sin audit trail es inaceptable para el protocolo UTN.
 
 **Causa raíz**:
 El endpoint se implementó antes del refactor de auth de BUG-21/22 y quedó sin migrar. Sibling exacto de BUG-21/22 que pasó sin detectar en la primera ronda (heads-up ya anotado en `CLAUDE.md` sesión 2026-04-21 antes del fix).
@@ -937,7 +937,7 @@ El endpoint se implementó antes del refactor de auth de BUG-21/22 y quedó sin 
 
 UUIDs usados: tenant demo `aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa` + user placeholder `11111111-1111-1111-1111-111111111111` (consistente con la convención de `kappa-workflow.md` §5 que ya usaba `1...001/002/003` para `episode_id`).
 
-NOTA: el `protocolo-piloto-unsl.docx` es binario y no se editó; si referencia los endpoints, debe regenerarse vía `make generate-protocol` después de actualizar el template fuente. Endpoints `GET /cohort/export/{job_id}/{status,download}` (ejemplos en `docs/F7-STATE.md:191,194`) no requieren headers de auth en el código actual (solo `job_id` en path) — fuera del scope de este follow-up; abrir nuevo bug si la implementación se endurece.
+NOTA: el `protocolo-piloto-utn.docx` es binario y no se editó; si referencia los endpoints, debe regenerarse vía `make generate-protocol` después de actualizar el template fuente. Endpoints `GET /cohort/export/{job_id}/{status,download}` (ejemplos en `docs/F7-STATE.md:191,194`) no requieren headers de auth en el código actual (solo `job_id` en path) — fuera del scope de este follow-up; abrir nuevo bug si la implementación se endurece.
 
 ---
 
@@ -1060,7 +1060,7 @@ Ordenados por prioridad (los primeros bloquean el siguiente onboarding en Window
 
 **Decisiones humanas pendientes** (no resueltas en esta sesión):
 - Quién designa formalmente a los 2 docentes raters (¿comité del piloto? ¿director de tesis?). El workflow asume que queda registrado en acta.
-- Estrategia de muestreo concreta para el piloto UNSL (estratificada por clasificador automático vs por `tarea_practica`). El workflow lista ambas como válidas; la elección es del investigador responsable.
+- Estrategia de muestreo concreta para el piloto UTN (estratificada por clasificador automático vs por `tarea_practica`). El workflow lista ambas como válidas; la elección es del investigador responsable.
 
 ---
 
@@ -1123,7 +1123,7 @@ Total: **13 tests** específicos de OBJ-12, todos contados en el conteo 310/310 
 **Conclusión**: OBJ-12 está cubierto end-to-end a nivel backend + tests + docs operativas. El consumo es API-only por diseño en F7. La auditoría OBJ debe corregir su clasificación de OBJ-12 a "implementado y verificado (UI deferida a F8+ por diseño documentado)".
 
 **Decisiones humanas pendientes** (no resueltas en esta sesión):
-- Si el piloto UNSL necesita UI de A/B testing antes de F8 (drag-and-drop de ratings + comparativa visual de κ), eso es scope de UI nuevo (estimado L: >16h, requiere mockups + decisión de UX). Hoy el investigador lo opera con `curl` + JSON de gold standard; el `docs/pilot/kappa-workflow.md` ya cubre cómo construir ese gold standard.
+- Si el piloto UTN necesita UI de A/B testing antes de F8 (drag-and-drop de ratings + comparativa visual de κ), eso es scope de UI nuevo (estimado L: >16h, requiere mockups + decisión de UX). Hoy el investigador lo opera con `curl` + JSON de gold standard; el `docs/pilot/kappa-workflow.md` ya cubre cómo construir ese gold standard.
 
 ### HU-088 / HU-118 audit log decision — ratificado en sesión 2026-04-21 (structlog, no tabla)
 
@@ -1186,7 +1186,7 @@ Plantilla de readiness real, copiable a cada `apps/<svc>/src/<svc>/routes/health
 Effort estimado para los 11 restantes: ~30 min/servicio (≈5–6h total). Encaja en M (4–16h). No hay decisión humana bloqueante.
 
 **Decisiones humanas pendientes**:
-- ¿Implementar readiness real en los 11 servicios restantes antes del piloto, o aceptar que en dev local un pod NotReady se detecta a ojo? Para piloto UNSL local (`make dev`) probablemente sea suficiente con ctr-service real + stubs en el resto. Para staging/prod (k8s real), las 11 readiness reales son requisito operativo — sin eso, un pod con DB caída sigue recibiendo tráfico hasta que falla en runtime.
+- ¿Implementar readiness real en los 11 servicios restantes antes del piloto, o aceptar que en dev local un pod NotReady se detecta a ojo? Para piloto UTN local (`make dev`) probablemente sea suficiente con ctr-service real + stubs en el resto. Para staging/prod (k8s real), las 11 readiness reales son requisito operativo — sin eso, un pod con DB caída sigue recibiendo tráfico hasta que falla en runtime.
 - ¿Agregar un test de smoke en CI que pegue a `/health/ready` de cada servicio levantado contra Postgres+Redis reales (testcontainers) y assertee 200 + `checks` poblado? Hoy `scripts/check-health.sh` solo se corre manualmente.
 
 ---
@@ -1262,5 +1262,5 @@ Threshold puesto en **60%** — el floor actual real, no el target. Esto convier
 3. **Fase C (compromiso académico)**: cumplir lo declarado en `CLAUDE.md` — tutor/ctr a 85%, gate global a 80%. Esto NO es opcional: es parte de la aceptabilidad académica del piloto (auditoría OBJ).
 
 **Decisiones humanas pendientes**:
-- Si el ratchet a 85% se hace antes del piloto UNSL o se documenta como deuda técnica conocida en la defensa de tesis. Dado que el plano pedagógico es el corazón de la tesis (tutor + CTR + classifier), no cumplir el target propio en `tutor` y `ctr` es un riesgo a la aceptabilidad académica. Recomendación de esta sesión: **Fase A debe ejecutarse antes del go-live del piloto**, no después.
+- Si el ratchet a 85% se hace antes del piloto UTN o se documenta como deuda técnica conocida en la defensa de tesis. Dado que el plano pedagógico es el corazón de la tesis (tutor + CTR + classifier), no cumplir el target propio en `tutor` y `ctr` es un riesgo a la aceptabilidad académica. Recomendación de esta sesión: **Fase A debe ejecutarse antes del go-live del piloto**, no después.
 - Si vale la pena fixear el `tests/test_health.py` cross-service collision para poder medir coverage global en CI (hoy CI agrega coverage XML pero no se sabe si el agregado pasa el target porque la corrida desde root da collection errors).

@@ -1,4 +1,4 @@
-"""Endpoints analíticos del piloto UNSL.
+"""Endpoints analíticos del piloto UTN.
 
 POST /api/v1/analytics/kappa            calcula Cohen's Kappa de un batch de ratings
 GET  /api/v1/analytics/cohort/export    descarga dataset académico anonimizado
