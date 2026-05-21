@@ -52,7 +52,7 @@ from typing import Literal
 
 # Versión semver del corpus de detectors. Bumpear cualquier patrón, threshold
 # o penalización requiere bumpear esto y el golden hash de los tests.
-SOCRATIC_COMPLIANCE_VERSION = "1.0.0"
+SOCRATIC_COMPLIANCE_VERSION = "1.1.0"
 
 # Tipos de prompt del estudiante. La detección distingue entre:
 # - "direct": el estudiante pide explícitamente la solución completa.
@@ -97,21 +97,42 @@ class SocraticComplianceResult:
 # Cubre español rioplatense (dame, escribime, hacelo) + neutral (dame, escribe,
 # hace) + inglés (give, write, do, solve).
 _DIRECT_PROMPT_PATTERNS = [
-    # "dame/dale/escribime/hacelo/respondeme + el código/solución/respuesta"
-    r"\b(dame|dale|escrib(e|í|ime|ímelo)|hac(e|é|elo|emelo|elo)|respond(e|eme|ele|émelo))\b"
+    # v1.1.0 (2026-05-21): ampliación rioplatense. Antes solo matchaba
+    # imperativos genéricos ("dame", "escribime") seguidos de sustantivo.
+    # Quedaban fuera variantes comunes: "pasame", "mostrame", "decime",
+    # "hacelo vos", "resolvelo vos", "no quiero pensar". Este sesgo
+    # producía falsos negativos: prompts claramente delegantes caían en
+    # "neutral" y luego en `aclaracion_enunciado`, escapando de
+    # `delegacion_pasiva` en el classifier.
+
+    # "dame/dale/escribime/hacelo/respondeme/pasame/mostrame/decime + sustantivo"
+    r"\b(dame|dale|escrib(e|í|ime|ímelo)|hac(e|é|elo|emelo|elo)|respond(e|eme|ele|émelo)|"
+    r"pas(a|á|ame|ámelo)|mostr(a|á|ame|ámelo)|dec(i|í|ime|ímelo)|prov(e|é|eeme))\b"
     r"[\s\-_.,]+"
-    r"(el|la|los|las|todo|me|nos)?[\s\-_.,]*"
+    r"(el|la|los|las|todo|me|nos|toda)?[\s\-_.,]*"
     r"(c(o|ó)digo|soluci(o|ó)n|respuesta|funci(o|ó)n|programa|answer|implementaci(o|ó)n)",
-    # "resolveme/resuelvelo + esto/el problema/el ejercicio"
+    # "resolveme/resuelvelo + esto/el problema/el ejercicio (vos)?"
     r"\b(resolv(e|eme|elo|emelo)|soluciona(me|lo|melo)?)\b[\s\-_.,]+"
     r"(esto|el|este|el\s+problema|el\s+ejercicio|el\s+tp)",
-    # "necesito + el código/la solución (con conjugación imperativa o de necesidad)"
+    # "hacelo vos / resolvelo vos" — imperativo + "vos" sin sustantivo
+    r"\b(hac(e|é|elo)|resolv(e|elo|elo)|escrib(i|í|ilo)|mostr(a|á|alo)|"
+    r"complet(a|á|alo)|termin(a|á|alo)|pone(?:lo)?)\s+(vos|tu|tú)\b",
+    # "necesito + el código/la solución" (con cualquier verbo de necesidad)
     r"\bnecesit(o|amos)\b[\s\-_.,]+"
     r"(el|la)?[\s\-_.,]*"
     r"(c(o|ó)digo|soluci(o|ó)n|respuesta\s+(completa|final))",
-    # EN equivalentes
-    r"\b(give|write|solve|do|provide|implement)\s+(me\s+)?(the\s+)?"
-    r"(code|solution|answer|implementation|function|program)",
+    # "necesito que me lo hagas/escribas/des/pases"
+    r"\bnecesit(o|amos)\s+que\s+me\s+lo\s+"
+    r"(hag(a|as|an)|escrib(a|as|an)|des|pas(es|en)|d(é|es))",
+    # Señales explícitas de delegación cognitiva: "no quiero pensar", "no tengo ganas"
+    r"\bno\s+quier(o|en)\s+pensar(lo)?\b",
+    r"\bno\s+tengo\s+ganas\s+(de\s+)?(pensar|hacer)",
+    # "hacelo (y ya|nomás|de una)" — imperativo abreviado
+    r"\bhac(e|é|elo)\s+(y\s+ya|nom(a|á)s|de\s+una)",
+    # EN equivalentes (ampliado)
+    r"\b(give|write|solve|do|provide|implement|hand|tell|show)\s+(me\s+)?(the\s+)?"
+    r"(code|solution|answer|implementation|function|program|response)",
+    r"\b(just\s+)?(do|write|give)\s+it\s+for\s+me\b",
 ]
 
 # Detector D2: prompt reflexivo — el estudiante busca entender, no obtener.
