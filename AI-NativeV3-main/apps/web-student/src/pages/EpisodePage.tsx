@@ -86,6 +86,7 @@ export function EpisodeView({ episodeId, onExit, ejercicioContext }: EpisodeView
   const [input, setInput] = useState<string>("")
   const [streaming, setStreaming] = useState(false)
   const [classification, setClassification] = useState<Classification | null>(null)
+  const [classificationFailed, setClassificationFailed] = useState<boolean>(false)
   const [error, setError] = useState<string | null>(null)
   const [hydrating, setHydrating] = useState<boolean>(true)
   const [closed, setClosed] = useState<boolean>(false)
@@ -288,8 +289,13 @@ export function EpisodeView({ episodeId, onExit, ejercicioContext }: EpisodeView
     try {
       const c = await classifyEpisode(episodeId)
       setClassification(c)
-    } catch {
-      // Best-effort.
+    } catch (e) {
+      // Best-effort: no bloqueamos el cierre si falla la clasificación,
+      // pero seteamos el flag para mostrar un panel de fallback en lugar
+      // de quedar en limbo silencioso (bug previo: el alumno cerraba y
+      // no veía nada si el classifier estaba caído).
+      console.warn("classify episode failed (best-effort):", e)
+      setClassificationFailed(true)
     }
     window.sessionStorage.removeItem(ACTIVE_EPISODE_KEY)
   }
@@ -345,6 +351,13 @@ export function EpisodeView({ episodeId, onExit, ejercicioContext }: EpisodeView
         }}
       />
     )
+  }
+
+  // Fallback: el episodio cerró pero la clasificación falló. Mejor mostrar
+  // un panel explícito que dejar al alumno en limbo viendo la UI del
+  // episodio activo (con `closed=true` pero sin feedback ni CTA claro).
+  if (classificationFailed && reflectionTargetId === null) {
+    return <ClassificationFallbackPanel onReset={onExit} />
   }
 
   if (!tarea) {
@@ -1042,16 +1055,31 @@ function buildPedagogicalFeedback(c: Classification): {
     case "delegacion_pasiva":
       return {
         tono: "atencion",
-        titulo: "Algo a mejorar para la próxima",
+        titulo: "Hay algo importante que repasar",
         mensaje:
-          "Completaste el ejercicio, pero notamos poca conversación con el tutor. Charlar con la IA antes y durante te ayuda a pensar mejor — y la idea del piloto es justamente esa.",
+          "Cerraste el episodio, pero el sistema detectó que la mayor parte del trabajo cognitivo lo hizo el tutor — no vos. La IA está acá para ayudarte a pensar, no para reemplazarte. Para la próxima, intentá poner TU idea primero (aunque esté incompleta) y usá al tutor para discutirla, no para que te dé la respuesta.",
         sugerencias:
           sugerencias.length > 0
             ? sugerencias
             : [
-                "La próxima vez, abrí el ejercicio y contale al tutor cuál es tu primera idea, ANTES de empezar a codear.",
+                "Cuando arranques el próximo ejercicio, escribí en el chat 'Mi idea es X' antes de pedir cualquier ayuda. Eso ya empieza a construir tu razonamiento.",
               ],
       }
+    default: {
+      // Defensa contra `appropriation` desconocido (clasificador con
+      // categoría nueva, valor null, etc.). Sin este default la función
+      // retornaba undefined y rompía el ClassificationPanel en runtime.
+      return {
+        tono: "neutro",
+        titulo: "Episodio cerrado",
+        mensaje:
+          "Cerramos tu episodio. La clasificación pedagógica no pudo determinar un nivel claro de apropiación esta vez — puede deberse a un episodio muy corto o con datos insuficientes para evaluar las coherencias.",
+        sugerencias:
+          sugerencias.length > 0
+            ? sugerencias
+            : ["Probá un episodio más largo donde puedas dialogar con el tutor."],
+      }
+    }
   }
 }
 
@@ -1118,6 +1146,39 @@ function ClassificationPanel({
           className="press-shrink px-5 py-2.5 bg-accent-brand hover:bg-accent-brand-deep text-white rounded-lg text-sm font-medium transition-colors"
         >
           {isMultiExercise ? "Siguiente ejercicio →" : "Volver a mis materias"}
+        </button>
+      </div>
+    </div>
+  )
+}
+
+function ClassificationFallbackPanel({ onReset }: { onReset: () => void }) {
+  // Panel mínimo cuando el cierre fue OK pero `classifyEpisode` falló.
+  // Antes de este componente, el alumno quedaba en limbo: `closed=true`
+  // pero sin classification, la UI seguía mostrando el episodio activo.
+  return (
+    <div className="flex-1 p-6 overflow-y-auto max-w-2xl mx-auto w-full">
+      <div className="rounded-2xl border border-border-soft bg-surface p-7 mb-6">
+        <p className="text-xs font-mono uppercase tracking-[0.15em] text-muted mb-2">
+          Cierre del ejercicio
+        </p>
+        <h2 className="font-serif text-3xl font-medium leading-tight text-ink">
+          Cerramos tu episodio
+        </h2>
+        <p className="mt-4 text-base leading-relaxed text-body">
+          Tu trabajo quedó registrado criptográficamente. La clasificación
+          pedagógica no se pudo calcular en este momento — el sistema la
+          va a procesar más tarde y vas a poder verla en{" "}
+          <strong>Mis reflexiones</strong>.
+        </p>
+      </div>
+      <div className="flex justify-end">
+        <button
+          type="button"
+          onClick={onReset}
+          className="press-shrink px-5 py-2.5 bg-accent-brand hover:bg-accent-brand-deep text-white rounded-lg text-sm font-medium transition-colors"
+        >
+          Volver a mis materias
         </button>
       </div>
     </div>
