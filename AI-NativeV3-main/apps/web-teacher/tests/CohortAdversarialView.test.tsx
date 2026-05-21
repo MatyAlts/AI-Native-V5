@@ -75,8 +75,9 @@ describe("CohortAdversarialView", () => {
     setupFetchMock({ "/adversarial-events": () => populatedResponse })
     renderWithRouter(<CohortAdversarialView getToken={fakeGetToken} initialComisionId={COMISION_ID} />)
     await waitFor(() => {
-      // Total de eventos
-      expect(screen.getByText("5")).toBeInTheDocument()
+      // Total de eventos. El "5" aparece tanto en el contador grande como
+      // en el badge del tab → `getAllByText` para evitar la colisión.
+      expect(screen.getAllByText("5").length).toBeGreaterThanOrEqual(1)
     })
     // Categoría visible (en barras + en lista de recientes)
     const jailbreakLabels = screen.getAllByText(/Jailbreak \(sustituci/i)
