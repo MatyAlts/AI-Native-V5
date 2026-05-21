@@ -282,6 +282,14 @@ export function EpisodeNLevelView({ getToken, initialEpisodeId }: Props) {
                   <div className="font-mono text-sm text-ink break-all">
                     {isDocente ? data.episode_id.slice(0, 8) : data.episode_id}
                   </div>
+                  <Link
+                    to="/episode-timeline"
+                    search={{ episodeId: data.episode_id }}
+                    className="inline-block mt-2 text-xs text-[var(--color-accent-brand)] hover:underline"
+                    data-testid="link-to-timeline"
+                  >
+                    Ver timeline detallado de eventos →
+                  </Link>
                 </div>
                 {!isDocente && (
                   <div className="text-right text-xs text-muted shrink-0">

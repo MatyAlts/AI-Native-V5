@@ -18,6 +18,7 @@ import { Route as MaterialesRouteImport } from './routes/materiales'
 import { Route as KappaRouteImport } from './routes/kappa'
 import { Route as InstrumentosCohorteRouteImport } from './routes/instrumentos-cohorte'
 import { Route as ExportRouteImport } from './routes/export'
+import { Route as EpisodeTimelineRouteImport } from './routes/episode-timeline'
 import { Route as EpisodeNLevelRouteImport } from './routes/episode-n-level'
 import { Route as EjerciciosRouteImport } from './routes/ejercicios'
 import { Route as CorreccionesRouteImport } from './routes/correcciones'
@@ -70,6 +71,11 @@ const ExportRoute = ExportRouteImport.update({
   path: '/export',
   getParentRoute: () => rootRouteImport,
 } as any)
+const EpisodeTimelineRoute = EpisodeTimelineRouteImport.update({
+  id: '/episode-timeline',
+  path: '/episode-timeline',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const EpisodeNLevelRoute = EpisodeNLevelRouteImport.update({
   id: '/episode-n-level',
   path: '/episode-n-level',
@@ -108,6 +114,7 @@ export interface FileRoutesByFullPath {
   '/correcciones': typeof CorreccionesRoute
   '/ejercicios': typeof EjerciciosRoute
   '/episode-n-level': typeof EpisodeNLevelRoute
+  '/episode-timeline': typeof EpisodeTimelineRoute
   '/export': typeof ExportRoute
   '/instrumentos-cohorte': typeof InstrumentosCohorteRoute
   '/kappa': typeof KappaRoute
@@ -125,6 +132,7 @@ export interface FileRoutesByTo {
   '/correcciones': typeof CorreccionesRoute
   '/ejercicios': typeof EjerciciosRoute
   '/episode-n-level': typeof EpisodeNLevelRoute
+  '/episode-timeline': typeof EpisodeTimelineRoute
   '/export': typeof ExportRoute
   '/instrumentos-cohorte': typeof InstrumentosCohorteRoute
   '/kappa': typeof KappaRoute
@@ -143,6 +151,7 @@ export interface FileRoutesById {
   '/correcciones': typeof CorreccionesRoute
   '/ejercicios': typeof EjerciciosRoute
   '/episode-n-level': typeof EpisodeNLevelRoute
+  '/episode-timeline': typeof EpisodeTimelineRoute
   '/export': typeof ExportRoute
   '/instrumentos-cohorte': typeof InstrumentosCohorteRoute
   '/kappa': typeof KappaRoute
@@ -162,6 +171,7 @@ export interface FileRouteTypes {
     | '/correcciones'
     | '/ejercicios'
     | '/episode-n-level'
+    | '/episode-timeline'
     | '/export'
     | '/instrumentos-cohorte'
     | '/kappa'
@@ -179,6 +189,7 @@ export interface FileRouteTypes {
     | '/correcciones'
     | '/ejercicios'
     | '/episode-n-level'
+    | '/episode-timeline'
     | '/export'
     | '/instrumentos-cohorte'
     | '/kappa'
@@ -196,6 +207,7 @@ export interface FileRouteTypes {
     | '/correcciones'
     | '/ejercicios'
     | '/episode-n-level'
+    | '/episode-timeline'
     | '/export'
     | '/instrumentos-cohorte'
     | '/kappa'
@@ -214,6 +226,7 @@ export interface RootRouteChildren {
   CorreccionesRoute: typeof CorreccionesRoute
   EjerciciosRoute: typeof EjerciciosRoute
   EpisodeNLevelRoute: typeof EpisodeNLevelRoute
+  EpisodeTimelineRoute: typeof EpisodeTimelineRoute
   ExportRoute: typeof ExportRoute
   InstrumentosCohorteRoute: typeof InstrumentosCohorteRoute
   KappaRoute: typeof KappaRoute
@@ -290,6 +303,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ExportRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/episode-timeline': {
+      id: '/episode-timeline'
+      path: '/episode-timeline'
+      fullPath: '/episode-timeline'
+      preLoaderRoute: typeof EpisodeTimelineRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/episode-n-level': {
       id: '/episode-n-level'
       path: '/episode-n-level'
@@ -342,6 +362,7 @@ const rootRouteChildren: RootRouteChildren = {
   CorreccionesRoute: CorreccionesRoute,
   EjerciciosRoute: EjerciciosRoute,
   EpisodeNLevelRoute: EpisodeNLevelRoute,
+  EpisodeTimelineRoute: EpisodeTimelineRoute,
   ExportRoute: ExportRoute,
   InstrumentosCohorteRoute: InstrumentosCohorteRoute,
   KappaRoute: KappaRoute,
