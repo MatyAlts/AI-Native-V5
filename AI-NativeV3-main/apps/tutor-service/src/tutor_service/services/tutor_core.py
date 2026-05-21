@@ -40,7 +40,29 @@ from tutor_service.services.guardrails import (
     OveruseDetector,
 )
 from tutor_service.services.guardrails import detect as detect_adversarial_default
+from tutor_service.services.postprocess import infer_prompt_kind
 from tutor_service.services.session import SessionManager, SessionState
+
+
+# Mapping del infer_prompt_kind (postprocess.py) al `prompt_kind` del contrato
+# CTR (PromptEnviadoPayload). El postprocess clasifica en 3 buckets coarsos
+# (direct / reflective / neutral) determinísticamente sobre el texto. Acá
+# mapeamos a los 3 kinds del contracts que mejor capturan la semántica:
+#
+#   direct     → solicitud_directa     "dame el código", "resolvelo vos"
+#   reflective → exploracion           "¿qué pasa si...?", "¿cómo encararía...?"
+#   neutral    → aclaracion_enunciado  preguntas que no son ni claramente
+#                                      directas ni claramente reflexivas
+#                                      (típicamente pedidos de contexto)
+#
+# Pre-fix (2026-05-21): el prompt_kind era hardcoded "solicitud_directa" para
+# TODOS los prompts, sin pasarlo por infer_prompt_kind. Resultado: el classifier
+# leía todo como acción huérfana → `ccd_orphan_ratio = 1.00` constante.
+_PROMPT_KIND_MAPPING: dict[str, str] = {
+    "direct": "solicitud_directa",
+    "reflective": "exploracion",
+    "neutral": "aclaracion_enunciado",
+}
 
 logger = logging.getLogger(__name__)
 
@@ -317,6 +339,10 @@ class TutorCore:
         rag_context = self._format_rag_context(retrieval.chunks)
 
         # 3. Emitir PromptEnviado al CTR
+        # Derivar prompt_kind del contenido via infer_prompt_kind (3 buckets
+        # → 3 valores del contracts via _PROMPT_KIND_MAPPING). Determinístico.
+        inferred_kind = infer_prompt_kind(user_message)
+        prompt_kind_ctr = _PROMPT_KIND_MAPPING[inferred_kind]
         prompt_seq = await self.sessions.next_seq(state)
         prompt_event = self._build_event(
             state=state,
@@ -324,7 +350,7 @@ class TutorCore:
             event_type="prompt_enviado",
             payload={
                 "content": user_message,
-                "prompt_kind": "solicitud_directa",
+                "prompt_kind": prompt_kind_ctr,
                 "chunks_used_hash": retrieval.chunks_used_hash,
             },
         )

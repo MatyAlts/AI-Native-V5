@@ -72,11 +72,26 @@ def test_reflection_fuera_de_ventana_no_alinea() -> None:
     assert r["orphans"] == 1
 
 
-def test_prompt_reflexion_cuenta_como_verbalizacion() -> None:
-    """Un prompt con kind='reflexion' actúa como verbalización."""
+def test_prompt_exploracion_cuenta_como_verbalizacion() -> None:
+    """v2.0.0: un prompt con kind='exploracion' actúa como verbalización
+    reflexiva. Antes esto fallaba porque el código buscaba 'reflexion'
+    (valor inexistente en runtime); ahora reconoce los 5 kinds reflexivos
+    reales que emite el tutor-service."""
     events = [
         _ev(0, "codigo_ejecutado", 0),
-        _ev(1, "prompt_enviado", 30, {"prompt_kind": "reflexion", "content": "pensé que..."}),
+        _ev(1, "prompt_enviado", 30, {"prompt_kind": "exploracion", "content": "¿qué pasa si...?"}),
+    ]
+    r = compute_ccd(events)
+    assert r["aligned"] == 1
+    assert r["orphans"] == 0
+
+
+def test_prompt_aclaracion_enunciado_cuenta_como_verbalizacion() -> None:
+    """v2.0.0: el alumno preguntando por el enunciado ANTES de codear
+    es señal de querer entender el problema — cuenta como verbalización."""
+    events = [
+        _ev(0, "codigo_ejecutado", 0),
+        _ev(1, "prompt_enviado", 30, {"prompt_kind": "aclaracion_enunciado", "content": "no entiendo..."}),
     ]
     r = compute_ccd(events)
     assert r["aligned"] == 1

@@ -113,6 +113,11 @@ class PromptEnviadoPayload(BaseModel):
         "epistemologica",
         "validacion",
         "aclaracion_enunciado",
+        # `exploracion` agregado 2026-05-21: el tutor-service lo emite en
+        # runtime (verificado: 100 eventos en DB) y faltaba en el contrato.
+        # Cubre prompts del estilo "¿qué pasa si...?", "¿cómo encararía...?"
+        # — son verbalizaciones reflexivas exploratorias, no pedidos directos.
+        "exploracion",
     ]
     chunks_used_hash: str | None = Field(default=None, pattern=r"^[a-f0-9]{64}$")
 

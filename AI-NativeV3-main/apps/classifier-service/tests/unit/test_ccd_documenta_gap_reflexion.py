@@ -1,10 +1,11 @@
-"""F19: ancla la limitación v1.0.0 de CCD documentada en el docstring.
+"""F19: ancla la operacionalización CCD vigente (v2.0.0, 2026-05-21).
 
-Bloquea regresiones del tipo "alguien cierra el gap parcialmente sin
-migrar el contract (PromptKind sigue sin admitir 'reflexion')". Si el
-tutor-service empezara a emitir `prompt_kind="reflexion"` sin que
-`PromptKind` lo admita, los CTRs no validarían contra el contract y
-llegarían a CCD desalineados — este test fija la realidad presente.
+El gap declarado en v1.0.0 (que el `prompt_kind="reflexion"` nunca se
+emitía y por eso CCD subestimaba la verbalización) fue cerrado en
+v2.0.0 reconociendo los 5 kinds reflexivos reales que el tutor-service
+emite via `infer_prompt_kind`. Este test ancla el nuevo set para
+prevenir regresiones (alguien sumando un kind reflexivo nuevo al
+contract sin agregarlo a `_REFLECTIVE_KINDS` de ccd.py).
 """
 
 from __future__ import annotations
@@ -26,25 +27,25 @@ def _ev(seq: int, event_type: str, sec_offset: int, payload: dict[str, Any]) -> 
     }
 
 
-def test_prompt_kind_reflexion_no_es_admitido_por_el_contract_pydantic() -> None:
-    """`PromptKind` solo admite 5 valores; 'reflexion' NO está en la lista.
+def test_prompt_kind_admite_6_valores_v2() -> None:
+    """v2.0.0: PromptKind admite 6 valores. 'exploracion' fue agregado el
+    2026-05-21 porque el runtime ya lo emitía (100 eventos en DB) y faltaba
+    en el contrato.
 
-    Si esto cambia (alguien suma 'reflexion' al Literal), CCD deja de tener
-    un gap y este test debe actualizarse junto con `tutor_core.py` y G9.
+    Si se agrega un kind nuevo al contract:
+      - Decidir si es reflexivo o no
+      - Agregarlo a `_REFLECTIVE_KINDS` de `ccd.py` si corresponde
+      - Bumpear `LABELER_VERSION` si cambia la operacionalización
     """
     field_info = PromptEnviadoPayload.model_fields["prompt_kind"]
     valores_admitidos = set(field_info.annotation.__args__)
-    assert "reflexion" not in valores_admitidos, (
-        "Si 'reflexion' ya está admitido en el contract, el gap de CCD"
-        " documentado en docstring v1.0.0 está cerrado — actualizá ccd.py"
-        " y este test."
-    )
     assert valores_admitidos == {
         "solicitud_directa",
         "comparativa",
         "epistemologica",
         "validacion",
         "aclaracion_enunciado",
+        "exploracion",
     }
 
 

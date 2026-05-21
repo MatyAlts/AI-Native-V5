@@ -15,30 +15,37 @@ Definición operacional:
 Valores cercanos a 0 en ccd_orphan_ratio = buena coherencia.
 Valores cercanos a 1 = muchas acciones "huérfanas" = baja apropiación.
 
-NOTA DE IMPLEMENTACIÓN v1.0.0
------------------------------
+NOTA DE IMPLEMENTACIÓN v2.0.0 (2026-05-21)
+------------------------------------------
 Este módulo trata como verbalización reflexiva a:
   (a) `anotacion_creada` (siempre), y
-  (b) `prompt_enviado` con `payload.prompt_kind == "reflexion"`.
+  (b) `prompt_enviado` con `payload.prompt_kind` ∈ _REFLECTIVE_KINDS:
+      {exploracion, aclaracion_enunciado, comparativa, epistemologica,
+       validacion}.
 
-Sin embargo, "reflexion" NO es uno de los valores admitidos por
-`PromptKind` en los contratos vigentes (ver
-`packages/contracts/src/platform_contracts/ctr/events.py` clase
-`PromptEnviadoPayload` — solo admite `solicitud_directa | comparativa |
-epistemologica | validacion | aclaracion_enunciado`). El tutor-service
-(`apps/tutor-service/src/tutor_service/services/tutor_core.py`) emite
-siempre `prompt_kind="solicitud_directa"` en v1.0.0. Por tanto la
-rama (b) **nunca se activa con datos reales del piloto** y CCD subestima
-la reflexividad de prompts cuyo contenido es reflexivo pero quedan
-etiquetados como "solicitud_directa".
+CAMBIO RESPECTO A v1.0.0:
+La versión anterior buscaba `prompt_kind == "reflexion"`, un valor que
+NUNCA se emite en runtime. Resultado: la rama (b) nunca se activaba,
+todos los prompts quedaban como "acción huérfana" y `ccd_orphan_ratio`
+quedaba inflado a 1.0 constante. Bug de sincronización entre el contrato
+(declaraba 5 kinds, ninguno "reflexion") y el classifier (buscaba un
+sexto inexistente).
 
-Esta es una limitación conocida del v1.0.0, alineada con la Sección 15.6
-de la tesis ("operacionalización temporal liviana, determinista,
-reproducible bit-a-bit; captura una señal importante pero no su
-contenido"). El fix completo —clasificación automática de `prompt_kind`
-a partir del contenido— es scope del Eje B (clasificador semántico) y
-se aborda en el cambio grande G9. Hoy, la única fuente activa de
-verbalización reflexiva es `anotacion_creada`.
+La operacionalización ahora alinea con `infer_prompt_kind` del
+tutor-service (`apps/tutor-service/.../services/postprocess.py:252`),
+que clasifica los prompts en runtime con un mapping determinístico
+sobre el contenido textual. Los prompts `solicitud_directa` (pedido
+directo de código) NO son reflexivos por definición — quedan como acción.
+
+Reproducibilidad bit-a-bit: el mapping kind→reflexivo es estático y
+determinístico. Bumpear `LABELER_VERSION` cuando este set cambie.
+
+NOTA HISTÓRICA (v1.0.0)
+------------------------
+Originalmente, la única fuente activa de verbalización reflexiva era
+`anotacion_creada`. Esa restricción no fue intencional sino derivada del
+bug de sincronización. Las 106 classifications históricas pre-v2.0.0
+están contaminadas por este bug y deben re-correrse (A1 plan-accion).
 
 DISTINCION FORMAL (CS03 informeSocra1.md / plan1Socra.md, 2026-05-16)
 ---------------------------------------------------------------------
@@ -97,25 +104,42 @@ def compute_ccd(events: list[dict]) -> dict[str, Any]:
 
     sorted_events = sorted(events, key=lambda e: e["seq"])
 
-    # Acciones: prompt_enviado (no-reflexion) + codigo_ejecutado
+    # Prompts reflexivos: prompts cuyo `prompt_kind` indica verbalización
+    # del razonamiento del alumno (NO pedido directo de solución). Set
+    # determinístico — los valores vienen del `infer_prompt_kind` del
+    # tutor-service (postprocess.py). Sin este set, antes solo "reflexion"
+    # contaba, pero ese valor no se emite en runtime → todos los prompts
+    # quedaban como "acción huérfana" y `ccd_orphan_ratio = 1.0` constante.
+    _REFLECTIVE_KINDS = {
+        "exploracion",  # "¿qué pasa si...?" "¿cómo encararía...?"
+        "aclaracion_enunciado",  # "no entiendo el enunciado" — pregunta el problema
+        "comparativa",  # "¿es mejor X o Y?" — razonamiento explícito
+        "epistemologica",  # "¿cómo sé que esto es verdad?"
+        "validacion",  # "¿está bien que...?" — busca confirmación de su razonamiento
+    }
+
+    def _kind(e: dict) -> str:
+        return (e.get("payload") or {}).get("prompt_kind") or ""
+
+    # Acciones: codigo_ejecutado + prompts NO reflexivos (solicitud_directa)
     actions = [
         e
         for e in sorted_events
         if e["event_type"] == "codigo_ejecutado"
         or (
             e["event_type"] == "prompt_enviado"
-            and (e.get("payload") or {}).get("prompt_kind") != "reflexion"
+            and _kind(e) not in _REFLECTIVE_KINDS
         )
     ]
 
-    # Verbalizaciones reflexivas: anotacion_creada O prompt con kind=reflexion
+    # Verbalizaciones reflexivas: anotacion_creada O prompt con kind reflexivo
     reflections = [
         e
         for e in sorted_events
         if e["event_type"] == "anotacion_creada"
         or (
             e["event_type"] == "prompt_enviado"
-            and (e.get("payload") or {}).get("prompt_kind") == "reflexion"
+            and _kind(e) in _REFLECTIVE_KINDS
         )
     ]
 
