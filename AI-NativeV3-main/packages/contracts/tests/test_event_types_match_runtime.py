@@ -21,12 +21,16 @@ import pytest
 from platform_contracts.ctr.events import (
     AnotacionCreada,
     CodigoEjecutado,
+    CopiaIntentada,
     EdicionCodigo,
     EpisodioAbandonado,
     EpisodioAbierto,
     EpisodioCerrado,
     IntentoAdversoDetectado,
     LecturaEnunciado,
+    PegaIntentada,
+    PestanaPerdida,
+    PestanaRecuperada,
     PromptEnviado,
     ReflexionCompletada,
     TestsEjecutados,
@@ -54,6 +58,10 @@ def _contract_event_types() -> set[str]:
         IntentoAdversoDetectado,
         ReflexionCompletada,
         TestsEjecutados,
+        PestanaPerdida,
+        PestanaRecuperada,
+        CopiaIntentada,
+        PegaIntentada,
     )
     return {cls.model_fields["event_type"].default for cls in classes}
 
