@@ -1,9 +1,48 @@
 # Infraestructura prod-like para piloto-2 ampliado UTN.
 #
+# ─────────────────────────────────────────────────────────────────────
+# RESUMEN EJECUTIVO — containers que levanta este compose
+# ─────────────────────────────────────────────────────────────────────
+#   INFRA (11):
+#     postgres          base academic_main + ctr_store + classifier_db + content_db
+#     keycloak-db       postgres dedicado a Keycloak (separado por ADR-002)
+#     keycloak          IdP/auth (realm UTN)
+#     redis             bus eventos CTR (8 streams ctr.p0..p7) + rate-limit + sessions
+#     minio             storage S3 para materiales + archive CTR
+#     otel-collector    receptor OTLP gRPC -> jaeger/prometheus/loki
+#     jaeger            traces UI (puerto interno, acceso por SSH tunnel)
+#     prometheus        metricas + alertas
+#     alertmanager      ruteo de alertas (email institucional UTN)
+#     loki              logs estructurados
+#     grafana           UI unificada (loopback 3000)
+#
+#   PYTHON SERVICES (10):
+#     api-gateway       :8000 (unico expuesto a internet via reverse-proxy)
+#     academic-service  :8002 (CRUDs + bulk-import)
+#     evaluation-service :8004 (entregas + calificaciones)
+#     analytics-service :8005 (kappa, progresion, alertas predictivas)
+#     tutor-service     :8006 (SSE socratico con guardrails)
+#     ctr-service       :8007 (cadena criptografica append-only, productor + API audit)
+#     classifier-service :8008 (N4 + 3 coherencias en 5 metricas)
+#     content-service   :8009 (RAG pgvector + materiales)
+#     governance-service :8010 (prompts versionados, internal-only)
+#     ai-gateway        :8011 (LLM proxy con BYOK por tenant)
+#
+#   CTR WORKERS (8):
+#     ctr-worker-0..7   single-writer por particion (ADR-010), drenan ctr.pN -> postgres
+#
+#   FRONTENDS (1):
+#     frontends         nginx sirviendo web-admin + web-teacher + web-student +
+#                       proxy /api/* a api-gateway (loopback :8080)
+#
+#   TOTAL: 30 containers. integrity-attestation-service NO esta aca (ADR-021,
+#   vive en VPS UTN aparte como infra institucional).
+#
+# ─────────────────────────────────────────────────────────────────────
 # DIFERENCIAS CON dev:
 #   - Credenciales via ${VAR} desde .env.prod (NO hardcoded admin/admin)
 #   - Los 10 servicios Python corren en containers (build .) — no en host
-#   - Solo api-gateway, Grafana y Keycloak admin exponen puertos al host
+#   - Solo api-gateway, Grafana, Keycloak admin y frontends exponen al host
 #   - Red interna platform-prod aislada
 #   - dev_trust_headers=false por contrato (api-gateway exige JWT real)
 #   - integrity-attestation-service NO está acá (vive en VPS UTN aparte, ADR-021)
@@ -33,6 +72,37 @@ x-service-defaults: &service-defaults
     LOG_FORMAT: json
     OTEL_EXPORTER_OTLP_ENDPOINT: http://otel-collector:4317
     OTEL_SERVICE_NAME_PREFIX: platform
+
+# Defaults compartidos por los 8 ctr-workers (ADR-010): mismo build que
+# ctr-service (Dockerfile y codigo identicos), pero el ENTRYPOINT lo
+# overrideamos con `command:` para correr el partition_worker. NO exponen
+# puertos (no escuchan HTTP).
+x-ctr-worker-defaults: &ctr-worker-defaults
+  build:
+    context: ..
+    dockerfile: apps/ctr-service/Dockerfile
+  # CRITICO: el Dockerfile de ctr-service tiene ENTRYPOINT exec form
+  # invocando uvicorn. Sin este `entrypoint: []`, Docker concatena ENTRYPOINT
+  # + command (el `command:` de cada ctr-worker-N) y arrancan uvicorn con
+  # args raros que crashean. `entrypoint: []` borra el ENTRYPOINT heredado
+  # del Dockerfile y deja que el `command:` de cada servicio sea el unico
+  # comando ejecutado.
+  entrypoint: []
+  restart: unless-stopped
+  networks:
+    - default
+  environment: &ctr-worker-env
+    LOG_LEVEL: ${LOG_LEVEL:-info}
+    LOG_FORMAT: json
+    OTEL_EXPORTER_OTLP_ENDPOINT: http://otel-collector:4317
+    OTEL_SERVICE_NAME_PREFIX: platform
+    CTR_STORE_URL: postgresql+asyncpg://ctr_user:${CTR_DB_PASSWORD}@postgres:5432/ctr_store
+    REDIS_URL: redis://:${REDIS_PASSWORD}@redis:6379/0
+  depends_on:
+    postgres:
+      condition: service_healthy
+    redis:
+      condition: service_started
 
 services:
   # ════════════════════════════════════════════════════════════════════
@@ -443,6 +513,72 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
+
+  # ════════════════════════════════════════════════════════════════════
+  # CAPA WORKERS CTR — single-writer por particion (ADR-010, NUM_PARTITIONS=8)
+  # Cada worker consume el stream ctr.p<N> y persiste a Postgres ctr_store.
+  # Mismo build que ctr-service (codigo compartido); el ENTRYPOINT del
+  # Dockerfile se ignora porque `command:` lo sobreescribe.
+  # ════════════════════════════════════════════════════════════════════
+
+  ctr-worker-0:
+    <<: *ctr-worker-defaults
+    container_name: platform-prod-ctr-worker-0
+    command: ["python", "-m", "ctr_service.workers.partition_worker", "--partition", "0"]
+
+  ctr-worker-1:
+    <<: *ctr-worker-defaults
+    container_name: platform-prod-ctr-worker-1
+    command: ["python", "-m", "ctr_service.workers.partition_worker", "--partition", "1"]
+
+  ctr-worker-2:
+    <<: *ctr-worker-defaults
+    container_name: platform-prod-ctr-worker-2
+    command: ["python", "-m", "ctr_service.workers.partition_worker", "--partition", "2"]
+
+  ctr-worker-3:
+    <<: *ctr-worker-defaults
+    container_name: platform-prod-ctr-worker-3
+    command: ["python", "-m", "ctr_service.workers.partition_worker", "--partition", "3"]
+
+  ctr-worker-4:
+    <<: *ctr-worker-defaults
+    container_name: platform-prod-ctr-worker-4
+    command: ["python", "-m", "ctr_service.workers.partition_worker", "--partition", "4"]
+
+  ctr-worker-5:
+    <<: *ctr-worker-defaults
+    container_name: platform-prod-ctr-worker-5
+    command: ["python", "-m", "ctr_service.workers.partition_worker", "--partition", "5"]
+
+  ctr-worker-6:
+    <<: *ctr-worker-defaults
+    container_name: platform-prod-ctr-worker-6
+    command: ["python", "-m", "ctr_service.workers.partition_worker", "--partition", "6"]
+
+  ctr-worker-7:
+    <<: *ctr-worker-defaults
+    container_name: platform-prod-ctr-worker-7
+    command: ["python", "-m", "ctr_service.workers.partition_worker", "--partition", "7"]
+
+  # ════════════════════════════════════════════════════════════════════
+  # CAPA FRONTEND — nginx sirviendo los 3 SPAs + proxy /api/ -> api-gateway
+  # Build context: root del repo (pnpm workspace requiere lockfile y packages/*).
+  # El Nginx externo del VPS (TLS termination) reverse-proxea a 127.0.0.1:8080.
+  # ════════════════════════════════════════════════════════════════════
+
+  frontends:
+    container_name: platform-prod-frontends
+    build:
+      context: ..
+      dockerfile: infrastructure/frontends.Dockerfile
+    restart: unless-stopped
+    networks:
+      - default
+    ports:
+      - "${FRONTENDS_BIND:-127.0.0.1:8080}:80"
+    depends_on:
+      - api-gateway
 
 volumes:
   pg_data:
