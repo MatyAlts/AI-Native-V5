@@ -25,13 +25,13 @@ COPY package.json pnpm-lock.yaml pnpm-workspace.yaml turbo.json ./
 COPY apps/web-admin/package.json   apps/web-admin/package.json
 COPY apps/web-teacher/package.json apps/web-teacher/package.json
 COPY apps/web-student/package.json apps/web-student/package.json
+# Solo los 4 packages que SON Node (tienen package.json). Los otros
+# packages del workspace (observability, platform-ops, test-utils,
+# contracts/src/python) son Python puro y no tienen package.json.
 COPY packages/ui/package.json           packages/ui/package.json
 COPY packages/auth-client/package.json  packages/auth-client/package.json
 COPY packages/contracts/package.json    packages/contracts/package.json
 COPY packages/ctr-client/package.json   packages/ctr-client/package.json
-COPY packages/observability/package.json packages/observability/package.json
-COPY packages/platform-ops/package.json  packages/platform-ops/package.json
-COPY packages/test-utils/package.json    packages/test-utils/package.json
 
 # Instala todas las deps del workspace (frozen lockfile = reproducible).
 RUN pnpm install --frozen-lockfile
