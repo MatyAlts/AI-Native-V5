@@ -23,6 +23,5 @@ ENV PATH="/app/.venv/bin:$PATH" \
     PYTHONUNBUFFERED=1 \
     PYTHONDONTWRITEBYTECODE=1
 
-EXPOSE 8004
 
 ENTRYPOINT ["/app/.venv/bin/python", "-m", "uvicorn", "evaluation_service.main:app", "--host", "0.0.0.0", "--port", "8004"]

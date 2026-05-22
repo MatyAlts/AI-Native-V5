@@ -23,6 +23,5 @@ ENV PATH="/app/.venv/bin:$PATH" \
     PYTHONUNBUFFERED=1 \
     PYTHONDONTWRITEBYTECODE=1
 
-EXPOSE 8010
 
 ENTRYPOINT ["/app/.venv/bin/python", "-m", "uvicorn", "governance_service.main:app", "--host", "0.0.0.0", "--port", "8010"]

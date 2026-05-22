@@ -61,6 +61,5 @@ COPY --from=builder /repo/apps/web-admin/dist/   /usr/share/nginx/html/admin/
 COPY --from=builder /repo/apps/web-teacher/dist/ /usr/share/nginx/html/teacher/
 COPY --from=builder /repo/apps/web-student/dist/ /usr/share/nginx/html/student/
 
-EXPOSE 80
 
 # nginx:alpine ya tiene CMD por default: nginx -g 'daemon off;'.

@@ -169,10 +169,8 @@ services:
       KC_PROXY_HEADERS: xforwarded
     volumes:
       - ./keycloak/realm-templates:/opt/keycloak/data/import:ro
-    ports:
-      # Expuesto al host solo si vas a configurar realms desde admin UI.
-      # En VPS detras de TLS reverse-proxy, considerar quitar el bind externo.
-      - "${KEYCLOAK_BIND:-127.0.0.1:8180}:8080"
+    # ports: removed — EasyPanel maneja exposicion via su reverse-proxy.
+    # Acceso al admin UI de Keycloak via EasyPanel domain mapping.
     depends_on:
       keycloak-db:
         condition: service_healthy
@@ -294,8 +292,7 @@ services:
       - ./grafana/provisioning/datasources:/etc/grafana/provisioning/datasources:ro
       - ./grafana/provisioning/dashboards:/etc/grafana/provisioning/dashboards:ro
       - grafana_data:/var/lib/grafana
-    ports:
-      - "${GRAFANA_BIND:-127.0.0.1:3000}:3000"
+    # ports: removed — EasyPanel mapea dominio al container internamente.
     depends_on:
       - prometheus
       - loki
@@ -337,8 +334,8 @@ services:
       CONTENT_SERVICE_URL: http://content-service:8009
       GOVERNANCE_SERVICE_URL: http://governance-service:8010
       AI_GATEWAY_URL: http://ai-gateway:8011
-    ports:
-      - "${API_GATEWAY_BIND:-0.0.0.0:8000}:8000"
+    # ports: removed — EasyPanel mapea el dominio externo al puerto 8000
+    # del container internamente. Otros containers le pegan via http://api-gateway:8000
     depends_on:
       - redis
       - keycloak
@@ -575,8 +572,8 @@ services:
     restart: unless-stopped
     networks:
       - default
-    ports:
-      - "${FRONTENDS_BIND:-127.0.0.1:8080}:80"
+    # ports: removed — EasyPanel mapea el dominio publico al puerto 80
+    # del container (donde escucha el nginx interno).
     depends_on:
       - api-gateway
 
