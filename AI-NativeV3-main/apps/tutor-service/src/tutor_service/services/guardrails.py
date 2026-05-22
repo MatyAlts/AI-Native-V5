@@ -15,25 +15,45 @@ GUARDRAILS_CORPUS_VERSION, cualquier patrón regex o cualquier threshold de over
 cambia el hash. Eventos viejos quedan etiquetados con el hash del corpus que los
 detectó (mismo patrón que `classifier_config_hash` en ADR-009).
 
+v1.3.0 (2026-05-22): cambio de `re` (stdlib) a `regex` (PyPI) + fuzzy matching
+`{e<=1}` en palabras clave largas (instrucci/prompt/directiv/restricci/...).
+Cierra parcialmente la brecha "evasión intra-palabra" del ADR-019 para typos
+de 1 caracter (insert/delete/substitute) — verificado contra dos intentos
+reales del piloto que el corpus 1.2.0 dejaba pasar ("iunstrucciones",
+"promts e istrucciones anteriores"). Separadores tolerantes (`olvi-da`,
+`ig-no-ra`) seguían cubiertos desde antes.
+
 Limitaciones declaradas en el ADR-019 + revisión adversarial 2026-04-27:
 - Regex no detecta encadenamientos sofisticados (técnica 4 de Sección 8.5.1).
-- Evasión intra-palabra (e.g. `"olvi-da tus instrucciones"`, `"ig-no-ra"`)
-  NO está cubierta en v1.1.0 — es señal clara de malicia pero matchearla
-  con regex sin introducir falsos positivos masivos requiere clasificador
-  ML (Fase B). Documentado como agenda futura.
+- Evasión intra-palabra de >1 typo (e.g. `"olvi-da tus iunstrucionnes"`)
+  sigue siendo blindspot. Para cobertura completa se requiere clasificador
+  semántico (Fase B, post-defensa).
 - Falsos positivos posibles (especialmente `jailbreak_fiction` — severidad 2).
+- Fuzzy `{e<=1}` aumenta levemente la tasa esperada de falsos positivos en
+  palabras de 6-7 caracteres (`prompt`, `urgente`); aceptable porque el
+  evento es side-channel (NO bloquea el flow) y el docente puede inspeccionar.
 """
 
 from __future__ import annotations
 
 import hashlib
 import json
-import re
 from dataclasses import dataclass
 from typing import Literal, Protocol
 from uuid import UUID
 
-GUARDRAILS_CORPUS_VERSION = "1.2.0"
+# v1.3.0: cambio de `re` (stdlib) a `regex` (PyPI) para habilitar fuzzy matching
+# `{e<=1}` en palabras clave largas. Drop-in compatible para la API que usamos
+# (compile/search/match con flags IGNORECASE | MULTILINE).
+# Motivación: alumnos reales escriben con typos ("iunstrucciones", "promts",
+# "istrucciones") que el corpus literal 1.2.0 no detectaba — verificado contra
+# 2 intentos reales del CTR del piloto. Ver ADR-019 sección "Limitaciones",
+# bullet "evasión intra-palabra" — esta versión cierra parcialmente esa brecha
+# para palabras clave ≥ 6 caracteres, sin sumar dependencias externas
+# (`regex` ya estaba como transitiva).
+import regex as re
+
+GUARDRAILS_CORPUS_VERSION = "1.3.0"
 
 Category = Literal[
     "jailbreak_indirect",
@@ -108,12 +128,13 @@ OVERUSE_MIN_EVENTS_FOR_PROPORTION = 5  # piso anti-falso-positivo en episodios c
 _PATTERNS: dict[Category, list[str]] = {
     "jailbreak_indirect": [
         # "imagina(te)? que (sos|eres|seas|fueras) un tutor sin restriccion(es)?"
-        # Tolera separadores variados (guiones/puntos en evasion)
-        r"imagin(a|ate|emos|á|ate)[\s\-_.]+que[\s\-_.]+(sos|eres|seas|fueras)[\s\-_.]+(un[\s\-_.]+)?(tutor|asistente|ai)[\s\-_.]+sin[\s\-_.]+restricci",
+        # Tolera separadores variados (guiones/puntos en evasion) y typos en
+        # `restricci` (v1.3.0): tolera 1 error (insert/delete/substitute).
+        r"imagin(a|ate|emos|á|ate)[\s\-_.]+que[\s\-_.]+(sos|eres|seas|fueras)[\s\-_.]+(un[\s\-_.]+)?(tutor|asistente|ai)[\s\-_.]+sin[\s\-_.]+(?:restricci){e<=1}",
         # "pretend you (are|were|will be) a tutor without/with no restrictions"
         r"pretend\s+you\s+(are|were|will\s+be)\s+(an?\s+)?(tutor|assistant|ai)\s+(without|with\s+no)",
         # "act(u|ú)a como (si no )?(tuvieras|tuvieses|tendrias) restricciones"
-        r"act(u|ú)a[\s\-_.]+como[\s\-_.]+(si[\s\-_.]+no[\s\-_.]+)?(tuvieras|tuvieses|tendrias|tendrías)[\s\-_.]+restricci",
+        r"act(u|ú)a[\s\-_.]+como[\s\-_.]+(si[\s\-_.]+no[\s\-_.]+)?(tuvieras|tuvieses|tendrias|tendrías)[\s\-_.]+(?:restricci){e<=1}",
         # "roleplay as ... without/with no filter/limit/restriction"
         r"role[\s\-_]?play\s+as\s+.{1,40}\s+(without|with\s+no)\s+(filter|limit|restrict)",
     ],
@@ -122,18 +143,22 @@ _PATTERNS: dict[Category, list[str]] = {
         #   olvida/olvidá/olvidate, ignora, descarta, borra
         # Separadores tolerantes: guiones, puntos, underscores ("olvi-da")
         # Objetos: tus/las/todas mis/tus + instrucciones/reglas/directivas/prompt/orden
-        r"(olvid|ignor|descart|borr|olv(i|í)d)[aá](te)?[\s\-_.]+(tus|las|tod[oa]s\s+(tus|las|mis|los))?[\s\-_.]*(instrucci|regl|prompt|directiv|orden|comando)",
+        # v1.3.0: las palabras objeto críticas (instrucci/prompt/directiv/comando)
+        # toleran 1 typo — atrapa "iunstrucciones", "promts", "istrucciones",
+        # "dyrectivas" etc. `regl` y `orden` quedan exactas (son cortas, fuzzy
+        # las haría matchear demasiado).
+        r"(olvid|ignor|descart|borr|olv(i|í)d)[aá](te)?[\s\-_.]+(tus|las|tod[oa]s\s+(tus|las|mis|los))?[\s\-_.]*((?:instrucci){e<=1}|regl|(?:prompt){e<=1}|(?:directiv){e<=1}|orden|(?:comando){e<=1})",
         # Variante mas ancha en EN: "ignore" + opcional all/your/previous + objeto
-        r"ignore[\s\-_]+(all\s+|your\s+|the\s+|previous\s+)*(instruction|prompt|message|rule|directive|command)",
+        r"ignore[\s\-_]+(all\s+|your\s+|the\s+|previous\s+)*((?:instruction){e<=1}|(?:prompt){e<=1}|(?:message){e<=1}|rule|(?:directive){e<=1}|(?:command){e<=1})",
         # "new/nuevo system prompt" / "nuevo prompt del sistema"
-        r"new[\s\-_]+system[\s\-_]+(prompt|message|instruction|rule)",
-        r"nuevo[\s\-_]+(system\s+)?prompt[\s\-_]+(del?\s+)?sistema",
+        r"new[\s\-_]+system[\s\-_]+((?:prompt){e<=1}|(?:message){e<=1}|(?:instruction){e<=1}|rule)",
+        r"nuevo[\s\-_]+(system\s+)?(?:prompt){e<=1}[\s\-_]+(del?\s+)?(?:sistema){e<=1}",
         # "disregard (the|your)? (rules|guidelines|instructions|directives)"
-        r"disregard\s+(the\s+|your\s+|all\s+)?(rule|guideline|instruction|directive|prompt)",
+        r"(?:disregard){e<=1}\s+(the\s+|your\s+|all\s+)?(rule|(?:guideline){e<=1}|(?:instruction){e<=1}|(?:directive){e<=1}|(?:prompt){e<=1})",
         # "olvida/borra/descarta lo (de) (antes|previo|anterior)" — variante elidida
-        r"(olvid|borr|descart)[aá](te)?[\s\-_.]+(todo[\s\-_.]+)?lo[\s\-_.]+(de[\s\-_.]+)?(antes|previo|anterior)",
+        r"(olvid|borr|descart)[aá](te)?[\s\-_.]+(todo[\s\-_.]+)?lo[\s\-_.]+(de[\s\-_.]+)?(antes|previo|(?:anterior){e<=1})",
         # "override (your|the) (system|prompt|instructions)"
-        r"override\s+(your\s+|the\s+)?(system|prompt|instruction|rule)",
+        r"(?:override){e<=1}\s+(your\s+|the\s+)?(system|(?:prompt){e<=1}|(?:instruction){e<=1}|rule)",
     ],
     "jailbreak_fiction": [
         # "en una novela/historia/ficcion donde ..."
