@@ -406,7 +406,10 @@ Esa guía cubre, paso a paso:
 3. `.env.prod` con todos los secrets a generar (`BYOK_MASTER_KEY`, etc.)
 4. Levantar la infra y los servicios via `docker-compose.prod.yml`
 5. Migraciones + Casbin policies + **seed UTN minimal** (`seed-utn-vps.py`)
-6. Carga del **material UTN** al RAG (`upload-utn-materiales.sh`)
+6. Carga del **material UTN al RAG vectorizado**:
+   - `scripts/export-rag-content.sh` (en local) → tar.gz con 303 chunks ya embeddeados
+   - `scripts/import-rag-content.sh` (en VPS) con re-mapeo automático de tenant/materia/comisión
+   - O alternativamente, `scripts/upload-utn-materiales.sh` para subir archivos crudos
 7. Configurar Keycloak real + JWT con `comisiones_activas`
 8. Cargar la **API key de Gemini** desde el admin UI (BYOK encriptado)
 9. Nginx + HTTPS via Let's Encrypt

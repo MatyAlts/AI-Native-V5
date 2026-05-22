@@ -1,0 +1,5 @@
+# Los dumps RAG son binarios grandes — no commitearlos al repo.
+# Se generan/restauran con scripts/export-rag-content.sh y
+# scripts/import-rag-content.sh, y se transfieren via scp.
+rag-content-*.tar.gz
+*.sql.gz

@@ -189,10 +189,50 @@ Keycloak emita para esos usuarios (ver Paso 7).
 > **Idempotente**: re-ejecutar el script borra y vuelve a crear solo lo
 > del namespace `d0d0d0d0-...`. No toca otros tenants ni datos del piloto.
 
-### Paso 6.6 — Cargar material UTN al RAG
+### Paso 6.6 — Cargar material al RAG (vectorizado)
 
-Con el stack arriba, sube los PDFs/DOCX de `documentos/` como materiales
-de la materia Programación I:
+Tenés DOS caminos según de dónde venga el material. Elegí uno (o
+combinalos):
+
+**Opción A — Importar un dump del content_db con embeddings ya
+generados** (recomendado si ya tenés un piloto/dev con el corpus
+vectorizado). Es el camino más rápido — no re-embeddea nada, copia
+los 303 chunks tal cual.
+
+En tu máquina local (donde tenés el corpus):
+```bash
+bash scripts/export-rag-content.sh
+# Genera: infrastructure/exports/rag-content-YYYYMMDD-HHMMSS.tar.gz
+```
+
+Transferir al VPS:
+```bash
+scp infrastructure/exports/rag-content-*.tar.gz \
+  platform@<vps>:/opt/platform/platform/AI-NativeV3-main/infrastructure/exports/
+```
+
+En el VPS:
+```bash
+bash scripts/import-rag-content.sh \
+  --dump infrastructure/exports/rag-content-YYYYMMDD-HHMMSS.tar.gz \
+  --target-tenant d0d0d0d0-0000-0000-0000-d0d0d0d00000 \
+  --target-materia d0d0d0d0-aa01-aa01-aa01-d0d0d0d0aa01 \
+  --target-comision d0d0d0d0-c001-c001-c001-d0d0d0d0c001 \
+  -y
+```
+
+Los `--target-*` re-mapean el tenant/materia/comision del dump original
+a los UUIDs del seed UTN-VPS (Paso 6.5). Si tu seed usa otros UUIDs,
+pasalos en su lugar. Si omitís los `--target-*`, importa con los
+UUIDs originales.
+
+> **Importante**: el script hace `TRUNCATE chunks; TRUNCATE materiales`
+> antes de cargar. Asume content_db recién deployado. Si querés merge
+> incremental, usá la Opción B y subí los archivos por el UI del
+> docente (`/materiales`) que respeta lo existente.
+
+**Opción B — Subir los archivos crudos de `documentos/` al RAG**
+(el embedder los procesa al subirlos):
 
 ```bash
 bash scripts/upload-utn-materiales.sh
@@ -200,13 +240,25 @@ bash scripts/upload-utn-materiales.sh
 
 Si tu api-gateway corre con `DEV_TRUST_HEADERS=false` (prod real con
 Keycloak), pasá un JWT:
-
 ```bash
 BEARER_TOKEN="<JWT_DEL_DOCENTE>" bash scripts/upload-utn-materiales.sh
 ```
 
-El embedder procesa los chunks en background y el RAG queda activo para
-el tutor IA (lo verás reflejado en `chunks_used_hash` de los eventos).
+> **Requiere `EMBEDDER=local`** (default) o `EMBEDDER=remote` con HF
+> API configurada. El embedder mock NO sirve para prod — los queries
+> no van a matchear con los chunks.
+
+**Verificación**: probá el RAG end-to-end:
+```bash
+curl -X POST http://localhost:8009/api/v1/retrieve \
+  -H "X-Tenant-Id: d0d0d0d0-0000-0000-0000-d0d0d0d00000" \
+  -H "X-User-Id: d0d0d0d0-d0c1-d0c1-d0c1-d0d0d0d0c001" \
+  -H "X-User-Roles: docente,docente_admin" \
+  -H "Content-Type: application/json" \
+  -d '{"materia_id":"d0d0d0d0-aa01-aa01-aa01-d0d0d0d0aa01","query":"<consulta de prueba>","top_k":3}'
+```
+Debe devolver chunks con `material_nombre` real. El tutor IA usa el
+mismo path automáticamente cuando responde al estudiante.
 
 ### Paso 7 — Configurar Keycloak realm (única acción manual)
 
