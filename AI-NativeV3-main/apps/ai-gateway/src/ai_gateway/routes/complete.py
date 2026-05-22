@@ -32,6 +32,7 @@ from ai_gateway.providers.base import (
     AnthropicProvider,
     BaseProvider,
     CompletionRequest,
+    GeminiProvider,
     MistralProvider,
     OpenAIProvider,
     get_provider,
@@ -130,7 +131,8 @@ _MODEL_TO_PROVIDER: dict[str, str] = {
     "mistral": "mistral",
     "codestral": "mistral",
     "gpt": "openai",
-    "gemini": "google",
+    "gemini": "gemini",
+    "gemma": "gemini",
 }
 
 
@@ -149,6 +151,8 @@ def _make_provider(provider_name: str, api_key: str) -> BaseProvider:
         return MistralProvider(api_key=api_key)
     if provider_name == "openai":
         return OpenAIProvider(api_key=api_key)
+    if provider_name == "gemini":
+        return GeminiProvider(api_key=api_key)
     return AnthropicProvider(api_key=api_key)
 
 
