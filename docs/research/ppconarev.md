@@ -1,7 +1,7 @@
 # Revisión de alineamiento entre el paper *ppcona.docx* y la implementación del proyecto
 
 **Fecha**: 2026-05-10
-**Objeto del análisis**: contrastar el paper "Modelo N4 de trazabilidad cognitiva para la enseñanza universitaria de programación con asistentes de IA generativa" (Cortez & Garis, UTN-FRM + UNSL) con el código del monorepo AI-Native N4 que lo operacionaliza.
+**Objeto del análisis**: contrastar el paper "Modelo N4 de trazabilidad cognitiva para la enseñanza universitaria de programación con asistentes de IA generativa" (Cortez & Garis, UTN-FRM + UTN) con el código del monorepo AI-Native N4 que lo operacionaliza.
 **Materiales**: paper en `AI-NativeV3-main/ppcona.docx` (1140 líneas convertidas con pandoc), código en `AI-NativeV3-main/apps/` y `packages/`, decisiones permanentes en `docs/adr/` (43 ADRs), invariantes operativas en `AI-NativeV3-main/CLAUDE.md`.
 **Insumos previos**: auditorías `audita1.md` y `audi2.md`, plan ejecutado `plan-accion.md`.
 

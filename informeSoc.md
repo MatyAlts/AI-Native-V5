@@ -3,7 +3,7 @@
 **Autor del informe**: análisis externo en rol de especialista en didáctica universitaria y método socrático aplicado.
 **Objeto de análisis**: plataforma AI-Native N4 (monorepo `AI-NativeV3-main/`), prompt activo `v1.1.0`, etiquetador `LABELER_VERSION = 1.2.0`, classifier con cinco coherencias separadas.
 **Fecha**: 2026-05-16.
-**Destinatario implícito**: Alberto A. Cortez (autor de la tesis), co-dirección, y eventual comité doctoral UNSL.
+**Destinatario implícito**: Alberto A. Cortez (autor de la tesis), co-dirección, y eventual comité doctoral UTN.
 
 ---
 
@@ -19,7 +19,7 @@ Dicho eso, identifico **cinco brechas pedagógicas sustantivas** que el informe 
 4. **El árbol de decisión a tres categorías de apropiación es una caja negra para el estudiante** y, en su forma actual, una operacionalización por umbral más que un instrumento pedagógico. (Nota 2026-05-16: la primera versión de este informe afirmaba que el paper tenía cinco categorías y la implementación tres; **verificación posterior mostró que ambos coinciden en tres** —el listado de cinco aparece sólo en el README del wrapper, sin respaldo. Ver §3.4 actualizada y la corrección del README ejecutada en esta sesión.)
 5. **El cuello de botella real no es técnico sino formativo**: la validación intercoder κ ≥ 0,70 sobre el protocolo dual del ADR-046 (200 eventos + 50 episodios, ~25-30 h por docente) requiere **una calibración previa entre etiquetadores** que el repositorio no documenta como protocolo explícito.
 
-Las recomendaciones P0 son tres y se desarrollan en §8: introducir una **fase de elenchos** en el prompt v1.2.0, mostrar al estudiante una **devolución metacognitiva narrativa** al cierre (sin colapsar score, sin nombrar categoría de apropiación), y **redactar el manual del etiquetador** antes de invitar a los dos docentes UNSL al estudio intercoder.
+Las recomendaciones P0 son tres y se desarrollan en §8: introducir una **fase de elenchos** en el prompt v1.2.0, mostrar al estudiante una **devolución metacognitiva narrativa** al cierre (sin colapsar score, sin nombrar categoría de apropiación), y **redactar el manual del etiquetador** antes de invitar a los dos docentes UTN al estudio intercoder.
 
 ---
 
@@ -148,7 +148,7 @@ Esta decisión tiene defensores legítimos (evitar el efecto Heisenberg, evitar 
 
 1. **Pérdida de la dimensión metacognitiva.** La investigación contemporánea (Flavell, Schraw, Veenman) muestra que la metacognición se entrena haciendo visible al estudiante el patrón de su propio pensamiento. Esconder los datos al productor de esos datos es renunciar a la mitad del potencial formativo.
 
-2. **El docente como único intérprete.** En una comisión de 30 estudiantes, el docente UNSL no va a leer 30 progresiones longitudinales con cinco coherencias cada una. Sí va a leer las alertas que el sistema le destaque. El estudiante "que no dispara alertas" queda invisibilizado por su propia regularidad —incluso si esa regularidad es estancamiento.
+2. **El docente como único intérprete.** En una comisión de 30 estudiantes, el docente UTN no va a leer 30 progresiones longitudinales con cinco coherencias cada una. Sí va a leer las alertas que el sistema le destaque. El estudiante "que no dispara alertas" queda invisibilizado por su propia regularidad —incluso si esa regularidad es estancamiento.
 
 3. **Asimetría como pedagogía implícita.** "Vos producís datos, otros los interpretan" es una pedagogía. No es neutral. En un piloto de tesis doctoral conviene tematizarla en la sección ética del paper, no naturalizarla.
 

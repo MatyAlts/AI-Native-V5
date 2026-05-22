@@ -6,38 +6,79 @@
 
 ---
 
-## Estado de ejecución (actualizado 2026-05-10)
+## Estado de ejecución
 
-**23 de 26 acciones cerradas en 1 sesión.** Estado consolidado:
+> **Última actualización 2026-05-20 — cleanup de deudas fantasma**
+>
+> Esta tabla se mantiene actualizada con cada sprint posterior al snapshot original. Cuando el código cierra un item, se marca acá con la fecha y sprint que lo cerró.
+> Para detalle vigente de capabilities y cifras del piloto, ver `AI-NativeV3-main/docs/CAPABILITIES.md` y `AI-NativeV3-main/docs/SESSION-LOG.md` (docs vivos del subdir).
+
+**Conteo al 2026-05-20**: **20 de 26 acciones cerradas en código** (vs 18 reportadas en snapshot 2026-05-10). Pendientes:
+- **2 internas**: A18 (web-admin TanStack Router, multi-PR), A20 (ratchet coverage 80%/85%, al final).
+- **4 externas**: A1 (script `reclassify-legacy-106.py` ya existe en `scripts/`, sub-sprint 4 — falta DB real UTN), A2 (intercoder κ≥0,70 con 2 docentes UTN), A3 (Keycloak claim DI UTN), A5 (texto defensa).
+
+**Lo cerrado entre snapshot original (2026-05-10) y 2026-05-20**:
+- **A15** (Persistir tokens en `tutor_respondio.payload`) → ✅ cerrado sprint `plan-mejora-instrumentos-research` (2026-05-17).
+- **A16** (Normalizar `nota_final` a `float`) → ✅ cerrado mismo sprint.
+
+**Cambio histórico de notación**: el snapshot original reportaba "23/26" en el header (contando A1/A2/A3/A5 externas con pre-cond cumplida como "cerradas en plan, falta coordinación"). Esta tabla ahora cuenta solo cierres efectivos de código (✅ Cerrado / ✅ Ya estaba). Las externas quedan separadas como 🔴.
 
 | ID | Estado | Detalle |
 |----|--------|---------|
-| **A1** | 🔴 Externo | Requiere DB real del piloto. Pre-cond A12 ✅. |
-| **A2** | 🔴 Externo | Validación intercoder κ ≥ 0,6 — etiquetadores UNSL, semanas. |
-| **A3** | 🔴 Externo | Keycloak claim — coordinación DI UNSL. |
+| **A1** | 🔴 Externo (script ✅ listo) | Requiere DB real del piloto. Pre-cond A12 ✅. **Script `scripts/reclassify-legacy-106.py` creado en sub-sprint 4 (2026-05-17) — idempotente, modo `--dry-run` disponible. Corre cuando Cortez tenga acceso a DB UTN.** |
+| **A2** | 🔴 Externo | Validación intercoder κ ≥ 0,70 (post-ADR-046, antes era 0,6) — protocolo dual 200 eventos + 50 episodios, 2 docentes UTN, ~50-60h totales. **Sigue siendo el cuello de botella académico más grande.** |
+| **A3** | 🔴 Externo | Keycloak claim `comisiones_activas` — coordinación DI UTN. Plan operativo escrito en `docs/research/plan-b2-jwt-comisiones-activas.md`. **Sub-sprint 4 agregó `scripts/verify-attestation-deployment.py` complementario.** |
 | **A4** | ✅ Cerrado | `BYOK_MASTER_KEY` en `.env.example` con `openssl rand -base64 32`. |
-| **A5** | 🔴 Externo | Texto de defensa doctoral. |
+| **A5** | 🔴 Externo | Texto de defensa doctoral. Puede arrancarse YA sin esperar A2 — el paper declara H3 honestamente como "En ejecución" (Tabla 6). |
 | **A6** | ✅ Ya estaba | Audit falso positivo — 6 views usan `PageContainer` que embebe HelpButton. |
 | **A7** | ✅ Cerrado | Build matrix 6→10 servicios. Removido identity-service (deprecated). |
-| **A8** | ✅ Cerrado (+ acción humana) | Yaml clarificado. **Falta marcar como Required check en branch protection (GitHub Settings)**. |
+| **A8** | ✅ Cerrado (+ acción humana) | Yaml clarificado. **Falta marcar `Smoke E2E API` como Required check en branch protection (GitHub Settings → Branches → main → Required status checks).** |
 | **A9** | ✅ Cerrado | Alembic init manual idempotente en evaluation-service. Hallazgo: ownership cruzado con academic (tablas creadas por academic, modelos en evaluation). |
 | **A10** | ✅ Cerrado | README integrity-attestation-service (99 líneas). Audit subestimó la madurez del servicio (61 tests, doble path ingest). |
 | **A11** | ✅ Cerrado | Leak `student_pseudonym` fixeado con pattern `_PRIVILEGED_ROLES_INSCRIPCIONES`. 8 tests nuevos. |
 | **A12** | ✅ Cerrado | Idempotencia de `persist_classification`. Bug real estaba en `pipeline.py`, no en handler. 3 tests + 10 golden de reproducibilidad pasan. |
 | **A13** | ✅ Cerrado | Filtro `unidad_id` aplicado. 3 tests nuevos. |
 | **A14** | ✅ Cerrado | Sentinel BYOKKey con UUID v5 determinista (revoked_at=created_at, fingerprint_last4='ENVF'). 8 tests, 66/66 sin regresiones. |
-| **A15** | 🟡 Pendiente | Schema CTR change. Alto riesgo de romper reproducibilidad bit-a-bit. Requiere sesión dedicada. |
-| **A16** | 🟡 Pendiente | `nota_final` float — PR coordinado FE+BE simultáneo. Riesgo medio. |
+| **A15** | ✅ Cerrado sprint 2026-05-17 | Tokens (input/output/provider) persistidos en `tutor_respondio.payload`. 3 campos opcionales en `packages/contracts/src/platform_contracts/ctr/events.py:129` (backwards-compat — eventos legacy quedan con `None`). Emisor en `apps/tutor-service/src/tutor_service/services/tutor_core.py:459-516`. **No bumpea `LABELER_VERSION` ni rompe reproducibilidad** (campos opcionales que el classifier no consulta — ver CLAUDE.md interno "Constantes que NO deben inventarse"). |
+| **A16** | ✅ Cerrado sprint 2026-05-17 | `nota_final` serializado como `float` (no `"8.50"` string Decimal): field validator `_decimal_to_float` en `apps/evaluation-service/src/evaluation_service/schemas/entrega.py:88-122`. Columna SQLAlchemy sigue `Numeric(5,2)` — cast solo en serialización. 5 tests en `test_entrega_schemas.py`. |
 | **A17** | ✅ Ya estaba | Audit falso positivo — MarkdownRenderer ya consolidado en `@platform/ui`. Sub-agent agregó 6 tests smoke que faltaban. |
-| **A18** | 🟡 Pendiente | web-admin TanStack Router — multi-PR (13 rutas), días de trabajo. |
+| **A18** | 🟡 Pendiente | web-admin TanStack Router — multi-PR (13 rutas), días de trabajo. **NO bloqueante para defensa**. Deferir a sprint dedicado post-defensa. |
 | **A19** | ✅ Cerrado | 20 tests en auth-client (http + index). Vitest configurado desde cero. Bonus: fixeado bug latente en package.json (apuntaba a index.ts inexistente). |
-| **A20** | 🟡 Pendiente | Ratchet coverage 80%/85% — al final, requiere todos los tests escritos. |
+| **A20** | 🟡 Pendiente | Ratchet coverage 80%/85% — al final, requiere todos los tests escritos. NO bloqueante para defensa. |
 | **A21** | ✅ Cerrado | Smoke ROUTE_MAP — 22 tests colectados. Detectó duplicación `/api/v1/entregas` en proxy.py L43+L60. |
 | **A22** | ✅ Cerrado | Drift `Comision.nombre` cerrado en frontend interface. Otro `as any` en ComisionSelectorRouted dejado intacto (TanStack Router escape hatch, otro dominio). |
 | **A23** | ✅ Cerrado | `@axe-core/playwright` en 2 journeys (admin-auditoria + student-tutor-flow). Requiere stack levantado para correr. |
 | **A24** | ✅ Cerrado | Script `check-vite-seed-sync.py` + workflow step. Detectó drift real web-admin (UUID `33333333-...` no estaba en seed) — resuelto agregando constante a `seed-3-comisiones.py`. |
 | **A25** | ✅ Cerrado | Borrado de `identity-service` + `enrollment-service`. 11 archivos shared modificados. 0 imports activos fuera de los dirs borrados. |
 | **A26** | ✅ Cerrado | 6 TODOs reformulados a `DEFERRED:` con contexto operacional. 2 falsos positivos. 305 unit tests pasan. |
+
+### Mejoras bonus discontiguas (no en plan original)
+
+Cierres adicionales que no estaban en las 26 acciones del plan original — ver `audi2.md §8` para detalle:
+
+| ID | Sprint | Detalle |
+|----|--------|---------|
+| **F1** | 2026-05-10 | Test `test_prompt_con_jailbreak_emite_evento_adverso` fixeado (fixture stale `v1_1_0_p` → `v1_2_0_p`). Desbloquea Tutor Socrático §3.1 y Guardrails Fase A §3.5. |
+| **F2** | 2026-05-10 | Duplicación de `/api/v1/entregas` en `proxy.py` eliminada. |
+| **F3** | 2026-05-10 | Afirmación falsa sobre seed-casbin en `docs/servicios/web-admin.md:95` corregida. |
+| **F4** | 2026-05-10 | Ownership cruzado entregas/calificaciones documentado en CLAUDE.md interno. |
+| **F6** | 2026-05-10 | BYOK reclasificada a ✅ 100% en `audi2.md`. |
+
+(Notar: F5 y F7 no existen — fueron mencionados erróneamente como "F1-F7" en versiones anteriores del CLAUDE.md del wrapper, corregido el 2026-05-20.)
+
+### Items adicionales cerrados post-2026-05-10 (no estaban en plan-accion original)
+
+Sprint `plan-mejora-instrumentos-research` (2026-05-17) — ver `AI-NativeV3-main/docs/CAPABILITIES.md`:
+
+- **P1 conceptual del PlanMejora.md**: ADR-053 (marcos interpretativos MI1-MI3 + 7 principios + marcador anti-reificación en UI), 5 riesgos a priori documentados en `docs/limitaciones-declaradas.md`.
+- **P2-4 protocolo entrevistas**: `docs/research/protocolo-entrevistas-piloto.md` (Braun & Clarke 2006 análisis temático reflexivo).
+- **P2-1/2/3 esqueleto técnico**: 3 tablas + RLS + Casbin (+21 policies, total 205) + UI web-student + UI web-teacher de los 3 instrumentos del paper §6.2 (cuestionario IA previa, pretest autoeficacia Lishinski 2016, test transferencia). Contenido académico pendiente validación coautoral con Garis + cátedra UTN (ver `revision-coautoral-instrumentos-2026-05-20.md` en el root del wrapper).
+
+Sub-sprint 4 (2026-05-17) — scripts que destraban dependencias externas:
+
+- **`scripts/reclassify-legacy-106.py`** — destraba A1 cuando Cortez tenga DB real UTN.
+- **`scripts/verify-attestation-deployment.py`** — destraba A3 cuando attestation service esté deployado en VPS UTN.
+- **Caliper Analytics 1.2 + xAPI 1.0.3 exporter MVP** — cierra agenda P3-1 del PlanMejora (paper §5.1 lo declaraba como agenda de extensión).
 
 **Acciones bonus ejecutadas** (no estaban en el plan original):
 - Drift web-admin UUID: resuelto en `scripts/seed-3-comisiones.py`.
@@ -57,8 +98,8 @@
 **Acciones humanas pendientes** (no son código):
 1. **A8** — Marcar `Smoke E2E API` como Required check en GitHub branch protection (Settings → Branches → main).
 2. **A1** — Correr re-clasificación de 106 históricos contra DB real (script worker nuevo + pre-cond A12 ya cumplida).
-3. **A2** — Coordinar 2 etiquetadores UNSL para κ ≥ 0,6 sobre 50+ muestras (semanas).
-4. **A3** — Coordinar con DI UNSL para claim `comisiones_activas` en Keycloak JWT.
+3. **A2** — Coordinar 2 etiquetadores UTN para κ ≥ 0,6 sobre 50+ muestras (semanas).
+4. **A3** — Coordinar con DI UTN para claim `comisiones_activas` en Keycloak JWT.
 5. **A9** — Correr `uv sync --all-packages` + `make migrate` con override de user para stampear baseline en DB real.
 
 ---
@@ -269,8 +310,8 @@ Cuatro tracks independientes que pueden correr simultáneamente:
 | Track | Acción | Owner típico |
 |-------|--------|--------------|
 | Backend | **A1** (re-clasificar 106) — requiere A12 ya cerrada | Dev backend |
-| Coordinación UNSL | **A2** (validación intercoder) | Investigador + etiquetadores |
-| Coordinación DI UNSL | **A3** (Keycloak comisiones) | Investigador + DI UNSL |
+| Coordinación UTN | **A2** (validación intercoder) | Investigador + etiquetadores |
+| Coordinación DI UTN | **A3** (Keycloak comisiones) | Investigador + DI UTN |
 | Doc | **A5** (limitación CII defensa) | Investigador |
 
 **Validación de la fase**: A1 corrió sin duplicates (gracias a A12), A2 reporta κ ≥ 0.6, A3 emite JWT con claim `comisiones_activas`, A5 incorporado al cuerpo de defensa.
@@ -330,7 +371,7 @@ Cuatro tracks independientes que pueden correr simultáneamente:
 ### A2 · Validación intercoder κ ≥ 0.6
 
 - **Por qué**: socratic_compliance (ADR-044) y lexical_anotacion (ADR-045) están en esqueleto OFF. Sin κ ≥ 0.6 sobre 50+ muestras, la defensa no puede usarlos aunque estén codificados.
-- **Pre-condición**: ninguna técnica. Sí coordinación con etiquetadores UNSL.
+- **Pre-condición**: ninguna técnica. Sí coordinación con etiquetadores UTN.
 - **Cómo**: protocolo offline. 2 etiquetadores independientes etiquetan 50+ muestras de tutor_respondio + episodios con anotacion_creada. Calcular Cohen's κ. Si < 0.6, ajustar patrones regex en `event_labeler_lexical.py` y `postprocess_socratic.py`, iterar.
 - **Validación**: reporte κ ≥ 0.6 firmado por ambos etiquetadores + checksum del corpus.
 - **Riesgo si se hace mal**: si se publica κ no validado y el comité revisa, rechazo metodológico.
@@ -339,7 +380,7 @@ Cuatro tracks independientes que pueden correr simultáneamente:
 
 - **Por qué**: gap B.2 — `GET /api/v1/comisiones/mis` busca en `usuarios_comision` (docentes), no en `inscripciones`. Estudiantes ven lista vacía. Hoy hay fallback dev hardcoded en `vite.config.ts`.
 - **Pre-condición**: ninguna técnica.
-- **Cómo**: requiere DI UNSL agregue claim al JWT que mapee usuario → lista de comisiones activas. Backend lee del header `X-User-Comisiones` (parseado del claim).
+- **Cómo**: requiere DI UTN agregue claim al JWT que mapee usuario → lista de comisiones activas. Backend lee del header `X-User-Comisiones` (parseado del claim).
 - **Archivos afectados**: `apps/api-gateway/src/api_gateway/auth.py` (parsing del claim), `apps/academic-service/src/academic_service/routes/comisiones.py` (handler).
 - **Validación**: estudiante real loguea, frontend muestra sus comisiones reales (no fallback dev).
 - **Riesgo si se hace mal**: si el claim no se parsea bien, **leak entre estudiantes** (uno ve comisiones de otro). Test obligatorio: estudiante A solo ve sus comisiones, no las de B.

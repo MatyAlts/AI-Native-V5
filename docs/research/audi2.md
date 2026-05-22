@@ -7,13 +7,37 @@
 
 ---
 
+> ## ⚠️ Snapshot del 2026-05-10 — no refleja sprints posteriores
+>
+> Este documento es un **snapshot congelado** al 2026-05-10. Los sprints posteriores (especialmente `plan-mejora-instrumentos-research` del 2026-05-17 y su sub-sprint 4) cerraron items adicionales que esta auditoría NO refleja.
+>
+> **Para estado vigente del código y capabilities**, consultar (en orden de autoridad):
+> 1. `AI-NativeV3-main/docs/CAPABILITIES.md` — capabilities cerradas con detalle de archivos y ADRs
+> 2. `AI-NativeV3-main/docs/SESSION-LOG.md` — changelog narrativo de sesiones
+> 3. `docs/research/plan-accion.md` (del wrapper) — actualizado al 2026-05-20 con re-marcado de items cerrados post-snapshot
+>
+> **Items que esta auditoría lista como pendientes pero ya están cerrados (deudas fantasma confirmadas 2026-05-20)**:
+> - §3.1 Tutor socrático §3.5 Guardrails Fase A — el test `test_prompt_con_jailbreak_emite_evento_adverso` fue fixeado por F1 del 2026-05-10 (mencionado en §8 al pie pero no propagado al cuerpo).
+> - §5.1 "9 tests más fallando en frontend" — cross-check 2026-05-20 con sub-agent Explore confirmó 16/16 archivos de test sin drift de API detectable estáticamente.
+> - **A15** (persistir tokens en `tutor_respondio.payload`) y **A16** (nota_final float) — cerrados por sprint 2026-05-17 (ver detalle en `plan-accion.md`).
+>
+> **Cifras del snapshot que pueden estar desactualizadas**:
+> - "170 Casbin policies" (línea 113) → al 2026-05-20 son **205** (post-sprint instrumentos +21 policies).
+> - "11/20 capabilities al 100%" sigue siendo válido bajo los 4 criterios estrictos: los esqueletos técnicos del sprint 2026-05-17 NO bumpan el conteo porque tienen contenido `[PLACEHOLDER GARIS]` / `[PLACEHOLDER CATEDRA UTN]` pendiente de validación coautoral — no pasan C3 ni C4.
+>
+> **Lo que sí sigue vigente del snapshot**: la lista de las 11 capabilities al 100% (§2), las 9 parciales con su bloqueador específico (§3), las 6 en skeleton OFF (§4), los 2 riesgos académicos críticos (106 hash legacy + intercoder κ pendiente). El núcleo defendible del sistema no cambió — solo se agregaron esqueletos pendientes de gate humano.
+>
+> Cuando llegue el momento de re-auditar (post-defensa o post-sprint mayor), generar un `audi3.md` nuevo en lugar de modificar este. Mantener trazabilidad histórica.
+
+---
+
 ## Resumen ejecutivo
 
 Se evaluaron **20 capabilities funcionales activas** del proyecto contra **4 criterios estrictos** de completitud:
 
 1. Código + tests + docs + sin `DEFERRED` activo
 2. Invariantes técnicas verificadas (CTR append-only, hashes deterministas, RLS, k-anonymity, BYOK)
-3. En producción en piloto UNSL (con números verificables)
+3. En producción en piloto UTN (con números verificables)
 4. Aprobada académicamente (ADR cerrado, sin gates intercoder pendientes)
 
 **Veredicto**:
@@ -28,7 +52,7 @@ Se evaluaron **20 capabilities funcionales activas** del proyecto contra **4 cri
 
 A esto se suman **6 capabilities en skeleton OFF / DEFERRED** (código presente pero feature-flag-OFF o sin esqueleto) que se evalúan por separado.
 
-**Conclusión central**: la mitad del sistema está cerrada al estándar más estricto. La otra mitad tiene **bloqueadores específicos identificables** — la mayoría son procesos externos (validación intercoder UNSL, data real piloto-2) o deuda técnica acotada.
+**Conclusión central**: la mitad del sistema está cerrada al estándar más estricto. La otra mitad tiene **bloqueadores específicos identificables** — la mayoría son procesos externos (validación intercoder UTN, data real piloto-2) o deuda técnica acotada.
 
 ---
 
@@ -61,7 +85,7 @@ Una capability está al 100% **solo si los 4 criterios marcan ✅**. Si alguno m
 |----------|----------|----------------|
 | **C1** Código+tests+docs | ¿Existe código funcional + tests reales + docs sin TODOs activos? | Glob/Grep en `apps/<svc>/`, `tests/`, README, ADRs |
 | **C2** Invariantes | ¿Las propiedades críticas pasan tests golden? | Tests `test_*reproducibility*`, `test_*chain*`, `test_*hash*`, `test_rls*` |
-| **C3** Producción piloto | ¿Se usa en piloto UNSL con números reales? | `docs/SESSION-LOG.md`, XLEN, classifications, conteos |
+| **C3** Producción piloto | ¿Se usa en piloto UTN con números reales? | `docs/SESSION-LOG.md`, XLEN, classifications, conteos |
 | **C4** Académica | ¿ADR cerrado + sin gates intercoder pendientes? | Estado en ADR + `docs/limitaciones-declaradas.md` |
 
 ### Símbolos
@@ -132,7 +156,7 @@ Cada una con su bloqueador específico. La mayoría son acotadas y resolubles. (
 - **ADR**: 010, 021 | **Servicios**: ctr-service + integrity-attestation-service
 - **C1** ✅ Tests `test_chain_integrity.py`, `test_hashing_and_sharding.py`, append-only verificado, 470/470 eventos íntegros (2026-05-04).
 - **C2** ⚠️ **Contradicción con CLAUDE.md**: una fuente dice `XLEN=20` del stream `attestation.requests` (verificado 2026-05-07 según CLAUDE.md), otra fuente dice `XLEN=0` con 94 episodios cerrados. La verdad probable: el stream se dispara en cierres por API real (no en seeds), eventualmente. Ver §6.
-- **C3** ⚠️ integrity-attestation-service vive en VPS UNSL — **no se levanta en dev**. Los eventos se acumulan en Redis hasta que el consumer institucional viene online. Sin evidencia de firmas Ed25519 reales en piloto.
+- **C3** ⚠️ integrity-attestation-service vive en VPS UTN — **no se levanta en dev**. Los eventos se acumulan en Redis hasta que el consumer institucional viene online. Sin evidencia de firmas Ed25519 reales en piloto.
 - **C4** ✅ ADRs cerrados.
 - **Bloqueador**: levantar el consumer institucional + cuantificar XLEN del attestation stream.
 
@@ -191,8 +215,8 @@ Ver §2 (Transversal) para la fila actualizada.
 - **C1** ✅ `packages/platform-ops/tests/test_kappa.py` con 14 tests. Helper `kappa_analysis.py`.
 - **C2** ✅ Edge cases capturados (acuerdo perfecto, desacuerdo, azar).
 - **C3** ⚠️ Endpoint operacional, **pero sin cómputo de κ real sobre clasificaciones piloto** reportado en SESSION-LOG. Medidor sin lectura.
-- **C4** ⚠️ Validación intercoder UNSL no ejecutada (50+ episodios por 2 docentes).
-- **Bloqueador**: A2 del plan-accion (coordinación etiquetadores UNSL). Externo, semanas.
+- **C4** ⚠️ Validación intercoder UTN no ejecutada (50+ episodios por 2 docentes).
+- **Bloqueador**: A2 del plan-accion (coordinación etiquetadores UTN). Externo, semanas.
 
 ### 3.10 RAG con pgvector + chunking estratificado
 - **ADR**: 011 | **Servicios**: content-service + tutor-service
@@ -254,7 +278,7 @@ Estas 3 no son bugs — son **deuda de adopción**: el código está, falta usar
 ### 5.4 Servicio integrity-attestation: madurez subestimada vs producción incierta
 
 - Audit anterior (`audita1.md`) marcó el servicio como 🟡 parcial. Realidad: **61 tests, 2 E2E con testcontainers, worker consumer, journal, DLQ con retry, failsafe contra dev key en prod**.
-- Pero: **NO se levanta en dev local** (vive en VPS UNSL en piloto). Stream `attestation.requests` se acumula sin consumidor en dev.
+- Pero: **NO se levanta en dev local** (vive en VPS UTN en piloto). Stream `attestation.requests` se acumula sin consumidor en dev.
 - Información contradictoria sobre XLEN del stream — ver §6.
 
 ---
@@ -278,12 +302,12 @@ Estas 3 no son bugs — son **deuda de adopción**: el código está, falta usar
 
 1. **Fix del test `test_prompt_con_jailbreak_emite_evento_adverso`** — actualizar fixture de `v1_1_0_p` a `v1_2_0_p0`. **Desbloquea §3.1 y §3.5 simultáneamente.** ~15 minutos.
 2. **Re-clasificar 106 históricos** (A1 del plan-accion) — desbloquea §3.3 reproducibilidad. Requiere DB real. ~1h con script + verificación.
-3. **Levantar integrity-attestation-service en piloto + cuantificar XLEN** — desbloquea §3.2 producción. Requiere coordinación VPS UNSL.
+3. **Levantar integrity-attestation-service en piloto + cuantificar XLEN** — desbloquea §3.2 producción. Requiere coordinación VPS UTN.
 
 ### Acciones que requieren coordinación externa (semanas / meses)
 
-4. **Validación intercoder UNSL** (A2 del plan-accion) — desbloquea §3.9 (kappa), §4.1 (override léxico, socratic_compliance), §3.5 (Fase B). 50+ muestras × 2 docentes. **Es el cuello de botella académico más grande del proyecto.**
-5. **Cargar materiales reales en content_db** — desbloquea §3.10 (RAG real). Coordinar con docentes UNSL.
+4. **Validación intercoder UTN** (A2 del plan-accion) — desbloquea §3.9 (kappa), §4.1 (override léxico, socratic_compliance), §3.5 (Fase B). 50+ muestras × 2 docentes. **Es el cuello de botella académico más grande del proyecto.**
+5. **Cargar materiales reales en content_db** — desbloquea §3.10 (RAG real). Coordinar con docentes UTN.
 6. **Definir scope académico de Unidades de trazabilidad** — desbloquea §3.8. Decisión arquitectónica + UI completa.
 
 ### Acciones diferidas a piloto-2 (no bloquean defensa actual)
@@ -355,4 +379,4 @@ Estas 3 no son bugs — son **deuda de adopción**: el código está, falta usar
 
 ---
 
-**Conclusión final**: el proyecto tiene **10 capabilities al 100%** que cubren el núcleo defendible (CTR, clasificación N4, alertas k-anonymity, multi-tenant RLS, BYOK, generación IA, reflexión, longitudinal CII, dashboard, auditoría criptográfica). Las 10 parciales tienen bloqueadores **específicos y resolubles** — la mayoría externos (intercoder UNSL, data piloto-2) o acotados (fix de test, re-clasificación). **Cero capabilities en estado "incompleto sin plan"**. La tesis es defendible con disclaimers acotados sobre las 4 limitaciones declaradas y los 2 esqueletos OFF.
+**Conclusión final**: el proyecto tiene **10 capabilities al 100%** que cubren el núcleo defendible (CTR, clasificación N4, alertas k-anonymity, multi-tenant RLS, BYOK, generación IA, reflexión, longitudinal CII, dashboard, auditoría criptográfica). Las 10 parciales tienen bloqueadores **específicos y resolubles** — la mayoría externos (intercoder UTN, data piloto-2) o acotados (fix de test, re-clasificación). **Cero capabilities en estado "incompleto sin plan"**. La tesis es defendible con disclaimers acotados sobre las 4 limitaciones declaradas y los 2 esqueletos OFF.

@@ -4,7 +4,7 @@
 **Objeto de análisis**: plataforma AI-Native N4 (`AI-NativeV3-main/`), prompt activo `v1.1.0`, etiquetador `LABELER_VERSION = 1.2.0`, classifier `tree.py` con árbol de 3 categorías, paper Cortez & Garis (`paper-draft.md`).
 **Fecha**: 2026-05-16.
 **Complementa**: `informeSoc.md` (análisis desde didáctica socrática). Este informe enfoca la **lente cognitiva**: cómo el sistema modela, mide y clasifica el **aprendizaje como objeto cognitivo**.
-**Destinatario implícito**: Alberto A. Cortez (autor de la tesis), co-dirección, comité doctoral UNSL.
+**Destinatario implícito**: Alberto A. Cortez (autor de la tesis), co-dirección, comité doctoral UTN.
 
 ---
 

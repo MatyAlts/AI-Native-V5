@@ -162,7 +162,7 @@ Tabla con 8 constantes versionadas:
 ## 4. Lo que ambos comparten (sin cambios sustantivos)
 
 - Título: idéntico.
-- Autores (Cortez & Garis), afiliaciones (UTN-FRM, UNSL), email.
+- Autores (Cortez & Garis), afiliaciones (UTN-FRM, UTN), email.
 - Resumen y palabras clave: prácticamente idénticos.
 - §1 Introducción, §2 Antecedentes, §3 Marco teórico (cuerpo principal), §4 Modelo N4 (excepto las 7 ediciones), §5 Operacionalización, §6 Diseño cuasi-experimental, §8 Hallazgos preliminares, §9 Discusión (excepto CS05), §10 Conclusiones.
 - Hipótesis H1, H2, H3 con κ ≥ 0,70 y protocolo dual.

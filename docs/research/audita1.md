@@ -2,7 +2,7 @@
 
 **Fecha**: 2026-05-10
 **Repositorio**: `C:\ana Garis\AI-NativeV3-main (4)\AI-NativeV3-main\`
-**Contexto**: Plataforma AI-Native N4, tesis doctoral UNSL (Cortez) — "Modelo AI-Native con Trazabilidad Cognitiva N4 para la Formación en Programación Universitaria"
+**Contexto**: Plataforma AI-Native N4, tesis doctoral UTN (Cortez) — "Modelo AI-Native con Trazabilidad Cognitiva N4 para la Formación en Programación Universitaria"
 **Alcance**: inventario de avance, brechas vs spec/tesis, calidad de código y arquitectura, cobertura de tests + CI
 
 > ## ⚠️ Errata — falsos positivos detectados durante ejecución del plan (2026-05-10)
@@ -75,7 +75,7 @@ Stack común: FastAPI + SQLAlchemy 2.0 async + Pydantic v2 + Alembic + structlog
 | **analytics-service** | 🟡 | 16 | 0 | 0 | 9 | 0 | Sin DB. kappa, ab-test-profiles, progression. |
 | **api-gateway** | 🟡 | 4 | 0 | 0 | 5 | 0 | Sin DB. Único punto de auth (JWT RS256, headers X-*). ROUTE_MAP de 30 entries. |
 | **governance-service** | 🟡 | 6 | 0 | 0 | 5 | 0 | Sin DB. Versionado de prompts. |
-| **integrity-attestation-service** | 🟡 | 6 | 0 | 0 | 9 | 0 | Sin DB, **sin README**. Ed25519 (ADR-021). En piloto vive en VPS UNSL. |
+| **integrity-attestation-service** | 🟡 | 6 | 0 | 0 | 9 | 0 | Sin DB, **sin README**. Ed25519 (ADR-021). En piloto vive en VPS UTN. |
 | **tutor-service** | 🟡 | 14 | 0 | 0 | 18 | 1 | Orquestador socrático + SSE. 40 archivos. |
 | **enrollment-service** | ⚫ | 5 | 0 | 0 | 1 | 2 | **Deprecated** (ADR-030). Bulk-import movido a academic-service. |
 | **identity-service** | ⚫ | 3 | 0 | 0 | 1 | 0 | **Deprecated** (ADR-041). Auth desplazada al api-gateway. |
@@ -291,7 +291,7 @@ Restricción crítica del epic: `_EXCLUDED_FROM_FEATURES = {"reflexion_completad
 **Completos** (41/43): 001-014, 016-040, 042-045 implementados y verificables por código + tests.
 
 **Brechas en ADRs**:
-- 🟡 **ADR-015 (Blue-green deploy)**: especificado, canary en `ops/k8s/canary-tutor-service.yaml`, **no validado en dev** (vive en VPS UNSL).
+- 🟡 **ADR-015 (Blue-green deploy)**: especificado, canary en `ops/k8s/canary-tutor-service.yaml`, **no validado en dev** (vive en VPS UTN).
 - 🟡 **ADR-042 (TareaPracticaTemplate piloto-1)**: comisiones nuevas POST-template **no heredan** TPs automáticamente. Limitación admitida.
 
 ### 5.4 Invariantes críticas
@@ -342,9 +342,9 @@ Restricción crítica del epic: `_EXCLUDED_FROM_FEATURES = {"reflexion_completad
 | # | Riesgo | Severidad | Categoría | Mitigación |
 |---|--------|-----------|-----------|------------|
 | 1 | **106 classifications con hash legacy** — reproducibilidad histórica comprometida | 🔴 CRÍTICA | Académica | Worker que recompute con LABELER_VERSION 1.2.0 antes de defensa |
-| 2 | **Validación intercoder bloqueada** (socratic + lexical) — κ ≥ 0.6 sobre 50+ muestras pendiente | 🔴 CRÍTICA | Académica | Coordinar con etiquetadores UNSL, iterar patrones |
+| 2 | **Validación intercoder bloqueada** (socratic + lexical) — κ ≥ 0.6 sobre 50+ muestras pendiente | 🔴 CRÍTICA | Académica | Coordinar con etiquetadores UTN, iterar patrones |
 | 3 | **`BYOK_MASTER_KEY` sin default seguro en dev** — bloquea dev local sin setup manual | 🔴 ALTA | Operacional | Agregar a `.env.example` con instrucción `openssl rand -base64 32` |
-| 4 | **Comisión selector vacío para estudiantes** — Gap B.2, F9-bloqueado por Keycloak | 🔴 ALTA | UX | Activar claim `comisiones_activas` con DI UNSL semana previa |
+| 4 | **Comisión selector vacío para estudiantes** — Gap B.2, F9-bloqueado por Keycloak | 🔴 ALTA | UX | Activar claim `comisiones_activas` con DI UTN semana previa |
 | 5 | **HelpButton ausente en 6/12 views de web-teacher** — viola mandato CLAUDE.md | 🟡 ALTA | Compliance | Skill `help-system-content` resuelve cada view en ~30min |
 | 6 | **Build matrix Docker incompleta (6/11)** — 5 servicios sin imagen en CI | 🟡 ALTA | DevOps | Expandir matriz en `ci.yml` |
 | 7 | **E2E smoke no obligatorio** — `workflow_dispatch` manual | 🟡 ALTA | Calidad | Cambiar trigger a `pull_request` |
@@ -370,7 +370,7 @@ Restricción crítica del epic: `_EXCLUDED_FROM_FEATURES = {"reflexion_completad
 |--------|--------------|---------|------------|
 | Comité rechaza modelo N4 por **106 históricos no-reproducibles** | ALTA | CRÍTICO | Re-clasificar masivo antes de defensa |
 | **Validación intercoder falla (κ < 0.6)** para socratic/lexical | MEDIA | ALTO | Entrenar etiquetadores, ajustar patrones, iterar |
-| Keycloak no onboardeado en UNSL → **selector comisiones vacío en defensa** | MEDIA | ALTO | Activar claim `comisiones_activas` con DI UNSL semana previa |
+| Keycloak no onboardeado en UTN → **selector comisiones vacío en defensa** | MEDIA | ALTO | Activar claim `comisiones_activas` con DI UTN semana previa |
 | **Canary deploy falla en vivo** porque no se validó en dev | MEDIA | MEDIO | Testear ADR-015 en staging K8s antes de prod |
 | **CII longitudinal reporta N=0** en una comisión (todas TPs huérfanas) | BAJA | MEDIO | Documentar limitación en defensa como scope piloto-1 |
 
@@ -382,7 +382,7 @@ Restricción crítica del epic: `_EXCLUDED_FROM_FEATURES = {"reflexion_completad
 
 1. **Re-clasificar 106 classifications históricas** con LABELER_VERSION 1.2.0 (worker batch nuevo).
 2. **Coordinar validación intercoder** para socratic_compliance + lexical_anotacion (50+ muestras, κ ≥ 0.6).
-3. **Activar Keycloak claim `comisiones_activas`** con DI UNSL para desbloquear gap B.2.
+3. **Activar Keycloak claim `comisiones_activas`** con DI UTN para desbloquear gap B.2.
 4. **Agregar `BYOK_MASTER_KEY` a `.env.example`** con instrucción `openssl rand -base64 32`.
 
 ### 9.2 Compliance & calidad (altas)

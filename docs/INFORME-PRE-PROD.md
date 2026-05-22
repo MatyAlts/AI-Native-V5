@@ -1,11 +1,11 @@
 # Informe pre-producción — AI-Native N4
 
-**Destinatario:** Alberto Alejandro Cortez · Doctorando UNSL
+**Destinatario:** Alberto Alejandro Cortez · Doctorando UTN
 **Autor del informe:** Juani Sarmiento
 **Fecha:** 2026-05-15
 **Estado del repo:** `JuaniSarmiento/AI-Native-V4` · branch `main` · último commit `acd92f3`
 
-Este documento sintetiza el estado del piloto antes de migrarlo al VPS institucional UNSL. Lista lo que hay operativo, lo que bloquea producción, y las dependencias externas que no se resuelven desde código.
+Este documento sintetiza el estado del piloto antes de migrarlo al VPS institucional UTN. Lista lo que hay operativo, lo que bloquea producción, y las dependencias externas que no se resuelven desde código.
 
 ---
 
@@ -20,7 +20,7 @@ Este documento sintetiza el estado del piloto antes de migrarlo al VPS instituci
 | Listo para piloto académico controlado | Sí, con observación de un investigador |
 | Listo para producción real (cientos de alumnos, sin supervisión) | **No** — requiere 6 bloqueantes + dependencias externas |
 
-**Tiempo estimado a producción:** 3-4 meses, principalmente por coordinaciones humanas (DI UNSL, docentes para κ, infra institucional), no por código.
+**Tiempo estimado a producción:** 3-4 meses, principalmente por coordinaciones humanas (DI UTN, docentes para κ, infra institucional), no por código.
 
 ---
 
@@ -69,34 +69,34 @@ Estos **no se pueden saltar**. Sin ellos, el sistema no es deployable o no es de
 **Estado:** `api-gateway` corre con `dev_trust_headers=True`. Confía en los headers `X-User-Id`, `X-Tenant-Id`, `X-User-Roles` sin validar nada. Cualquiera con `curl` puede simular cualquier usuario.
 
 **Qué falta:**
-- Configurar realm institucional UNSL en Keycloak
-- Federación LDAP read-only con DI UNSL (condición del convenio)
+- Configurar realm institucional UTN en Keycloak
+- Federación LDAP read-only con DI UTN (condición del convenio)
 - Validador JWT RS256 en `api-gateway`
 - Wirear `keycloak-js` en los 3 frontends (la dependencia ya está instalada)
 - Quitar el monkey-patch de `window.fetch` que inyecta `x-selected-tenant` (en prod el JWT decide el tenant)
 - Quitar los UUIDs hardcoded en `vite.config.ts`
 
-**Esfuerzo estimado:** 1-2 semanas + coordinación DI UNSL.
+**Esfuerzo estimado:** 1-2 semanas + coordinación DI UTN.
 
-**Dependencia externa:** **Sí.** Requiere coordinación formal con DI UNSL.
+**Dependencia externa:** **Sí.** Requiere coordinación formal con DI UTN.
 
 ### 3.2. Claim `comisiones_activas` en JWT (gap B.2)
 
 **Estado:** El endpoint legacy `/api/v1/comisiones/mis` joinea `usuarios_comision` (docentes), pero los alumnos viven en `inscripciones` con `student_pseudonym`. El alumno hoy ve 0 comisiones en ese endpoint. Hay un workaround vigente (`/materias/mias` joinea contra `inscripciones`).
 
 **Qué falta:**
-- DI UNSL emite claim `comisiones_activas` en el JWT
+- DI UTN emite claim `comisiones_activas` en el JWT
 - Backend lee el claim en lugar de joinear tablas según rol
 - Plan operativo documentado en `AI-NativeV3-main/docs/research/plan-b2-jwt-comisiones-activas.md`
 
-**Esfuerzo estimado:** 1-2 días de trabajo mecánico, **bloqueado por DI UNSL**.
+**Esfuerzo estimado:** 1-2 días de trabajo mecánico, **bloqueado por DI UTN**.
 
 ### 3.3. Validación intercoder κ ≥ 0.70
 
 **Estado:** El clasificador N4 funciona, pero la categorización en niveles N1-N4 **no está validada estadísticamente contra etiquetado humano**. Sin esto la tesis no es defendible.
 
 **Qué falta:**
-- Coordinar 2 docentes UNSL para etiquetar manualmente:
+- Coordinar 2 docentes UTN para etiquetar manualmente:
   - 200 eventos estratificados (50 por nivel N1-N4) — Protocolo A
   - 50 episodios cerrados en 3 categorías de apropiación — Protocolo B
 - Calcular Cohen's κ — debe dar ≥ 0.70 (umbral del ADR-046)
@@ -129,12 +129,12 @@ Estos **no se pueden saltar**. Sin ellos, el sistema no es deployable o no es de
 
 **Esfuerzo estimado:** 1 día.
 
-### 3.6. `integrity-attestation-service` en VPS UNSL
+### 3.6. `integrity-attestation-service` en VPS UTN
 
 **Estado:** Puerto `:8012` siempre 503 en dev local. El stream Redis `attestation.requests` acumula eventos sin consumer.
 
 **Qué falta:**
-- Provisionar VPS institucional UNSL
+- Provisionar VPS institucional UTN
 - Desplegar `integrity-attestation-service` con su clave Ed25519
 - Configurar drenaje del stream `attestation.requests`
 - Backup del archivo append-only `attestations-YYYY-MM-DD.jsonl` (es evidencia criptográfica crítica)
@@ -226,12 +226,12 @@ Hoy: 30 smoke E2E + tests unitarios. No hay reporte de cobertura. **Mejora:** ta
 
 Estas son **responsabilidad de Alberto + equipo institucional**, no del dev:
 
-1. **Coordinación con DI UNSL**
+1. **Coordinación con DI UTN**
    - Configurar realm Keycloak
    - Definir claim `comisiones_activas` en el JWT
    - Convenio LDAP read-only (condición de uso del directorio institucional)
 
-2. **2 docentes UNSL para validación κ**
+2. **2 docentes UTN para validación κ**
    - ~25-30 horas cada uno
    - Protocolo dual (200 eventos + 50 episodios)
    - Si κ < 0.70, refinar etiquetador y repetir
@@ -261,8 +261,8 @@ Estas son **responsabilidad de Alberto + equipo institucional**, no del dev:
 | Fase | Duración | Foco |
 |---|---|---|
 | **Fase 0 — Cleanup último (1 semana)** | Resolver deuda técnica menor del punto 5. Activar branch protection. Migrar rate limiting a Redis. | Equipo dev |
-| **Fase 1 — Validación intercoder (4-6 semanas)** | Coordinar 2 docentes UNSL. Calibrar protocolos. Etiquetar. Calcular κ. Si κ ≥ 0.70 → activar feature flags. | Alberto + 2 docentes |
-| **Fase 2 — Infra institucional (3-4 semanas)** | Coordinar con DI UNSL para Keycloak realm. Provisión de VPS. Despliegue de `integrity-attestation-service`. Backup strategy. | Alberto + DI UNSL + devops |
+| **Fase 1 — Validación intercoder (4-6 semanas)** | Coordinar 2 docentes UTN. Calibrar protocolos. Etiquetar. Calcular κ. Si κ ≥ 0.70 → activar feature flags. | Alberto + 2 docentes |
+| **Fase 2 — Infra institucional (3-4 semanas)** | Coordinar con DI UTN para Keycloak realm. Provisión de VPS. Despliegue de `integrity-attestation-service`. Backup strategy. | Alberto + DI UTN + devops |
 | **Fase 3 — Auth real + JWT (1-2 semanas)** | Quitar `dev_trust_headers`. Wirear `keycloak-js`. Validador JWT en api-gateway. | Equipo dev |
 | **Fase 4 — Auditoría externa (2-3 semanas)** | Pentest + Audit de RLS + dependency scan. | Consultora externa |
 | **Fase 5 — Despliegue real (1-2 semanas)** | Helm charts. Argo Rollouts. Migración de DB del piloto al VPS. Re-clasificar las 106 históricas. | Equipo devops |

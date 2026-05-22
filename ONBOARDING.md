@@ -8,7 +8,7 @@
 
 ## 1. Bienvenida
 
-Lo que estás por testear es la plataforma **AI-Native N4**, la implementación de la tesis doctoral de Alberto Alejandro Cortez en UNSL. Es un sistema de tutoría socrática con trazabilidad cognitiva criptográfica para enseñanza de programación universitaria. En cristiano: un alumno escribe código Python en el browser, un tutor con LLM real lo guía con preguntas (sin darle la respuesta), y **cada evento del proceso queda anclado en una cadena SHA-256 append-only** que después permite auditar bit-a-bit cómo aprendió.
+Lo que estás por testear es la plataforma **AI-Native N4**, la implementación de la tesis doctoral de Alberto Alejandro Cortez en UTN. Es un sistema de tutoría socrática con trazabilidad cognitiva criptográfica para enseñanza de programación universitaria. En cristiano: un alumno escribe código Python en el browser, un tutor con LLM real lo guía con preguntas (sin darle la respuesta), y **cada evento del proceso queda anclado en una cadena SHA-256 append-only** que después permite auditar bit-a-bit cómo aprendió.
 
 Lo que **NO es**: un producto comercial, una herramienta lista para venderse, ni un MVP con UX pulida. Es un **piloto académico** cuya aceptabilidad doctoral depende de invariantes criptográficas (append-only, reproducibilidad bit-a-bit, k-anonymity N≥5) y de poder defenderse frente a un comité. Eso explica decisiones que de afuera parecen sobre-ingeniería: el CTR, las 3 coherencias agregadas en 5 métricas separadas, el `classifier_config_hash`, el bus Redis Streams particionado, los tests smoke E2E que blindan invariantes.
 
@@ -41,7 +41,7 @@ make dev
 bash scripts/check-health.sh
 ```
 
-Tenés que ver **10/11 servicios OK**. El que queda en `503` es `integrity-attestation-service:8012` — eso es **by design** en dev local (vive en VPS UNSL en piloto real). No es un bug, no es un bloqueante.
+Tenés que ver **10/11 servicios OK**. El que queda en `503` es `integrity-attestation-service:8012` — eso es **by design** en dev local (vive en VPS UTN en piloto real). No es un bug, no es un bloqueante.
 
 Si algún otro servicio falla en `check-health`, NO sigas al tour — pegale una mirada a la sección 10 (Troubleshooting) del [`README.md`](README.md). Los síntomas típicos son: container Docker ajeno en puerto 5173/5174/5175, BYOK_MASTER_KEY no seteada en `.env`, alembic con permission denied.
 
@@ -55,7 +55,7 @@ Tres URLs, un orden recomendado. Abrilas en pestañas separadas del mismo browse
 
 Sos `superadmin` + `docente_admin`. En el header arriba a la derecha tenés el **TenantSelector**: un dropdown con las 5 universidades del seed. Verificá que:
 
-- El dropdown lista las 5 universidades (UNSL, UTN-FRM, UTN-FRSN, y dos más del seed).
+- El dropdown lista las 5 universidades (UTN, UTN-FRM, UTN-FRSN, y dos más del seed).
 - Al cambiar de universidad, el dashboard muestra **otros datos** (otras comisiones, otros docentes, otros alumnos). Si los datos NO cambian, hay un bug grave de aislamiento — reportá inmediato.
 
 Recorré las páginas del menú lateral:
@@ -78,7 +78,7 @@ Verificá:
 - **Tareas Prácticas**: instancias por comisión.
 - **Materiales / Banco de ejercicios**: los 25 ejercicios canónicos del piloto. Verificá que aparecen.
 - **Progression**: vista cohorte con k-anonymity (N≥5 sobre cuartiles). Si la comisión tiene N<5 estudiantes con classifications, debería decir `insufficient_data`.
-- **Kappa rating**: pantalla de validación intercoder (todavía sin uso real — está esperando coordinación de 2 docentes UNSL).
+- **Kappa rating**: pantalla de validación intercoder (todavía sin uso real — está esperando coordinación de 2 docentes UTN).
 
 ### 3.3. Alumno (http://localhost:5175) — 10 minutos
 
@@ -342,10 +342,10 @@ Estas las tenemos catalogadas. Si tu hallazgo cae acá, no perdés tiempo escrib
 
 | Limitación | Síntoma observable | Tracking |
 |---|---|---|
-| **Gap B.2: comisiones del alumno** | `GET /api/v1/comisiones/mis` devuelve vacío para estudiantes reales. El web-student cae al `selectedComisionId` hardcoded en `vite.config.ts`. | Se destraba con claim `comisiones_activas` en JWT de Keycloak (coordinación con DI UNSL pendiente). Plan en `docs/research/plan-b2-jwt-comisiones-activas.md`. |
+| **Gap B.2: comisiones del alumno** | `GET /api/v1/comisiones/mis` devuelve vacío para estudiantes reales. El web-student cae al `selectedComisionId` hardcoded en `vite.config.ts`. | Se destraba con claim `comisiones_activas` en JWT de Keycloak (coordinación con DI UTN pendiente). Plan en `docs/research/plan-b2-jwt-comisiones-activas.md`. |
 | **Hashes ceremoniales `"c" * 64`** en algunos eventos seed | Algunos eventos del seed tienen `self_hash = "cccc...cccc"` (placeholder). No son episodios reales — son seed data. | By design del seed inicial; episodios creados en runtime SÍ tienen hashes reales. No verificar la cadena de los episodios del seed con `"c"*64`. |
 | **106 classifications con hash legacy** | Hashes pre-LABELER_VERSION 1.2.0 (`9dd96894...`). | Acción A1 del plan, requiere re-clasificar con DB del piloto real. |
-| **`integrity-attestation-service:8012` devuelve 503** | `check-health` lo marca como degraded. | By design en dev local — vive en VPS UNSL en piloto real. No bloqueante. |
+| **`integrity-attestation-service:8012` devuelve 503** | `check-health` lo marca como degraded. | By design en dev local — vive en VPS UTN en piloto real. No bloqueante. |
 | **`byok_keys_usage` vacía cuando resolver cae a env_fallback** | Auditoría de costos BYOK puede no tener todos los registros. | Backlog QA pass 2026-05-07. Sentinel pattern UUID v5 cerrando gap, ver `audi2.md`. |
 | **`tutor_respondio.payload` sin tokens_input/output/provider** | Solo persiste `model`, `content`, `chunks_used_hash`. | Backlog QA pass 2026-05-07. |
 | **`nota_final` serializado como string `"8.50"`** | Frontends que tipan como `number` pueden romper con `.toFixed()`. | Backlog QA pass 2026-05-07. |
@@ -354,7 +354,7 @@ Estas las tenemos catalogadas. Si tu hallazgo cae acá, no perdés tiempo escrib
 | **Leak parcial de `student_pseudonyms` en `/comisiones/{id}/inscripciones`** | Handler devuelve todos en vez de filtrar a `WHERE student_pseudonym = user.id` para estudiantes. | Backlog QA pass 2026-05-07. |
 | **Vite cambia de puerto si 5173/5174/5175 están ocupados** | `make dev` puede arrancar en 5176/5177. | Ver salida real de `make dev` para confirmar puertos. Container Docker ajeno = matarlo. |
 | **Socratic compliance / lexical anotación OFF** | Las features `socratic_compliance` y override léxico de `anotacion_creada` están en feature-flag OFF. | Bloqueado por validación intercoder κ ≥ 0.70 (ADR-044, ADR-045, ADR-046). |
-| **Kappa rating sin uso real** | La pantalla existe pero no hay etiquetadores activos. | Bloqueado por coordinación con 2 docentes UNSL (~25-30h por docente). |
+| **Kappa rating sin uso real** | La pantalla existe pero no hay etiquetadores activos. | Bloqueado por coordinación con 2 docentes UTN (~25-30h por docente). |
 
 Para detalle completo de capabilities y su estado real, ver [`AI-NativeV3-main/docs/CAPABILITIES.md`](AI-NativeV3-main/docs/CAPABILITIES.md) y [`audi2.md`](audi2.md).
 
@@ -372,4 +372,4 @@ Para detalle completo de capabilities y su estado real, ver [`AI-NativeV3-main/d
 ---
 
 **Última actualización**: 2026-05-15.
-**Autor del proyecto**: Alberto Alejandro Cortez · Doctorado UNSL · Co-directora: Daniela Carbonari.
+**Autor del proyecto**: Alberto Alejandro Cortez · Doctorado UTN · Co-directora: Daniela Carbonari.

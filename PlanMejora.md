@@ -2,7 +2,7 @@
 
 **Fecha**: 2026-05-17
 **Autor del análisis**: auditoría asistida por Claude (instrucción del autor de tesis, Alberto Cortez).
-**Objeto**: contrastar la versión 2026-05-16 (tercera ronda de consolidación) del paper *"Modelo N4 de trazabilidad cognitiva para la enseñanza universitaria de programación con asistentes de IA generativa"* (Cortez & Garis, UTN-FRM + UNSL) contra el código del monorepo `AI-NativeV3-main/` y producir un plan de mejoras priorizado.
+**Objeto**: contrastar la versión 2026-05-16 (tercera ronda de consolidación) del paper *"Modelo N4 de trazabilidad cognitiva para la enseñanza universitaria de programación con asistentes de IA generativa"* (Cortez & Garis, UTN-FRM + UTN) contra el código del monorepo `AI-NativeV3-main/` y producir un plan de mejoras priorizado.
 
 **Insumos**:
 - `paper_conaiisi.pdf` (1241 líneas extraídas con `pdftotext`, 10 secciones + Apéndice A).
@@ -42,7 +42,7 @@ Cada claim del paper se evaluó contra el código real con uno de cinco estados:
 - ⚠️ **PARCIAL**: existe pero le falta algo específico (test stale, feature-flag OFF, draft sin operacionalizar).
 - ❌ **FALTANTE**: el paper afirma o presupone algo que no está en código/docs/UI.
 - 📋 **AGENDA**: el paper explícitamente declara el ítem como extensión futura — no es bug.
-- ❓ **NO VERIFICABLE**: requiere acceso a sistema externo (VPS UNSL, DB del piloto real).
+- ❓ **NO VERIFICABLE**: requiere acceso a sistema externo (VPS UTN, DB del piloto real).
 
 ### 1.2 Insumos cruzados
 
@@ -115,25 +115,25 @@ Estos NO son hallazgos nuevos: `audi2.md` y `plan-accion.md` ya los identificaro
 - **Bloquea**: H1 y H2 (Tabla 6 del paper marca ambas como "Pendiente").
 - **Estado actual**: pre-condición A12 (idempotencia de `persist_classification`) cumplida. Falta ejecución sobre DB real del piloto.
 - **Acción**: ejecutar A1 del `plan-accion.md` — worker batch que re-clasifica los 106 con `LABELER_VERSION = "1.2.0"` vigente.
-- **Esfuerzo**: ~1h con script + verificación, depende de acceso a DB del piloto UNSL.
-- **Owner**: Cortez + DI UNSL.
+- **Esfuerzo**: ~1h con script + verificación, depende de acceso a DB del piloto UTN.
+- **Owner**: Cortez + DI UTN.
 
 ### 3.2 [P0-2] Cierre del protocolo dual de validación intercoder κ ≥ 0,70
 
 - **Impacto en paper**: §7.1 prescribe Protocolo A (200 eventos estratificados 50/nivel N1-N4) + Protocolo B (50 episodios cerrados en 3 categorías), totalizando 250 unidades por anotador + 20 episodios de calibración. La Tabla 6 marca el componente como "En ejecución".
 - **Bloquea**: H3, además de las features `socratic_compliance` (ADR-044) y `lexical_anotacion_override` (ADR-045) que siguen en feature-flag OFF.
 - **Estado actual**: A2 del `plan-accion.md` pendiente. Cuello de botella académico más grande del proyecto (≈25-30h por docente × 2 docentes).
-- **Acción**: coordinar 2 docentes auxiliares UNSL, ejecutar capacitación + sesión calibración 20 episodios + Protocolo A (200 eventos) + Protocolo B (50 episodios), reportar κ con IC95% por par (Clasificador vs Anotador 1, Clasificador vs Anotador 2, Anotador 1 vs Anotador 2), por separado para A y para B.
+- **Acción**: coordinar 2 docentes auxiliares UTN, ejecutar capacitación + sesión calibración 20 episodios + Protocolo A (200 eventos) + Protocolo B (50 episodios), reportar κ con IC95% por par (Clasificador vs Anotador 1, Clasificador vs Anotador 2, Anotador 1 vs Anotador 2), por separado para A y para B.
 - **Esfuerzo**: semanas de coordinación humana.
-- **Owner**: Cortez + Ana Garis (co-autora) + 2 docentes UNSL a designar.
+- **Owner**: Cortez + Ana Garis (co-autora) + 2 docentes UTN a designar.
 
-### 3.3 [P0-3] Levantar `integrity-attestation-service` con consumer activo en VPS UNSL
+### 3.3 [P0-3] Levantar `integrity-attestation-service` con consumer activo en VPS UTN
 
 - **Impacto en paper**: §5.2 enumera attestations Ed25519 como capacidad de plataforma. El `audi2.md §3.2` declara: *"NO se levanta en dev local. Los eventos se acumulan en Redis hasta que el consumer institucional viene online. Sin evidencia de firmas Ed25519 reales en piloto."*
 - **Bloquea**: criterio C3 (producción piloto) de la capability "CTR cadena criptográfica" — el CTR funciona, pero la segunda capa criptográfica Ed25519 no produce firmas reales en el piloto.
-- **Acción**: deployar servicio en VPS UNSL, cuantificar XLEN del stream `attestation.requests`, registrar firmas reales producidas.
-- **Esfuerzo**: coordinación DI UNSL para VPS + verificación.
-- **Owner**: Cortez + DI UNSL.
+- **Acción**: deployar servicio en VPS UTN, cuantificar XLEN del stream `attestation.requests`, registrar firmas reales producidas.
+- **Esfuerzo**: coordinación DI UTN para VPS + verificación.
+- **Owner**: Cortez + DI UTN.
 
 ---
 
@@ -222,12 +222,12 @@ El paper §6.2 enumera instrumentos de medición que el diseño quasi-experiment
 - **Claim del paper (§6.1 H2, Tabla 4)**: H2 postula asociación entre coherencia estructural y desempeño en tareas de transferencia. La medida dependiente es "pruebas comunes a ambos grupos".
 - **Realidad código**: draft existe en `docs/research/diseno-test-transfer.md` (v1.0.0, 5 problemas de 3-5 min — pendiente validación de contenido). NO operacionalizado.
 - **Acción**:
-  1. Validar contenido de los 5 problemas con cátedra UNSL.
+  1. Validar contenido de los 5 problemas con cátedra UTN.
   2. Operacionalizar como serie de TP "transfer" en el banco de ejercicios, marcados con flag específico (`is_transfer_task=True` o similar), ejecutables tanto por grupo experimental (con CTR activo) como por grupo de comparación (sin CTR).
   3. Diseñar cómo se recolectan las respuestas del grupo de comparación (¿formulario fuera del sistema? ¿módulo separado?). Decisión crítica: el grupo de comparación NO usa el sistema instrumentado — esto excluye el flujo normal de TP.
   4. Definir scoring común para ambos grupos.
 - **Esfuerzo**: ~24-40h (la decisión de cómo recolectar del grupo de comparación es la parte más cara).
-- **Owner**: Cortez + Garis + cátedra UNSL.
+- **Owner**: Cortez + Garis + cátedra UTN.
 
 ### 5.4 [P2-4] Protocolo de entrevistas semi-estructuradas
 
@@ -313,8 +313,8 @@ Estos cierran las brechas P1 enteras y permiten que el paper y el repo estén en
 
 ### 8.2 Sprint medio (3-6 semanas, costo medio)
 
-5. **P0-1**: re-clasificar 106 históricos contra DB del piloto real (1h ejecución + coordinación DI UNSL).
-6. **P0-3**: levantar `integrity-attestation-service` en VPS UNSL (coordinación DI UNSL + verificación).
+5. **P0-1**: re-clasificar 106 históricos contra DB del piloto real (1h ejecución + coordinación DI UTN).
+6. **P0-3**: levantar `integrity-attestation-service` en VPS UTN (coordinación DI UTN + verificación).
 7. **P2-2**: cuestionario inicial IA previa (8-12h).
 8. **P2-4**: protocolo de entrevistas semi-estructuradas (12-16h).
 
@@ -322,7 +322,7 @@ Estos cierran las brechas P1 enteras y permiten que el paper y el repo estén en
 
 ### 8.3 Sprint largo (2-4 meses, alto costo)
 
-9. **P0-2**: validación intercoder Protocolo A + B con 2 docentes UNSL (~50-60h totales de docentes + coordinación).
+9. **P0-2**: validación intercoder Protocolo A + B con 2 docentes UTN (~50-60h totales de docentes + coordinación).
 10. **P2-1**: pretest estandarizado operacionalizado (~16-24h dev + revisión académica).
 11. **P2-3**: pruebas comunes de transferencia (24-40h + decisión cómo recolectar grupo comparación).
 12. **Recolección piloto real con n ≥ 64 por grupo** según análisis de potencia §6.2.
@@ -350,7 +350,7 @@ Lo perfectible: tres categorías de brechas distintas y resolubles con esfuerzo 
 
 La tesis es defendible hoy con disclaimers acotados (los mismos que `audi2.md` ya identificó). Cerrar P1 (sprint corto) eleva la calidad documental antes de la defensa con esfuerzo bajo. Cerrar P2 + P0-1 + P0-2 (sprints medio + largo) habilita la **validación empírica completa** que el paper formula como compromiso.
 
-La recomendación operativa es ejecutar P1 ya (es trabajo de Cortez + dev local en el wrapper), coordinar P0-1 y P0-3 con DI UNSL para entrar al sprint medio cuanto antes, y planificar P0-2 + P2 para el cierre del semestre lectivo 2026 que es cuando se puede coordinar a las docentes etiquetadoras y al grupo de comparación.
+La recomendación operativa es ejecutar P1 ya (es trabajo de Cortez + dev local en el wrapper), coordinar P0-1 y P0-3 con DI UTN para entrar al sprint medio cuanto antes, y planificar P0-2 + P2 para el cierre del semestre lectivo 2026 que es cuando se puede coordinar a las docentes etiquetadoras y al grupo de comparación.
 
 ---
 

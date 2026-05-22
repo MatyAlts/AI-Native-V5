@@ -4,7 +4,7 @@ Alberto Cortez (1,2) y Ana Garis (1,2)
 
 (1) Universidad Tecnológica Nacional, Facultad Regional Mendoza, Argentina
 
-(2) Doctorado en Ciencias de la Computación, Universidad Nacional de San Luis, Argentina
+(2) Doctorado en Ciencias de la Computación, Universidad Tecnológica Nacional, Argentina
 
 {albertocortez, anagaris}@frm.utn.edu.ar
 
@@ -24,7 +24,7 @@ La especificidad estructural del dominio programación agrava el problema. A dif
 
 Una tercera vía, todavía minoritariamente explorada en la práctica argentina, propone instrumentar el proceso cognitivo del estudiante durante la sesión misma de trabajo y producir un registro auditable de sus acciones cognitivas observables, de modo que la cátedra pueda razonar sobre el proceso y no sólo sobre el producto [3, 18]. Esta vía es metodológicamente prometedora pero exige un aparato conceptual que no se reduce a la suma de tecnología disponible: requiere un modelo del proceso cognitivo que permita interpretar los registros, criterios evaluativos que no dependan de la corrección del artefacto, y un protocolo de validación que sostenga la confiabilidad de las inferencias.
 
-El presente trabajo presenta el Modelo N4 de Trazabilidad Cognitiva como respuesta articulada a esta exigencia. El modelo se materializa en el proyecto AI-Native N4, una plataforma de software desplegada en el piloto UNSL 2026 que opera sobre una arquitectura de servicios distribuida con propiedades de auditabilidad criptográfica; el presente paper se enfoca en la formalización conceptual del modelo, mientras que las decisiones de despliegue y los detalles de implementación de la plataforma quedan documentados de manera canónica en los Architectural Decision Records del repositorio del proyecto, accesibles al lector interesado en la articulación entre formalización y operación. La sección 2 posiciona el aporte respecto del estado del arte. La sección 3 desarrolla el marco teórico que sustenta las decisiones epistemológicas del modelo. La sección 4 formaliza el modelo en sus cuatro niveles, los tres tipos de apropiación de la IA, las tres dimensiones de coherencia estructural y un ejemplo canónico ilustrativo. La sección 5 describe la operacionalización mediante el Cognitive Trace Record y el Clasificador N4. La sección 6 presenta el diseño cuasi-experimental para la validación empírica con sus tres hipótesis contrastables y su confound declarado. La sección 7 formula el protocolo de fiabilidad intercodificador con kappa de Cohen y discute consideraciones de equidad y reproducibilidad del estado del sistema. La sección 8 reporta hallazgos cualitativos parciales, el estado del sistema instrumental al cierre, las limitaciones operacionales transparentes del piloto y la agenda confirmatoria. La sección 9 discute el posicionamiento del modelo frente a la literatura reciente. La sección 10 cierra con conclusiones. El Apéndice A documenta las propiedades arquitectónicas críticas del sistema instrumental que sostienen la auditabilidad académica del modelo.
+El presente trabajo presenta el Modelo N4 de Trazabilidad Cognitiva como respuesta articulada a esta exigencia. El modelo se materializa en el proyecto AI-Native N4, una plataforma de software desplegada en el piloto UTN 2026 que opera sobre una arquitectura de servicios distribuida con propiedades de auditabilidad criptográfica; el presente paper se enfoca en la formalización conceptual del modelo, mientras que las decisiones de despliegue y los detalles de implementación de la plataforma quedan documentados de manera canónica en los Architectural Decision Records del repositorio del proyecto, accesibles al lector interesado en la articulación entre formalización y operación. La sección 2 posiciona el aporte respecto del estado del arte. La sección 3 desarrolla el marco teórico que sustenta las decisiones epistemológicas del modelo. La sección 4 formaliza el modelo en sus cuatro niveles, los tres tipos de apropiación de la IA, las tres dimensiones de coherencia estructural y un ejemplo canónico ilustrativo. La sección 5 describe la operacionalización mediante el Cognitive Trace Record y el Clasificador N4. La sección 6 presenta el diseño cuasi-experimental para la validación empírica con sus tres hipótesis contrastables y su confound declarado. La sección 7 formula el protocolo de fiabilidad intercodificador con kappa de Cohen y discute consideraciones de equidad y reproducibilidad del estado del sistema. La sección 8 reporta hallazgos cualitativos parciales, el estado del sistema instrumental al cierre, las limitaciones operacionales transparentes del piloto y la agenda confirmatoria. La sección 9 discute el posicionamiento del modelo frente a la literatura reciente. La sección 10 cierra con conclusiones. El Apéndice A documenta las propiedades arquitectónicas críticas del sistema instrumental que sostienen la auditabilidad académica del modelo.
 
 ## 2 Antecedentes y posicionamiento
 
@@ -312,7 +312,7 @@ Cada una de estas constantes es auditable contra el repositorio y queda referida
 
 ## Agradecimientos
 
-Los autores agradecen al equipo del PID UTN-FRM y Universidad Marcelino Champagnat sobre evaluación auténtica con IA generativa, particularmente a Daniela Carbonari (co-directora del PID), Bruno Roberti, Carlos Martínez, Claudia Naveda, Juan Sarmiento y Juan Robledo, por las discusiones que enriquecieron el aparato conceptual del modelo. Se reconoce el apoyo institucional de UTN-FRM y de UNSL.
+Los autores agradecen al equipo del PID UTN-FRM y Universidad Marcelino Champagnat sobre evaluación auténtica con IA generativa, particularmente a Daniela Carbonari (co-directora del PID), Bruno Roberti, Carlos Martínez, Claudia Naveda, Juan Sarmiento y Juan Robledo, por las discusiones que enriquecieron el aparato conceptual del modelo. Se reconoce el apoyo institucional de UTN-FRM y de UTN.
 
 ## Referencias
 
@@ -375,6 +375,6 @@ Los autores agradecen al equipo del PID UTN-FRM y Universidad Marcelino Champagn
 Esta versión del paper integra:
 - Las 10 decisiones académicas resueltas durante mayo de 2026 (Camino 1 + protocolo dual + 4 decisiones temáticas), documentadas en `ppconarev.md` y formalizadas en el ADR-046 del repositorio del proyecto.
 - Las 8 recomendaciones de redacción derivadas del análisis de 30 distorsiones y omisiones del paper original frente al código del sistema instrumental, documentadas en `papermod.md` (mayo de 2026).
-- La base argumentativa y estructural del paper original `ppcona.docx` (Cortez & Garis, UTN-FRM + UNSL).
+- La base argumentativa y estructural del paper original `ppcona.docx` (Cortez & Garis, UTN-FRM + UTN).
 
 Generado: 2026-05-10

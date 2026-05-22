@@ -2,7 +2,7 @@
 
 **Plataforma de tutoría socrática con trazabilidad cognitiva criptográfica** para la enseñanza de programación universitaria.
 
-Tesis doctoral de **Alberto Alejandro Cortez** (UNSL) — *"Modelo AI-Native con Trazabilidad Cognitiva N4 para la Formación en Programación Universitaria"*.
+Tesis doctoral de **Alberto Alejandro Cortez** (UTN) — *"Modelo AI-Native con Trazabilidad Cognitiva N4 para la Formación en Programación Universitaria"*.
 
 > No es un producto comercial. Es un **piloto académico** cuya aceptabilidad doctoral depende de invariantes criptográficas y reproducibilidad bit-a-bit.
 
@@ -188,7 +188,7 @@ Verificación rápida:
 bash scripts/check-health.sh
 ```
 
-Deberías ver 10/11 servicios OK. El `integrity-attestation-service:8012` queda en `503 by design` en dev local — vive en VPS UNSL en piloto real, no es bloqueante.
+Deberías ver 10/11 servicios OK. El `integrity-attestation-service:8012` queda en `503 by design` en dev local — vive en VPS UTN en piloto real, no es bloqueante.
 
 **Apagar todo:**
 
@@ -405,8 +405,8 @@ Borra TPs, unidades, episodios, clasificaciones y ejercicios IA. **Preserva**: c
 **Lo que aún falta** son externos al código (coordinación humana):
 
 - **A1**: re-clasificar 106 classifications históricas con DB del piloto real.
-- **A2**: validación intercoder κ ≥ 0.70 con 2 docentes UNSL (cuello de botella académico).
-- **A3**: claim `comisiones_activas` en JWT de Keycloak (con DI UNSL).
+- **A2**: validación intercoder κ ≥ 0.70 con 2 docentes UTN (cuello de botella académico).
+- **A3**: claim `comisiones_activas` en JWT de Keycloak (con DI UTN).
 - **A5**: defensa doctoral.
 
 ---
@@ -417,6 +417,6 @@ Ver [`AI-NativeV3-main/LICENSE`](AI-NativeV3-main/LICENSE).
 
 ---
 
-**Autor**: Alberto Alejandro Cortez · Doctorado UNSL
+**Autor**: Alberto Alejandro Cortez · Doctorado UTN
 **Co-directora**: Daniela Carbonari
 **Repositorio del piloto**: este monorepo

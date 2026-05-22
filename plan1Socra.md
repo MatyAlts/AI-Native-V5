@@ -41,7 +41,7 @@ El informe cognitivo identificó **6 observaciones sustantivas + 5 riesgos + 4 b
 - Reescritura sincronizada del paper Cortez & Garis: sección por sección, qué se modifica, por qué, dependencia con qué acción CS.
 - DAG explícito de dependencias entre acciones (gates humanos, gates externos como A1, secuencia obligatoria de validación).
 - Estimaciones de esfuerzo realistas (rango bajo/alto, no número único).
-- Distinción entre acciones ejecutables por sub-agentes vs acciones que requieren participación humana (dir, co-dir, Ana Garis, docentes UNSL, estudiantes piloto).
+- Distinción entre acciones ejecutables por sub-agentes vs acciones que requieren participación humana (dir, co-dir, Ana Garis, docentes UTN, estudiantes piloto).
 
 ### 1.2 NO cubre
 
@@ -188,7 +188,7 @@ Diseño de los instrumentos de validación convergente. Listos para aplicar en p
 - **Dónde**: `AI-NativeV3-main/docs/research/protocolo-nasa-tlx.md` (nuevo). Agregar referencia en §6 (método) o §8 (agenda) del paper post-piloto-2.
 - **Esfuerzo**: 6-8 h.
 - **Dependencias**: ninguna (diseño autónomo).
-- **Gate humano**: revisión coautoral + comité de ética UNSL (instrumento adicional sobre estudiantes).
+- **Gate humano**: revisión coautoral + comité de ética UTN (instrumento adicional sobre estudiantes).
 
 ### CS10 — Diseñar protocolo de aplicación de MAI (Schraw & Dennison, 1994)
 
@@ -217,7 +217,7 @@ Diseño de los instrumentos de validación convergente. Listos para aplicar en p
 - **Dónde**: `AI-NativeV3-main/docs/research/diseno-test-transfer.md` + nuevo endpoint. Referencia en §6 (H2) del paper + descripción detallada en sección de métodos.
 - **Esfuerzo**: 16-24 h (diseño de ejercicios + endpoint + análisis previsto).
 - **Dependencias**: ninguna.
-- **Gate humano**: revisión coautoral + docentes UNSL revisan los ejercicios isomórficos (validez de contenido).
+- **Gate humano**: revisión coautoral + docentes UTN revisan los ejercicios isomórficos (validez de contenido).
 
 ### CS12 — Diseñar escala de autoeficacia en programación
 
@@ -317,7 +317,7 @@ Implementación efectiva de los instrumentos diseñados en P1 + análisis cuanti
 
 - **Observación de origen**: `informeSocra1.md` §3.1, §3.2, §9 (C1 implícita en calibrar parámetros operacionales).
 - **Tipo**: código + paper.
-- **Qué hace**: usando los datos del piloto-1 post-A1, ejecutar el script de CS04 con grid extendido; consultar a dirección + docentes UNSL para decidir constantes definitivas; bumpear constantes si corresponde y bumpear `LABELER_VERSION` o `classifier_config_hash` coordinadamente (ADR nuevo si las constantes cambian).
+- **Qué hace**: usando los datos del piloto-1 post-A1, ejecutar el script de CS04 con grid extendido; consultar a dirección + docentes UTN para decidir constantes definitivas; bumpear constantes si corresponde y bumpear `LABELER_VERSION` o `classifier_config_hash` coordinadamente (ADR nuevo si las constantes cambian).
 - **Esfuerzo**: 10-14 h (post-CS04).
 - **Dependencias**: CS04, dirección + docentes.
 
@@ -369,7 +369,7 @@ Acciones más profundas que requieren cambios arquitectónicos o investigación 
 - **Qué hace**: diseño y ejecución de estudio comparado con grupo control (estudiantes sin tutor AI). Análisis comparativo del aprendizaje (medido por transfer + delta-MAI + autoeficacia post) entre grupo experimental (con tutor) y control (sin tutor o con tutor humano tradicional).
 - **Esfuerzo**: 60-120 h (diseño + reclutamiento + ejecución + análisis + redacción).
 - **Dependencias**: CS11, CS14, CS16, piloto-3, presupuesto institucional, aprobación ética ampliada.
-- **Gate humano**: dirección + co-dirección + comité ética UNSL.
+- **Gate humano**: dirección + co-dirección + comité ética UTN.
 
 ---
 
@@ -563,7 +563,7 @@ CS21 depende de implementar clasificación semántica de prompts via `ai-gateway
 
 ### 9.5 Grupo control (CS24) puede ser inviable por consideraciones éticas y de coordinación
 
-Comparar estudiantes con/sin tutor AI en el mismo cuatrimestre es éticamente complejo (asignación aleatoria a "intervención que se presume mejor") y operacionalmente difícil (requiere dos cohortes paralelas). Mitigación: discutir con comité ético UNSL antes de incluirlo en agenda. Alternativa: comparación pre/post con la misma cohorte (less rigoroso pero más viable).
+Comparar estudiantes con/sin tutor AI en el mismo cuatrimestre es éticamente complejo (asignación aleatoria a "intervención que se presume mejor") y operacionalmente difícil (requiere dos cohortes paralelas). Mitigación: discutir con comité ético UTN antes de incluirlo en agenda. Alternativa: comparación pre/post con la misma cohorte (less rigoroso pero más viable).
 
 ### 9.6 Las acciones P0 dependen mucho de la disponibilidad de Ana Garis
 
@@ -580,7 +580,7 @@ Lo inmediato (esta semana o la siguiente):
 3. **Iniciar CS02 y CS08** (no requieren revisión coautoral, sin riesgo): ejecutables por sub-agente esta misma semana.
 4. **Agendar sesión coautoral** para CS01, CS03, CS05, CS06, CS07 (5 acciones interconectadas). Estimado de la sesión: 2-3 h.
 5. **Para CS04**: confirmar timeline de A1 con dirección. Si A1 cierra antes de la defensa, ejecutar CS04 en cuanto cierre.
-6. **Para CS09-CS12**: discutir con comité ético UNSL la viabilidad de instrumentos adicionales en piloto-2.
+6. **Para CS09-CS12**: discutir con comité ético UTN la viabilidad de instrumentos adicionales en piloto-2.
 
 Lo de mediano plazo (próximos 2-3 meses, post-A1):
 
