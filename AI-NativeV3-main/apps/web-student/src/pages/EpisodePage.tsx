@@ -1006,22 +1006,24 @@ function buildPedagogicalFeedback(c: Classification): {
   const sugerencias: string[] = []
 
   // Reglas accionables basadas en cada coherencia específica.
-  if (c.ccd_orphan_ratio > 0.5) {
+  // Las metricas son `number | null` cuando no hay datos suficientes — `??`
+  // los trata como neutros (0.5 = ni alto ni bajo) y evita falsos positivos.
+  if ((c.ccd_orphan_ratio ?? 0) > 0.5) {
     sugerencias.push(
       "Cuando vayas a ejecutar el código, contale al tutor qué esperás que pase ANTES de correrlo. Te ayuda a anticipar errores.",
     )
   }
-  if (c.ccd_mean < 0.3) {
+  if ((c.ccd_mean ?? 1) < 0.3) {
     sugerencias.push(
       "Hablá más con el tutor mientras trabajás. La IA está para ordenarte el pensamiento, no para resolverte el ejercicio.",
     )
   }
-  if (c.ct_summary < 0.3) {
+  if ((c.ct_summary ?? 1) < 0.3) {
     sugerencias.push(
       "Trabajaste de forma intermitente. Sesiones más continuas (sin tantas pausas) te van a rendir mejor.",
     )
   }
-  if (c.cii_stability < 0.3 && c.cii_evolution < 0.3) {
+  if ((c.cii_stability ?? 1) < 0.3 && (c.cii_evolution ?? 1) < 0.3) {
     sugerencias.push(
       "Cambiaste mucho de estrategia entre intentos. Probá quedarte con una idea y refinarla, en lugar de empezar de cero.",
     )
@@ -1185,62 +1187,12 @@ function ClassificationFallbackPanel({ onReset }: { onReset: () => void }) {
   )
 }
 
-function CoherenceCard({
-  title,
-  description,
-  value,
-  secondary,
-}: {
-  title: string
-  description: string
-  value: number | null
-  secondary?: { label: string; value: number | null; invertScale?: boolean }
-}) {
-  return (
-    <div className="rounded-lg border border-border-soft p-4 bg-white">
-      <h4 className="font-medium text-sm">{title}</h4>
-      <p className="text-xs text-muted mt-1 mb-3">{description}</p>
-      <Meter value={value} />
-      {secondary && (
-        <div className="mt-3 pt-3 border-t border-border-soft">
-          <p className="text-xs text-muted mb-1">{secondary.label}</p>
-          {secondary.invertScale !== undefined ? (
-            <Meter value={secondary.value} invertScale={secondary.invertScale} />
-          ) : (
-            <Meter value={secondary.value} />
-          )}
-        </div>
-      )}
-    </div>
-  )
-}
+// CoherenceCard fue removido — codigo muerto (no se usa en ningun lado de
+// EpisodePage.tsx ni en el flow del alumno post-cierre actual). El render de
+// metricas por coherencia se hace ahora via buildPedagogicalFeedback() arriba.
 
-function Meter({
-  value,
-  invertScale = false,
-}: {
-  value: number | null
-  invertScale?: boolean
-}) {
-  if (value == null) {
-    return <div className="text-xs text-muted-soft">sin datos</div>
-  }
-  const pct = Math.round(value * 100)
-  const goodHigh = !invertScale
-  const isGood = goodHigh ? pct > 60 : pct < 40
-  const barColor = isGood ? "bg-success" : pct > 40 && pct < 70 ? "bg-warning" : "bg-danger"
-  return (
-    <div>
-      <div className="flex items-baseline justify-between mb-1">
-        <span className="font-mono text-lg">{value.toFixed(2)}</span>
-        <span className="text-xs text-muted-soft">{pct}%</span>
-      </div>
-      <div className="h-2 bg-surface-alt rounded overflow-hidden">
-        <div className={`h-full ${barColor}`} style={{ width: `${pct}%` }} />
-      </div>
-    </div>
-  )
-}
+// Meter y CoherenceCard removidos — eran codigo muerto (sin callers).
+// Ver git history si se necesitan otra vez.
 
 // Default export para retro-compat con `App.tsx` viejo (queda como referencia
 // no utilizada cuando main.tsx usa RouterProvider). NO romper si alguien

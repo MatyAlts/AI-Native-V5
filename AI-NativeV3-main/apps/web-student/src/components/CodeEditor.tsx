@@ -219,7 +219,7 @@ export function CodeEditor({
           })
           flashClipboardWarning("Cortar está bloqueado. Quedó registrado.")
         }
-        const onContextMenu = (ev: MouseEvent) => {
+        const onContextMenu = (_ev: MouseEvent) => {
           // No bloqueamos el menu (Monaco lo necesita) — solo registramos
           // que esta proximo a usarlo. Los listeners de paste/copy van a
           // capturar la accion final.

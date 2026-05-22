@@ -42,9 +42,9 @@ export interface TareaSelectorProps {
    * - `null`: muestra solo las TPs sin unidad asignada ("huérfanas").
    * - `string`: muestra solo las TPs de esa unidad.
    */
-  unidadId?: string | null
+  unidadId?: string | null | undefined
   /** Callback opcional para volver al selector de unidades. */
-  onBack?: () => void
+  onBack?: (() => void) | undefined
 }
 
 interface Zones {

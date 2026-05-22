@@ -1,10 +1,5 @@
 import { useEffect, useState } from "react"
-import {
-  type AvailableTarea,
-  type Unidad,
-  listUnidades,
-  tareasPracticasApi,
-} from "../lib/api"
+import { type Unidad, listUnidades, tareasPracticasApi } from "../lib/api"
 
 export interface UnidadSelectorProps {
   comisionId: string

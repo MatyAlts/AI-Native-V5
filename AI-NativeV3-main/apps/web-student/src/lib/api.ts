@@ -192,7 +192,8 @@ export async function getEpisodeState(
   // Para los demás status codes (401/403/500) tiramos al toque sin retry.
   const delays = [0, 200, 400, 800, 1600]
   for (let i = 0; i < delays.length; i++) {
-    if (delays[i] > 0) await new Promise((resolve) => setTimeout(resolve, delays[i]))
+    const delay = delays[i] ?? 0
+    if (delay > 0) await new Promise((resolve) => setTimeout(resolve, delay))
     const r = await fetch(`/api/v1/episodes/${episodeId}`, {
       headers: await authHeaders(getToken),
     })
@@ -484,8 +485,18 @@ export interface AvailableTarea {
    * Si el docente no la define, viene null y el editor cae a su default.
    */
   inicial_codigo: string | null
-  /** Unidad temática a la que pertenece la TP (null si está sin asignar). */
-  unidad_id: string | null
+  /** Unidad temática a la que pertenece la TP (null si está sin asignar).
+   * Opcional para backwards-compat con endpoints que no la populan. */
+  unidad_id?: string | null
+  /** Ejercicios asociados (banco reusable, ADR-047). Opcional — solo presente
+   * cuando el endpoint los popula via `?include=ejercicios`. */
+  ejercicios?: Array<{
+    orden: number
+    titulo: string
+    enunciado_md: string
+    inicial_codigo: string | null
+    peso: number
+  }>
 }
 
 // ── Unidades temáticas (navegación intermedia materia → unidad → TP) ─
