@@ -5,11 +5,30 @@ cd "$(dirname "$0")/.."
 mkdir -p .dev-logs
 : > .dev-logs/pids.txt
 
-# Mock providers (ADR — sin API keys reales en dev)
-export LLM_PROVIDER="${LLM_PROVIDER:-mock}"
-export EMBEDDER="${EMBEDDER:-mock}"
+# Providers reales por default (sin mocks).
+#  - LLM_PROVIDER=gemini: el ai-gateway resuelve la key via BYOK (en
+#    admin UI) o env GEMINI_API_KEY. Sin key configurada el tutor da
+#    error claro en lugar de canned mock.
+#  - EMBEDDER=local: sentence-transformers + multilingual-e5-large.
+#    CUDA_VISIBLE_DEVICES="" fuerza CPU (la GPU local puede no tener
+#    memoria libre; CPU es lento la primera vez pero estable).
+#  - STORAGE=s3: MinIO local (corre en docker-compose.dev.yml :9000).
+#    Las credenciales por default son minioadmin/minioadmin, alineadas
+#    con `content-service/config.py` defaults.
+#  - RERANKER=identity sigue siendo el default — no es mock, es
+#    passthrough (sin reranking, el order del vector search se respeta).
+#
+# Override puntual: `LLM_PROVIDER=mock bash scripts/dev-start-all.sh`
+# si necesitás canned responses para tests deterministicos.
+export LLM_PROVIDER="${LLM_PROVIDER:-gemini}"
+export EMBEDDER="${EMBEDDER:-local}"
 export RERANKER="${RERANKER:-identity}"
-export STORAGE="${STORAGE:-mock}"
+export STORAGE="${STORAGE:-s3}"
+export CUDA_VISIBLE_DEVICES="${CUDA_VISIBLE_DEVICES:-}"
+export S3_ENDPOINT="${S3_ENDPOINT:-http://127.0.0.1:9000}"
+export S3_ACCESS_KEY="${S3_ACCESS_KEY:-minioadmin}"
+export S3_SECRET_KEY="${S3_SECRET_KEY:-minioadmin}"
+export S3_BUCKET_MATERIALS="${S3_BUCKET_MATERIALS:-materials}"
 
 start_svc() {
   local module="$1"
