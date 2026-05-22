@@ -23,5 +23,11 @@ ENV PATH="/app/.venv/bin:$PATH" \
     PYTHONUNBUFFERED=1 \
     PYTHONDONTWRITEBYTECODE=1
 
+# Script dispatcher: arranca server HTTP (CTR_MODE=server default) o worker
+# (CTR_MODE=worker + CTR_WORKER_PARTITION=N). Robusto contra overrides de
+# docker-compose (EasyPanel) que pisarian el `command:` del compose y
+# dejarian al python ejecutandose desde /usr/bin/ sin el venv activo.
+COPY --from=builder /app/apps/ctr-service/docker-entrypoint.sh /usr/local/bin/ctr-entrypoint
+RUN chmod +x /usr/local/bin/ctr-entrypoint
 
-ENTRYPOINT ["/app/.venv/bin/python", "-m", "uvicorn", "ctr_service.main:app", "--host", "0.0.0.0", "--port", "8007"]
+ENTRYPOINT ["/usr/local/bin/ctr-entrypoint"]

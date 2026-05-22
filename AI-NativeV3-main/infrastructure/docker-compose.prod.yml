@@ -81,13 +81,6 @@ x-ctr-worker-defaults: &ctr-worker-defaults
   build:
     context: ..
     dockerfile: apps/ctr-service/Dockerfile
-  # CRITICO: el Dockerfile de ctr-service tiene ENTRYPOINT exec form
-  # invocando uvicorn. Sin este `entrypoint: []`, Docker concatena ENTRYPOINT
-  # + command (el `command:` de cada ctr-worker-N) y arrancan uvicorn con
-  # args raros que crashean. `entrypoint: []` borra el ENTRYPOINT heredado
-  # del Dockerfile y deja que el `command:` de cada servicio sea el unico
-  # comando ejecutado.
-  entrypoint: []
   restart: unless-stopped
   networks:
     - default
@@ -98,6 +91,10 @@ x-ctr-worker-defaults: &ctr-worker-defaults
     OTEL_SERVICE_NAME_PREFIX: platform
     CTR_STORE_URL: postgresql+asyncpg://ctr_user:${CTR_DB_PASSWORD}@postgres:5432/ctr_store
     REDIS_URL: redis://:${REDIS_PASSWORD}@redis:6379/0
+    # El docker-entrypoint del ctr-service lee estas env vars para decidir
+    # si arranca server o worker. Cada ctr-worker-N override CTR_WORKER_PARTITION.
+    # Robusto contra overrides de EasyPanel que pisarian el `command:`.
+    CTR_MODE: worker
   depends_on:
     postgres:
       condition: service_healthy
@@ -151,10 +148,16 @@ services:
     image: quay.io/keycloak/keycloak:25.0
     container_name: platform-prod-keycloak
     restart: unless-stopped
+    # NOTA: sin `--optimized` porque ese flag asume un `kc.sh build` previo
+    # con --db=postgres. Sin el build previo, Keycloak intenta arrancar con
+    # el driver H2 default y falla al conectar a postgres
+    # ("Driver does not support the provided URL: jdbc:postgresql:..").
+    # Al sacar --optimized, Keycloak hace el build implícito al startup
+    # (tarda ~20s más pero funciona). Para optimizar luego, agregar un
+    # stage que haga el build y commitear la imagen pre-buildeada.
     command:
       - start
       - --import-realm
-      - --optimized
       - --hostname-strict=false
     environment:
       KC_DB: postgres
@@ -432,6 +435,9 @@ services:
       OTEL_SERVICE_NAME_PREFIX: platform
       CTR_STORE_URL: postgresql+asyncpg://ctr_user:${CTR_DB_PASSWORD}@postgres:5432/ctr_store
       REDIS_URL: redis://:${REDIS_PASSWORD}@redis:6379/0
+      # Default del docker-entrypoint = server. Lo declaramos explicito por
+      # claridad (los workers usan CTR_MODE=worker).
+      CTR_MODE: server
     depends_on:
       postgres:
         condition: service_healthy
@@ -514,49 +520,65 @@ services:
   # ════════════════════════════════════════════════════════════════════
   # CAPA WORKERS CTR — single-writer por particion (ADR-010, NUM_PARTITIONS=8)
   # Cada worker consume el stream ctr.p<N> y persiste a Postgres ctr_store.
-  # Mismo build que ctr-service (codigo compartido); el ENTRYPOINT del
-  # Dockerfile se ignora porque `command:` lo sobreescribe.
-  # ════════════════════════════════════════════════════════════════════
+  # Mismo build que ctr-service. El ENTRYPOINT del Dockerfile es un script
+  # dispatcher que arranca worker o server segun CTR_MODE. Asi NO usamos
+  # `command:` (robusto contra overrides de EasyPanel que lo pisarian).
 
   ctr-worker-0:
     <<: *ctr-worker-defaults
     container_name: platform-prod-ctr-worker-0
-    command: ["/app/.venv/bin/python", "-m", "ctr_service.workers.partition_worker", "--partition", "0"]
+    environment:
+      <<: *ctr-worker-env
+      CTR_WORKER_PARTITION: "0"
 
   ctr-worker-1:
     <<: *ctr-worker-defaults
     container_name: platform-prod-ctr-worker-1
-    command: ["/app/.venv/bin/python", "-m", "ctr_service.workers.partition_worker", "--partition", "1"]
+    environment:
+      <<: *ctr-worker-env
+      CTR_WORKER_PARTITION: "1"
 
   ctr-worker-2:
     <<: *ctr-worker-defaults
     container_name: platform-prod-ctr-worker-2
-    command: ["/app/.venv/bin/python", "-m", "ctr_service.workers.partition_worker", "--partition", "2"]
+    environment:
+      <<: *ctr-worker-env
+      CTR_WORKER_PARTITION: "2"
 
   ctr-worker-3:
     <<: *ctr-worker-defaults
     container_name: platform-prod-ctr-worker-3
-    command: ["/app/.venv/bin/python", "-m", "ctr_service.workers.partition_worker", "--partition", "3"]
+    environment:
+      <<: *ctr-worker-env
+      CTR_WORKER_PARTITION: "3"
 
   ctr-worker-4:
     <<: *ctr-worker-defaults
     container_name: platform-prod-ctr-worker-4
-    command: ["/app/.venv/bin/python", "-m", "ctr_service.workers.partition_worker", "--partition", "4"]
+    environment:
+      <<: *ctr-worker-env
+      CTR_WORKER_PARTITION: "4"
 
   ctr-worker-5:
     <<: *ctr-worker-defaults
     container_name: platform-prod-ctr-worker-5
-    command: ["/app/.venv/bin/python", "-m", "ctr_service.workers.partition_worker", "--partition", "5"]
+    environment:
+      <<: *ctr-worker-env
+      CTR_WORKER_PARTITION: "5"
 
   ctr-worker-6:
     <<: *ctr-worker-defaults
     container_name: platform-prod-ctr-worker-6
-    command: ["/app/.venv/bin/python", "-m", "ctr_service.workers.partition_worker", "--partition", "6"]
+    environment:
+      <<: *ctr-worker-env
+      CTR_WORKER_PARTITION: "6"
 
   ctr-worker-7:
     <<: *ctr-worker-defaults
     container_name: platform-prod-ctr-worker-7
-    command: ["/app/.venv/bin/python", "-m", "ctr_service.workers.partition_worker", "--partition", "7"]
+    environment:
+      <<: *ctr-worker-env
+      CTR_WORKER_PARTITION: "7"
 
   # ════════════════════════════════════════════════════════════════════
   # CAPA FRONTEND — nginx sirviendo los 3 SPAs + proxy /api/ -> api-gateway
