@@ -1,9 +1,17 @@
 """Configuración del api-gateway."""
 
+import json
 from functools import lru_cache
+from typing import Annotated, Any
 
-from pydantic import Field
-from pydantic_settings import BaseSettings, SettingsConfigDict
+from pydantic import Field, field_validator
+from pydantic_settings import BaseSettings, NoDecode, SettingsConfigDict
+
+_DEFAULT_CORS_ORIGINS: list[str] = [
+    "http://localhost:5173",
+    "http://localhost:5174",
+    "http://localhost:5175",
+]
 
 
 class Settings(BaseSettings):
@@ -18,13 +26,32 @@ class Settings(BaseSettings):
     # CORS: default = solo frontends de dev local. Producción DEBE override via
     # env var CORS_ORIGINS con la lista explícita de dominios del piloto.
     # Nunca usar ["*"] junto con allow_credentials=True (bypass de origin check).
-    cors_origins: list[str] = Field(
-        default_factory=lambda: [
-            "http://localhost:5173",
-            "http://localhost:5174",
-            "http://localhost:5175",
-        ]
+    # `NoDecode` evita que pydantic-settings haga json.loads() del env var
+    # ANTES de llegar al field_validator. El validator de abajo tolera
+    # vacio / CSV / JSON.
+    cors_origins: Annotated[list[str], NoDecode] = Field(
+        default_factory=lambda: list(_DEFAULT_CORS_ORIGINS)
     )
+
+    @field_validator("cors_origins", mode="before")
+    @classmethod
+    def _parse_cors_origins(cls, v: Any) -> Any:
+        # Tolerar 3 formatos en CORS_ORIGINS env var:
+        #   1. JSON array: '["http://a","http://b"]'
+        #   2. CSV: 'http://a,http://b'
+        #   3. Vacio / espacios: fallback al default (no fallar el boot).
+        # Sin esta normalizacion, pydantic-settings hace json.loads() directo y
+        # un valor vacio o CSV crashea el servicio al startup.
+        if v is None:
+            return list(_DEFAULT_CORS_ORIGINS)
+        if isinstance(v, str):
+            stripped = v.strip()
+            if not stripped:
+                return list(_DEFAULT_CORS_ORIGINS)
+            if stripped.startswith("["):
+                return json.loads(stripped)
+            return [item.strip() for item in stripped.split(",") if item.strip()]
+        return v
     otel_endpoint: str = "http://127.0.0.1:4317"
     sentry_dsn: str = ""
 

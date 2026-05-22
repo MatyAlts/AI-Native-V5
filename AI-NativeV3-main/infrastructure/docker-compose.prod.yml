@@ -148,16 +148,21 @@ services:
     image: quay.io/keycloak/keycloak:25.0
     container_name: platform-prod-keycloak
     restart: unless-stopped
-    # NOTA: sin `--optimized` porque ese flag asume un `kc.sh build` previo
-    # con --db=postgres. Sin el build previo, Keycloak intenta arrancar con
-    # el driver H2 default y falla al conectar a postgres
-    # ("Driver does not support the provided URL: jdbc:postgresql:..").
-    # Al sacar --optimized, Keycloak hace el build implícito al startup
-    # (tarda ~20s más pero funciona). Para optimizar luego, agregar un
-    # stage que haga el build y commitear la imagen pre-buildeada.
+    # NOTA: `--db=postgres` es BUILD-TIME en Keycloak — pasarlo solo como
+    # env var KC_DB no alcanza. El log lo confirma:
+    #   "build time non-cli options have values that differ from what is
+    #    persisted - the new values will NOT be used until another build
+    #    is run: kc.db, kc.health-enabled"
+    # Al pasar `--db=postgres` como argumento del `start`, Keycloak detecta
+    # el cambio build-time y hace el build implicito antes de arrancar
+    # (~30s extra al primer startup, despues queda cacheado en el volumen).
+    # Sin esto, Keycloak crashea con "Driver does not support the provided
+    # URL: jdbc:postgresql://..." porque la imagen viene pre-buildeada con
+    # driver H2.
     command:
       - start
       - --import-realm
+      - --db=postgres
       - --hostname-strict=false
     environment:
       KC_DB: postgres
