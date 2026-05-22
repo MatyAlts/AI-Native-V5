@@ -521,42 +521,42 @@ services:
   ctr-worker-0:
     <<: *ctr-worker-defaults
     container_name: platform-prod-ctr-worker-0
-    command: ["python", "-m", "ctr_service.workers.partition_worker", "--partition", "0"]
+    command: ["/app/.venv/bin/python", "-m", "ctr_service.workers.partition_worker", "--partition", "0"]
 
   ctr-worker-1:
     <<: *ctr-worker-defaults
     container_name: platform-prod-ctr-worker-1
-    command: ["python", "-m", "ctr_service.workers.partition_worker", "--partition", "1"]
+    command: ["/app/.venv/bin/python", "-m", "ctr_service.workers.partition_worker", "--partition", "1"]
 
   ctr-worker-2:
     <<: *ctr-worker-defaults
     container_name: platform-prod-ctr-worker-2
-    command: ["python", "-m", "ctr_service.workers.partition_worker", "--partition", "2"]
+    command: ["/app/.venv/bin/python", "-m", "ctr_service.workers.partition_worker", "--partition", "2"]
 
   ctr-worker-3:
     <<: *ctr-worker-defaults
     container_name: platform-prod-ctr-worker-3
-    command: ["python", "-m", "ctr_service.workers.partition_worker", "--partition", "3"]
+    command: ["/app/.venv/bin/python", "-m", "ctr_service.workers.partition_worker", "--partition", "3"]
 
   ctr-worker-4:
     <<: *ctr-worker-defaults
     container_name: platform-prod-ctr-worker-4
-    command: ["python", "-m", "ctr_service.workers.partition_worker", "--partition", "4"]
+    command: ["/app/.venv/bin/python", "-m", "ctr_service.workers.partition_worker", "--partition", "4"]
 
   ctr-worker-5:
     <<: *ctr-worker-defaults
     container_name: platform-prod-ctr-worker-5
-    command: ["python", "-m", "ctr_service.workers.partition_worker", "--partition", "5"]
+    command: ["/app/.venv/bin/python", "-m", "ctr_service.workers.partition_worker", "--partition", "5"]
 
   ctr-worker-6:
     <<: *ctr-worker-defaults
     container_name: platform-prod-ctr-worker-6
-    command: ["python", "-m", "ctr_service.workers.partition_worker", "--partition", "6"]
+    command: ["/app/.venv/bin/python", "-m", "ctr_service.workers.partition_worker", "--partition", "6"]
 
   ctr-worker-7:
     <<: *ctr-worker-defaults
     container_name: platform-prod-ctr-worker-7
-    command: ["python", "-m", "ctr_service.workers.partition_worker", "--partition", "7"]
+    command: ["/app/.venv/bin/python", "-m", "ctr_service.workers.partition_worker", "--partition", "7"]
 
   # ════════════════════════════════════════════════════════════════════
   # CAPA FRONTEND — nginx sirviendo los 3 SPAs + proxy /api/ -> api-gateway

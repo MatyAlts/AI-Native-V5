@@ -11,12 +11,12 @@ COPY . /app
 WORKDIR /app
 RUN --mount=from=ghcr.io/astral-sh/uv:latest,source=/uv,target=/bin/uv \
     --mount=type=cache,target=/root/.cache/uv \
-    uv sync --no-dev
+    uv sync --all-packages --no-dev
 
 # Runtime stage: distroless python
-FROM gcr.io/distroless/python3-debian12:nonroot
+FROM python:3.12-slim
 
-COPY --from=builder --chown=nonroot:nonroot /app /app
+COPY --from=builder /app /app
 WORKDIR /app
 
 ENV PATH="/app/.venv/bin:$PATH" \
