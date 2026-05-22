@@ -57,6 +57,19 @@ def _check_llm_provider() -> CheckResult:
                 ok=False, latency_ms=0, error="mistral api key missing"
             )
         return CheckResult(ok=True, latency_ms=0)
+    if provider == "gemini":
+        # Gemini puede venir por env o por BYOK; el health solo flagea env-faltante.
+        # Si la operación real va por BYOK, el resolver levanta la key al request.
+        if not settings.gemini_api_key:
+            return CheckResult(
+                ok=True,
+                latency_ms=0,
+                error=None,
+            )
+        return CheckResult(ok=True, latency_ms=0)
+    if provider == "openai":
+        # Soporta proxies (copilot-api, LM Studio, Ollama) — no exigimos env key.
+        return CheckResult(ok=True, latency_ms=0)
     return CheckResult(
         ok=False,
         latency_ms=0,

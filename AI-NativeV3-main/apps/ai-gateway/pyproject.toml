@@ -23,6 +23,9 @@ dependencies = [
 
 [project.optional-dependencies]
 openai = ["openai>=1.50"]
+gemini = [
+    "google-genai>=0.3",
+]
 
 [dependency-groups]
 dev = [

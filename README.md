@@ -46,6 +46,7 @@ Después abrís `http://localhost:5175` y ya estás dentro como alumno.
 10. [Troubleshooting](#10-troubleshooting)
 11. [Reset entre sesiones](#11-reset-entre-sesiones)
 12. [Recursos para profundizar](#12-recursos-para-profundizar)
+13. [Deploy a VPS (producción)](#13-deploy-a-vps-producción)
 
 ---
 
@@ -387,6 +388,40 @@ Borra TPs, unidades, episodios, clasificaciones y ejercicios IA. **Preserva**: c
 **Workspace**: uv (Python) + pnpm + turbo (TS)
 
 **Infraestructura**: Postgres 16 + RLS · Redis 7 Streams · Keycloak 25 · MinIO · Prometheus + Grafana + Loki + Jaeger
+
+---
+
+## 13. Deploy a VPS (producción)
+
+Todo lo que tenés que hacer para subirlo a un VPS Linux y dejarlo accesible
+con auth real, HTTPS, backup automático y la IA del tutor funcionando con
+Gemini está en:
+
+➡️ **[`AI-NativeV3-main/docs/VPS-DEPLOY.md`](AI-NativeV3-main/docs/VPS-DEPLOY.md)**
+
+Esa guía cubre, paso a paso:
+
+1. Requisitos del VPS (CPU/RAM/disco, OS)
+2. Bootstrap (docker, ufw, usuario `platform`)
+3. `.env.prod` con todos los secrets a generar (`BYOK_MASTER_KEY`, etc.)
+4. Levantar la infra y los servicios via `docker-compose.prod.yml`
+5. Migraciones + Casbin policies + **seed UTN minimal** (`seed-utn-vps.py`)
+6. Carga del **material UTN** al RAG (`upload-utn-materiales.sh`)
+7. Configurar Keycloak real + JWT con `comisiones_activas`
+8. Cargar la **API key de Gemini** desde el admin UI (BYOK encriptado)
+9. Nginx + HTTPS via Let's Encrypt
+10. Backup automático + alertmanager
+11. Smoke tests post-deploy + checklist prod-ready
+
+**Stack LLM**: el sistema soporta **Gemini, Anthropic, Mistral y OpenAI**
+como providers vía BYOK. La key NUNCA va en `.env` — el docente_admin /
+superadmin la carga desde la UI en `/admin/byok-keys` y se encripta con
+AES-256-GCM. El **tutor IA** del estudiante y el **generador de TPs/
+ejercicios** del docente usan la misma key resuelta por scope
+(materia > facultad > tenant). Setear `LLM_PROVIDER=gemini` en `.env.prod`
+para que el default operativo sea Gemini.
+
+**Tiempo estimado**: ~45-60 min sin contar DNS/SSL.
 
 ---
 

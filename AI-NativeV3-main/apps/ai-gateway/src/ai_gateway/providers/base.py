@@ -301,6 +301,123 @@ class OpenAIProvider(BaseProvider):
                 yield delta.content
 
 
+class GeminiProvider(BaseProvider):
+    """Provider de Google Gemini (gemini-2.0-flash, gemini-1.5-pro, etc.).
+
+    Usa el SDK `google-genai` (instalar con extra `[gemini]`). La API es REST
+    + streaming sobre Server-Sent Events; el SDK lo abstrae con un cliente
+    async. Pricing oficial a 2026-05 (USD por 1M tokens).
+    """
+
+    name = "gemini"
+
+    PRICING = {
+        # https://ai.google.dev/pricing
+        "gemini-2.0-flash": {"input": 0.10, "output": 0.40},
+        "gemini-2.0-flash-lite": {"input": 0.075, "output": 0.30},
+        "gemini-1.5-flash": {"input": 0.075, "output": 0.30},
+        "gemini-1.5-flash-8b": {"input": 0.0375, "output": 0.15},
+        "gemini-1.5-pro": {"input": 1.25, "output": 5.0},
+    }
+
+    def __init__(self, api_key: str | None = None) -> None:
+        self.api_key = api_key or os.environ.get("GEMINI_API_KEY", "")
+        self._client: Any = None
+
+    def _ensure_client(self) -> Any:
+        if self._client is None:
+            try:
+                from google import genai
+            except ImportError as e:
+                raise RuntimeError(
+                    "google-genai SDK no instalado. Agregar al deploy: "
+                    "`uv sync --extra gemini` o instalar `google-genai>=0.3`."
+                ) from e
+            if not self.api_key:
+                raise RuntimeError(
+                    "GEMINI_API_KEY no configurada. Cargar la key via BYOK "
+                    "desde el admin (/admin/byok-keys) o setear env var."
+                )
+            self._client = genai.Client(api_key=self.api_key)
+        return self._client
+
+    @staticmethod
+    def _convert_messages(messages: list[dict[str, Any]]) -> tuple[str, list[dict[str, Any]]]:
+        """Separa system prompts del resto y mapea roles `assistant -> model`.
+
+        Gemini espera `system_instruction` aparte y `contents` con roles
+        `user`/`model`. Concatena multiples system messages con doble newline.
+        """
+        system_parts: list[str] = []
+        contents: list[dict[str, Any]] = []
+        for m in messages:
+            role = m.get("role", "")
+            content = m.get("content", "")
+            if role == "system":
+                system_parts.append(content)
+                continue
+            mapped_role = "model" if role == "assistant" else "user"
+            contents.append({"role": mapped_role, "parts": [{"text": content}]})
+        return "\n\n".join(system_parts), contents
+
+    async def complete(self, request: CompletionRequest) -> CompletionResponse:
+        client = self._ensure_client()
+        system_instruction, contents = self._convert_messages(request.messages)
+
+        config: dict[str, Any] = {
+            "temperature": request.temperature,
+            "max_output_tokens": request.max_tokens,
+        }
+        if system_instruction:
+            config["system_instruction"] = system_instruction
+        if request.response_format and request.response_format.get("type") == "json_object":
+            config["response_mime_type"] = "application/json"
+
+        result = await client.aio.models.generate_content(
+            model=request.model,
+            contents=contents,
+            config=config,
+        )
+
+        content = result.text or ""
+        usage = getattr(result, "usage_metadata", None)
+        input_tok = getattr(usage, "prompt_token_count", 0) if usage else 0
+        output_tok = getattr(usage, "candidates_token_count", 0) if usage else 0
+        pricing = self.PRICING.get(request.model, {"input": 1.0, "output": 3.0})
+        cost = (input_tok * pricing["input"] + output_tok * pricing["output"]) / 1_000_000
+
+        return CompletionResponse(
+            content=content,
+            model=request.model,
+            provider="gemini",
+            input_tokens=input_tok,
+            output_tokens=output_tok,
+            cost_usd=cost,
+        )
+
+    async def stream_complete(self, request: CompletionRequest) -> AsyncIterator[str]:
+        client = self._ensure_client()
+        system_instruction, contents = self._convert_messages(request.messages)
+
+        config: dict[str, Any] = {
+            "temperature": request.temperature,
+            "max_output_tokens": request.max_tokens,
+        }
+        if system_instruction:
+            config["system_instruction"] = system_instruction
+
+        stream = await client.aio.models.generate_content_stream(
+            model=request.model,
+            contents=contents,
+            config=config,
+        )
+
+        async for chunk in stream:
+            text = getattr(chunk, "text", None)
+            if text:
+                yield text
+
+
 @lru_cache(maxsize=1)
 def get_provider(name: str = "") -> BaseProvider:
     """Factory de providers. name='mock' para tests.
@@ -334,6 +451,8 @@ def get_provider(name: str = "") -> BaseProvider:
         return MistralProvider()
     if which == "openai":
         return OpenAIProvider()
+    if which == "gemini":
+        return GeminiProvider()
     if from_runtime_config:
         import logging
 

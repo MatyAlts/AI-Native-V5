@@ -164,6 +164,50 @@ docker compose -f infrastructure/docker-compose.prod.yml \
 
 Esto carga las 205 policies Casbin (los 4 roles × N entidades).
 
+### Paso 6.5 — Seed UTN minimal (estructura académica)
+
+Crea la base mínima de datos para que docente y alumno puedan loguearse el día 1:
+
+```bash
+docker compose -f infrastructure/docker-compose.prod.yml \
+  --env-file infrastructure/.env.prod \
+  exec academic-service \
+  uv run python scripts/seed-utn-vps.py
+```
+
+Esto crea:
+- Universidad **UTN**, Facultad Regional, Carrera TUP, Plan 2024
+- Materia **Programación I** (PROG1), Comisión **COM-1**
+- **1 docente** con `user_id = d0d0d0d0-d0c1-d0c1-d0c1-d0d0d0d0c001`
+- **1 alumno** con `pseudonym = d0d0d0d0-a100-a100-a100-d0d0d0a10001`
+- 5 unidades temáticas (Variables y Tipos, Secuenciales, Condicionales, Repetitivas, Funciones)
+- 3 TPs publicados auto-instanciados en la comisión
+
+Los UUIDs del docente y alumno tienen que coincidir con los `sub` que
+Keycloak emita para esos usuarios (ver Paso 7).
+
+> **Idempotente**: re-ejecutar el script borra y vuelve a crear solo lo
+> del namespace `d0d0d0d0-...`. No toca otros tenants ni datos del piloto.
+
+### Paso 6.6 — Cargar material UTN al RAG
+
+Con el stack arriba, sube los PDFs/DOCX de `documentos/` como materiales
+de la materia Programación I:
+
+```bash
+bash scripts/upload-utn-materiales.sh
+```
+
+Si tu api-gateway corre con `DEV_TRUST_HEADERS=false` (prod real con
+Keycloak), pasá un JWT:
+
+```bash
+BEARER_TOKEN="<JWT_DEL_DOCENTE>" bash scripts/upload-utn-materiales.sh
+```
+
+El embedder procesa los chunks en background y el RAG queda activo para
+el tutor IA (lo verás reflejado en `chunks_used_hash` de los eventos).
+
 ### Paso 7 — Configurar Keycloak realm (única acción manual)
 
 1. Abrir consola admin: `http://localhost:8180` (o `https://keycloak.tu-dominio.utn.edu.ar`)
@@ -188,6 +232,44 @@ make test-smoke
 ```
 
 Si todo pasa, el piloto-2 está deployable.
+
+### Paso 9 — Cargar la API key de Gemini desde el admin UI
+
+El LLM provider recomendado para prod es **Gemini** (gratis hasta cuota
+generosa, latencia baja, buen español). La key NUNCA se mete en `.env.prod`
+— se carga desde la UI del admin via BYOK (Bring Your Own Key) y se
+encripta con `BYOK_MASTER_KEY` (AES-256-GCM).
+
+1. Login en `https://<tu-dominio>/admin` como superadmin
+2. Sidebar → **"BYOK Keys"**
+3. **+ Nueva key**:
+   - Provider: `gemini`
+   - Scope type: `tenant` (cubre toda la universidad)
+   - Scope id: `d0d0d0d0-0000-0000-0000-d0d0d0d00000` (el TENANT_ID del seed UTN)
+   - Plaintext: pegá tu API key de [Google AI Studio](https://aistudio.google.com/apikey)
+   - Label: `"Gemini UTN prod"`
+4. Guardar
+
+A partir de ese momento:
+- El **tutor socrático** del alumno usa Gemini para responder
+- El **generador de TPs e ejercicios** (web-teacher → "Generar con IA")
+  usa Gemini
+- Toda la auditoría de uso queda registrada en `byok_keys_usage` para
+  reporting de cuota / costo
+
+> **Setear `LLM_PROVIDER=gemini` en `.env.prod`** para que el factory
+> por default resuelva a Gemini. Sin esta variable cae al default
+> (`mock`) y el tutor responde con mensajes canned.
+
+**Otros providers soportados** (mismo flujo, distinto `provider` en BYOK):
+- `anthropic` — Claude (cuota paga, mejor calidad para code)
+- `openai` — GPT-4o/mini (soporta también proxies OpenAI-compatibles
+  vía `OPENAI_BASE_URL`, ej. copilot-api local)
+- `mistral` — Mistral AI (cuota paga)
+
+Para cambiar provider en runtime sin re-deploy, basta cargar una key
+con scope más específico (ej. scope `materia` con provider distinto).
+El resolver BYOK respeta jerarquía `materia > facultad > tenant > env`.
 
 ---
 
