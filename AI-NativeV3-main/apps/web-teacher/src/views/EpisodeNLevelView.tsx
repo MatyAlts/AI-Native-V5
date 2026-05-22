@@ -3,7 +3,14 @@ import { Link } from "@tanstack/react-router"
 import { useEffect, useMemo, useState } from "react"
 import { Cell, Pie, PieChart, ResponsiveContainer, Tooltip } from "recharts"
 import { useViewMode } from "../hooks/useViewMode"
-import { type NLevel, type NLevelDistribution, getEpisodeNLevelDistribution } from "../lib/api"
+import {
+  type AppropriationLabel,
+  type EpisodeClassification,
+  type NLevel,
+  type NLevelDistribution,
+  getEpisodeClassification,
+  getEpisodeNLevelDistribution,
+} from "../lib/api"
 import { NLEVEL_DOCENTE, NLEVEL_INVESTIGADOR } from "../utils/docenteLabels"
 import { helpContent } from "../utils/helpContent"
 
@@ -179,33 +186,40 @@ function NLevelDistributionChart({
 export function EpisodeNLevelView({ getToken, initialEpisodeId }: Props) {
   const [episodeIdInput, setEpisodeIdInput] = useState(initialEpisodeId ?? "")
   const [data, setData] = useState<NLevelDistribution | null>(null)
+  const [classification, setClassification] = useState<EpisodeClassification | null>(null)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const colors = useMemo(resolveLevelColors, [])
   const [viewMode] = useViewMode()
   const isDocente = viewMode === "docente"
 
-  const handleSearch = () => {
-    if (!episodeIdInput.trim()) return
+  const loadEpisode = (episodeId: string) => {
     setLoading(true)
     setError(null)
     setData(null)
-    getEpisodeNLevelDistribution(episodeIdInput.trim(), getToken)
-      .then(setData)
+    setClassification(null)
+    Promise.all([
+      getEpisodeNLevelDistribution(episodeId, getToken),
+      getEpisodeClassification(episodeId, getToken).catch(() => null),
+    ])
+      .then(([dist, clf]) => {
+        setData(dist)
+        setClassification(clf)
+      })
       .catch((e) => setError(String(e)))
       .finally(() => setLoading(false))
+  }
+
+  const handleSearch = () => {
+    if (!episodeIdInput.trim()) return
+    loadEpisode(episodeIdInput.trim())
   }
 
   useEffect(() => {
     if (!initialEpisodeId) return
     setEpisodeIdInput(initialEpisodeId)
-    setLoading(true)
-    setError(null)
-    setData(null)
-    getEpisodeNLevelDistribution(initialEpisodeId, getToken)
-      .then(setData)
-      .catch((e) => setError(String(e)))
-      .finally(() => setLoading(false))
+    loadEpisode(initialEpisodeId)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [initialEpisodeId, getToken])
 
   const dom = data
@@ -273,6 +287,7 @@ export function EpisodeNLevelView({ getToken, initialEpisodeId }: Props) {
         {data && (
           <>
             {isDocente && dom && <DocenteInterpretation dominant={dom} />}
+            {isDocente && <DocenteAppropriationVerdict classification={classification} />}
             <div className="rounded-xl border border-border bg-white overflow-hidden">
               <div className="flex items-start justify-between gap-4 border-b border-border px-6 py-4">
                 <div>
@@ -362,6 +377,70 @@ function DocenteInterpretation({
     <div className="rounded-xl border border-border bg-white px-6 py-4 text-sm text-ink">
       <strong>{pct}% del tiempo</strong> lo paso <strong>{dominant.label.toLowerCase()}</strong>.{" "}
       {insights[dominant.level]}
+    </div>
+  )
+}
+
+const APPROPRIATION_DISPLAY: Record<
+  AppropriationLabel,
+  { label: string; chip: string; container: string; headline: string }
+> = {
+  delegacion_pasiva: {
+    label: "Delegacion pasiva",
+    chip: "bg-danger text-white",
+    container: "border-danger/30 bg-danger-soft",
+    headline:
+      "El alumno tendio a pedir y copiar del tutor sin reflexionar. Conviene revisarlo con el.",
+  },
+  apropiacion_superficial: {
+    label: "Apropiacion superficial",
+    chip: "bg-warning text-warning-soft",
+    container: "border-warning/30 bg-warning-soft",
+    headline:
+      "El alumno intento, pero el trabajo no termino de sostenerse en las tres dimensiones. Esta en zona media.",
+  },
+  apropiacion_reflexiva: {
+    label: "Apropiacion reflexiva",
+    chip: "bg-success text-white",
+    container: "border-success/30 bg-success-soft",
+    headline:
+      "Trabajo sostenido y coherente: ritmo, verbalizaciones e iteraciones se acompanaron.",
+  },
+}
+
+function DocenteAppropriationVerdict({
+  classification,
+}: {
+  classification: EpisodeClassification | null
+}) {
+  if (classification === null) {
+    return (
+      <div className="rounded-xl border border-dashed border-border bg-white px-6 py-4 text-sm text-muted">
+        Este episodio todavia no fue clasificado. Una vez cerrado, aparece aca el veredicto de
+        apropiacion.
+      </div>
+    )
+  }
+
+  const display = APPROPRIATION_DISPLAY[classification.appropriation]
+
+  return (
+    <div className={`rounded-xl border px-6 py-4 ${display.container}`}>
+      <div className="flex flex-wrap items-center gap-3 mb-2">
+        <span className="text-xs uppercase tracking-wider text-muted">Estado del alumno</span>
+        <span
+          className={`inline-flex items-center px-2.5 py-1 rounded-full text-xs font-semibold ${display.chip}`}
+        >
+          {display.label}
+        </span>
+      </div>
+      <p className="text-sm text-ink font-medium">{display.headline}</p>
+      {classification.appropriation_reason && (
+        <p className="mt-2 text-xs text-muted leading-relaxed">
+          <span className="font-semibold">Por que: </span>
+          {classification.appropriation_reason}
+        </p>
+      )}
     </div>
   )
 }

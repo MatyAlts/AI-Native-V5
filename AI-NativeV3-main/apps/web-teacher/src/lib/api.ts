@@ -1066,6 +1066,39 @@ export async function getEpisodeNLevelDistribution(
   return r.json()
 }
 
+// ── Clasificación de apropiación del episodio (output del árbol N4) ──
+
+export type AppropriationLabel =
+  | "delegacion_pasiva"
+  | "apropiacion_superficial"
+  | "apropiacion_reflexiva"
+
+export interface EpisodeClassification {
+  episode_id: string
+  comision_id: string
+  classifier_config_hash: string
+  appropriation: AppropriationLabel
+  appropriation_reason: string
+  ct_summary: number | null
+  ccd_mean: number | null
+  ccd_orphan_ratio: number | null
+  cii_stability: number | null
+  cii_evolution: number | null
+  is_current: boolean
+}
+
+export async function getEpisodeClassification(
+  episodeId: string,
+  getToken?: TokenGetter,
+): Promise<EpisodeClassification | null> {
+  const r = await fetch(`/api/v1/classifications/${episodeId}`, {
+    headers: await authHeaders(getToken),
+  })
+  if (r.status === 404) return null
+  await throwIfNotOk(r)
+  return r.json()
+}
+
 // ── ADR-018: CII evolution longitudinal por estudiante ───────────────
 
 export interface CIIEvolutionTemplate {
