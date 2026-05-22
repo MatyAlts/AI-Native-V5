@@ -61,10 +61,19 @@ export const PROGRESSION_DOCENTE: Record<string, string> = {
   insuficiente: "Sin datos suficientes",
 }
 
+// IMPORTANTE: estos labels DEBEN reflejar la semántica del event_labeler
+// (apps/classifier-service/.../event_labeler.py:DEFAULT_EVENT_LEVELS).
+//   - `edicion_codigo` (escribir código) → N2
+//   - `codigo_ejecutado` (botón Ejecutar) → N3
+//   - `tests_ejecutados` → N3 (o N4 si todos pasan + tutor reciente)
+// Por eso N2 incluye "escribiendo código" y N3 dice "probando" (ejecutando),
+// no "escribiendo". Cambiar la semántica del labeler requiere bumpear
+// LABELER_VERSION + re-clasificar — pero los labels del UI pueden y deben
+// alinearse con lo que ya se mide.
 export const NLEVEL_DOCENTE: Record<string, string> = {
   N1: "Leyendo el problema",
-  N2: "Tomando notas y planificando",
-  N3: "Escribiendo y probando codigo",
+  N2: "Planificando y escribiendo codigo",
+  N3: "Probando codigo (ejecutando)",
   N4: "Usando el tutor IA",
   meta: "Abriendo/cerrando la sesion",
 }

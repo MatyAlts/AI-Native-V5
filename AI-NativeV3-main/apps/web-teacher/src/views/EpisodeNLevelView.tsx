@@ -367,8 +367,8 @@ function DocenteInterpretation({
   const pct = Math.round(dominant.ratio * 100)
   const insights: Record<NLevel, string> = {
     N1: "El alumno paso la mayor parte del tiempo leyendo el enunciado. Puede que le cueste entender la consigna o que sea un problema nuevo para el.",
-    N2: "El alumno dedico bastante tiempo a tomar notas y planificar. Buena senal de estrategia antes de codear.",
-    N3: "El alumno paso la mayor parte del tiempo escribiendo y probando codigo. Esta trabajando activamente en la solucion.",
+    N2: "El alumno dedico bastante tiempo a planificar y escribir codigo (todavia sin ejecutarlo). Buena senal de estrategia antes de validar.",
+    N3: "El alumno paso la mayor parte del tiempo ejecutando codigo y corriendo tests. Esta validando activamente su solucion.",
     N4: "El alumno paso la mayor parte del tiempo usando el tutor IA. Conviene revisar si esta entendiendo o solo copiando respuestas.",
     meta: "La mayor parte del tiempo fue de inicio y cierre de sesion. Puede que la sesion haya sido muy corta.",
   }
