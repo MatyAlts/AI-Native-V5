@@ -121,3 +121,4 @@ Desktop.ini
 
 # Claude Code local settings (per-developer permissions, no debe compartirse)
 .claude/settings.local.json
+*.tsbuildinfo

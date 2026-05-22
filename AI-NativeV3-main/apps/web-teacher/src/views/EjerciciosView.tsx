@@ -382,7 +382,7 @@ function toCreate(ej: Ejercicio): EjercicioCreate {
 // ── Form modal ──────────────────────────────────────────────────────────
 
 interface FormModalProps {
-  initial?: EjercicioCreate
+  initial?: EjercicioCreate | undefined
   title: string
   onClose: () => void
   onSubmit: (body: EjercicioCreate) => Promise<void>

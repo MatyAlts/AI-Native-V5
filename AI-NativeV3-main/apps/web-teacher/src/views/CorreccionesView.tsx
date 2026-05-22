@@ -347,7 +347,9 @@ function EjercicioPanel({ ej, resolvedEpisodeId, tarea, getToken }: EjercicioPan
   const [loading, setLoading] = useState(false)
   const [fetchError, setFetchError] = useState<string | null>(null)
 
-  const ejercicioInfo = tarea?.ejercicios?.find((e) => e.orden === ej.orden)
+  const ejercicioInfo = tarea?.ejercicios?.find(
+    (e: { orden: number }) => e.orden === ej.orden,
+  )
 
   function handleToggle() {
     const next = !expanded

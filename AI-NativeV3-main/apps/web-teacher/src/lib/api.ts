@@ -303,6 +303,14 @@ export interface TareaPractica {
   }> | null
   // Unidades de trazabilidad — FK nullable a la unidad de la comision (ADR-041)
   unidad_id: string | null
+  // Ejercicios asociados a la TP via tp_ejercicios (banco reusable, ADR-047).
+  // Opcional: solo presente en endpoints que populan la relacion (ej. GET /tareas-practicas/{id}?include=ejercicios).
+  ejercicios?: Array<{
+    id: string
+    titulo: string
+    enunciado: string
+    orden: number
+  }> | null
 }
 
 export interface TareaPracticaCreate {
@@ -1067,11 +1075,7 @@ export async function getEpisodeNLevelDistribution(
 }
 
 // ── Clasificación de apropiación del episodio (output del árbol N4) ──
-
-export type AppropriationLabel =
-  | "delegacion_pasiva"
-  | "apropiacion_superficial"
-  | "apropiacion_reflexiva"
+// AppropriationLabel ya esta declarado en la cabecera del archivo (linea 8).
 
 export interface EpisodeClassification {
   episode_id: string
@@ -1737,7 +1741,9 @@ export async function deleteEjercicio(id: string, getToken?: TokenGetter): Promi
 // ── Wizard IA standalone (POST /api/v1/ejercicios/generate) ──────────
 
 export interface EjercicioGenerateRequest {
-  materia_id: string
+  // materia_id es opcional: si esta vacio, el backend resuelve la primera
+  // del tenant (modo demo / piloto). Ver ADR-047.
+  materia_id?: string
   descripcion_nl: string
   unidad_tematica: UnidadTematica
   dificultad?: Dificultad
