@@ -319,6 +319,41 @@ A partir de ese momento:
   vía `OPENAI_BASE_URL`, ej. copilot-api local)
 - `mistral` — Mistral AI (cuota paga)
 
+### Fallback manual si Gemini se cae (sin tocar código)
+
+Gemini ocasionalmente devuelve `503 UNAVAILABLE` ("high demand") o
+`429 RESOURCE_EXHAUSTED` (cuota agotada). Si la caída es prolongada
+y tenés GitHub Copilot pago, hacés el switch sin downtime:
+
+1. Levantar [`copilot-api`](https://github.com/ericc-ch/copilot-api)
+   en el VPS:
+   ```bash
+   npx copilot-api@latest start --port 4141
+   # primera vez: OAuth con tu cuenta GitHub (browser opcional)
+   ```
+
+2. Editar `infrastructure/.env.prod`:
+   ```bash
+   LLM_PROVIDER=openai
+   OPENAI_BASE_URL=http://127.0.0.1:4141
+   OPENAI_API_KEY=dummy-any-non-empty-string
+   DEFAULT_MODEL=gpt-4o-mini   # o claude-sonnet-4.6 / gemini-2.5-flash via copilot
+   ```
+
+3. Reiniciar el ai-gateway:
+   ```bash
+   docker compose -f infrastructure/docker-compose.prod.yml \
+     --env-file infrastructure/.env.prod \
+     up -d --no-deps ai-gateway tutor-service
+   ```
+
+`copilot-api` expone Claude/GPT/Gemini via su catálogo de Copilot, todos
+con compatibilidad OpenAI-API. Probado: el `OpenAIProvider` del
+ai-gateway funciona contra ese proxy sin cambios. Costo: lo absorbe la
+cuota Copilot del operador, no la del piloto.
+
+Para volver a Gemini: revertir las 4 env vars y reiniciar.
+
 Para cambiar provider en runtime sin re-deploy, basta cargar una key
 con scope más específico (ej. scope `materia` con provider distinto).
 El resolver BYOK respeta jerarquía `materia > facultad > tenant > env`.
