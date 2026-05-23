@@ -1,17 +1,12 @@
 """Configuración del api-gateway."""
 
-import json
-from functools import lru_cache
-from typing import Annotated, Any
+from functools import cached_property, lru_cache
 
-from pydantic import Field, field_validator
-from pydantic_settings import BaseSettings, NoDecode, SettingsConfigDict
+from pydantic_settings import BaseSettings, SettingsConfigDict
 
-_DEFAULT_CORS_ORIGINS: list[str] = [
-    "http://localhost:5173",
-    "http://localhost:5174",
-    "http://localhost:5175",
-]
+_DEFAULT_CORS_ORIGINS_CSV = (
+    "http://localhost:5173,http://localhost:5174,http://localhost:5175"
+)
 
 
 class Settings(BaseSettings):
@@ -23,35 +18,35 @@ class Settings(BaseSettings):
     log_level: str = "info"
     log_format: str = "json"
 
-    # CORS: default = solo frontends de dev local. Producción DEBE override via
-    # env var CORS_ORIGINS con la lista explícita de dominios del piloto.
-    # Nunca usar ["*"] junto con allow_credentials=True (bypass de origin check).
-    # `NoDecode` evita que pydantic-settings haga json.loads() del env var
-    # ANTES de llegar al field_validator. El validator de abajo tolera
-    # vacio / CSV / JSON.
-    cors_origins: Annotated[list[str], NoDecode] = Field(
-        default_factory=lambda: list(_DEFAULT_CORS_ORIGINS)
-    )
+    # CORS — STRING (CSV), no list. Razon: pydantic-settings hace json.loads()
+    # automatico sobre fields con tipo list/dict/tuple. Con env var vacia o
+    # mal-formada (caso real en prod EasyPanel), eso explota con:
+    #   SettingsError: error parsing value for field "cors_origins"
+    #   json.decoder.JSONDecodeError: Expecting value: line 1 column 1 (char 0)
+    # Workarounds via NoDecode/field_validator dependen de la version de
+    # pydantic-settings y son fragiles. Solucion robusta: dejar el field como
+    # str y parsearlo a list en runtime via `cors_origins_list`.
+    cors_origins: str = _DEFAULT_CORS_ORIGINS_CSV
 
-    @field_validator("cors_origins", mode="before")
-    @classmethod
-    def _parse_cors_origins(cls, v: Any) -> Any:
-        # Tolerar 3 formatos en CORS_ORIGINS env var:
-        #   1. JSON array: '["http://a","http://b"]'
-        #   2. CSV: 'http://a,http://b'
-        #   3. Vacio / espacios: fallback al default (no fallar el boot).
-        # Sin esta normalizacion, pydantic-settings hace json.loads() directo y
-        # un valor vacio o CSV crashea el servicio al startup.
-        if v is None:
-            return list(_DEFAULT_CORS_ORIGINS)
-        if isinstance(v, str):
-            stripped = v.strip()
-            if not stripped:
-                return list(_DEFAULT_CORS_ORIGINS)
-            if stripped.startswith("["):
-                return json.loads(stripped)
-            return [item.strip() for item in stripped.split(",") if item.strip()]
-        return v
+    @cached_property
+    def cors_origins_list(self) -> list[str]:
+        """Parse cors_origins (CSV o JSON array) a list[str]."""
+        raw = (self.cors_origins or "").strip()
+        if not raw:
+            return [o.strip() for o in _DEFAULT_CORS_ORIGINS_CSV.split(",")]
+        # Tolerar JSON array si alguien lo pone asi
+        if raw.startswith("["):
+            import json
+
+            try:
+                parsed = json.loads(raw)
+                if isinstance(parsed, list):
+                    return [str(o) for o in parsed]
+            except json.JSONDecodeError:
+                pass
+        # CSV (formato default y recomendado)
+        return [o.strip() for o in raw.split(",") if o.strip()]
+
     otel_endpoint: str = "http://127.0.0.1:4317"
     sentry_dsn: str = ""
 
