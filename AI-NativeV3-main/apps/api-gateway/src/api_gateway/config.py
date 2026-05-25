@@ -88,10 +88,11 @@ class Settings(BaseSettings):
     # PROD esto NUNCA debe ir a True — habilitaria impersonacion sin credenciales.
     dev_trust_headers: bool = False
     # Fallback demo cuando dev_trust_headers=True y no llegan X-* desde proxy.
-    demo_user_id: str = "e19354fb-c05a-4535-a0bf-a7d3ea09692d"
-    demo_tenant_id: str = "d6269f07-022f-4181-a24d-db7e16e655ae"
-    demo_user_email: str = "alumno01@demo-uni.edu"
-    demo_user_roles: str = "estudiante,classifier_worker"
+    # Deben matchear el seed oficial (`tests/e2e/smoke/_helpers.py`).
+    demo_user_id: str = "b1b1b1b1-0001-0001-0001-000000000001"
+    demo_tenant_id: str = "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa"
+    demo_user_email: str = "alumno@demo-uni.edu"
+    demo_user_roles: str = "estudiante"
 
 
 @lru_cache
