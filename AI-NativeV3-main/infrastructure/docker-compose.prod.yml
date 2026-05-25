@@ -390,9 +390,9 @@ services:
       LOG_FORMAT: json
       OTEL_EXPORTER_OTLP_ENDPOINT: http://otel-collector:4317
       OTEL_SERVICE_NAME_PREFIX: platform
-      # Modo demo temporal: permitir identidad via headers X-* desde nginx-frontends.
-      # Cambiar a false al volver al flujo normal de login/JWT.
-      DEV_TRUST_HEADERS: ${DEV_TRUST_HEADERS:-true}
+      # Modo demo temporal: permitir identidad via headers/fallback demo en gateway.
+      # IMPORTANTE: volver a "false" cuando se habilite login JWT real.
+      DEV_TRUST_HEADERS: "true"
       JWT_ISSUER: ${JWT_ISSUER:?JWT_ISSUER requerido para prod}
       JWT_AUDIENCE: ${JWT_AUDIENCE:-platform-backend}
       JWT_JWKS_URI: ${JWT_JWKS_URI:?JWT_JWKS_URI requerido para prod}
