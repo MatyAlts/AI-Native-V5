@@ -93,33 +93,11 @@ def resolve_target(path: str) -> str | None:
 )
 async def proxy(full_path: str, request: Request) -> StreamingResponse:
     path = f"/api/{full_path}"
-    target = resolve_target(path)
-    if not target:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail=f"No hay servicio registrado para {path}",
-        )
 
-    url = f"{target.rstrip('/')}{path}"
-
-    # Preservar headers relevantes (auth, content-type, etc.)
-    headers = dict(request.headers)
-    headers.pop("host", None)  # httpx setea el correcto
-
-    body = await request.body()
-
-    async with httpx.AsyncClient(timeout=120.0) as client:
-        upstream = await client.request(
-            request.method,
-            url,
-            params=request.query_params,
-            headers=headers,
-            content=body,
-        )
-
-    # Fallback demo (piloto): si academic-service cae con 5xx para las rutas
-    # base del web-student, devolver payload mínimo estable para no bloquear UI.
-    if settings.dev_trust_headers and upstream.status_code >= 500:
+    # Fallback demo (piloto): endpoints mínimos del web-student servidos
+    # directamente por gateway para no bloquear la UI cuando academic-service
+    # está inestable durante deploys pesados.
+    if settings.dev_trust_headers:
         if path.startswith("/api/v1/universidades/mine"):
             return JSONResponse(
                 status_code=200,
@@ -157,6 +135,29 @@ async def proxy(full_path: str, request: Request) -> StreamingResponse:
                     "meta": {"total": 1},
                 },
             )
+    target = resolve_target(path)
+    if not target:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"No hay servicio registrado para {path}",
+        )
+
+    url = f"{target.rstrip('/')}{path}"
+
+    # Preservar headers relevantes (auth, content-type, etc.)
+    headers = dict(request.headers)
+    headers.pop("host", None)  # httpx setea el correcto
+
+    body = await request.body()
+
+    async with httpx.AsyncClient(timeout=120.0) as client:
+        upstream = await client.request(
+            request.method,
+            url,
+            params=request.query_params,
+            headers=headers,
+            content=body,
+        )
 
     # Stream response al cliente
     async def iter_content():
