@@ -61,6 +61,10 @@ app.add_middleware(
     JWTMiddleware,
     validator=_jwt_validator,
     dev_trust_headers=settings.dev_trust_headers,
+    demo_user_id=settings.demo_user_id,
+    demo_tenant_id=settings.demo_tenant_id,
+    demo_user_email=settings.demo_user_email,
+    demo_user_roles=settings.demo_user_roles,
 )
 
 # ── Rate limit (F4) ─────────────────────────────────────────────────
