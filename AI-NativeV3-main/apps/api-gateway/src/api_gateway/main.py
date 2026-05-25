@@ -65,6 +65,7 @@ app.add_middleware(
     demo_tenant_id=settings.demo_tenant_id,
     demo_user_email=settings.demo_user_email,
     demo_user_roles=settings.demo_user_roles,
+    demo_user_realm=settings.demo_user_realm,
 )
 
 # ── Rate limit (F4) ─────────────────────────────────────────────────

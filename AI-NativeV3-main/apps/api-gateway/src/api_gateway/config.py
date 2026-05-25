@@ -93,6 +93,7 @@ class Settings(BaseSettings):
     demo_tenant_id: str = "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa"
     demo_user_email: str = "alumno@demo-uni.edu"
     demo_user_roles: str = "estudiante"
+    demo_user_realm: str = "demo_uni"
 
 
 @lru_cache
