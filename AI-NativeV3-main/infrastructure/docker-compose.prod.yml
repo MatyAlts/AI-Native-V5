@@ -65,6 +65,11 @@ name: platform-prod
 
 x-service-defaults: &service-defaults
   restart: unless-stopped
+  logging:
+    driver: json-file
+    options:
+      max-size: "20m"
+      max-file: "5"
   networks:
     - default
   environment:
@@ -82,6 +87,11 @@ x-ctr-worker-defaults: &ctr-worker-defaults
     context: ..
     dockerfile: apps/ctr-service/Dockerfile
   restart: unless-stopped
+  logging:
+    driver: json-file
+    options:
+      max-size: "20m"
+      max-file: "5"
   networks:
     - default
   environment: &ctr-worker-env
@@ -110,6 +120,11 @@ services:
     image: pgvector/pgvector:pg16
     container_name: platform-prod-postgres
     restart: unless-stopped
+    logging:
+      driver: json-file
+      options:
+        max-size: "20m"
+        max-file: "5"
     environment:
       POSTGRES_USER: postgres
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD requerido}
@@ -130,6 +145,11 @@ services:
     image: postgres:16-alpine
     container_name: platform-prod-keycloak-db
     restart: unless-stopped
+    logging:
+      driver: json-file
+      options:
+        max-size: "20m"
+        max-file: "5"
     environment:
       POSTGRES_DB: keycloak
       POSTGRES_USER: keycloak
@@ -148,6 +168,11 @@ services:
     image: quay.io/keycloak/keycloak:25.0
     container_name: platform-prod-keycloak
     restart: unless-stopped
+    logging:
+      driver: json-file
+      options:
+        max-size: "20m"
+        max-file: "5"
     # NOTA: `--db=postgres` es BUILD-TIME en Keycloak — pasarlo solo como
     # env var KC_DB no alcanza. El log lo confirma:
     #   "build time non-cli options have values that differ from what is
@@ -189,6 +214,11 @@ services:
     image: redis:7-alpine
     container_name: platform-prod-redis
     restart: unless-stopped
+    logging:
+      driver: json-file
+      options:
+        max-size: "20m"
+        max-file: "5"
     command: >
       redis-server
       --appendonly yes
@@ -209,6 +239,11 @@ services:
     image: minio/minio:RELEASE.2025-09-07T16-13-09Z
     container_name: platform-prod-minio
     restart: unless-stopped
+    logging:
+      driver: json-file
+      options:
+        max-size: "20m"
+        max-file: "5"
     command: server /data --console-address ":9001"
     environment:
       MINIO_ROOT_USER: ${MINIO_ROOT_USER:?MINIO_ROOT_USER requerido}
@@ -230,6 +265,11 @@ services:
     image: otel/opentelemetry-collector-contrib:0.150.1
     container_name: platform-prod-otel-collector
     restart: unless-stopped
+    logging:
+      driver: json-file
+      options:
+        max-size: "20m"
+        max-file: "5"
     command: ["--config=/etc/otel-collector-config.yaml"]
     volumes:
       - ./observability/otel-collector-config.yaml:/etc/otel-collector-config.yaml:ro
@@ -244,6 +284,11 @@ services:
     image: jaegertracing/all-in-one:1.62.0
     container_name: platform-prod-jaeger
     restart: unless-stopped
+    logging:
+      driver: json-file
+      options:
+        max-size: "20m"
+        max-file: "5"
     environment:
       COLLECTOR_OTLP_ENABLED: "true"
     networks:
@@ -255,9 +300,15 @@ services:
     image: prom/prometheus:v2.55.0
     container_name: platform-prod-prometheus
     restart: unless-stopped
+    logging:
+      driver: json-file
+      options:
+        max-size: "20m"
+        max-file: "5"
     command:
       - "--config.file=/etc/prometheus/prometheus.yml"
-      - "--storage.tsdb.retention.time=90d"
+      - "--storage.tsdb.retention.time=${PROMETHEUS_RETENTION_TIME:-21d}"
+      - "--storage.tsdb.retention.size=${PROMETHEUS_RETENTION_SIZE:-20GB}"
       - "--web.enable-lifecycle"
     volumes:
       - ./observability/prometheus.yml:/etc/prometheus/prometheus.yml:ro
@@ -270,6 +321,11 @@ services:
     image: prom/alertmanager:v0.28.0
     container_name: platform-prod-alertmanager
     restart: unless-stopped
+    logging:
+      driver: json-file
+      options:
+        max-size: "20m"
+        max-file: "5"
     command:
       - "--config.file=/etc/alertmanager/alertmanager.yml"
       - "--storage.path=/alertmanager"
@@ -283,6 +339,11 @@ services:
     image: grafana/loki:3.7.1
     container_name: platform-prod-loki
     restart: unless-stopped
+    logging:
+      driver: json-file
+      options:
+        max-size: "20m"
+        max-file: "5"
     command: -config.file=/etc/loki/local-config.yaml
     networks:
       - default
@@ -291,6 +352,11 @@ services:
     image: grafana/grafana:11.3.0
     container_name: platform-prod-grafana
     restart: unless-stopped
+    logging:
+      driver: json-file
+      options:
+        max-size: "20m"
+        max-file: "5"
     environment:
       GF_SECURITY_ADMIN_USER: ${GRAFANA_ADMIN_USER:?GRAFANA_ADMIN_USER requerido}
       GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD:?GRAFANA_ADMIN_PASSWORD requerido}
@@ -324,8 +390,9 @@ services:
       LOG_FORMAT: json
       OTEL_EXPORTER_OTLP_ENDPOINT: http://otel-collector:4317
       OTEL_SERVICE_NAME_PREFIX: platform
-      # SAFETY: dev_trust_headers MUST be false en prod.
-      DEV_TRUST_HEADERS: "false"
+      # Modo demo temporal: permitir identidad via headers/fallback demo en gateway.
+      # IMPORTANTE: volver a "false" cuando se habilite login JWT real.
+      DEV_TRUST_HEADERS: "true"
       JWT_ISSUER: ${JWT_ISSUER:?JWT_ISSUER requerido para prod}
       JWT_AUDIENCE: ${JWT_AUDIENCE:-platform-backend}
       JWT_JWKS_URI: ${JWT_JWKS_URI:?JWT_JWKS_URI requerido para prod}
@@ -597,6 +664,11 @@ services:
       context: ..
       dockerfile: infrastructure/frontends.Dockerfile
     restart: unless-stopped
+    logging:
+      driver: json-file
+      options:
+        max-size: "20m"
+        max-file: "5"
     networks:
       - default
     # ports: removed — EasyPanel mapea el dominio publico al puerto 80

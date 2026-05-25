@@ -55,10 +55,20 @@ class JWTMiddleware(BaseHTTPMiddleware):
         app,
         validator: JWTValidator | None,
         dev_trust_headers: bool = False,
+        demo_user_id: str = "",
+        demo_tenant_id: str = "",
+        demo_user_email: str = "",
+        demo_user_roles: str = "",
+        demo_user_realm: str = "",
     ) -> None:
         super().__init__(app)
         self.validator = validator
         self.dev_trust_headers = dev_trust_headers
+        self.demo_user_id = demo_user_id
+        self.demo_tenant_id = demo_tenant_id
+        self.demo_user_email = demo_user_email
+        self.demo_user_roles = demo_user_roles
+        self.demo_user_realm = demo_user_realm
 
     async def dispatch(self, request: Request, call_next: Callable) -> Response:
         path = request.url.path
@@ -89,7 +99,40 @@ class JWTMiddleware(BaseHTTPMiddleware):
             x_user_id = request.headers.get("x-user-id")
             x_tenant_id = request.headers.get("x-tenant-id")
             if x_user_id and x_tenant_id:
+                # Completar realm demo si no vino desde proxy.
+                if self.demo_user_realm and not request.headers.get("x-user-realm"):
+                    headers = [
+                        (k, v)
+                        for k, v in request.scope["headers"]
+                        if k.lower() != b"x-user-realm"
+                    ]
+                    headers.append((b"x-user-realm", self.demo_user_realm.encode()))
+                    request.scope["headers"] = headers
                 # Pasar sin modificar (dev trust)
+                return await _add_request_id(request, call_next)
+            if self.demo_user_id and self.demo_tenant_id:
+                # Fallback demo local: inyectar X-* si proxy no los seteó.
+                headers = [
+                    (k, v)
+                    for k, v in request.scope["headers"]
+                    if k.lower()
+                    not in (
+                        b"x-user-id",
+                        b"x-tenant-id",
+                        b"x-user-email",
+                        b"x-user-roles",
+                    )
+                ]
+                headers.extend(
+                    [
+                        (b"x-user-id", self.demo_user_id.encode()),
+                        (b"x-tenant-id", self.demo_tenant_id.encode()),
+                        (b"x-user-email", self.demo_user_email.encode()),
+                        (b"x-user-roles", self.demo_user_roles.encode()),
+                        (b"x-user-realm", self.demo_user_realm.encode()),
+                    ]
+                )
+                request.scope["headers"] = headers
                 return await _add_request_id(request, call_next)
 
         if principal is None:

@@ -87,6 +87,13 @@ class Settings(BaseSettings):
     # mandan X-User-Id / X-Tenant-Id / X-User-Roles via Vite proxy). En piloto-2
     # PROD esto NUNCA debe ir a True — habilitaria impersonacion sin credenciales.
     dev_trust_headers: bool = False
+    # Fallback demo cuando dev_trust_headers=True y no llegan X-* desde proxy.
+    # Deben matchear el seed oficial (`tests/e2e/smoke/_helpers.py`).
+    demo_user_id: str = "b1b1b1b1-0001-0001-0001-000000000001"
+    demo_tenant_id: str = "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa"
+    demo_user_email: str = "alumno@demo-uni.edu"
+    demo_user_roles: str = "estudiante"
+    demo_user_realm: str = "demo_uni"
 
 
 @lru_cache
