@@ -90,7 +90,8 @@ class SentenceTransformerEmbedder(BaseEmbedder):
             import torch
             from sentence_transformers import SentenceTransformer
 
-            device = "cuda" if torch.cuda.is_available() else "cpu"
+            # EasyPanel: forzamos CPU para evitar dependencia de runtime GPU/NVIDIA.
+            device = "cpu"
             self._model = SentenceTransformer(self.model_name, device=device)
         return self._model
 
