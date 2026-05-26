@@ -16,6 +16,7 @@ dependencies = [
     "opentelemetry-exporter-otlp>=1.27",
     "gitpython>=3.1",
     "platform-contracts",
+    "platform-observability",
 ]
 
 [dependency-groups]
