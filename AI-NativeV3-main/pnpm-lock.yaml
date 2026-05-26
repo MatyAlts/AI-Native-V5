@@ -44,6 +44,9 @@ importers:
 
   apps/web-admin:
     dependencies:
+      '@clerk/clerk-react':
+        specifier: ^5.61.3
+        version: 5.61.3(react-dom@19.2.5(react@19.2.5))(react@19.2.5)
       '@platform/auth-client':
         specifier: workspace:*
         version: link:../../packages/auth-client
@@ -284,6 +287,9 @@ importers:
 
   apps/web-teacher:
     dependencies:
+      '@clerk/clerk-react':
+        specifier: ^5.61.3
+        version: 5.61.3(react-dom@19.2.5(react@19.2.5))(react@19.2.5)
       '@platform/auth-client':
         specifier: workspace:*
         version: link:../../packages/auth-client

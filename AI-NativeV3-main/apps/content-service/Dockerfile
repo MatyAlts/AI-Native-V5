@@ -24,4 +24,4 @@ ENV PATH="/app/.venv/bin:$PATH" \
     PYTHONDONTWRITEBYTECODE=1
 
 
-ENTRYPOINT ["sh", "-c", "cd /app/apps/content-service 2>/dev/null || cd /app && python -m alembic upgrade head && python -m uvicorn content_service.main:app --host 0.0.0.0 --port 8009"]
+ENTRYPOINT ["sh", "-c", "cd /app/apps/content-service 2>/dev/null || cd /app; python -m alembic upgrade head || echo 'WARN: alembic failed, continuing'; exec python -m uvicorn content_service.main:app --host 0.0.0.0 --port 8009"]
