@@ -17,6 +17,7 @@ dependencies = [
     "opentelemetry-instrumentation-fastapi>=0.48b0",
     "opentelemetry-exporter-otlp>=1.27",
     "platform-contracts",
+    "platform-observability",
     "alembic>=1.13",
     "asyncpg>=0.29",
     "psycopg2-binary>=2.9",
