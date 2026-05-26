@@ -13,6 +13,7 @@
  *     este activa, va a inyectar el id via search/path param y el footer va a
  *     pollear el verify (mejora pendiente; el render con null sigue siendo válido).
  */
+import { SignInButton, SignUpButton, UserButton, useAuth } from "@clerk/clerk-react"
 import { AuditFooter, HelpButton } from "@platform/ui"
 import { Outlet, createRootRouteWithContext } from "@tanstack/react-router"
 import { TenantSelector } from "../components/TenantSelector"
@@ -28,12 +29,9 @@ export const Route = createRootRouteWithContext<RouterContext>()({
 })
 
 function RootLayout() {
+  const { isSignedIn } = useAuth()
+
   return (
-    // `h-dvh` (altura dinámica del viewport) + `overflow-hidden` en el root
-    // confina la altura al viewport. Sin esto, el editor Monaco crece con
-    // el contenido y empuja al chat hacia abajo cuando el código es largo.
-    // Las pages que necesitan scroll vertical (home, materia) tienen su
-    // propio `overflow-y-auto` en su contenedor.
     <div className="h-dvh bg-surface-alt text-ink flex flex-col overflow-hidden">
       <header className="border-b border-border-soft px-6 py-3 flex items-center justify-between gap-4">
         <div className="flex items-center gap-3 min-w-0">
@@ -47,12 +45,42 @@ function RootLayout() {
           </h1>
         </div>
         <div className="flex items-center gap-3">
-          <TenantSelector />
-          <HelpButton title="Tutor Socratico" content={helpContent.episode} />
+          {isSignedIn ? (
+            <>
+              <TenantSelector />
+              <HelpButton title="Tutor Socratico" content={helpContent.episode} />
+              <UserButton afterSignOutUrl="/" />
+            </>
+          ) : (
+            <>
+              <SignInButton mode="modal">
+                <button type="button" className="text-sm font-medium text-accent-brand hover:underline">
+                  Iniciar sesion
+                </button>
+              </SignInButton>
+              <SignUpButton mode="modal">
+                <button type="button" className="text-sm font-medium bg-accent-brand text-white px-3 py-1.5 rounded-md hover:opacity-90">
+                  Registrarse
+                </button>
+              </SignUpButton>
+            </>
+          )}
         </div>
       </header>
 
-      <Outlet />
+      {isSignedIn ? <Outlet /> : (
+        <div className="flex-1 flex items-center justify-center">
+          <div className="text-center space-y-4">
+            <h2 className="text-2xl font-bold text-ink">Bienvenido a Plataforma N4</h2>
+            <p className="text-muted-soft">Inicia sesion para acceder a tus materias y tareas practicas.</p>
+            <SignInButton mode="modal">
+              <button type="button" className="bg-accent-brand text-white px-6 py-2 rounded-md font-medium hover:opacity-90">
+                Iniciar sesion
+              </button>
+            </SignInButton>
+          </div>
+        </div>
+      )}
 
       <AuditFooter episodeId={null} classifierHash={null} />
     </div>

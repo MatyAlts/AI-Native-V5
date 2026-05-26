@@ -21,6 +21,9 @@ FROM node:20-alpine AS builder
 ARG VITE_API_URL=
 ENV VITE_API_URL=$VITE_API_URL
 
+ARG VITE_CLERK_PUBLISHABLE_KEY=
+ENV VITE_CLERK_PUBLISHABLE_KEY=$VITE_CLERK_PUBLISHABLE_KEY
+
 # pnpm via corepack (incluido en Node 20).
 RUN corepack enable && corepack prepare pnpm@9.12.0 --activate
 

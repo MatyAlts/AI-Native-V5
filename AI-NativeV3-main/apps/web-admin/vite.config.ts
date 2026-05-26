@@ -24,6 +24,7 @@ const vitestConfig = {
 } as const
 
 export default defineConfig({
+  base: "/admin/",
   plugins: [react(), tailwindcss()],
   resolve: {
     alias: {

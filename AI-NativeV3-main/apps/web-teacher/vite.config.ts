@@ -21,6 +21,7 @@ const vitestConfig = {
 } as const
 
 export default defineConfig({
+  base: "/teacher/",
   plugins: [
     TanStackRouterVite({ target: "react", autoCodeSplitting: true }),
     react(),

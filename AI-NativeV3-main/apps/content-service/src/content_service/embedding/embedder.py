@@ -77,6 +77,48 @@ class MockEmbedder(BaseEmbedder):
         return vec
 
 
+class GeminiEmbedder(BaseEmbedder):
+    """Embedder via Google Gemini API (text-embedding-004).
+
+    Usa el SDK oficial ``google-genai``.  El modelo devuelve 768 dims
+    por default; se rellenan con ceros hasta ``EMBEDDING_DIM`` (1024).
+    Lee ``GEMINI_API_KEY`` del entorno.
+    """
+
+    model_name = "text-embedding-004"
+
+    def __init__(self) -> None:
+        from google import genai
+
+        api_key = os.environ.get("GEMINI_API_KEY", "")
+        if not api_key:
+            msg = "GEMINI_API_KEY env var is required for GeminiEmbedder"
+            raise ValueError(msg)
+        self._client = genai.Client(api_key=api_key)
+
+    def _pad(self, vector: list[float]) -> list[float]:
+        """Pad/truncate a ``EMBEDDING_DIM``."""
+        if len(vector) >= EMBEDDING_DIM:
+            return vector[:EMBEDDING_DIM]
+        return vector + [0.0] * (EMBEDDING_DIM - len(vector))
+
+    async def embed_documents(self, texts: list[str]) -> list[list[float]]:
+        response = self._client.models.embed_content(
+            model=self.model_name,
+            contents=texts,
+            config={"task_type": "RETRIEVAL_DOCUMENT"},
+        )
+        return [self._pad(e.values) for e in response.embeddings]
+
+    async def embed_query(self, text: str) -> list[float]:
+        response = self._client.models.embed_content(
+            model=self.model_name,
+            contents=[text],
+            config={"task_type": "RETRIEVAL_QUERY"},
+        )
+        return self._pad(response.embeddings[0].values)
+
+
 class SentenceTransformerEmbedder(BaseEmbedder):
     """Embedder local con sentence-transformers + multilingual-e5-large."""
 
@@ -123,6 +165,8 @@ def get_embedder() -> BaseEmbedder:
     which = os.environ.get("EMBEDDER", "").lower()
     if which == "mock":
         return MockEmbedder()
+    if which == "gemini":
+        return GeminiEmbedder()
     if which == "local":
         return SentenceTransformerEmbedder()
 
