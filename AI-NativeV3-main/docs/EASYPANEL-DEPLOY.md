@@ -134,6 +134,7 @@ En el Domain del servicio frontend (`frontends`):
 3. Las variables `.env` requeridas del servicio están cargadas en Environment.
 4. URLs internas entre servicios apuntan a `http://<service-name>:<port>`.
 5. El Domain (si aplica) apunta al puerto correcto del servicio.
+6. Si ves `ModuleNotFoundError: No module named 'platform_observability'` en `api-gateway`, confirmá que la imagen incluya la versión con `platform-observability` en `apps/api-gateway/pyproject.toml` y rebuild sin cache.
 
 ## 8) Opciones para reemplazar lo removido (especial foco GPU)
 
