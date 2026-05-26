@@ -10,14 +10,17 @@ import { routeTree } from "./routeTree.gen"
 // `X-Tenant-Id` al api-gateway. Sin selección, el proxy cae al default.
 export const SELECTED_TENANT_STORAGE_KEY = "selectedTenantId"
 const originalFetch = window.fetch.bind(window)
+const apiBase = (import.meta.env.VITE_API_URL ?? "").replace(/\/$/, "")
 window.fetch = (input, init) => {
-  const url = typeof input === "string" ? input : input instanceof URL ? input.href : input.url
-  if (!url.startsWith("/api/")) return originalFetch(input, init)
-  const tenantId = window.localStorage.getItem(SELECTED_TENANT_STORAGE_KEY)
-  if (!tenantId) return originalFetch(input, init)
+  const rawUrl = typeof input === "string" ? input : input instanceof URL ? input.href : input.url
+  const isRelativeApi = rawUrl.startsWith("/api/")
+  const targetUrl = isRelativeApi && apiBase ? `${apiBase}${rawUrl}` : rawUrl
+
+  const tenantId = isRelativeApi ? window.localStorage.getItem(SELECTED_TENANT_STORAGE_KEY) : null
+  if (!tenantId) return originalFetch(targetUrl, init)
   const headers = new Headers(init?.headers ?? {})
   headers.set("x-selected-tenant", tenantId)
-  return originalFetch(input, { ...init, headers })
+  return originalFetch(targetUrl, { ...init, headers })
 }
 
 // Routing type-safe del web-student con file-based routes (espejo del web-teacher).
