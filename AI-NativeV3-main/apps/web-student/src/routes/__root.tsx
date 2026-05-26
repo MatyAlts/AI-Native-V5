@@ -13,14 +13,16 @@
  *     este activa, va a inyectar el id via search/path param y el footer va a
  *     pollear el verify (mejora pendiente; el render con null sigue siendo válido).
  */
-import { SignInButton, SignUpButton, UserButton, useAuth } from "@clerk/clerk-react"
+import { SignInButton, SignUpButton, UserButton, useAuth, useUser } from "@clerk/clerk-react"
 import { AuditFooter, HelpButton } from "@platform/ui"
 import { Outlet, createRootRouteWithContext } from "@tanstack/react-router"
+import { useEffect, useRef } from "react"
 import { TenantSelector } from "../components/TenantSelector"
 import { helpContent } from "../utils/helpContent"
 
+const DEFAULT_COMISION_ID = "aaaaaaaa-0001-0001-0001-aaaaaaaaaaaa"
+
 export interface RouterContext {
-  /** Función de auth — placeholder hasta integración Keycloak (F8). */
   getToken: () => Promise<string | null>
 }
 
@@ -28,8 +30,29 @@ export const Route = createRootRouteWithContext<RouterContext>()({
   component: RootLayout,
 })
 
+function useAutoEnroll() {
+  const { isSignedIn } = useAuth()
+  const { user } = useUser()
+  const enrolled = useRef(false)
+
+  useEffect(() => {
+    if (!isSignedIn || !user || enrolled.current) return
+    enrolled.current = true
+
+    fetch(`/api/v1/comisiones/${DEFAULT_COMISION_ID}/inscripciones`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        student_pseudonym: user.id,
+        fecha_inscripcion: new Date().toISOString().slice(0, 10),
+      }),
+    }).catch(() => {})
+  }, [isSignedIn, user])
+}
+
 function RootLayout() {
   const { isSignedIn } = useAuth()
+  useAutoEnroll()
 
   return (
     <div className="h-dvh bg-surface-alt text-ink flex flex-col overflow-hidden">
