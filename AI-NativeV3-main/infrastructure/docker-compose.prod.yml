@@ -75,7 +75,8 @@ x-service-defaults: &service-defaults
   environment:
     LOG_LEVEL: ${LOG_LEVEL:-info}
     LOG_FORMAT: json
-    OTEL_EXPORTER_OTLP_ENDPOINT: http://otel-collector:4317
+    # OTEL deshabilitado para deploy base en EasyPanel (sin stack observabilidad).
+    OTEL_EXPORTER_OTLP_ENDPOINT: ""
     OTEL_SERVICE_NAME_PREFIX: platform
 
 # Defaults compartidos por los 8 ctr-workers (ADR-010): mismo build que
@@ -97,7 +98,7 @@ x-ctr-worker-defaults: &ctr-worker-defaults
   environment: &ctr-worker-env
     LOG_LEVEL: ${LOG_LEVEL:-info}
     LOG_FORMAT: json
-    OTEL_EXPORTER_OTLP_ENDPOINT: http://otel-collector:4317
+    OTEL_EXPORTER_OTLP_ENDPOINT: ""
     OTEL_SERVICE_NAME_PREFIX: platform
     CTR_STORE_URL: postgresql+asyncpg://ctr_user:${CTR_DB_PASSWORD}@postgres:5432/ctr_store
     REDIS_URL: redis://:${REDIS_PASSWORD}@redis:6379/0
@@ -141,74 +142,7 @@ services:
       - default
     # Sin ports exposes — solo accesible desde la red interna.
 
-  keycloak-db:
-    image: postgres:16-alpine
-    container_name: platform-prod-keycloak-db
-    restart: unless-stopped
-    logging:
-      driver: json-file
-      options:
-        max-size: "20m"
-        max-file: "5"
-    environment:
-      POSTGRES_DB: keycloak
-      POSTGRES_USER: keycloak
-      POSTGRES_PASSWORD: ${KEYCLOAK_DB_PASSWORD:?KEYCLOAK_DB_PASSWORD requerido}
-    volumes:
-      - kc_data:/var/lib/postgresql/data
-    healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U keycloak"]
-      interval: 5s
-      timeout: 5s
-      retries: 10
-    networks:
-      - default
-
-  keycloak:
-    image: quay.io/keycloak/keycloak:25.0
-    container_name: platform-prod-keycloak
-    restart: unless-stopped
-    logging:
-      driver: json-file
-      options:
-        max-size: "20m"
-        max-file: "5"
-    # NOTA: `--db=postgres` es BUILD-TIME en Keycloak — pasarlo solo como
-    # env var KC_DB no alcanza. El log lo confirma:
-    #   "build time non-cli options have values that differ from what is
-    #    persisted - the new values will NOT be used until another build
-    #    is run: kc.db, kc.health-enabled"
-    # Al pasar `--db=postgres` como argumento del `start`, Keycloak detecta
-    # el cambio build-time y hace el build implicito antes de arrancar
-    # (~30s extra al primer startup, despues queda cacheado en el volumen).
-    # Sin esto, Keycloak crashea con "Driver does not support the provided
-    # URL: jdbc:postgresql://..." porque la imagen viene pre-buildeada con
-    # driver H2.
-    command:
-      - start
-      - --import-realm
-      - --db=postgres
-      - --hostname-strict=false
-    environment:
-      KC_DB: postgres
-      KC_DB_URL: jdbc:postgresql://keycloak-db:5432/keycloak
-      KC_DB_USERNAME: keycloak
-      KC_DB_PASSWORD: ${KEYCLOAK_DB_PASSWORD:?KEYCLOAK_DB_PASSWORD requerido}
-      KEYCLOAK_ADMIN: ${KEYCLOAK_ADMIN_USER:?KEYCLOAK_ADMIN_USER requerido}
-      KEYCLOAK_ADMIN_PASSWORD: ${KEYCLOAK_ADMIN_PASSWORD:?KEYCLOAK_ADMIN_PASSWORD requerido}
-      KC_HOSTNAME: ${KEYCLOAK_HOSTNAME:-localhost}
-      KC_HTTP_ENABLED: "true"
-      KC_HEALTH_ENABLED: "true"
-      KC_PROXY_HEADERS: xforwarded
-    volumes:
-      - ./keycloak/realm-templates:/opt/keycloak/data/import:ro
-    # ports: removed — EasyPanel maneja exposicion via su reverse-proxy.
-    # Acceso al admin UI de Keycloak via EasyPanel domain mapping.
-    depends_on:
-      keycloak-db:
-        condition: service_healthy
-    networks:
-      - default
+  # keycloak-db y keycloak removidos para deploy limpio en EasyPanel.
 
   redis:
     image: redis:7-alpine
@@ -259,64 +193,7 @@ services:
       - default
     # Sin ports exposes — content-service accede por la red interna.
 
-  # ── Observabilidad ────────────────────────────────────────────────
-
-  otel-collector:
-    image: otel/opentelemetry-collector-contrib:0.150.1
-    container_name: platform-prod-otel-collector
-    restart: unless-stopped
-    logging:
-      driver: json-file
-      options:
-        max-size: "20m"
-        max-file: "5"
-    command: ["--config=/etc/otel-collector-config.yaml"]
-    volumes:
-      - ./observability/otel-collector-config.yaml:/etc/otel-collector-config.yaml:ro
-    depends_on:
-      - jaeger
-      - prometheus
-      - loki
-    networks:
-      - default
-
-  jaeger:
-    image: jaegertracing/all-in-one:1.62.0
-    container_name: platform-prod-jaeger
-    restart: unless-stopped
-    logging:
-      driver: json-file
-      options:
-        max-size: "20m"
-        max-file: "5"
-    environment:
-      COLLECTOR_OTLP_ENABLED: "true"
-    networks:
-      - default
-    # Sin ports exposes. Para acceder al UI usar SSH tunnel:
-    # ssh -L 16686:localhost:16686 vps-utn
-
-  prometheus:
-    image: prom/prometheus:v2.55.0
-    container_name: platform-prod-prometheus
-    restart: unless-stopped
-    logging:
-      driver: json-file
-      options:
-        max-size: "20m"
-        max-file: "5"
-    command:
-      - "--config.file=/etc/prometheus/prometheus.yml"
-      - "--storage.tsdb.retention.time=${PROMETHEUS_RETENTION_TIME:-21d}"
-      - "--storage.tsdb.retention.size=${PROMETHEUS_RETENTION_SIZE:-20GB}"
-      - "--web.enable-lifecycle"
-    volumes:
-      - ./observability/prometheus.yml:/etc/prometheus/prometheus.yml:ro
-      - ./observability/alerts:/etc/prometheus/alerts:ro
-      - prom_data:/prometheus
-    networks:
-      - default
-
+  # ── Observabilidad (base mínima) ──────────────────────────────────
   alertmanager:
     image: prom/alertmanager:v0.28.0
     container_name: platform-prod-alertmanager
@@ -335,44 +212,7 @@ services:
     networks:
       - default
 
-  loki:
-    image: grafana/loki:3.7.1
-    container_name: platform-prod-loki
-    restart: unless-stopped
-    logging:
-      driver: json-file
-      options:
-        max-size: "20m"
-        max-file: "5"
-    command: -config.file=/etc/loki/local-config.yaml
-    networks:
-      - default
-
-  grafana:
-    image: grafana/grafana:11.3.0
-    container_name: platform-prod-grafana
-    restart: unless-stopped
-    logging:
-      driver: json-file
-      options:
-        max-size: "20m"
-        max-file: "5"
-    environment:
-      GF_SECURITY_ADMIN_USER: ${GRAFANA_ADMIN_USER:?GRAFANA_ADMIN_USER requerido}
-      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD:?GRAFANA_ADMIN_PASSWORD requerido}
-      GF_USERS_ALLOW_SIGN_UP: "false"
-      GF_SERVER_ROOT_URL: ${GRAFANA_ROOT_URL:-http://localhost:3000}
-    volumes:
-      - ./grafana/provisioning/datasources:/etc/grafana/provisioning/datasources:ro
-      - ./grafana/provisioning/dashboards:/etc/grafana/provisioning/dashboards:ro
-      - grafana_data:/var/lib/grafana
-    # ports: removed — EasyPanel mapea dominio al container internamente.
-    depends_on:
-      - prometheus
-      - loki
-      - jaeger
-    networks:
-      - default
+  # grafana, loki, prometheus, jaeger y otel-collector removidos para EasyPanel.
 
   # ════════════════════════════════════════════════════════════════════
   # CAPA DE APLICACION — 10 servicios Python
@@ -388,7 +228,7 @@ services:
     environment:
       LOG_LEVEL: ${LOG_LEVEL:-info}
       LOG_FORMAT: json
-      OTEL_EXPORTER_OTLP_ENDPOINT: http://otel-collector:4317
+      OTEL_EXPORTER_OTLP_ENDPOINT: ""
       OTEL_SERVICE_NAME_PREFIX: platform
       # Modo demo temporal: permitir identidad via headers/fallback demo en gateway.
       # IMPORTANTE: volver a "false" cuando se habilite login JWT real.
@@ -413,7 +253,6 @@ services:
     # del container internamente. Otros containers le pegan via http://api-gateway:8000
     depends_on:
       - redis
-      - keycloak
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8000/health/ready"]
       interval: 10s
@@ -430,7 +269,7 @@ services:
     environment:
       LOG_LEVEL: ${LOG_LEVEL:-info}
       LOG_FORMAT: json
-      OTEL_EXPORTER_OTLP_ENDPOINT: http://otel-collector:4317
+      OTEL_EXPORTER_OTLP_ENDPOINT: ""
       OTEL_SERVICE_NAME_PREFIX: platform
       ACADEMIC_DB_URL: postgresql+asyncpg://academic_user:${ACADEMIC_DB_PASSWORD:?ACADEMIC_DB_PASSWORD requerido}@postgres:5432/academic_main
     depends_on:
@@ -446,7 +285,7 @@ services:
     environment:
       LOG_LEVEL: ${LOG_LEVEL:-info}
       LOG_FORMAT: json
-      OTEL_EXPORTER_OTLP_ENDPOINT: http://otel-collector:4317
+      OTEL_EXPORTER_OTLP_ENDPOINT: ""
       OTEL_SERVICE_NAME_PREFIX: platform
       ACADEMIC_DB_URL: postgresql+asyncpg://academic_user:${ACADEMIC_DB_PASSWORD}@postgres:5432/academic_main
     depends_on:
@@ -462,7 +301,7 @@ services:
     environment:
       LOG_LEVEL: ${LOG_LEVEL:-info}
       LOG_FORMAT: json
-      OTEL_EXPORTER_OTLP_ENDPOINT: http://otel-collector:4317
+      OTEL_EXPORTER_OTLP_ENDPOINT: ""
       OTEL_SERVICE_NAME_PREFIX: platform
       ACADEMIC_DB_URL: postgresql+asyncpg://academic_user:${ACADEMIC_DB_PASSWORD}@postgres:5432/academic_main
       CTR_STORE_URL: postgresql+asyncpg://ctr_user:${CTR_DB_PASSWORD:?CTR_DB_PASSWORD requerido}@postgres:5432/ctr_store
@@ -480,7 +319,7 @@ services:
     environment:
       LOG_LEVEL: ${LOG_LEVEL:-info}
       LOG_FORMAT: json
-      OTEL_EXPORTER_OTLP_ENDPOINT: http://otel-collector:4317
+      OTEL_EXPORTER_OTLP_ENDPOINT: ""
       OTEL_SERVICE_NAME_PREFIX: platform
       REDIS_URL: redis://:${REDIS_PASSWORD}@redis:6379/0
       AI_GATEWAY_URL: http://ai-gateway:8011
@@ -503,7 +342,7 @@ services:
     environment:
       LOG_LEVEL: ${LOG_LEVEL:-info}
       LOG_FORMAT: json
-      OTEL_EXPORTER_OTLP_ENDPOINT: http://otel-collector:4317
+      OTEL_EXPORTER_OTLP_ENDPOINT: ""
       OTEL_SERVICE_NAME_PREFIX: platform
       CTR_STORE_URL: postgresql+asyncpg://ctr_user:${CTR_DB_PASSWORD}@postgres:5432/ctr_store
       REDIS_URL: redis://:${REDIS_PASSWORD}@redis:6379/0
@@ -523,7 +362,7 @@ services:
     environment:
       LOG_LEVEL: ${LOG_LEVEL:-info}
       LOG_FORMAT: json
-      OTEL_EXPORTER_OTLP_ENDPOINT: http://otel-collector:4317
+      OTEL_EXPORTER_OTLP_ENDPOINT: ""
       OTEL_SERVICE_NAME_PREFIX: platform
       CLASSIFIER_DB_URL: postgresql+asyncpg://classifier_user:${CLASSIFIER_DB_PASSWORD}@postgres:5432/classifier_db
       CTR_STORE_URL: postgresql+asyncpg://ctr_user:${CTR_DB_PASSWORD}@postgres:5432/ctr_store
@@ -541,7 +380,7 @@ services:
     environment:
       LOG_LEVEL: ${LOG_LEVEL:-info}
       LOG_FORMAT: json
-      OTEL_EXPORTER_OTLP_ENDPOINT: http://otel-collector:4317
+      OTEL_EXPORTER_OTLP_ENDPOINT: ""
       OTEL_SERVICE_NAME_PREFIX: platform
       CONTENT_DB_URL: postgresql+asyncpg://content_user:${CONTENT_DB_PASSWORD:?CONTENT_DB_PASSWORD requerido}@postgres:5432/content_db
       MINIO_ENDPOINT: minio:9000
@@ -563,7 +402,7 @@ services:
     environment:
       LOG_LEVEL: ${LOG_LEVEL:-info}
       LOG_FORMAT: json
-      OTEL_EXPORTER_OTLP_ENDPOINT: http://otel-collector:4317
+      OTEL_EXPORTER_OTLP_ENDPOINT: ""
       OTEL_SERVICE_NAME_PREFIX: platform
       PROMPTS_REPO_PATH: /var/lib/platform/prompts
     volumes:
@@ -578,7 +417,7 @@ services:
     environment:
       LOG_LEVEL: ${LOG_LEVEL:-info}
       LOG_FORMAT: json
-      OTEL_EXPORTER_OTLP_ENDPOINT: http://otel-collector:4317
+      OTEL_EXPORTER_OTLP_ENDPOINT: ""
       OTEL_SERVICE_NAME_PREFIX: platform
       # BYOK master key — encripta BYOKKey.encrypted_value (AES-256-GCM).
       # Generar con: openssl rand -base64 32. NUNCA loggear, NUNCA versionar.
@@ -678,12 +517,9 @@ services:
 
 volumes:
   pg_data:
-  kc_data:
   redis_data:
   minio_data:
-  prom_data:
   alertmanager_data:
-  grafana_data:
 
 networks:
   default:
