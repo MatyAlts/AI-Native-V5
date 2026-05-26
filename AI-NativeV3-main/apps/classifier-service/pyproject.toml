@@ -21,6 +21,7 @@ dependencies = [
     "opentelemetry-exporter-otlp>=1.27",
     "httpx>=0.27",
     "platform-contracts",
+    "platform-observability",
 ]
 
 [dependency-groups]
