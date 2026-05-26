@@ -30,6 +30,10 @@ case "${CTR_MODE:-server}" in
     exec "$VENV_PY" -m ctr_service.workers.partition_worker --partition "${CTR_WORKER_PARTITION}"
     ;;
   server|*)
+    echo "[ctr-entrypoint] arrancando workers partition 0-7 en background"
+    for p in 0 1 2 3 4 5 6 7; do
+      "$VENV_PY" -m ctr_service.workers.partition_worker --partition "$p" &
+    done
     echo "[ctr-entrypoint] arrancando HTTP server :8007"
     exec "$VENV_PY" -m uvicorn ctr_service.main:app --host 0.0.0.0 --port 8007
     ;;
