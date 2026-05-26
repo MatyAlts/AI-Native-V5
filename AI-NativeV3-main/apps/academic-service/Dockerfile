@@ -11,7 +11,7 @@ COPY . /app
 WORKDIR /app
 RUN --mount=from=ghcr.io/astral-sh/uv:latest,source=/uv,target=/bin/uv \
     --mount=type=cache,target=/root/.cache/uv \
-    uv sync --package platform-academic-service --no-dev
+    uv sync --all-packages --no-dev
 
 # Runtime stage: distroless python
 FROM python:3.12-slim
