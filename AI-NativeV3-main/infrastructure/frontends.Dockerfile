@@ -15,6 +15,12 @@
 # ─────────────────────────────────────────────────────────────────────
 FROM node:20-alpine AS builder
 
+# URL base consumida por los bundles Vite en build-time.
+# Si queda vacia, los frontends mantienen requests relativas `/api/*`
+# (que nginx frontends proxea a api-gateway:8000).
+ARG VITE_API_URL=
+ENV VITE_API_URL=$VITE_API_URL
+
 # pnpm via corepack (incluido en Node 20).
 RUN corepack enable && corepack prepare pnpm@9.12.0 --activate
 

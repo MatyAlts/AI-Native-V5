@@ -110,6 +110,24 @@ En el Domain del servicio frontend (`frontends`):
 3. `CORS_ORIGINS` debe incluir el host final HTTPS del frontend.
 4. No publicar puertos manualmente en compose para estos servicios; EasyPanel enruta internamente por Domain.
 
+
+## 6.1) Frontends en EasyPanel (Vite dev/proxy)
+
+Si publicas `web-admin`, `web-teacher` o `web-student` con Vite, el proxy de `/api` usa `VITE_API_URL`.
+
+- Si `VITE_API_URL` no esta seteada durante el **build** del frontend, el bundle puede terminar apuntando al fallback local en escenarios de Vite/proxy mal configurados.
+- En EasyPanel con `infrastructure/frontends.Dockerfile`, `VITE_API_URL` debe cargarse como **Build Arg** (no solo variable runtime), porque Vite inyecta `import.meta.env` al compilar.
+- Configura `VITE_API_URL` con la URL publica del gateway (ej. `https://api.tudominio.com`). Si usas URL interna (`http://api-gateway:8000`), solo sirve cuando quien resuelve esa URL es otro contenedor, no el navegador del usuario final.
+- Evita hostnames mal tipeados: el nombre interno debe coincidir exactamente con el service name de EasyPanel (sin inventar `_` o `-`).
+
+Ejemplo recomendado para frontends publicados por dominio:
+
+```env
+VITE_API_URL=https://api.ai-native-tutor-socratico-api-gateway.3xzl86.easypanel.host
+```
+
+Con eso, llamadas como `/api/v1/universidades/mine` y `/api/v1/materias/mias` dejan de depender del fallback local.
+
 ## 6) Ejemplo de Domains mínimos
 
 ### Frontend público
