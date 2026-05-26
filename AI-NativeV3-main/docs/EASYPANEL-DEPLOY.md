@@ -115,8 +115,9 @@ En el Domain del servicio frontend (`frontends`):
 
 Si publicas `web-admin`, `web-teacher` o `web-student` con Vite, el proxy de `/api` usa `VITE_API_URL`.
 
-- Si `VITE_API_URL` no esta seteada, cae al default local `http://127.0.0.1:8000` y en EasyPanel suele terminar en `502`.
-- Configura `VITE_API_URL` con la URL publica del gateway (ej. `https://api.tudominio.com`) **o** con la URL interna correcta del servicio (`http://api-gateway:8000`).
+- Si `VITE_API_URL` no esta seteada durante el **build** del frontend, el bundle puede terminar apuntando al fallback local en escenarios de Vite/proxy mal configurados.
+- En EasyPanel con `infrastructure/frontends.Dockerfile`, `VITE_API_URL` debe cargarse como **Build Arg** (no solo variable runtime), porque Vite inyecta `import.meta.env` al compilar.
+- Configura `VITE_API_URL` con la URL publica del gateway (ej. `https://api.tudominio.com`). Si usas URL interna (`http://api-gateway:8000`), solo sirve cuando quien resuelve esa URL es otro contenedor, no el navegador del usuario final.
 - Evita hostnames mal tipeados: el nombre interno debe coincidir exactamente con el service name de EasyPanel (sin inventar `_` o `-`).
 
 Ejemplo recomendado para frontends publicados por dominio:
