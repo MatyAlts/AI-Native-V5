@@ -19,6 +19,8 @@ dependencies = [
     "sse-starlette>=2.1",
     "platform-contracts",
     "platform-observability",
+    "platform-ops",
+    "regex>=2024.11.6",
 ]
 
 [dependency-groups]

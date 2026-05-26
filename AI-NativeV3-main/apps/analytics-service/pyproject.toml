@@ -18,6 +18,7 @@ dependencies = [
     "opentelemetry-exporter-otlp>=1.27",
     "platform-contracts",
     "platform-observability",
+    "platform-ops",
     "strawberry-graphql[fastapi]>=0.235",
 ]
 
