@@ -24,4 +24,4 @@ ENV PATH="/app/.venv/bin:$PATH" \
     PYTHONDONTWRITEBYTECODE=1
 
 
-ENTRYPOINT ["/app/.venv/bin/python", "-m", "uvicorn", "evaluation_service.main:app", "--host", "0.0.0.0", "--port", "8004"]
+ENTRYPOINT ["sh", "-c", "cd /app/apps/evaluation-service 2>/dev/null || cd /app && python -m alembic upgrade head && python -m uvicorn evaluation_service.main:app --host 0.0.0.0 --port 8004"]

@@ -14,6 +14,12 @@ set -eu
 
 VENV_PY="/app/.venv/bin/python"
 
+# Run migrations before starting
+ALEMBIC_DIR="/app/apps/ctr-service"
+[ -d "$ALEMBIC_DIR" ] || ALEMBIC_DIR="/app"
+cd "$ALEMBIC_DIR" && "$VENV_PY" -m alembic upgrade head || echo "[ctr-entrypoint] WARN: alembic migration failed, continuing anyway"
+cd /app
+
 case "${CTR_MODE:-server}" in
   worker)
     if [ -z "${CTR_WORKER_PARTITION:-}" ]; then
