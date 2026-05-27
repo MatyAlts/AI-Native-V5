@@ -34,6 +34,7 @@ const queryClient = new QueryClient({
 
 const router = createRouter({
   routeTree,
+  basepath: "/teacher",
   context: { getToken: async () => null },
   defaultPreload: "intent",
 })
