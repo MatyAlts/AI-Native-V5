@@ -75,6 +75,7 @@ class Comision(Base, TenantMixin, TimestampMixin):
     # reference_profile + classifier_config); forma parte de cada evento
     # CTR de esta comisión, ver ADR-009.
     curso_config_hash: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    invite_code: Mapped[str | None] = mapped_column(String(10), unique=True, nullable=True)
     # Presupuesto mensual de IA en USD
     ai_budget_monthly_usd: Mapped[Decimal] = mapped_column(
         Numeric(10, 2), default=Decimal("100.00")

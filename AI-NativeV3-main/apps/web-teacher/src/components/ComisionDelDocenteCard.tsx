@@ -67,6 +67,14 @@ export function ComisionDelDocenteCard({
             </span>
             {horarioStr && <span className="text-[11px] text-muted truncate">{horarioStr}</span>}
           </div>
+          {(comision as { invite_code?: string }).invite_code && (
+            <span
+              className="font-mono text-xs font-semibold text-accent-brand bg-accent-brand/10 px-2 py-1 rounded border border-accent-brand/20"
+              title="Codigo de invitacion para alumnos"
+            >
+              {(comision as { invite_code?: string }).invite_code}
+            </span>
+          )}
           {/* Indicador de estado (puntito) */}
           <span
             className={`inline-flex items-center gap-1 text-[10px] font-medium uppercase tracking-wide ${hasActividad ? "text-success" : "text-muted-soft"}`}

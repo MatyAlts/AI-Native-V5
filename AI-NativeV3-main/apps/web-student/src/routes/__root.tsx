@@ -1,27 +1,12 @@
-/**
- * Root layout del web-student (post-craft Fase 2).
- *
- * Pattern espejo del web-teacher:
- *   - createRootRouteWithContext para que las rutas hijas reciban `getToken`
- *     sin prop drilling.
- *   - Header global SIN selector de comisión: el alumno YA NO elige comisión.
- *     La comisión es metadata de la materia (visible en /materia/:id).
- *   - <Outlet /> renderiza la ruta hija.
- *   - <AuditFooter /> al pie en TODAS las rutas (Design Principle 2 del PRODUCT.md:
- *     "auditabilidad visible, no oculta"). El footer hoy se monta SIN episodeId
- *     porque ese estado vive ahora dentro de /episodio/$id; cuando esa ruta
- *     este activa, va a inyectar el id via search/path param y el footer va a
- *     pollear el verify (mejora pendiente; el render con null sigue siendo válido).
- */
 import { SignInButton, SignUpButton, UserButton, useAuth, useUser } from "@clerk/clerk-react"
 import { AuditFooter, HelpButton } from "@platform/ui"
 import { Outlet, createRootRouteWithContext } from "@tanstack/react-router"
-import { useEffect, useState } from "react"
+import { useCallback, useEffect, useState } from "react"
 import { setClerkUserId, clearClerkUserId } from "../main"
 import { TenantSelector } from "../components/TenantSelector"
 import { helpContent } from "../utils/helpContent"
 
-const DEFAULT_COMISION_ID = "aaaaaaaa-0001-0001-0001-aaaaaaaaaaaa"
+const ENROLLED_COMISION_KEY = "enrolledComisionId"
 
 export interface RouterContext {
   getToken: () => Promise<string | null>
@@ -31,39 +16,113 @@ export const Route = createRootRouteWithContext<RouterContext>()({
   component: RootLayout,
 })
 
-function useAutoEnroll(): boolean {
+type EnrollState = "loading" | "need-code" | "enrolled"
+
+function useEnrollment() {
   const { isSignedIn } = useAuth()
   const { user } = useUser()
-  const [ready, setReady] = useState(false)
+  const [state, setState] = useState<EnrollState>("loading")
+  const [error, setError] = useState<string | null>(null)
 
   useEffect(() => {
     if (!isSignedIn || !user) {
       clearClerkUserId()
-      setReady(false)
+      setState("loading")
+      return
+    }
+    setClerkUserId(user.id)
+
+    const saved = localStorage.getItem(ENROLLED_COMISION_KEY)
+    if (saved) {
+      setState("enrolled")
+    } else {
+      // Verificar si ya tiene inscripción
+      fetch("/api/v1/materias/mias").then(async (r) => {
+        const j = await r.json()
+        if (j.data && j.data.length > 0) {
+          localStorage.setItem(ENROLLED_COMISION_KEY, j.data[0].comision_id)
+          setState("enrolled")
+        } else {
+          setState("need-code")
+        }
+      }).catch(() => setState("need-code"))
+    }
+  }, [isSignedIn, user])
+
+  const enroll = useCallback(async (code: string) => {
+    if (!user) return
+    setError(null)
+    const uuid = localStorage.getItem("clerkDerivedUserId") || user.id
+
+    // Buscar comisión por invite_code
+    const r1 = await fetch("/api/v1/comisiones?limit=100")
+    const j1 = await r1.json()
+    const comision = j1.data?.find((c: { invite_code?: string }) => c.invite_code === code.trim().toUpperCase())
+
+    if (!comision) {
+      setError("Codigo invalido. Pedile el codigo correcto a tu docente.")
       return
     }
 
-    // Setear UUID ANTES de que cualquier hijo haga fetch
-    setClerkUserId(user.id)
-    const uuid = window.localStorage.getItem("clerkDerivedUserId") || user.id
-
-    // Auto-inscribir en la comisión default
-    fetch(`/api/v1/comisiones/${DEFAULT_COMISION_ID}/inscripciones`, {
+    // Inscribir
+    const r2 = await fetch(`/api/v1/comisiones/${comision.id}/inscripciones`, {
       method: "POST",
       headers: { "Content-Type": "application/json", "x-user-id": uuid },
       body: JSON.stringify({
         student_pseudonym: uuid,
         fecha_inscripcion: new Date().toISOString().slice(0, 10),
       }),
-    }).finally(() => setReady(true))
-  }, [isSignedIn, user])
+    })
 
-  return ready
+    if (r2.status === 201 || r2.status === 409) {
+      localStorage.setItem(ENROLLED_COMISION_KEY, comision.id)
+      setState("enrolled")
+      window.location.reload()
+    } else {
+      setError("No se pudo inscribir. Intenta de nuevo.")
+    }
+  }, [user])
+
+  return { state, error, enroll }
+}
+
+function InviteCodeScreen({ onSubmit, error }: { onSubmit: (code: string) => void; error: string | null }) {
+  const [code, setCode] = useState("")
+
+  return (
+    <div className="flex-1 flex items-center justify-center">
+      <div className="text-center space-y-6 max-w-sm">
+        <div>
+          <h2 className="text-2xl font-bold text-ink">Unirte a una comision</h2>
+          <p className="text-muted-soft mt-2">Ingresa el codigo que te dio tu docente para acceder a la materia.</p>
+        </div>
+        <div className="space-y-3">
+          <input
+            type="text"
+            value={code}
+            onChange={(e) => setCode(e.target.value.toUpperCase())}
+            placeholder="Ej: C1-7X3K"
+            className="w-full px-4 py-3 text-center text-lg font-mono tracking-widest border border-border-soft rounded-lg bg-surface focus:outline-none focus:ring-2 focus:ring-accent-brand"
+            maxLength={10}
+          />
+          <button
+            type="button"
+            onClick={() => onSubmit(code)}
+            disabled={code.length < 3}
+            className="w-full bg-accent-brand text-white px-6 py-3 rounded-lg font-medium hover:opacity-90 disabled:opacity-50"
+          >
+            Unirme a la comision
+          </button>
+          {error && <p className="text-sm text-red-600">{error}</p>}
+        </div>
+      </div>
+    </div>
+  )
 }
 
 function RootLayout() {
   const { isSignedIn } = useAuth()
-  const enrollReady = useAutoEnroll()
+  const { state, error, enroll } = useEnrollment()
 
   return (
     <div className="h-dvh bg-surface-alt text-ink flex flex-col overflow-hidden">
@@ -102,11 +161,7 @@ function RootLayout() {
         </div>
       </header>
 
-      {isSignedIn && enrollReady ? <Outlet /> : isSignedIn ? (
-        <div className="flex-1 flex items-center justify-center">
-          <p className="text-muted-soft animate-pulse">Preparando tu sesion...</p>
-        </div>
-      ) : (
+      {!isSignedIn ? (
         <div className="flex-1 flex items-center justify-center">
           <div className="text-center space-y-4">
             <h2 className="text-2xl font-bold text-ink">Bienvenido a Plataforma N4</h2>
@@ -118,6 +173,14 @@ function RootLayout() {
             </SignInButton>
           </div>
         </div>
+      ) : state === "loading" ? (
+        <div className="flex-1 flex items-center justify-center">
+          <p className="text-muted-soft animate-pulse">Cargando...</p>
+        </div>
+      ) : state === "need-code" ? (
+        <InviteCodeScreen onSubmit={enroll} error={error} />
+      ) : (
+        <Outlet />
       )}
 
       <AuditFooter episodeId={null} classifierHash={null} />

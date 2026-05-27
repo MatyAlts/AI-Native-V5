@@ -88,6 +88,7 @@ class ComisionOut(ComisionBase):
     materia_id: UUID
     periodo_id: UUID
     curso_config_hash: str | None = None
+    invite_code: str | None = None
     created_at: datetime
     deleted_at: datetime | None = None
 
