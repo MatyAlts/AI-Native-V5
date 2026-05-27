@@ -78,45 +78,44 @@ class MockEmbedder(BaseEmbedder):
 
 
 class GeminiEmbedder(BaseEmbedder):
-    """Embedder via Google Gemini API (text-embedding-004).
+    """Embedder via Google Gemini REST API (text-embedding-004).
 
-    Usa el SDK oficial ``google-genai``.  El modelo devuelve 768 dims
-    por default; se rellenan con ceros hasta ``EMBEDDING_DIM`` (1024).
-    Lee ``GEMINI_API_KEY`` del entorno.
+    Usa httpx directo contra la REST API v1beta para evitar problemas
+    de compatibilidad del SDK google-genai con versiones de API.
     """
 
-    model_name = "gemini-embedding-exp-03-07"
+    model_name = "text-embedding-004"
 
     def __init__(self) -> None:
-        from google import genai
+        import httpx
 
-        api_key = os.environ.get("GEMINI_API_KEY", "")
-        if not api_key:
+        self._api_key = os.environ.get("GEMINI_API_KEY", "")
+        if not self._api_key:
             msg = "GEMINI_API_KEY env var is required for GeminiEmbedder"
             raise ValueError(msg)
-        self._client = genai.Client(api_key=api_key)
+        self._http = httpx.AsyncClient(timeout=30)
+        self._url = f"https://generativelanguage.googleapis.com/v1beta/models/{self.model_name}:embedContent"
 
     def _pad(self, vector: list[float]) -> list[float]:
-        """Pad/truncate a ``EMBEDDING_DIM``."""
         if len(vector) >= EMBEDDING_DIM:
             return vector[:EMBEDDING_DIM]
         return vector + [0.0] * (EMBEDDING_DIM - len(vector))
 
-    async def embed_documents(self, texts: list[str]) -> list[list[float]]:
-        response = self._client.models.embed_content(
-            model=self.model_name,
-            contents=texts,
-            config={"task_type": "RETRIEVAL_DOCUMENT"},
+    async def _embed_one(self, text: str, task_type: str) -> list[float]:
+        resp = await self._http.post(
+            self._url,
+            params={"key": self._api_key},
+            json={"model": f"models/{self.model_name}", "content": {"parts": [{"text": text}]}, "taskType": task_type},
         )
-        return [self._pad(e.values) for e in response.embeddings]
+        resp.raise_for_status()
+        values = resp.json()["embedding"]["values"]
+        return self._pad(values)
+
+    async def embed_documents(self, texts: list[str]) -> list[list[float]]:
+        return [await self._embed_one(t, "RETRIEVAL_DOCUMENT") for t in texts]
 
     async def embed_query(self, text: str) -> list[float]:
-        response = self._client.models.embed_content(
-            model=self.model_name,
-            contents=[text],
-            config={"task_type": "RETRIEVAL_QUERY"},
-        )
-        return self._pad(response.embeddings[0].values)
+        return await self._embed_one(text, "RETRIEVAL_QUERY")
 
 
 class SentenceTransformerEmbedder(BaseEmbedder):
