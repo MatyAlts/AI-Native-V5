@@ -48,7 +48,7 @@ function useAutoEnroll() {
     setClerkUserId(user.id)
     const uuid = window.localStorage.getItem("clerkDerivedUserId") || user.id
 
-    // Auto-inscribir en la comisión default
+    // Auto-inscribir en la comisión default y recargar para que la UI lo tome
     fetch(`/api/v1/comisiones/${DEFAULT_COMISION_ID}/inscripciones`, {
       method: "POST",
       headers: { "Content-Type": "application/json", "x-user-id": uuid },
@@ -56,6 +56,8 @@ function useAutoEnroll() {
         student_pseudonym: uuid,
         fecha_inscripcion: new Date().toISOString().slice(0, 10),
       }),
+    }).then((r) => {
+      if (r.status === 201) window.location.reload()
     }).catch(() => {})
   }, [isSignedIn, user])
 }
