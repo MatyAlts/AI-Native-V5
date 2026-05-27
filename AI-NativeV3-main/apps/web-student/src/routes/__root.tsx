@@ -17,7 +17,7 @@ import { SignInButton, SignUpButton, UserButton, useAuth, useUser } from "@clerk
 import { AuditFooter, HelpButton } from "@platform/ui"
 import { Outlet, createRootRouteWithContext } from "@tanstack/react-router"
 import { useEffect, useRef } from "react"
-import { setClerkUserId } from "../main"
+import { setClerkUserId, clearClerkUserId } from "../main"
 import { TenantSelector } from "../components/TenantSelector"
 import { helpContent } from "../utils/helpContent"
 
@@ -37,18 +37,23 @@ function useAutoEnroll() {
   const enrolled = useRef(false)
 
   useEffect(() => {
-    if (!isSignedIn || !user || enrolled.current) return
+    if (!isSignedIn || !user) {
+      clearClerkUserId()
+      return
+    }
+    if (enrolled.current) return
     enrolled.current = true
 
-    // Setear el UUID derivado del Clerk user.id para todas las requests
+    // Setear UUID ANTES de cualquier fetch
     setClerkUserId(user.id)
+    const uuid = window.localStorage.getItem("clerkDerivedUserId") || user.id
 
-    // Auto-inscribir en la comisión default (el X-User-Id ya se manda via fetch interceptor)
+    // Auto-inscribir en la comisión default
     fetch(`/api/v1/comisiones/${DEFAULT_COMISION_ID}/inscripciones`, {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: { "Content-Type": "application/json", "x-user-id": uuid },
       body: JSON.stringify({
-        student_pseudonym: window.localStorage.getItem("clerkDerivedUserId") || user.id,
+        student_pseudonym: uuid,
         fecha_inscripcion: new Date().toISOString().slice(0, 10),
       }),
     }).catch(() => {})

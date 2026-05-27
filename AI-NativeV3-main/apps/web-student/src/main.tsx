@@ -8,8 +8,8 @@ import { routeTree } from "./routeTree.gen"
 
 const CLERK_PUBLISHABLE_KEY = import.meta.env.VITE_CLERK_PUBLISHABLE_KEY as string
 
-// UUID v5 determinista desde un string (Clerk user.id → UUID para el backend)
-function clerkIdToUuid(clerkId: string): string {
+// UUID determinista desde Clerk user.id → UUID válido para el backend
+export function clerkIdToUuid(clerkId: string): string {
   let hash = 0
   for (let i = 0; i < clerkId.length; i++) {
     hash = ((hash << 5) - hash + clerkId.charCodeAt(i)) | 0
@@ -18,8 +18,21 @@ function clerkIdToUuid(clerkId: string): string {
   return `${hex.slice(0, 8)}-${hex.slice(0, 4)}-4${hex.slice(1, 4)}-a${hex.slice(1, 4)}-${hex.padEnd(12, "0").slice(0, 12)}`
 }
 
+// Variable global: el UUID del alumno logueado. Se setea desde el root layout.
+let _currentUserUuid: string | null = localStorage.getItem("clerkDerivedUserId")
+
+export function setClerkUserId(clerkId: string) {
+  const uuid = clerkIdToUuid(clerkId)
+  _currentUserUuid = uuid
+  localStorage.setItem("clerkDerivedUserId", uuid)
+}
+
+export function clearClerkUserId() {
+  _currentUserUuid = null
+  localStorage.removeItem("clerkDerivedUserId")
+}
+
 export const SELECTED_TENANT_STORAGE_KEY = "selectedTenantId"
-const CLERK_USER_ID_KEY = "clerkDerivedUserId"
 const originalFetch = window.fetch.bind(window)
 const apiBase = (import.meta.env.VITE_API_URL ?? "").replace(/\/$/, "")
 window.fetch = (input, init) => {
@@ -29,17 +42,10 @@ window.fetch = (input, init) => {
 
   if (!isRelativeApi) return originalFetch(targetUrl, init)
   const headers = new Headers(init?.headers ?? {})
-  const tenantId = window.localStorage.getItem(SELECTED_TENANT_STORAGE_KEY)
+  const tenantId = localStorage.getItem(SELECTED_TENANT_STORAGE_KEY)
   if (tenantId) headers.set("x-selected-tenant", tenantId)
-  const clerkUserId = window.localStorage.getItem(CLERK_USER_ID_KEY)
-  if (clerkUserId) headers.set("x-user-id", clerkUserId)
+  if (_currentUserUuid) headers.set("x-user-id", _currentUserUuid)
   return originalFetch(targetUrl, { ...init, headers })
-}
-
-// Llamado desde el root layout al detectar sesión Clerk
-export function setClerkUserId(clerkId: string) {
-  const uuid = clerkIdToUuid(clerkId)
-  window.localStorage.setItem(CLERK_USER_ID_KEY, uuid)
 }
 
 const queryClient = new QueryClient({
