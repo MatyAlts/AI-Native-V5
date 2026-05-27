@@ -16,7 +16,7 @@
 import { SignInButton, SignUpButton, UserButton, useAuth, useUser } from "@clerk/clerk-react"
 import { AuditFooter, HelpButton } from "@platform/ui"
 import { Outlet, createRootRouteWithContext } from "@tanstack/react-router"
-import { useEffect, useRef } from "react"
+import { useEffect, useState } from "react"
 import { setClerkUserId, clearClerkUserId } from "../main"
 import { TenantSelector } from "../components/TenantSelector"
 import { helpContent } from "../utils/helpContent"
@@ -31,24 +31,23 @@ export const Route = createRootRouteWithContext<RouterContext>()({
   component: RootLayout,
 })
 
-function useAutoEnroll() {
+function useAutoEnroll(): boolean {
   const { isSignedIn } = useAuth()
   const { user } = useUser()
-  const enrolled = useRef(false)
+  const [ready, setReady] = useState(false)
 
   useEffect(() => {
     if (!isSignedIn || !user) {
       clearClerkUserId()
+      setReady(false)
       return
     }
-    if (enrolled.current) return
-    enrolled.current = true
 
-    // Setear UUID ANTES de cualquier fetch
+    // Setear UUID ANTES de que cualquier hijo haga fetch
     setClerkUserId(user.id)
     const uuid = window.localStorage.getItem("clerkDerivedUserId") || user.id
 
-    // Auto-inscribir en la comisión default y recargar para que la UI lo tome
+    // Auto-inscribir en la comisión default
     fetch(`/api/v1/comisiones/${DEFAULT_COMISION_ID}/inscripciones`, {
       method: "POST",
       headers: { "Content-Type": "application/json", "x-user-id": uuid },
@@ -56,15 +55,15 @@ function useAutoEnroll() {
         student_pseudonym: uuid,
         fecha_inscripcion: new Date().toISOString().slice(0, 10),
       }),
-    }).then((r) => {
-      if (r.status === 201) window.location.reload()
-    }).catch(() => {})
+    }).finally(() => setReady(true))
   }, [isSignedIn, user])
+
+  return ready
 }
 
 function RootLayout() {
   const { isSignedIn } = useAuth()
-  useAutoEnroll()
+  const enrollReady = useAutoEnroll()
 
   return (
     <div className="h-dvh bg-surface-alt text-ink flex flex-col overflow-hidden">
@@ -103,7 +102,11 @@ function RootLayout() {
         </div>
       </header>
 
-      {isSignedIn ? <Outlet /> : (
+      {isSignedIn && enrollReady ? <Outlet /> : isSignedIn ? (
+        <div className="flex-1 flex items-center justify-center">
+          <p className="text-muted-soft animate-pulse">Preparando tu sesion...</p>
+        </div>
+      ) : (
         <div className="flex-1 flex items-center justify-center">
           <div className="text-center space-y-4">
             <h2 className="text-2xl font-bold text-ink">Bienvenido a Plataforma N4</h2>
