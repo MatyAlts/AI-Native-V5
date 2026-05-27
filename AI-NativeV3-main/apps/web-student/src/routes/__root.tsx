@@ -17,6 +17,7 @@ import { SignInButton, SignUpButton, UserButton, useAuth, useUser } from "@clerk
 import { AuditFooter, HelpButton } from "@platform/ui"
 import { Outlet, createRootRouteWithContext } from "@tanstack/react-router"
 import { useEffect, useRef } from "react"
+import { setClerkUserId } from "../main"
 import { TenantSelector } from "../components/TenantSelector"
 import { helpContent } from "../utils/helpContent"
 
@@ -39,11 +40,15 @@ function useAutoEnroll() {
     if (!isSignedIn || !user || enrolled.current) return
     enrolled.current = true
 
+    // Setear el UUID derivado del Clerk user.id para todas las requests
+    setClerkUserId(user.id)
+
+    // Auto-inscribir en la comisión default (el X-User-Id ya se manda via fetch interceptor)
     fetch(`/api/v1/comisiones/${DEFAULT_COMISION_ID}/inscripciones`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
-        student_pseudonym: user.id,
+        student_pseudonym: window.localStorage.getItem("clerkDerivedUserId") || user.id,
         fecha_inscripcion: new Date().toISOString().slice(0, 10),
       }),
     }).catch(() => {})
