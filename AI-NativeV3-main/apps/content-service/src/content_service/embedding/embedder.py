@@ -85,7 +85,7 @@ class GeminiEmbedder(BaseEmbedder):
     Lee ``GEMINI_API_KEY`` del entorno.
     """
 
-    model_name = "text-embedding-004"
+    model_name = "models/text-embedding-004"
 
     def __init__(self) -> None:
         from google import genai
@@ -94,7 +94,7 @@ class GeminiEmbedder(BaseEmbedder):
         if not api_key:
             msg = "GEMINI_API_KEY env var is required for GeminiEmbedder"
             raise ValueError(msg)
-        self._client = genai.Client(api_key=api_key)
+        self._client = genai.Client(api_key=api_key, http_options={"api_version": "v1"})
 
     def _pad(self, vector: list[float]) -> list[float]:
         """Pad/truncate a ``EMBEDDING_DIM``."""
