@@ -21,6 +21,7 @@ type PyodideAPI = {
   runPythonAsync(code: string): Promise<unknown>
   setStdout(opts: { batched: (text: string) => void }): void
   setStderr(opts: { batched: (text: string) => void }): void
+  setStdin(opts: { stdin: () => string | null }): void
 }
 
 type PyodideLoader = (options?: { indexURL?: string }) => Promise<PyodideAPI>
@@ -310,12 +311,19 @@ export function CodeEditor({
       const py = await window.loadPyodide({ indexURL: PYODIDE_URL })
       if (cancelled) return
 
-      // Capturar stdout/stderr
+      // Capturar stdout/stderr con saltos de línea
       py.setStdout({
-        batched: (text: string) => setOutput((prev) => prev + text),
+        batched: (text: string) => setOutput((prev) => prev + text + "\n"),
       })
       py.setStderr({
-        batched: (text: string) => setOutput((prev) => prev + text),
+        batched: (text: string) => setOutput((prev) => prev + text + "\n"),
+      })
+      // Soporte para input(): usa prompt() del browser
+      py.setStdin({
+        stdin: () => {
+          const value = window.prompt("El programa pide un dato (input):")
+          return value ?? ""
+        },
       })
 
       pyodideRef.current = py
