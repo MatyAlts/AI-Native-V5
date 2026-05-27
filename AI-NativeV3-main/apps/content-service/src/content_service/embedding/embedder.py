@@ -84,7 +84,7 @@ class GeminiEmbedder(BaseEmbedder):
     de compatibilidad del SDK google-genai con versiones de API.
     """
 
-    model_name = "text-embedding-004"
+    model_name = "gemini-embedding-001"
 
     def __init__(self) -> None:
         import httpx
