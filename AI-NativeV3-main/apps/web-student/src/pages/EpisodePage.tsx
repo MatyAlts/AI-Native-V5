@@ -422,7 +422,7 @@ export function EpisodeView({ episodeId, onExit, ejercicioContext }: EpisodeView
               del episodio.
             </p>
             <p className="text-sm opacity-90 mb-4">
-              Si no volvés en <strong>30 segundos</strong>, el episodio se cerrará
+              Si no volvés en <strong>5 minutos</strong>, el episodio se cerrará
               automáticamente y el sistema lo marcará como abandono por
               distracción.
             </p>
@@ -439,15 +439,29 @@ export function EpisodeView({ episodeId, onExit, ejercicioContext }: EpisodeView
           <div className="text-sm">
             <strong>Volviste al episodio.</strong> Estuviste fuera{" "}
             <span className="font-mono">{awayLastDurationSec.toFixed(1)}s</span>.
-            Quedó registrado en la trazabilidad.
+            Quedó registrado en la trazabilidad. ¿Querés cerrar el episodio
+            ahora?
           </div>
-          <button
-            type="button"
-            onClick={() => setShowFocusWarning(false)}
-            className="text-amber-900 hover:text-amber-700 font-medium text-sm"
-          >
-            Continuar
-          </button>
+          <div className="flex items-center gap-2 ml-4">
+            <button
+              type="button"
+              onClick={() => {
+                setShowFocusWarning(false)
+                void handleClose()
+              }}
+              data-testid="focus-recovered-close-button"
+              className="press-shrink px-3 py-1.5 text-xs font-medium bg-amber-600 text-white rounded hover:bg-amber-700"
+            >
+              Sí, cerrar episodio
+            </button>
+            <button
+              type="button"
+              onClick={() => setShowFocusWarning(false)}
+              className="text-amber-900 hover:text-amber-700 font-medium text-sm px-2"
+            >
+              Continuar
+            </button>
+          </div>
         </div>
       )}
       {/* ═══ HEADER CONTEXT — chip de episodio + tiempo + nivel + acciones ═══ */}
