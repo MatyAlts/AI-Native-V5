@@ -114,14 +114,19 @@ export function EpisodeView({ episodeId, onExit, ejercicioContext }: EpisodeView
   }, [episodeId, closed])
 
   // ADR-025 G10-A: emitir EpisodioAbandonado en beforeunload.
+  // Ademas, preventDefault para que el browser muestre confirm nativo
+  // "¿Estas seguro que querés salir?" — evita cierres accidentales de la
+  // pestaña durante un episodio activo.
   useEffect(() => {
     if (typeof window === "undefined") return
     if (closed) return
-    const handler = () => {
+    const handler = (event: BeforeUnloadEvent) => {
       void emitEpisodioAbandonado(episodeId, {
         reason: "beforeunload",
         last_activity_seconds_ago: 0,
       })
+      event.preventDefault()
+      event.returnValue = ""
     }
     window.addEventListener("beforeunload", handler)
     return () => window.removeEventListener("beforeunload", handler)
@@ -136,13 +141,26 @@ export function EpisodeView({ episodeId, onExit, ejercicioContext }: EpisodeView
     if (closed) return
     let awayStartMs: number | null = null
 
+    const markEpisodeDeadByFocus = () => {
+      setError(
+        'Tu episodio se cerró automáticamente porque saliste de la pestaña. Esto queda registrado en tu historial académico. Hacé clic en "Salir" para volver al inicio.',
+      )
+      setClosed(true)
+      window.sessionStorage.removeItem(ACTIVE_EPISODE_KEY)
+    }
+
     const handleHidden = (trigger: "visibilitychange" | "blur") => {
       if (awayStartMs !== null) return
       awayStartMs = Date.now()
       setIsAway(true)
       setShowFocusWarning(false)
       void emitPestanaPerdida(episodeId, { trigger }).catch((e) => {
-        console.warn("emit pestana_perdida failed:", e)
+        const msg = String(e)
+        if (msg.includes("409") || msg.includes("404")) {
+          markEpisodeDeadByFocus()
+        } else {
+          console.warn("emit pestana_perdida failed:", e)
+        }
       })
     }
     const handleVisible = () => {
@@ -155,7 +173,12 @@ export function EpisodeView({ episodeId, onExit, ejercicioContext }: EpisodeView
       void emitPestanaRecuperada(episodeId, {
         tiempo_fuera_segundos: seconds,
       }).catch((e) => {
-        console.warn("emit pestana_recuperada failed:", e)
+        const msg = String(e)
+        if (msg.includes("409") || msg.includes("404")) {
+          markEpisodeDeadByFocus()
+        } else {
+          console.warn("emit pestana_recuperada failed:", e)
+        }
       })
     }
 
@@ -422,9 +445,8 @@ export function EpisodeView({ episodeId, onExit, ejercicioContext }: EpisodeView
               del episodio.
             </p>
             <p className="text-sm opacity-90 mb-4">
-              Si no volvés en <strong>5 minutos</strong>, el episodio se cerrará
-              automáticamente y el sistema lo marcará como abandono por
-              distracción.
+              El episodio se está cerrando <strong>automáticamente</strong>. El
+              sistema lo marcará como abandono por distracción.
             </p>
           </div>
         </div>

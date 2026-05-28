@@ -59,8 +59,8 @@ class Settings(BaseSettings):
     # Worker de distraccion: cierra episodios cuando el alumno cambio de
     # pestaña y no volvio en `distraction_threshold_seconds`. NO se puede
     # bloquear desde el browser — esta es la respuesta server-side.
-    distraction_threshold_seconds: int = 300  # 5 minutos fuera de la pestaña
-    distraction_check_interval_seconds: int = 5  # sweep cada 5s (alta resolucion)
+    distraction_threshold_seconds: int = 0  # cierre inmediato al perder foco
+    distraction_check_interval_seconds: int = 1  # sweep cada 1s
     enable_distraction_worker: bool = True
 
     # ADR-027 / ADR-044 (Mejora 4 plan post-piloto-1): Fase B de guardrails —
