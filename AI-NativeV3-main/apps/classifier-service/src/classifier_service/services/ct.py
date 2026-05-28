@@ -100,6 +100,11 @@ def compute_ct_summary(windows: list[WorkWindow]) -> float:
     Heurística:
     - Cada ventana aporta con peso proporcional a su duración.
     - Score de ventana combina densidad y balance prompt/exec.
+
+    Bug fix 2026-05-28: si una ventana NO tiene prompts NI ejecuciones,
+    el balance heredado del fallback `prompt_exec_ratio = 0.5` daba
+    falso positivo (balance "perfecto" sin actividad real). En ese
+    caso usamos solo density_score para el score de la ventana.
     """
     if not windows:
         return 0.5  # neutral si no hay datos
@@ -115,10 +120,16 @@ def compute_ct_summary(windows: list[WorkWindow]) -> float:
         # Score de la ventana:
         # - densidad normalizada (clamp entre 0.5 y 5 eventos/min → 0-1)
         density_score = min(1.0, max(0.0, (w.density - 0.5) / 4.5))
-        # - balance: cercanía a ratio 0.5 (mitad prompts, mitad exec)
-        balance = 1.0 - abs(w.prompt_exec_ratio - 0.5) * 2
 
-        window_score = 0.5 * density_score + 0.5 * balance
+        if w.prompt_count + w.execution_count == 0:
+            # Sin prompts ni ejecuciones, el balance no es interpretable.
+            # Solo aportamos density_score (sin coeficiente artificial).
+            window_score = density_score
+        else:
+            # balance: cercanía a ratio 0.5 (mitad prompts, mitad exec)
+            balance = 1.0 - abs(w.prompt_exec_ratio - 0.5) * 2
+            window_score = 0.5 * density_score + 0.5 * balance
+
         weighted_sum += weight * window_score
         total_weight += weight
 
@@ -133,12 +144,21 @@ def ct_features(events: list[dict]) -> dict[str, Any]:
     if not windows:
         return {"windows": 0, "ct_summary": 0.5, "insufficient_data": True}
 
+    # Bug fix 2026-05-28: marcar insufficient_data cuando el episodio no
+    # tiene NI ejecuciones de código NI anotaciones reflexivas. El valor
+    # de ct_summary puede caer cerca de 0.5 en ese caso pero NO refleja
+    # señal pedagógica real — solo densidad de prompts/eventos auxiliares.
+    total_execs = sum(w.execution_count for w in windows)
+    total_reflections = sum(w.reflection_count for w in windows)
+    insufficient = total_execs == 0 and total_reflections == 0
+
     return {
         "windows": len(windows),
         "total_duration_min": sum(w.duration_seconds for w in windows) / 60,
         "ct_summary": compute_ct_summary(windows),
         "avg_density_evt_per_min": sum(w.density for w in windows) / len(windows),
         "avg_prompt_exec_ratio": sum(w.prompt_exec_ratio for w in windows) / len(windows),
+        "insufficient_data": insufficient,
     }
 
 

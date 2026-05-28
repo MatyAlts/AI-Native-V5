@@ -87,3 +87,28 @@ def test_ventana_cuenta_prompts_y_ejecuciones() -> None:
     assert w.prompt_count == 2
     assert w.execution_count == 1
     assert w.reflection_count == 1
+
+
+def test_ventana_sin_prompts_ni_execs_no_da_falso_positivo() -> None:
+    """Bug fix 2026-05-28: ventana con solo anotaciones (sin prompts ni
+    ejecuciones) NO debe heredar el fallback prompt_exec_ratio=0.5 como
+    balance perfecto (=1.0). Solo aporta density_score."""
+    events = [
+        _ev(0, "anotacion_creada", 0),
+        _ev(1, "anotacion_creada", 1),
+        _ev(2, "anotacion_creada", 2),
+    ]
+    f = ct_features(events)
+    assert f["ct_summary"] < 0.6  # antes del fix daba ~0.61
+
+
+def test_episodio_sin_execs_ni_reflections_marca_insufficient() -> None:
+    """Bug fix 2026-05-28: si el episodio no tiene NI ejecuciones NI
+    anotaciones, insufficient_data debe ser True para que el docente
+    sepa que el ct_summary no refleja actividad pedagógica real."""
+    events = [
+        _ev(0, "prompt_enviado", 0),
+        _ev(1, "prompt_enviado", 1),
+    ]
+    f = ct_features(events)
+    assert f["insufficient_data"] is True
