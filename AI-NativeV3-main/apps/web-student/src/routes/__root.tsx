@@ -32,6 +32,23 @@ function useEnrollment() {
     }
     setClerkUserId(user.id)
 
+    // Auto-llenado del perfil: una vez por session, envia full_name + email
+    // de Clerk al backend para que el docente vea el nombre real en la UI.
+    const profileKey = `profilePushed_${user.id}`
+    if (!sessionStorage.getItem(profileKey)) {
+      const fullName = user.fullName
+        ?? [user.firstName, user.lastName].filter(Boolean).join(" ").trim()
+        ?? null
+      const email = user.primaryEmailAddress?.emailAddress ?? null
+      void fetch("/api/v1/users/me/profile", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ full_name: fullName || null, email }),
+      }).then((r) => {
+        if (r.ok) sessionStorage.setItem(profileKey, "1")
+      }).catch(() => {/* silencioso: no bloquea el flujo del alumno */})
+    }
+
     const saved = localStorage.getItem(ENROLLED_COMISION_KEY)
     if (saved) {
       setState("enrolled")

@@ -34,6 +34,10 @@ ROUTE_MAP: dict[str, str] = {
     "/api/v1/planes": settings.academic_service_url,
     "/api/v1/materias": settings.academic_service_url,
     "/api/v1/comisiones": settings.academic_service_url,
+    # Auto-llenado del perfil del alumno desde Clerk (full_name + email).
+    # POST /api/v1/users/me/profile invocado por web-student al loguearse;
+    # GET /api/v1/comisiones/{id}/students/profiles consumido por web-teacher.
+    "/api/v1/users": settings.academic_service_url,
     "/api/v1/periodos": settings.academic_service_url,
     "/api/v1/tareas-practicas": settings.academic_service_url,
     "/api/v1/ejercicios": settings.academic_service_url,

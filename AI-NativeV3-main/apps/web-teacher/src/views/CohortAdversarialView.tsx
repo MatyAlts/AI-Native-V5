@@ -13,6 +13,7 @@ import {
 } from "../lib/api"
 import { ADVERSARIAL_DOCENTE, SEVERITY_DOCENTE, studentShortLabel } from "../utils/docenteLabels"
 import { helpContent } from "../utils/helpContent"
+import { useStudentProfiles } from "../hooks/useStudentProfiles"
 
 // Umbral minimo de eventos para hacer afirmaciones de "% concentrado".
 // Con N<5 cualquier proporcion (50%, 100%) es estadisticamente engañosa.
@@ -245,6 +246,7 @@ export function CohortAdversarialView({ getToken, initialComisionId }: Props) {
   const [activeTab, setActiveTab] = useState<ActiveTab>("adversarial")
   const [viewMode] = useViewMode()
   const isDocente = viewMode === "docente"
+  const profilesMap = useStudentProfiles(comisionId, getToken)
 
   const catColors = useMemo(
     () =>
@@ -476,7 +478,7 @@ export function CohortAdversarialView({ getToken, initialComisionId }: Props) {
                         >
                           <span className="font-mono text-xs text-muted">
                             {isDocente
-                              ? studentShortLabel(s.student_pseudonym)
+                              ? studentShortLabel(s.student_pseudonym, profilesMap)
                               : `${s.student_pseudonym.slice(0, 8)}...${s.student_pseudonym.slice(-4)}`}
                           </span>
                           <span className="flex items-center gap-2">
@@ -494,7 +496,7 @@ export function CohortAdversarialView({ getToken, initialComisionId }: Props) {
                         <div className="flex items-center justify-between px-6 py-3">
                           <span className="font-mono text-xs text-muted">
                             {isDocente
-                              ? studentShortLabel(s.student_pseudonym)
+                              ? studentShortLabel(s.student_pseudonym, profilesMap)
                               : `${s.student_pseudonym.slice(0, 8)}...${s.student_pseudonym.slice(-4)}`}
                           </span>
                           <Badge className="bg-ink text-white">
@@ -571,7 +573,7 @@ export function CohortAdversarialView({ getToken, initialComisionId }: Props) {
                                 {resolveCategoryLabel(ev.category, true)}
                               </div>
                               <div className="text-xs text-muted mt-0.5">
-                                {studentShortLabel(ev.student_pseudonym)} · {ev.ts.slice(0, 10)}
+                                {studentShortLabel(ev.student_pseudonym, profilesMap)} · {ev.ts.slice(0, 10)}
                                 <span className="mx-1.5">·</span>
                                 Riesgo: {SEVERITY_DOCENTE[String(ev.severity)] ?? ev.severity}
                               </div>
@@ -628,7 +630,12 @@ export function CohortAdversarialView({ getToken, initialComisionId }: Props) {
         )}
 
         {activeTab === "integridad" && integrityData && !loading && (
-          <IntegrityTab data={integrityData} comisionId={comisionId} isDocente={isDocente} />
+          <IntegrityTab
+            data={integrityData}
+            comisionId={comisionId}
+            isDocente={isDocente}
+            profilesMap={profilesMap}
+          />
         )}
       </div>
     </PageContainer>
@@ -676,10 +683,12 @@ function IntegrityTab({
   data,
   comisionId,
   isDocente,
+  profilesMap,
 }: {
   data: CohortIntegrityEvents
   comisionId: string | null
   isDocente: boolean
+  profilesMap: Map<string, string>
 }) {
   if (data.n_events_total === 0) {
     return (
@@ -747,7 +756,7 @@ function IntegrityTab({
                   >
                     <span className="font-mono text-xs text-muted">
                       {isDocente
-                        ? studentShortLabel(s.student_pseudonym)
+                        ? studentShortLabel(s.student_pseudonym, profilesMap)
                         : `${s.student_pseudonym.slice(0, 8)}...${s.student_pseudonym.slice(-4)}`}
                     </span>
                     <span className="flex items-center gap-2">
@@ -758,7 +767,7 @@ function IntegrityTab({
                 ) : (
                   <div className="flex items-center justify-between px-6 py-3">
                     <span className="font-mono text-xs text-muted">
-                      {studentShortLabel(s.student_pseudonym)}
+                      {studentShortLabel(s.student_pseudonym, profilesMap)}
                     </span>
                     <Badge className="bg-warning text-warning-soft">{s.n_events} eventos</Badge>
                   </div>
@@ -798,7 +807,7 @@ function IntegrityTab({
                       </span>
                       <div className="min-w-0 flex-1">
                         <div className="text-xs text-muted">
-                          {studentShortLabel(ev.student_pseudonym)} · {ev.ts.slice(0, 19).replace("T", " ")}
+                          {studentShortLabel(ev.student_pseudonym, profilesMap)} · {ev.ts.slice(0, 19).replace("T", " ")}
                         </div>
                         <div className="text-sm text-ink mt-0.5">{formatted.detail}</div>
                         {ev.payload.contenido_preview && ev.payload.contenido_preview.length > 0 && (

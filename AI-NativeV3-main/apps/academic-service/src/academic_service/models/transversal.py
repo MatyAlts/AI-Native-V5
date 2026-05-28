@@ -46,6 +46,30 @@ class AuditLog(Base, TenantMixin):
     )
 
 
+class StudentProfile(Base, TenantMixin):
+    """Mapeo student_pseudonym -> nombre real del alumno.
+
+    El CTR sigue siendo anonimo (solo pseudonym). Esta tabla es lateral:
+    el alumno la auto-llena al loguearse con Clerk (POST /users/me/profile).
+    El docente la lee filtrada por su comision para ver nombres reales
+    en lugar de "Est. xxxxxx".
+    """
+
+    __tablename__ = "student_profiles"
+
+    student_pseudonym: Mapped[uuid.UUID] = mapped_column(
+        PgUUID(as_uuid=True), primary_key=True
+    )
+    full_name: Mapped[str | None] = mapped_column(String(200), nullable=True)
+    email: Mapped[str | None] = mapped_column(String(254), nullable=True)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        default=utc_now,
+        onupdate=utc_now,
+        nullable=False,
+    )
+
+
 class CasbinRule(Base):
     """Persistencia de policies Casbin (ADR-008).
 

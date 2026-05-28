@@ -28,7 +28,7 @@ from academic_service.models.operacional import (
     Unidad,
     UsuarioComision,
 )
-from academic_service.models.transversal import AuditLog, CasbinRule
+from academic_service.models.transversal import AuditLog, CasbinRule, StudentProfile
 
 __all__ = [
     # Transversal
@@ -48,6 +48,7 @@ __all__ = [
     "RespuestaCuestionarioIA",
     "RespuestaPretestAutoeficacia",
     "RespuestaTestTransferencia",
+    "StudentProfile",
     "TareaPractica",
     "TareaPracticaTemplate",
     "TenantMixin",

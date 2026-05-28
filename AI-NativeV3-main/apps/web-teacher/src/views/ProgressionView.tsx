@@ -22,6 +22,7 @@ import {
   studentShortLabel,
 } from "../utils/docenteLabels"
 import { helpContent } from "../utils/helpContent"
+import { useStudentProfiles } from "../hooks/useStudentProfiles"
 
 const LABEL_COLOR_VAR: Record<string, string> = {
   delegacion_pasiva: "var(--color-appropriation-delegacion)",
@@ -49,6 +50,7 @@ export function ProgressionView({ comisionId, getToken }: Props) {
   const [unidades, setUnidades] = useState<Unidad[]>([])
   const [viewMode] = useViewMode()
   const isDocente = viewMode === "docente"
+  const profilesMap = useStudentProfiles(comisionId, getToken)
 
   useEffect(() => {
     setLoading(true)
@@ -178,6 +180,7 @@ export function ProgressionView({ comisionId, getToken }: Props) {
         entregaStats={entregaStats}
         unidades={unidades}
         getToken={getToken}
+        profilesMap={profilesMap}
       />
     </div>
   )
@@ -374,6 +377,7 @@ function TrajectoriesSection({
   entregaStats,
   unidades,
   getToken,
+  profilesMap,
 }: {
   trajectories: StudentTrajectory[]
   comisionId: string
@@ -381,6 +385,7 @@ function TrajectoriesSection({
   entregaStats: EntregaStatsMap
   unidades: Unidad[]
   getToken: () => Promise<string | null>
+  profilesMap: Map<string, string>
 }) {
   if (trajectories.length === 0) {
     return (
@@ -455,6 +460,7 @@ function TrajectoriesSection({
               isDocente={isDocente}
               unidades={unidades}
               getToken={getToken}
+              profilesMap={profilesMap}
               {...(stat !== undefined ? { entregaStat: stat } : {})}
             />
           )
@@ -471,6 +477,7 @@ function TrajectoryRow({
   entregaStat,
   unidades,
   getToken,
+  profilesMap,
 }: {
   trajectory: StudentTrajectory
   comisionId: string
@@ -478,6 +485,7 @@ function TrajectoryRow({
   entregaStat?: { pendientes: number; corregidas: number; nota_promedio: number | null }
   unidades: Unidad[]
   getToken: () => Promise<string | null>
+  profilesMap: Map<string, string>
 }) {
   const [unidadExpanded, setUnidadExpanded] = useState(false)
   const [unidadData, setUnidadData] = useState<CIIEvolutionUnidad[] | null>(null)
@@ -526,7 +534,7 @@ function TrajectoryRow({
         <div className="w-40 shrink-0">
           <div className="font-mono text-xs font-medium text-ink">
             {isDocente
-              ? studentShortLabel(trajectory.student_pseudonym)
+              ? studentShortLabel(trajectory.student_pseudonym, profilesMap)
               : trajectory.student_pseudonym.slice(0, 12)}
           </div>
           {!isDocente && <div className="text-xs text-muted">{trajectory.n_episodes} ep.</div>}

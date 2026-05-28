@@ -24,6 +24,7 @@ from academic_service.routes import (
     instrumentos,
     materias,
     planes,
+    student_profiles,
     tareas_practicas,
     tareas_practicas_templates,
     unidades,
@@ -72,6 +73,10 @@ app.include_router(bulk.router)
 app.include_router(instrumentos.cuestionario_ia_router)
 app.include_router(instrumentos.pretest_router)
 app.include_router(instrumentos.transferencia_router)
+
+# Auto-llenado de perfil del alumno (full_name + email desde Clerk)
+app.include_router(student_profiles.users_router)
+app.include_router(student_profiles.comisiones_profiles_router)
 
 
 @app.exception_handler(IntegrityError)

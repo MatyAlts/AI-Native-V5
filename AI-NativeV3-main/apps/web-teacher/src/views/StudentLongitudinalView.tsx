@@ -22,6 +22,7 @@ import {
   studentShortLabel,
 } from "../utils/docenteLabels"
 import { helpContent } from "../utils/helpContent"
+import { useStudentProfiles } from "../hooks/useStudentProfiles"
 
 interface Props {
   getToken: () => Promise<string | null>
@@ -162,6 +163,7 @@ export function StudentLongitudinalView({ getToken, initialComisionId, initialSt
   const [error, setError] = useState<string | null>(null)
   const [viewMode] = useViewMode()
   const isDocente = viewMode === "docente"
+  const profilesMap = useStudentProfiles(comisionId, getToken)
 
   const scoreColors = useMemo(resolveScoreColors, [])
 
@@ -195,7 +197,7 @@ export function StudentLongitudinalView({ getToken, initialComisionId, initialSt
       description={
         isDocente
           ? studentId
-            ? `Alumno ${studentShortLabel(studentId)}`
+            ? `Alumno ${studentShortLabel(studentId, profilesMap)}`
             : ""
           : "Slope ordinal de apropiacion a traves de problemas analogos (Seccion 15.4, ADR-018, RN-130). N>=3 episodios por template para slope valido."
       }

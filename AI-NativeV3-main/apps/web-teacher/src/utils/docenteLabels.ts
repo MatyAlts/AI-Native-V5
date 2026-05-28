@@ -177,7 +177,14 @@ export function kappaToDocente(kappa: number): {
   }
 }
 
-export function studentShortLabel(pseudonym: string): string {
+export function studentShortLabel(
+  pseudonym: string,
+  profilesMap?: Map<string, string>,
+): string {
+  // Si el alumno ya se logueo con Clerk y auto-completo su perfil, mostramos
+  // el nombre real (full_name). Caso contrario, fallback al pseudonym corto.
+  const realName = profilesMap?.get(pseudonym)
+  if (realName) return realName
   // Los pseudonyms del seed tienen patron tipo `c1c1c1c1-0001-...-000000000001`
   // donde los PRIMEROS chars son la marca de la comision (identicos para todos)
   // y la entropia esta en los ULTIMOS chars. Usar los ultimos 6 garantiza

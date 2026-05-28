@@ -106,6 +106,26 @@ export async function getCohortProgression(
   return r.json()
 }
 
+// ── Student profiles (auto-llenado desde Clerk via web-student) ───────
+
+export interface StudentProfile {
+  student_pseudonym: string
+  full_name: string | null
+  email: string | null
+  updated_at: string | null
+}
+
+export async function listStudentProfiles(
+  comisionId: string,
+  getToken?: TokenGetter,
+): Promise<StudentProfile[]> {
+  const r = await fetch(`/api/v1/comisiones/${comisionId}/students/profiles`, {
+    headers: await authHeaders(getToken),
+  })
+  await throwIfNotOk(r)
+  return r.json()
+}
+
 // ── Kappa ─────────────────────────────────────────────────────────────
 
 export async function computeKappa(
