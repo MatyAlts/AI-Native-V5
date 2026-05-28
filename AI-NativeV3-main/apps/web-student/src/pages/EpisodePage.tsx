@@ -257,14 +257,32 @@ export function EpisodeView({ episodeId, onExit, ejercicioContext }: EpisodeView
           setMessages((m) => [...m.slice(0, -1), { ...tutorMessage }])
           scrollToBottom()
         } else if (event.type === "error") {
-          setError(`Tutor error: ${event.message}`)
+          const msg = event.message ?? ""
+          if (/no existe|expir|cerrad/i.test(msg)) {
+            setError(
+              'Tu episodio se cerró automáticamente por inactividad. Hacé clic en "Salir" para volver al inicio y abrir uno nuevo.',
+            )
+            setClosed(true)
+            window.sessionStorage.removeItem(ACTIVE_EPISODE_KEY)
+          } else {
+            setError(`Tutor error: ${msg}`)
+          }
           break
         } else if (event.type === "done") {
           console.debug("chunks_used_hash:", event.chunks_used_hash)
         }
       }
     } catch (e) {
-      setError(`Error en streaming: ${e}`)
+      const msg = String(e)
+      if (msg.includes("404") || msg.includes("409")) {
+        setError(
+          'Tu episodio se cerró automáticamente por inactividad. Hacé clic en "Salir" para volver al inicio y abrir uno nuevo.',
+        )
+        setClosed(true)
+        window.sessionStorage.removeItem(ACTIVE_EPISODE_KEY)
+      } else {
+        setError(`Error en streaming: ${e}`)
+      }
     } finally {
       setStreaming(false)
     }

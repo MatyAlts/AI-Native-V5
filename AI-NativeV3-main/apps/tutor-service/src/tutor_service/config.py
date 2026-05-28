@@ -59,7 +59,7 @@ class Settings(BaseSettings):
     # Worker de distraccion: cierra episodios cuando el alumno cambio de
     # pestaña y no volvio en `distraction_threshold_seconds`. NO se puede
     # bloquear desde el browser — esta es la respuesta server-side.
-    distraction_threshold_seconds: int = 30  # 30 segundos fuera de la pestaña
+    distraction_threshold_seconds: int = 300  # 5 minutos fuera de la pestaña
     distraction_check_interval_seconds: int = 5  # sweep cada 5s (alta resolucion)
     enable_distraction_worker: bool = True
 
