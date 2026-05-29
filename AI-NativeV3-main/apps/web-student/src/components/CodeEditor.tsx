@@ -94,6 +94,10 @@ export function CodeEditor({
   // Refs estables para los callbacks de clipboard (evita re-mount del editor).
   const onPasteAttemptRef = useRef<typeof onPasteAttempt>(onPasteAttempt)
   const onCopyAttemptRef = useRef<typeof onCopyAttempt>(onCopyAttempt)
+  // Ref a runCode para que el shortcut Ctrl+Enter del editor Monaco
+  // (registrado una sola vez al mount) llame siempre a la version mas
+  // reciente sin re-mountear el editor.
+  const runCodeRef = useRef<() => void>(() => {})
   useEffect(() => {
     onPasteAttemptRef.current = onPasteAttempt
   }, [onPasteAttempt])
@@ -184,6 +188,12 @@ export function CodeEditor({
           metodo: "shortcut",
         })
         flashClipboardWarning("Cortar está bloqueado. Quedó registrado.")
+      })
+      // Ctrl/Cmd+Enter → ejecutar codigo (Etapa 1.7). Shortcut estandar de
+      // IDEs ("Run" en VSCode/JetBrains). Llamamos via ref para mantener
+      // la captura sincronizada con el render actual.
+      editor.addCommand(ctrl | monaco.KeyCode.Enter, () => {
+        runCodeRef.current?.()
       })
 
       // Listeners DOM para cubrir menu contextual y eventos no atrapados
@@ -361,17 +371,71 @@ export function CodeEditor({
     }
   }
 
+  // Mantenemos el ref de runCode sincronizado para el shortcut Ctrl+Enter
+  // registrado al mount del editor.
+  useEffect(() => {
+    runCodeRef.current = runCode
+  })
+
+  // Atajo platform-aware para el hint visible en el boton.
+  const isMac = typeof navigator !== "undefined" && /mac/i.test(navigator.platform)
+  const shortcutLabel = isMac ? "⌘↵" : "Ctrl+↵"
+
   return (
     <div className="flex flex-col h-full relative">
-      <div className="flex items-center justify-between border-b border-border-soft px-4 py-2">
+      <div className="flex items-center justify-between border-b border-border-soft px-4 py-2.5">
         <h2 className="text-sm font-medium">Código ({language})</h2>
         <button
           type="button"
           onClick={runCode}
           disabled={loading || running}
-          className="px-3 py-1 text-xs rounded bg-green-600 hover:bg-green-700 disabled:bg-border-strong text-white font-medium"
+          aria-keyshortcuts="Control+Enter Meta+Enter"
+          aria-label={running ? "Ejecutando codigo" : "Ejecutar codigo Python"}
+          className="inline-flex items-center gap-2 px-4 py-2 text-sm font-semibold rounded-md bg-emerald-600 hover:bg-emerald-700 disabled:bg-border-strong disabled:cursor-not-allowed text-white shadow-sm transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500 focus-visible:ring-offset-1"
         >
-          {loading ? "Cargando Python..." : running ? "Ejecutando..." : "▶ Ejecutar"}
+          {/* Icono Play SVG inline (evita dep extra de lucide para este botón). */}
+          {loading || running ? (
+            <svg
+              aria-hidden="true"
+              className="h-4 w-4 animate-spin"
+              viewBox="0 0 24 24"
+              fill="none"
+              xmlns="http://www.w3.org/2000/svg"
+            >
+              <circle
+                cx="12"
+                cy="12"
+                r="10"
+                stroke="currentColor"
+                strokeWidth="3"
+                strokeOpacity="0.25"
+              />
+              <path
+                d="M22 12a10 10 0 0 0-10-10"
+                stroke="currentColor"
+                strokeWidth="3"
+                strokeLinecap="round"
+              />
+            </svg>
+          ) : (
+            <svg
+              aria-hidden="true"
+              className="h-4 w-4"
+              viewBox="0 0 24 24"
+              fill="currentColor"
+              xmlns="http://www.w3.org/2000/svg"
+            >
+              <path d="M8 5v14l11-7L8 5z" />
+            </svg>
+          )}
+          <span>
+            {loading ? "Cargando Python..." : running ? "Ejecutando..." : "Ejecutar"}
+          </span>
+          {!loading && !running && (
+            <kbd className="hidden sm:inline-flex items-center rounded border border-white/30 bg-white/10 px-1.5 py-0.5 text-[11px] font-mono font-medium leading-none">
+              {shortcutLabel}
+            </kbd>
+          )}
         </button>
       </div>
 
@@ -395,7 +459,7 @@ export function CodeEditor({
           <span className="text-muted">
             {loading
               ? "Cargando runtime Python en el navegador (primera vez ~6 MB)..."
-              : "Presioná Ejecutar para correr el código."}
+              : `Ejecutá tu código (${shortcutLabel}) para ver el output acá.`}
           </span>
         )}
       </div>
