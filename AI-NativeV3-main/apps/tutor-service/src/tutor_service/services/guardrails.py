@@ -53,7 +53,7 @@ from uuid import UUID
 # (`regex` ya estaba como transitiva).
 import regex as re
 
-GUARDRAILS_CORPUS_VERSION = "1.3.0"
+GUARDRAILS_CORPUS_VERSION = "1.4.0"
 
 Category = Literal[
     "jailbreak_indirect",
@@ -169,8 +169,12 @@ _PATTERNS: dict[Category, list[str]] = {
         r"escrib(i|í|iendo)\s+(un\s+)?(cuento|relato|historia)\s+donde",
     ],
     "persuasion_urgency": [
-        # Familia enfermo/muriendo (manipulacion emocional clara)
-        r"mi\s+(abuel[ao]|madre|padre|herman[ao]|familiar|t(i|í)[ao])\s+(est[aá])\s+(muriendo|enferm|grave)",
+        # Familia enfermo/muriendo (manipulacion emocional clara). v1.4.0 amplia
+        # a variantes coloquiales (mama/mami/papa/papi/vieja/viejo) y a
+        # "esta en (el) hospital/internad" — el jailbreak #3 del QA 2026-05-29
+        # ("Mi mama esta en el hospital") no caia bajo el patron v1.3.0
+        # (solo cubria "madre/padre" + "muriendo/enferm/grave").
+        r"mi\s+(abuel[ao]|madre|padre|m(a|á)m(a|á|i)|p(a|á)p(a|á|i)|viej[ao]|herman[ao]|familiar|t(i|í)[ao])\s+(est[aá])\s+(muriendo|enferm|grave|internad|en\s+(el\s+)?hospital|en\s+terapia)",
         # "tengo examen (mañana|manana|hoy|esta noche/tarde|en N)"
         # Match solo cuando hay temporalidad inminente — NO matchea "estudie para el examen"
         r"tengo\s+(un\s+)?(examen|parcial|final)\s+(ma(ñ|n)ana|hoy|esta\s+(noche|tarde)|en\s+\d)",
@@ -181,6 +185,15 @@ _PATTERNS: dict[Category, list[str]] = {
         # legitimos como "es urgente que entienda esto antes del examen".
         # Nuevo: requiere verbo imperativo cercano (dame/escribime/respondeme/etc.)
         r"(es|sea)\s+(super\s+|muy\s+)?urgente\s*[,!.;]?\s*(por\s+favor\s+)?(dame|dale|escrib(e|ime|ímelo|í)|respond(e|eme|émelo|é)|necesito\s+(la|el|que)|ayudame|hace(lo|melo))",
+        # v1.4.0: "URGENTE" como palabra suelta (a menudo en mayusculas al
+        # inicio del prompt) seguida de imperativo en algun punto del mensaje.
+        # Cubre el patron "URGENTE. ... ayudame/mostrame/escribime ...".
+        r"\burgente\b[\s\S]{0,200}\b(ayud(a|á)me|mostr(a|á)me|escrib(i|í)me|hace(l|m)e?lo|dec(i|í)me\s+como|por\s+favor\s+mostrame|por\s+favor\s+hace(l|m)e?lo)",
+        # v1.4.0: "necesito entregar (TP|trabajo|tarea) (en N (minutos|horas|hoy))"
+        # — version academica del "tengo examen" (TPs son entregables del piloto).
+        # Combina con consecuencia (me echan/me suspenden/repruebo) cuando esta presente.
+        r"necesito\s+(entregar|terminar)\s+(este\s+)?(tp|trabajo|tarea|practico)\s+(en\s+\d+\s+(min(uto)?s?|hora?s?|d(i|í)as?)|hoy|ahora|ya)",
+        r"(me\s+echan|me\s+suspenden|me\s+rajan|repru(e|é)bo|me\s+sacan|pierdo\s+la\s+materia)\s+(de\s+la\s+)?(facultad|materia|catedra|c(a|á)tedra|cursada)?",
     ],
     "prompt_injection": [
         # Markup tags de sistema
