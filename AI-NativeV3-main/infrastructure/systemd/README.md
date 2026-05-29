@@ -97,11 +97,68 @@ docker exec -it platform-prod-postgres psql -U postgres -c "DROP DATABASE academ
    - `classifier_db` — clasificaciones N4 con classifier_config_hash
    - `content_db` — materiales + chunks pgvector (RAG)
 
-2. **`/var/lib/platform/attestations/attestations-*.jsonl`** — firmas Ed25519
+2. **Redis** — RDB snapshot via BGSAVE. Cubre streams `ctr.p0..ctr.p7`,
+   `attestation.requests`, sesiones de tutor, y rate-limit counters.
+   Configurar `REDIS_DUMP_PATH` apuntando al `dump.rdb` montado del container.
+
+3. **MinIO** — `mc mirror` de los buckets configurados en `MINIO_BUCKETS`
+   (default `materiales,ctr-archive`). Requiere `MINIO_ACCESS_KEY` +
+   `MINIO_SECRET_KEY` y el binario `mc` en PATH.
+
+4. **`/var/lib/platform/attestations/attestations-*.jsonl`** — firmas Ed25519
    del integrity-attestation-service. **Evidencia criptografica de la tesis**
    — perderlos invalida la cadena de custodia.
 
-3. **`manifest-*.txt`** — checksums SHA-256 de todos los archivos.
+5. **`manifest-*.txt`** — checksums SHA-256 de todos los archivos.
+
+## Upload off-site (CRITICO)
+
+Sin upload off-site, los backups viven en el mismo VPS que la prod. Un crash
+del VPS = piloto perdido. Setear `REMOTE_BACKUP_URL` en `/etc/platform/backup.env`:
+
+```bash
+# Opcion 1: S3 (AWS) — requiere aws-cli instalado
+REMOTE_BACKUP_URL=s3://mi-bucket-backups/ai-native-n4
+
+# Opcion 2: Backblaze B2 / Google Cloud / Azure — via rclone
+REMOTE_BACKUP_URL=rclone:b2-remote:mi-bucket/ai-native-n4
+```
+
+El script hace `aws s3 sync` o `rclone copy` despues del manifest.
+
+## Deploy en EasyPanel (sin acceso a systemd del host)
+
+Si el VPS corre `docker-compose.prod.yml` via EasyPanel y no tenes acceso al
+systemd del host, en lugar de los timers podes correr el backup como container
+sidecar con cron. Sumar al compose:
+
+```yaml
+backup:
+  image: postgres:16-alpine
+  container_name: platform-prod-backup
+  restart: unless-stopped
+  command: >
+    sh -c "apk add --no-cache redis minio-client bash dcron &&
+           echo '0 3 * * * /opt/scripts/backup.sh' > /etc/crontabs/root &&
+           crond -f"
+  environment:
+    PG_HOST: postgres
+    PG_BACKUP_PASSWORD: ${PG_BACKUP_PASSWORD:?}
+    REDIS_HOST: redis
+    REDIS_DUMP_PATH: /backup-src/redis/dump.rdb
+    MINIO_HOST: minio:9000
+    MINIO_ACCESS_KEY: ${MINIO_ACCESS_KEY:?}
+    MINIO_SECRET_KEY: ${MINIO_SECRET_KEY:?}
+    REMOTE_BACKUP_URL: ${REMOTE_BACKUP_URL:?}
+  volumes:
+    - ./scripts:/opt/scripts:ro
+    - redis_data:/backup-src/redis:ro
+    - /var/backups/platform:/var/backups/platform
+  depends_on:
+    - postgres
+    - redis
+    - minio
+```
 
 ## Retencion
 
