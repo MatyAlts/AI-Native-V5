@@ -91,6 +91,14 @@ export function EpisodeView({ episodeId, onExit, ejercicioContext }: EpisodeView
   const [hydrating, setHydrating] = useState<boolean>(true)
   const [closed, setClosed] = useState<boolean>(false)
   const [reflectionTargetId, setReflectionTargetId] = useState<string | null>(null)
+  // Flag: true cuando el alumno cierra el modal de reflexion sin completarla
+  // (boton "No quiero reflexionar ahora" o escape). Se persiste en
+  // localStorage para sobrevivir F5 — la pantalla post-cierre cambia el
+  // tono pedagogico en consecuencia (Etapa 1.1 / QA round 2).
+  const [skippedReflection, setSkippedReflection] = useState<boolean>(() => {
+    if (typeof window === "undefined") return false
+    return window.localStorage.getItem(`episode_${episodeId}_reflection_skipped`) === "1"
+  })
   // Integridad de foco: trackea si el alumno cambio de pestaña y por cuanto.
   const [isAway, setIsAway] = useState(false)
   const [awayLastDurationSec, setAwayLastDurationSec] = useState<number>(0)
@@ -373,6 +381,7 @@ export function EpisodeView({ episodeId, onExit, ejercicioContext }: EpisodeView
     return (
       <ClassificationPanel
         classification={classification}
+        skippedReflection={skippedReflection}
         isMultiExercise={ejercicioContext != null}
         onReset={async () => {
           setClassification(null)
@@ -769,8 +778,20 @@ export function EpisodeView({ episodeId, onExit, ejercicioContext }: EpisodeView
       <ReflectionModal
         isOpen={reflectionTargetId !== null}
         episodeId={reflectionTargetId}
-        onClose={async () => {
+        onClose={async (submitted) => {
           setReflectionTargetId(null)
+          if (!submitted) {
+            // Skip explicito: persistir flag para la pantalla post-cierre
+            // y para sobrevivir F5. La pantalla nueva (rama "sin reflexion"
+            // del ClassificationPanel) lo lee de aca.
+            setSkippedReflection(true)
+            if (typeof window !== "undefined") {
+              window.localStorage.setItem(
+                `episode_${episodeId}_reflection_skipped`,
+                "1",
+              )
+            }
+          }
           // Cierre/skip del modal de reflexión:
           // - Si ya hay classification cargada, el render condicional muestra
           //   ClassificationPanel (la pantalla N4) y desde ahí el alumno
@@ -1051,6 +1072,30 @@ function EnunciadoPanel({
  * para el análisis del docente/investigador, pero al alumno le mostramos
  * UN feedback constructivo + 1-3 sugerencias concretas para la próxima vez.
  */
+/**
+ * Pantalla post-cierre cuando el alumno saltea la reflexion metacognitiva
+ * (boton "No quiero reflexionar ahora" en el ReflectionModal).
+ *
+ * No es positiva ni de atencion — es factual. La reflexion es opcional
+ * por ADR-035, pero la UI no debe mentir diciendo "Buen trabajo /
+ * Resolviste el ejercicio" como en la rama apropiacion_superficial.
+ * Honestidad tecnica como asset academico (PRODUCT.md §"Design Principles" #5).
+ */
+function buildSinReflexionFeedback(): {
+  tono: "positivo" | "neutro" | "atencion"
+  titulo: string
+  mensaje: string
+  sugerencias: string[]
+} {
+  return {
+    tono: "neutro",
+    titulo: "Tu trabajo quedo registrado",
+    mensaje:
+      "Cerraste el episodio sin pasar por la reflexion final. Esa instancia es opcional pero es donde el modelo N4 captura la apropiacion reflexiva del trabajo que hiciste. La proxima vez, si tenes 2 minutos, dedicalos a contestar las 3 preguntas — sirve mas para vos que para el sistema.",
+    sugerencias: [],
+  }
+}
+
 function buildPedagogicalFeedback(c: Classification): {
   tono: "positivo" | "neutro" | "atencion"
   titulo: string
@@ -1141,14 +1186,22 @@ function buildPedagogicalFeedback(c: Classification): {
 
 function ClassificationPanel({
   classification,
+  skippedReflection,
   isMultiExercise,
   onReset,
 }: {
   classification: Classification
+  // Etapa 1.1: si el alumno cerro sin completar la reflexion, el feedback
+  // debe ser honesto al respecto en lugar de mostrar el "Buen trabajo /
+  // Resolviste el ejercicio" que la rama apropiacion_superficial muestra.
+  // La honestidad tecnica es asset academico (PRODUCT.md §"Design Principles").
+  skippedReflection?: boolean
   isMultiExercise?: boolean
   onReset: () => void
 }) {
-  const feedback = buildPedagogicalFeedback(classification)
+  const feedback = skippedReflection
+    ? buildSinReflexionFeedback()
+    : buildPedagogicalFeedback(classification)
 
   const tonoStyles: Record<typeof feedback.tono, string> = {
     positivo: "bg-success-soft border-success/40 text-success",
@@ -1163,7 +1216,7 @@ function ClassificationPanel({
         className={`rounded-2xl border p-7 mb-8 ${tonoStyles[feedback.tono]}`}
       >
         <p className="text-xs font-mono uppercase tracking-[0.15em] opacity-70 mb-2">
-          Cierre del ejercicio
+          {skippedReflection ? "Cierre del ejercicio · sin reflexion" : "Cierre del ejercicio"}
         </p>
         <h2 className="font-serif text-3xl font-medium leading-tight">
           {feedback.titulo}
@@ -1173,26 +1226,28 @@ function ClassificationPanel({
         </p>
       </div>
 
-      {/* Sugerencias concretas y accionables. */}
-      <section className="mb-8">
-        <h3 className="text-xs font-mono uppercase tracking-[0.15em] text-muted mb-4">
-          Para la próxima vez
-        </h3>
-        <ul className="space-y-3">
-          {feedback.sugerencias.map((s) => (
-            <li
-              key={s}
-              className="flex items-start gap-3 rounded-lg border border-border-soft bg-surface p-4"
-            >
-              <span
-                aria-hidden="true"
-                className="mt-2 inline-block h-1.5 w-1.5 shrink-0 rounded-full bg-accent-brand"
-              />
-              <span className="text-sm leading-relaxed text-body">{s}</span>
-            </li>
-          ))}
-        </ul>
-      </section>
+      {/* Sugerencias concretas y accionables — vacias si fue skip de reflexion. */}
+      {feedback.sugerencias.length > 0 && (
+        <section className="mb-8">
+          <h3 className="text-xs font-mono uppercase tracking-[0.15em] text-muted mb-4">
+            Para la próxima vez
+          </h3>
+          <ul className="space-y-3">
+            {feedback.sugerencias.map((s) => (
+              <li
+                key={s}
+                className="flex items-start gap-3 rounded-lg border border-border-soft bg-surface p-4"
+              >
+                <span
+                  aria-hidden="true"
+                  className="mt-2 inline-block h-1.5 w-1.5 shrink-0 rounded-full bg-accent-brand"
+                />
+                <span className="text-sm leading-relaxed text-body">{s}</span>
+              </li>
+            ))}
+          </ul>
+        </section>
+      )}
 
       {/* CTA único, claro. Sin hash, sin metadata técnica. */}
       <div className="flex justify-end">

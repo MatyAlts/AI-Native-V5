@@ -40,7 +40,12 @@ const MAX_CHARS = 500
 interface ReflectionModalProps {
   isOpen: boolean
   episodeId: string | null
-  onClose: () => void
+  // `submitted=true` → el alumno completo las 3 preguntas y se emitio
+  // reflexion_completada al CTR. `submitted=false` → cerro sin reflexionar
+  // (boton "No quiero reflexionar ahora" o escape/click-outside). La
+  // pantalla post-cierre lo usa para diferenciar el tono pedagogico
+  // (QA round 2 bug ROUND2-BUG / Etapa 1.1).
+  onClose: (submitted: boolean) => void
 }
 
 export function ReflectionModal({ isOpen, episodeId, onClose }: ReflectionModalProps) {
@@ -85,7 +90,7 @@ export function ReflectionModal({ isOpen, episodeId, onClose }: ReflectionModalP
         prompt_version: PROMPT_VERSION,
         tiempo_completado_ms: Math.max(0, tiempoMs),
       })
-      onClose()
+      onClose(true)
     } catch (e) {
       setError(`Error enviando reflexion: ${e}`)
       setSubmitting(false)
@@ -94,7 +99,7 @@ export function ReflectionModal({ isOpen, episodeId, onClose }: ReflectionModalP
 
   function handleSkip() {
     if (submitting) return
-    onClose()
+    onClose(false)
   }
 
   return (
