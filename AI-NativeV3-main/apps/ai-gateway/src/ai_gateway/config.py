@@ -15,7 +15,10 @@ class Settings(BaseSettings):
     log_level: str = "info"
     log_format: str = "json"
 
-    cors_origins: list[str] = Field(default_factory=lambda: ["*"])
+    # Default vacio: este servicio solo se llama server-to-server desde el
+    # api-gateway (sin Origin header). Si se necesita exposicion publica,
+    # setear CORS_ORIGINS explicito por env. Wildcard "*" prohibido por audit.
+    cors_origins: list[str] = Field(default_factory=list)
     otel_endpoint: str = "http://127.0.0.1:4317"
     sentry_dsn: str = ""
 
