@@ -3,6 +3,9 @@
 - /health/live  → siempre 200 si el proceso corre
 - /health/ready → 200 si Keycloak JWKS responde; 503 si falla
 - /health      → alias de readiness por compatibilidad
+- /api/v1/health → liveness JSON minimal para el KPI del web-admin (no
+  depende del path raiz `/health` que en deploy con nginx puede caer al
+  SPA).
 
 Critical: `keycloak_jwks`. Non-critical: `academic_service`.
 Usa el helper compartido `platform_observability.health`.
@@ -22,6 +25,7 @@ from platform_observability.health import (
 from api_gateway.config import settings
 
 router = APIRouter(prefix="/health", tags=["health"])
+api_router = APIRouter(prefix="/api/v1/health", tags=["health"])
 
 VERSION = "0.1.0"
 
@@ -59,3 +63,14 @@ async def ready(response: Response) -> HealthResponse:
 @router.get("/live", status_code=status.HTTP_200_OK)
 async def live() -> dict[str, str]:
     return {"status": "alive"}
+
+
+@api_router.get("", status_code=status.HTTP_200_OK)
+async def api_health() -> dict[str, str]:
+    """Liveness JSON minimal para el KPI del web-admin (ADMIN-BUG-001).
+
+    El path `/health` sin prefijo `/api/v1/` cae al SPA en el deploy
+    con nginx (devuelve text/html) y rompe el KPI 'API Gateway' del
+    dashboard. Este alias garantiza JSON estable.
+    """
+    return {"status": "ok", "service": "api-gateway"}

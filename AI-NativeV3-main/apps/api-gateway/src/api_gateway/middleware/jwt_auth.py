@@ -44,6 +44,7 @@ class JWTMiddleware(BaseHTTPMiddleware):
     EXEMPT_PATHS = (
         "/",
         "/health",
+        "/api/v1/health",
         "/metrics",
         "/docs",
         "/openapi.json",

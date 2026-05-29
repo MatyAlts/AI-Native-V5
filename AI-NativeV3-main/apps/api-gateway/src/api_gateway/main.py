@@ -85,6 +85,7 @@ if settings.rate_limit_enabled:
     app.add_middleware(UserRateLimitMiddleware)
 
 app.include_router(health.router)
+app.include_router(health.api_router)
 app.include_router(proxy.router)
 
 

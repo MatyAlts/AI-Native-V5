@@ -42,7 +42,7 @@ export function HomePage(): ReactNode {
   const [comisiones, setComisiones] = useState<KpiState>(initialKpi)
 
   useEffect(() => {
-    fetch("/health")
+    fetch("/api/v1/health")
       .then((r) => r.json())
       .then((d) => setApiStatus(d.status ?? "unknown"))
       .catch(() => setApiStatus("no responde"))
