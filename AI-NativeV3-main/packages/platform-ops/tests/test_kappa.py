@@ -107,7 +107,10 @@ def test_acuerdo_sustancial_clasificador_vs_humano() -> None:
         + [("apropiacion_superficial", "delegacion_pasiva")] * 1  # error
     )
     result = compute_cohen_kappa(ratings)
-    assert result.kappa > 0.70
+    # ~80% de aciertos sobre 3 categorías da κ≈0.68 = "acuerdo sustancial" según
+    # Landis-Koch (corte real 0.61, no 0.70). El umbral previo (>0.70) estaba mal
+    # calibrado y fallaba sobre su propio dataset.
+    assert result.kappa >= 0.61
     assert result.interpretation in ("sustancial", "casi perfecto")
 
 
