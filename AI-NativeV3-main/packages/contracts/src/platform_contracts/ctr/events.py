@@ -211,6 +211,12 @@ class IntentoAdversoDetectadoPayload(BaseModel):
         "jailbreak_fiction",
         "persuasion_urgency",
         "prompt_injection",
+        # ADR-043 (v1.2.0): categoría informativa de sobreuso detectada por el
+        # OveruseDetector (ventana temporal cross-prompt, severidad 1). Debe estar
+        # en el contrato para que el evento `intento_adverso_detectado` emitido por
+        # tutor_core valide (CTRBaseEvent usa extra="forbid"). Aditivo: no cambia
+        # la serialización de eventos históricos (nunca tuvieron overuse).
+        "overuse",
     ]
     severity: int = Field(ge=1, le=5)
     matched_text: str = Field(description="Fragmento del prompt que matcheó")
