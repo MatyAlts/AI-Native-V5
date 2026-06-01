@@ -25,6 +25,7 @@ import {
   EpisodeStateError,
   classifyEpisode,
   closeEpisode,
+  emitCodigoEjecutado,
   emitCopiaIntentada,
   emitEdicionCodigo,
   emitEpisodioAbandonado,
@@ -596,7 +597,16 @@ export function EpisodeView({ episodeId, onExit, ejercicioContext }: EpisodeView
             initialCode={code}
             onCodeExecuted={(result) => {
               setCode(result.code)
-              console.debug("code executed:", result)
+              // P0 (QA 2026-05-29): emitir codigo_ejecutado al CTR. Sin esto el
+              // classifier no distingue N3/N4 y todo cae a apropiacion_superficial.
+              void emitCodigoEjecutado(episodeId, {
+                code: result.code,
+                stdout: result.output,
+                stderr: result.error ?? "",
+                duration_ms: Math.round(result.durationMs),
+              }).catch((e) => {
+                console.warn("emit codigo_ejecutado failed:", e)
+              })
             }}
             onEditDebounced={(snapshot, diffChars, origin) => {
               void emitEdicionCodigo(episodeId, {
