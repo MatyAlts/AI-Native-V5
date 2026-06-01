@@ -80,10 +80,16 @@ function resolveCodigoInicial(tarea: AvailableTarea): string | null {
 
 export function EpisodeView({ episodeId, onExit, ejercicioContext }: EpisodeViewProps) {
   const [tarea, setTarea] = useState<AvailableTarea | null>(null)
-  const [code, setCode] = useState<string>(
-    "# Escribí tu código Python acá\n\ndef factorial(n):\n    pass\n",
-  )
+  // Default neutro: si el ejercicio trae `inicial_codigo` se usa eso (ver
+  // resolveCodigoInicial); este fallback NO debe sugerir una consigna concreta
+  // (antes mostraba `def factorial` para TODOS los ejercicios — NEW-002 QA).
+  const [code, setCode] = useState<string>("# Escribí tu código Python acá\n")
   const [messages, setMessages] = useState<Message[]>([])
+  // Indicador de ACTIVIDAD en curso (no es la clasificacion final del classifier,
+  // que se deriva post-cierre — ADR-020). Refleja el nivel de la accion que el
+  // alumno esta haciendo ahora, segun el mapeo del labeler: lectura=N1,
+  // edicion=N2, ejecucion=N3. Arranca en 1 y solo sube (NEW-003 QA).
+  const [maxActividad, setMaxActividad] = useState<1 | 2 | 3>(1)
   const [input, setInput] = useState<string>("")
   const [streaming, setStreaming] = useState(false)
   const [classification, setClassification] = useState<Classification | null>(null)
@@ -513,14 +519,26 @@ export function EpisodeView({ episodeId, onExit, ejercicioContext }: EpisodeView
           {formatElapsed(elapsedSeconds)}
         </span>
         <span className="text-muted-soft">·</span>
-        <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full bg-level-n1/10 border border-level-n1/30 text-level-n1 font-medium">
-          <span
-            aria-hidden="true"
-            className="inline-block w-1.5 h-1.5 rounded-full"
-            style={{ backgroundColor: "var(--color-level-n1)" }}
-          />
-          N1 lectura activa
-        </span>
+        {(() => {
+          const act = {
+            1: { txt: "N1 · lectura activa", cls: "bg-level-n1/10 border-level-n1/30 text-level-n1", dot: "var(--color-level-n1)" },
+            2: { txt: "N2 · edición activa", cls: "bg-level-n2/10 border-level-n2/30 text-level-n2", dot: "var(--color-level-n2)" },
+            3: { txt: "N3 · ejecución activa", cls: "bg-level-n3/10 border-level-n3/30 text-level-n3", dot: "var(--color-level-n3)" },
+          }[maxActividad]
+          return (
+            <span
+              className={`inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full border font-medium ${act.cls}`}
+              title="Nivel de la actividad que estas haciendo ahora. NO es la clasificacion final del episodio (esa la calcula el sistema al cerrar)."
+            >
+              <span
+                aria-hidden="true"
+                className="inline-block w-1.5 h-1.5 rounded-full"
+                style={{ backgroundColor: act.dot }}
+              />
+              {act.txt}
+            </span>
+          )
+        })()}
         <div className="ml-auto flex items-center gap-1">
           <HelpButton title="Tutor Socratico" content={helpContent.episode} />
           <button
@@ -597,6 +615,7 @@ export function EpisodeView({ episodeId, onExit, ejercicioContext }: EpisodeView
             initialCode={code}
             onCodeExecuted={(result) => {
               setCode(result.code)
+              setMaxActividad((a) => (a < 3 ? 3 : a))
               // P0 (QA 2026-05-29): emitir codigo_ejecutado al CTR. Sin esto el
               // classifier no distingue N3/N4 y todo cae a apropiacion_superficial.
               void emitCodigoEjecutado(episodeId, {
@@ -609,6 +628,7 @@ export function EpisodeView({ episodeId, onExit, ejercicioContext }: EpisodeView
               })
             }}
             onEditDebounced={(snapshot, diffChars, origin) => {
+              setMaxActividad((a) => (a < 2 ? 2 : a))
               void emitEdicionCodigo(episodeId, {
                 snapshot,
                 diff_chars: Math.abs(diffChars),

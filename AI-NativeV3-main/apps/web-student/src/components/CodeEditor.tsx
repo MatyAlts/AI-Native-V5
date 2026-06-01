@@ -73,7 +73,7 @@ export interface CodeEditorProps {
 const EDIT_DEBOUNCE_MS = 1000
 
 export function CodeEditor({
-  initialCode = "# Escribí tu código Python acá\n\ndef factorial(n):\n    pass\n",
+  initialCode = "# Escribí tu código Python acá\n",
   onCodeExecuted,
   onEditDebounced,
   onPasteAttempt,
