@@ -80,6 +80,13 @@ ROUTE_MAP: dict[str, str] = {
     # tp-entregas-correccion: entregas + calificaciones via evaluation-service (puerto 8004)
     "/api/v1/entregas": settings.evaluation_service_url,
     "/api/v1/calificaciones": settings.evaluation_service_url,
+    # `/api/v1/active_configs` (governance-service) NO se expone a propósito.
+    # governance-service es interno by-design (prompts versionados; ver CLAUDE.md
+    # "governance-service NO expuesto en ROUTE_MAP"). El manifest declarativo de
+    # versiones lo lee el AuditFooter de forma hardcodeada por ahora — no necesita
+    # el endpoint. Si un dashboard futuro requiere versiones dinámicas, exponer un
+    # alias específico (patrón ctr `/api/v1/audit`), no el servicio entero.
+    # Documentado para que el QA no lo re-marque como 404 inesperado (ADMIN-BUG-004).
 }
 
 

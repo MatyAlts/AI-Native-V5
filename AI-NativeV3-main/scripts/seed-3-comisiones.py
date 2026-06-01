@@ -474,11 +474,12 @@ async def seed_academic(academic_url: str) -> dict[UUID, list[UUID]]:
             # Universidad (sin tenant_id: es el tenant)
             await session.execute(
                 text(
-                    "INSERT INTO universidades (id, nombre, codigo, dominio_email, keycloak_realm, config) "
-                    "VALUES (:id, :nombre, :codigo, :dominio, :realm, '{}'::jsonb)"
+                    "INSERT INTO universidades (id, tenant_id, nombre, codigo, dominio_email, keycloak_realm, config) "
+                    "VALUES (:id, :t, :nombre, :codigo, :dominio, :realm, '{}'::jsonb)"
                 ),
                 {
                     "id": str(UNIVERSIDAD_ID),
+                    "t": str(TENANT_ID),
                     "nombre": "UTN demo",
                     "codigo": "UTN-DEMO",
                     "dominio": "utn.edu.ar",
