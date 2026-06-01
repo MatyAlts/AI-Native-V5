@@ -146,6 +146,12 @@ async def list_entregas(
     if is_docente:
         if student_pseudonym:
             conditions.append(Entrega.student_pseudonym == student_pseudonym)
+        # NEW-004 QA: la cola de correccion del docente NO debe mostrar entregas
+        # en 'draft' (el alumno todavia esta trabajando, no entrego). Solo se
+        # ocultan si no pidio un estado explicito (puede filtrar estado=draft a
+        # proposito). El estudiante SI ve su propio draft (rama else).
+        if not estado:
+            conditions.append(Entrega.estado != "draft")
     else:
         conditions.append(Entrega.student_pseudonym == user.id)
 
