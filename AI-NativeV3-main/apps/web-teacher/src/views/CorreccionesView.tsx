@@ -29,6 +29,8 @@ import {
   getStudentEpisodes,
   tareasPracticasApi,
 } from "../lib/api"
+import { useStudentProfiles } from "../hooks/useStudentProfiles"
+import { studentShortLabel } from "../utils/docenteLabels"
 import { helpContent } from "../utils/helpContent"
 
 interface Props {
@@ -110,6 +112,7 @@ function EntregasListView({ comisionId, getToken, onSelectEntrega }: EntregasLis
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [estadoFilter, setEstadoFilter] = useState<EntregaEstado | "">("")
+  const profilesMap = useStudentProfiles(comisionId, getToken)
 
   useEffect(() => {
     if (!comisionId) return
@@ -267,8 +270,11 @@ function EntregasListView({ comisionId, getToken, onSelectEntrega }: EntregasLis
                   />
                   <div className="p-4 flex-1 flex flex-col gap-3">
                     <div className="flex items-center justify-between gap-2 flex-wrap">
-                      <span className="font-mono text-[11px] uppercase tracking-wider text-muted px-2 py-0.5 rounded bg-surface-alt border border-border-soft">
-                        {entrega.student_pseudonym.slice(0, 8)}…
+                      <span
+                        className="text-[11px] font-semibold tracking-wide text-ink px-2 py-0.5 rounded bg-surface-alt border border-border-soft"
+                        title={entrega.student_pseudonym}
+                      >
+                        {studentShortLabel(entrega.student_pseudonym, profilesMap)}
                       </span>
                       <span data-testid={`entrega-estado-${entrega.estado}`}>
                         <Badge variant={ESTADO_VARIANT[entrega.estado]}>
@@ -445,6 +451,7 @@ interface GradingFormViewProps {
 }
 
 function GradingFormView({ entrega, tarea, getToken, onBack, onUpdated }: GradingFormViewProps) {
+  const profilesMap = useStudentProfiles(entrega.comision_id, getToken)
   const [nota, setNota] = useState<string>("")
   const [feedback, setFeedback] = useState("")
   const [submitting, setSubmitting] = useState(false)
@@ -597,8 +604,8 @@ function GradingFormView({ entrega, tarea, getToken, onBack, onUpdated }: Gradin
                 {tarea.titulo}
               </h3>
             )}
-            <p className="text-xs text-muted font-mono">
-              Estudiante: {entrega.student_pseudonym.slice(0, 12)}…
+            <p className="text-xs text-muted" title={entrega.student_pseudonym}>
+              Estudiante: {studentShortLabel(entrega.student_pseudonym, profilesMap)}
             </p>
           </div>
           <Badge variant={ESTADO_VARIANT[entrega.estado]}>{ESTADO_LABEL[entrega.estado]}</Badge>
