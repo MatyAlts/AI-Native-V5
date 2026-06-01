@@ -206,15 +206,34 @@ export function studentShortLabel(
 export interface EstadoDocenteExplicado {
   resumen: string
   factores: string[]
+  sinActividad?: boolean
 }
 
-export function explicarEstadoDocente(c: {
-  appropriation: string
-  ct_summary: number | null
-  ccd_mean: number | null
-  ccd_orphan_ratio: number | null
-  cii_stability: number | null
-}): EstadoDocenteExplicado {
+export function explicarEstadoDocente(
+  c: {
+    appropriation: string
+    ct_summary: number | null
+    ccd_mean: number | null
+    ccd_orphan_ratio: number | null
+    cii_stability: number | null
+  },
+  eventosCognitivos?: number | null,
+): EstadoDocenteExplicado {
+  // Episodio vacío: solo abrió/cerró, sin actividad cognitiva (niveles N1-N4).
+  // Las métricas de coherencia caen a defaults neutros (~0.5) que NO
+  // representan trabajo real — afirmar "trabajo ordenado" seria falso.
+  // Decimos la verdad en lugar de inventar señales.
+  if (eventosCognitivos === 0) {
+    return {
+      sinActividad: true,
+      resumen:
+        "La sesion fue demasiado corta para evaluar: el alumno practicamente solo abrio y cerro el episodio, sin trabajar en el problema.",
+      factores: [
+        "No se registro lectura del enunciado, escritura de codigo, ejecucion ni dialogo con el tutor.",
+      ],
+    }
+  }
+
   const factores: string[] = []
 
   // Ritmo de trabajo (coherencia temporal)

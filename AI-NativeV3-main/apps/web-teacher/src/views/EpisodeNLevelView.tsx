@@ -287,7 +287,9 @@ export function EpisodeNLevelView({ getToken, initialEpisodeId }: Props) {
         {data && (
           <>
             {isDocente && dom && <DocenteInterpretation dominant={dom} />}
-            {isDocente && <DocenteAppropriationVerdict classification={classification} />}
+            {isDocente && (
+              <DocenteAppropriationVerdict classification={classification} distribution={data} />
+            )}
             <div className="rounded-xl border border-border bg-white overflow-hidden">
               <div className="flex items-start justify-between gap-4 border-b border-border px-6 py-4">
                 <div>
@@ -410,8 +412,10 @@ const APPROPRIATION_DISPLAY: Record<
 
 function DocenteAppropriationVerdict({
   classification,
+  distribution,
 }: {
   classification: EpisodeClassification | null
+  distribution: NLevelDistribution | null
 }) {
   if (classification === null) {
     return (
@@ -422,17 +426,34 @@ function DocenteAppropriationVerdict({
     )
   }
 
+  // Eventos cognitivos = niveles N1-N4 (excluye `meta` = abrir/cerrar).
+  // Si es 0, el episodio esta vacio y no es evaluable.
+  const eventosCognitivos = distribution
+    ? (["N1", "N2", "N3", "N4"] as const).reduce(
+        (acc, lvl) => acc + (distribution.total_events_per_level[lvl] ?? 0),
+        0,
+      )
+    : null
+
+  const explicacion = explicarEstadoDocente(classification, eventosCognitivos)
   const display = APPROPRIATION_DISPLAY[classification.appropriation]
-  const explicacion = explicarEstadoDocente(classification)
+
+  // Episodio sin actividad: chip neutro en vez del veredicto de apropiación
+  // (no tiene sentido decir "superficial" si el alumno no trabajó).
+  const containerCls = explicacion.sinActividad ? "border-border bg-surface-alt" : display.container
+  const chipCls = explicacion.sinActividad
+    ? "bg-surface border border-border text-muted"
+    : display.chip
+  const chipLabel = explicacion.sinActividad ? "Sin actividad evaluable" : display.label
 
   return (
-    <div className={`rounded-xl border px-6 py-4 ${display.container}`}>
+    <div className={`rounded-xl border px-6 py-4 ${containerCls}`}>
       <div className="flex flex-wrap items-center gap-3 mb-2">
         <span className="text-xs uppercase tracking-wider text-muted">Estado del alumno</span>
         <span
-          className={`inline-flex items-center px-2.5 py-1 rounded-full text-xs font-semibold ${display.chip}`}
+          className={`inline-flex items-center px-2.5 py-1 rounded-full text-xs font-semibold ${chipCls}`}
         >
-          {display.label}
+          {chipLabel}
         </span>
       </div>
       <p className="text-sm text-ink font-medium">{explicacion.resumen}</p>
