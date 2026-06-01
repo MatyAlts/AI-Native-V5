@@ -1,8 +1,8 @@
 import { SignInButton, SignUpButton, UserButton, useAuth, useUser } from "@clerk/clerk-react"
 import { AuditFooter, HelpButton } from "@platform/ui"
 import { Outlet, createRootRouteWithContext } from "@tanstack/react-router"
-import { useCallback, useEffect, useState } from "react"
-import { setClerkUserId, clearClerkUserId } from "../main"
+import { useCallback, useEffect, useState, type ReactNode } from "react"
+import { setClerkUserId, clearClerkUserId, DEV_NO_CLERK, DEV_STUDENT_UUID } from "../auth"
 import { TenantSelector } from "../components/TenantSelector"
 import { helpContent } from "../utils/helpContent"
 
@@ -18,32 +18,40 @@ export const Route = createRootRouteWithContext<RouterContext>()({
 
 type EnrollState = "loading" | "need-code" | "enrolled"
 
-function useEnrollment() {
-  const { isSignedIn } = useAuth()
-  const { user } = useUser()
+// Identidad normalizada del alumno, independiente de Clerk. En modo Clerk se
+// arma desde `useUser`; en dev se hardcodea (ver DevRootLayout).
+interface AuthUser {
+  id: string
+  fullName: string | null
+  email: string | null
+}
+
+/**
+ * Resuelve inscripcion del alumno. Recibe el `authUser` ya normalizado para no
+ * depender de hooks de Clerk: asi el path dev (sin ClerkProvider) lo reutiliza.
+ * `isDev` evita derivar el pseudonym via clerkIdToUuid (en dev ya esta fijado
+ * en memoria por setDevStudentId con el UUID exacto del seed).
+ */
+function useEnrollment(authUser: AuthUser | null, isDev: boolean) {
   const [state, setState] = useState<EnrollState>("loading")
   const [error, setError] = useState<string | null>(null)
 
   useEffect(() => {
-    if (!isSignedIn || !user) {
+    if (!authUser) {
       clearClerkUserId()
       setState("loading")
       return
     }
-    setClerkUserId(user.id)
+    if (!isDev) setClerkUserId(authUser.id)
 
     // Auto-llenado del perfil: una vez por session, envia full_name + email
-    // de Clerk al backend para que el docente vea el nombre real en la UI.
-    const profileKey = `profilePushed_${user.id}`
+    // al backend para que el docente vea el nombre real en la UI.
+    const profileKey = `profilePushed_${authUser.id}`
     if (!sessionStorage.getItem(profileKey)) {
-      const fullName = user.fullName
-        ?? [user.firstName, user.lastName].filter(Boolean).join(" ").trim()
-        ?? null
-      const email = user.primaryEmailAddress?.emailAddress ?? null
       void fetch("/api/v1/users/me/profile", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ full_name: fullName || null, email }),
+        body: JSON.stringify({ full_name: authUser.fullName || null, email: authUser.email }),
       }).then((r) => {
         if (r.ok) sessionStorage.setItem(profileKey, "1")
       }).catch(() => {/* silencioso: no bloquea el flujo del alumno */})
@@ -64,41 +72,31 @@ function useEnrollment() {
         }
       }).catch(() => setState("need-code"))
     }
-  }, [isSignedIn, user])
+  }, [authUser?.id, isDev])
 
   const enroll = useCallback(async (code: string) => {
-    if (!user) return
+    if (!authUser) return
     setError(null)
-    const uuid = localStorage.getItem("clerkDerivedUserId") || user.id
 
-    // Buscar comisión por invite_code
-    const r1 = await fetch("/api/v1/comisiones?limit=100")
-    const j1 = await r1.json()
-    const comision = j1.data?.find((c: { invite_code?: string }) => c.invite_code === code.trim().toUpperCase())
-
-    if (!comision) {
-      setError("Codigo invalido. Pedile el codigo correcto a tu docente.")
-      return
-    }
-
-    // Inscribir
-    const r2 = await fetch(`/api/v1/comisiones/${comision.id}/inscripciones`, {
+    // El código se resuelve server-side: el backend busca la comisión por
+    // invite_code e inscribe al alumno. El frontend NUNCA lista los códigos.
+    const r = await fetch("/api/v1/comisiones/join", {
       method: "POST",
-      headers: { "Content-Type": "application/json", "x-user-id": uuid },
-      body: JSON.stringify({
-        student_pseudonym: uuid,
-        fecha_inscripcion: new Date().toISOString().slice(0, 10),
-      }),
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ invite_code: code.trim().toUpperCase() }),
     })
 
-    if (r2.status === 201 || r2.status === 409) {
+    if (r.ok) {
+      const comision = await r.json()
       localStorage.setItem(ENROLLED_COMISION_KEY, comision.id)
       setState("enrolled")
       window.location.reload()
+    } else if (r.status === 404) {
+      setError("Codigo invalido. Pedile el codigo correcto a tu docente.")
     } else {
       setError("No se pudo inscribir. Intenta de nuevo.")
     }
-  }, [user])
+  }, [authUser?.id])
 
   return { state, error, enroll }
 }
@@ -137,10 +135,9 @@ function InviteCodeScreen({ onSubmit, error }: { onSubmit: (code: string) => voi
   )
 }
 
-function RootLayout() {
-  const { isSignedIn } = useAuth()
-  const { state, error, enroll } = useEnrollment()
-
+// Carcasa compartida: header + footer. Las acciones del header y el cuerpo se
+// inyectan por props para que el path dev no monte componentes de Clerk.
+function LayoutShell({ headerActions, children }: { headerActions: ReactNode; children: ReactNode }) {
   return (
     <div className="h-dvh bg-surface-alt text-ink flex flex-col overflow-hidden">
       <header className="border-b border-border-soft px-6 py-3 flex items-center justify-between gap-4">
@@ -154,30 +151,77 @@ function RootLayout() {
             Plataforma N4 <span className="text-muted-soft mx-1">·</span> UTN
           </h1>
         </div>
-        <div className="flex items-center gap-3">
-          {isSignedIn ? (
-            <>
-              <TenantSelector />
-              <HelpButton title="Tutor Socratico" content={helpContent.episode} />
-              <UserButton afterSignOutUrl="/" />
-            </>
-          ) : (
-            <>
-              <SignInButton mode="modal">
-                <button type="button" className="text-sm font-medium text-accent-brand hover:underline">
-                  Iniciar sesion
-                </button>
-              </SignInButton>
-              <SignUpButton mode="modal">
-                <button type="button" className="text-sm font-medium bg-accent-brand text-white px-3 py-1.5 rounded-md hover:opacity-90">
-                  Registrarse
-                </button>
-              </SignUpButton>
-            </>
-          )}
-        </div>
+        <div className="flex items-center gap-3">{headerActions}</div>
       </header>
 
+      {children}
+
+      <AuditFooter episodeId={null} classifierHash={null} />
+    </div>
+  )
+}
+
+// Cuerpo segun estado de inscripcion (compartido por ambos paths).
+function EnrollmentBody({
+  state,
+  error,
+  enroll,
+}: {
+  state: EnrollState
+  error: string | null
+  enroll: (code: string) => void
+}) {
+  if (state === "loading") {
+    return (
+      <div className="flex-1 flex items-center justify-center">
+        <p className="text-muted-soft animate-pulse">Cargando...</p>
+      </div>
+    )
+  }
+  if (state === "need-code") {
+    return <InviteCodeScreen onSubmit={enroll} error={error} />
+  }
+  return <Outlet />
+}
+
+// Path real: auth via Clerk.
+function ClerkRootLayout() {
+  const { isSignedIn } = useAuth()
+  const { user } = useUser()
+  const authUser: AuthUser | null =
+    isSignedIn && user
+      ? {
+          id: user.id,
+          fullName:
+            user.fullName ?? [user.firstName, user.lastName].filter(Boolean).join(" ").trim() ?? null,
+          email: user.primaryEmailAddress?.emailAddress ?? null,
+        }
+      : null
+  const { state, error, enroll } = useEnrollment(authUser, false)
+
+  const headerActions = isSignedIn ? (
+    <>
+      <TenantSelector />
+      <HelpButton title="Tutor Socratico" content={helpContent.episode} />
+      <UserButton afterSignOutUrl="/" />
+    </>
+  ) : (
+    <>
+      <SignInButton mode="modal">
+        <button type="button" className="text-sm font-medium text-accent-brand hover:underline">
+          Iniciar sesion
+        </button>
+      </SignInButton>
+      <SignUpButton mode="modal">
+        <button type="button" className="text-sm font-medium bg-accent-brand text-white px-3 py-1.5 rounded-md hover:opacity-90">
+          Registrarse
+        </button>
+      </SignUpButton>
+    </>
+  )
+
+  return (
+    <LayoutShell headerActions={headerActions}>
       {!isSignedIn ? (
         <div className="flex-1 flex items-center justify-center">
           <div className="text-center space-y-4">
@@ -190,17 +234,38 @@ function RootLayout() {
             </SignInButton>
           </div>
         </div>
-      ) : state === "loading" ? (
-        <div className="flex-1 flex items-center justify-center">
-          <p className="text-muted-soft animate-pulse">Cargando...</p>
-        </div>
-      ) : state === "need-code" ? (
-        <InviteCodeScreen onSubmit={enroll} error={error} />
       ) : (
-        <Outlet />
+        <EnrollmentBody state={state} error={error} enroll={enroll} />
       )}
-
-      <AuditFooter episodeId={null} classifierHash={null} />
-    </div>
+    </LayoutShell>
   )
+}
+
+// Path dev sin Clerk: alumno hardcodeado, siempre "logueado".
+function DevRootLayout() {
+  const authUser: AuthUser = {
+    id: DEV_STUDENT_UUID,
+    fullName: "Alumno 01 (dev)",
+    email: "alumno01@demo-uni.edu",
+  }
+  const { state, error, enroll } = useEnrollment(authUser, true)
+
+  const headerActions = (
+    <>
+      <TenantSelector />
+      <HelpButton title="Tutor Socratico" content={helpContent.episode} />
+      <span className="text-xs text-muted-soft">alumno01 · dev</span>
+    </>
+  )
+
+  return (
+    <LayoutShell headerActions={headerActions}>
+      <EnrollmentBody state={state} error={error} enroll={enroll} />
+    </LayoutShell>
+  )
+}
+
+function RootLayout() {
+  // Flag build-time constante: la rama nunca cambia entre renders.
+  return DEV_NO_CLERK ? <DevRootLayout /> : <ClerkRootLayout />
 }

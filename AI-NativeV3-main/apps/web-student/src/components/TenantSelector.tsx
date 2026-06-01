@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react"
-import { SELECTED_TENANT_STORAGE_KEY } from "../main"
+import { SELECTED_TENANT_STORAGE_KEY } from "../auth"
 
 interface Universidad {
   id: string

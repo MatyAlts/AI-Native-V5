@@ -5,10 +5,13 @@ import { StrictMode } from "react"
 import { createRoot } from "react-dom/client"
 import "./index.css"
 import { routeTree } from "./routeTree.gen"
+import { SELECTED_TENANT_STORAGE_KEY } from "./constants"
 
 const CLERK_PUBLISHABLE_KEY = import.meta.env.VITE_CLERK_PUBLISHABLE_KEY as string
+// Dev sin Clerk: si no hay publishable key, la identidad (docente) la inyecta
+// el proxy de Vite y el backend corre con dev_trust_headers.
+const DEV_NO_CLERK = !CLERK_PUBLISHABLE_KEY
 
-export const SELECTED_TENANT_STORAGE_KEY = "selectedTenantId"
 const originalFetch = window.fetch.bind(window)
 const apiBase = (import.meta.env.VITE_API_URL ?? "").replace(/\/$/, "")
 window.fetch = (input, init) => {
@@ -50,15 +53,26 @@ function InnerApp() {
   return <RouterProvider router={router} context={{ getToken }} />
 }
 
+// Dev sin Clerk: router sin token (el proxy mete los headers de identidad).
+function DevApp() {
+  return <RouterProvider router={router} context={{ getToken: async () => null }} />
+}
+
 const rootElement = document.getElementById("root")
 if (!rootElement) throw new Error("Missing #root element")
 
 createRoot(rootElement).render(
   <StrictMode>
-    <ClerkProvider publishableKey={CLERK_PUBLISHABLE_KEY}>
+    {DEV_NO_CLERK ? (
       <QueryClientProvider client={queryClient}>
-        <InnerApp />
+        <DevApp />
       </QueryClientProvider>
-    </ClerkProvider>
+    ) : (
+      <ClerkProvider publishableKey={CLERK_PUBLISHABLE_KEY}>
+        <QueryClientProvider client={queryClient}>
+          <InnerApp />
+        </QueryClientProvider>
+      </ClerkProvider>
+    )}
   </StrictMode>,
 )
