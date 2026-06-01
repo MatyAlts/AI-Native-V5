@@ -11,7 +11,7 @@ import {
   getEpisodeClassification,
   getEpisodeNLevelDistribution,
 } from "../lib/api"
-import { NLEVEL_DOCENTE, NLEVEL_INVESTIGADOR } from "../utils/docenteLabels"
+import { explicarEstadoDocente, NLEVEL_DOCENTE, NLEVEL_INVESTIGADOR } from "../utils/docenteLabels"
 import { helpContent } from "../utils/helpContent"
 
 interface Props {
@@ -423,6 +423,7 @@ function DocenteAppropriationVerdict({
   }
 
   const display = APPROPRIATION_DISPLAY[classification.appropriation]
+  const explicacion = explicarEstadoDocente(classification)
 
   return (
     <div className={`rounded-xl border px-6 py-4 ${display.container}`}>
@@ -434,12 +435,24 @@ function DocenteAppropriationVerdict({
           {display.label}
         </span>
       </div>
-      <p className="text-sm text-ink font-medium">{display.headline}</p>
-      {classification.appropriation_reason && (
-        <p className="mt-2 text-xs text-muted leading-relaxed">
-          <span className="font-semibold">Por que: </span>
-          {classification.appropriation_reason}
-        </p>
+      <p className="text-sm text-ink font-medium">{explicacion.resumen}</p>
+      {explicacion.factores.length > 0 && (
+        <div className="mt-3">
+          <span className="text-xs font-semibold uppercase tracking-wider text-muted">
+            Que se observo
+          </span>
+          <ul className="mt-1.5 space-y-1">
+            {explicacion.factores.map((f) => (
+              <li key={f} className="flex gap-2 text-xs text-muted leading-relaxed">
+                <span
+                  aria-hidden="true"
+                  className="mt-1.5 h-1 w-1 shrink-0 rounded-full bg-muted"
+                />
+                <span>{f}</span>
+              </li>
+            ))}
+          </ul>
+        </div>
       )}
     </div>
   )

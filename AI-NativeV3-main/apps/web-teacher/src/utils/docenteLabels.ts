@@ -193,3 +193,80 @@ export function studentShortLabel(
   const tail = pseudonym.replace(/-/g, "").slice(-6)
   return `Est. ${tail}`
 }
+
+// ─── Explicación del estado del alumno en lenguaje docente ───────────────
+//
+// Traduce las métricas de coherencia (ritmo temporal, código-discurso,
+// enfoque inter-iteración) a una explicación SIN números ni jerga, que
+// cambia según el valor de cada dimensión. Reemplaza el `appropriation_reason`
+// técnico del backend en la UI del docente. NO altera la clasificación —
+// es solo presentación (mismo espíritu que el feedback al alumno en
+// web-student/EpisodePage.tsx). El reason técnico sigue persistido en el CTR
+// para auditoría/investigador (paper §4.4 + ADR-053).
+export interface EstadoDocenteExplicado {
+  resumen: string
+  factores: string[]
+}
+
+export function explicarEstadoDocente(c: {
+  appropriation: string
+  ct_summary: number | null
+  ccd_mean: number | null
+  ccd_orphan_ratio: number | null
+  cii_stability: number | null
+}): EstadoDocenteExplicado {
+  const factores: string[] = []
+
+  // Ritmo de trabajo (coherencia temporal)
+  if (c.ct_summary !== null) {
+    if (c.ct_summary >= 0.65)
+      factores.push("Trabajo de forma ordenada y sostenida en el tiempo.")
+    else if (c.ct_summary >= 0.35)
+      factores.push("Tuvo un ritmo de trabajo irregular, con idas y vueltas.")
+    else factores.push("Trabajo de forma muy fragmentada, con muchas interrupciones.")
+  }
+
+  // Código vs. diálogo (coherencia código-discurso)
+  if (c.ccd_orphan_ratio !== null && c.ccd_orphan_ratio >= 0.5) {
+    factores.push(
+      "Ejecuto o edito codigo sin explicar que buscaba ni consultarlo con el tutor.",
+    )
+  } else if (c.ccd_mean !== null && c.ccd_mean >= 0.65) {
+    factores.push(
+      "Acompano lo que programaba con lo que conversaba: codigo y razonamiento fueron de la mano.",
+    )
+  } else if (c.ccd_mean !== null && c.ccd_mean < 0.35) {
+    factores.push("Casi no verbalizo su razonamiento mientras programaba.")
+  } else if (c.ccd_mean !== null) {
+    factores.push("En parte explico lo que hacia, en parte trabajo sin verbalizar.")
+  }
+
+  // Profundización (estabilidad inter-iteración)
+  if (c.cii_stability !== null) {
+    if (c.cii_stability > 0.2)
+      factores.push(
+        "Se mantuvo enfocado en el mismo problema, profundizando en lugar de saltar de tema.",
+      )
+    else
+      factores.push(
+        "No llego a profundizar: toco varias cosas sin sostener una sola linea de trabajo.",
+      )
+  }
+
+  let resumen: string
+  switch (c.appropriation) {
+    case "apropiacion_reflexiva":
+      resumen =
+        "En conjunto, fue un trabajo reflexivo y autonomo: las tres dimensiones se acompanaron."
+      break
+    case "delegacion_pasiva":
+      resumen =
+        "El patron sugiere que se apoyo en el tutor sin construir comprension propia. Conviene conversarlo con el alumno."
+      break
+    default:
+      resumen =
+        "Hubo intento y actividad, pero sin evidencia suficiente de comprension profunda. Vale la pena preguntarle como llego a su solucion."
+  }
+
+  return { resumen, factores }
+}
