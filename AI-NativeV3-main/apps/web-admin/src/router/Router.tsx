@@ -9,7 +9,7 @@
  * espacio vertical y dar lugar a más entidades académicas sin que la nav se vuelva un
  * carrusel horizontal apretado.
  */
-import { type NavGroup, Sidebar } from "@platform/ui"
+import { AuditFooter, type NavGroup, Sidebar } from "@platform/ui"
 import { TenantSelector } from "../components/TenantSelector"
 import {
   Building2,
@@ -138,6 +138,9 @@ export function Router(): ReactNode {
           {current === "governance-events" && <GovernanceEventsPage />}
           {current === "byok" && <ByokPage />}
         </div>
+        {/* Footer técnico de trazabilidad (paridad con web-student/web-teacher,
+            ADMIN-BUG-003 del QA): version de prompt/classifier/labeler/cadena. */}
+        <AuditFooter episodeId={null} classifierHash={null} />
       </main>
     </div>
   )

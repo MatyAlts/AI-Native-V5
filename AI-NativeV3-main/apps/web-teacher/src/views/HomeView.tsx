@@ -152,7 +152,7 @@ export function HomeView({ getToken }: Props) {
 
           <div className="relative grid grid-cols-2 md:grid-cols-4 gap-x-8 gap-y-6">
             <HeroStat label="Comisiones" value={items.length} unit="activas" />
-            <HeroStat label="Alumnos" value={totalAlumnos} unit="totales" />
+            <HeroStat label="Alumnos" value={totalAlumnos} unit="con actividad" />
             <HeroStat label="Episodios" value={totalEpisodios} unit="esta semana" />
             <HeroStat
               label="Adversos"

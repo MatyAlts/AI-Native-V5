@@ -464,9 +464,9 @@ function InvestigadorSummary({
         </div>
       </div>
       <div className="flex flex-wrap gap-x-8 gap-y-2 text-sm">
-        <div>
+        <div title="Episodios agrupables por plantilla/unidad para el analisis longitudinal. Puede ser menor al total de episodios cerrados que se listan abajo (los que no tienen template/unidad no entran al slope).">
           <span className="font-semibold text-ink">{data.n_episodes_total}</span>
-          <span className="text-muted ml-1">episodios</span>
+          <span className="text-muted ml-1">episodios analizables</span>
         </div>
         <div>
           <span className="font-semibold text-ink">{data.n_groups_evaluated}</span>
