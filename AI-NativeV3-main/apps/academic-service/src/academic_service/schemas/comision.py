@@ -93,6 +93,16 @@ class ComisionOut(ComisionBase):
     deleted_at: datetime | None = None
 
 
+class ComisionJoinRequest(BaseModel):
+    """Auto-inscripción del estudiante con código de invitación.
+
+    El código se resuelve server-side — el frontend NUNCA recibe el listado
+    de invite_codes (ver `_redact_invite_code` en routes/comisiones).
+    """
+
+    invite_code: str = Field(min_length=3, max_length=10)
+
+
 class ConfigHashesOut(BaseModel):
     """Bootstrap mínimo F9: hashes vigentes para abrir un episodio.
 

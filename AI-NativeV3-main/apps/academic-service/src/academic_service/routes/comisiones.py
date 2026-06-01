@@ -11,10 +11,11 @@ import httpx
 from fastapi import APIRouter, Depends, Query, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from academic_service.auth import User, get_db, require_permission
+from academic_service.auth import User, get_current_user, get_db, require_permission
 from academic_service.config import settings
 from academic_service.schemas import (
     ComisionCreate,
+    ComisionJoinRequest,
     ComisionOut,
     ComisionUpdate,
     ConfigHashesOut,
@@ -40,6 +41,20 @@ _CLASSIFIER_HASH_FALLBACK = "d" * 64
 
 periodos_router = APIRouter(prefix="/api/v1/periodos", tags=["periodos"])
 comisiones_router = APIRouter(prefix="/api/v1/comisiones", tags=["comisiones"])
+
+# Roles que pueden ver el `invite_code` de una comisión. El estudiante NO:
+# con el código se auto-inscribe sin invitación del docente (RN privacy del
+# piloto). Mismo set que `_PRIVILEGED_ROLES_INSCRIPCIONES` del service.
+_INVITE_CODE_PRIVILEGED_ROLES: frozenset[str] = frozenset(
+    {"docente", "docente_admin", "superadmin", "jtp", "auxiliar"}
+)
+
+
+def _redact_invite_code(item: ComisionOut, user: User) -> ComisionOut:
+    """Oculta `invite_code` a usuarios sin rol docente/admin de la comisión."""
+    if user.roles & _INVITE_CODE_PRIVILEGED_ROLES:
+        return item
+    return item.model_copy(update={"invite_code": None})
 
 
 # ── Periodos ───────────────────────────────────────────
@@ -106,6 +121,27 @@ async def create_comision(
     return ComisionOut.model_validate(obj)
 
 
+@comisiones_router.post("/join", response_model=ComisionOut)
+async def join_comision(
+    data: ComisionJoinRequest,
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+) -> ComisionOut:
+    """Auto-inscripción del estudiante con invite_code resuelto server-side.
+
+    Reemplaza el flujo viejo donde el frontend listaba TODAS las comisiones
+    y matcheaba el código en el cliente (exponía todos los invite_codes).
+
+    Autorización: el `invite_code` válido ES la capacidad — basta estar
+    autenticado. El estudiante solo puede inscribirse a SÍ MISMO (el service
+    fuerza `student_pseudonym = user.id`), por eso no exige el permiso Casbin
+    `inscripcion:create` (que daría poder de inscribir a terceros).
+    """
+    svc = ComisionService(db)
+    comision = await svc.join_by_invite_code(data.invite_code, user)
+    return _redact_invite_code(ComisionOut.model_validate(comision), user)
+
+
 @comisiones_router.get("", response_model=ListResponse[ComisionOut])
 async def list_comisiones(
     limit: int = Query(50, ge=1, le=200),
@@ -117,7 +153,7 @@ async def list_comisiones(
 ) -> ListResponse[ComisionOut]:
     svc = ComisionService(db)
     objs = await svc.list(limit=limit, cursor=cursor, materia_id=materia_id, periodo_id=periodo_id)
-    items = [ComisionOut.model_validate(o) for o in objs]
+    items = [_redact_invite_code(ComisionOut.model_validate(o), user) for o in objs]
     next_cursor = str(objs[-1].id) if len(objs) == limit else None
     return ListResponse(data=items, meta=ListMeta(cursor_next=next_cursor))
 
@@ -139,7 +175,7 @@ async def list_my_comisiones(
     """
     svc = ComisionService(db)
     objs = await svc.list_for_user(user_id=user.id, limit=limit, cursor=cursor)
-    items = [ComisionOut.model_validate(o) for o in objs]
+    items = [_redact_invite_code(ComisionOut.model_validate(o), user) for o in objs]
     next_cursor = str(objs[-1].id) if len(objs) == limit else None
     return ListResponse(data=items, meta=ListMeta(cursor_next=next_cursor))
 
@@ -152,7 +188,7 @@ async def get_comision(
 ) -> ComisionOut:
     svc = ComisionService(db)
     obj = await svc.get(comision_id)
-    return ComisionOut.model_validate(obj)
+    return _redact_invite_code(ComisionOut.model_validate(obj), user)
 
 
 @comisiones_router.get("/{comision_id}/config-hashes", response_model=ConfigHashesOut)
@@ -238,7 +274,7 @@ async def update_comision(
 ) -> ComisionOut:
     svc = ComisionService(db)
     obj = await svc.update(comision_id, data, user)
-    return ComisionOut.model_validate(obj)
+    return _redact_invite_code(ComisionOut.model_validate(obj), user)
 
 
 @comisiones_router.delete("/{comision_id}", status_code=status.HTTP_204_NO_CONTENT)

@@ -457,6 +457,60 @@ class ComisionService:
         await self.session.refresh(insc)
         return insc
 
+    async def join_by_invite_code(self, invite_code: str, user: User) -> Comision:
+        """Auto-inscripción de un estudiante usando el invite_code.
+
+        El código se resuelve server-side (nunca se expone el listado de
+        invite_codes a los alumnos). RLS filtra por tenant: un código de
+        otro tenant no resuelve. Idempotente: si el estudiante ya está
+        inscripto, devuelve la comisión sin crear una segunda inscripción.
+        """
+        code = invite_code.strip().upper()
+        stmt = select(Comision).where(
+            Comision.invite_code == code,
+            Comision.deleted_at.is_(None),
+        )
+        result = await self.session.execute(stmt)
+        comision = result.scalar_one_or_none()
+        if comision is None:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Código de invitación inválido",
+            )
+
+        existing = await self.session.execute(
+            select(Inscripcion).where(
+                Inscripcion.comision_id == comision.id,
+                Inscripcion.student_pseudonym == user.id,
+                Inscripcion.deleted_at.is_(None),
+            )
+        )
+        if existing.scalar_one_or_none() is not None:
+            return comision  # idempotente: ya inscripto
+
+        insc = Inscripcion(
+            id=uuid4(),
+            tenant_id=comision.tenant_id,
+            comision_id=comision.id,
+            student_pseudonym=user.id,
+            rol="regular",
+            estado="activa",
+            fecha_inscripcion=date.today(),
+        )
+        self.session.add(insc)
+        audit = AuditLog(
+            tenant_id=comision.tenant_id,
+            user_id=user.id,
+            action="inscripcion.self_enroll",
+            resource_type="inscripcion",
+            resource_id=insc.id,
+            changes={"invite_code_used": True, "comision_id": str(comision.id)},
+        )
+        self.session.add(audit)
+        await self.session.flush()
+        await self.session.refresh(insc)
+        return comision
+
     async def remove_inscripcion(self, comision_id: UUID, insc_id: UUID, user: User) -> None:
         """Soft-delete de una Inscripcion."""
         from academic_service.models.base import utc_now

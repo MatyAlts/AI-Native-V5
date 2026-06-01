@@ -9,6 +9,7 @@ from academic_service.schemas.base import (
 from academic_service.schemas.carrera import CarreraCreate, CarreraOut, CarreraUpdate
 from academic_service.schemas.comision import (
     ComisionCreate,
+    ComisionJoinRequest,
     ComisionOut,
     ComisionUpdate,
     ConfigHashesOut,
@@ -58,6 +59,7 @@ __all__ = [
     "CarreraOut",
     "CarreraUpdate",
     "ComisionCreate",
+    "ComisionJoinRequest",
     "ComisionOut",
     "ComisionUpdate",
     "ConfigHashesOut",
