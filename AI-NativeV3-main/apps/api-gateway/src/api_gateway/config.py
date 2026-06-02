@@ -82,6 +82,14 @@ class Settings(BaseSettings):
         ""  # ej "http://keycloak:8080/realms/demo_uni/protocol/openid-connect/certs"
     )
     jwt_jwks_cache_ttl: int = 300
+    # Proveedor de auth: "" o "keycloak" => validator Keycloak; "clerk" =>
+    # ClerkJWTValidator (deriva user_id=uuid5(sub), email del token, tenant fijo).
+    # Para activar Clerk en prod: AUTH_PROVIDER=clerk + JWT_ISSUER/JWT_JWKS_URI de
+    # Clerk + (idealmente) DEV_TRUST_HEADERS=false.
+    auth_provider: str = ""
+    # Roles base que recibe todo usuario logueado con Clerk. La distincion real
+    # docente/alumno la da usuarios_comision/inscripciones por identidad, no el token.
+    clerk_base_roles: str = "estudiante,docente"
     # SAFETY: default False — auth via JWT obligatorio. Para dev local sin
     # Keycloak setear DEV_TRUST_HEADERS=true explicito en .env (los frontends
     # mandan X-User-Id / X-Tenant-Id / X-User-Roles via Vite proxy). En piloto-2

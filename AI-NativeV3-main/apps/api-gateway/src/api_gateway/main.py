@@ -20,6 +20,7 @@ from api_gateway.middleware import (
 from api_gateway.observability import setup_observability
 from api_gateway.routes import health, proxy
 from api_gateway.services import JWTValidator, JWTValidatorConfig
+from api_gateway.services.jwt_validator import ClerkJWTValidator
 
 
 @asynccontextmanager
@@ -48,14 +49,22 @@ app.add_middleware(
 # middleware corre en modo dev_trust_headers (acepta X-* tal cual vienen).
 _jwt_validator: JWTValidator | None = None
 if settings.jwt_issuer:
-    _jwt_validator = JWTValidator(
-        config=JWTValidatorConfig(
-            issuer=settings.jwt_issuer,
-            audience=settings.jwt_audience,
-            jwks_uri=settings.jwt_jwks_uri,
-            jwks_cache_ttl_seconds=settings.jwt_jwks_cache_ttl,
-        )
+    _validator_config = JWTValidatorConfig(
+        issuer=settings.jwt_issuer,
+        audience=settings.jwt_audience,
+        jwks_uri=settings.jwt_jwks_uri,
+        jwks_cache_ttl_seconds=settings.jwt_jwks_cache_ttl,
     )
+    if settings.auth_provider == "clerk":
+        _jwt_validator = ClerkJWTValidator(
+            config=_validator_config,
+            fixed_tenant_id=settings.demo_tenant_id,
+            base_roles=frozenset(
+                r.strip() for r in settings.clerk_base_roles.split(",") if r.strip()
+            ),
+        )
+    else:
+        _jwt_validator = JWTValidator(config=_validator_config)
 
 app.add_middleware(
     JWTMiddleware,
