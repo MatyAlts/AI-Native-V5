@@ -25,7 +25,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query, status
 from pydantic import BaseModel, Field
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from academic_service.auth import User, get_db, owner_filter, require_permission
+from academic_service.auth import User, get_db, require_permission
 from academic_service.schemas import ListMeta, ListResponse
 from academic_service.services.ejercicio_service import EjercicioService
 from platform_contracts.academic.ejercicio import (
@@ -68,21 +68,14 @@ async def list_ejercicios(
 
     - `unidad_tematica`: filtra por taxonomía pedagógica del ejercicio.
     - `dificultad`: filtra por dificultad declarada.
-    - `created_by`: docente creador (solo respetado para roles oversight).
+    - `created_by`: docente creador.
     - `created_via_ai`: filtra ejercicios generados con el wizard IA.
-
-    Aislamiento por docente (ver docs/filtrado-teacher-plan.md): un docente
-    comun queda forzado a ver SOLO sus propios ejercicios (se ignora el
-    `created_by` del cliente). superadmin/docente_admin ven todo el banco
-    del tenant y pueden filtrar por `created_by` explicito.
     """
-    scope = owner_filter(user)
-    effective_created_by = created_by if scope is None else scope
     svc = EjercicioService(db)
     objs = await svc.list(
         unidad_tematica=unidad_tematica,
         dificultad=dificultad,
-        created_by=effective_created_by,
+        created_by=created_by,
         created_via_ai=created_via_ai,
         limit=limit,
         cursor=cursor,

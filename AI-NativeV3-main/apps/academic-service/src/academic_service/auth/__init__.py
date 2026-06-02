@@ -9,7 +9,6 @@ from academic_service.auth.dependencies import (
     User,
     get_current_user,
     get_db,
-    owner_filter,
     require_role,
 )
 
@@ -19,7 +18,6 @@ __all__ = [
     "get_current_user",
     "get_db",
     "get_enforcer",
-    "owner_filter",
     "require_permission",
     "require_role",
 ]

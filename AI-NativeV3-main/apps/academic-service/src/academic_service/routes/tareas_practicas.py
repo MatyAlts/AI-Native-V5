@@ -13,7 +13,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 logger = logging.getLogger(__name__)
 
-from academic_service.auth import User, get_db, owner_filter, require_permission
+from academic_service.auth import User, get_db, require_permission
 from academic_service.schemas import ListMeta, ListResponse
 from academic_service.schemas.tarea_practica import (
     TareaPracticaCreate,
@@ -59,16 +59,12 @@ async def list_tareas_practicas(
     - `unidad_id` filtra a las TPs asignadas a esa Unidad temática
       (ADR-041). Sin el query param, devuelve TPs sin filtrar por
       unidad (comportamiento actual).
-    - Aislamiento por docente: `owner_filter` restringe a las TPs
-      creadas por el docente logueado (oversight ve todas). RLS solo
-      aisla por tenant, no por docente.
     """
     svc = TareaPracticaService(db)
     objs = await svc.list(
         comision_id=comision_id,
         estado=estado,
         unidad_id=unidad_id,
-        created_by=owner_filter(user),
         limit=limit,
         cursor=cursor,
     )

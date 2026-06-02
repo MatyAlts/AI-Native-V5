@@ -78,26 +78,6 @@ async def get_db(user: User = Depends(get_current_user)) -> AsyncIterator[AsyncS
         yield session
 
 
-# Roles que ven TODO el contenido de su contexto academico (oversight).
-# El resto de los docentes solo ve el contenido que ellos crearon, para
-# aislar datos entre docentes de un mismo tenant — RLS aisla por tenant,
-# NO por docente. Ver docs/filtrado-teacher-plan.md.
-CONTENT_OVERSIGHT_ROLES: frozenset[str] = frozenset({"superadmin", "docente_admin"})
-
-
-def owner_filter(user: User) -> UUID | None:
-    """UUID por el que filtrar `created_by`, o None si el user ve todo.
-
-    Aisla el contenido (unidades, TPs, ejercicios) por docente creador:
-    un docente comun solo ve lo suyo; superadmin/docente_admin ven todo
-    el contexto academico. El filtro se aplica en el backend (no se confia
-    en el frontend) usando la identidad del header X-User-Id.
-    """
-    if user.roles & CONTENT_OVERSIGHT_ROLES:
-        return None
-    return user.id
-
-
 def require_role(*allowed_roles: str):
     """Dependency factory que exige al menos uno de los roles."""
 
