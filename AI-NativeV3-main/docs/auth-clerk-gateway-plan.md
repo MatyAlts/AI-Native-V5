@@ -30,18 +30,35 @@ producción (el gateway sigue en modo demo). Este doc deja todo listo para retom
   el del frontend (JS `uuidv5`), mismo namespace `8f9d2c4a-7b1e-5d3f-9a8c-1e2b3c4d5e6f`.
   (Sin esto el docente no veria sus datos — es la pieza critica y esta OK).
 
+## Hecho y verificado (actualizado)
+
+- ✅ `ClerkJWTValidator` (validator).
+- ✅ **Config** (`config.py`): `auth_provider`, `clerk_base_roles`.
+- ✅ **Wiring** (`main.py`): `AUTH_PROVIDER=clerk` construye el `ClerkJWTValidator`.
+- ✅ **TEST con token real de Clerk**: validó firma JWKS + extrajo email + derivó user_id.
+  Confirmado: `user_id` Python = `user_id` JS (mismo namespace). **El validator anda de verdad.**
+
 ## Falta para activar (en orden)
 
-1. **Config (`config.py` del gateway):** vars para issuer/jwks de Clerk + tenant fijo + roles base.
-2. **Wiring (`main.py`):** construir `ClerkJWTValidator` cuando esas vars estén; sino, comportamiento actual (demo).
-3. **Fallback seguro (decidir):** que un token Clerk inválido NO tire 401 sino caiga al demo
-   durante la transición — o aceptar que apagar el demo es el switch (más riesgoso).
-4. **Frontend:** asegurar que web-teacher manda `Authorization: Bearer <token>` (el student ya lo hace);
-   ruteo post-login (login en `/` → `/teacher/` si docente; proteger `/teacher/`).
-5. **TEST con token real de Clerk** (capturar un session token real de una sesión logueada y
-   validarlo localmente contra el `ClerkJWTValidator`) — NO activar en prod sin esto.
-6. **Activación en prod:** setear las env vars en EasyPanel (gateway), tag de rollback, verificar
-   inmediatamente que se puede entrar. Riesgo: si el JWT falla, NADIE entra → revertir env var.
+1. **Frontend — mandar el token (PRERREQUISITO):** el web-student ya manda
+   `Authorization: Bearer <token>` (en su `lib/api.ts`). **El web-teacher NO** (su fetch override
+   no agrega Authorization). Hay que hacer que el teacher (y admin) manden el token de Clerk
+   (`window.Clerk.session.getToken()`) en cada request. **Sin esto, al activar, el teacher da 401 en todo.**
+2. **Frontend — ruteo post-login:** login en `/` → si es docente (tiene comisiones en
+   `/comisiones/mis`), redirigir a `/teacher/`; proteger `/teacher/` (rebotar a `/` si no es docente).
+3. **Activación en prod (el switch, con cuidado):** en EasyPanel, servicio `api-gateway`, setear:
+   - `AUTH_PROVIDER=clerk`
+   - `JWT_ISSUER=https://keen-adder-74.clerk.accounts.dev`
+   - `JWT_JWKS_URI=https://keen-adder-74.clerk.accounts.dev/.well-known/jwks.json`
+   - **Dejar `DEV_TRUST_HEADERS=true` como fallback** (un request sin token cae al demo, no rompe).
+   Tag de rollback antes. Redeploy del gateway. **Verificar inmediatamente que se puede entrar.**
+
+## Riesgo clave
+
+El paso 1 (frontend manda token) es **bloqueante**: si activás el modo Clerk sin que el front mande
+el token, los requests sin token caen al demo (ok), pero el flujo docente real no funciona. Y si
+apagás `DEV_TRUST_HEADERS`, un token faltante/inválido = 401 = nadie entra. Activar con
+`DEV_TRUST_HEADERS=true` mitiga (fallback al demo).
 
 ## Riesgo clave
 
