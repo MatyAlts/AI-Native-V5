@@ -581,12 +581,23 @@ function ComisionForm({
     horario: {},
     ai_budget_monthly_usd: "100.00",
   })
+  const [docenteEmail, setDocenteEmail] = useState<string>("")
   const [error, setError] = useState<string | null>(null)
   const queryClient = useQueryClient()
 
   const createMutation = useMutation({
-    mutationFn: (data: ComisionCreate) => comisionesApi.create(data),
-    onMutate: async (data) => {
+    mutationFn: async (vars: { comision: ComisionCreate; docenteEmail: string }) => {
+      const comision = await comisionesApi.create(vars.comision)
+      const email = vars.docenteEmail.trim()
+      // Asignar el docente por email (opcional). El user_id se resuelve cuando
+      // el docente se loguea con Clerk (matching por email en el backend).
+      if (email) {
+        await comisionesApi.addDocente(comision.id, { email })
+      }
+      return comision
+    },
+    onMutate: async (vars) => {
+      const data = vars.comision
       const optimistic: Comision = {
         id: `temp-${Date.now()}`,
         tenant_id: "",
@@ -634,7 +645,7 @@ function ComisionForm({
   const submit = (e: React.FormEvent) => {
     e.preventDefault()
     setError(null)
-    createMutation.mutate(form)
+    createMutation.mutate({ comision: form, docenteEmail })
   }
 
   return (
@@ -726,6 +737,19 @@ function ComisionForm({
             required
             className={inputClass}
           />
+        </Field>
+
+        <Field label="Email del docente (opcional)">
+          <input
+            type="email"
+            value={docenteEmail}
+            onChange={(e) => setDocenteEmail(e.target.value)}
+            className={inputClass}
+            placeholder="docente@utn.edu.ar"
+          />
+          <span className="text-[11px] text-muted-soft">
+            Se le asigna como titular. Queda vinculado cuando inicie sesion con ese email.
+          </span>
         </Field>
       </div>
 
@@ -870,10 +894,12 @@ function DocentesTab({
   onAdded: () => void
 }): ReactNode {
   const [showForm, setShowForm] = useState(false)
-  const [form, setForm] = useState({
-    user_id: "",
-    rol: "titular" as UsuarioComisionCreate["rol"],
-    fecha_desde: new Date().toISOString().slice(0, 10),
+  const [form, setForm] = useState<{
+    email: string
+    rol: NonNullable<UsuarioComisionCreate["rol"]>
+  }>({
+    email: "",
+    rol: "titular",
   })
   const [formError, setFormError] = useState<string | null>(null)
 
@@ -881,7 +907,7 @@ function DocentesTab({
     mutationFn: (data: UsuarioComisionCreate) => comisionDocentesApi.create(comisionId, data),
     onSuccess: () => {
       setShowForm(false)
-      setForm({ user_id: "", rol: "titular", fecha_desde: new Date().toISOString().slice(0, 10) })
+      setForm({ email: "", rol: "titular" })
       onAdded()
     },
     onError: (err) =>
@@ -900,25 +926,31 @@ function DocentesTab({
         <table className="w-full text-xs">
           <thead className="text-left text-muted">
             <tr>
-              <th className="py-1 pr-3">User ID</th>
+              <th className="py-1 pr-3">Docente</th>
               <th className="py-1 pr-3">Rol</th>
+              <th className="py-1 pr-3">Estado</th>
               <th className="py-1 pr-3">Desde</th>
-              <th className="py-1 pr-3">Hasta</th>
               <th className="py-1" />
             </tr>
           </thead>
           <tbody>
             {docentes.map((d) => (
               <tr key={d.id} className="border-t border-border-soft">
-                <td className="py-1 pr-3 font-mono">{d.user_id.slice(0, 8)}…</td>
+                <td className="py-1 pr-3">{d.email ?? "—"}</td>
                 <td className="py-1 pr-3">{d.rol}</td>
+                <td className="py-1 pr-3">
+                  {d.user_id ? (
+                    <span className="text-[var(--color-success)]">Activo</span>
+                  ) : (
+                    <span className="text-muted">Pendiente de login</span>
+                  )}
+                </td>
                 <td className="py-1 pr-3">{d.fecha_desde}</td>
-                <td className="py-1 pr-3">{d.fecha_hasta ?? "—"}</td>
                 <td className="py-1 text-right">
                   <button
                     type="button"
                     onClick={() => {
-                      if (window.confirm(`¿Quitar docente ${d.user_id.slice(0, 8)}…?`)) {
+                      if (window.confirm(`¿Quitar docente ${d.email ?? d.id.slice(0, 8)}?`)) {
                         onRemove(d.id)
                       }
                     }}
@@ -944,13 +976,13 @@ function DocentesTab({
           className="grid grid-cols-4 gap-2 items-end"
         >
           <div className="col-span-2">
-            <Field label="User ID (UUID)" required>
+            <Field label="Email del docente" required>
               <input
-                type="text"
-                value={form.user_id}
-                onChange={(e) => setForm({ ...form, user_id: e.target.value })}
+                type="email"
+                value={form.email}
+                onChange={(e) => setForm({ ...form, email: e.target.value })}
                 required
-                placeholder="UUID del docente"
+                placeholder="docente@utn.edu.ar"
                 className={inputClass}
               />
             </Field>
@@ -958,7 +990,9 @@ function DocentesTab({
           <Field label="Rol" required>
             <select
               value={form.rol}
-              onChange={(e) => setForm({ ...form, rol: e.target.value as UsuarioComisionCreate["rol"] })}
+              onChange={(e) =>
+                setForm({ ...form, rol: e.target.value as NonNullable<UsuarioComisionCreate["rol"]> })
+              }
               className={inputClass}
             >
               <option value="titular">Titular</option>
@@ -967,15 +1001,6 @@ function DocentesTab({
               <option value="ayudante">Ayudante</option>
               <option value="corrector">Corrector</option>
             </select>
-          </Field>
-          <Field label="Desde" required>
-            <input
-              type="date"
-              value={form.fecha_desde}
-              onChange={(e) => setForm({ ...form, fecha_desde: e.target.value })}
-              required
-              className={inputClass}
-            />
           </Field>
           {formError && (
             <div className="col-span-4 text-xs text-danger bg-danger-soft border border-danger/30 rounded p-2">

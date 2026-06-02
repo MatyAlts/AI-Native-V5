@@ -361,6 +361,13 @@ export const comisionesApi = {
       body: JSON.stringify(data),
     }),
   delete: (id: string) => request<void>(`/comisiones/${id}`, { method: "DELETE" }),
+  // Asigna un docente a la comision POR EMAIL. El user_id se resuelve cuando
+  // el docente se loguea con Clerk (matching por email en el backend).
+  addDocente: (comisionId: string, data: UsuarioComisionCreate) =>
+    request<UsuarioComisionOut>(`/comisiones/${comisionId}/docentes`, {
+      method: "POST",
+      body: JSON.stringify(data),
+    }),
 }
 
 // ── Facultades ───────────────────────────────────────────────────────
@@ -421,7 +428,9 @@ export interface UsuarioComisionOut {
   id: string
   tenant_id: string
   comision_id: string
-  user_id: string
+  // null hasta que el docente se loguea con Clerk (asignado por email).
+  user_id: string | null
+  email: string | null
   rol: "titular" | "adjunto" | "jtp" | "ayudante" | "corrector"
   permisos_extra: string[]
   fecha_desde: string
@@ -431,9 +440,10 @@ export interface UsuarioComisionOut {
 }
 
 export interface UsuarioComisionCreate {
-  user_id: string
-  rol: "titular" | "adjunto" | "jtp" | "ayudante" | "corrector"
-  fecha_desde: string
+  // El admin asigna por email; el docente todavia no tiene user_id.
+  email: string
+  rol?: "titular" | "adjunto" | "jtp" | "ayudante" | "corrector"
+  fecha_desde?: string
   fecha_hasta?: string
 }
 
