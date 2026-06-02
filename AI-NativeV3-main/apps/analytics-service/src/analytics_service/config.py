@@ -44,6 +44,12 @@ class Settings(BaseSettings):
     # en /student/{id}/cii-evolution-longitudinal. Modo dev (vacío) salta la query.
     academic_db_url: str = Field(default="")
 
+    # Aislamiento por comisión del análisis: si True (default prod), todo
+    # endpoint scopeado por comisión exige que el caller sea docente de esa
+    # comisión (usuarios_comision). Los tests unit lo ponen en False (vía
+    # conftest) para no simular gateway ni sembrar membresía en la DB.
+    enforce_comision_access: bool = Field(default=True)
+
 
 @lru_cache
 def get_settings() -> Settings:

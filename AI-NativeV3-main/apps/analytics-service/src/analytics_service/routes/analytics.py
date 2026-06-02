@@ -77,7 +77,7 @@ async def assert_comision_member(
 
     from analytics_service.config import settings
 
-    if not settings.academic_db_url:
+    if not settings.enforce_comision_access or not settings.academic_db_url:
         return
     engine = create_async_engine(settings.academic_db_url, pool_size=2)
     try:
@@ -114,14 +114,13 @@ async def require_comision_access(
     análisis por comisión. Para endpoints con `comision_id` en el body
     (export) se llama a `assert_comision_member` a mano.
 
-    El enforcement se aplica SOLO cuando los datasources reales están
-    activos (prod) — mismo criterio dev/stub que usan los endpoints. En
-    dev/stub es no-op (el stub no tiene datos reales que aislar), así los
-    tests unit no necesitan simular identidad ni sembrar membresía.
+    Enforcement gateado por `settings.enforce_comision_access` (True en
+    prod por default; los tests unit lo ponen en False vía conftest para
+    no tener que simular gateway ni sembrar membresía en la DB).
     """
-    from analytics_service.services.export import _real_data_source_enabled
+    from analytics_service.config import settings
 
-    if not _real_data_source_enabled():
+    if not settings.enforce_comision_access:
         return
     if not x_user_id:
         raise HTTPException(
@@ -268,13 +267,10 @@ async def export_cohort(
 
     Aislamiento por comisión: solo un docente asignado a `req.comision_id`
     puede exportar su dataset (el `comision_id` viene en el body, así que
-    el guard se llama a mano). Se aplica solo con datasources reales (prod);
-    en dev/stub es no-op.
+    el guard se llama a mano). `assert_comision_member` se auto-gatea por
+    `settings.enforce_comision_access` (no-op en tests).
     """
-    from analytics_service.services.export import _real_data_source_enabled
-
-    if _real_data_source_enabled():
-        await assert_comision_member(user_id, req.comision_id, tenant_id)
+    await assert_comision_member(user_id, req.comision_id, tenant_id)
 
     import hashlib
     from datetime import UTC, datetime
