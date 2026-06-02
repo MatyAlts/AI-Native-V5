@@ -11,8 +11,8 @@
  */
 import { useQuery } from "@tanstack/react-query"
 import { Link, createFileRoute, useNavigate } from "@tanstack/react-router"
-import { BookOpenText, Sparkles } from "lucide-react"
-import { useEffect } from "react"
+import { BookOpenText, Plus, Sparkles } from "lucide-react"
+import { useEffect, useState } from "react"
 import { MateriaCard } from "../components/MateriaCard"
 import { type MateriaInscripta, listMisMaterias } from "../lib/api"
 
@@ -118,14 +118,17 @@ export function HomeContent({ isLoading, error, materias, onEnter }: HomeContent
               acompaña en cada ejercicio.
             </p>
           </div>
-          <Link
-            to="/reflexiones"
-            data-testid="home-link-reflexiones"
-            className="press-shrink shrink-0 inline-flex items-center gap-1.5 px-3 py-2 rounded-md border border-border bg-surface text-xs font-medium text-body hover:bg-accent-brand-soft hover:text-accent-brand-deep hover:border-accent-brand/40 transition-colors"
-          >
-            <BookOpenText className="h-3.5 w-3.5" aria-hidden="true" />
-            Mis reflexiones
-          </Link>
+          <div className="flex shrink-0 items-center gap-2">
+            <JoinMateriaControl />
+            <Link
+              to="/reflexiones"
+              data-testid="home-link-reflexiones"
+              className="press-shrink shrink-0 inline-flex items-center gap-1.5 px-3 py-2 rounded-md border border-border bg-surface text-xs font-medium text-body hover:bg-accent-brand-soft hover:text-accent-brand-deep hover:border-accent-brand/40 transition-colors"
+            >
+              <BookOpenText className="h-3.5 w-3.5" aria-hidden="true" />
+              Mis reflexiones
+            </Link>
+          </div>
         </header>
 
         {usaListaDensa ? (
@@ -145,6 +148,116 @@ export function HomeContent({ isLoading, error, materias, onEnter }: HomeContent
         )}
       </div>
     </div>
+  )
+}
+
+// Permite sumar OTRA materia cuando el alumno ya tiene al menos una. El input
+// de invitación de `__root` solo aparece con 0 materias; este control reabre
+// ese flujo (mismo endpoint idempotente `POST /comisiones/join`) sin tocar la
+// máquina de estados de inscripción. Reusa los tokens visuales del input de
+// código original para mantener consistencia.
+function JoinMateriaControl() {
+  const [open, setOpen] = useState(false)
+  const [code, setCode] = useState("")
+  const [error, setError] = useState<string | null>(null)
+  const [submitting, setSubmitting] = useState(false)
+
+  const close = () => {
+    if (submitting) return
+    setOpen(false)
+    setCode("")
+    setError(null)
+  }
+
+  const submit = async () => {
+    setError(null)
+    setSubmitting(true)
+    try {
+      const r = await fetch("/api/v1/comisiones/join", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ invite_code: code.trim().toUpperCase() }),
+      })
+      if (r.ok) {
+        // Recarga para refrescar la lista de materias (el backend ya inscribió;
+        // es idempotente si el código apunta a una comisión ya cursada).
+        window.location.reload()
+      } else if (r.status === 404) {
+        setError("Codigo invalido. Pedile el codigo correcto a tu docente.")
+        setSubmitting(false)
+      } else {
+        setError("No se pudo inscribir. Intenta de nuevo.")
+        setSubmitting(false)
+      }
+    } catch {
+      setError("No se pudo inscribir. Intenta de nuevo.")
+      setSubmitting(false)
+    }
+  }
+
+  return (
+    <>
+      <button
+        type="button"
+        onClick={() => setOpen(true)}
+        data-testid="home-join-otra"
+        className="press-shrink shrink-0 inline-flex items-center gap-1.5 px-3 py-2 rounded-md border border-border bg-surface text-xs font-medium text-body hover:bg-accent-brand-soft hover:text-accent-brand-deep hover:border-accent-brand/40 transition-colors"
+      >
+        <Plus className="h-3.5 w-3.5" aria-hidden="true" />
+        Unirse a otra materia
+      </button>
+
+      {open && (
+        <div
+          role="dialog"
+          aria-modal="true"
+          aria-label="Unirse a otra materia"
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4"
+          onClick={close}
+        >
+          <div
+            className="w-full max-w-sm rounded-xl border border-border bg-surface p-6 shadow-lg"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <h2 className="text-lg font-semibold text-ink">Unirte a otra materia</h2>
+            <p className="text-sm text-muted-soft mt-1 mb-4">
+              Ingresá el código que te dio tu docente para sumar otra materia.
+            </p>
+            <input
+              type="text"
+              value={code}
+              autoFocus
+              onChange={(e) => setCode(e.target.value.toUpperCase())}
+              onKeyDown={(e) => {
+                if (e.key === "Enter" && code.length >= 3 && !submitting) submit()
+              }}
+              placeholder="Ej: C1-7X3K"
+              maxLength={10}
+              className="w-full px-4 py-3 text-center text-lg font-mono tracking-widest border border-border-soft rounded-lg bg-surface focus:outline-none focus:ring-2 focus:ring-accent-brand"
+            />
+            {error && <p className="text-sm text-red-600 mt-2">{error}</p>}
+            <div className="flex items-center justify-end gap-2 mt-4">
+              <button
+                type="button"
+                onClick={close}
+                disabled={submitting}
+                className="press-shrink px-4 py-2 rounded-md border border-border bg-surface text-sm font-medium text-body hover:bg-surface-alt transition-colors disabled:opacity-50"
+              >
+                Cancelar
+              </button>
+              <button
+                type="button"
+                onClick={submit}
+                disabled={code.length < 3 || submitting}
+                className="press-shrink bg-accent-brand text-white px-5 py-2 rounded-md text-sm font-medium hover:opacity-90 disabled:opacity-50"
+              >
+                {submitting ? "Uniéndote…" : "Unirme"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+    </>
   )
 }
 
