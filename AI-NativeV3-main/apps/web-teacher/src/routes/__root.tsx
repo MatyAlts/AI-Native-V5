@@ -24,7 +24,6 @@ import {
   ClipboardList,
   Download,
   FileBarChart,
-  FileCode2,
   FlaskConical,
   FolderOpen,
   Group,
@@ -52,7 +51,6 @@ const NAV_GROUPS: NavGroup[] = [
   {
     label: "Trabajo del docente",
     items: [
-      { id: "/templates", label: "Plantillas", icon: FileCode2 },
       { id: "/unidades", label: "Unidades", icon: Group },
       { id: "/ejercicios", label: "Banco de ejercicios", icon: BookOpen },
       { id: "/tareas-practicas", label: "Trabajos Prácticos", icon: ClipboardList },
