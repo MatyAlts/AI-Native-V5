@@ -940,7 +940,13 @@ export async function listPlanes(carreraId: string, getToken?: TokenGetter): Pro
 }
 
 export async function listMaterias(planId: string, getToken?: TokenGetter): Promise<Materia[]> {
-  return fetchList<Materia>(`/api/v1/materias?plan_id=${planId}&limit=200`, getToken)
+  const materias = await fetchList<Materia>(`/api/v1/materias?plan_id=${planId}&limit=200`, getToken)
+  // Orden pedagógico para todos los dropdowns/listas del panel docente:
+  // por cuatrimestre y luego por código (antes salían mezcladas).
+  return materias.sort(
+    (a, b) =>
+      a.cuatrimestre_sugerido - b.cuatrimestre_sugerido || a.codigo.localeCompare(b.codigo),
+  )
 }
 
 export async function listPeriodos(getToken?: TokenGetter): Promise<Periodo[]> {

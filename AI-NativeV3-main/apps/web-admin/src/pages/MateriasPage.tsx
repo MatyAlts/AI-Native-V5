@@ -364,7 +364,13 @@ export function MateriasPage(): ReactNode {
                 </tr>
               </thead>
               <tbody>
-                {items.map((m) => (
+                {[...items]
+                  .sort(
+                    (a, b) =>
+                      a.cuatrimestre_sugerido - b.cuatrimestre_sugerido ||
+                      a.codigo.localeCompare(b.codigo),
+                  )
+                  .map((m) => (
                   <tr key={m.id} className="border-b border-border-soft">
                     <td className="px-4 py-2 font-mono text-xs">{m.codigo}</td>
                     <td className="px-4 py-2">{m.nombre}</td>

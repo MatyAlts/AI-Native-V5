@@ -58,6 +58,22 @@ const UNIDAD_LABEL: Record<UnidadTematica, string> = {
   mixtos: "Mixtos",
 }
 
+// Orden pedagógico de los temas para listar el banco (no alfabético).
+const UNIDAD_ORDER: Record<UnidadTematica, number> = {
+  secuenciales: 0,
+  condicionales: 1,
+  repetitivas: 2,
+  mixtos: 3,
+}
+
+function sortEjerciciosPorTema(ejs: Ejercicio[]): Ejercicio[] {
+  return [...ejs].sort(
+    (a, b) =>
+      UNIDAD_ORDER[a.unidad_tematica] - UNIDAD_ORDER[b.unidad_tematica] ||
+      a.titulo.localeCompare(b.titulo),
+  )
+}
+
 const DIFICULTAD_LABEL: Record<Dificultad, string> = {
   basica: "Basica",
   intermedia: "Intermedia",
@@ -140,7 +156,7 @@ export function EjerciciosView({ comisionId, getToken }: Props) {
       },
       getToken,
     )
-      .then((r) => setEjercicios(r.data))
+      .then((r) => setEjercicios(sortEjerciciosPorTema(r.data)))
       .catch((e) => setError(String(e)))
       .finally(() => setLoading(false))
   }, [materiaId, filterUnidad, filterDificultad, filterIA, getToken])
