@@ -1,4 +1,4 @@
-import { ClerkProvider, useAuth, useUser } from "@clerk/clerk-react"
+import { ClerkProvider, SignedIn, SignedOut, SignIn, useAuth, useUser } from "@clerk/clerk-react"
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query"
 import { RouterProvider, createRouter } from "@tanstack/react-router"
 import { StrictMode, useEffect } from "react"
@@ -97,9 +97,18 @@ createRoot(rootElement).render(
       </QueryClientProvider>
     ) : (
       <ClerkProvider publishableKey={CLERK_PUBLISHABLE_KEY}>
-        <QueryClientProvider client={queryClient}>
-          <InnerApp />
-        </QueryClientProvider>
+        {/* Sin sesion: pantalla de login de Clerk. Con sesion: la app (y el
+            push de perfil que vincula al docente con sus comisiones). */}
+        <SignedOut>
+          <div className="min-h-screen flex items-center justify-center bg-canvas">
+            <SignIn />
+          </div>
+        </SignedOut>
+        <SignedIn>
+          <QueryClientProvider client={queryClient}>
+            <InnerApp />
+          </QueryClientProvider>
+        </SignedIn>
       </ClerkProvider>
     )}
   </StrictMode>,
