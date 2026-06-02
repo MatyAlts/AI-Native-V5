@@ -101,7 +101,9 @@ createRoot(rootElement).render(
             push de perfil que vincula al docente con sus comisiones). */}
         <SignedOut>
           <div className="min-h-screen flex items-center justify-center bg-canvas">
-            <SignIn />
+            {/* forceRedirectUrl: sin esto Clerk redirige a "/" (que es el
+                web-student) tras el login. Forzamos quedarnos en /teacher. */}
+            <SignIn forceRedirectUrl="/teacher" signUpForceRedirectUrl="/teacher" />
           </div>
         </SignedOut>
         <SignedIn>
