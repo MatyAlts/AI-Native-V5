@@ -133,6 +133,7 @@ async def list_entregas(
     is_docente = bool(
         user.roles & frozenset({"superadmin", "docente_admin", "docente", "jtp", "auxiliar"})
     )
+    is_oversight = bool(user.roles & frozenset({"superadmin", "docente_admin"}))
 
     conditions = [Entrega.deleted_at.is_(None)]
 
@@ -144,6 +145,26 @@ async def list_entregas(
         conditions.append(Entrega.estado == estado)
 
     if is_docente:
+        if not is_oversight:
+            # Aislamiento por comisión: en prod todos los docentes comparten un
+            # tenant fijo, así que la RLS no los separa. Restringimos la cola de
+            # corrección a las comisiones donde el docente está asignado
+            # (usuarios_comision vive en la misma DB academic_main). Pedir una
+            # comisión ajena queda fuera del IN → no se filtra nada de otro
+            # docente. Ver docs/filtrado-teacher-plan.md.
+            rows_c = await db.execute(
+                text(
+                    "SELECT comision_id FROM usuarios_comision "
+                    "WHERE user_id = :uid AND deleted_at IS NULL"
+                ),
+                {"uid": str(user.id)},
+            )
+            my_comisiones = [r[0] for r in rows_c.all()]
+            if not my_comisiones:
+                return EntregaListResponse(
+                    data=[], meta=EntregaListMeta(cursor_next=None, limit=limit)
+                )
+            conditions.append(Entrega.comision_id.in_(my_comisiones))
         if student_pseudonym:
             conditions.append(Entrega.student_pseudonym == student_pseudonym)
         # NEW-004 QA: la cola de correccion del docente NO debe mostrar entregas

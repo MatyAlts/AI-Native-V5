@@ -13,6 +13,13 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 logger = logging.getLogger(__name__)
 
+from platform_contracts.academic.ejercicio import (
+    EjercicioRead,
+    TpEjercicioCreate,
+    TpEjercicioRead,
+    TpEjercicioUpdate,
+)
+
 from academic_service.auth import User, get_db, require_permission
 from academic_service.schemas import ListMeta, ListResponse
 from academic_service.schemas.tarea_practica import (
@@ -21,14 +28,12 @@ from academic_service.schemas.tarea_practica import (
     TareaPracticaUpdate,
     TareaPracticaVersionRef,
 )
+from academic_service.services.comision_service import (
+    OVERSIGHT_ROLES,
+    assert_comision_member,
+)
 from academic_service.services.tarea_practica_service import TareaPracticaService
 from academic_service.services.tp_ejercicio_service import TpEjercicioService
-from platform_contracts.academic.ejercicio import (
-    EjercicioRead,
-    TpEjercicioCreate,
-    TpEjercicioRead,
-    TpEjercicioUpdate,
-)
 
 router = APIRouter(prefix="/api/v1/tareas-practicas", tags=["tareas-practicas"])
 
@@ -59,7 +64,15 @@ async def list_tareas_practicas(
     - `unidad_id` filtra a las TPs asignadas a esa Unidad temática
       (ADR-041). Sin el query param, devuelve TPs sin filtrar por
       unidad (comportamiento actual).
+    - Aislamiento por comisión: un docente común solo puede listar TPs de
+      comisiones donde está asignado (`usuarios_comision`). Pedir una
+      comisión ajena → 403; sin `comision_id` → lista vacía (no se permite
+      listar todo el tenant, que en prod es compartido). Oversight ve todo.
     """
+    if comision_id is not None:
+        await assert_comision_member(db, user, comision_id)
+    elif not (user.roles & OVERSIGHT_ROLES):
+        return ListResponse(data=[], meta=ListMeta(cursor_next=None))
     svc = TareaPracticaService(db)
     objs = await svc.list(
         comision_id=comision_id,

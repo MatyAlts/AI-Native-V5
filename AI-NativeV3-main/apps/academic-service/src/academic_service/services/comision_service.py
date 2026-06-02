@@ -41,6 +41,40 @@ from academic_service.schemas.comision import (
 from academic_service.schemas.inscripcion import InscripcionCreateIndividual
 from academic_service.schemas.usuario_comision import UsuarioComisionCreate
 
+# Roles con vista total del tenant (no se les exige membresia de comision).
+OVERSIGHT_ROLES: frozenset[str] = frozenset({"superadmin", "docente_admin"})
+
+
+async def comisiones_del_usuario(session: AsyncSession, user_id: UUID) -> set[UUID]:
+    """comision_ids donde `user_id` es staff (docente/JTP/auxiliar) activo."""
+    rows = await session.execute(
+        select(UsuarioComision.comision_id).where(
+            UsuarioComision.user_id == user_id,
+            UsuarioComision.deleted_at.is_(None),
+        )
+    )
+    return {r[0] for r in rows.all()}
+
+
+async def assert_comision_member(
+    session: AsyncSession, user: User, comision_id: UUID
+) -> None:
+    """Lanza 403 si `user` no es staff de `comision_id`.
+
+    El aislamiento entre docentes NO lo da la RLS (en prod todos comparten
+    un tenant fijo); lo da la asignacion `usuarios_comision`. Los roles
+    oversight (superadmin/docente_admin) ven todo el tenant.
+    Ver docs/filtrado-teacher-plan.md.
+    """
+    if user.roles & OVERSIGHT_ROLES:
+        return
+    ids = await comisiones_del_usuario(session, user.id)
+    if comision_id not in ids:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="No tenes acceso a esta comision (no sos docente asignado).",
+        )
+
 
 class PeriodoService:
     def __init__(self, session: AsyncSession) -> None:

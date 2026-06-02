@@ -27,6 +27,7 @@ from academic_service.schemas.unidad import (
     UnidadReorderRequest,
     UnidadUpdate,
 )
+from academic_service.services.comision_service import assert_comision_member
 from academic_service.services.unidad_service import UnidadService
 
 router = APIRouter(prefix="/api/v1/unidades", tags=["unidades"])
@@ -77,8 +78,11 @@ async def list_unidades(
 
     `comision_id` es REQUERIDO — sin él se devuelve 422.
     Solo devuelve Unidades con `deleted_at=NULL`.
-    RLS garantiza aislamiento multi-tenant automáticamente.
+    RLS aísla por tenant; `assert_comision_member` aísla por docente
+    (en prod todos comparten un tenant fijo → la RLS no alcanza).
+    Un docente que pide una comisión ajena recibe 403.
     """
+    await assert_comision_member(db, user, comision_id)
     svc = UnidadService(db)
     objs = await svc.list_by_comision(user.tenant_id, comision_id)
     items = [UnidadOut.model_validate(o) for o in objs]
