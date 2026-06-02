@@ -66,6 +66,10 @@ async def assert_comision_member(
     un tenant fijo); lo da la asignacion `usuarios_comision`. Los roles
     oversight (superadmin/docente_admin) ven todo el tenant.
     Ver docs/filtrado-teacher-plan.md.
+
+    SOLO para endpoints de gestion docente (escritura). Para lecturas que
+    tambien consumen alumnos (unidades, TPs publicadas) usar
+    `assert_comision_access`, que ademas acepta estudiantes inscriptos.
     """
     if user.roles & OVERSIGHT_ROLES:
         return
@@ -75,6 +79,51 @@ async def assert_comision_member(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="No tenes acceso a esta comision (no sos docente asignado).",
         )
+
+
+async def comisiones_inscriptas_del_usuario(
+    session: AsyncSession, user_id: UUID
+) -> set[UUID]:
+    """comision_ids donde `user_id` es estudiante con inscripcion vigente.
+
+    Paridad con `/materias/mias`: solo los estados que el alumno ve en su
+    lista (`activa`/`cursando`). Mismo criterio = "si la materia te aparece
+    en tu listado, podes entrar a sus unidades y TPs publicadas".
+    """
+    rows = await session.execute(
+        select(Inscripcion.comision_id).where(
+            Inscripcion.student_pseudonym == user_id,
+            Inscripcion.estado.in_(("activa", "cursando")),
+            Inscripcion.deleted_at.is_(None),
+        )
+    )
+    return {r[0] for r in rows.all()}
+
+
+async def assert_comision_access(
+    session: AsyncSession, user: User, comision_id: UUID
+) -> bool:
+    """Lanza 403 si `user` no es staff NI estudiante inscripto de la comision.
+
+    Gate de LECTURA para recursos que consumen tanto docentes (web-teacher)
+    como alumnos (web-student): unidades y TPs publicadas. El aislamiento
+    docente sigue siendo `usuarios_comision`; el de alumnos es
+    `inscripciones`. Para escritura/gestion docente usar
+    `assert_comision_member`.
+
+    Devuelve `True` si el caller es staff/oversight (puede ver borradores),
+    `False` si es alumno inscripto (acceso de solo-lectura a lo publicado).
+    """
+    if user.roles & OVERSIGHT_ROLES:
+        return True
+    if comision_id in await comisiones_del_usuario(session, user.id):
+        return True
+    if comision_id in await comisiones_inscriptas_del_usuario(session, user.id):
+        return False
+    raise HTTPException(
+        status_code=status.HTTP_403_FORBIDDEN,
+        detail="No tenes acceso a esta comision.",
+    )
 
 
 class PeriodoService:

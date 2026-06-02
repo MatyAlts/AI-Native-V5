@@ -30,7 +30,7 @@ from academic_service.schemas.tarea_practica import (
 )
 from academic_service.services.comision_service import (
     OVERSIGHT_ROLES,
-    assert_comision_member,
+    assert_comision_access,
 )
 from academic_service.services.tarea_practica_service import TareaPracticaService
 from academic_service.services.tp_ejercicio_service import TpEjercicioService
@@ -64,13 +64,18 @@ async def list_tareas_practicas(
     - `unidad_id` filtra a las TPs asignadas a esa Unidad temática
       (ADR-041). Sin el query param, devuelve TPs sin filtrar por
       unidad (comportamiento actual).
-    - Aislamiento por comisión: un docente común solo puede listar TPs de
-      comisiones donde está asignado (`usuarios_comision`). Pedir una
+    - Aislamiento por comisión: el acceso es válido para docentes asignados
+      (`usuarios_comision`) o alumnos inscriptos (`inscripciones`). Pedir una
       comisión ajena → 403; sin `comision_id` → lista vacía (no se permite
       listar todo el tenant, que en prod es compartido). Oversight ve todo.
+    - Visibilidad por estado: los alumnos (no staff) solo ven TPs
+      `published` — se fuerza server-side, sin importar el `estado` pedido,
+      para no filtrar borradores/archivadas.
     """
     if comision_id is not None:
-        await assert_comision_member(db, user, comision_id)
+        is_staff = await assert_comision_access(db, user, comision_id)
+        if not is_staff:
+            estado = "published"
     elif not (user.roles & OVERSIGHT_ROLES):
         return ListResponse(data=[], meta=ListMeta(cursor_next=None))
     svc = TareaPracticaService(db)
