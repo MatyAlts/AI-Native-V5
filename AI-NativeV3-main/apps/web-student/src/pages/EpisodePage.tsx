@@ -31,8 +31,6 @@ import {
   emitEpisodioAbandonado,
   emitLecturaEnunciado,
   emitPegaIntentada,
-  emitPestanaPerdida,
-  emitPestanaRecuperada,
   getEpisodeState,
   getTareaById,
   listEjerciciosTp,
@@ -107,9 +105,6 @@ export function EpisodeView({ episodeId, onExit, ejercicioContext }: EpisodeView
     return window.localStorage.getItem(`episode_${episodeId}_reflection_skipped`) === "1"
   })
   // Integridad de foco: trackea si el alumno cambio de pestaña y por cuanto.
-  const [isAway, setIsAway] = useState(false)
-  const [awayLastDurationSec, setAwayLastDurationSec] = useState<number>(0)
-  const [showFocusWarning, setShowFocusWarning] = useState(false)
   const messagesEndRef = useRef<HTMLDivElement>(null)
 
   const ejercicioOrden = ejercicioContext?.ejercicioOrden ?? null
@@ -147,83 +142,11 @@ export function EpisodeView({ episodeId, onExit, ejercicioContext }: EpisodeView
     return () => window.removeEventListener("beforeunload", handler)
   }, [episodeId, closed])
 
-  // Integridad de foco: registrar cambios de pestaña en el CTR.
-  // El worker server-side cierra el episodio si supera el umbral
-  // (distraction_threshold_seconds, default 30s). El browser NO permite
-  // bloquear la accion — solo registramos como evidencia auditable.
-  useEffect(() => {
-    if (typeof window === "undefined") return
-    if (closed) return
-    let awayStartMs: number | null = null
-
-    const markEpisodeDeadByFocus = () => {
-      setError(
-        'Tu episodio se cerró automáticamente porque saliste de la pestaña. Esto queda registrado en tu historial académico. Hacé clic en "Salir" para volver al inicio.',
-      )
-      setClosed(true)
-      window.sessionStorage.removeItem(ACTIVE_EPISODE_KEY)
-    }
-
-    const handleHidden = (trigger: "visibilitychange" | "blur") => {
-      if (awayStartMs !== null) return
-      awayStartMs = Date.now()
-      setIsAway(true)
-      setShowFocusWarning(false)
-      void emitPestanaPerdida(episodeId, { trigger }).catch((e) => {
-        const msg = String(e)
-        if (msg.includes("409") || msg.includes("404")) {
-          markEpisodeDeadByFocus()
-        } else {
-          console.warn("emit pestana_perdida failed:", e)
-        }
-      })
-    }
-    const handleVisible = () => {
-      if (awayStartMs === null) return
-      const seconds = (Date.now() - awayStartMs) / 1000
-      awayStartMs = null
-      setIsAway(false)
-      setAwayLastDurationSec(seconds)
-      setShowFocusWarning(true)
-      void emitPestanaRecuperada(episodeId, {
-        tiempo_fuera_segundos: seconds,
-      }).catch((e) => {
-        const msg = String(e)
-        if (msg.includes("409") || msg.includes("404")) {
-          markEpisodeDeadByFocus()
-        } else {
-          console.warn("emit pestana_recuperada failed:", e)
-        }
-      })
-    }
-
-    const onVisibilityChange = () => {
-      if (document.visibilityState === "hidden") {
-        handleHidden("visibilitychange")
-      } else if (document.visibilityState === "visible") {
-        handleVisible()
-      }
-    }
-    const onBlur = () => {
-      // visibilitychange ya cubre la mayoría de casos; blur agarra el
-      // Alt+Tab al SO en algunos browsers donde el tab sigue "visible".
-      if (document.visibilityState === "visible") {
-        handleHidden("blur")
-      }
-    }
-    const onFocus = () => {
-      if (document.visibilityState === "visible") handleVisible()
-    }
-
-    document.addEventListener("visibilitychange", onVisibilityChange)
-    window.addEventListener("blur", onBlur)
-    window.addEventListener("focus", onFocus)
-    return () => {
-      document.removeEventListener("visibilitychange", onVisibilityChange)
-      window.removeEventListener("blur", onBlur)
-      window.removeEventListener("focus", onFocus)
-    }
-  }, [episodeId, closed])
+  // Tracking de foco/pestaña DESACTIVADO: cerraba el episodio cuando el
+  // alumno salía de la pestaña, pero `window blur` se dispara espurio (ej.
+  // al hacer foco en el editor Monaco) y sacaba al alumno sin haberse ido.
+  // Se removió por completo (no se emite pestana_perdida → el worker
+  // server-side no cierra por distracción). Ver docs/filtrado-teacher-plan.md.
 
   // Hydration on-mount. El episodeId viene del path param, no del state.
   useEffect(() => {
@@ -444,64 +367,6 @@ export function EpisodeView({ episodeId, onExit, ejercicioContext }: EpisodeView
     // viewport, obligando a hacer scroll de toda la página para alternar
     // entre código y mensaje del tutor.
     <div className="flex-1 flex flex-col min-h-0 overflow-hidden relative">
-      {/* ═══ OVERLAY: alumno se salió de la pestaña (visible cuando isAway) ═══ */}
-      {isAway && !closed && (
-        <div
-          role="alertdialog"
-          aria-live="assertive"
-          className="absolute inset-0 z-50 bg-red-950/95 flex items-center justify-center p-8"
-          data-testid="focus-lost-overlay"
-        >
-          <div className="max-w-xl text-center text-white">
-            <div className="text-6xl mb-4">⚠️</div>
-            <h2 className="text-2xl font-bold mb-3">Te saliste del episodio</h2>
-            <p className="text-base mb-2">
-              Detectamos que cambiaste de pestaña o ventana. Esta acción quedó{" "}
-              <strong>registrada criptográficamente</strong> en la trazabilidad
-              del episodio.
-            </p>
-            <p className="text-sm opacity-90 mb-4">
-              El episodio se está cerrando <strong>automáticamente</strong>. El
-              sistema lo marcará como abandono por distracción.
-            </p>
-          </div>
-        </div>
-      )}
-      {/* ═══ BANNER: alumno volvió de una salida (visible cuando showFocusWarning) ═══ */}
-      {showFocusWarning && !isAway && !closed && (
-        <div
-          role="status"
-          className="absolute top-0 inset-x-0 z-40 bg-amber-100 border-b-2 border-amber-500 px-6 py-3 flex items-center justify-between text-amber-900"
-          data-testid="focus-recovered-banner"
-        >
-          <div className="text-sm">
-            <strong>Volviste al episodio.</strong> Estuviste fuera{" "}
-            <span className="font-mono">{awayLastDurationSec.toFixed(1)}s</span>.
-            Quedó registrado en la trazabilidad. ¿Querés cerrar el episodio
-            ahora?
-          </div>
-          <div className="flex items-center gap-2 ml-4">
-            <button
-              type="button"
-              onClick={() => {
-                setShowFocusWarning(false)
-                void handleClose()
-              }}
-              data-testid="focus-recovered-close-button"
-              className="press-shrink px-3 py-1.5 text-xs font-medium bg-amber-600 text-white rounded hover:bg-amber-700"
-            >
-              Sí, cerrar episodio
-            </button>
-            <button
-              type="button"
-              onClick={() => setShowFocusWarning(false)}
-              className="text-amber-900 hover:text-amber-700 font-medium text-sm px-2"
-            >
-              Continuar
-            </button>
-          </div>
-        </div>
-      )}
       {/* ═══ HEADER CONTEXT — chip de episodio + tiempo + nivel + acciones ═══ */}
       <div
         data-testid="episode-context-header"
