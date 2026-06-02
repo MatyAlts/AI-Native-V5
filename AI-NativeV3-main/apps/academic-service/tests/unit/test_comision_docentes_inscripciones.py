@@ -18,18 +18,16 @@ from pydantic import ValidationError
 
 class TestUsuarioComisionCreate:
     def test_crea_con_campos_obligatorios(self) -> None:
-        uc = UsuarioComisionCreate(
-            user_id=uuid4(),
-            rol="titular",
-            fecha_desde=date(2026, 3, 1),
-        )
+        # El admin asigna por email (no por user_id: el docente todavia no
+        # se logueo). rol y fecha_desde tienen defaults.
+        uc = UsuarioComisionCreate(email="docente@utn.edu.ar")
         assert uc.rol == "titular"
         assert uc.fecha_hasta is None
 
     def test_acepta_todos_los_roles(self) -> None:
         for rol in ("titular", "adjunto", "jtp", "ayudante", "corrector"):
             uc = UsuarioComisionCreate(
-                user_id=uuid4(),
+                email="docente@utn.edu.ar",
                 rol=rol,
                 fecha_desde=date(2026, 3, 1),
             )
@@ -38,14 +36,18 @@ class TestUsuarioComisionCreate:
     def test_rechaza_rol_invalido(self) -> None:
         with pytest.raises(ValidationError):
             UsuarioComisionCreate(
-                user_id=uuid4(),
+                email="docente@utn.edu.ar",
                 rol="rectorado",  # no existe
                 fecha_desde=date(2026, 3, 1),
             )
 
+    def test_rechaza_sin_email(self) -> None:
+        with pytest.raises(ValidationError):
+            UsuarioComisionCreate(rol="titular")  # falta email obligatorio
+
     def test_acepta_fecha_hasta(self) -> None:
         uc = UsuarioComisionCreate(
-            user_id=uuid4(),
+            email="docente@utn.edu.ar",
             rol="jtp",
             fecha_desde=date(2026, 3, 1),
             fecha_hasta=date(2026, 7, 31),

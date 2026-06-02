@@ -341,9 +341,12 @@ class ComisionService:
             id=uuid4(),
             tenant_id=comision.tenant_id,
             comision_id=comision_id,
-            user_id=data.user_id,
+            # user_id NULL: el admin asigna por email; la identidad real se
+            # vincula en el primer login del docente con Clerk.
+            user_id=None,
+            email=data.email.strip().lower(),
             rol=data.rol,
-            fecha_desde=data.fecha_desde,
+            fecha_desde=data.fecha_desde or date.today(),
             fecha_hasta=data.fecha_hasta,
         )
         self.session.add(uc)

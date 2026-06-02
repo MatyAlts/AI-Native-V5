@@ -15,12 +15,12 @@ from __future__ import annotations
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, status
-from sqlalchemy import select
+from sqlalchemy import func, select, update
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from academic_service.auth import User, get_current_user, get_db, require_role
-from academic_service.models.operacional import Inscripcion
+from academic_service.models.operacional import Inscripcion, UsuarioComision
 from academic_service.models.transversal import StudentProfile
 from academic_service.schemas.student_profile import StudentProfileOut, StudentProfileUpsert
 
@@ -57,8 +57,25 @@ async def upsert_my_profile(
         .returning(StudentProfile)
     )
     result = await db.execute(stmt)
+    profile = result.scalar_one()
+
+    # Resolución de asignaciones docentes pendientes: el admin pudo haber
+    # asignado a este usuario como docente por email ANTES de su primer login.
+    # Ahora que conocemos su user_id real (derivado de Clerk), lo vinculamos a
+    # esas comisiones para que aparezcan en GET /comisiones/mis.
+    if data.email:
+        await db.execute(
+            update(UsuarioComision)
+            .where(
+                func.lower(UsuarioComision.email) == data.email.strip().lower(),
+                UsuarioComision.user_id.is_(None),
+                UsuarioComision.tenant_id == user.tenant_id,
+            )
+            .values(user_id=user.id)
+        )
+
     await db.commit()
-    return result.scalar_one()
+    return profile
 
 
 # Endpoint del docente: monta sobre el prefix /api/v1/comisiones existente

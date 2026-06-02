@@ -142,7 +142,11 @@ class UsuarioComision(Base, TenantMixin, TimestampMixin):
 
     id: Mapped[uuid.UUID] = uuid_pk()
     comision_id: Mapped[uuid.UUID] = fk_uuid("comisiones.id")
-    user_id: Mapped[uuid.UUID] = mapped_column(PgUUID(as_uuid=True), nullable=False)
+    # user_id es NULL hasta que el docente se loguea con Clerk: el admin asigna
+    # por email y la identidad real se resuelve en el primer login (matching por
+    # email). email queda como ancla persistente de la asignación.
+    user_id: Mapped[uuid.UUID | None] = mapped_column(PgUUID(as_uuid=True), nullable=True)
+    email: Mapped[str | None] = mapped_column(String(255), nullable=True)
     rol: Mapped[str] = mapped_column(String(20), nullable=False)
     # titular|adjunto|jtp|ayudante|corrector
     permisos_extra: Mapped[list[str]] = mapped_column(JSONB, default=list)
