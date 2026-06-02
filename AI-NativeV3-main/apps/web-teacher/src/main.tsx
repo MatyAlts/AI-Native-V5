@@ -1,7 +1,7 @@
-import { ClerkProvider, useAuth } from "@clerk/clerk-react"
+import { ClerkProvider, useAuth, useUser } from "@clerk/clerk-react"
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query"
 import { RouterProvider, createRouter } from "@tanstack/react-router"
-import { StrictMode } from "react"
+import { StrictMode, useEffect } from "react"
 import { createRoot } from "react-dom/client"
 import "./index.css"
 import { routeTree } from "./routeTree.gen"
@@ -50,6 +50,34 @@ declare module "@tanstack/react-router" {
 
 function InnerApp() {
   const { getToken } = useAuth()
+  const { user } = useUser()
+
+  // Auto-llenado del perfil del docente al loguearse con Clerk. Es lo que
+  // dispara la resolucion server-side: el backend matchea este email con las
+  // asignaciones que el admin creo por email (usuarios_comision) y vincula la
+  // identidad real del docente a sus comisiones. Sin esto, el docente se
+  // loguea pero nunca aparece como docente de ninguna comision.
+  useEffect(() => {
+    if (!user) return
+    const email = user.primaryEmailAddress?.emailAddress ?? null
+    if (!email) return
+    const fullName =
+      user.fullName ?? [user.firstName, user.lastName].filter(Boolean).join(" ").trim() ?? null
+    const key = `teacherProfilePushed_${user.id}`
+    if (sessionStorage.getItem(key)) return
+    void fetch("/api/v1/users/me/profile", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ full_name: fullName || null, email }),
+    })
+      .then((r) => {
+        if (r.ok) sessionStorage.setItem(key, "1")
+      })
+      .catch(() => {
+        /* silencioso: no bloquea el flujo del docente */
+      })
+  }, [user])
+
   return <RouterProvider router={router} context={{ getToken }} />
 }
 
