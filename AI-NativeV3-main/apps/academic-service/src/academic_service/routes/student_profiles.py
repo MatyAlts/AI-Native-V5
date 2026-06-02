@@ -59,16 +59,16 @@ async def upsert_my_profile(
     result = await db.execute(stmt)
     profile = result.scalar_one()
 
-    # Resolución de asignaciones docentes pendientes: el admin pudo haber
-    # asignado a este usuario como docente por email ANTES de su primer login.
-    # Ahora que conocemos su user_id real (derivado de Clerk), lo vinculamos a
-    # esas comisiones para que aparezcan en GET /comisiones/mis.
+    # Resolución de asignaciones docentes por email: el admin asigna al docente
+    # por email (antes de que se loguee). Al loguearse, vinculamos esas
+    # asignaciones a su user_id REAL (derivado del token). Idempotente y
+    # re-vinculante: el registro con ese email siempre queda con la identidad
+    # del login actual (cubre el caso de un user_id viejo/demo previo).
     if data.email:
         await db.execute(
             update(UsuarioComision)
             .where(
                 func.lower(UsuarioComision.email) == data.email.strip().lower(),
-                UsuarioComision.user_id.is_(None),
                 UsuarioComision.tenant_id == user.tenant_id,
             )
             .values(user_id=user.id)
