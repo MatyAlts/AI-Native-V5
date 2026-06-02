@@ -10,7 +10,7 @@ from __future__ import annotations
 
 from datetime import datetime
 from decimal import Decimal
-from typing import Any, Literal
+from typing import Literal
 from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
@@ -154,6 +154,10 @@ class _EjercicioBase(BaseModel):
     enunciado_md: str = Field(min_length=1)
     inicial_codigo: str | None = None
 
+    # Materia del ejercicio (Prog 1, Prog 2, …). El banco se filtra por esta
+    # materia; nullable para compat con el banco histórico (global por tenant).
+    materia_id: UUID | None = None
+
     unidad_tematica: UnidadTematica
     dificultad: Dificultad | None = None
     prerequisitos: PrerequisitosSchema = Field(default_factory=PrerequisitosSchema)
@@ -188,6 +192,7 @@ class EjercicioUpdate(BaseModel):
     titulo: str | None = Field(default=None, min_length=1, max_length=200)
     enunciado_md: str | None = Field(default=None, min_length=1)
     inicial_codigo: str | None = None
+    materia_id: UUID | None = None
     unidad_tematica: UnidadTematica | None = None
     dificultad: Dificultad | None = None
     prerequisitos: PrerequisitosSchema | None = None

@@ -22,17 +22,17 @@ from uuid import UUID
 
 import httpx
 from fastapi import APIRouter, Depends, HTTPException, Query, status
+from platform_contracts.academic.ejercicio import (
+    EjercicioCreate,
+    EjercicioRead,
+    EjercicioUpdate,
+)
 from pydantic import BaseModel, Field
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from academic_service.auth import User, get_db, require_permission
 from academic_service.schemas import ListMeta, ListResponse
 from academic_service.services.ejercicio_service import EjercicioService
-from platform_contracts.academic.ejercicio import (
-    EjercicioCreate,
-    EjercicioRead,
-    EjercicioUpdate,
-)
 
 logger = logging.getLogger(__name__)
 
@@ -61,11 +61,14 @@ async def list_ejercicios(
     dificultad: Literal["basica", "intermedia", "avanzada"] | None = None,
     created_by: UUID | None = None,
     created_via_ai: bool | None = None,
+    materia_id: UUID | None = None,
     user: User = Depends(require_permission("ejercicio", "read")),
     db: AsyncSession = Depends(get_db),
 ) -> ListResponse[EjercicioRead]:
     """Lista ejercicios del banco con filtros opcionales.
 
+    - `materia_id`: filtra el banco por materia (Prog 1, Prog 2, …). El
+      web-teacher lo deriva de la materia de la comisión activa del docente.
     - `unidad_tematica`: filtra por taxonomía pedagógica del ejercicio.
     - `dificultad`: filtra por dificultad declarada.
     - `created_by`: docente creador.
@@ -77,6 +80,7 @@ async def list_ejercicios(
         dificultad=dificultad,
         created_by=created_by,
         created_via_ai=created_via_ai,
+        materia_id=materia_id,
         limit=limit,
         cursor=cursor,
     )

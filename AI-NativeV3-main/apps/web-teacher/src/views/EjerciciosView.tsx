@@ -28,6 +28,7 @@ import {
   type EjercicioGenerateRequest,
   type Materia,
   type UnidadTematica,
+  comisionesApi,
   createEjercicio,
   deleteEjercicio,
   generateEjercicioWithAI,
@@ -38,6 +39,7 @@ import {
 import { helpContent } from "../utils/helpContent"
 
 interface Props {
+  comisionId: string
   getToken: () => Promise<string | null>
 }
 
@@ -88,7 +90,7 @@ function emptyEjercicio(unidad: UnidadTematica = "secuenciales"): EjercicioCreat
   }
 }
 
-export function EjerciciosView({ getToken }: Props) {
+export function EjerciciosView({ comisionId, getToken }: Props) {
   const [ejercicios, setEjercicios] = useState<Ejercicio[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
@@ -96,12 +98,41 @@ export function EjerciciosView({ getToken }: Props) {
   const [filterUnidad, setFilterUnidad] = useState<UnidadTematica | "">("")
   const [filterDificultad, setFilterDificultad] = useState<Dificultad | "">("")
   const [filterIA, setFilterIA] = useState<"" | "true" | "false">("")
+  // El banco se filtra por la materia de la comisión activa (Prog 1, Prog 2…).
+  // null = todavía resolviendo o la comisión no es del docente.
+  const [materiaId, setMateriaId] = useState<string | null>(null)
+
+  useEffect(() => {
+    let cancelled = false
+    setMateriaId(null)
+    comisionesApi
+      .listMine()
+      .then((res) => {
+        if (cancelled) return
+        const c = res.items.find((x) => x.id === comisionId)
+        setMateriaId(c?.materia_id ?? null)
+      })
+      .catch(() => {
+        if (!cancelled) setMateriaId(null)
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [comisionId])
 
   const fetchList = useCallback(() => {
+    // Sin materia resuelta no listamos: evita mostrar el banco global de
+    // otra materia/docente mientras resolvemos la comisión activa.
+    if (!materiaId) {
+      setEjercicios([])
+      setLoading(false)
+      return
+    }
     setLoading(true)
     setError(null)
     listEjercicios(
       {
+        materia_id: materiaId,
         ...(filterUnidad ? { unidad_tematica: filterUnidad } : {}),
         ...(filterDificultad ? { dificultad: filterDificultad } : {}),
         ...(filterIA ? { created_via_ai: filterIA === "true" } : {}),
@@ -112,7 +143,7 @@ export function EjerciciosView({ getToken }: Props) {
       .then((r) => setEjercicios(r.data))
       .catch((e) => setError(String(e)))
       .finally(() => setLoading(false))
-  }, [filterUnidad, filterDificultad, filterIA, getToken])
+  }, [materiaId, filterUnidad, filterDificultad, filterIA, getToken])
 
   useEffect(() => {
     fetchList()
@@ -124,7 +155,9 @@ export function EjerciciosView({ getToken }: Props) {
 
   async function handleCreate(body: EjercicioCreate): Promise<void> {
     try {
-      await createEjercicio(body, getToken)
+      // Taggea el ejercicio con la materia de la comisión activa para que
+      // quede en el banco de esa materia (Prog 1, Prog 2…).
+      await createEjercicio({ ...body, materia_id: materiaId }, getToken)
       closeModal()
       fetchList()
     } catch (e) {

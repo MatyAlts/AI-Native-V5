@@ -15,15 +15,15 @@ from __future__ import annotations
 from typing import Any
 from uuid import UUID, uuid4
 
+from platform_contracts.academic.ejercicio import (
+    EjercicioCreate,
+    EjercicioUpdate,
+)
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from academic_service.auth.dependencies import User
 from academic_service.models import AuditLog, Ejercicio
 from academic_service.repositories import EjercicioRepository
-from platform_contracts.academic.ejercicio import (
-    EjercicioCreate,
-    EjercicioUpdate,
-)
 
 
 class EjercicioService:
@@ -105,6 +105,7 @@ class EjercicioService:
         dificultad: str | None = None,
         created_by: UUID | None = None,
         created_via_ai: bool | None = None,
+        materia_id: UUID | None = None,
         limit: int = 50,
         cursor: UUID | None = None,
     ) -> list[Ejercicio]:
@@ -115,6 +116,10 @@ class EjercicioService:
             filters["dificultad"] = dificultad
         if created_by:
             filters["created_by"] = created_by
+        if materia_id:
+            # Banco por materia (Prog 1, Prog 2, …): la vista del docente se
+            # filtra por la materia de su comisión activa.
+            filters["materia_id"] = materia_id
         if created_via_ai is not None:
             filters["created_via_ai"] = created_via_ai
         return await self.repo.list(limit=limit, cursor=cursor, filters=filters)

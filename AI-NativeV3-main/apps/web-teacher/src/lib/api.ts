@@ -1648,6 +1648,7 @@ export interface Ejercicio {
   titulo: string
   enunciado_md: string
   inicial_codigo: string | null
+  materia_id: string | null
   unidad_tematica: UnidadTematica
   dificultad: Dificultad | null
   prerequisitos: Prerequisitos
@@ -1669,6 +1670,7 @@ export interface EjercicioCreate {
   titulo: string
   enunciado_md: string
   inicial_codigo?: string | null
+  materia_id?: string | null
   unidad_tematica: UnidadTematica
   dificultad?: Dificultad | null
   prerequisitos?: Prerequisitos
@@ -1692,6 +1694,7 @@ export interface EjercicioListResponse {
 
 export async function listEjercicios(
   params: {
+    materia_id?: string
     unidad_tematica?: UnidadTematica
     dificultad?: Dificultad
     created_by?: string
@@ -1702,6 +1705,7 @@ export async function listEjercicios(
   getToken?: TokenGetter,
 ): Promise<EjercicioListResponse> {
   const qs = new URLSearchParams()
+  if (params.materia_id) qs.set("materia_id", params.materia_id)
   if (params.unidad_tematica) qs.set("unidad_tematica", params.unidad_tematica)
   if (params.dificultad) qs.set("dificultad", params.dificultad)
   if (params.created_by) qs.set("created_by", params.created_by)

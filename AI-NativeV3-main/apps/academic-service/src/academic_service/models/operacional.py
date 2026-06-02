@@ -198,7 +198,7 @@ class Unidad(Base, TenantMixin, TimestampMixin):
     )
     created_by: Mapped[uuid.UUID] = mapped_column(PgUUID(as_uuid=True), nullable=False)
 
-    tareas_practicas: Mapped[list["TareaPractica"]] = relationship(
+    tareas_practicas: Mapped[list[TareaPractica]] = relationship(
         back_populates="unidad"
     )
 
@@ -430,6 +430,12 @@ class Ejercicio(Base, TenantMixin, TimestampMixin):
     titulo: Mapped[str] = mapped_column(String(200), nullable=False)
     enunciado_md: Mapped[str] = mapped_column(Text, nullable=False)
     inicial_codigo: Mapped[str | None] = mapped_column(Text, nullable=True)
+
+    # ── Ámbito académico ───────────────────────────────────────
+    # Materia a la que pertenece el ejercicio (Prog 1, Prog 2, …). Nullable
+    # para compat con el banco histórico (global por tenant). El listado del
+    # banco se filtra por esta materia (la de la comisión activa del docente).
+    materia_id: Mapped[uuid.UUID | None] = fk_uuid("materias.id", nullable=True)
 
     # ── Clasificación pedagógica ───────────────────────────────
     # 'secuenciales' | 'condicionales' | 'repetitivas' | 'mixtos'
