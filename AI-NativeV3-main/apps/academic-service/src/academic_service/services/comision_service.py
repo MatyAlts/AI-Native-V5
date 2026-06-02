@@ -7,8 +7,17 @@ pertenezca al tenant del user, y emite ComisionCreada al bus.
 from __future__ import annotations
 
 import builtins
+import secrets
 from datetime import date
 from uuid import UUID, uuid4
+
+# Alfabeto sin caracteres ambiguos (O/0, I/1/L) para que el código sea fácil
+# de dictar/copiar. 6 chars => ~887M combinaciones, colisión despreciable.
+_INVITE_ALPHABET = "ABCDEFGHJKMNPQRSTUVWXYZ23456789"
+
+
+def _generate_invite_code() -> str:
+    return "".join(secrets.choice(_INVITE_ALPHABET) for _ in range(6))
 
 from fastapi import HTTPException, status
 from sqlalchemy import and_, select
@@ -241,6 +250,10 @@ class ComisionService:
                 "cupo_maximo": data.cupo_maximo,
                 "horario": data.horario,
                 "ai_budget_monthly_usd": data.ai_budget_monthly_usd,
+                # Código de invitación auto-generado: los alumnos lo usan para
+                # inscribirse (POST /comisiones/join). Sin esto la comisión
+                # quedaba sin código y nadie podía sumarse.
+                "invite_code": _generate_invite_code(),
             }
         )
 
