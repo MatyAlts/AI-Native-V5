@@ -74,25 +74,25 @@ function InnerApp() {
   // asignaciones que el admin creo por email (usuarios_comision) y vincula la
   // identidad real del docente a sus comisiones. Sin esto, el docente se
   // loguea pero nunca aparece como docente de ninguna comision.
+  //
+  // CORRE EN CADA CARGA (no se gatea por sessionStorage): la re-vinculacion
+  // es idempotente y barata, y asi un docente al que el admin le asigna una
+  // comision DESPUES de su primer login la ve con solo RECARGAR (antes el
+  // gate de sessionStorage lo saltaba en reloads de la misma pestana y la
+  // asignacion nueva nunca se vinculaba). Ver docs/filtrado-teacher-plan.md.
   useEffect(() => {
     if (!user) return
     const email = user.primaryEmailAddress?.emailAddress ?? null
     if (!email) return
     const fullName =
       user.fullName ?? [user.firstName, user.lastName].filter(Boolean).join(" ").trim() ?? null
-    const key = `teacherProfilePushed_${user.id}`
-    if (sessionStorage.getItem(key)) return
     void fetch("/api/v1/users/me/profile", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ full_name: fullName || null, email }),
+    }).catch(() => {
+      /* silencioso: no bloquea el flujo del docente */
     })
-      .then((r) => {
-        if (r.ok) sessionStorage.setItem(key, "1")
-      })
-      .catch(() => {
-        /* silencioso: no bloquea el flujo del docente */
-      })
   }, [user])
 
   return <RouterProvider router={router} context={{ getToken }} />
