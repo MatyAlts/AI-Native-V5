@@ -14,7 +14,7 @@ const DEV_NO_CLERK = !CLERK_PUBLISHABLE_KEY
 
 const originalFetch = window.fetch.bind(window)
 const apiBase = (import.meta.env.VITE_API_URL ?? "").replace(/\/$/, "")
-window.fetch = (input, init) => {
+window.fetch = async (input, init) => {
   const rawUrl = typeof input === "string" ? input : input instanceof URL ? input.href : input.url
   const isRelativeApi = rawUrl.startsWith("/api/")
   const targetUrl = isRelativeApi && apiBase ? `${apiBase}${rawUrl}` : rawUrl
@@ -23,6 +23,23 @@ window.fetch = (input, init) => {
   const headers = new Headers(init?.headers ?? {})
   const tenantId = window.localStorage.getItem(SELECTED_TENANT_STORAGE_KEY)
   if (tenantId) headers.set("x-selected-tenant", tenantId)
+  // Adjuntar el token de Clerk a TODO request /api/ (cubre el push de perfil y
+  // cualquier fetch suelto que no pase por authHeaders). Si ya viene Authorization
+  // (de lib/api authHeaders), lo respetamos. En dev sin Clerk, window.Clerk no
+  // existe y el try/catch deja que el gateway use los headers X-* del proxy.
+  if (!headers.has("Authorization")) {
+    try {
+      const clerk = (
+        window as unknown as {
+          Clerk?: { session?: { getToken: () => Promise<string | null> } }
+        }
+      ).Clerk
+      const token = await clerk?.session?.getToken()
+      if (token) headers.set("Authorization", `Bearer ${token}`)
+    } catch {
+      /* dev sin Clerk: sin token; el gateway cae a headers de dev */
+    }
+  }
   return originalFetch(targetUrl, { ...init, headers })
 }
 
