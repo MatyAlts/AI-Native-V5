@@ -44,33 +44,60 @@ function useEnrollment(authUser: AuthUser | null, isDev: boolean) {
     }
     if (!isDev) setClerkUserId(authUser.id)
 
-    // Auto-llenado del perfil: una vez por session, envia full_name + email
-    // al backend para que el docente vea el nombre real en la UI.
-    const profileKey = `profilePushed_${authUser.id}`
-    if (!sessionStorage.getItem(profileKey)) {
-      void fetch("/api/v1/users/me/profile", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ full_name: authUser.fullName || null, email: authUser.email }),
-      }).then((r) => {
-        if (r.ok) sessionStorage.setItem(profileKey, "1")
-      }).catch(() => {/* silencioso: no bloquea el flujo del alumno */})
-    }
+    let cancelled = false
+    ;(async () => {
+      // Auto-llenado + re-vinculación: en CADA carga pusheamos el perfil
+      // (idempotente). Esto resuelve la asignación docente por email: si el
+      // admin promovió este correo a docente, acá queda vinculado a su user_id.
+      try {
+        await fetch("/api/v1/users/me/profile", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ full_name: authUser.fullName || null, email: authUser.email }),
+        })
+      } catch {
+        /* silencioso */
+      }
+      if (cancelled) return
 
-    const saved = localStorage.getItem(ENROLLED_COMISION_KEY)
-    if (saved) {
-      setState("enrolled")
-    } else {
-      // Verificar si ya tiene inscripción
-      fetch("/api/v1/materias/mias").then(async (r) => {
+      // Ruteo por rol: si es docente (tiene comisiones asignadas), va al panel
+      // docente. Así, tras ser promovido, un F5 lo lleva solo a /teacher/.
+      try {
+        const r = await fetch("/api/v1/comisiones/mis")
+        if (r.ok) {
+          const j = await r.json()
+          if (!cancelled && Array.isArray(j.data) && j.data.length > 0) {
+            window.location.href = "/teacher/"
+            return
+          }
+        }
+      } catch {
+        /* si falla, seguimos como alumno */
+      }
+      if (cancelled) return
+
+      // Flujo alumno
+      const saved = localStorage.getItem(ENROLLED_COMISION_KEY)
+      if (saved) {
+        setState("enrolled")
+        return
+      }
+      try {
+        const r = await fetch("/api/v1/materias/mias")
         const j = await r.json()
+        if (cancelled) return
         if (j.data && j.data.length > 0) {
           localStorage.setItem(ENROLLED_COMISION_KEY, j.data[0].comision_id)
           setState("enrolled")
         } else {
           setState("need-code")
         }
-      }).catch(() => setState("need-code"))
+      } catch {
+        if (!cancelled) setState("need-code")
+      }
+    })()
+    return () => {
+      cancelled = true
     }
   }, [authUser?.id, isDev])
 

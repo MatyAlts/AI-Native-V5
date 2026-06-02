@@ -16,7 +16,7 @@ const CLERK_PUBLISHABLE_KEY = import.meta.env.VITE_CLERK_PUBLISHABLE_KEY as stri
 
 const originalFetch = window.fetch.bind(window)
 const apiBase = (import.meta.env.VITE_API_URL ?? "").replace(/\/$/, "")
-window.fetch = (input, init) => {
+window.fetch = async (input, init) => {
   const rawUrl = typeof input === "string" ? input : input instanceof URL ? input.href : input.url
   const isRelativeApi = rawUrl.startsWith("/api/")
   const targetUrl = isRelativeApi && apiBase ? `${apiBase}${rawUrl}` : rawUrl
@@ -27,6 +27,21 @@ window.fetch = (input, init) => {
   if (tenantId) headers.set("x-selected-tenant", tenantId)
   const userUuid = getCurrentUserUuid()
   if (userUuid) headers.set("x-user-id", userUuid)
+  // Token de Clerk: el gateway lo valida y deriva la identidad real. En dev
+  // sin Clerk, window.Clerk no existe y se usan los headers X-* de arriba.
+  if (!headers.has("Authorization")) {
+    try {
+      const clerk = (
+        window as unknown as {
+          Clerk?: { session?: { getToken: () => Promise<string | null> } }
+        }
+      ).Clerk
+      const token = await clerk?.session?.getToken()
+      if (token) headers.set("Authorization", `Bearer ${token}`)
+    } catch {
+      /* dev sin Clerk: sin token */
+    }
+  }
   return originalFetch(targetUrl, { ...init, headers })
 }
 
