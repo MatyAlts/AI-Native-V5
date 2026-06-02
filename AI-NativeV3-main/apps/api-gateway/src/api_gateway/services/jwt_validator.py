@@ -20,6 +20,7 @@ from __future__ import annotations
 
 import logging
 import time
+import uuid
 from dataclasses import dataclass
 from typing import Any
 
@@ -192,6 +193,95 @@ class JWTValidator:
             email=claims.get("email", ""),
             roles=roles,
             realm=claims.get("iss", "").rstrip("/").split("/")[-1],
+            raw_claims=claims,
+        )
+
+
+class ClerkJWTValidator(JWTValidator):
+    """Valida JWTs emitidos por Clerk (en vez de Keycloak).
+
+    Diferencias con el validator base (Keycloak):
+      - NO verifica audience (Clerk no setea `aud` por defecto en el session
+        token; la confianza viene de issuer + firma JWKS).
+      - El `user_id` interno se DERIVA del `sub` de Clerk con UUID v5 y el
+        MISMO namespace que usa el frontend (`clerkIdToUuid`). Asi el user_id
+        del backend coincide con el student_pseudonym que genera el front.
+      - `tenant_id` es fijo (el piloto es un solo tenant) — no viene del token.
+      - `roles` base configurable. La distincion real docente/alumno la da
+        `usuarios_comision`/`inscripciones` por identidad (no el token).
+      - Requiere el claim `email` (configurado en Clerk → Customize session
+        token). Es la clave del matching docente y debe venir del token
+        validado (no del body, que seria falsificable).
+    """
+
+    # MISMO namespace que apps/web-student/src/auth.ts::CLERK_PSEUDONYM_NAMESPACE.
+    # Si cambia uno, cambiar el otro — sino el user_id del backend deja de
+    # coincidir con el pseudonym del front y el docente no ve sus datos.
+    CLERK_PSEUDONYM_NAMESPACE = uuid.UUID("8f9d2c4a-7b1e-5d3f-9a8c-1e2b3c4d5e6f")
+
+    def __init__(
+        self,
+        config: JWTValidatorConfig,
+        fixed_tenant_id: str,
+        base_roles: frozenset[str],
+        jwks_cache: JWKSCache | None = None,
+    ) -> None:
+        super().__init__(config, jwks_cache)
+        self.fixed_tenant_id = fixed_tenant_id
+        self.base_roles = base_roles
+
+    async def validate(self, token: str) -> ValidatedPrincipal:
+        try:
+            unverified_header = jwt.get_unverified_header(token)
+        except jwt.InvalidTokenError as e:
+            raise JWTValidationError(f"Token malformado: {e}") from e
+
+        kid = unverified_header.get("kid")
+        alg = unverified_header.get("alg", "")
+        if not kid:
+            raise JWTValidationError("Token sin 'kid' en header")
+        if alg != "RS256":
+            raise JWTValidationError(f"Algoritmo no permitido: {alg}")
+
+        key = await self.jwks_cache.get_key(kid)
+
+        try:
+            claims = jwt.decode(
+                token,
+                key=key,
+                algorithms=["RS256"],
+                issuer=self.config.issuer,
+                leeway=self.config.leeway_seconds,
+                options={
+                    "require": ["exp", "iat", "iss", "sub"],
+                    "verify_exp": True,
+                    "verify_iat": True,
+                    "verify_iss": True,
+                    "verify_aud": False,  # Clerk no setea `aud` por defecto
+                    "verify_signature": True,
+                },
+            )
+        except jwt.ExpiredSignatureError:
+            raise JWTValidationError("Token expirado")
+        except jwt.InvalidIssuerError:
+            raise JWTValidationError(f"Issuer inválido; se esperaba {self.config.issuer}")
+        except jwt.InvalidTokenError as e:
+            raise JWTValidationError(f"Token inválido: {e}") from e
+
+        clerk_sub = claims["sub"]
+        email = claims.get("email")
+        if not email:
+            raise JWTValidationError(
+                "Token de Clerk sin claim 'email' (configurar Customize session token)"
+            )
+        derived_user_id = str(uuid.uuid5(self.CLERK_PSEUDONYM_NAMESPACE, clerk_sub))
+
+        return ValidatedPrincipal(
+            user_id=derived_user_id,
+            tenant_id=self.fixed_tenant_id,
+            email=email,
+            roles=self.base_roles,
+            realm="clerk",
             raw_claims=claims,
         )
 
