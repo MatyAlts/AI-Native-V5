@@ -28,8 +28,11 @@ interface Props {
  * truncado.
  */
 export function comisionLabel(c: Comision): string {
-  if (c.nombre.length > 0) return c.nombre
-  return c.codigo
+  const comision = c.nombre.length > 0 ? c.nombre : c.codigo
+  // Prefijar la materia (Prog 1 / Prog 2) para distinguir comisiones de
+  // distintas materias. Si el backend no la mandó, cae al nombre solo.
+  const materia = c.materia_nombre || c.materia_codigo
+  return materia ? `${materia} · ${comision}` : comision
 }
 
 /**

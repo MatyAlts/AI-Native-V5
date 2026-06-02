@@ -175,7 +175,15 @@ async def list_my_comisiones(
     """
     svc = ComisionService(db)
     objs = await svc.list_for_user(user_id=user.id, limit=limit, cursor=cursor)
-    items = [_redact_invite_code(ComisionOut.model_validate(o), user) for o in objs]
+    items = []
+    for o in objs:
+        out = _redact_invite_code(ComisionOut.model_validate(o), user)
+        # `materia` viene eager-loaded (selectinload) — sirve para que la UI
+        # distinga comisiones de distintas materias (Prog 1 vs Prog 2).
+        if o.materia is not None:
+            out.materia_nombre = o.materia.nombre
+            out.materia_codigo = o.materia.codigo
+        items.append(out)
     next_cursor = str(objs[-1].id) if len(objs) == limit else None
     return ListResponse(data=items, meta=ListMeta(cursor_next=next_cursor))
 
@@ -252,7 +260,7 @@ async def get_config_hashes(
                     "classifier-service devolvio payload inesperado",
                     extra={"payload": data},
                 )
-    except Exception as exc:  # noqa: BLE001 — best-effort: fallback hardcoded.
+    except Exception as exc:
         logger.warning(
             "classifier-service no respondio config-hash; usando fallback",
             extra={"error": str(exc), "comision_id": str(comision_id)},

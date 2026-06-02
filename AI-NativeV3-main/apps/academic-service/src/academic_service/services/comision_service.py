@@ -22,6 +22,7 @@ def _generate_invite_code() -> str:
 from fastapi import HTTPException, status
 from sqlalchemy import and_, select
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import selectinload
 
 from academic_service.auth.dependencies import User
 from academic_service.models import AuditLog, Comision, Inscripcion, Periodo, UsuarioComision
@@ -603,6 +604,7 @@ class ComisionService:
         stmt = (
             select(Comision)
             .join(UsuarioComision, UsuarioComision.comision_id == Comision.id)
+            .options(selectinload(Comision.materia))
             .where(
                 UsuarioComision.user_id == user_id,
                 UsuarioComision.deleted_at.is_(None),

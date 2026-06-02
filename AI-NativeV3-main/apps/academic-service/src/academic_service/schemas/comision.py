@@ -87,6 +87,11 @@ class ComisionOut(ComisionBase):
     tenant_id: UUID
     materia_id: UUID
     periodo_id: UUID
+    # Nombre/código de la materia, para distinguir comisiones de distintas
+    # materias en la UI (ej. un docente con una comisión de Prog 1 y otra de
+    # Prog 2). Lo puebla el endpoint que carga la relación `materia`.
+    materia_nombre: str | None = None
+    materia_codigo: str | None = None
     curso_config_hash: str | None = None
     invite_code: str | None = None
     created_at: datetime

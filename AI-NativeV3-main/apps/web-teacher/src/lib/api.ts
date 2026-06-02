@@ -568,6 +568,10 @@ export interface Comision {
    * el frontend leía `(c as any).nombre` como escape hatch — eliminado.
    */
   nombre: string
+  // Materia de la comisión (lo devuelve /comisiones/mis) — para distinguir
+  // comisiones de distintas materias en la UI (Prog 1 vs Prog 2).
+  materia_nombre?: string | null
+  materia_codigo?: string | null
   cupo_maximo: number
   horario: Record<string, unknown>
   ai_budget_monthly_usd: string
