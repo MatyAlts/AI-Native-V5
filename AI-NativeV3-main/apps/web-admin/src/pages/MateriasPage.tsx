@@ -107,6 +107,24 @@ export function MateriasPage(): ReactNode {
     }
   }
 
+  const handleDelete = async (m: Materia) => {
+    if (
+      !window.confirm(
+        `¿Eliminar la materia "${m.nombre}" (${m.codigo})? La quita del plan. ` +
+          "Si ya tiene comisiones/contenido asociado, puede fallar.",
+      )
+    ) {
+      return
+    }
+    setError(null)
+    try {
+      await materiasApi.delete(m.id)
+      await loadMaterias(planId)
+    } catch (e) {
+      setError(e instanceof HttpError ? `${e.status}: ${e.detail || e.title}` : String(e))
+    }
+  }
+
   // biome-ignore lint/correctness/useExhaustiveDependencies: loadUniversidades — fetch mount-only; el handler usa setState con identidad estable.
   useEffect(() => {
     void loadUniversidades()
@@ -342,6 +360,7 @@ export function MateriasPage(): ReactNode {
                   <th className="px-4 py-2 font-medium">Plan</th>
                   <th className="px-4 py-2 font-medium">Horas</th>
                   <th className="px-4 py-2 font-medium">Cuatri.</th>
+                  <th className="px-4 py-2 font-medium text-right">Acciones</th>
                 </tr>
               </thead>
               <tbody>
@@ -357,6 +376,15 @@ export function MateriasPage(): ReactNode {
                       <span className="inline-flex items-center rounded-full bg-surface-alt px-2 py-0.5 text-xs">
                         {m.cuatrimestre_sugerido}
                       </span>
+                    </td>
+                    <td className="px-4 py-2 text-right">
+                      <button
+                        type="button"
+                        onClick={() => handleDelete(m)}
+                        className="press-shrink rounded-md px-2.5 py-1 text-xs font-medium text-danger hover:bg-danger-soft"
+                      >
+                        Eliminar
+                      </button>
                     </td>
                   </tr>
                 ))}
