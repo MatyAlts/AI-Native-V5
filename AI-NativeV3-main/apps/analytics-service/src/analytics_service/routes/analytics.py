@@ -61,6 +61,83 @@ async def get_user_id(x_user_id: str | None = Header(default=None)) -> UUID:
         )
 
 
+async def assert_comision_member(
+    user_id: UUID, comision_id: UUID, tenant_id: UUID
+) -> None:
+    """Lanza 403 si `user_id` no es docente asignado a `comision_id`.
+
+    El análisis se aísla por comisión: en prod todos los docentes comparten
+    un tenant fijo, así que la RLS por tenant NO los separa — el aislamiento
+    lo da la asignación `usuarios_comision` (academic_main). Sin academic_db
+    configurado (dev/stub) el guard es no-op. Ver docs/filtrado-teacher-plan.md.
+    """
+    from platform_ops import set_tenant_rls
+    from sqlalchemy import text
+    from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
+
+    from analytics_service.config import settings
+
+    if not settings.academic_db_url:
+        return
+    engine = create_async_engine(settings.academic_db_url, pool_size=2)
+    try:
+        async with async_sessionmaker(engine, expire_on_commit=False)() as s:
+            await set_tenant_rls(s, tenant_id)
+            row = (
+                await s.execute(
+                    text(
+                        "SELECT 1 FROM usuarios_comision "
+                        "WHERE comision_id = :c AND user_id = :u "
+                        "AND deleted_at IS NULL LIMIT 1"
+                    ),
+                    {"c": str(comision_id), "u": str(user_id)},
+                )
+            ).first()
+        if row is None:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="No tenes acceso al analisis de esta comision.",
+            )
+    finally:
+        await engine.dispose()
+
+
+async def require_comision_access(
+    comision_id: UUID,
+    x_user_id: str | None = Header(default=None),
+    tenant_id: UUID = Depends(get_tenant_id),
+) -> None:
+    """Dependency: exige que el caller sea docente de `comision_id`.
+
+    FastAPI resuelve `comision_id` del path (cohort/*) o del query
+    (student/* lo pasan como query param) del endpoint. Aísla todo el
+    análisis por comisión. Para endpoints con `comision_id` en el body
+    (export) se llama a `assert_comision_member` a mano.
+
+    El enforcement se aplica SOLO cuando los datasources reales están
+    activos (prod) — mismo criterio dev/stub que usan los endpoints. En
+    dev/stub es no-op (el stub no tiene datos reales que aislar), así los
+    tests unit no necesitan simular identidad ni sembrar membresía.
+    """
+    from analytics_service.services.export import _real_data_source_enabled
+
+    if not _real_data_source_enabled():
+        return
+    if not x_user_id:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="X-User-Id header required",
+        )
+    try:
+        user_id = UUID(x_user_id)
+    except ValueError:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="X-User-Id must be a valid UUID",
+        )
+    await assert_comision_member(user_id, comision_id, tenant_id)
+
+
 # ── Kappa endpoint ────────────────────────────────────────────────────
 
 
@@ -188,7 +265,17 @@ async def export_cohort(
     global del analytics-service, y el worker lo consume en background.
     El investigador hace polling a `/cohort/export/{job_id}/status` y
     descarga con `/cohort/export/{job_id}/download` cuando está listo.
+
+    Aislamiento por comisión: solo un docente asignado a `req.comision_id`
+    puede exportar su dataset (el `comision_id` viene en el body, así que
+    el guard se llama a mano). Se aplica solo con datasources reales (prod);
+    en dev/stub es no-op.
     """
+    from analytics_service.services.export import _real_data_source_enabled
+
+    if _real_data_source_enabled():
+        await assert_comision_member(user_id, req.comision_id, tenant_id)
+
     import hashlib
     from datetime import UTC, datetime
     from uuid import uuid4
@@ -318,6 +405,7 @@ class CohortProgressionOut(BaseModel):
 async def get_cohort_progression(
     comision_id: UUID,
     tenant_id: UUID = Depends(get_tenant_id),
+    _comision_access: None = Depends(require_comision_access),
 ) -> CohortProgressionOut:
     """Analiza la progresión longitudinal de los estudiantes de una cohorte.
 
@@ -578,6 +666,7 @@ async def get_cii_evolution_longitudinal(
     comision_id: UUID,
     tenant_id: UUID = Depends(get_tenant_id),
     user_id: UUID = Depends(get_user_id),
+    _comision_access: None = Depends(require_comision_access),
 ) -> CIIEvolutionLongitudinalOut:
     """CII evolution longitudinal del estudiante en una comisión (ADR-018).
 
@@ -704,6 +793,7 @@ async def get_student_episodes(
     comision_id: UUID,
     tenant_id: UUID = Depends(get_tenant_id),
     user_id: UUID = Depends(get_user_id),
+    _comision_access: None = Depends(require_comision_access),
 ) -> StudentEpisodesOut:
     """Listado de episodios CERRADOS del estudiante con classification + template_id.
 
@@ -799,6 +889,7 @@ async def get_cohort_cii_quartiles(
     comision_id: UUID,
     tenant_id: UUID = Depends(get_tenant_id),
     user_id: UUID = Depends(get_user_id),
+    _comision_access: None = Depends(require_comision_access),
 ) -> CohortCIIQuartilesOut:
     """Cuartiles agregados de mean_slope longitudinales de la cohorte (ADR-022).
 
@@ -910,6 +1001,7 @@ async def get_student_alerts(
     comision_id: UUID,
     tenant_id: UUID = Depends(get_tenant_id),
     user_id: UUID = Depends(get_user_id),
+    _comision_access: None = Depends(require_comision_access),
 ) -> StudentAlertsOut:
     """Alertas longitudinales del estudiante vs. cohorte (ADR-022, audit G7).
 
@@ -1059,6 +1151,7 @@ async def get_cohort_alerts_summary(  # noqa: PLR0915  # endpoint complejo: gate
     periodo_id: UUID | None = None,
     tenant_id: UUID = Depends(get_tenant_id),
     user_id: UUID = Depends(get_user_id),
+    _comision_access: None = Depends(require_comision_access),
 ) -> CohortAlertsSummaryOut:
     """Resumen agregado de alertas predictivas por cohorte (ADR-022).
 
@@ -1261,6 +1354,7 @@ async def get_cohort_adversarial_events(
     periodo_id: UUID | None = None,
     tenant_id: UUID = Depends(get_tenant_id),
     user_id: UUID = Depends(get_user_id),
+    _comision_access: None = Depends(require_comision_access),
 ) -> CohortAdversarialEventsOut:
     """Agregado de eventos adversos para visibilidad pedagógica del docente.
 
@@ -1354,6 +1448,7 @@ async def get_cohort_integrity_events(
     comision_id: UUID,
     tenant_id: UUID = Depends(get_tenant_id),
     user_id: UUID = Depends(get_user_id),
+    _comision_access: None = Depends(require_comision_access),
 ) -> CohortIntegrityEventsOut:
     """Agregado de eventos de integridad del episodio (foco + clipboard).
 
