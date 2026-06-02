@@ -103,7 +103,7 @@ createRoot(rootElement).render(
           <div className="min-h-screen flex items-center justify-center bg-canvas">
             {/* forceRedirectUrl: sin esto Clerk redirige a "/" (que es el
                 web-student) tras el login. Forzamos quedarnos en /teacher. */}
-            <SignIn forceRedirectUrl="/teacher" signUpForceRedirectUrl="/teacher" />
+            <SignIn forceRedirectUrl="/teacher/" signUpForceRedirectUrl="/teacher/" />
           </div>
         </SignedOut>
         <SignedIn>
