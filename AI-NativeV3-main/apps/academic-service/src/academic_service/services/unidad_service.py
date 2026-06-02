@@ -104,9 +104,17 @@ class UnidadService:
         return unidad
 
     async def list_by_comision(
-        self, tenant_id: UUID, comision_id: UUID
+        self,
+        tenant_id: UUID,
+        comision_id: UUID,
+        created_by: UUID | None = None,
     ) -> list[Unidad]:
-        """Lista Unidades activas de una comisión ordenadas por `orden` ASC."""
+        """Lista Unidades activas de una comisión ordenadas por `orden` ASC.
+
+        Si `created_by` no es None, aisla por docente creador (un docente
+        comun solo ve sus propias Unidades). None = ver todas las de la
+        comision (oversight de superadmin/docente_admin).
+        """
         stmt = (
             select(Unidad)
             .where(
@@ -116,6 +124,8 @@ class UnidadService:
             )
             .order_by(Unidad.orden.asc())
         )
+        if created_by is not None:
+            stmt = stmt.where(Unidad.created_by == created_by)
         result = await self.session.execute(stmt)
         return list(result.scalars().all())
 

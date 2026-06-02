@@ -369,6 +369,7 @@ class TareaPracticaService:
         comision_id: UUID | None = None,
         estado: str | None = None,
         unidad_id: UUID | None = None,
+        created_by: UUID | None = None,
         limit: int = 50,
         cursor: UUID | None = None,
     ) -> list[TareaPractica]:
@@ -380,4 +381,7 @@ class TareaPracticaService:
         if unidad_id:
             # Fix QA A13: el filtro unidad_id no se propagaba al WHERE.
             filters["unidad_id"] = unidad_id
+        if created_by:
+            # Aislamiento por docente creador (ver docs/filtrado-teacher-plan.md).
+            filters["created_by"] = created_by
         return await self.repo.list(limit=limit, cursor=cursor, filters=filters)

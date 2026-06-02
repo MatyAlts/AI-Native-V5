@@ -19,7 +19,7 @@ from uuid import UUID
 from fastapi import APIRouter, Depends, Query, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from academic_service.auth import User, get_db, require_permission
+from academic_service.auth import User, get_db, owner_filter, require_permission
 from academic_service.schemas import ListMeta, ListResponse
 from academic_service.schemas.unidad import (
     UnidadCreate,
@@ -77,10 +77,14 @@ async def list_unidades(
 
     `comision_id` es REQUERIDO — sin él se devuelve 422.
     Solo devuelve Unidades con `deleted_at=NULL`.
-    RLS garantiza aislamiento multi-tenant automáticamente.
+    RLS garantiza aislamiento multi-tenant automáticamente; el filtro
+    `owner_filter` aisla ademas por docente creador dentro del tenant
+    (un docente comun solo ve sus Unidades; oversight ve todas).
     """
     svc = UnidadService(db)
-    objs = await svc.list_by_comision(user.tenant_id, comision_id)
+    objs = await svc.list_by_comision(
+        user.tenant_id, comision_id, created_by=owner_filter(user)
+    )
     items = [UnidadOut.model_validate(o) for o in objs]
     return ListResponse(data=items, meta=ListMeta(cursor_next=None))
 
