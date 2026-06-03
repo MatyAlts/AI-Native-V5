@@ -102,6 +102,33 @@ jobs:
 
       - run: pnpm turbo lint typecheck
 
+  build-frontend:
+    name: Build frontends (Vite)
+    # Gate que faltaba: `lint-frontend` corre `turbo lint typecheck` (tsc --noEmit),
+    # que NO equivale al `tsc -b && vite build` de infrastructure/frontends.Dockerfile.
+    # Por eso errores TS que rompen el build de PROD pasaban CI y solo reventaban
+    # en EasyPanel (dejando un bundle viejo servido). Acá corremos EXACTAMENTE los
+    # mismos builds que el Dockerfile, asi un build roto falla en CI, no en prod.
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: ${{ env.PNPM_VERSION }}
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: pnpm
+
+      - run: pnpm install --frozen-lockfile
+
+      - run: pnpm --filter @platform/web-admin   build
+      - run: pnpm --filter @platform/web-teacher build
+      - run: pnpm --filter @platform/web-student build
+
   test-unit:
     name: Unit tests
     runs-on: ubuntu-latest
