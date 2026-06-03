@@ -97,8 +97,17 @@ async def get_tarea_practica(
     user: User = Depends(require_permission("tarea_practica", "read")),
     db: AsyncSession = Depends(get_db),
 ) -> TareaPracticaOut:
+    """Detalle de una TP por id.
+
+    IDOR fix: además del permiso Casbin, valida acceso a la comisión de la TP
+    (docente asignado o alumno inscripto). Un alumno solo ve TPs `published`
+    de su comisión; pedir una ajena o un borrador → 404 (no se revela).
+    """
     svc = TareaPracticaService(db)
     obj = await svc.get(tarea_id)
+    is_staff = await assert_comision_access(db, user, obj.comision_id)
+    if not is_staff and obj.estado != "published":
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="No encontrada")
     return TareaPracticaOut.model_validate(obj)
 
 

@@ -113,7 +113,7 @@ async def create_cuestionario_ia(
     obj = RespuestaCuestionarioIA(
         tenant_id=user.tenant_id,
         comision_id=data.comision_id,
-        student_pseudonym=data.student_pseudonym,
+        student_pseudonym=user.id,  # anti-spoofing: identidad autenticada, no del body
         instrument_version=data.instrument_version,
         responses=data.responses,
     )
@@ -208,7 +208,7 @@ async def create_pretest_autoeficacia(
     obj = RespuestaPretestAutoeficacia(
         tenant_id=user.tenant_id,
         comision_id=data.comision_id,
-        student_pseudonym=data.student_pseudonym,
+        student_pseudonym=user.id,  # anti-spoofing: identidad autenticada, no del body
         instrument_version=data.instrument_version,
         responses=data.responses,
         total_score=total_score,
@@ -314,7 +314,7 @@ async def create_test_transferencia(
     obj = RespuestaTestTransferencia(
         tenant_id=user.tenant_id,
         comision_id=data.comision_id,
-        student_pseudonym=data.student_pseudonym,
+        student_pseudonym=user.id,  # anti-spoofing: identidad autenticada, no del body
         instrument_version=data.instrument_version,
         group_assignment=data.group_assignment,
         test_id=data.test_id,

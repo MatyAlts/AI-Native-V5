@@ -96,8 +96,14 @@ async def get_unidad(
     user: User = Depends(require_permission("unidad", "read")),
     db: AsyncSession = Depends(get_db),
 ) -> UnidadOut:
+    """Detalle de una Unidad por id.
+
+    IDOR fix: valida acceso a la comisión de la Unidad (docente asignado o
+    alumno inscripto) además del permiso Casbin. Comisión ajena → 403.
+    """
     svc = UnidadService(db)
     obj = await svc.get_by_id(unidad_id)
+    await assert_comision_access(db, user, obj.comision_id)
     return UnidadOut.model_validate(obj)
 
 
