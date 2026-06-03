@@ -64,6 +64,10 @@ FROM nginx:alpine
 # Quita config default y mete la nuestra.
 RUN rm -f /etc/nginx/conf.d/default.conf
 COPY infrastructure/nginx-frontends.conf /etc/nginx/conf.d/frontends.conf
+# Credenciales Basic Auth del panel admin / fallback de /api/ sin Bearer.
+# DEV/TEST: admin/admin. Reemplazar por un secreto real (o gestionarlo vía
+# volumen/secret del orquestador) antes de exponer datos reales del piloto.
+COPY infrastructure/htpasswd /etc/nginx/.htpasswd
 
 # Copia los 3 builds a paths separados dentro de /usr/share/nginx/html.
 COPY --from=builder /repo/apps/web-admin/dist/   /usr/share/nginx/html/admin/

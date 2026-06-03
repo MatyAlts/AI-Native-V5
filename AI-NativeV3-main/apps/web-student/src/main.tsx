@@ -33,9 +33,17 @@ window.fetch = async (input, init) => {
     try {
       const clerk = (
         window as unknown as {
-          Clerk?: { session?: { getToken: () => Promise<string | null> } }
+          Clerk?: {
+            loaded?: boolean
+            load?: () => Promise<unknown>
+            session?: { getToken: () => Promise<string | null> }
+          }
         }
       ).Clerk
+      // Esperar a que Clerk hidrate la sesión antes de pedir el token: evita
+      // requests sin Bearer en el primer render (el nginx los rechazaría con
+      // Basic Auth). En dev sin Clerk, window.Clerk no existe → se saltea.
+      if (clerk && clerk.loaded === false && clerk.load) await clerk.load()
       const token = await clerk?.session?.getToken()
       if (token) headers.set("Authorization", `Bearer ${token}`)
     } catch {
