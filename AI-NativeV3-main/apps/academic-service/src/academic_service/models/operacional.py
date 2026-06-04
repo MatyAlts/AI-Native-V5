@@ -438,7 +438,7 @@ class Ejercicio(Base, TenantMixin, TimestampMixin):
     materia_id: Mapped[uuid.UUID | None] = fk_uuid("materias.id", nullable=True)
 
     # ── Clasificación pedagógica ───────────────────────────────
-    # 'secuenciales' | 'condicionales' | 'repetitivas' | 'mixtos'
+    # 'secuenciales' | 'condicionales' | 'repetitivas' | 'mixtos' | 'funciones'
     unidad_tematica: Mapped[str] = mapped_column(String(30), nullable=False)
     # 'basica' | 'intermedia' | 'avanzada' | NULL
     dificultad: Mapped[str | None] = mapped_column(String(20), nullable=True)
@@ -478,7 +478,7 @@ class Ejercicio(Base, TenantMixin, TimestampMixin):
 
     __table_args__ = (
         CheckConstraint(
-            "unidad_tematica IN ('secuenciales', 'condicionales', 'repetitivas', 'mixtos')",
+            "unidad_tematica IN ('secuenciales', 'condicionales', 'repetitivas', 'mixtos', 'funciones')",
             name="ck_ejercicios_unidad_tematica",
         ),
         CheckConstraint(

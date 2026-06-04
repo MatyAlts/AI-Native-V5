@@ -15,7 +15,7 @@ from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
-UnidadTematica = Literal["secuenciales", "condicionales", "repetitivas", "mixtos"]
+UnidadTematica = Literal["secuenciales", "condicionales", "repetitivas", "mixtos", "funciones"]
 Dificultad = Literal["basica", "intermedia", "avanzada"]
 NivelN4 = Literal[1, 2, 3, 4]
 
