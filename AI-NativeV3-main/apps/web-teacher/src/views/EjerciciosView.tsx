@@ -56,6 +56,7 @@ const UNIDAD_LABEL: Record<UnidadTematica, string> = {
   condicionales: "Condicionales",
   repetitivas: "Repetitivas",
   mixtos: "Mixtos",
+  funciones: "Funciones",
 }
 
 // Orden pedagógico de los temas para listar el banco (no alfabético).
@@ -64,6 +65,7 @@ const UNIDAD_ORDER: Record<UnidadTematica, number> = {
   condicionales: 1,
   repetitivas: 2,
   mixtos: 3,
+  funciones: 4,
 }
 
 function sortEjerciciosPorTema(ejs: Ejercicio[]): Ejercicio[] {
@@ -220,6 +222,7 @@ export function EjerciciosView({ comisionId, getToken }: Props) {
             <option value="condicionales">Condicionales</option>
             <option value="repetitivas">Repetitivas</option>
             <option value="mixtos">Mixtos</option>
+            <option value="funciones">Funciones</option>
           </select>
           <select
             value={filterDificultad}
@@ -509,6 +512,7 @@ function EjercicioFormModal({ initial, title, onClose, onSubmit }: FormModalProp
                 <option value="condicionales">Condicionales</option>
                 <option value="repetitivas">Repetitivas</option>
                 <option value="mixtos">Mixtos</option>
+                <option value="funciones">Funciones</option>
               </select>
             </div>
             <div>

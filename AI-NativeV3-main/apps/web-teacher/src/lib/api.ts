@@ -1582,7 +1582,7 @@ export const entregasDocenteApi = {
 
 // ── Ejercicios reusables (ADR-047 + ADR-048) ─────────────────────────
 
-export type UnidadTematica = "secuenciales" | "condicionales" | "repetitivas" | "mixtos"
+export type UnidadTematica = "secuenciales" | "condicionales" | "repetitivas" | "mixtos" | "funciones"
 export type Dificultad = "basica" | "intermedia" | "avanzada"
 
 export interface PreguntaSocratica {
