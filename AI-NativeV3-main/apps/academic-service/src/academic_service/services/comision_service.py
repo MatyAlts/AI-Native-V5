@@ -45,6 +45,11 @@ from academic_service.schemas.usuario_comision import UsuarioComisionCreate
 # Roles con vista total del tenant (no se les exige membresia de comision).
 OVERSIGHT_ROLES: frozenset[str] = frozenset({"superadmin", "docente_admin"})
 
+# Cuentas de servicio internas (caller servicio-a-servicio via api-gateway).
+# El tutor-service valida la TareaPractica al abrir un episodio y NO es
+# docente ni alumno de la comision: se lo exime del gate de membresia.
+SERVICE_ROLES: frozenset[str] = frozenset({"tutor_service"})
+
 
 async def comisiones_del_usuario(session: AsyncSession, user_id: UUID) -> set[UUID]:
     """comision_ids donde `user_id` es staff (docente/JTP/auxiliar) activo."""
@@ -114,6 +119,8 @@ async def assert_comision_access(
     Devuelve `True` si el caller es staff/oversight (puede ver borradores),
     `False` si es alumno inscripto (acceso de solo-lectura a lo publicado).
     """
+    if user.roles & SERVICE_ROLES:
+        return True
     if user.roles & OVERSIGHT_ROLES:
         return True
     if comision_id in await comisiones_del_usuario(session, user.id):
