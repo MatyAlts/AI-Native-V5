@@ -65,6 +65,12 @@ def setup_observability(
     if config is None:
         config = ObservabilityConfig(**kwargs)
 
+    # Apagado de OTel via env estandar OTEL_SDK_DISABLED=true (sin tocar cada
+    # servicio). Cuando NO hay collector desplegado, esto evita el spam de
+    # "failed to export ... :4317" que tapa los tracebacks reales en los logs.
+    if _otel_disabled_by_env():
+        config.otel_enabled = False
+
     _setup_logging(config)
 
     if config.otel_enabled and _can_import_otel():
@@ -86,7 +92,18 @@ def setup_metrics(config: ObservabilityConfig | None = None, **kwargs) -> None:
     """
     if config is None:
         config = ObservabilityConfig(**kwargs)
+    if _otel_disabled_by_env():
+        return
     _setup_metrics(config)
+
+
+def _otel_disabled_by_env() -> bool:
+    """True si OTEL_SDK_DISABLED esta seteado a un valor truthy.
+
+    Respeta la convencion estandar de OpenTelemetry para apagar el SDK por
+    env. Se usa para silenciar el push OTLP cuando no hay collector vivo.
+    """
+    return os.getenv("OTEL_SDK_DISABLED", "").strip().lower() in ("true", "1", "yes")
 
 
 def _can_import_otel() -> bool:
