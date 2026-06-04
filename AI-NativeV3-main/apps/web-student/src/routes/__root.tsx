@@ -88,7 +88,9 @@ function useEnrollment(authUser: AuthUser | null, isDev: boolean) {
         const r = await fetch("/api/v1/materias/mias")
         const j = await r.json()
         if (cancelled) return
-        const comisiones = Array.isArray(j.data) ? j.data.map((m) => m.comision_id) : []
+        const comisiones = Array.isArray(j.data)
+          ? j.data.map((m: { comision_id: string }) => m.comision_id)
+          : []
         if (comisiones.length > 0) {
           // Si la cacheada ya no esta entre las vigentes, la reemplazamos.
           const valid = saved && comisiones.includes(saved) ? saved : comisiones[0]
