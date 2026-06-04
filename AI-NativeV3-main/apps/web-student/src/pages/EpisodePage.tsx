@@ -14,7 +14,7 @@
  * limpiamos sessionStorage y llamamos onExit().
  */
 import { HelpButton, MarkdownRenderer } from "@platform/ui"
-import { Bot, BookOpen, Code2, LogOut, MessageSquare, Send, Sparkles, User } from "lucide-react"
+import { Bot, BookOpen, Code2, LogOut, MessageSquare, Send, ShieldAlert, Sparkles, User } from "lucide-react"
 import { useCallback, useEffect, useRef, useState } from "react"
 import { Group as PanelGroup, Panel, Separator as PanelResizeHandle } from "react-resizable-panels"
 import { CodeEditor } from "../components/CodeEditor"
@@ -31,6 +31,8 @@ import {
   emitEpisodioAbandonado,
   emitLecturaEnunciado,
   emitPegaIntentada,
+  emitPestanaPerdida,
+  emitPestanaRecuperada,
   getEpisodeState,
   getTareaById,
   listEjerciciosTp,
@@ -105,6 +107,13 @@ export function EpisodeView({ episodeId, onExit, ejercicioContext }: EpisodeView
     return window.localStorage.getItem(`episode_${episodeId}_reflection_skipped`) === "1"
   })
   // Integridad de foco: trackea si el alumno cambio de pestaña y por cuanto.
+  // `tabExit` null = sin aviso; con valor = overlay bloqueante al volver, con
+  // el numero de salida y los segundos afuera. NO cierra el episodio — la
+  // salida solo se registra en el CTR (politica server-side:
+  // tutor-service config.enable_distraction_worker=False).
+  const [tabExit, setTabExit] = useState<{ count: number; secondsAway: number } | null>(null)
+  const tabExitCountRef = useRef(0)
+  const hiddenAtRef = useRef<number | null>(null)
   const messagesEndRef = useRef<HTMLDivElement>(null)
 
   const ejercicioOrden = ejercicioContext?.ejercicioOrden ?? null
@@ -142,11 +151,40 @@ export function EpisodeView({ episodeId, onExit, ejercicioContext }: EpisodeView
     return () => window.removeEventListener("beforeunload", handler)
   }, [episodeId, closed])
 
-  // Tracking de foco/pestaña DESACTIVADO: cerraba el episodio cuando el
-  // alumno salía de la pestaña, pero `window blur` se dispara espurio (ej.
-  // al hacer foco en el editor Monaco) y sacaba al alumno sin haberse ido.
-  // Se removió por completo (no se emite pestana_perdida → el worker
-  // server-side no cierra por distracción). Ver docs/filtrado-teacher-plan.md.
+  // Integridad de pestaña: detecta cuando el alumno deja de ver el episodio
+  // y vuelve. Usamos SOLO `visibilitychange` (NO `window blur`): blur se
+  // dispara espurio al hacer foco en el editor Monaco y daba falsos positivos
+  // (por eso el tracking estuvo desactivado). El worker server-side de cierre
+  // por distracción quedó apagado (config.enable_distraction_worker=False),
+  // así que emitir pestana_perdida ya NO cierra el episodio: solo registra en
+  // el CTR y dispara el overlay bloqueante al volver.
+  useEffect(() => {
+    if (typeof document === "undefined") return
+    if (closed) return
+
+    function onVisibility() {
+      if (document.visibilityState === "hidden") {
+        hiddenAtRef.current = Date.now()
+        void emitPestanaPerdida(episodeId, { trigger: "visibilitychange" }).catch((e) =>
+          console.warn("emit pestana_perdida failed:", e),
+        )
+        return
+      }
+      // El alumno volvió a la pestaña.
+      const hiddenAt = hiddenAtRef.current
+      if (hiddenAt == null) return
+      hiddenAtRef.current = null
+      const secondsAway = Math.max(0, Math.round((Date.now() - hiddenAt) / 1000))
+      void emitPestanaRecuperada(episodeId, {
+        tiempo_fuera_segundos: secondsAway,
+      }).catch((e) => console.warn("emit pestana_recuperada failed:", e))
+      tabExitCountRef.current += 1
+      setTabExit({ count: tabExitCountRef.current, secondsAway })
+    }
+
+    document.addEventListener("visibilitychange", onVisibility)
+    return () => document.removeEventListener("visibilitychange", onVisibility)
+  }, [episodeId, closed])
 
   // Hydration on-mount. El episodeId viene del path param, no del state.
   useEffect(() => {
@@ -714,6 +752,58 @@ export function EpisodeView({ episodeId, onExit, ejercicioContext }: EpisodeView
           }
         }}
       />
+
+      {/* Overlay de integridad: bloqueante al volver de la pestaña. NO cierra
+          el episodio (el alumno reconoce y sigue); la salida ya quedó en el CTR. */}
+      {tabExit && (
+        <div
+          className="animate-fade-in fixed inset-0 z-50 flex items-center justify-center bg-ink/70 px-4 backdrop-blur-sm"
+          role="alertdialog"
+          aria-modal="true"
+          aria-labelledby="tab-exit-title"
+        >
+          <div className="animate-scale-in w-full max-w-md rounded-xl bg-surface p-6 shadow-2xl">
+            <div className="flex items-start gap-4">
+              <span
+                aria-hidden="true"
+                className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-warning-soft text-warning"
+              >
+                <ShieldAlert className="h-6 w-6" />
+              </span>
+              <div className="min-w-0">
+                <h2
+                  id="tab-exit-title"
+                  className="text-lg font-semibold leading-snug text-ink"
+                >
+                  Saliste de la evaluación
+                </h2>
+                <p className="mt-1.5 text-sm leading-relaxed text-muted">
+                  Mientras resolvés un episodio no podés cambiar de pestaña ni de
+                  ventana. Esta salida quedó registrada en la trazabilidad del
+                  episodio y tu docente puede verla.
+                </p>
+              </div>
+            </div>
+
+            <div className="mt-4 flex flex-wrap items-center gap-x-2 gap-y-1 rounded-md bg-surface-alt px-3 py-2 text-xs text-muted">
+              <span className="font-medium text-ink tabular-nums">
+                {tabExit.count} {tabExit.count === 1 ? "salida registrada" : "salidas registradas"}
+              </span>
+              <span className="text-muted-soft">·</span>
+              <span className="tabular-nums">{tabExit.secondsAway}s afuera</span>
+            </div>
+
+            <button
+              type="button"
+              autoFocus
+              onClick={() => setTabExit(null)}
+              className="mt-5 w-full rounded-md bg-accent-brand px-4 py-2.5 text-sm font-medium text-surface transition-colors hover:bg-accent-brand-deep focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent-brand"
+            >
+              Entendido, volver al ejercicio
+            </button>
+          </div>
+        </div>
+      )}
     </div>
   )
 }

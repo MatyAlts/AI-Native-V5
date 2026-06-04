@@ -59,12 +59,17 @@ class Settings(BaseSettings):
     abandonment_check_interval_seconds: int = 60  # sweep cada 1 min
     enable_abandonment_worker: bool = True  # apagable para tests / dev
 
-    # Worker de distraccion: cierra episodios cuando el alumno cambio de
-    # pestaña y no volvio en `distraction_threshold_seconds`. NO se puede
-    # bloquear desde el browser — esta es la respuesta server-side.
-    distraction_threshold_seconds: int = 0  # cierre inmediato al perder foco
+    # Worker de distraccion: historicamente cerraba el episodio cuando el
+    # alumno cambiaba de pestaña (threshold 0 = cierre inmediato server-side).
+    # Politica vigente: NO cerrar por distraccion. La salida de pestaña se
+    # registra en el CTR (pestana_perdida / pestana_recuperada) y el frontend
+    # muestra un overlay bloqueante al volver, pero el episodio sigue abierto.
+    # El worker queda apagado por default; los eventos quedan como trazabilidad
+    # para que el docente vea las salidas en la auditoria sin penalizar al
+    # alumno con el cierre. Reactivar solo con decision explicita del piloto.
+    distraction_threshold_seconds: int = 0
     distraction_check_interval_seconds: int = 1  # sweep cada 1s
-    enable_distraction_worker: bool = True
+    enable_distraction_worker: bool = False
 
     # ADR-027 / ADR-044 (Mejora 4 plan post-piloto-1): Fase B de guardrails —
     # postprocesamiento de respuestas del tutor + cálculo de socratic_compliance.

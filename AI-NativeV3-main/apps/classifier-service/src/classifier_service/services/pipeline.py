@@ -65,6 +65,8 @@ _EXCLUDED_FROM_FEATURES = frozenset(
         "reflexion_completada",  # ADR-035
         "tp_entregada",          # tp-entregas-correccion: meta-evento de entrega formal
         "tp_calificada",         # tp-entregas-correccion: meta-evento de calificacion docente
+        "pestana_perdida",       # side-channel integridad de foco — NO cognitivo
+        "pestana_recuperada",    # side-channel integridad de foco — NO cognitivo
     }
 )
 
