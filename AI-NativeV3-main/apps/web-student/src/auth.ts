@@ -48,18 +48,20 @@ export function getCurrentUserUuid(): string | null {
 }
 
 export function setClerkUserId(clerkId: string) {
-  // Preservar pseudonyms legacy del piloto (pre-v5-2026-05-29). Si el
-  // localStorage ya tiene un UUID guardado de la version anterior del
-  // algoritmo, lo conservamos para no romper la continuidad de eventos CTR
-  // de este alumno. Solo regeneramos con v5 cuando no hay nada guardado.
-  const existing = localStorage.getItem(CLERK_PSEUDONYM_STORAGE_KEY)
-  const storedVersion = localStorage.getItem(LEGACY_PSEUDONYM_VERSION_KEY)
-  if (existing && storedVersion !== PSEUDONYM_ALGO_VERSION) {
-    // Pseudonym pre-fix: preservar pero marcar que el algoritmo viejo se uso
-    _currentUserUuid = existing
-    localStorage.setItem(LEGACY_PSEUDONYM_VERSION_KEY, "legacy-truncated-hash")
-    return
-  }
+  // Identidad determinista: el pseudonym SIEMPRE se deriva del Clerk user.id
+  // logueado actual (UUID v5 namespaced). NO se confia en lo que ya este en
+  // localStorage — ese valor puede ser de OTRO alumno que uso este browser, o
+  // un pseudonym legacy pre-v5 que ya no matchea ninguna inscripcion. En ese
+  // caso el header `x-user-id` salia con el UUID equivocado y
+  // academic.assert_comision_access devolvia 403 al abrir un episodio; la vieja
+  // rama "preservar legacy" ademas dejaba ese UUID pegado (escribia un version
+  // tag != PSEUDONYM_ALGO_VERSION), asi que el 403 solo se curaba limpiando
+  // localStorage a mano.
+  //
+  // Verificado 2026-06-04 contra la DB de prod: el 100% de las inscripciones y
+  // de los episodios del CTR usan pseudonym v5 (namespace fijado 2026-05-29).
+  // No existe ninguna cadena CTR legacy que preservar, asi que derivar siempre
+  // es seguro y NO rompe el append-only.
   const uuid = clerkIdToUuid(clerkId)
   _currentUserUuid = uuid
   localStorage.setItem(CLERK_PSEUDONYM_STORAGE_KEY, uuid)
