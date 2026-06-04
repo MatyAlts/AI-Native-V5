@@ -76,24 +76,33 @@ function useEnrollment(authUser: AuthUser | null, isDev: boolean) {
       }
       if (cancelled) return
 
-      // Flujo alumno
+      // Flujo alumno: SIEMPRE re-validar contra el server. La comision cacheada
+      // en localStorage puede estar stale (te movieron de comision, o quedo de
+      // otra identidad que uso este browser) y daba estado "enrolled" con una
+      // comision a la que el backend despues te tira 403. Usamos el cache solo
+      // como render optimista (para no flickerear) y reconciliamos con
+      // /materias/mias, que refleja las inscripciones vigentes.
       const saved = localStorage.getItem(ENROLLED_COMISION_KEY)
-      if (saved) {
-        setState("enrolled")
-        return
-      }
+      if (saved) setState("enrolled")
       try {
         const r = await fetch("/api/v1/materias/mias")
         const j = await r.json()
         if (cancelled) return
-        if (j.data && j.data.length > 0) {
-          localStorage.setItem(ENROLLED_COMISION_KEY, j.data[0].comision_id)
+        const comisiones = Array.isArray(j.data) ? j.data.map((m) => m.comision_id) : []
+        if (comisiones.length > 0) {
+          // Si la cacheada ya no esta entre las vigentes, la reemplazamos.
+          const valid = saved && comisiones.includes(saved) ? saved : comisiones[0]
+          localStorage.setItem(ENROLLED_COMISION_KEY, valid)
           setState("enrolled")
         } else {
+          // Sin inscripcion vigente: limpiar el cache stale y pedir codigo.
+          localStorage.removeItem(ENROLLED_COMISION_KEY)
           setState("need-code")
         }
       } catch {
-        if (!cancelled) setState("need-code")
+        // Error de red: si habia cache lo respetamos (ya seteamos "enrolled"
+        // arriba, optimista); sin cache, pedimos codigo.
+        if (!cancelled && !saved) setState("need-code")
       }
     })()
     return () => {
