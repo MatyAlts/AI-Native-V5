@@ -156,7 +156,7 @@ export function HomeContent({ isLoading, error, materias, onEnter }: HomeContent
 // ese flujo (mismo endpoint idempotente `POST /comisiones/join`) sin tocar la
 // máquina de estados de inscripción. Reusa los tokens visuales del input de
 // código original para mantener consistencia.
-function JoinMateriaControl() {
+function JoinMateriaControl({ label = "Unirse a otra materia" }: { label?: string }) {
   const [open, setOpen] = useState(false)
   const [code, setCode] = useState("")
   const [error, setError] = useState<string | null>(null)
@@ -204,7 +204,7 @@ function JoinMateriaControl() {
         className="press-shrink shrink-0 inline-flex items-center gap-1.5 px-3 py-2 rounded-md border border-border bg-surface text-xs font-medium text-body hover:bg-accent-brand-soft hover:text-accent-brand-deep hover:border-accent-brand/40 transition-colors"
       >
         <Plus className="h-3.5 w-3.5" aria-hidden="true" />
-        Unirse a otra materia
+        {label}
       </button>
 
       {open && (
@@ -360,17 +360,17 @@ function EmptyState() {
         </section>
 
         <div
-          role="status"
           data-testid="home-empty-gap-b2"
-          className="rounded-xl border-l-4 border-warning bg-warning-soft px-5 py-4 max-w-xl animate-fade-in-up animate-delay-300"
+          className="rounded-xl border border-border bg-surface px-5 py-5 max-w-xl animate-fade-in-up animate-delay-300"
         >
-          <p className="font-medium text-warning mb-1 text-sm">
-            ¿No estás viendo tus materias?
+          <p className="text-sm font-semibold text-ink mb-1">
+            Para empezar, unite a tu comisión
           </p>
-          <p className="text-xs text-warning/85 leading-relaxed">
-            Tu Dirección de Informática todavía no activó tu inscripción. Ver gap-B.2 / ADR-029
-            para el detalle.
+          <p className="text-xs text-muted leading-relaxed mb-4">
+            Ingresá el código que te dio tu docente o tu Dirección de Informática para ver
+            las materias y las tareas prácticas de tu comisión.
           </p>
+          <JoinMateriaControl label="Ingresar el código de mi comisión" />
         </div>
       </div>
     </div>

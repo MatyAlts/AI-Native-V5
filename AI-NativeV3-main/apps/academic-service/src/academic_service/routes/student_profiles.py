@@ -20,6 +20,7 @@ from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from academic_service.auth import User, get_current_user, get_db, require_role
+from academic_service.services.comision_service import assert_comision_member
 from academic_service.models.operacional import Inscripcion, UsuarioComision
 from academic_service.models.transversal import StudentProfile
 from academic_service.schemas.student_profile import StudentProfileOut, StudentProfileUpsert
@@ -98,7 +99,11 @@ async def list_student_profiles_for_comision(
     hizo POST /me/profile, full_name y email vienen None y el frontend
     cae al `Est. xxxxxx` como fallback.
     """
-    _ = user
+    # Cierra el leak: un docente solo puede ver los perfiles de SUS comisiones
+    # (staff). Sin esto, cualquier docente veria los pseudonimos de alumnos de
+    # cualquier comision (require_role solo valida el rol generico, no la
+    # pertenencia a esta comision puntual).
+    await assert_comision_member(db, user, comision_id)
     stmt = (
         select(
             Inscripcion.student_pseudonym,

@@ -1,9 +1,10 @@
 import { ClerkProvider, SignedIn, SignedOut, SignIn, useAuth, useUser } from "@clerk/clerk-react"
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query"
 import { RouterProvider, createRouter } from "@tanstack/react-router"
-import { StrictMode, useEffect } from "react"
+import { StrictMode, useEffect, useState } from "react"
 import { createRoot } from "react-dom/client"
 import "./index.css"
+import { comisionesApi } from "./lib/api"
 import { routeTree } from "./routeTree.gen"
 import { SELECTED_TENANT_STORAGE_KEY } from "./constants"
 
@@ -99,32 +100,60 @@ declare module "@tanstack/react-router" {
 function InnerApp() {
   const { getToken } = useAuth()
   const { user } = useUser()
+  // null = resolviendo; true = staff de al menos una comision; false = no docente.
+  const [esDocente, setEsDocente] = useState<boolean | null>(null)
 
-  // Auto-llenado del perfil del docente al loguearse con Clerk. Es lo que
-  // dispara la resolucion server-side: el backend matchea este email con las
-  // asignaciones que el admin creo por email (usuarios_comision) y vincula la
-  // identidad real del docente a sus comisiones. Sin esto, el docente se
-  // loguea pero nunca aparece como docente de ninguna comision.
-  //
-  // CORRE EN CADA CARGA (no se gatea por sessionStorage): la re-vinculacion
-  // es idempotente y barata, y asi un docente al que el admin le asigna una
-  // comision DESPUES de su primer login la ve con solo RECARGAR (antes el
-  // gate de sessionStorage lo saltaba en reloads de la misma pestana y la
-  // asignacion nueva nunca se vinculaba). Ver docs/filtrado-teacher-plan.md.
+  // Re-vincula la identidad de Clerk con las comisiones que el admin le asigno
+  // por email (POST /users/me/profile, idempotente) y RECIEN DESPUES resuelve si
+  // es docente. Modelo: todos arrancan como alumno; solo es docente quien el
+  // admin asigno a una comision (existe en usuarios_comision). El orden importa:
+  // si consultaramos /comisiones/mis antes de re-vincular, daria vacio y
+  // rebotaria a un docente real.
   useEffect(() => {
     if (!user) return
+    let cancelled = false
     const email = user.primaryEmailAddress?.emailAddress ?? null
-    if (!email) return
     const fullName =
       user.fullName ?? [user.firstName, user.lastName].filter(Boolean).join(" ").trim() ?? null
-    void fetch("/api/v1/users/me/profile", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ full_name: fullName || null, email }),
-    }).catch(() => {
-      /* silencioso: no bloquea el flujo del docente */
-    })
+    ;(async () => {
+      if (email) {
+        try {
+          await fetch("/api/v1/users/me/profile", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ full_name: fullName || null, email }),
+          })
+        } catch {
+          /* best-effort: la re-vinculacion no debe bloquear el chequeo siguiente */
+        }
+      }
+      try {
+        const res = await comisionesApi.listMine()
+        if (!cancelled) setEsDocente(res.items.length > 0)
+      } catch {
+        if (!cancelled) setEsDocente(false)
+      }
+    })()
+    return () => {
+      cancelled = true
+    }
   }, [user])
+
+  // No es docente (sin comisiones asignadas): lo mandamos directo al panel de
+  // alumno (`/`), donde puede ingresar el codigo de su comision. Modelo: todos
+  // son alumnos hasta que el admin los asigne como docentes de una comision.
+  // replace() para no dejar /teacher en el historial (evita volver con "atras").
+  useEffect(() => {
+    if (esDocente === false) window.location.replace("/")
+  }, [esDocente])
+
+  if (esDocente !== true) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-canvas text-sm text-muted">
+        {esDocente === null ? "Verificando tu acceso…" : "Te llevamos a tu pantalla…"}
+      </div>
+    )
+  }
 
   return <RouterProvider router={router} context={{ getToken }} />
 }

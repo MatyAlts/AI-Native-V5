@@ -1,7 +1,7 @@
-import { ClerkProvider, useAuth } from "@clerk/clerk-react"
+import { ClerkProvider, useAuth, useUser } from "@clerk/clerk-react"
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query"
 import { RouterProvider, createRouter } from "@tanstack/react-router"
-import { StrictMode } from "react"
+import { StrictMode, useEffect } from "react"
 import { createRoot } from "react-dom/client"
 import "./index.css"
 import { routeTree } from "./routeTree.gen"
@@ -76,6 +76,49 @@ declare module "@tanstack/react-router" {
 
 function InnerApp() {
   const { getToken } = useAuth()
+  const { user } = useUser()
+
+  // Re-vincula la identidad de Clerk con las comisiones que el admin asigno por
+  // email (POST /users/me/profile, idempotente: tambien llena el perfil del
+  // alumno). Si resulta STAFF de alguna comision (es docente), lo manda al panel
+  // docente automaticamente. Si no, se queda aca, en el panel de alumno, donde
+  // puede ingresar el codigo de su comision. Optimista: no bloquea al alumno
+  // (caso comun); solo el docente ve un instante esta pantalla antes de redirigir.
+  useEffect(() => {
+    if (!user) return
+    let cancelled = false
+    const email = user.primaryEmailAddress?.emailAddress ?? null
+    const fullName =
+      user.fullName ?? [user.firstName, user.lastName].filter(Boolean).join(" ").trim() ?? null
+    ;(async () => {
+      if (email) {
+        try {
+          await fetch("/api/v1/users/me/profile", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ full_name: fullName || null, email }),
+          })
+        } catch {
+          /* best-effort */
+        }
+      }
+      try {
+        const r = await fetch("/api/v1/comisiones/mis")
+        if (!r.ok) return
+        const data = await r.json()
+        const items = data?.data ?? data?.items ?? []
+        if (!cancelled && Array.isArray(items) && items.length > 0) {
+          window.location.replace("/teacher/")
+        }
+      } catch {
+        /* se queda en el panel de alumno */
+      }
+    })()
+    return () => {
+      cancelled = true
+    }
+  }, [user])
+
   return <RouterProvider router={router} context={{ getToken }} />
 }
 
