@@ -7,10 +7,11 @@ GET  /api/v1/budget      → estado actual del budget del tenant
 
 from __future__ import annotations
 
+import asyncio
 import json
 import logging
 import time
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import UTC, datetime
 from uuid import UUID
 
@@ -47,6 +48,65 @@ from ai_gateway.services.byok import (
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/v1", tags=["ai-gateway"])
+
+
+# ── Resiliencia del streaming LLM ───────────────────────────────────
+# Gemini (y otros) tiran 503 "model overloaded" en picos, AUN en tier pago. Si
+# el stream se cortaba a la mitad, el caller veía un token suelto (ej. "M"). Para
+# evitarlo: buffereamos la respuesta entera con reintentos y SOLO la emitimos
+# cuando está completa — el alumno recibe todo o un error limpio, nunca basura.
+
+_RETRIABLE_MARKERS = (
+    "503", "500", "502", "504", "429", "unavailable", "overloaded",
+    "high demand", "timeout", "timed out", "rate limit", "temporarily",
+    "connection", "reset", "deadline", "resource_exhausted",
+)
+
+
+def _is_retriable(exc: Exception) -> bool:
+    msg = str(exc).lower()
+    return any(m in msg for m in _RETRIABLE_MARKERS)
+
+
+async def _collect_stream(provider: BaseProvider, req: CompletionRequest) -> str:
+    """Consume el stream del provider y devuelve el texto COMPLETO buffereado."""
+    parts: list[str] = []
+    async for chunk in provider.stream_complete(req):
+        parts.append(chunk)
+    return "".join(parts)
+
+
+async def _collect_with_retry(
+    provider: BaseProvider, req: CompletionRequest, max_attempts: int
+) -> str:
+    """Junta la respuesta completa reintentando errores transitorios.
+
+    Como buffereamos (no emitimos hasta tener todo), un 503 a mitad de stream se
+    reintenta de cero sin que el alumno haya visto nada. Solo reintenta errores
+    transitorios (503/timeout/etc.); los permanentes fallan rápido.
+    """
+    last_err: Exception | None = None
+    for attempt in range(max_attempts):
+        try:
+            return await _collect_stream(provider, req)
+        except Exception as exc:
+            last_err = exc
+            if not _is_retriable(exc) or attempt == max_attempts - 1:
+                raise
+            backoff = 0.6 * (2**attempt)
+            logger.warning(
+                "llm_stream_retry attempt=%d/%d model=%s backoff=%.1fs err=%s",
+                attempt + 1, max_attempts, req.model, backoff, exc,
+            )
+            await asyncio.sleep(backoff)
+    raise last_err if last_err else RuntimeError("stream failed")
+
+
+def _emit_text_chunks(text: str, size: int = 48):
+    """Parte el texto completo en chunks para re-emitir con efecto de tipeo,
+    preservando TODOS los caracteres (incluidos saltos de línea)."""
+    for i in range(0, len(text), size):
+        yield text[i : i + size]
 
 
 _redis_client: redis.Redis | None = None
@@ -406,30 +466,66 @@ async def stream_complete(
     approx_input_tokens = sum(len(m.get("content", "")) for m in internal_req.messages) // 4
 
     async def event_stream():
-        total_chars = 0
+        # Buffer + retry: juntamos la respuesta ENTERA con reintentos antes de
+        # emitir nada. Así un 503 transitorio de Gemini no le deja al alumno un
+        # token suelto ("M") — recibe la respuesta completa o un error limpio.
+        full_text: str | None = None
         try:
-            async for chunk in provider.stream_complete(internal_req):
-                total_chars += len(chunk)
-                yield f"data: {json.dumps({'type': 'token', 'content': chunk})}\n\n"
-            # Estimación rudimentaria de costo (el provider streaming no
-            # siempre expone tokens finales)
-            approx_output_tokens = total_chars // 4
-            est_cost = total_chars / 4 / 1_000_000 * 5.0  # ~$5/M output tokens
-            await tracker.charge(caller.tenant_id, req.feature, est_cost)
-            # Backlog QA 2026-05-07: incluir `provider`, `tokens_input`,
-            # `tokens_output` en el `done` event SSE para que el tutor-service
-            # pueda persistirlos en el payload de `tutor_respondio` (auditoria
-            # doctoral de costos cross-evento).
-            done_payload = {
-                "type": "done",
-                "estimated_cost_usd": est_cost,
-                "provider": effective_provider_name,
-                "tokens_input": approx_input_tokens,
-                "tokens_output": approx_output_tokens,
-            }
-            yield f"data: {json.dumps(done_payload)}\n\n"
-        except Exception as e:
-            yield f"data: {json.dumps({'type': 'error', 'message': str(e)})}\n\n"
+            full_text = await _collect_with_retry(
+                provider, internal_req, settings.llm_stream_max_attempts
+            )
+        except Exception as primary_err:
+            # Fallback a un modelo secundario si está configurado.
+            fb_model = settings.llm_fallback_model
+            if fb_model and fb_model != internal_req.model:
+                ai_gateway_fallback_total.add(1, {"reason": "stream_model_fallback"})
+                logger.warning(
+                    "llm_stream_fallback primary=%s fallback=%s err=%s",
+                    internal_req.model, fb_model, primary_err,
+                )
+                try:
+                    full_text = await _collect_with_retry(
+                        provider,
+                        replace(internal_req, model=fb_model),
+                        settings.llm_stream_max_attempts,
+                    )
+                except Exception:
+                    logger.exception("llm_stream_fallback_failed")
+            if full_text is None:
+                logger.exception("llm_stream_failed model=%s", internal_req.model)
+                yield (
+                    "data: "
+                    + json.dumps(
+                        {
+                            "type": "error",
+                            "message": (
+                                "El tutor está sobrecargado en este momento. "
+                                "Reintentá en unos segundos."
+                            ),
+                        }
+                    )
+                    + "\n\n"
+                )
+                return
+
+        # Re-emitimos la respuesta completa en chunks (efecto tipeo) + done.
+        total_chars = len(full_text)
+        for chunk in _emit_text_chunks(full_text):
+            yield f"data: {json.dumps({'type': 'token', 'content': chunk})}\n\n"
+        approx_output_tokens = total_chars // 4
+        est_cost = total_chars / 4 / 1_000_000 * 5.0  # ~$5/M output tokens
+        await tracker.charge(caller.tenant_id, req.feature, est_cost)
+        # Backlog QA 2026-05-07: incluir `provider`, `tokens_input`,
+        # `tokens_output` en el `done` event SSE para que el tutor-service
+        # pueda persistirlos en el payload de `tutor_respondio`.
+        done_payload = {
+            "type": "done",
+            "estimated_cost_usd": est_cost,
+            "provider": effective_provider_name,
+            "tokens_input": approx_input_tokens,
+            "tokens_output": approx_output_tokens,
+        }
+        yield f"data: {json.dumps(done_payload)}\n\n"
 
     return StreamingResponse(
         event_stream(),

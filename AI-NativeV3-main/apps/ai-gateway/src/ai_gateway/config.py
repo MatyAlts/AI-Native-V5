@@ -30,6 +30,13 @@ class Settings(BaseSettings):
     # haya keys configuradas.
     llm_provider: str = "mock"
 
+    # Resiliencia del streaming del tutor. El modelo (ej. Gemini) puede tirar
+    # 503 "model overloaded" en picos AUNQUE sea tier pago. Reintentamos la
+    # llamada entera (buffereada) ante errores transitorios; si se configura un
+    # `llm_fallback_model`, se prueba ese modelo después de agotar los reintentos.
+    llm_stream_max_attempts: int = 3
+    llm_fallback_model: str = ""  # ej. "gemini-2.0-flash" — vacío = sin fallback
+
     # Budgets default por tenant/feature/mes (USD)
     default_monthly_budget_usd: float = 100.0
 
