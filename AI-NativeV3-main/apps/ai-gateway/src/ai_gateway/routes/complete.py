@@ -55,7 +55,19 @@ _redis_client: redis.Redis | None = None
 def _get_redis() -> redis.Redis:
     global _redis_client
     if _redis_client is None:
-        _redis_client = redis.from_url(settings.redis_url, decode_responses=True)
+        # Resiliencia del cliente de budget+cache (path del tutor bajo carga):
+        # health_check_interval evita usar una conexión colgada sin avisar;
+        # retry_on_timeout + connect_timeout cortan cuelgues en reconexión.
+        # NOTA: esto NO afecta el readiness del servicio — ese usa check_redis()
+        # con su propia conexión. El "degraded" pre-existente del ai-gateway es
+        # el check non-critical de llm_provider en modo mock, no Redis.
+        _redis_client = redis.from_url(
+            settings.redis_url,
+            decode_responses=True,
+            health_check_interval=30,
+            retry_on_timeout=True,
+            socket_connect_timeout=5,
+        )
     return _redis_client
 
 
