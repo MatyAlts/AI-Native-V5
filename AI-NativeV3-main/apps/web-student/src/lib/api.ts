@@ -609,20 +609,21 @@ export interface StudentEpisodesResponse {
 }
 
 /**
- * Trae los episodios cerrados del estudiante en una comision. Usado por
- * el TareaSelector para mostrar la trayectoria N4 historica en TPs
- * analogas (mismo `template_id`).
+ * Trae los episodios cerrados del PROPIO alumno en una comision. Usado por
+ * el TareaSelector para mostrar la trayectoria N4 historica en TPs analogas
+ * (mismo `template_id`).
  *
- * `studentPseudonym` = UUID del estudiante autenticado. En dev mode el
- * proxy de Vite inyecta `x-user-id`; en prod viene del JWT.
+ * Usa el endpoint `/student/me/episodes`: el backend deriva el alumno del JWT
+ * (X-User-Id) — NO se pasa el pseudonym por la URL. Antes pegaba al endpoint de
+ * docente `/student/{id}/episodes`, que le daba 403 al alumno y le exponia el
+ * UUID en la URL (F-08).
  */
 export async function listStudentEpisodes(
-  studentPseudonym: string,
   comisionId: string,
   getToken?: TokenGetter,
 ): Promise<StudentEpisodesResponse> {
   const qs = new URLSearchParams({ comision_id: comisionId })
-  const r = await fetch(`/api/v1/analytics/student/${studentPseudonym}/episodes?${qs.toString()}`, {
+  const r = await fetch(`/api/v1/analytics/student/me/episodes?${qs.toString()}`, {
     headers: await authHeaders(getToken),
   })
   if (!r.ok) throw new Error(`list student episodes failed: ${r.status}`)

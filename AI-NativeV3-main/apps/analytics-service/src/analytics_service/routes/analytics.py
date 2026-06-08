@@ -796,6 +796,70 @@ class StudentEpisodesOut(BaseModel):
 
 
 @router.get(
+    "/student/me/episodes",
+    response_model=StudentEpisodesOut,
+)
+async def get_my_episodes(
+    comision_id: UUID,
+    tenant_id: UUID = Depends(get_tenant_id),
+    user_id: UUID = Depends(get_user_id),
+) -> StudentEpisodesOut:
+    """Episodios cerrados del PROPIO alumno autenticado (sin gate de docente).
+
+    El `me` enforza que el alumno solo vea SUS episodios: `student_pseudonym`
+    se deriva del JWT (`user_id`), no se acepta por path. Así el web-student no
+    tiene que pegar al endpoint de docente `/student/{id}/episodes` (que le da
+    403 y le filtra el UUID en la URL — F-08). DEBE quedar registrado ANTES de
+    la ruta `/student/{student_pseudonym}/episodes` o FastAPI captura "me" como
+    path param y tira 422.
+    """
+    from analytics_service.services.export import _real_data_source_enabled
+
+    if not _real_data_source_enabled():
+        return StudentEpisodesOut(
+            student_pseudonym=str(user_id),
+            comision_id=str(comision_id),
+            n_episodes=0,
+            episodes=[],
+        )
+
+    from platform_ops import RealLongitudinalDataSource, set_tenant_rls
+    from sqlalchemy.ext.asyncio import async_sessionmaker
+
+    ctr_engine = get_ctr_engine()
+    cls_engine = get_classifier_engine()
+    acad_engine = get_academic_engine()
+    async with (
+        async_sessionmaker(ctr_engine, expire_on_commit=False)() as ctr_s,
+        async_sessionmaker(cls_engine, expire_on_commit=False)() as cls_s,
+        async_sessionmaker(acad_engine, expire_on_commit=False)() as acad_s,
+    ):
+        await set_tenant_rls(ctr_s, tenant_id)
+        await set_tenant_rls(cls_s, tenant_id)
+        await set_tenant_rls(acad_s, tenant_id)
+        ds = RealLongitudinalDataSource(ctr_s, cls_s, tenant_id)
+        episodes = await ds.list_episodes_with_classifications_for_student(
+            student_pseudonym=user_id,
+            comision_id=comision_id,
+            academic_session=acad_s,
+        )
+
+    logger.info(
+        "my_episodes_listed tenant_id=%s user_id=%s comision_id=%s n_episodes=%d",
+        tenant_id,
+        user_id,
+        comision_id,
+        len(episodes),
+    )
+    return StudentEpisodesOut(
+        student_pseudonym=str(user_id),
+        comision_id=str(comision_id),
+        n_episodes=len(episodes),
+        episodes=[StudentEpisodeOut(**e) for e in episodes],
+    )
+
+
+@router.get(
     "/student/{student_pseudonym}/episodes",
     response_model=StudentEpisodesOut,
 )

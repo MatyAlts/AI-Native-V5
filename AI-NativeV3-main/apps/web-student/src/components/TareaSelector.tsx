@@ -31,7 +31,6 @@ import {
   listStudentEpisodes,
   tareasPracticasApi,
 } from "../lib/api"
-import { STUDENT_PSEUDONYM_DEV } from "../lib/dev-user"
 
 export interface TareaSelectorProps {
   comisionId: string
@@ -168,11 +167,9 @@ export function TareaSelector({ comisionId, onSelect, unidadId, onBack }: TareaS
   // (analytics down, dev mode sin classifier), seguimos sin la zona Continuar.
   useEffect(() => {
     let cancelled = false
-    // El backend filtra por X-User-Id, no por este path param — pero el
-    // contrato pide UUID valido. En dev usamos STUDENT_PSEUDONYM_DEV
-    // (mismo UUID que el vite.config inyecta como X-User-Id). En prod, el
-    // sub del JWT proveera el verdadero `student_pseudonym`.
-    listStudentEpisodes(STUDENT_PSEUDONYM_DEV, comisionId)
+    // `/student/me/episodes`: el backend deriva el alumno del X-User-Id (dev) o
+    // del sub del JWT (prod). No pasamos pseudonym por la URL.
+    listStudentEpisodes(comisionId)
       .then((res) => {
         if (cancelled) return
         setEpisodes(res.episodes)
