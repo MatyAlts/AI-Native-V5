@@ -282,6 +282,29 @@ async def get_episode_state(
     return _build_episode_state(episode_id, ep)
 
 
+async def _enforce_message_rate_limit(user_id: UUID) -> None:
+    """Rate limit por usuario del POST /message. Ventana de 60s en Redis.
+
+    Protege el budget de IA de la comision contra rafagas (un alumno con un
+    script mandando cientos de requests). Fail-open: si Redis no responde NO
+    bloqueamos — es proteccion de budget, no de seguridad critica, y no queremos
+    tumbar el tutor si Redis hipa.
+    """
+    key = f"tutor:msg_rate:{user_id}"
+    try:
+        redis_client = _get_redis()
+        count = await redis_client.incr(key)
+        if count == 1:
+            await redis_client.expire(key, 60)
+    except Exception:
+        return
+    if count > settings.message_rate_limit_per_minute:
+        raise HTTPException(
+            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+            detail="Estas mandando mensajes muy rapido. Espera unos segundos.",
+        )
+
+
 @router.post("/{episode_id}/message")
 async def send_message(
     episode_id: UUID,
@@ -289,6 +312,7 @@ async def send_message(
     user: User = Depends(require_role("estudiante", "docente", "docente_admin", "superadmin")),
 ):
     """SSE streaming de la respuesta del tutor."""
+    await _enforce_message_rate_limit(user.id)
     tutor = _get_tutor()
 
     async def event_stream():

@@ -24,6 +24,12 @@ class Settings(BaseSettings):
 
     redis_url: str = "redis://127.0.0.1:6379/2"
 
+    # Rate limit del POST /episodes/{id}/message por usuario. Protege el budget
+    # de IA de la comision contra rafagas (un alumno mandando cientos de requests
+    # concurrentes podia agotar los 100 USD/mes en minutos). Ventana deslizante
+    # de 60s en Redis. Generoso para un humano (un mensaje cada ~4s), corta scripts.
+    message_rate_limit_per_minute: int = 15
+
     # URLs de los servicios dependientes
     governance_service_url: str = "http://127.0.0.1:8010"
     content_service_url: str = "http://127.0.0.1:8009"
