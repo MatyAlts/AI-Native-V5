@@ -175,7 +175,17 @@ function InviteCodeScreen({ onSubmit, error }: { onSubmit: (code: string) => voi
 
 // Carcasa compartida: header + footer. Las acciones del header y el cuerpo se
 // inyectan por props para que el path dev no monte componentes de Clerk.
-function LayoutShell({ headerActions, children }: { headerActions: ReactNode; children: ReactNode }) {
+function LayoutShell({
+  headerActions,
+  children,
+  showAudit = true,
+}: {
+  headerActions: ReactNode
+  children: ReactNode
+  // FIX-18 (F-12): el footer expone versiones de prompt/labeler/clasificador.
+  // Solo se muestra a usuarios autenticados, no en la pantalla de login.
+  showAudit?: boolean
+}) {
   return (
     <div className="h-dvh bg-surface-alt text-ink flex flex-col overflow-hidden">
       <header className="border-b border-border-soft px-6 py-3 flex items-center justify-between gap-4">
@@ -194,7 +204,7 @@ function LayoutShell({ headerActions, children }: { headerActions: ReactNode; ch
 
       {children}
 
-      <AuditFooter episodeId={null} classifierHash={null} />
+      {showAudit && <AuditFooter episodeId={null} classifierHash={null} />}
     </div>
   )
 }
@@ -259,7 +269,7 @@ function ClerkRootLayout() {
   )
 
   return (
-    <LayoutShell headerActions={headerActions}>
+    <LayoutShell headerActions={headerActions} showAudit={!!isSignedIn}>
       {!isSignedIn ? (
         <div className="flex-1 flex items-center justify-center">
           <div className="text-center space-y-4">
