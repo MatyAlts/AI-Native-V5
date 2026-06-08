@@ -19,10 +19,13 @@ ADR-030 — el bulk-import unificado de academic-service cubre todos los casos.
 from __future__ import annotations
 
 import httpx
+import structlog
 from fastapi import APIRouter, HTTPException, Request, status
 from fastapi.responses import JSONResponse, StreamingResponse
 
 from api_gateway.config import settings
+
+logger = structlog.get_logger(__name__)
 
 router = APIRouter(tags=["proxy"])
 
@@ -107,9 +110,12 @@ async def proxy(full_path: str, request: Request) -> StreamingResponse:
 
     target = resolve_target(path)
     if not target:
+        # Mensaje genérico al cliente; el path va al log interno (F-11: no
+        # revelar qué rutas existen/no existen ni la topología de servicios).
+        logger.info("unregistered_route", path=path)
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
-            detail=f"No hay servicio registrado para {path}",
+            detail="Not Found",
         )
 
     url = f"{target.rstrip('/')}{path}"
