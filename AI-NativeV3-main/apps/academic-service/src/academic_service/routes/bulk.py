@@ -2,11 +2,14 @@
 
 from __future__ import annotations
 
+import structlog
 from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from academic_service.auth import User, get_current_user, get_db
 from academic_service.auth.casbin_setup import check_permission
+
+logger = structlog.get_logger(__name__)
 from academic_service.services.bulk_import import (
     SUPPORTED_ENTITIES,
     BulkImportCommitResult,
@@ -51,12 +54,19 @@ async def bulk_import(
 
     resource = _RESOURCE_BY_ENTITY[entity]
     if not check_permission(user, resource, "create"):
+        # Mensaje genérico al cliente; detalle al log interno (F-06, no filtrar
+        # roles ni el permiso exacto requerido).
+        logger.info(
+            "permission_denied",
+            resource=resource,
+            action="create",
+            user_id=str(user.id),
+            tenant_id=str(user.tenant_id),
+            roles=sorted(user.roles),
+        )
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
-            detail=(
-                f"Permiso denegado: se requiere create sobre {resource} "
-                f"(roles actuales: {', '.join(user.roles) or 'ninguno'})"
-            ),
+            detail="Permiso denegado.",
         )
 
     content = await file.read()

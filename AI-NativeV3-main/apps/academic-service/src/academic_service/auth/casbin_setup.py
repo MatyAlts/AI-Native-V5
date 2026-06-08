@@ -10,11 +10,14 @@ from dataclasses import dataclass
 from pathlib import Path
 
 import casbin
+import structlog
 from casbin_sqlalchemy_adapter import Adapter
 from fastapi import Depends, HTTPException, status
 
 from academic_service.auth.dependencies import User, get_current_user
 from academic_service.config import settings
+
+logger = structlog.get_logger(__name__)
 
 # Modelo Casbin RBAC con dominios (tenant = universidad).
 # - sub: user_id
@@ -85,12 +88,20 @@ def require_permission(resource: str, action: str):
 
     async def checker(user: User = Depends(get_current_user)) -> User:
         if not check_permission(user, resource, action):
+            # Mensaje genérico al cliente: exponer el permiso exacto + los roles
+            # del usuario le mapea el sistema de permisos a un atacante (F-06).
+            # El detalle va al log interno para debugging/auditoría.
+            logger.info(
+                "permission_denied",
+                resource=resource,
+                action=action,
+                user_id=str(user.id),
+                tenant_id=str(user.tenant_id),
+                roles=sorted(user.roles),
+            )
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
-                detail=(
-                    f"Permiso denegado: se requiere {action} sobre {resource} "
-                    f"(roles actuales: {', '.join(user.roles) or 'ninguno'})"
-                ),
+                detail="Permiso denegado.",
             )
         return user
 
