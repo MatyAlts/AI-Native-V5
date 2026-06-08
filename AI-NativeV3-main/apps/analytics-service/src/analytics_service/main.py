@@ -22,6 +22,10 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     yield
     # Shutdown
     await stop_worker()
+    # Cerrar los engines de DB compartidos (ver analytics_service.db).
+    from analytics_service.db import dispose_all
+
+    await dispose_all()
 
 
 app = FastAPI(

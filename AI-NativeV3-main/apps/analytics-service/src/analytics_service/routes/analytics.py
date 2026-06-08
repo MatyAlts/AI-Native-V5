@@ -22,6 +22,7 @@ from platform_ops import (
 )
 from pydantic import BaseModel, Field
 
+from analytics_service.db import get_academic_engine, get_classifier_engine, get_ctr_engine
 from analytics_service.metrics import (
     classifier_kappa_rolling,
     classifier_kappa_rolling_last_update_unix_seconds,
@@ -73,33 +74,30 @@ async def assert_comision_member(
     """
     from platform_ops import set_tenant_rls
     from sqlalchemy import text
-    from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
+    from sqlalchemy.ext.asyncio import async_sessionmaker
 
     from analytics_service.config import settings
 
     if not settings.enforce_comision_access or not settings.academic_db_url:
         return
-    engine = create_async_engine(settings.academic_db_url, pool_size=2)
-    try:
-        async with async_sessionmaker(engine, expire_on_commit=False)() as s:
-            await set_tenant_rls(s, tenant_id)
-            row = (
-                await s.execute(
-                    text(
-                        "SELECT 1 FROM usuarios_comision "
-                        "WHERE comision_id = :c AND user_id = :u "
-                        "AND deleted_at IS NULL LIMIT 1"
-                    ),
-                    {"c": str(comision_id), "u": str(user_id)},
-                )
-            ).first()
-        if row is None:
-            raise HTTPException(
-                status_code=status.HTTP_403_FORBIDDEN,
-                detail="No tenes acceso al analisis de esta comision.",
+    engine = get_academic_engine()
+    async with async_sessionmaker(engine, expire_on_commit=False)() as s:
+        await set_tenant_rls(s, tenant_id)
+        row = (
+            await s.execute(
+                text(
+                    "SELECT 1 FROM usuarios_comision "
+                    "WHERE comision_id = :c AND user_id = :u "
+                    "AND deleted_at IS NULL LIMIT 1"
+                ),
+                {"c": str(comision_id), "u": str(user_id)},
             )
-    finally:
-        await engine.dispose()
+        ).first()
+    if row is None:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="No tenes acceso al analisis de esta comision.",
+        )
 
 
 async def require_comision_access(
@@ -394,6 +392,32 @@ class CohortProgressionOut(BaseModel):
     trajectories: list[StudentTrajectoryOut]
 
 
+# ── Cache TTL en proceso para progression ─────────────────────────────
+# `build_trajectories` + `summarize_cohort` es CPU-bound y serializa todas las
+# requests (informe Fase 5: throughput clavado en ~8 req/s). Memoizamos el
+# resultado por (tenant, comision) con TTL corto. In-process a propósito:
+# analytics-service es instancia única en el piloto y NO usa Redis — meterlo
+# acá solo para esto sería sumar dependencia + modo de falla. Si se escala a
+# múltiples réplicas, migrar a un cache compartido (Redis).
+_PROGRESSION_CACHE_TTL_SEC = 60.0
+_progression_cache: dict[tuple[str, str], tuple[float, CohortProgressionOut]] = {}
+
+
+def _progression_cache_get(key: tuple[str, str]) -> CohortProgressionOut | None:
+    entry = _progression_cache.get(key)
+    if entry is None:
+        return None
+    cached_at, value = entry
+    if time.monotonic() - cached_at > _PROGRESSION_CACHE_TTL_SEC:
+        _progression_cache.pop(key, None)
+        return None
+    return value
+
+
+def _progression_cache_set(key: tuple[str, str], value: CohortProgressionOut) -> None:
+    _progression_cache[key] = (time.monotonic(), value)
+
+
 @router.get(
     "/cohort/{comision_id}/progression",
     response_model=CohortProgressionOut,
@@ -414,6 +438,13 @@ async def get_cohort_progression(
     configuradas, usa el adaptador real con RLS por tenant. Si no, cae a
     un stub vacío (modo dev).
     """
+    # Cache TTL por (tenant, comision). El guard de acceso ya corrió arriba
+    # (Depends), así que un hit no saltea autorización.
+    cache_key = (str(tenant_id), str(comision_id))
+    cached = _progression_cache_get(cache_key)
+    if cached is not None:
+        return cached
+
     from platform_ops import build_trajectories, summarize_cohort
 
     from analytics_service.services.export import (
@@ -422,26 +453,20 @@ async def get_cohort_progression(
 
     if _real_data_source_enabled():
         from platform_ops import RealLongitudinalDataSource, set_tenant_rls
-        from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
+        from sqlalchemy.ext.asyncio import async_sessionmaker
 
-        from analytics_service.config import settings
-
-        ctr_engine = create_async_engine(settings.ctr_store_url, pool_size=2)
-        cls_engine = create_async_engine(settings.classifier_db_url, pool_size=2)
+        ctr_engine = get_ctr_engine()
+        cls_engine = get_classifier_engine()
         ctr_maker = async_sessionmaker(ctr_engine, expire_on_commit=False)
         cls_maker = async_sessionmaker(cls_engine, expire_on_commit=False)
-        try:
-            async with ctr_maker() as ctr_s, cls_maker() as cls_s:
-                await set_tenant_rls(ctr_s, tenant_id)
-                await set_tenant_rls(cls_s, tenant_id)
-                ds = RealLongitudinalDataSource(ctr_s, cls_s, tenant_id)
-                # build_trajectories acepta cualquier objeto con
-                # `list_classifications_grouped_by_student` (duck-typed); el
-                # protocol _DataSource es interno al paquete platform-ops.
-                trajectories = await build_trajectories(ds, comision_id)  # type: ignore[arg-type]
-        finally:
-            await ctr_engine.dispose()
-            await cls_engine.dispose()
+        async with ctr_maker() as ctr_s, cls_maker() as cls_s:
+            await set_tenant_rls(ctr_s, tenant_id)
+            await set_tenant_rls(cls_s, tenant_id)
+            ds = RealLongitudinalDataSource(ctr_s, cls_s, tenant_id)
+            # build_trajectories acepta cualquier objeto con
+            # `list_classifications_grouped_by_student` (duck-typed); el
+            # protocol _DataSource es interno al paquete platform-ops.
+            trajectories = await build_trajectories(ds, comision_id)  # type: ignore[arg-type]
     else:
         # Stub para dev
         class _LongitudinalAdapter:
@@ -452,7 +477,7 @@ async def get_cohort_progression(
 
     summary = summarize_cohort(comision_id, trajectories)
 
-    return CohortProgressionOut(
+    result = CohortProgressionOut(
         comision_id=comision_id,
         n_students=summary.n_students,
         n_students_with_enough_data=summary.n_students_with_enough_data,
@@ -482,6 +507,8 @@ async def get_cohort_progression(
             for t in trajectories
         ],
     )
+    _progression_cache_set(cache_key, result)
+    return result
 
 
 # ── Etiquetador N1-N4 por evento (ADR-020) ────────────────────────────
@@ -552,33 +579,28 @@ async def get_n_level_distribution(
     from ctr_service.models import Event
     from platform_ops import set_tenant_rls
     from sqlalchemy import select
-    from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
+    from sqlalchemy.ext.asyncio import async_sessionmaker
 
-    from analytics_service.config import settings
-
-    ctr_engine = create_async_engine(settings.ctr_store_url, pool_size=2)
-    try:
-        ctr_maker = async_sessionmaker(ctr_engine, expire_on_commit=False)
-        async with ctr_maker() as ctr_s:
-            await set_tenant_rls(ctr_s, tenant_id)
-            stmt = (
-                select(Event)
-                .where(Event.episode_id == episode_id)
-                .where(Event.tenant_id == tenant_id)  # doble filtro (defensivo)
-                .order_by(Event.seq.asc())
-            )
-            result = await ctr_s.execute(stmt)
-            events = [
-                {
-                    "seq": ev.seq,
-                    "event_type": ev.event_type,
-                    "ts": ev.ts.isoformat().replace("+00:00", "Z") if ev.ts else None,
-                    "payload": ev.payload or {},
-                }
-                for ev in result.scalars().all()
-            ]
-    finally:
-        await ctr_engine.dispose()
+    ctr_engine = get_ctr_engine()
+    ctr_maker = async_sessionmaker(ctr_engine, expire_on_commit=False)
+    async with ctr_maker() as ctr_s:
+        await set_tenant_rls(ctr_s, tenant_id)
+        stmt = (
+            select(Event)
+            .where(Event.episode_id == episode_id)
+            .where(Event.tenant_id == tenant_id)  # doble filtro (defensivo)
+            .order_by(Event.seq.asc())
+        )
+        result = await ctr_s.execute(stmt)
+        events = [
+            {
+                "seq": ev.seq,
+                "event_type": ev.event_type,
+                "ts": ev.ts.isoformat().replace("+00:00", "Z") if ev.ts else None,
+                "payload": ev.payload or {},
+            }
+            for ev in result.scalars().all()
+        ]
 
     if not events:
         raise HTTPException(
@@ -694,45 +716,38 @@ async def get_cii_evolution_longitudinal(
 
     # Modo real: 3 sesiones (ctr + classifier + academic) con RLS
     from platform_ops import RealLongitudinalDataSource, set_tenant_rls
-    from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
+    from sqlalchemy.ext.asyncio import async_sessionmaker
 
-    from analytics_service.config import settings
+    ctr_engine = get_ctr_engine()
+    cls_engine = get_classifier_engine()
+    acad_engine = get_academic_engine()
+    async with (
+        async_sessionmaker(ctr_engine, expire_on_commit=False)() as ctr_s,
+        async_sessionmaker(cls_engine, expire_on_commit=False)() as cls_s,
+        async_sessionmaker(acad_engine, expire_on_commit=False)() as acad_s,
+    ):
+        await set_tenant_rls(ctr_s, tenant_id)
+        await set_tenant_rls(cls_s, tenant_id)
+        await set_tenant_rls(acad_s, tenant_id)
+        ds = RealLongitudinalDataSource(ctr_s, cls_s, tenant_id)
+        classifications = await ds.list_classifications_with_templates_for_student(
+            student_pseudonym=student_pseudonym,
+            comision_id=comision_id,
+            academic_session=acad_s,
+        )
 
-    ctr_engine = create_async_engine(settings.ctr_store_url, pool_size=2)
-    cls_engine = create_async_engine(settings.classifier_db_url, pool_size=2)
-    acad_engine = create_async_engine(settings.academic_db_url, pool_size=2)
-    try:
-        async with (
-            async_sessionmaker(ctr_engine, expire_on_commit=False)() as ctr_s,
-            async_sessionmaker(cls_engine, expire_on_commit=False)() as cls_s,
-            async_sessionmaker(acad_engine, expire_on_commit=False)() as acad_s,
-        ):
-            await set_tenant_rls(ctr_s, tenant_id)
-            await set_tenant_rls(cls_s, tenant_id)
-            await set_tenant_rls(acad_s, tenant_id)
-            ds = RealLongitudinalDataSource(ctr_s, cls_s, tenant_id)
-            classifications = await ds.list_classifications_with_templates_for_student(
-                student_pseudonym=student_pseudonym,
-                comision_id=comision_id,
-                academic_session=acad_s,
-            )
+        # Resolver unidad_id → nombre para los grupos de unidad.
+        # Recopilar los unidad_ids no-None de las classifications.
+        from uuid import UUID as _UUID
 
-            # Resolver unidad_id → nombre para los grupos de unidad.
-            # Recopilar los unidad_ids no-None de las classifications.
-            from uuid import UUID as _UUID
-
-            unidad_ids_raw = {
-                c["unidad_id"] for c in classifications if c.get("unidad_id") is not None
-            }
-            unidad_ids = [_UUID(str(uid)) for uid in unidad_ids_raw]
-            unidad_map = await ds.list_unidades_by_ids(
-                unidad_ids=unidad_ids,
-                academic_session=acad_s,
-            )
-    finally:
-        await ctr_engine.dispose()
-        await cls_engine.dispose()
-        await acad_engine.dispose()
+        unidad_ids_raw = {
+            c["unidad_id"] for c in classifications if c.get("unidad_id") is not None
+        }
+        unidad_ids = [_UUID(str(uid)) for uid in unidad_ids_raw]
+        unidad_map = await ds.list_unidades_by_ids(
+            unidad_ids=unidad_ids,
+            academic_session=acad_s,
+        )
 
     distribution = compute_cii_evolution_longitudinal(classifications, unidad_map=unidad_map)
     logger.info(
@@ -807,32 +822,25 @@ async def get_student_episodes(
         )
 
     from platform_ops import RealLongitudinalDataSource, set_tenant_rls
-    from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
+    from sqlalchemy.ext.asyncio import async_sessionmaker
 
-    from analytics_service.config import settings
-
-    ctr_engine = create_async_engine(settings.ctr_store_url, pool_size=2)
-    cls_engine = create_async_engine(settings.classifier_db_url, pool_size=2)
-    acad_engine = create_async_engine(settings.academic_db_url, pool_size=2)
-    try:
-        async with (
-            async_sessionmaker(ctr_engine, expire_on_commit=False)() as ctr_s,
-            async_sessionmaker(cls_engine, expire_on_commit=False)() as cls_s,
-            async_sessionmaker(acad_engine, expire_on_commit=False)() as acad_s,
-        ):
-            await set_tenant_rls(ctr_s, tenant_id)
-            await set_tenant_rls(cls_s, tenant_id)
-            await set_tenant_rls(acad_s, tenant_id)
-            ds = RealLongitudinalDataSource(ctr_s, cls_s, tenant_id)
-            episodes = await ds.list_episodes_with_classifications_for_student(
-                student_pseudonym=student_pseudonym,
-                comision_id=comision_id,
-                academic_session=acad_s,
-            )
-    finally:
-        await ctr_engine.dispose()
-        await cls_engine.dispose()
-        await acad_engine.dispose()
+    ctr_engine = get_ctr_engine()
+    cls_engine = get_classifier_engine()
+    acad_engine = get_academic_engine()
+    async with (
+        async_sessionmaker(ctr_engine, expire_on_commit=False)() as ctr_s,
+        async_sessionmaker(cls_engine, expire_on_commit=False)() as cls_s,
+        async_sessionmaker(acad_engine, expire_on_commit=False)() as acad_s,
+    ):
+        await set_tenant_rls(ctr_s, tenant_id)
+        await set_tenant_rls(cls_s, tenant_id)
+        await set_tenant_rls(acad_s, tenant_id)
+        ds = RealLongitudinalDataSource(ctr_s, cls_s, tenant_id)
+        episodes = await ds.list_episodes_with_classifications_for_student(
+            student_pseudonym=student_pseudonym,
+            comision_id=comision_id,
+            academic_session=acad_s,
+        )
 
     logger.info(
         "student_episodes_listed tenant_id=%s user_id=%s student_pseudonym=%s "
@@ -905,51 +913,44 @@ async def get_cohort_cii_quartiles(
         compute_cii_evolution_longitudinal,
         set_tenant_rls,
     )
-    from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
+    from sqlalchemy.ext.asyncio import async_sessionmaker
 
-    from analytics_service.config import settings
-
-    ctr_engine = create_async_engine(settings.ctr_store_url, pool_size=2)
-    cls_engine = create_async_engine(settings.classifier_db_url, pool_size=2)
-    acad_engine = create_async_engine(settings.academic_db_url, pool_size=2)
+    ctr_engine = get_ctr_engine()
+    cls_engine = get_classifier_engine()
+    acad_engine = get_academic_engine()
     student_slopes: list[float] = []
-    try:
-        async with (
-            async_sessionmaker(ctr_engine, expire_on_commit=False)() as ctr_s,
-            async_sessionmaker(cls_engine, expire_on_commit=False)() as cls_s,
-            async_sessionmaker(acad_engine, expire_on_commit=False)() as acad_s,
-        ):
-            await set_tenant_rls(ctr_s, tenant_id)
-            await set_tenant_rls(cls_s, tenant_id)
-            await set_tenant_rls(acad_s, tenant_id)
-            ds = RealLongitudinalDataSource(ctr_s, cls_s, tenant_id)
+    async with (
+        async_sessionmaker(ctr_engine, expire_on_commit=False)() as ctr_s,
+        async_sessionmaker(cls_engine, expire_on_commit=False)() as cls_s,
+        async_sessionmaker(acad_engine, expire_on_commit=False)() as acad_s,
+    ):
+        await set_tenant_rls(ctr_s, tenant_id)
+        await set_tenant_rls(cls_s, tenant_id)
+        await set_tenant_rls(acad_s, tenant_id)
+        ds = RealLongitudinalDataSource(ctr_s, cls_s, tenant_id)
 
-            # Iterar por estudiante: obtener student list, luego cii por cada uno
-            from ctr_service.models import Episode
-            from sqlalchemy import select
+        # Iterar por estudiante: obtener student list, luego cii por cada uno
+        from ctr_service.models import Episode
+        from sqlalchemy import select
 
-            ep_stmt = (
-                select(Episode.student_pseudonym)
-                .where(Episode.comision_id == comision_id)
-                .where(Episode.tenant_id == tenant_id)
-                .distinct()
+        ep_stmt = (
+            select(Episode.student_pseudonym)
+            .where(Episode.comision_id == comision_id)
+            .where(Episode.tenant_id == tenant_id)
+            .distinct()
+        )
+        students_result = await ctr_s.execute(ep_stmt)
+        student_ids = [row.student_pseudonym for row in students_result.all()]
+
+        for student_id in student_ids:
+            classifications = await ds.list_classifications_with_templates_for_student(
+                student_pseudonym=student_id,
+                comision_id=comision_id,
+                academic_session=acad_s,
             )
-            students_result = await ctr_s.execute(ep_stmt)
-            student_ids = [row.student_pseudonym for row in students_result.all()]
-
-            for student_id in student_ids:
-                classifications = await ds.list_classifications_with_templates_for_student(
-                    student_pseudonym=student_id,
-                    comision_id=comision_id,
-                    academic_session=acad_s,
-                )
-                evolution = compute_cii_evolution_longitudinal(classifications)
-                if evolution["mean_slope"] is not None:
-                    student_slopes.append(evolution["mean_slope"])
-    finally:
-        await ctr_engine.dispose()
-        await cls_engine.dispose()
-        await acad_engine.dispose()
+            evolution = compute_cii_evolution_longitudinal(classifications)
+            if evolution["mean_slope"] is not None:
+                student_slopes.append(evolution["mean_slope"])
 
     payload = compute_cohort_quartiles_payload(student_slopes)
     logger.info(
@@ -1023,60 +1024,53 @@ async def get_student_alerts(
         compute_cii_evolution_longitudinal,
         set_tenant_rls,
     )
-    from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
+    from sqlalchemy.ext.asyncio import async_sessionmaker
 
-    from analytics_service.config import settings
-
-    ctr_engine = create_async_engine(settings.ctr_store_url, pool_size=2)
-    cls_engine = create_async_engine(settings.classifier_db_url, pool_size=2)
-    acad_engine = create_async_engine(settings.academic_db_url, pool_size=2)
+    ctr_engine = get_ctr_engine()
+    cls_engine = get_classifier_engine()
+    acad_engine = get_academic_engine()
     student_slope: float | None = None
     cohort_slopes: list[float] = []
-    try:
-        async with (
-            async_sessionmaker(ctr_engine, expire_on_commit=False)() as ctr_s,
-            async_sessionmaker(cls_engine, expire_on_commit=False)() as cls_s,
-            async_sessionmaker(acad_engine, expire_on_commit=False)() as acad_s,
-        ):
-            await set_tenant_rls(ctr_s, tenant_id)
-            await set_tenant_rls(cls_s, tenant_id)
-            await set_tenant_rls(acad_s, tenant_id)
-            ds = RealLongitudinalDataSource(ctr_s, cls_s, tenant_id)
+    async with (
+        async_sessionmaker(ctr_engine, expire_on_commit=False)() as ctr_s,
+        async_sessionmaker(cls_engine, expire_on_commit=False)() as cls_s,
+        async_sessionmaker(acad_engine, expire_on_commit=False)() as acad_s,
+    ):
+        await set_tenant_rls(ctr_s, tenant_id)
+        await set_tenant_rls(cls_s, tenant_id)
+        await set_tenant_rls(acad_s, tenant_id)
+        ds = RealLongitudinalDataSource(ctr_s, cls_s, tenant_id)
 
-            # 1. Slope del estudiante target
-            student_classifications = await ds.list_classifications_with_templates_for_student(
-                student_pseudonym=student_pseudonym,
+        # 1. Slope del estudiante target
+        student_classifications = await ds.list_classifications_with_templates_for_student(
+            student_pseudonym=student_pseudonym,
+            comision_id=comision_id,
+            academic_session=acad_s,
+        )
+        student_evolution = compute_cii_evolution_longitudinal(student_classifications)
+        student_slope = student_evolution["mean_slope"]
+
+        # 2. Slopes de toda la cohorte (para cuartiles)
+        from ctr_service.models import Episode
+        from sqlalchemy import select
+
+        ep_stmt = (
+            select(Episode.student_pseudonym)
+            .where(Episode.comision_id == comision_id)
+            .where(Episode.tenant_id == tenant_id)
+            .distinct()
+        )
+        students_result = await ctr_s.execute(ep_stmt)
+        student_ids = [row.student_pseudonym for row in students_result.all()]
+        for sid in student_ids:
+            cls = await ds.list_classifications_with_templates_for_student(
+                student_pseudonym=sid,
                 comision_id=comision_id,
                 academic_session=acad_s,
             )
-            student_evolution = compute_cii_evolution_longitudinal(student_classifications)
-            student_slope = student_evolution["mean_slope"]
-
-            # 2. Slopes de toda la cohorte (para cuartiles)
-            from ctr_service.models import Episode
-            from sqlalchemy import select
-
-            ep_stmt = (
-                select(Episode.student_pseudonym)
-                .where(Episode.comision_id == comision_id)
-                .where(Episode.tenant_id == tenant_id)
-                .distinct()
-            )
-            students_result = await ctr_s.execute(ep_stmt)
-            student_ids = [row.student_pseudonym for row in students_result.all()]
-            for sid in student_ids:
-                cls = await ds.list_classifications_with_templates_for_student(
-                    student_pseudonym=sid,
-                    comision_id=comision_id,
-                    academic_session=acad_s,
-                )
-                evo = compute_cii_evolution_longitudinal(cls)
-                if evo["mean_slope"] is not None:
-                    cohort_slopes.append(evo["mean_slope"])
-    finally:
-        await ctr_engine.dispose()
-        await cls_engine.dispose()
-        await acad_engine.dispose()
+            evo = compute_cii_evolution_longitudinal(cls)
+            if evo["mean_slope"] is not None:
+                cohort_slopes.append(evo["mean_slope"])
 
     cohort_stats = compute_cohort_quartiles_payload(cohort_slopes)
     alerts_payload = compute_alerts_payload(student_slope, cohort_stats)
@@ -1142,7 +1136,7 @@ class CohortAlertsSummaryOut(BaseModel):
     "/cohort/{comision_id}/alerts-summary",
     response_model=CohortAlertsSummaryOut,
 )
-async def get_cohort_alerts_summary(  # noqa: PLR0915  # endpoint complejo: gate k-anonymity + iteración estudiantes + agregación
+async def get_cohort_alerts_summary(
     comision_id: UUID,
     periodo_id: UUID | None = None,
     tenant_id: UUID = Depends(get_tenant_id),
@@ -1183,54 +1177,47 @@ async def get_cohort_alerts_summary(  # noqa: PLR0915  # endpoint complejo: gate
         compute_cii_evolution_longitudinal,
         set_tenant_rls,
     )
-    from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
+    from sqlalchemy.ext.asyncio import async_sessionmaker
 
-    from analytics_service.config import settings
-
-    ctr_engine = create_async_engine(settings.ctr_store_url, pool_size=2)
-    cls_engine = create_async_engine(settings.classifier_db_url, pool_size=2)
-    acad_engine = create_async_engine(settings.academic_db_url, pool_size=2)
+    ctr_engine = get_ctr_engine()
+    cls_engine = get_classifier_engine()
+    acad_engine = get_academic_engine()
 
     # Paso 1: recopilar slopes por estudiante (1 pasada para cohort stats
     # + n_students_evaluated). Paso 2: si N≥5, computar alertas individuales
     # y agregar por tipo.
     student_slope_pairs: list[tuple[UUID, float]] = []
-    try:
-        async with (
-            async_sessionmaker(ctr_engine, expire_on_commit=False)() as ctr_s,
-            async_sessionmaker(cls_engine, expire_on_commit=False)() as cls_s,
-            async_sessionmaker(acad_engine, expire_on_commit=False)() as acad_s,
-        ):
-            await set_tenant_rls(ctr_s, tenant_id)
-            await set_tenant_rls(cls_s, tenant_id)
-            await set_tenant_rls(acad_s, tenant_id)
-            ds = RealLongitudinalDataSource(ctr_s, cls_s, tenant_id)
+    async with (
+        async_sessionmaker(ctr_engine, expire_on_commit=False)() as ctr_s,
+        async_sessionmaker(cls_engine, expire_on_commit=False)() as cls_s,
+        async_sessionmaker(acad_engine, expire_on_commit=False)() as acad_s,
+    ):
+        await set_tenant_rls(ctr_s, tenant_id)
+        await set_tenant_rls(cls_s, tenant_id)
+        await set_tenant_rls(acad_s, tenant_id)
+        ds = RealLongitudinalDataSource(ctr_s, cls_s, tenant_id)
 
-            from ctr_service.models import Episode
-            from sqlalchemy import select
+        from ctr_service.models import Episode
+        from sqlalchemy import select
 
-            ep_stmt = (
-                select(Episode.student_pseudonym)
-                .where(Episode.comision_id == comision_id)
-                .where(Episode.tenant_id == tenant_id)
-                .distinct()
+        ep_stmt = (
+            select(Episode.student_pseudonym)
+            .where(Episode.comision_id == comision_id)
+            .where(Episode.tenant_id == tenant_id)
+            .distinct()
+        )
+        students_result = await ctr_s.execute(ep_stmt)
+        student_ids = [row.student_pseudonym for row in students_result.all()]
+
+        for sid in student_ids:
+            cls = await ds.list_classifications_with_templates_for_student(
+                student_pseudonym=sid,
+                comision_id=comision_id,
+                academic_session=acad_s,
             )
-            students_result = await ctr_s.execute(ep_stmt)
-            student_ids = [row.student_pseudonym for row in students_result.all()]
-
-            for sid in student_ids:
-                cls = await ds.list_classifications_with_templates_for_student(
-                    student_pseudonym=sid,
-                    comision_id=comision_id,
-                    academic_session=acad_s,
-                )
-                evo = compute_cii_evolution_longitudinal(cls)
-                if evo["mean_slope"] is not None:
-                    student_slope_pairs.append((sid, evo["mean_slope"]))
-    finally:
-        await ctr_engine.dispose()
-        await cls_engine.dispose()
-        await acad_engine.dispose()
+            evo = compute_cii_evolution_longitudinal(cls)
+            if evo["mean_slope"] is not None:
+                student_slope_pairs.append((sid, evo["mean_slope"]))
 
     cohort_slopes = [slope for _sid, slope in student_slope_pairs]
     cohort_stats = compute_cohort_quartiles_payload(cohort_slopes)
@@ -1375,24 +1362,18 @@ async def get_cohort_adversarial_events(
         return CohortAdversarialEventsOut(comision_id=str(comision_id), **empty)
 
     from platform_ops import RealLongitudinalDataSource, set_tenant_rls
-    from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
+    from sqlalchemy.ext.asyncio import async_sessionmaker
 
-    from analytics_service.config import settings
-
-    ctr_engine = create_async_engine(settings.ctr_store_url, pool_size=2)
-    cls_engine = create_async_engine(settings.classifier_db_url, pool_size=2)
-    try:
-        async with (
-            async_sessionmaker(ctr_engine, expire_on_commit=False)() as ctr_s,
-            async_sessionmaker(cls_engine, expire_on_commit=False)() as cls_s,
-        ):
-            await set_tenant_rls(ctr_s, tenant_id)
-            await set_tenant_rls(cls_s, tenant_id)
-            ds = RealLongitudinalDataSource(ctr_s, cls_s, tenant_id)
-            events = await ds.list_adversarial_events_by_comision(comision_id)
-    finally:
-        await ctr_engine.dispose()
-        await cls_engine.dispose()
+    ctr_engine = get_ctr_engine()
+    cls_engine = get_classifier_engine()
+    async with (
+        async_sessionmaker(ctr_engine, expire_on_commit=False)() as ctr_s,
+        async_sessionmaker(cls_engine, expire_on_commit=False)() as cls_s,
+    ):
+        await set_tenant_rls(ctr_s, tenant_id)
+        await set_tenant_rls(cls_s, tenant_id)
+        ds = RealLongitudinalDataSource(ctr_s, cls_s, tenant_id)
+        events = await ds.list_adversarial_events_by_comision(comision_id)
 
     aggregated = aggregate_adversarial_events(events)
     logger.info(
@@ -1469,24 +1450,18 @@ async def get_cohort_integrity_events(
         return CohortIntegrityEventsOut(comision_id=str(comision_id), **empty)
 
     from platform_ops import RealLongitudinalDataSource, set_tenant_rls
-    from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
+    from sqlalchemy.ext.asyncio import async_sessionmaker
 
-    from analytics_service.config import settings
-
-    ctr_engine = create_async_engine(settings.ctr_store_url, pool_size=2)
-    cls_engine = create_async_engine(settings.classifier_db_url, pool_size=2)
-    try:
-        async with (
-            async_sessionmaker(ctr_engine, expire_on_commit=False)() as ctr_s,
-            async_sessionmaker(cls_engine, expire_on_commit=False)() as cls_s,
-        ):
-            await set_tenant_rls(ctr_s, tenant_id)
-            await set_tenant_rls(cls_s, tenant_id)
-            ds = RealLongitudinalDataSource(ctr_s, cls_s, tenant_id)
-            events = await ds.list_integrity_events_by_comision(comision_id)
-    finally:
-        await ctr_engine.dispose()
-        await cls_engine.dispose()
+    ctr_engine = get_ctr_engine()
+    cls_engine = get_classifier_engine()
+    async with (
+        async_sessionmaker(ctr_engine, expire_on_commit=False)() as ctr_s,
+        async_sessionmaker(cls_engine, expire_on_commit=False)() as cls_s,
+    ):
+        await set_tenant_rls(ctr_s, tenant_id)
+        await set_tenant_rls(cls_s, tenant_id)
+        ds = RealLongitudinalDataSource(ctr_s, cls_s, tenant_id)
+        events = await ds.list_integrity_events_by_comision(comision_id)
 
     # Agregacion inline (simpler than the adversarial one — solo 4 types).
     counts_by_type: dict[str, int] = {}
@@ -1742,42 +1717,36 @@ async def get_governance_events(
         )
 
     from platform_ops import RealLongitudinalDataSource, set_tenant_rls
-    from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
+    from sqlalchemy.ext.asyncio import async_sessionmaker
 
-    from analytics_service.config import settings
-
-    ctr_engine = create_async_engine(settings.ctr_store_url, pool_size=2)
-    cls_engine = create_async_engine(settings.classifier_db_url, pool_size=2)
-    try:
-        async with (
-            async_sessionmaker(ctr_engine, expire_on_commit=False)() as ctr_s,
-            async_sessionmaker(cls_engine, expire_on_commit=False)() as cls_s,
-        ):
-            await set_tenant_rls(ctr_s, tenant_id)
-            await set_tenant_rls(cls_s, tenant_id)
-            ds = RealLongitudinalDataSource(ctr_s, cls_s, tenant_id)
-            # NOTA: list_governance_events_cross_cohort es un metodo nuevo del
-            # data source — debe filtrar por academic_main JOIN para resolver
-            # facultad_id/materia_id/periodo_id desde Comision/Materia/Periodo.
-            # Si el metodo no existe (compat dev), caemos a list por comision sin
-            # filtros de facultad — el frontend muestra el subset disponible.
-            list_fn = getattr(ds, "list_governance_events_cross_cohort", None)
-            if list_fn is None:
-                events_raw: list[dict] = []
-            else:
-                events_raw = await list_fn(
-                    facultad_id=facultad_id,
-                    materia_id=materia_id,
-                    periodo_id=periodo_id,
-                    severity_min=severity_min,
-                    severity_max=severity_max,
-                    category=category,
-                    cursor=cursor,
-                    limit=limit,
-                )
-    finally:
-        await ctr_engine.dispose()
-        await cls_engine.dispose()
+    ctr_engine = get_ctr_engine()
+    cls_engine = get_classifier_engine()
+    async with (
+        async_sessionmaker(ctr_engine, expire_on_commit=False)() as ctr_s,
+        async_sessionmaker(cls_engine, expire_on_commit=False)() as cls_s,
+    ):
+        await set_tenant_rls(ctr_s, tenant_id)
+        await set_tenant_rls(cls_s, tenant_id)
+        ds = RealLongitudinalDataSource(ctr_s, cls_s, tenant_id)
+        # NOTA: list_governance_events_cross_cohort es un metodo nuevo del
+        # data source — debe filtrar por academic_main JOIN para resolver
+        # facultad_id/materia_id/periodo_id desde Comision/Materia/Periodo.
+        # Si el metodo no existe (compat dev), caemos a list por comision sin
+        # filtros de facultad — el frontend muestra el subset disponible.
+        list_fn = getattr(ds, "list_governance_events_cross_cohort", None)
+        if list_fn is None:
+            events_raw: list[dict] = []
+        else:
+            events_raw = await list_fn(
+                facultad_id=facultad_id,
+                materia_id=materia_id,
+                periodo_id=periodo_id,
+                severity_min=severity_min,
+                severity_max=severity_max,
+                category=category,
+                cursor=cursor,
+                limit=limit,
+            )
 
     events_out = [
         GovernanceEventOut(
@@ -1931,62 +1900,56 @@ async def get_my_reflections(  # noqa: PLR0915  # endpoint complejo: query + par
 
     from platform_ops import set_tenant_rls
     from sqlalchemy import select
-    from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
+    from sqlalchemy.ext.asyncio import async_sessionmaker
 
-    from analytics_service.config import settings
+    ctr_engine = get_ctr_engine()
+    acad_engine = get_academic_engine()
+    ctr_maker = async_sessionmaker(ctr_engine, expire_on_commit=False)
+    acad_maker = async_sessionmaker(acad_engine, expire_on_commit=False)
+    async with ctr_maker() as ctr_s, acad_maker() as acad_s:
+        await set_tenant_rls(ctr_s, tenant_id)
+        await set_tenant_rls(acad_s, tenant_id)
 
-    ctr_engine = create_async_engine(settings.ctr_store_url, pool_size=2)
-    acad_engine = create_async_engine(settings.academic_db_url, pool_size=2)
-    try:
-        ctr_maker = async_sessionmaker(ctr_engine, expire_on_commit=False)
-        acad_maker = async_sessionmaker(acad_engine, expire_on_commit=False)
-        async with ctr_maker() as ctr_s, acad_maker() as acad_s:
-            await set_tenant_rls(ctr_s, tenant_id)
-            await set_tenant_rls(acad_s, tenant_id)
+        # Late imports (modelos viven en otros servicios)
+        from academic_service.models.operacional import TareaPractica
+        from ctr_service.models import Episode, Event
 
-            # Late imports (modelos viven en otros servicios)
-            from academic_service.models.operacional import TareaPractica
-            from ctr_service.models import Episode, Event
+        # Query: JOIN Event (reflexion_completada) con Episode para
+        # asegurar que el episodio sea del estudiante autenticado.
+        # Doble filtro (RLS + WHERE explicito) es el patron defensivo
+        # de ADR-007.
+        stmt = (
+            select(Event, Episode)
+            .join(Episode, Episode.id == Event.episode_id)
+            .where(Event.event_type == "reflexion_completada")
+            .where(Event.tenant_id == tenant_id)
+            .where(Episode.tenant_id == tenant_id)
+            .where(Episode.student_pseudonym == user_id)
+            .order_by(Event.ts.desc())
+        )
+        if cursor_dt is not None:
+            stmt = stmt.where(Event.ts < cursor_dt)
+        # Pedimos limit+1 para detectar si hay mas paginas sin un count
+        # adicional.
+        stmt = stmt.limit(limit + 1)
+        result = await ctr_s.execute(stmt)
+        rows = result.all()
 
-            # Query: JOIN Event (reflexion_completada) con Episode para
-            # asegurar que el episodio sea del estudiante autenticado.
-            # Doble filtro (RLS + WHERE explicito) es el patron defensivo
-            # de ADR-007.
-            stmt = (
-                select(Event, Episode)
-                .join(Episode, Episode.id == Event.episode_id)
-                .where(Event.event_type == "reflexion_completada")
-                .where(Event.tenant_id == tenant_id)
-                .where(Episode.tenant_id == tenant_id)
-                .where(Episode.student_pseudonym == user_id)
-                .order_by(Event.ts.desc())
+        has_more = len(rows) > limit
+        visible_rows = rows[:limit]
+
+        # Resolver titulos/codigos de TPs en un solo query batch
+        problema_ids = list({row.Episode.problema_id for row in visible_rows})
+        tarea_map: dict[UUID, tuple[str | None, str | None]] = {}
+        if problema_ids:
+            tp_stmt = (
+                select(TareaPractica.id, TareaPractica.codigo, TareaPractica.titulo)
+                .where(TareaPractica.id.in_(problema_ids))
+                .where(TareaPractica.tenant_id == tenant_id)
             )
-            if cursor_dt is not None:
-                stmt = stmt.where(Event.ts < cursor_dt)
-            # Pedimos limit+1 para detectar si hay mas paginas sin un count
-            # adicional.
-            stmt = stmt.limit(limit + 1)
-            result = await ctr_s.execute(stmt)
-            rows = result.all()
-
-            has_more = len(rows) > limit
-            visible_rows = rows[:limit]
-
-            # Resolver titulos/codigos de TPs en un solo query batch
-            problema_ids = list({row.Episode.problema_id for row in visible_rows})
-            tarea_map: dict[UUID, tuple[str | None, str | None]] = {}
-            if problema_ids:
-                tp_stmt = (
-                    select(TareaPractica.id, TareaPractica.codigo, TareaPractica.titulo)
-                    .where(TareaPractica.id.in_(problema_ids))
-                    .where(TareaPractica.tenant_id == tenant_id)
-                )
-                tp_result = await acad_s.execute(tp_stmt)
-                for tp_id, tp_codigo, tp_titulo in tp_result.all():
-                    tarea_map[tp_id] = (tp_codigo, tp_titulo)
-    finally:
-        await ctr_engine.dispose()
-        await acad_engine.dispose()
+            tp_result = await acad_s.execute(tp_stmt)
+            for tp_id, tp_codigo, tp_titulo in tp_result.all():
+                tarea_map[tp_id] = (tp_codigo, tp_titulo)
 
     reflections: list[ReflectionEntryOut] = []
     last_ts: _datetime | None = None

@@ -25,9 +25,10 @@ from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy import select
-from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
+from sqlalchemy.ext.asyncio import async_sessionmaker
 
 from analytics_service.config import settings
+from analytics_service.db import get_ctr_engine
 from analytics_service.routes.analytics import get_tenant_id, get_user_id
 from analytics_service.services.caliper_xapi_exporter import to_caliper, to_xapi
 
@@ -54,36 +55,33 @@ async def _fetch_episode_events(
             detail="ctr_store_url no configurado (modo dev sin DB real)",
         )
 
-    ctr_engine = create_async_engine(settings.ctr_store_url, pool_size=2)
-    try:
-        ctr_maker = async_sessionmaker(ctr_engine, expire_on_commit=False)
-        async with ctr_maker() as ctr_s:
-            await set_tenant_rls(ctr_s, tenant_id)
-            stmt = (
-                select(Event)
-                .where(Event.episode_id == episode_id)
-                .where(Event.tenant_id == tenant_id)
-                .order_by(Event.seq.asc())
-            )
-            result = await ctr_s.execute(stmt)
-            events = [
-                {
-                    "id": str(ev.id) if hasattr(ev, "id") else str(ev.seq),
-                    "seq": ev.seq,
-                    "event_type": ev.event_type,
-                    "ts": ev.ts.isoformat().replace("+00:00", "Z") if ev.ts else None,
-                    "payload": ev.payload or {},
-                    "self_hash": getattr(ev, "self_hash", None),
-                    "chain_hash": getattr(ev, "chain_hash", None),
-                    "prev_chain_hash": getattr(ev, "prev_chain_hash", None),
-                    "labeler_version": getattr(ev, "labeler_version", None),
-                    "n_level": getattr(ev, "n_level", None),
-                    "student_pseudonym": str(getattr(ev, "student_pseudonym", "")) or None,
-                }
-                for ev in result.scalars().all()
-            ]
-    finally:
-        await ctr_engine.dispose()
+    ctr_engine = get_ctr_engine()
+    ctr_maker = async_sessionmaker(ctr_engine, expire_on_commit=False)
+    async with ctr_maker() as ctr_s:
+        await set_tenant_rls(ctr_s, tenant_id)
+        stmt = (
+            select(Event)
+            .where(Event.episode_id == episode_id)
+            .where(Event.tenant_id == tenant_id)
+            .order_by(Event.seq.asc())
+        )
+        result = await ctr_s.execute(stmt)
+        events = [
+            {
+                "id": str(ev.id) if hasattr(ev, "id") else str(ev.seq),
+                "seq": ev.seq,
+                "event_type": ev.event_type,
+                "ts": ev.ts.isoformat().replace("+00:00", "Z") if ev.ts else None,
+                "payload": ev.payload or {},
+                "self_hash": getattr(ev, "self_hash", None),
+                "chain_hash": getattr(ev, "chain_hash", None),
+                "prev_chain_hash": getattr(ev, "prev_chain_hash", None),
+                "labeler_version": getattr(ev, "labeler_version", None),
+                "n_level": getattr(ev, "n_level", None),
+                "student_pseudonym": str(getattr(ev, "student_pseudonym", "")) or None,
+            }
+            for ev in result.scalars().all()
+        ]
 
     if not events:
         raise HTTPException(
