@@ -47,12 +47,13 @@ class GovernanceClient:
     def __init__(self, base_url: str, timeout: float = 10.0) -> None:
         self.base_url = base_url.rstrip("/")
         self.timeout = timeout
+        self._client = httpx.AsyncClient(timeout=timeout)
 
     async def get_prompt(self, name: str, version: str) -> PromptConfig:
-        async with httpx.AsyncClient(timeout=self.timeout) as client:
-            r = await client.get(f"{self.base_url}/api/v1/prompts/{name}/{version}")
-            r.raise_for_status()
-            data = r.json()
+        client = self._client
+        r = await client.get(f"{self.base_url}/api/v1/prompts/{name}/{version}")
+        r.raise_for_status()
+        data = r.json()
         return PromptConfig(
             name=data["name"],
             version=data["version"],
@@ -61,16 +62,17 @@ class GovernanceClient:
         )
 
     async def get_active_configs(self) -> dict:
-        async with httpx.AsyncClient(timeout=self.timeout) as client:
-            r = await client.get(f"{self.base_url}/api/v1/active_configs")
-            r.raise_for_status()
-            return r.json()
+        client = self._client
+        r = await client.get(f"{self.base_url}/api/v1/active_configs")
+        r.raise_for_status()
+        return r.json()
 
 
 class ContentClient:
     def __init__(self, base_url: str, timeout: float = 15.0) -> None:
         self.base_url = base_url.rstrip("/")
         self.timeout = timeout
+        self._client = httpx.AsyncClient(timeout=timeout)
 
     async def retrieve(
         self,
@@ -123,14 +125,14 @@ class ContentClient:
             payload["materia_id"] = str(materia_id)
         elif comision_id is not None:
             payload["comision_id"] = str(comision_id)
-        async with httpx.AsyncClient(timeout=self.timeout) as client:
-            r = await client.post(
-                f"{self.base_url}/api/v1/retrieve",
-                json=payload,
-                headers=headers,
-            )
-            r.raise_for_status()
-            data = r.json()
+        client = self._client
+        r = await client.post(
+            f"{self.base_url}/api/v1/retrieve",
+            json=payload,
+            headers=headers,
+        )
+        r.raise_for_status()
+        data = r.json()
         chunks = [
             RetrievedChunk(
                 id=UUID(c["id"]),
@@ -151,6 +153,7 @@ class AIGatewayClient:
     def __init__(self, base_url: str, timeout: float = 60.0) -> None:
         self.base_url = base_url.rstrip("/")
         self.timeout = timeout
+        self._client = httpx.AsyncClient(timeout=timeout)
 
     async def stream(
         self,
@@ -196,15 +199,13 @@ class AIGatewayClient:
             payload["materia_id"] = str(materia_id)
         body = json.dumps(payload)
 
-        async with (
-            httpx.AsyncClient(timeout=self.timeout) as client,
-            client.stream(
-                "POST",
-                f"{self.base_url}/api/v1/stream",
-                content=body,
-                headers=headers,
-            ) as response,
-        ):
+        client = self._client
+        async with client.stream(
+            "POST",
+            f"{self.base_url}/api/v1/stream",
+            content=body,
+            headers=headers,
+        ) as response:
             response.raise_for_status()
             async for line in response.aiter_lines():
                 if not line or not line.startswith("data: "):
@@ -239,6 +240,7 @@ class CTRClient:
     def __init__(self, base_url: str, timeout: float = 5.0) -> None:
         self.base_url = base_url.rstrip("/")
         self.timeout = timeout
+        self._client = httpx.AsyncClient(timeout=timeout)
 
     async def publish_event(self, event: dict, tenant_id: UUID, caller_id: UUID) -> str:
         headers = {
@@ -247,14 +249,14 @@ class CTRClient:
             "X-User-Email": "tutor-service@platform.internal",
             "X-User-Roles": "tutor_service",
         }
-        async with httpx.AsyncClient(timeout=self.timeout) as client:
-            r = await client.post(
-                f"{self.base_url}/api/v1/events",
-                json=event,
-                headers=headers,
-            )
-            r.raise_for_status()
-            data = r.json()
+        client = self._client
+        r = await client.post(
+            f"{self.base_url}/api/v1/events",
+            json=event,
+            headers=headers,
+        )
+        r.raise_for_status()
+        data = r.json()
         return data["message_id"]
 
     async def get_episode(self, episode_id: UUID, tenant_id: UUID, caller_id: UUID) -> dict | None:
@@ -275,11 +277,11 @@ class CTRClient:
             "X-User-Email": "tutor-service@platform.internal",
             "X-User-Roles": "tutor_service",
         }
-        async with httpx.AsyncClient(timeout=self.timeout) as client:
-            r = await client.get(
-                f"{self.base_url}/api/v1/episodes/{episode_id}",
-                headers=headers,
-            )
+        client = self._client
+        r = await client.get(
+            f"{self.base_url}/api/v1/episodes/{episode_id}",
+            headers=headers,
+        )
         if r.status_code == 404:
             return None
         r.raise_for_status()

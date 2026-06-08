@@ -30,25 +30,26 @@ class GovernanceClient:
     def __init__(self, base_url: str, timeout: float = 10.0) -> None:
         self.base_url = base_url.rstrip("/")
         self.timeout = timeout
+        self._client = httpx.AsyncClient(timeout=timeout)
 
     async def active_configs(self) -> dict[str, Any]:
-        async with httpx.AsyncClient(timeout=self.timeout) as client:
-            resp = await client.get(f"{self.base_url}/api/v1/active_configs")
-            resp.raise_for_status()
-            return resp.json()
+        client = self._client
+        resp = await client.get(f"{self.base_url}/api/v1/active_configs")
+        resp.raise_for_status()
+        return resp.json()
 
     async def load_prompt(self, name: str, version: str) -> ActivePrompt:
         """Carga un prompt verificado."""
-        async with httpx.AsyncClient(timeout=self.timeout) as client:
-            resp = await client.get(f"{self.base_url}/api/v1/prompts/{name}/{version}")
-            resp.raise_for_status()
-            data = resp.json()
-            return ActivePrompt(
-                name=data["name"],
-                version=data["version"],
-                content=data["content"],
-                hash=data["hash"],
-            )
+        client = self._client
+        resp = await client.get(f"{self.base_url}/api/v1/prompts/{name}/{version}")
+        resp.raise_for_status()
+        data = resp.json()
+        return ActivePrompt(
+            name=data["name"],
+            version=data["version"],
+            content=data["content"],
+            hash=data["hash"],
+        )
 
     async def resolve_for_tenant(self, tenant_id: str, prompt_name: str = "tutor") -> ActivePrompt:
         """Obtiene el prompt activo para un tenant específico.

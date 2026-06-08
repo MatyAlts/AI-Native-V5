@@ -43,6 +43,7 @@ class ContentClient:
     def __init__(self, base_url: str, timeout: float = 15.0) -> None:
         self.base_url = base_url.rstrip("/")
         self.timeout = timeout
+        self._client = httpx.AsyncClient(timeout=timeout)
 
     async def retrieve(
         self,
@@ -102,14 +103,14 @@ class ContentClient:
             "X-User-Roles": "tutor_service",
         }
 
-        async with httpx.AsyncClient(timeout=self.timeout) as client:
-            resp = await client.post(
-                f"{self.base_url}/api/v1/retrieve",
-                json=payload,
-                headers=headers,
-            )
-            resp.raise_for_status()
-            data = resp.json()
+        client = self._client
+        resp = await client.post(
+            f"{self.base_url}/api/v1/retrieve",
+            json=payload,
+            headers=headers,
+        )
+        resp.raise_for_status()
+        data = resp.json()
 
         chunks = [
             RetrievedChunk(

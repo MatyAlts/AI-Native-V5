@@ -55,6 +55,7 @@ class AcademicClient:
     def __init__(self, base_url: str, timeout: float = 10.0) -> None:
         self.base_url = base_url.rstrip("/")
         self.timeout = timeout
+        self._client = httpx.AsyncClient(timeout=timeout)
 
     async def get_tarea_practica(
         self,
@@ -78,11 +79,11 @@ class AcademicClient:
             "X-User-Email": "tutor-service@platform.internal",
             "X-User-Roles": "tutor_service",
         }
-        async with httpx.AsyncClient(timeout=self.timeout) as client:
-            resp = await client.get(
-                f"{self.base_url}/api/v1/tareas-practicas/{tarea_id}",
-                headers=headers,
-            )
+        client = self._client
+        resp = await client.get(
+            f"{self.base_url}/api/v1/tareas-practicas/{tarea_id}",
+            headers=headers,
+        )
         if resp.status_code == 404:
             return None
         resp.raise_for_status()
@@ -122,11 +123,11 @@ class AcademicClient:
             "X-User-Email": "tutor-service@platform.internal",
             "X-User-Roles": "tutor_service",
         }
-        async with httpx.AsyncClient(timeout=self.timeout) as client:
-            resp = await client.get(
-                f"{self.base_url}/api/v1/comisiones/{comision_id}",
-                headers=headers,
-            )
+        client = self._client
+        resp = await client.get(
+            f"{self.base_url}/api/v1/comisiones/{comision_id}",
+            headers=headers,
+        )
         if resp.status_code == 404:
             return None
         resp.raise_for_status()
@@ -162,11 +163,11 @@ class AcademicClient:
             "X-User-Email": "tutor-service@platform.internal",
             "X-User-Roles": "tutor_service",
         }
-        async with httpx.AsyncClient(timeout=self.timeout) as client:
-            resp = await client.get(
-                f"{self.base_url}/api/v1/tareas-practicas/{tarea_id}",
-                headers=headers,
-            )
+        client = self._client
+        resp = await client.get(
+            f"{self.base_url}/api/v1/tareas-practicas/{tarea_id}",
+            headers=headers,
+        )
         if resp.status_code == 404:
             return None
         resp.raise_for_status()
@@ -194,11 +195,11 @@ class AcademicClient:
             "X-User-Email": "tutor-service@platform.internal",
             "X-User-Roles": "tutor_service",
         }
-        async with httpx.AsyncClient(timeout=self.timeout) as client:
-            resp = await client.get(
-                f"{self.base_url}/api/v1/ejercicios/{ejercicio_id}",
-                headers=headers,
-            )
+        client = self._client
+        resp = await client.get(
+            f"{self.base_url}/api/v1/ejercicios/{ejercicio_id}",
+            headers=headers,
+        )
         if resp.status_code == 404:
             return None
         resp.raise_for_status()
@@ -230,11 +231,11 @@ class AcademicClient:
             "X-User-Email": "tutor-service@platform.internal",
             "X-User-Roles": "tutor_service",
         }
-        async with httpx.AsyncClient(timeout=self.timeout) as client:
-            resp = await client.get(
-                f"{self.base_url}/api/v1/tareas-practicas/{tarea_id}/ejercicios",
-                headers=headers,
-            )
+        client = self._client
+        resp = await client.get(
+            f"{self.base_url}/api/v1/tareas-practicas/{tarea_id}/ejercicios",
+            headers=headers,
+        )
         resp.raise_for_status()
         data = resp.json()
         # El endpoint devuelve directamente la lista (no envuelta en ListResponse).
