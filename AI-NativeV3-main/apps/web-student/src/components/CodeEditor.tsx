@@ -378,6 +378,29 @@ export function CodeEditor({
       // Fallback para sys.stdin.read() crudo (sin prompt inline).
       py.setStdin({ stdin: () => askForInput("") })
 
+      // FIX-22 (F-13): sandbox del editor. En Pyodide `import js` le da al
+      // código del alumno acceso al navegador (DOM, cookies, localStorage).
+      // Lo cerramos con un finder que rechaza js / pyodide_js + lo sacamos de
+      // sys.modules (sino `import js` devuelve la copia cacheada sin pasar por
+      // el finder). Los imports normales (math, random, etc.) no se tocan.
+      await py.runPythonAsync(`
+import sys as _tutor_sys
+
+_TUTOR_BLOCKED = {"js", "pyodide_js"}
+
+
+class _TutorImportGuard:
+    def find_spec(self, name, path=None, target=None):
+        if name.split(".")[0] in _TUTOR_BLOCKED:
+            raise ImportError("El acceso al navegador esta bloqueado en este editor")
+        return None
+
+
+_tutor_sys.meta_path.insert(0, _TutorImportGuard())
+for _m in [k for k in list(_tutor_sys.modules) if k.split(".")[0] in _TUTOR_BLOCKED]:
+    del _tutor_sys.modules[_m]
+`)
+
       pyodideRef.current = py
       setLoading(false)
     })().catch((e: unknown) => {
