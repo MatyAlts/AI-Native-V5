@@ -22,6 +22,7 @@ type PyodideAPI = {
   setStdout(opts: { batched: (text: string) => void }): void
   setStderr(opts: { batched: (text: string) => void }): void
   setStdin(opts: { stdin: () => string | null }): void
+  globals: { set(name: string, value: unknown): void }
 }
 
 type PyodideLoader = (options?: { indexURL?: string }) => Promise<PyodideAPI>
@@ -345,25 +346,37 @@ export function CodeEditor({
           setOutput((prev) => `${prev}${text}\n`)
         },
       })
-      // Soporte para input(): usa prompt() del browser. Le mostramos al alumno
-      // lo que el programa ya imprimió (los print() que orientan qué ingresar),
-      // porque el render de React queda bloqueado mientras el prompt está abierto.
-      py.setStdin({
-        stdin: () => {
-          const guia = outputBufferRef.current.trim()
-          const mensaje = guia
-            ? `${guia}\n\n↳ Ingresá el dato que pide el programa:`
-            : "El programa pide un dato de entrada (input):"
-          const value = window.prompt(mensaje)
-          // Echo del valor ingresado a la terminal, así la transcripción de la
-          // ejecución queda legible (sino el input del alumno no aparece).
-          if (value !== null) {
-            outputBufferRef.current += `${value}\n`
-            setOutput((prev) => `${prev}${value}\n`)
-          }
-          return value ?? ""
-        },
-      })
+      // Soporte para input(). Pyodide manda el prompt inline de input("texto")
+      // a stdout SIN salto de línea, así que el handler `batched` lo bufferea y
+      // no llega a la ventanita a tiempo. Para no depender de stdout,
+      // interceptamos input() en Python (override de builtins.input) y recibimos
+      // el texto del prompt como argumento, explícito.
+      const askForInput = (promptText: string): string => {
+        const raw = promptText ?? ""
+        const inline = raw.trim()
+        // El prompt inline de input("...") manda; si no hay, mostramos lo que el
+        // programa ya imprimió con print() (los mensajes que orientan al alumno).
+        const guia = inline || outputBufferRef.current.trim()
+        const mensaje = guia
+          ? `${guia}\n\n↳ Ingresá el dato que pide el programa:`
+          : "El programa pide un dato de entrada (input):"
+        const value = window.prompt(mensaje) ?? ""
+        // Echo del prompt inline (que no pasó por stdout) + el valor, para que la
+        // terminal muestre la interacción completa, como una consola real.
+        const echo = `${raw}${value}\n`
+        outputBufferRef.current += echo
+        setOutput((prev) => `${prev}${echo}`)
+        return value
+      }
+      py.globals.set("__tutor_ask_input", askForInput)
+      await py.runPythonAsync(
+        "import builtins as __tutor_builtins\n" +
+          "def __tutor_input(prompt=''):\n" +
+          "    return __tutor_ask_input(str(prompt))\n" +
+          "__tutor_builtins.input = __tutor_input\n",
+      )
+      // Fallback para sys.stdin.read() crudo (sin prompt inline).
+      py.setStdin({ stdin: () => askForInput("") })
 
       pyodideRef.current = py
       setLoading(false)
