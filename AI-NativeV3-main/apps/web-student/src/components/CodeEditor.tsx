@@ -83,6 +83,11 @@ export function CodeEditor({
   const editorContainerRef = useRef<HTMLDivElement>(null)
   const editorRef = useRef<MonacoEditor.IStandaloneCodeEditor | null>(null)
   const pyodideRef = useRef<PyodideAPI | null>(null)
+  // Espejo síncrono de `output`: window.prompt() bloquea el event loop, así que
+  // React no alcanza a repintar el panel con los print() previos antes de que
+  // aparezca la ventanita de input(). Leemos de este ref para mostrarle al
+  // alumno los mensajes que orientan qué dato ingresar.
+  const outputBufferRef = useRef<string>("")
 
   const [code, setCode] = useState(initialCode)
   const [output, setOutput] = useState<string>("")
@@ -150,6 +155,11 @@ export function CodeEditor({
         renderWhitespace: "selection",
         tabSize: 4,
         insertSpaces: true,
+        // El código largo fluye a la línea siguiente en vez de escaparse
+        // horizontal a la derecha — clave para principiantes que pierden de
+        // vista lo que escriben fuera del viewport.
+        wordWrap: "on",
+        wrappingIndent: "indent",
       })
 
       // F6: detectar paste del clipboard. Monaco dispara onDidPaste *antes*
@@ -321,17 +331,36 @@ export function CodeEditor({
       const py = await window.loadPyodide({ indexURL: PYODIDE_URL })
       if (cancelled) return
 
-      // Capturar stdout/stderr con saltos de línea
+      // Capturar stdout/stderr con saltos de línea. Mantenemos el espejo
+      // síncrono (outputBufferRef) además del state de React.
       py.setStdout({
-        batched: (text: string) => setOutput((prev) => prev + text + "\n"),
+        batched: (text: string) => {
+          outputBufferRef.current += `${text}\n`
+          setOutput((prev) => `${prev}${text}\n`)
+        },
       })
       py.setStderr({
-        batched: (text: string) => setOutput((prev) => prev + text + "\n"),
+        batched: (text: string) => {
+          outputBufferRef.current += `${text}\n`
+          setOutput((prev) => `${prev}${text}\n`)
+        },
       })
-      // Soporte para input(): usa prompt() del browser
+      // Soporte para input(): usa prompt() del browser. Le mostramos al alumno
+      // lo que el programa ya imprimió (los print() que orientan qué ingresar),
+      // porque el render de React queda bloqueado mientras el prompt está abierto.
       py.setStdin({
         stdin: () => {
-          const value = window.prompt("El programa pide un dato (input):")
+          const guia = outputBufferRef.current.trim()
+          const mensaje = guia
+            ? `${guia}\n\n↳ Ingresá el dato que pide el programa:`
+            : "El programa pide un dato de entrada (input):"
+          const value = window.prompt(mensaje)
+          // Echo del valor ingresado a la terminal, así la transcripción de la
+          // ejecución queda legible (sino el input del alumno no aparece).
+          if (value !== null) {
+            outputBufferRef.current += `${value}\n`
+            setOutput((prev) => `${prev}${value}\n`)
+          }
           return value ?? ""
         },
       })
@@ -354,18 +383,21 @@ export function CodeEditor({
     if (!pyodideRef.current || running) return
     setRunning(true)
     setOutput("")
+    outputBufferRef.current = ""
     setError(null)
     const started = performance.now()
 
     try {
       await pyodideRef.current.runPythonAsync(code)
       const elapsed = performance.now() - started
-      onCodeExecuted?.({ code, output, error: null, durationMs: elapsed })
+      // outputBufferRef (no el state `output`, que es stale por el closure)
+      // tiene la salida real acumulada que viaja en el evento CTR codigo_ejecutado.
+      onCodeExecuted?.({ code, output: outputBufferRef.current, error: null, durationMs: elapsed })
     } catch (e) {
       const errMsg = String(e)
       setError(errMsg)
       const elapsed = performance.now() - started
-      onCodeExecuted?.({ code, output, error: errMsg, durationMs: elapsed })
+      onCodeExecuted?.({ code, output: outputBufferRef.current, error: errMsg, durationMs: elapsed })
     } finally {
       setRunning(false)
     }
@@ -452,16 +484,25 @@ export function CodeEditor({
 
       <div ref={editorContainerRef} className="flex-1 min-h-[200px]" />
 
-      <div className="border-t border-border-soft bg-ink text-surface font-mono text-xs p-3 min-h-[100px] max-h-[200px] overflow-y-auto">
-        {output && <pre className="whitespace-pre-wrap">{output}</pre>}
-        {error && <pre className="whitespace-pre-wrap text-danger">{error}</pre>}
-        {!output && !error && !running && (
-          <span className="text-muted">
-            {loading
-              ? "Cargando runtime Python en el navegador (primera vez ~6 MB)..."
-              : `Ejecutá tu código (${shortcutLabel}) para ver el output acá.`}
+      <div className="border-t border-border-soft flex flex-col">
+        <div className="flex items-center gap-2 px-4 py-1.5 bg-ink border-b border-white/5">
+          <span className="text-[11px] font-semibold uppercase tracking-wider text-muted">
+            Salida
           </span>
-        )}
+        </div>
+        {/* Terminal redimensionable (arrastrar el borde inferior): el alumno
+            necesita seguir la ejecución sin que la salida quede apretada. */}
+        <div className="bg-ink text-surface font-mono text-sm leading-relaxed p-4 h-[240px] min-h-[120px] max-h-[60vh] resize-y overflow-auto">
+          {output && <pre className="whitespace-pre-wrap">{output}</pre>}
+          {error && <pre className="whitespace-pre-wrap text-danger">{error}</pre>}
+          {!output && !error && !running && (
+            <span className="text-muted">
+              {loading
+                ? "Cargando runtime Python en el navegador (primera vez ~6 MB)..."
+                : `Ejecutá tu código (${shortcutLabel}) para ver el output acá.`}
+            </span>
+          )}
+        </div>
       </div>
     </div>
   )
