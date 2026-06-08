@@ -81,6 +81,10 @@ app.add_middleware(
 _rate_limit_redis = redis.from_url(
     settings.rate_limit_redis_url,
     decode_responses=True,
+    # Resiliencia (FIX-20): el rate limit no debe romperse por una conexión colgada.
+    health_check_interval=30,
+    retry_on_timeout=True,
+    socket_keepalive=True,
 )
 app.add_middleware(RateLimitMiddleware, redis_client=_rate_limit_redis)
 

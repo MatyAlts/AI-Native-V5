@@ -43,7 +43,14 @@ _tutor: TutorCore | None = None
 def _get_redis() -> redis.Redis:
     global _redis
     if _redis is None:
-        _redis = redis.from_url(settings.redis_url, decode_responses=True)
+        # Resiliencia (FIX-20): evita usar conexiones colgadas y reintenta en timeout.
+        _redis = redis.from_url(
+            settings.redis_url,
+            decode_responses=True,
+            health_check_interval=30,
+            retry_on_timeout=True,
+            socket_keepalive=True,
+        )
     return _redis
 
 

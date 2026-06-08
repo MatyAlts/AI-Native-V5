@@ -61,7 +61,14 @@ _redis_client: redis.Redis | None = None
 def _get_redis() -> redis.Redis:
     global _redis_client
     if _redis_client is None:
-        _redis_client = redis.from_url(settings.redis_url, decode_responses=False)
+        # Resiliencia (FIX-20): health check + retry para no usar conexiones colgadas.
+        _redis_client = redis.from_url(
+            settings.redis_url,
+            decode_responses=False,
+            health_check_interval=30,
+            retry_on_timeout=True,
+            socket_keepalive=True,
+        )
     return _redis_client
 
 

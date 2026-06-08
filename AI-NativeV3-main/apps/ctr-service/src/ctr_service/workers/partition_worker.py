@@ -439,7 +439,15 @@ async def run_worker(partition: int) -> None:
         format="%(asctime)s %(levelname)s %(name)s: %(message)s",
     )
 
-    redis_client = redis.from_url(settings.redis_url, decode_responses=False)
+    # Resiliencia (FIX-20): health check + retry. No cambia la semántica de
+    # consumer-group ni el single-writer por partición; solo la conexión.
+    redis_client = redis.from_url(
+        settings.redis_url,
+        decode_responses=False,
+        health_check_interval=30,
+        retry_on_timeout=True,
+        socket_keepalive=True,
+    )
     session_factory = get_session_factory()
 
     # ADR-021: producer del stream `attestation.requests`. Comparte el cliente
