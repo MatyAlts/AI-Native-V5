@@ -53,8 +53,11 @@ def get_engine() -> AsyncEngine:
     if _engine is None:
         _engine = create_async_engine(
             settings.academic_db_url,
-            pool_size=10,
-            max_overflow=5,
+            # Pools chicos a propósito: con ~10 servicios sobre un Postgres de
+            # max_connections=100, mantener 10 idle por servicio agotaba el techo.
+            # 2 idle + overflow para picos (total 8). Ver tuning piloto 100 users.
+            pool_size=2,
+            max_overflow=6,
             pool_pre_ping=True,
             echo=settings.db_echo,
             json_serializer=_json_serializer,

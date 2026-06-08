@@ -109,7 +109,10 @@ def _get_sessionmaker() -> async_sessionmaker[AsyncSession]:
         # pool_pre_ping (FIX-20): evita usar conexiones colgadas bajo carga,
         # alineado con el resto de los servicios.
         _engine = create_async_engine(
-            settings.academic_db_url, pool_size=5, pool_pre_ping=True
+            settings.academic_db_url,
+            pool_size=2,
+            max_overflow=4,
+            pool_pre_ping=True,
         )
         _sessionmaker = async_sessionmaker(_engine, expire_on_commit=False)
     return _sessionmaker

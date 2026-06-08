@@ -25,8 +25,10 @@ from analytics_service.config import settings
 def _make(url: str) -> AsyncEngine:
     return create_async_engine(
         url,
-        pool_size=5,
-        max_overflow=10,
+        # Pool chico: analytics tiene 3 engines (ctr+classifier+academic) y comparte
+        # el Postgres (max_connections=100) con ~10 servicios. 2 idle + overflow.
+        pool_size=2,
+        max_overflow=3,
         pool_pre_ping=True,
     )
 

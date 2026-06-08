@@ -23,8 +23,9 @@ def get_engine() -> AsyncEngine:
     if _engine is None:
         _engine = create_async_engine(
             settings.classifier_db_url,
-            pool_size=10,
-            max_overflow=5,
+            # Pool chico: ~10 servicios sobre Postgres max_connections=100.
+            pool_size=2,
+            max_overflow=6,
             pool_pre_ping=True,
             echo=settings.db_echo,
         )
