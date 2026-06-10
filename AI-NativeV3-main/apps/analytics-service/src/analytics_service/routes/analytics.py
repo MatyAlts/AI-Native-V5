@@ -959,10 +959,12 @@ async def get_cohort_cii_quartiles(
     user_id: UUID = Depends(get_user_id),
     _comision_access: None = Depends(require_comision_access),
 ) -> CohortCIIQuartilesOut:
-    """Cuartiles agregados de mean_slope longitudinales de la cohorte (ADR-022).
+    """Cuartiles agregados del PROGRESO de la cohorte (ADR-022, revisado 2026-06-10).
 
-    Itera por estudiante de la comisión, computa su `mean_slope`, agrega.
-    Modo dev devuelve estructura vacía con `insufficient_data: true`.
+    El "valor por alumno" es el delta de su apropiación (último tercio - primer
+    tercio sobre todos sus episodios), NO el slope por template — el piloto ya no
+    usa plantillas. Misma señal que `/cohort/{id}/progression`. NO expone valores
+    individuales. <5 estudiantes con datos → `insufficient_data: true` (k-anonymity).
     """
     from platform_ops import compute_cohort_quartiles_payload
 
@@ -972,49 +974,35 @@ async def get_cohort_cii_quartiles(
         empty = compute_cohort_quartiles_payload([])
         return CohortCIIQuartilesOut(comision_id=str(comision_id), **empty)
 
+    # Vuelta de rosca (2026-06-10): el cuartil ANTES dependía del slope longitudinal
+    # POR TEMPLATE (>=3 episodios del mismo template). Como el piloto ya no usa
+    # plantillas, daba siempre 0 estudiantes evaluados. Ahora cuartilizamos sobre el
+    # PROGRESO GENERAL del alumno (delta primer->ultimo tercio de su apropiación, sobre
+    # TODOS sus episodios), la misma señal que usa /cohort/{id}/progression.
     from platform_ops import (
         RealLongitudinalDataSource,
-        compute_cii_evolution_longitudinal,
+        build_trajectories,
         set_tenant_rls,
     )
     from sqlalchemy.ext.asyncio import async_sessionmaker
 
     ctr_engine = get_ctr_engine()
     cls_engine = get_classifier_engine()
-    acad_engine = get_academic_engine()
-    student_slopes: list[float] = []
     async with (
         async_sessionmaker(ctr_engine, expire_on_commit=False)() as ctr_s,
         async_sessionmaker(cls_engine, expire_on_commit=False)() as cls_s,
-        async_sessionmaker(acad_engine, expire_on_commit=False)() as acad_s,
     ):
         await set_tenant_rls(ctr_s, tenant_id)
         await set_tenant_rls(cls_s, tenant_id)
-        await set_tenant_rls(acad_s, tenant_id)
         ds = RealLongitudinalDataSource(ctr_s, cls_s, tenant_id)
+        trajectories = await build_trajectories(ds, comision_id)  # type: ignore[arg-type]
 
-        # Iterar por estudiante: obtener student list, luego cii por cada uno
-        from ctr_service.models import Episode
-        from sqlalchemy import select
-
-        ep_stmt = (
-            select(Episode.student_pseudonym)
-            .where(Episode.comision_id == comision_id)
-            .where(Episode.tenant_id == tenant_id)
-            .distinct()
-        )
-        students_result = await ctr_s.execute(ep_stmt)
-        student_ids = [row.student_pseudonym for row in students_result.all()]
-
-        for student_id in student_ids:
-            classifications = await ds.list_classifications_with_templates_for_student(
-                student_pseudonym=student_id,
-                comision_id=comision_id,
-                academic_session=acad_s,
-            )
-            evolution = compute_cii_evolution_longitudinal(classifications)
-            if evolution["mean_slope"] is not None:
-                student_slopes.append(evolution["mean_slope"])
+    student_slopes: list[float] = []
+    for t in trajectories:
+        terciles = t.tercile_means()  # None si <3 episodios
+        if terciles is not None:
+            first, _mid, last = terciles
+            student_slopes.append(last - first)
 
     payload = compute_cohort_quartiles_payload(student_slopes)
     logger.info(
