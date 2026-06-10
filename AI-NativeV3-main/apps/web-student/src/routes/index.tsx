@@ -13,6 +13,7 @@ import { useQuery } from "@tanstack/react-query"
 import { Link, createFileRoute, useNavigate } from "@tanstack/react-router"
 import { BookOpenText, Plus, Sparkles } from "lucide-react"
 import { useEffect, useState } from "react"
+import { createPortal } from "react-dom"
 import { MateriaCard } from "../components/MateriaCard"
 import { type MateriaInscripta, listMisMaterias } from "../lib/api"
 
@@ -207,7 +208,7 @@ function JoinMateriaControl({ label = "Unirse a otra materia" }: { label?: strin
         {label}
       </button>
 
-      {open && (
+      {open && createPortal(
         <div
           role="dialog"
           aria-modal="true"
@@ -255,7 +256,8 @@ function JoinMateriaControl({ label = "Unirse a otra materia" }: { label?: strin
               </button>
             </div>
           </div>
-        </div>
+        </div>,
+        document.body
       )}
     </>
   )
