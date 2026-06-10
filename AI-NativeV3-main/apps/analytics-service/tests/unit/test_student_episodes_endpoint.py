@@ -85,7 +85,7 @@ def test_quartiles_modo_dev_devuelve_insufficient_data(client: TestClient) -> No
     assert data["median"] is None
     assert data["q3"] is None
     assert data["min_students_for_quartiles"] == 5
-    assert data["labeler_version"] == "1.0.0"
+    assert data["labeler_version"] == "1.2.0"
 
 
 def test_quartiles_response_shape_es_estable(client: TestClient) -> None:
