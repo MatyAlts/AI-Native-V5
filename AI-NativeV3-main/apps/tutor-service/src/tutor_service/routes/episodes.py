@@ -30,6 +30,7 @@ from tutor_service.services.clients import (
     CTRClient,
     GovernanceClient,
 )
+from tutor_service.services.guardrails import OveruseDetector
 from tutor_service.services.session import SessionManager
 from tutor_service.services.tutor_core import TutorCore
 
@@ -66,6 +67,10 @@ def _get_tutor() -> TutorCore:
             academic=AcademicClient(settings.academic_service_url),
             default_prompt_version=settings.default_prompt_version,
             default_model=settings.default_model,
+            # FIX (2026-06-10): el detector de sobreuso existía pero NUNCA se
+            # inyectaba → self.overuse_detector quedaba None y el bloque de
+            # deteccion (tutor_core.py) no corria. Cero eventos overuse en prod.
+            overuse_detector=OveruseDetector(_get_redis()),
         )
     return _tutor
 
