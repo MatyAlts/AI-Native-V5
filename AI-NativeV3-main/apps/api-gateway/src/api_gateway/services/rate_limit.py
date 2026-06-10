@@ -5,10 +5,11 @@ Algoritmo: sliding log con Redis SET-EXPIRE.
     contador con TTL igual al tamaño de ventana.
   - Si el contador supera `limit`, se rechaza con 429.
 
-Configuración por tier de endpoint:
-  - /api/v1/episodes/*/message — alto costo (LLM): 30 req/min por usuario
-  - /api/v1/retrieve — medio costo: 60 req/min por usuario
-  - Otros endpoints: 300 req/min por usuario (default)
+Configuración por tier de endpoint (ver PATH_LIMITS):
+  - /api/v1/episodes, /api/v1/retrieve, /api/v1/classify_episode: 1000 req/min
+    por usuario — endpoints del flujo crítico (LLM/CTR). Límite alto a propósito
+    para no cortar la operación del alumno (un límite bajo cortaba el chat SSE).
+  - Otros endpoints: 300 req/min por usuario (default) — protección anti-abuso.
 
 Principal de rate limit:
   - Si hay X-User-Id → rate limit por usuario

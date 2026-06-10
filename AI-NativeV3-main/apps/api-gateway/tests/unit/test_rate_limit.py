@@ -91,12 +91,12 @@ def test_principal_unknown_si_ni_ip() -> None:
 
 def test_config_for_path_usa_episodes_limit_para_message() -> None:
     cfg = config_for_path("/api/v1/episodes/abc/message")
-    assert cfg.max_requests == 30  # el tier de episodes
+    assert cfg.max_requests == 1000  # tier de episodes (subido en 8dca78f para no cortar el chat SSE)
 
 
 def test_config_for_path_usa_retrieve_limit() -> None:
     cfg = config_for_path("/api/v1/retrieve")
-    assert cfg.max_requests == 60
+    assert cfg.max_requests == 1000
 
 
 def test_config_for_path_default_para_otras_rutas() -> None:
@@ -106,7 +106,7 @@ def test_config_for_path_default_para_otras_rutas() -> None:
 
 def test_config_for_path_classify_episode_tiene_limite_propio() -> None:
     cfg = config_for_path("/api/v1/classify_episode/abc")
-    assert cfg.max_requests == 20
+    assert cfg.max_requests == 1000
 
 
 # ── Integración con ventanas ───────────────────────────────────────────
