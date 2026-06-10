@@ -27,6 +27,7 @@ from classifier_service.models import Classification
 from classifier_service.services.ccd import compute_ccd
 from classifier_service.services.cii import compute_cii
 from classifier_service.services.ct import ct_features
+from classifier_service.services.subgrupo import compute_subgrupo
 from classifier_service.services.tree import (
     DEFAULT_REFERENCE_PROFILE,
     ClassificationResult,
@@ -91,7 +92,13 @@ def classify_episode_from_events(
     ct = ct_features(classifier_events)
     ccd = compute_ccd(classifier_events)
     cii = compute_cii(classifier_events)
-    return classify(ct=ct, ccd=ccd, cii=cii, reference_profile=profile)
+    result = classify(ct=ct, ccd=ccd, cii=cii, reference_profile=profile)
+    # Modo sombra (B1 Fase 2): subgrupo + 4 dimensiones, ADITIVO en features. NO toca
+    # appropriation ni classifier_config_hash (features no entra al hash canónico) →
+    # no rompe reproducibilidad. Se calcula sobre los eventos ORIGINALES (no los
+    # filtrados) para que el foco cuente pestana_perdida/copia_intentada/pega_intentada.
+    result.features["subgrupo"] = compute_subgrupo(events)
+    return result
 
 
 async def persist_classification(
