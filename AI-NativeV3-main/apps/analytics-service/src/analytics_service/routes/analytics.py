@@ -224,6 +224,68 @@ async def compute_kappa(
     return response
 
 
+# ── Kappa: muestra de episodios REALES para etiquetar (inter-rater) ────
+# Reemplaza los 9 episodios demo hardcodeados del web-teacher. El docente
+# revisa episodios reales de su comisión (con la etiqueta que les puso la IA =
+# rater_a) y marca la suya (rater_b) en el front, luego POST /kappa con los pares.
+
+
+class KappaSampleEpisodeOut(BaseModel):
+    episode_id: str
+    clasificacion_ia: str  # rater_a: appropriation asignada por el clasificador
+
+
+class KappaSampleOut(BaseModel):
+    comision_id: str
+    episodes: list[KappaSampleEpisodeOut]
+
+
+@router.get("/kappa/sample", response_model=KappaSampleOut)
+async def get_kappa_sample(
+    comision_id: UUID,
+    limit: int = 30,
+    tenant_id: UUID = Depends(get_tenant_id),
+    user_id: UUID = Depends(get_user_id),
+    _comision_access: None = Depends(require_comision_access),
+) -> KappaSampleOut:
+    """Episodios reales de la comisión con su clasificación automática (rater_a).
+
+    El front los muestra (usando `/api/v1/audit/episodes/{id}` para el detalle),
+    el docente marca su etiqueta (rater_b) y arma el POST a `/kappa`. Modo dev
+    devuelve lista vacía.
+    """
+    from analytics_service.services.export import _real_data_source_enabled
+
+    if not _real_data_source_enabled():
+        return KappaSampleOut(comision_id=str(comision_id), episodes=[])
+
+    from classifier_service.models import Classification
+    from platform_ops import set_tenant_rls
+    from sqlalchemy import select
+    from sqlalchemy.ext.asyncio import async_sessionmaker
+
+    cls_engine = get_classifier_engine()
+    async with async_sessionmaker(cls_engine, expire_on_commit=False)() as cls_s:
+        await set_tenant_rls(cls_s, tenant_id)
+        stmt = (
+            select(Classification.episode_id, Classification.appropriation)
+            .where(Classification.comision_id == comision_id)
+            .where(Classification.is_current.is_(True))
+            .limit(limit)
+        )
+        rows = await cls_s.execute(stmt)
+        episodes = [
+            KappaSampleEpisodeOut(episode_id=str(eid), clasificacion_ia=appr)
+            for eid, appr in rows.all()
+        ]
+
+    logger.info(
+        "kappa_sample tenant_id=%s user_id=%s comision_id=%s n=%d",
+        tenant_id, user_id, comision_id, len(episodes),
+    )
+    return KappaSampleOut(comision_id=str(comision_id), episodes=episodes)
+
+
 # ── Cohort export endpoint ─────────────────────────────────────────────
 # El export real requiere acceso a varias DBs (episodes, events, classifications).
 # Este endpoint es un stub que documenta la API; la integración con el
