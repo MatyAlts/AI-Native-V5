@@ -65,14 +65,10 @@ export interface EpisodeViewProps {
 }
 
 /**
- * Resuelve el codigo_inicial para Monaco.
- *
- * ADR-047: `tarea.ejercicios` ya no viene embebido. Para TPs multi-ejercicio
- * el código inicial específico del ejercicio se inyecta al system message
- * del tutor por el backend; el editor del cliente arranca con el scaffold
- * de la TP (o default). Una versión futura puede pre-cargar el
- * `inicial_codigo` del ejercicio al sessionStorage cuando se abre el
- * episodio para que aparezca directo en Monaco.
+ * Resuelve el codigo_inicial de la TP (caso monolitico). Para TPs
+ * multi-ejercicio (ADR-047) el codigo inicial vive en el ejercicio del banco y
+ * se resuelve aparte via listEjerciciosTp (ver hydration). Si nada aplica, el
+ * editor cae a su default.
  */
 function resolveCodigoInicial(tarea: AvailableTarea): string | null {
   return tarea.inicial_codigo ?? null
@@ -211,7 +207,19 @@ export function EpisodeView({ episodeId, onExit, ejercicioContext }: EpisodeView
         if (state.last_code_snapshot) {
           setCode(state.last_code_snapshot)
         } else {
-          const initialCode = resolveCodigoInicial(t)
+          // ADR-047: el codigo inicial del ejercicio vive en el banco, no en la
+          // TP. Si venimos de un ejercicio, lo traemos via /tareas-practicas/{id}/
+          // ejercicios y lo matcheamos por orden. Fallback al de la TP (monoliticas).
+          let initialCode = resolveCodigoInicial(t)
+          if (!initialCode && ejercicioContext) {
+            try {
+              const tpEjs = await listEjerciciosTp(state.tarea_practica_id)
+              const match = tpEjs.find((te) => te.orden === ejercicioContext.ejercicioOrden)
+              initialCode = match?.ejercicio?.inicial_codigo ?? null
+            } catch {
+              // best-effort: si falla, el editor cae a su default
+            }
+          }
           if (initialCode) setCode(initialCode)
         }
         setMessages(
