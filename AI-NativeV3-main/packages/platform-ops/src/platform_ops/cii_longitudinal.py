@@ -209,6 +209,31 @@ def compute_mean_slope(per_template: list[dict[str, Any]]) -> float | None:
     return sum(valid_slopes) / len(valid_slopes)
 
 
+def compute_evolution_general(classifications: list[dict[str, Any]]) -> dict[str, Any]:
+    """Tendencia GENERAL del alumno: TODOS sus episodios ordenados por fecha, SIN
+    agrupar por template ni unidad. Para alumnos con trabajos dispersos en varias
+    unidades (1-2 c/u) que nunca llegan a N>=3 por grupo pero si en total.
+
+    Menos riguroso que comparar episodios analogos (compara problemas distintos):
+    es una señal pedagogica general de progreso, NO una medida academica fina.
+    Requiere >=MIN_EPISODES_FOR_LONGITUDINAL episodios en total.
+    """
+    items = sorted(
+        (c for c in classifications if c.get("appropriation") in APPROPRIATION_ORDINAL),
+        key=lambda c: _coerce_ts(c["classified_at"]),
+    )
+    scores = [APPROPRIATION_ORDINAL[c["appropriation"]] for c in items]
+    n = len(scores)
+    if n < MIN_EPISODES_FOR_LONGITUDINAL:
+        return {"n_episodes": n, "slope": None, "insufficient_data": True, "scores_ordinal": scores}
+    return {
+        "n_episodes": n,
+        "slope": _compute_slope_ordinal(scores),
+        "insufficient_data": False,
+        "scores_ordinal": scores,
+    }
+
+
 def compute_cii_evolution_longitudinal(
     classifications: list[dict[str, Any]],
     unidad_map: dict[Any, dict[str, Any]] | None = None,
@@ -240,9 +265,18 @@ def compute_cii_evolution_longitudinal(
     ]
     mean_slope = compute_mean_slope(summary_groups)
 
+    # Tendencia general del alumno (todos los episodios por fecha). Fallback final
+    # cuando ningun grupo (unidad/template) llega a N>=3 pero el alumno SI tiene
+    # >=3 episodios en total (caso comun: trabajos dispersos en varias unidades).
+    general = compute_evolution_general(classifications)
+    if mean_slope is None:
+        mean_slope = general["slope"]
+
     n_groups_evaluated = sum(1 for entry in summary_groups if not entry.get("insufficient_data"))
     n_groups_insufficient = len(summary_groups) - n_groups_evaluated
     n_episodes_total = sum(entry["n_episodes"] for entry in summary_groups)
+    if n_episodes_total == 0:
+        n_episodes_total = general["n_episodes"]
 
     return {
         "n_groups_evaluated": n_groups_evaluated,
@@ -250,7 +284,10 @@ def compute_cii_evolution_longitudinal(
         "n_episodes_total": n_episodes_total,
         "evolution_per_template": per_template,
         "evolution_per_unidad": per_unidad,
+        "evolution_general": general,
         "mean_slope": mean_slope,
+        "mean_slope_general": general["slope"],
         "sufficient_data": mean_slope is not None,
+        "sufficient_data_general": not general["insufficient_data"],
         "labeler_version": CII_LONGITUDINAL_VERSION,
     }

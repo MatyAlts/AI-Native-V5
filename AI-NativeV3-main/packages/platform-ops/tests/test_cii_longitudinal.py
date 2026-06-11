@@ -259,18 +259,33 @@ def test_helper_lista_vacia_devuelve_estructura_vacia() -> None:
     assert result["labeler_version"] == CII_LONGITUDINAL_VERSION
 
 
-def test_helper_solo_huerfanas_es_sufficient_data_false() -> None:
-    """Estudiante con classifications pero todas sin template_id —
-    insufficient_data porque ninguna entra al calculo."""
+def test_helper_huerfanas_con_3plus_usa_tendencia_general() -> None:
+    """Estudiante con >=3 classifications sin template NI unidad: ya NO es
+    'sin datos'. Se calcula la tendencia GENERAL (todos los episodios por
+    fecha) — decision 2026-06-11 para que alumnos con trabajos dispersos en
+    varias unidades vean su evolucion aunque ningun grupo llegue a N>=3."""
     classifications = [
-        _cls(template_id=None, appropriation="apropiacion_reflexiva", minute_offset=0),
-        _cls(template_id=None, appropriation="apropiacion_reflexiva", minute_offset=60),
+        _cls(template_id=None, appropriation="delegacion_pasiva", minute_offset=0),
+        _cls(template_id=None, appropriation="apropiacion_superficial", minute_offset=60),
         _cls(template_id=None, appropriation="apropiacion_reflexiva", minute_offset=120),
     ]
     result = compute_cii_evolution_longitudinal(classifications)
-    assert result["n_episodes_total"] == 0
+    assert result["n_episodes_total"] == 3
+    assert result["mean_slope"] is not None  # cae a la tendencia general
+    assert result["sufficient_data"] is True
+    assert result["sufficient_data_general"] is True
+
+
+def test_helper_menos_de_3_episodios_es_insufficient() -> None:
+    """Con <3 episodios en total no hay tendencia (ni por grupo ni general)."""
+    classifications = [
+        _cls(template_id=None, appropriation="apropiacion_reflexiva", minute_offset=0),
+        _cls(template_id=None, appropriation="apropiacion_superficial", minute_offset=60),
+    ]
+    result = compute_cii_evolution_longitudinal(classifications)
     assert result["mean_slope"] is None
     assert result["sufficient_data"] is False
+    assert result["sufficient_data_general"] is False
 
 
 def test_helper_es_funcion_pura_sin_side_effects() -> None:
