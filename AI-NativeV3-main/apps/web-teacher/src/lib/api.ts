@@ -1158,6 +1158,21 @@ export async function getEpisodeNLevelDistribution(
 // ── Clasificación de apropiación del episodio (output del árbol N4) ──
 // AppropriationLabel ya esta declarado en la cabecera del archivo (linea 8).
 
+// Subgrupo de apropiacion (capa diagnostica fina sobre el eje oficial).
+// Lo calcula el classifier y lo guarda en features['subgrupo'].
+export interface Subgrupo {
+  key: string
+  label: string
+  eje: string
+  dimensiones: {
+    autonomia: number
+    experimentacion: number
+    persistencia: number
+    foco: number
+  }
+  accion_docente: string
+}
+
 export interface EpisodeClassification {
   episode_id: string
   comision_id: string
@@ -1170,6 +1185,7 @@ export interface EpisodeClassification {
   cii_stability: number | null
   cii_evolution: number | null
   is_current: boolean
+  subgrupo: Subgrupo | null
 }
 
 export async function getEpisodeClassification(
