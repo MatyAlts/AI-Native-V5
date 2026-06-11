@@ -112,7 +112,7 @@ def classify_episode_from_events(
     sg = compute_subgrupo(events)
     result.features["subgrupo"] = sg
     result.appropriation = _EJE_TO_APPROPRIATION[sg["eje"]]
-    result.appropriation_reason = (
+    result.reason = (
         f"Subgrupo {sg['key']} ({sg['label']}) -> eje {sg['eje']}. {sg['accion_docente']}."
     )
     return result
