@@ -284,7 +284,7 @@ async def test_classify_episode_201_cuando_cambia_config_hash(
     """
     episode_id = uuid4()
     comision_id = uuid4()
-    # El pre-check busca por el config_hash CURRENT (v1.0.0). Como la fila
+    # El pre-check busca por el config_hash CURRENT (v3.0.0). Como la fila
     # vieja tiene hash distinto, el pre-check devuelve None (mismo path que
     # el caso "episodio nuevo" en el handler — la distincion la hace
     # persist_classification, no el handler).
@@ -309,7 +309,7 @@ async def test_classify_episode_201_cuando_cambia_config_hash(
     assert len(session.added_rows) == 1
     new = session.added_rows[0]
     assert new.classifier_config_hash == compute_classifier_config_hash(
-        DEFAULT_REFERENCE_PROFILE, "v1.0.0"
+        DEFAULT_REFERENCE_PROFILE, "v3.0.0"
     )
 
 
