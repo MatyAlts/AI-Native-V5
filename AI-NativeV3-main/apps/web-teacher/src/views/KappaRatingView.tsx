@@ -10,6 +10,9 @@ import {
 import {
   APPROPRIATION_DOCENTE,
   APPROPRIATION_INVESTIGADOR,
+  NLEVEL_DOCENTE,
+  NLEVEL_INVESTIGADOR,
+  SUBGRUPO_DOCENTE,
   kappaToDocente,
 } from "../utils/docenteLabels"
 import { helpContent } from "../utils/helpContent"
@@ -75,7 +78,9 @@ export function KappaRatingView({ getToken, episodes }: Props) {
   const allLabeled = episodes.every((e) => humanLabels[e.episode_id])
   const labeledCount = Object.keys(humanLabels).length
 
-  const categoryLabels = isDocente ? APPROPRIATION_DOCENTE : APPROPRIATION_INVESTIGADOR
+  const categoryLabels = isDocente
+    ? { ...APPROPRIATION_DOCENTE, ...SUBGRUPO_DOCENTE, ...NLEVEL_DOCENTE }
+    : { ...APPROPRIATION_INVESTIGADOR, ...SUBGRUPO_DOCENTE, ...NLEVEL_INVESTIGADOR }
   const [protocol, setProtocol] = useState<ProtocolKey>("ejes")
   const activeCategories: RatingLabel[] = [...PROTOCOLS[protocol]]
 
@@ -178,10 +183,9 @@ export function KappaRatingView({ getToken, episodes }: Props) {
               </div>
             </div>
 
-            {!isDocente && (
-              <div className="flex items-center gap-2 text-sm">
-                <span className="text-muted">Protocolo de etiquetado:</span>
-                {(Object.keys(PROTOCOLS) as ProtocolKey[]).map((p) => (
+            <div className="flex items-center gap-2 text-sm">
+              <span className="text-muted">Protocolo de etiquetado:</span>
+              {(Object.keys(PROTOCOLS) as ProtocolKey[]).map((p) => (
                   <button
                     key={p}
                     type="button"
@@ -197,9 +201,8 @@ export function KappaRatingView({ getToken, episodes }: Props) {
                   >
                     {PROTOCOL_LABELS[p]}
                   </button>
-                ))}
-              </div>
-            )}
+              ))}
+            </div>
 
             <div className="space-y-3">
               {episodes.map((ep) => {
