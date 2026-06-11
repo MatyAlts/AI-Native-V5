@@ -140,9 +140,11 @@ def compute_student_alerts(
                         "Este estudiante está bastante atrás del avance general de la "
                         "comisión. Sugerimos tomar contacto pedagógico focalizado pronto — "
                         "una charla individual para entender qué lo está trabando suele "
-                        "ayudar antes de que la distancia se haga mayor. "
-                        f"(Datos para investigación: slope {student_slope:+.3f}, "
-                        f"media cohorte {mean:+.3f}, σ={stdev:.3f}, z={z_score:+.2f}.)"
+                        "ayudar antes de que la distancia se haga mayor."
+                    ),
+                    "research_note": (
+                        f"slope {student_slope:+.3f}, media cohorte {mean:+.3f}, "
+                        f"σ={stdev:.3f}, z={z_score:+.2f}"
                     ),
                     "threshold_used": "-2σ",
                     "z_score": round(z_score, 3),
@@ -158,9 +160,11 @@ def compute_student_alerts(
                         "El ritmo de progreso del estudiante está claramente por debajo "
                         "del de sus compañeros. Buen momento para una charla rápida e "
                         "identificar si hay algo que lo está frenando antes de que se "
-                        "aleje más. "
-                        f"(Datos para investigación: slope {student_slope:+.3f}, "
-                        f"media cohorte {mean:+.3f}, σ={stdev:.3f}, z={z_score:+.2f}.)"
+                        "aleje más."
+                    ),
+                    "research_note": (
+                        f"slope {student_slope:+.3f}, media cohorte {mean:+.3f}, "
+                        f"σ={stdev:.3f}, z={z_score:+.2f}"
                     ),
                     "threshold_used": "-1σ",
                     "z_score": round(z_score, 3),
@@ -179,9 +183,11 @@ def compute_student_alerts(
                     "Está entre el 25% de la comisión que avanza más despacio. "
                     "No siempre indica un problema — puede ser un ritmo personal "
                     "de aprendizaje. Si te llama la atención, vale la pena conversar "
-                    "con el estudiante para entender cómo se siente con la materia. "
-                    f"(Datos para investigación: slope {student_slope:+.3f}, "
-                    f"umbral del cuartil inferior Q1 ≤ {cohort_stats['q1']:+.3f}.)"
+                    "con el estudiante para entender cómo se siente con la materia."
+                ),
+                "research_note": (
+                    f"slope {student_slope:+.3f}, "
+                    f"umbral del cuartil inferior Q1 ≤ {cohort_stats['q1']:+.3f}"
                 ),
                 "threshold_used": "Q1",
             }
@@ -199,9 +205,11 @@ def compute_student_alerts(
                     "nuevo lo clasifica peor que el anterior. Conviene revisar su "
                     "trayectoria y conversar con él — puede haber un obstáculo puntual "
                     "(un tema que no entendió, un mal momento personal) que necesita "
-                    "atención. "
-                    f"(Datos para investigación: slope {student_slope:+.3f}, "
-                    "retroceso > 0.3 categorías ordinales por episodio.)"
+                    "atención."
+                ),
+                "research_note": (
+                    f"slope {student_slope:+.3f}, "
+                    "retroceso > 0.3 categorías ordinales por episodio"
                 ),
                 "threshold_used": "slope < -0.3",
             }
