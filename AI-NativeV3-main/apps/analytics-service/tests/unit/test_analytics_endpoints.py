@@ -83,10 +83,44 @@ def test_kappa_endpoint_incluye_per_class_agreement(client: TestClient) -> None:
 
 
 def test_kappa_endpoint_categoria_invalida_422(client: TestClient) -> None:
-    """Pydantic Literal rechaza categorías inválidas con 422."""
+    """El field_validator rechaza etiquetas fuera de la whitelist con 422."""
     bad = {"episode_id": "x", "rater_a": "foobar", "rater_b": "apropiacion_reflexiva"}
     r = client.post("/api/v1/analytics/kappa", json={"ratings": [bad]}, headers=_KAPPA_HEADERS)
     assert r.status_code == 422
+
+
+def test_kappa_endpoint_acepta_subgrupos(client: TestClient) -> None:
+    """Subgrupos reales del classifier son etiquetas validas (no 422)."""
+    ratings = [
+        _rating("ep1", "colaborador_reflexivo", "colaborador_reflexivo"),
+        _rating("ep2", "dependiente", "autonomo_competente"),
+        _rating("ep3", "escribe_sin_validar", "escribe_sin_validar"),
+    ]
+    r = client.post("/api/v1/analytics/kappa", json={"ratings": ratings}, headers=_KAPPA_HEADERS)
+    assert r.status_code == 200
+    assert r.json()["n_episodes"] == 3
+
+
+def test_kappa_endpoint_acepta_niveles_n1_n4(client: TestClient) -> None:
+    """Protocolo A: niveles cognitivos N1-N4 son etiquetas validas."""
+    ratings = [_rating("ep1", "N1", "N1"), _rating("ep2", "N3", "N4")]
+    r = client.post("/api/v1/analytics/kappa", json={"ratings": ratings}, headers=_KAPPA_HEADERS)
+    assert r.status_code == 200
+
+
+def test_kappa_response_incluye_ac1_y_ci(client: TestClient) -> None:
+    """El response expone ac1, kappa_se y kappa_ci_95 (defensa paradoja de prevalencia)."""
+    ratings = [
+        _rating("ep1", "apropiacion_reflexiva", "apropiacion_reflexiva"),
+        _rating("ep2", "delegacion_pasiva", "delegacion_pasiva"),
+    ]
+    r = client.post("/api/v1/analytics/kappa", json={"ratings": ratings}, headers=_KAPPA_HEADERS)
+    assert r.status_code == 200
+    data = r.json()
+    assert "ac1" in data
+    assert "ac1_interpretation" in data
+    assert "kappa_se" in data
+    assert isinstance(data["kappa_ci_95"], list) and len(data["kappa_ci_95"]) == 2
 
 
 def test_kappa_endpoint_sin_ratings_422(client: TestClient) -> None:

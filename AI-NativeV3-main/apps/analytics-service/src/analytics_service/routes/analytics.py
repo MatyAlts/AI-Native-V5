@@ -20,7 +20,7 @@ from platform_ops import (
     compute_cohen_kappa,
     compute_cohort_quartiles_payload,
 )
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
 from analytics_service.db import get_academic_engine, get_classifier_engine, get_ctr_engine
 from analytics_service.metrics import (
@@ -138,10 +138,32 @@ async def require_comision_access(
 # ── Kappa endpoint ────────────────────────────────────────────────────
 
 
+# Etiquetas validas para rating inter-rater. Soporta 3 protocolos configurables:
+#  - B: 3 ejes canonicos (lo que el classifier da como etiqueta oficial).
+#  - Subgrupos: los 8 reales de classifier-service/services/subgrupo.py.
+#  - A: niveles cognitivos N1-N4.
+# kappa_analysis.py ya soporta categorias arbitrarias; solo validamos la entrada.
+VALID_APPROPRIATION_LABELS: frozenset[str] = frozenset({
+    "delegacion_pasiva", "apropiacion_superficial", "apropiacion_reflexiva",
+    "autonomo_competente", "autonomo_trabado", "escribe_sin_validar", "desenganchado",
+    "colaborador_reflexivo", "colaborador_funcional", "dependiente", "indeterminado",
+    "N1", "N2", "N3", "N4",
+})
+
+
 class KappaRatingIn(BaseModel):
     episode_id: str
-    rater_a: Literal["delegacion_pasiva", "apropiacion_superficial", "apropiacion_reflexiva"]
-    rater_b: Literal["delegacion_pasiva", "apropiacion_superficial", "apropiacion_reflexiva"]
+    rater_a: str
+    rater_b: str
+
+    @field_validator("rater_a", "rater_b")
+    @classmethod
+    def _validate_label(cls, v: str) -> str:
+        if v not in VALID_APPROPRIATION_LABELS:
+            raise ValueError(
+                f"Etiqueta '{v}' no reconocida. Validas: {sorted(VALID_APPROPRIATION_LABELS)}"
+            )
+        return v
 
 
 class KappaRequest(BaseModel):
@@ -160,6 +182,11 @@ class KappaResponse(BaseModel):
     interpretation: str
     per_class_agreement: dict[str, float]
     confusion_matrix: dict[str, dict[str, int]]
+    # Estadisticos adicionales para defensa ante la paradoja de prevalencia.
+    ac1: float
+    ac1_interpretation: str
+    kappa_se: float
+    kappa_ci_95: tuple[float, float]
 
 
 @router.post("/kappa", response_model=KappaResponse)
@@ -186,8 +213,12 @@ async def compute_kappa(
         )
         for r in req.ratings
     ]
+    # Derivar las categorias presentes en los ratings (soporta los 3 protocolos:
+    # 3 ejes canonicos / 8 subgrupos / N1-N4). kappa_analysis usa estas categorias
+    # en vez de las 3 default, asi el calculo no rompe con subgrupos o niveles.
+    cats = sorted({r.rater_a for r in ratings} | {r.rater_b for r in ratings})
     try:
-        result = compute_cohen_kappa(ratings)
+        result = compute_cohen_kappa(ratings, categories=cats)
     except ValueError as e:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
 
@@ -199,6 +230,10 @@ async def compute_kappa(
         interpretation=result.interpretation,
         per_class_agreement=result.per_class_agreement,
         confusion_matrix=result.confusion_matrix,
+        ac1=result.ac1,
+        ac1_interpretation=result.ac1_interpretation,
+        kappa_se=result.kappa_se,
+        kappa_ci_95=result.kappa_ci_95,
     )
 
     logger.info(
