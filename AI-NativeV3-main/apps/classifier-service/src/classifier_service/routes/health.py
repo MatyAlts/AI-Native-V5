@@ -39,8 +39,9 @@ config_router = APIRouter(prefix="/api/v1/classifier", tags=["classifier"])
 
 VERSION = "0.1.0"
 # Tree version vigente — sincronizar con el árbol de decisión activo.
-# Hoy es "v1.0.0" (idéntico al que usa /classify_episode/{id}).
-_TREE_VERSION = "v1.0.0"
+# v3.0.0 (2026-06-11): reemplazo — la etiqueta oficial deriva del subgrupo.
+# Idéntico al que usa /classify_episode/{id}.
+_TREE_VERSION = "v3.0.0"
 
 
 @router.get("", response_model=HealthResponse)

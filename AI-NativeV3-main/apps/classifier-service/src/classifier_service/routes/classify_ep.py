@@ -123,7 +123,7 @@ async def classify_episode(
     devuelve la fila ganadora con 200 OK.
     """
     profile = DEFAULT_REFERENCE_PROFILE
-    config_hash = compute_classifier_config_hash(profile, "v1.0.0")
+    config_hash = compute_classifier_config_hash(profile, "v3.0.0")
 
     # Pre-check idempotencia: si ya existe la classification current con este
     # hash, devolvemos 200 sin pegarle al ctr-service (ahorro de roundtrip).
