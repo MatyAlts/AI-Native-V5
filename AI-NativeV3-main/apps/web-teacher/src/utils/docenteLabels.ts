@@ -9,6 +9,19 @@ export const APPROPRIATION_DOCENTE: Record<string, string> = {
   apropiacion_reflexiva: "En este episodio: trabajo de forma autonoma",
 }
 
+// Subgrupos en lenguaje docente (selector de protocolo del inter-rater).
+// Coinciden con classifier-service/services/subgrupo.py.
+export const SUBGRUPO_DOCENTE: Record<string, string> = {
+  autonomo_competente: "Autonomo: resolvio bien solo",
+  autonomo_trabado: "Autonomo: se trabo sin pedir ayuda",
+  escribe_sin_validar: "Escribio codigo sin probarlo",
+  desenganchado: "Poco enganchado con la tarea",
+  colaborador_reflexivo: "Colaboro con la IA reflexionando",
+  colaborador_funcional: "Uso la IA de forma funcional",
+  dependiente: "Dependio de la IA",
+  indeterminado: "Sesion muy corta / sin señal",
+}
+
 // Labels para vista investigador (técnica, comité doctoral).
 // IMPORTANTE: la categoría describe el perfil tipológico de apropiación
 // observado en UN episodio. NO es un atributo del estudiante. Marcador
