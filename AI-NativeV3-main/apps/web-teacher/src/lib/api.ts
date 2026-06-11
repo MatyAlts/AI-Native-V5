@@ -173,6 +173,25 @@ export async function computeKappa(
   return r.json()
 }
 
+// Episodios REALES de una comision para el inter-rater (reemplaza los demo).
+export interface KappaSampleEpisode {
+  episode_id: string
+  clasificacion_ia: AppropriationLabel
+}
+
+export async function getKappaSample(
+  comisionId: string,
+  getToken?: TokenGetter,
+  limit = 30,
+): Promise<{ comision_id: string; episodes: KappaSampleEpisode[] }> {
+  const r = await fetch(
+    `/api/v1/analytics/kappa/sample?comision_id=${comisionId}&limit=${limit}`,
+    { headers: await authHeaders(getToken) },
+  )
+  await throwIfNotOk(r)
+  return r.json()
+}
+
 // ── Export dataset ────────────────────────────────────────────────────
 
 export async function requestCohortExport(
