@@ -10,6 +10,7 @@
  * para que las URLs sean shareable. Las views consumen el comisionId via
  * Route.useSearch().
  */
+import { UserButton } from "@clerk/clerk-react"
 import { AuditFooter, type NavGroup, Sidebar } from "@platform/ui"
 import {
   Outlet,
@@ -37,6 +38,8 @@ import { useCallback } from "react"
 import { ComisionSelectorRouted } from "../components/ComisionSelectorRouted"
 import { TenantSelector } from "../components/TenantSelector"
 import { ViewModeToggle } from "../components/ViewModeToggle"
+
+const HAS_CLERK = !!import.meta.env.VITE_CLERK_PUBLISHABLE_KEY
 
 export interface RouterContext {
   /** Función de auth, placeholder hasta integración Keycloak (F8). */
@@ -129,6 +132,12 @@ function RootLayout() {
           <TenantSelector />
           <span className="w-px h-5 bg-border" aria-hidden="true" />
           <ComisionSelectorRouted />
+          {HAS_CLERK && (
+            <>
+              <span className="w-px h-5 bg-border" aria-hidden="true" />
+              <UserButton afterSignOutUrl="/teacher/" />
+            </>
+          )}
         </div>
       </header>
 

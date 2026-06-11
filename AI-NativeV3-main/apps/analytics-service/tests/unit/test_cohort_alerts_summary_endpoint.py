@@ -67,7 +67,7 @@ def test_alerts_summary_modo_dev_devuelve_insufficient_data(client: TestClient) 
     assert data["n_students_evaluated"] == 0
     assert data["min_students_threshold"] == 5  # k-anonymity invariante
     assert data["alerts_summary"] is None
-    assert data["labeler_version"] == "1.0.0"
+    assert data["labeler_version"] == "1.2.0"
 
 
 def test_alerts_summary_response_shape_es_estable(client: TestClient) -> None:

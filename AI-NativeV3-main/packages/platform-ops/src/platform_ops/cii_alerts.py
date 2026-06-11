@@ -23,7 +23,11 @@ from typing import Any, Literal
 
 CIIQuartile = Literal["Q1", "Q2", "Q3", "Q4"]
 AlertSeverity = Literal["low", "medium", "high"]
-ALERTS_VERSION = "1.0.0"
+# Se reporta como `labeler_version` en los payloads de cuartiles/alertas, así que
+# DEBE reflejar la versión vigente del labeler (classifier `event_labeler.LABELER_VERSION`,
+# hoy 1.2.0). Antes estaba pegado en "1.0.0" → el endpoint reportaba una versión falsa.
+# Mantener sincronizado en cada bump del labeler. TODO: derivar de una fuente única.
+ALERTS_VERSION = "1.2.0"
 
 # Mínimo de estudiantes con `mean_slope` no-null en la cohorte para reportar
 # cuartiles. Con menos de N estudiantes, los cuartiles son inestables.

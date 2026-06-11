@@ -537,7 +537,7 @@ async def test_prompt_con_jailbreak_emite_evento_adverso(
     adv = fake_ctr.published_events[1]
     assert adv["payload"]["category"] == "jailbreak_substitution"
     assert adv["payload"]["severity"] == 4
-    assert adv["payload"]["pattern_id"].startswith("jailbreak_substitution_v1_2_0_p")
+    assert adv["payload"]["pattern_id"].startswith("jailbreak_substitution_v1_4_0_p")
     assert adv["payload"]["guardrails_corpus_hash"] == GUARDRAILS_CORPUS_HASH
     # El regex captura "olvida tus instrucci" (prefijo) — no la palabra completa.
     # Es OK porque pattern_id ya identifica unicamente el patron.

@@ -108,7 +108,13 @@ def test_episodio_solo_conversacion_sin_ejecuciones_devuelve_solo_conversacion()
     ]
     result = generate_metacognitive_feedback(events)
     assert result["feedback_template"] == "solo_conversacion"
-    assert "2" in result["feedback_text"]  # n_prompts insertado
+    # El borrador (DRAFT, pendiente revision coautoral de Garis) de
+    # 'solo_conversacion' es un texto generico que NO inserta el conteo de prompts
+    # (a diferencia de integrando_feedback/consulta_temprana, que si lo hacen y se
+    # cubren en sus tests). Verificamos la mecanica: template correcto + texto no
+    # vacio. Si Garis decide incluir el conteo en la redaccion final, sumar el assert.
+    assert result["feedback_text"]
+    assert "tutor" in result["feedback_text"]
 
 
 def test_episodio_con_prompts_post_tests_devuelve_integrando_feedback() -> None:

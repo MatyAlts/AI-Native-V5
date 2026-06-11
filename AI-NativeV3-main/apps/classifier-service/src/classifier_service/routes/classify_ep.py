@@ -46,6 +46,9 @@ class ClassificationOut(BaseModel):
     cii_stability: float | None
     cii_evolution: float | None
     is_current: bool
+    # Modo sombra (B1 Fase 2): subgrupo + 4 dimensiones, derivado de features.
+    # None para clasificaciones viejas (pre-modo-sombra) — el front cae a la etiqueta clásica.
+    subgrupo: dict | None = None
 
     class Config:
         from_attributes = True
@@ -275,4 +278,6 @@ async def get_current_classification(
             status_code=status.HTTP_404_NOT_FOUND,
             detail=f"Sin clasificación actual para episodio {episode_id}",
         )
-    return ClassificationOut.model_validate(c)
+    out = ClassificationOut.model_validate(c)
+    out.subgrupo = (c.features or {}).get("subgrupo")
+    return out

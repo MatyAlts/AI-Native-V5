@@ -19,6 +19,8 @@ import {
 } from "../lib/api"
 import { helpContent } from "../utils/helpContent"
 
+const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
+
 interface Props {
   getToken: () => Promise<string | null>
   comisionIdDefault?: string
@@ -37,8 +39,9 @@ export function ExportView({ getToken, comisionIdDefault = "" }: Props) {
 
   const pollRef = useRef<number | null>(null)
 
+  const comisionIdValid = UUID_PATTERN.test(comisionId.trim())
   const saltValid = salt.length >= 16
-  const canSubmit = Boolean(comisionId) && saltValid && !requesting && !job
+  const canSubmit = comisionIdValid && saltValid && !requesting && !job
 
   const startPolling = useCallback(
     (jobId: string) => {
@@ -179,16 +182,28 @@ export function ExportView({ getToken, comisionIdDefault = "" }: Props) {
                 Ayuda sobre el formulario
               </span>
             </div>
-            <label className="block">
-              <span className="block text-sm font-medium mb-1">Comisión (UUID)</span>
-              <input
-                type="text"
-                value={comisionId}
-                onChange={(e) => setComisionId(e.target.value)}
-                placeholder="aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa"
-                className="w-full px-3 py-2 border border-border dark:border-sidebar-bg-edge rounded font-mono text-sm bg-transparent"
-              />
-            </label>
+            <div>
+              <label className="block">
+                <span className="block text-sm font-medium mb-1">Comisión (UUID)</span>
+                <input
+                  type="text"
+                  value={comisionId}
+                  onChange={(e) => setComisionId(e.target.value)}
+                  placeholder="aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa"
+                  aria-invalid={comisionId.length > 0 && !comisionIdValid}
+                  className={`w-full px-3 py-2 border rounded font-mono text-sm bg-transparent ${
+                    comisionId.length > 0 && !comisionIdValid
+                      ? "border-danger/40"
+                      : "border-border dark:border-sidebar-bg-edge"
+                  }`}
+                />
+              </label>
+              {comisionId.length > 0 && !comisionIdValid && (
+                <p className="text-xs text-danger mt-1">
+                  Formato UUID invalido. Ejemplo: aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa
+                </p>
+              )}
+            </div>
 
             <div>
               <label className="block">

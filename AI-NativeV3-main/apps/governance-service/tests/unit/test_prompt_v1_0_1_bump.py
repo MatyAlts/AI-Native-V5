@@ -127,10 +127,10 @@ def test_manifest_global_activa_v101_para_tutor_default(loader: PromptLoader) ->
     cfg = loader.active_configs()
     active = cfg.get("active", {})
     default = active.get("default", {})
-    assert default.get("tutor") == "v1.1.0", (
-        f"manifest.yaml global debe declarar tutor=v1.1.0 para default; "
-        f"obtenido: {default.get('tutor')!r}. Si la activacion fue revertida, "
-        f"alinear tambien tutor-service/config.py:default_prompt_version."
+    assert default.get("tutor") == "v1.2.0", (
+        f"manifest.yaml global debe declarar tutor=v1.2.0 para default (version "
+        f"activa vigente, la que usan los alumnos); obtenido: {default.get('tutor')!r}. "
+        f"Alinear tambien tutor-service/config.py:default_prompt_version."
     )
     # Sanity: classifier sigue en v1.0.0 (no hubo bump del classifier prompt).
     assert default.get("classifier") == "v1.0.0", (

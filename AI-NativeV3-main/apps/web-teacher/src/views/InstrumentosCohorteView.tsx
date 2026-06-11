@@ -27,34 +27,32 @@ export function InstrumentosCohorteView({ comisionId, getToken }: Props) {
   const [cuestionarioIA, setCuestionarioIA] = useState<InstrumentoSummary | null>(null)
   const [pretest, setPretest] = useState<InstrumentoSummary | null>(null)
   const [transferencia, setTransferencia] = useState<TransferenciaSummary | null>(null)
-  const [error, setError] = useState<string | null>(null)
   const [loading, setLoading] = useState(true)
   const [linkCopied, setLinkCopied] = useState(false)
   const [viewMode] = useViewMode()
   const isDocente = viewMode === "docente"
 
+  const STUDENT_BASE =
+    (import.meta.env.VITE_STUDENT_APP_URL as string | undefined) ??
+    window.location.origin.replace(/:51\d\d$/, ":5175")
+
   const studentLink = useMemo(
-    () => `${window.location.origin.replace(":5174", ":5175")}/instrumentos?comisionId=${comisionId}`,
+    () => `${STUDENT_BASE}/instrumentos?comisionId=${comisionId}`,
     [comisionId],
   )
 
   useEffect(() => {
     setLoading(true)
-    Promise.all([
+    Promise.allSettled([
       instrumentosSummaryApi.cuestionarioIA(comisionId, undefined, getToken),
       instrumentosSummaryApi.pretest(comisionId, undefined, getToken),
       instrumentosSummaryApi.transferencia(comisionId, undefined, getToken),
-    ])
-      .then(([c, p, t]) => {
-        setCuestionarioIA(c)
-        setPretest(p)
-        setTransferencia(t)
-        setLoading(false)
-      })
-      .catch((e) => {
-        setError(String(e))
-        setLoading(false)
-      })
+    ]).then(([c, p, t]) => {
+      if (c.status === "fulfilled") setCuestionarioIA(c.value)
+      if (p.status === "fulfilled") setPretest(p.value)
+      if (t.status === "fulfilled") setTransferencia(t.value)
+      setLoading(false)
+    })
   }, [comisionId, getToken])
 
   async function copyLink() {
@@ -65,14 +63,6 @@ export function InstrumentosCohorteView({ comisionId, getToken }: Props) {
     } catch {
       // best-effort
     }
-  }
-
-  if (error) {
-    return (
-      <div className="rounded-md border border-danger bg-danger-soft p-4 text-sm text-danger">
-        Error cargando agregados de instrumentos: {error}
-      </div>
-    )
   }
 
   const nCuestionario = cuestionarioIA?.n_responses ?? 0

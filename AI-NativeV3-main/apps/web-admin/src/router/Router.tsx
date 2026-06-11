@@ -9,8 +9,11 @@
  * espacio vertical y dar lugar a más entidades académicas sin que la nav se vuelva un
  * carrusel horizontal apretado.
  */
+import { UserButton } from "@clerk/clerk-react"
 import { AuditFooter, type NavGroup, Sidebar } from "@platform/ui"
 import { TenantSelector } from "../components/TenantSelector"
+
+const HAS_CLERK = !!import.meta.env.VITE_CLERK_PUBLISHABLE_KEY
 import {
   Building2,
   CalendarDays,
@@ -120,8 +123,9 @@ export function Router(): ReactNode {
         onNavigate={(id) => navigate(id as Route)}
       />
       <main className="flex-1 overflow-x-hidden">
-        <div className="border-b border-border bg-surface-alt px-6 py-3 flex justify-end">
+        <div className="border-b border-border bg-surface-alt px-6 py-3 flex items-center justify-end gap-3">
           <TenantSelector />
+          {HAS_CLERK && <UserButton afterSignOutUrl="/admin/" />}
         </div>
         <div className="container mx-auto p-6 max-w-6xl">
           {current === "home" && <HomePage />}

@@ -3,11 +3,17 @@
  *
  * Consume GET /api/v1/classifications/aggregated del classifier-service.
  * Muestra distribución, evolución temporal y promedios de las 3 coherencias.
+ *
+ * F2 — nueva medición (modo sombra):
+ * Consume GET /api/v1/classifications/subgrupos del classifier-service.
+ * Muestra los 8 subgrupos con roll-up a los 3 ejes y las 4 dimensiones.
  */
 import { PageContainer } from "@platform/ui"
 import { type ReactNode, useEffect, useState } from "react"
 import { ComisionPicker } from "../components/ComisionPicker"
 import { helpContent } from "../utils/helpContent"
+
+// ── Tipos — medición oficial ──────────────────────────────────────────────
 
 type Appropriation = "delegacion_pasiva" | "apropiacion_superficial" | "apropiacion_reflexiva"
 
@@ -24,15 +30,44 @@ interface AggregatedStats {
   timeseries: { date: string; counts: Record<Appropriation, number> }[]
 }
 
+// ── Tipos — nueva medición (modo sombra) ──────────────────────────────────
+
+type Eje = "reflexiva" | "superficial" | "delegacion_pasiva" | "sin_clasificar"
+
+interface SubgrupoCount {
+  key: string
+  label: string
+  accion_docente: string
+  eje: Eje
+  count: number
+}
+
+interface SubgruposStats {
+  comision_id: string
+  total_episodes: number
+  subgrupos: SubgrupoCount[]
+  avg_dimensiones: {
+    autonomia: number | null
+    experimentacion: number | null
+    persistencia: number | null
+    foco: number | null
+  }
+}
+
 // Headers X-* los inyecta el proxy de Vite + el monkey-patch de `main.tsx`.
-// No mas mock-headers hardcoded acá.
 
 export function ClasificacionesPage(): ReactNode {
   const [comisionId, setComisionId] = useState<string | null>(null)
+  const [periodDays, setPeriodDays] = useState(30)
+
+  // Medición oficial
   const [stats, setStats] = useState<AggregatedStats | null>(null)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
-  const [periodDays, setPeriodDays] = useState(30)
+
+  // Nueva medición (modo sombra)
+  const [subgruposStats, setSubgruposStats] = useState<SubgruposStats | null>(null)
+  const [subgruposPending, setSubgruposPending] = useState(false)
 
   useEffect(() => {
     if (!comisionId) {
@@ -43,9 +78,7 @@ export function ClasificacionesPage(): ReactNode {
     setLoading(true)
     setError(null)
 
-    fetch(
-      `/api/v1/classifications/aggregated?comision_id=${comisionId}&period_days=${periodDays}`,
-    )
+    fetch(`/api/v1/classifications/aggregated?comision_id=${comisionId}&period_days=${periodDays}`)
       .then(async (r) => {
         if (!r.ok) throw new Error(`HTTP ${r.status}`)
         return r.json()
@@ -68,13 +101,44 @@ export function ClasificacionesPage(): ReactNode {
     }
   }, [comisionId, periodDays])
 
+  useEffect(() => {
+    if (!comisionId) {
+      setSubgruposStats(null)
+      setSubgruposPending(false)
+      return
+    }
+    let cancelled = false
+    setSubgruposStats(null)
+    setSubgruposPending(false)
+
+    fetch(`/api/v1/classifications/subgrupos?comision_id=${comisionId}&period_days=${periodDays}`)
+      .then(async (r) => {
+        if (r.status === 404 || r.status === 501) {
+          if (!cancelled) setSubgruposPending(true)
+          return null
+        }
+        if (!r.ok) return null
+        return r.json()
+      })
+      .then((data: SubgruposStats | null) => {
+        if (!cancelled && data) setSubgruposStats(data)
+      })
+      .catch(() => {
+        if (!cancelled) setSubgruposPending(true)
+      })
+
+    return () => {
+      cancelled = true
+    }
+  }, [comisionId, periodDays])
+
   return (
     <PageContainer
       title="Clasificaciones N4"
       eyebrow="Inicio · Clasificaciones N4"
       description={
         stats
-          ? `Ultimos ${stats.period_days} dias · ${stats.total_episodes} episodios cerrados`
+          ? `Últimos ${stats.period_days} días · ${stats.total_episodes} episodios cerrados`
           : "Seleccioná una comisión para ver clasificaciones agregadas"
       }
       helpContent={helpContent.clasificaciones}
@@ -169,12 +233,21 @@ export function ClasificacionesPage(): ReactNode {
                 <Timeseries data={stats.timeseries} />
               </section>
             )}
+
+            {/* Nueva medición — 8 subgrupos (modo sombra) */}
+            <NuevaMedicionSection
+              stats={subgruposStats}
+              pending={subgruposPending}
+              totalEpisodes={stats.total_episodes}
+            />
           </>
         )}
       </div>
     </PageContainer>
   )
 }
+
+// ── Componentes — medición oficial ────────────────────────────────────────
 
 function DistributionCard({
   label,
@@ -300,6 +373,181 @@ function LegendDot({ color, label }: { color: string; label: string }): ReactNod
     <div className="flex items-center gap-1.5">
       <div className={`w-3 h-3 rounded ${color}`} />
       <span>{label}</span>
+    </div>
+  )
+}
+
+// ── Componentes — nueva medición (modo sombra) ────────────────────────────
+
+const EJE_CONFIG: Record<Eje, { label: string; bg: string; border: string; text: string; dot: string }> = {
+  reflexiva: {
+    label: "Reflexiva",
+    bg: "bg-success-soft",
+    border: "border-success/30",
+    text: "text-success",
+    dot: "bg-success",
+  },
+  superficial: {
+    label: "Superficial",
+    bg: "bg-warning-soft",
+    border: "border-warning/30",
+    text: "text-warning",
+    dot: "bg-warning",
+  },
+  delegacion_pasiva: {
+    label: "Delegación",
+    bg: "bg-danger-soft",
+    border: "border-danger/30",
+    text: "text-danger",
+    dot: "bg-danger",
+  },
+  sin_clasificar: {
+    label: "Sin clasificar",
+    bg: "bg-surface-alt",
+    border: "border-border-soft",
+    text: "text-muted",
+    dot: "bg-border",
+  },
+}
+
+function NuevaMedicionSection({
+  stats,
+  pending,
+  totalEpisodes,
+}: {
+  stats: SubgruposStats | null
+  pending: boolean
+  totalEpisodes: number
+}): ReactNode {
+  return (
+    <section className="rounded-lg border border-border-soft bg-surface p-4 space-y-4">
+      <div className="flex items-center gap-2">
+        <h2 className="text-sm font-semibold uppercase text-muted">
+          Nueva medición — 4 dimensiones / 8 subgrupos
+        </h2>
+        <span className="rounded-full bg-surface-alt border border-border-soft px-2 py-0.5 text-xs text-muted">
+          modo sombra
+        </span>
+      </div>
+
+      {pending && (
+        <div className="rounded-lg bg-surface-alt border border-border-soft p-6 text-center">
+          <p className="text-sm text-muted">
+            Disponible próximamente — el endpoint de subgrupos está en implementación.
+          </p>
+        </div>
+      )}
+
+      {!pending && !stats && (
+        <div className="rounded-lg bg-surface-alt border border-border-soft p-6 text-center">
+          <p className="text-sm text-muted">Cargando subgrupos...</p>
+        </div>
+      )}
+
+      {stats && (
+        <>
+          {/* Distribución por eje (roll-up) */}
+          <EjeRollup subgrupos={stats.subgrupos} total={totalEpisodes} />
+
+          {/* Subgrupos individuales */}
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
+            {stats.subgrupos.map((sg) => (
+              <SubgrupoCard key={sg.key} subgrupo={sg} total={totalEpisodes} />
+            ))}
+          </div>
+
+          {/* 4 dimensiones */}
+          <div className="rounded-lg bg-surface-alt border border-border-soft p-4 space-y-3">
+            <p className="text-xs font-semibold uppercase text-muted">
+              Promedios de las 4 dimensiones
+            </p>
+            <DimensionBar label="Autonomía" value={stats.avg_dimensiones.autonomia} />
+            <DimensionBar label="Experimentación" value={stats.avg_dimensiones.experimentacion} />
+            <DimensionBar label="Persistencia" value={stats.avg_dimensiones.persistencia} />
+            <DimensionBar label="Foco" value={stats.avg_dimensiones.foco} />
+          </div>
+        </>
+      )}
+    </section>
+  )
+}
+
+function EjeRollup({
+  subgrupos,
+  total,
+}: {
+  subgrupos: SubgrupoCount[]
+  total: number
+}): ReactNode {
+  const ejeOrder: Eje[] = ["reflexiva", "superficial", "delegacion_pasiva", "sin_clasificar"]
+  const ejeCount: Partial<Record<Eje, number>> = {}
+  for (const sg of subgrupos) {
+    ejeCount[sg.eje] = (ejeCount[sg.eje] ?? 0) + sg.count
+  }
+
+  return (
+    <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+      {ejeOrder.map((eje) => {
+        const count = ejeCount[eje] ?? 0
+        const pct = total > 0 ? Math.round((count / total) * 100) : 0
+        const cfg = EJE_CONFIG[eje]
+        return (
+          <div key={eje} className={`rounded-lg border p-3 ${cfg.bg} ${cfg.border} ${cfg.text}`}>
+            <div className="text-xs font-medium opacity-70">{cfg.label}</div>
+            <div className="mt-1 flex items-baseline gap-1.5">
+              <span className="text-2xl font-bold">{count}</span>
+              <span className="text-xs opacity-60">{pct}%</span>
+            </div>
+          </div>
+        )
+      })}
+    </div>
+  )
+}
+
+function SubgrupoCard({
+  subgrupo,
+  total,
+}: {
+  subgrupo: SubgrupoCount
+  total: number
+}): ReactNode {
+  const pct = total > 0 ? Math.round((subgrupo.count / total) * 100) : 0
+  const cfg = EJE_CONFIG[subgrupo.eje]
+
+  return (
+    <div className={`rounded-lg border p-3 ${cfg.bg} ${cfg.border}`}>
+      <div className={`text-sm font-medium ${cfg.text}`}>{subgrupo.label}</div>
+      <div className="mt-1.5 flex items-baseline gap-1.5">
+        <span className={`text-xl font-bold ${cfg.text}`}>{subgrupo.count}</span>
+        <span className="text-xs text-muted-soft">{pct}%</span>
+      </div>
+      <div className="mt-2 h-1 bg-white/40 rounded overflow-hidden">
+        <div className={`h-full ${cfg.dot}`} style={{ width: `${pct}%` }} />
+      </div>
+      <p className="mt-2 text-xs text-muted leading-tight">{subgrupo.accion_docente}</p>
+    </div>
+  )
+}
+
+function DimensionBar({ label, value }: { label: string; value: number | null }): ReactNode {
+  if (value == null) {
+    return (
+      <div className="flex items-center gap-3">
+        <span className="w-32 text-xs text-muted shrink-0">{label}</span>
+        <span className="text-xs text-muted-soft">sin datos</span>
+      </div>
+    )
+  }
+  const pct = Math.round(value * 100)
+  const color = pct > 60 ? "bg-success" : pct > 40 ? "bg-warning" : "bg-danger"
+  return (
+    <div className="flex items-center gap-3">
+      <span className="w-32 text-xs text-muted shrink-0">{label}</span>
+      <div className="flex-1 h-2 bg-surface rounded overflow-hidden">
+        <div className={`h-full ${color}`} style={{ width: `${pct}%` }} />
+      </div>
+      <span className="w-10 text-right font-mono text-xs text-muted-soft">{pct}%</span>
     </div>
   )
 }
