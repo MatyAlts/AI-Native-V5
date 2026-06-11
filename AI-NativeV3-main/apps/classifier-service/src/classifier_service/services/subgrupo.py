@@ -115,6 +115,17 @@ def _resolvio(events: list[dict]) -> bool:
     return (p.get("stdout") or "") != "" and (p.get("stderr") or "") == ""
 
 
+def _verbaliza(events: list[dict]) -> bool:
+    """Hay reflexion explicita: una anotacion escrita o un prompt reflexivo
+    (mismos kinds que ccd.py). Un alumno que reflexiona NO es un delegador puro."""
+    if _count(events, "anotacion_creada") > 0:
+        return True
+    return any(
+        e.get("event_type") == "prompt_enviado" and _kind(e) in _REFLECTIVE_KINDS
+        for e in events
+    )
+
+
 def clasificar_subgrupo(events: list[dict]) -> Subgrupo:
     """Árbol de 8 subgrupos. El gate `prompts == 0` corrige la inversión:
     sin prompts, delegar es imposible → rama autónoma."""
@@ -142,7 +153,7 @@ def clasificar_subgrupo(events: list[dict]) -> Subgrupo:
         return ESCRIBE_SIN_VALIDAR
 
     # con prompts: delegación ANTES que "poco trabajo" (el delegador copia, no trabaja)
-    if sol_directa >= DEP_SOLICITA and exp < DEP_EXP:
+    if sol_directa >= DEP_SOLICITA and exp < DEP_EXP and not _verbaliza(events):
         return DEPENDIENTE
     if poco_trabajo:
         return DESENGANCHADO

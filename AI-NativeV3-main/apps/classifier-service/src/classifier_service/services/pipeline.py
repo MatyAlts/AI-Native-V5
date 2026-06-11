@@ -38,7 +38,7 @@ logger = logging.getLogger(__name__)
 
 
 def compute_classifier_config_hash(
-    reference_profile: dict[str, Any], tree_version: str = "v2.0.0"
+    reference_profile: dict[str, Any], tree_version: str = "v3.0.0"
 ) -> str:
     """Hash determinista del config del classifier.
 
@@ -71,6 +71,16 @@ _EXCLUDED_FROM_FEATURES = frozenset(
     }
 )
 
+# Roll-up del eje del subgrupo a la etiqueta oficial (3 categorias del schema).
+# REEMPLAZO 2026-06-11 (tree_version v3.0.0): el subgrupo pasa a decidir la etiqueta.
+# Indeterminado (episodios muy cortos, sin señal) -> superficial (default acordado).
+_EJE_TO_APPROPRIATION = {
+    "reflexiva": "apropiacion_reflexiva",
+    "superficial": "apropiacion_superficial",
+    "delegacion_pasiva": "delegacion_pasiva",
+    "sin_clasificar": "apropiacion_superficial",
+}
+
 
 def classify_episode_from_events(
     events: list[dict],
@@ -93,11 +103,18 @@ def classify_episode_from_events(
     ccd = compute_ccd(classifier_events)
     cii = compute_cii(classifier_events)
     result = classify(ct=ct, ccd=ccd, cii=cii, reference_profile=profile)
-    # Modo sombra (B1 Fase 2): subgrupo + 4 dimensiones, ADITIVO en features. NO toca
-    # appropriation ni classifier_config_hash (features no entra al hash canónico) →
-    # no rompe reproducibilidad. Se calcula sobre los eventos ORIGINALES (no los
-    # filtrados) para que el foco cuente pestana_perdida/copia_intentada/pega_intentada.
-    result.features["subgrupo"] = compute_subgrupo(events)
+    # REEMPLAZO OFICIAL (2026-06-11, tree_version v3.0.0): la etiqueta oficial
+    # `appropriation` pasa a derivarse del SUBGRUPO (roll-up al eje), corrigiendo la
+    # inversion del arbol viejo (autonomos sin tutor caian en delegacion_pasiva). Las
+    # 5 metricas (ct/ccd/cii) se siguen calculando y persistiendo para auditoria, pero
+    # ya NO deciden la etiqueta. El subgrupo + 4 dimensiones se calculan sobre los
+    # eventos ORIGINALES (para que el foco cuente pestana/copia/pega) y van en features.
+    sg = compute_subgrupo(events)
+    result.features["subgrupo"] = sg
+    result.appropriation = _EJE_TO_APPROPRIATION[sg["eje"]]
+    result.appropriation_reason = (
+        f"Subgrupo {sg['key']} ({sg['label']}) -> eje {sg['eje']}. {sg['accion_docente']}."
+    )
     return result
 
 
