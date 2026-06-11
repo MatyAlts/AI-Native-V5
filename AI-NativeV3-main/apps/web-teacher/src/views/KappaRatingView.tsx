@@ -65,9 +65,12 @@ interface EpisodeToRate {
 interface Props {
   getToken: () => Promise<string | null>
   episodes: EpisodeToRate[]
+  // true (default): lote sintetico de calibracion. false: episodios reales de
+  // una comision -> el kappa SI valida la fiabilidad inter-rater del piloto.
+  isTraining?: boolean
 }
 
-export function KappaRatingView({ getToken, episodes }: Props) {
+export function KappaRatingView({ getToken, episodes, isTraining = true }: Props) {
   const [humanLabels, setHumanLabels] = useState<Record<string, RatingLabel>>({})
   const [result, setResult] = useState<KappaResult | null>(null)
   const [computing, setComputing] = useState(false)
@@ -133,15 +136,28 @@ export function KappaRatingView({ getToken, episodes }: Props) {
       <div className="space-y-6 max-w-5xl">
         {!result && (
           <>
-            <div className="rounded-xl border border-amber-300 bg-amber-50 px-6 py-4 text-sm text-amber-900">
-              <p className="font-semibold mb-1">Modo entrenamiento — episodios sinteticos</p>
-              <p>
-                Este lote es para calibrar tu criterio de evaluacion (curva de aprendizaje del
-                coding). <strong>NO son los episodios reales del piloto.</strong> El kappa que
-                resulte aca mide tu consistencia con el modelo sobre datos de practica, no valida
-                la fiabilidad inter-rater del piloto real.
-              </p>
-            </div>
+            {isTraining ? (
+              <div className="rounded-xl border border-amber-300 bg-amber-50 px-6 py-4 text-sm text-amber-900">
+                <p className="font-semibold mb-1">Modo entrenamiento — episodios sinteticos</p>
+                <p>
+                  Este lote es para calibrar tu criterio de evaluacion (curva de aprendizaje del
+                  coding). <strong>NO son los episodios reales del piloto.</strong> El kappa que
+                  resulte aca mide tu consistencia con el modelo sobre datos de practica, no valida
+                  la fiabilidad inter-rater del piloto real. Para validar con datos reales, entra
+                  desde una comision (boton "Inter-rater" de la cohorte).
+                </p>
+              </div>
+            ) : (
+              <div className="rounded-xl border border-green-300 bg-green-50 px-6 py-4 text-sm text-green-900">
+                <p className="font-semibold mb-1">Validacion real — episodios del piloto</p>
+                <p>
+                  Estos son <strong>episodios reales de tus alumnos</strong> en esta comision, con
+                  la etiqueta que les puso el clasificador automatico. El kappa que resulte aca
+                  <strong> si valida la fiabilidad inter-rater del piloto</strong> (Protocolo del
+                  ADR-046). Revisa cada episodio en su detalle antes de etiquetar.
+                </p>
+              </div>
+            )}
             {isDocente && (
               <div className="rounded-xl border border-border bg-white px-6 py-4 text-sm text-muted">
                 <p className="text-ink font-medium mb-1">Como funciona</p>
