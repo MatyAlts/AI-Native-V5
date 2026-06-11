@@ -475,6 +475,47 @@ function DocenteAppropriationVerdict({
           </ul>
         </div>
       )}
+      {classification.subgrupo && !explicacion.sinActividad && (
+        <div className="mt-4 pt-3 border-t border-border/60">
+          <div className="flex flex-wrap items-center gap-2 mb-2">
+            <span className="text-xs font-semibold uppercase tracking-wider text-muted">
+              Perfil detallado
+            </span>
+            <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-surface border border-border text-ink">
+              {classification.subgrupo.label}
+            </span>
+          </div>
+          <div className="grid grid-cols-2 gap-x-4 gap-y-1.5 max-w-md">
+            {(
+              [
+                ["Autonomia", classification.subgrupo.dimensiones.autonomia],
+                ["Experimentacion", classification.subgrupo.dimensiones.experimentacion],
+                ["Persistencia", classification.subgrupo.dimensiones.persistencia],
+                ["Foco", classification.subgrupo.dimensiones.foco],
+              ] as const
+            ).map(([nombre, val]) => (
+              <div key={nombre} className="flex items-center gap-2">
+                <span className="text-[11px] text-muted min-w-[92px]">{nombre}</span>
+                <div className="flex-1 h-2 bg-border rounded overflow-hidden">
+                  <div
+                    className="h-full bg-accent-brand rounded"
+                    style={{ width: `${Math.round(val * 100)}%` }}
+                  />
+                </div>
+                <span className="text-[11px] text-muted w-9 text-right">
+                  {Math.round(val * 100)}%
+                </span>
+              </div>
+            ))}
+          </div>
+          {classification.subgrupo.accion_docente && (
+            <p className="mt-2.5 text-xs text-muted leading-relaxed">
+              <span className="font-medium text-ink">Sugerencia: </span>
+              {classification.subgrupo.accion_docente}
+            </p>
+          )}
+        </div>
+      )}
     </div>
   )
 }
