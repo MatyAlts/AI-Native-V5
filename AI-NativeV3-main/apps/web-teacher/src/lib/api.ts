@@ -1649,7 +1649,8 @@ export const entregasDocenteApi = {
 
 // ── Ejercicios reusables (ADR-047 + ADR-048) ─────────────────────────
 
-export type UnidadTematica = "secuenciales" | "condicionales" | "repetitivas" | "mixtos" | "funciones"
+// Texto libre: cada materia define sus unidades (no es una taxonomia fija).
+export type UnidadTematica = string
 export type Dificultad = "basica" | "intermedia" | "avanzada"
 
 export interface PreguntaSocratica {

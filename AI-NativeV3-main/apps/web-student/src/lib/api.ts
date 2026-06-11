@@ -801,7 +801,7 @@ export interface Ejercicio {
   titulo: string
   enunciado_md: string
   inicial_codigo: string | null
-  unidad_tematica: "secuenciales" | "condicionales" | "repetitivas" | "mixtos"
+  unidad_tematica: string
   dificultad: "basica" | "intermedia" | "avanzada" | null
   test_cases: unknown[]
 }

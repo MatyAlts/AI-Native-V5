@@ -51,27 +51,38 @@ type ModalState =
   | { kind: "ai-wizard" }
   | { kind: "confirm-delete"; ejercicio: Ejercicio }
 
-const UNIDAD_LABEL: Record<UnidadTematica, string> = {
+// Fuente unica de las unidades del banco. Agregar una unidad nueva aca y
+// aparece en todos los selectores. El backend acepta cualquiera (texto libre),
+// asi que esto es solo la lista sugerida/visible.
+const UNIDAD_LABEL: Record<string, string> = {
   secuenciales: "Secuenciales",
   condicionales: "Condicionales",
   repetitivas: "Repetitivas",
   mixtos: "Mixtos",
   funciones: "Funciones",
+  manejo_errores: "Manejo de errores",
+  manejo_archivos: "Manejo de archivos",
+  estructura_datos: "Estructura de datos",
+  recursividad: "Recursividad",
 }
 
 // Orden pedagógico de los temas para listar el banco (no alfabético).
-const UNIDAD_ORDER: Record<UnidadTematica, number> = {
+const UNIDAD_ORDER: Record<string, number> = {
   secuenciales: 0,
   condicionales: 1,
   repetitivas: 2,
   mixtos: 3,
   funciones: 4,
+  manejo_errores: 5,
+  manejo_archivos: 6,
+  estructura_datos: 7,
+  recursividad: 8,
 }
 
 function sortEjerciciosPorTema(ejs: Ejercicio[]): Ejercicio[] {
   return [...ejs].sort(
     (a, b) =>
-      UNIDAD_ORDER[a.unidad_tematica] - UNIDAD_ORDER[b.unidad_tematica] ||
+      (UNIDAD_ORDER[a.unidad_tematica] ?? 99) - (UNIDAD_ORDER[b.unidad_tematica] ?? 99) ||
       a.titulo.localeCompare(b.titulo),
   )
 }
@@ -218,11 +229,11 @@ export function EjerciciosView({ comisionId, getToken }: Props) {
             className="border border-border rounded px-2 py-1 text-sm bg-white"
           >
             <option value="">Todas las unidades</option>
-            <option value="secuenciales">Secuenciales</option>
-            <option value="condicionales">Condicionales</option>
-            <option value="repetitivas">Repetitivas</option>
-            <option value="mixtos">Mixtos</option>
-            <option value="funciones">Funciones</option>
+            {Object.entries(UNIDAD_LABEL).map(([v, l]) => (
+              <option key={v} value={v}>
+                {l}
+              </option>
+            ))}
           </select>
           <select
             value={filterDificultad}
@@ -508,11 +519,11 @@ function EjercicioFormModal({ initial, title, onClose, onSubmit }: FormModalProp
                 onChange={(e) => set("unidad_tematica", e.target.value as UnidadTematica)}
                 className="w-full border border-border rounded px-2 py-1 text-sm bg-white"
               >
-                <option value="secuenciales">Secuenciales</option>
-                <option value="condicionales">Condicionales</option>
-                <option value="repetitivas">Repetitivas</option>
-                <option value="mixtos">Mixtos</option>
-                <option value="funciones">Funciones</option>
+                {Object.entries(UNIDAD_LABEL).map(([v, l]) => (
+                  <option key={v} value={v}>
+                    {l}
+                  </option>
+                ))}
               </select>
             </div>
             <div>
@@ -848,10 +859,11 @@ function EjercicioAIWizard({ getToken, onClose, onGenerated }: AIWizardProps) {
               onChange={(e) => setUnidad(e.target.value as UnidadTematica)}
               className="w-full border border-border rounded px-2 py-1 text-sm bg-white"
             >
-              <option value="secuenciales">Secuenciales</option>
-              <option value="condicionales">Condicionales</option>
-              <option value="repetitivas">Repetitivas</option>
-              <option value="mixtos">Mixtos</option>
+              {Object.entries(UNIDAD_LABEL).map(([v, l]) => (
+                <option key={v} value={v}>
+                  {l}
+                </option>
+              ))}
             </select>
           </div>
           <div>
