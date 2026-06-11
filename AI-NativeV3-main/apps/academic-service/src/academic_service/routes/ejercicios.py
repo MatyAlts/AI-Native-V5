@@ -54,9 +54,7 @@ async def create_ejercicio(
 async def list_ejercicios(
     limit: int = Query(50, ge=1, le=200),
     cursor: UUID | None = None,
-    unidad_tematica: Literal[
-        "secuenciales", "condicionales", "repetitivas", "mixtos", "funciones"
-    ]
+    unidad_tematica: str
     | None = None,
     dificultad: Literal["basica", "intermedia", "avanzada"] | None = None,
     created_by: UUID | None = None,
@@ -141,9 +139,7 @@ class EjercicioGenerateRequest(BaseModel):
 
     materia_id: UUID | None = None
     descripcion_nl: str = Field(min_length=10, max_length=2000)
-    unidad_tematica: Literal[
-        "secuenciales", "condicionales", "repetitivas", "mixtos", "funciones"
-    ]
+    unidad_tematica: str
     dificultad: Literal["basica", "intermedia", "avanzada"] | None = None
     contexto: str | None = Field(default=None, max_length=2000)
     comision_id: UUID | None = None

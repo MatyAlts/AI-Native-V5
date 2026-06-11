@@ -477,10 +477,7 @@ class Ejercicio(Base, TenantMixin, TimestampMixin):
     tp_ejercicios: Mapped[list[TpEjercicio]] = relationship(back_populates="ejercicio")
 
     __table_args__ = (
-        CheckConstraint(
-            "unidad_tematica IN ('secuenciales', 'condicionales', 'repetitivas', 'mixtos', 'funciones')",
-            name="ck_ejercicios_unidad_tematica",
-        ),
+        # unidad_tematica es TEXTO LIBRE (cada materia define sus unidades) — sin CHECK.
         CheckConstraint(
             "dificultad IS NULL OR dificultad IN ('basica', 'intermedia', 'avanzada')",
             name="ck_ejercicios_dificultad",
