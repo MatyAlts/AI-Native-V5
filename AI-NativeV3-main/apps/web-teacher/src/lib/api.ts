@@ -5,10 +5,37 @@
  * un TokenGetter como primer parámetro.
  */
 
-export type AppropriationLabel =
+// Categorias canonicas (Protocolo B — etiqueta oficial del classifier).
+export type AppropriationCanonical =
   | "delegacion_pasiva"
   | "apropiacion_superficial"
   | "apropiacion_reflexiva"
+
+// Subgrupos diagnosticos (capa de analisis sobre episodios ya clasificados).
+// Deben coincidir con classifier-service/services/subgrupo.py.
+export type AppropriationSubgroup =
+  | "autonomo_competente"
+  | "autonomo_trabado"
+  | "escribe_sin_validar"
+  | "desenganchado"
+  | "colaborador_reflexivo"
+  | "colaborador_funcional"
+  | "dependiente"
+  | "indeterminado"
+
+// Niveles cognitivos del Protocolo A.
+export type CognitiveLevelLabel = "N1" | "N2" | "N3" | "N4"
+
+// La etiqueta OFICIAL del classifier es SIEMPRE una de las 3 canonicas.
+// (classification.appropriation, trajectories, displays, etc. usan este tipo).
+export type AppropriationLabel = AppropriationCanonical
+
+// Etiqueta para RATING inter-rater (kappa): ademas de las 3 canonicas admite
+// subgrupos diagnosticos y niveles N1-N4 (protocolos configurables).
+export type RatingLabel =
+  | AppropriationCanonical
+  | AppropriationSubgroup
+  | CognitiveLevelLabel
 
 export interface TrajectoryPoint {
   episode_id: string
@@ -41,8 +68,8 @@ export interface CohortProgression {
 
 export interface KappaRating {
   episode_id: string
-  rater_a: AppropriationLabel
-  rater_b: AppropriationLabel
+  rater_a: RatingLabel
+  rater_b: RatingLabel
 }
 
 export interface KappaResult {
@@ -53,6 +80,11 @@ export interface KappaResult {
   interpretation: string
   per_class_agreement: Record<string, number>
   confusion_matrix: Record<string, Record<string, number>>
+  // Estadisticos adicionales (defensa ante paradoja de prevalencia).
+  ac1: number
+  ac1_interpretation: string
+  kappa_se: number
+  kappa_ci_95: [number, number]
 }
 
 export interface ExportJobStatus {

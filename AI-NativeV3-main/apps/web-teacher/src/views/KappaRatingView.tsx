@@ -2,7 +2,7 @@ import { PageContainer } from "@platform/ui"
 import { useState } from "react"
 import { useViewMode } from "../hooks/useViewMode"
 import {
-  type AppropriationLabel,
+  type RatingLabel,
   type KappaRating,
   type KappaResult,
   computeKappa,
@@ -14,21 +14,48 @@ import {
 } from "../utils/docenteLabels"
 import { helpContent } from "../utils/helpContent"
 
-const CATEGORIES: AppropriationLabel[] = [
-  "delegacion_pasiva",
-  "apropiacion_superficial",
-  "apropiacion_reflexiva",
-]
+// Protocolos de etiquetado configurables (decision 2026-06-11).
+const PROTOCOLS = {
+  ejes: ["delegacion_pasiva", "apropiacion_superficial", "apropiacion_reflexiva"],
+  subgrupos: [
+    "autonomo_competente", "autonomo_trabado", "colaborador_reflexivo",
+    "colaborador_funcional", "escribe_sin_validar", "indeterminado",
+    "desenganchado", "dependiente",
+  ],
+  niveles: ["N1", "N2", "N3", "N4"],
+} as const satisfies Record<string, readonly RatingLabel[]>
 
-const CATEGORY_COLORS: Record<AppropriationLabel, string> = {
+type ProtocolKey = keyof typeof PROTOCOLS
+
+const PROTOCOL_LABELS: Record<ProtocolKey, string> = {
+  ejes: "3 ejes",
+  subgrupos: "8 subgrupos",
+  niveles: "Niveles N1-N4",
+}
+
+// Record<string,string> (no Record<RatingLabel,...>) para no exigir las 15
+// keys del tipo ampliado. Subgrupos heredan el color de su eje; N1-N4 en azules.
+const CATEGORY_COLORS: Record<string, string> = {
   delegacion_pasiva: "bg-danger hover:bg-danger",
   apropiacion_superficial: "bg-warning hover:bg-warning",
   apropiacion_reflexiva: "bg-green-600 hover:bg-green-700",
+  dependiente: "bg-danger hover:bg-danger",
+  desenganchado: "bg-amber-400 hover:bg-amber-500",
+  escribe_sin_validar: "bg-warning hover:bg-warning",
+  colaborador_funcional: "bg-amber-400 hover:bg-amber-500",
+  indeterminado: "bg-stone-400 hover:bg-stone-500",
+  colaborador_reflexivo: "bg-green-600 hover:bg-green-700",
+  autonomo_competente: "bg-green-700 hover:bg-green-800",
+  autonomo_trabado: "bg-green-500 hover:bg-green-600",
+  N1: "bg-sky-400 hover:bg-sky-500",
+  N2: "bg-blue-500 hover:bg-blue-600",
+  N3: "bg-indigo-500 hover:bg-indigo-600",
+  N4: "bg-violet-600 hover:bg-violet-700",
 }
 
 interface EpisodeToRate {
   episode_id: string
-  classifier_label: AppropriationLabel
+  classifier_label: RatingLabel
   summary: string
 }
 
@@ -38,7 +65,7 @@ interface Props {
 }
 
 export function KappaRatingView({ getToken, episodes }: Props) {
-  const [humanLabels, setHumanLabels] = useState<Record<string, AppropriationLabel>>({})
+  const [humanLabels, setHumanLabels] = useState<Record<string, RatingLabel>>({})
   const [result, setResult] = useState<KappaResult | null>(null)
   const [computing, setComputing] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -49,8 +76,10 @@ export function KappaRatingView({ getToken, episodes }: Props) {
   const labeledCount = Object.keys(humanLabels).length
 
   const categoryLabels = isDocente ? APPROPRIATION_DOCENTE : APPROPRIATION_INVESTIGADOR
+  const [protocol, setProtocol] = useState<ProtocolKey>("ejes")
+  const activeCategories: RatingLabel[] = [...PROTOCOLS[protocol]]
 
-  const handleLabel = (episodeId: string, label: AppropriationLabel) => {
+  const handleLabel = (episodeId: string, label: RatingLabel) => {
     setHumanLabels((prev) => ({ ...prev, [episodeId]: label }))
   }
 
@@ -149,6 +178,29 @@ export function KappaRatingView({ getToken, episodes }: Props) {
               </div>
             </div>
 
+            {!isDocente && (
+              <div className="flex items-center gap-2 text-sm">
+                <span className="text-muted">Protocolo de etiquetado:</span>
+                {(Object.keys(PROTOCOLS) as ProtocolKey[]).map((p) => (
+                  <button
+                    key={p}
+                    type="button"
+                    onClick={() => {
+                      setProtocol(p)
+                      handleReset()
+                    }}
+                    className={`px-3 py-1 rounded border text-xs transition ${
+                      protocol === p
+                        ? "bg-accent-brand text-white border-accent-brand"
+                        : "border-border hover:bg-canvas"
+                    }`}
+                  >
+                    {PROTOCOL_LABELS[p]}
+                  </button>
+                ))}
+              </div>
+            )}
+
             <div className="space-y-3">
               {episodes.map((ep) => {
                 const currentLabel = humanLabels[ep.episode_id]
@@ -158,6 +210,7 @@ export function KappaRatingView({ getToken, episodes }: Props) {
                     episode={ep}
                     {...(currentLabel ? { currentLabel } : {})}
                     onLabel={(l) => handleLabel(ep.episode_id, l)}
+                    categories={activeCategories}
                     categoryLabels={categoryLabels}
                     isDocente={isDocente}
                   />
@@ -184,12 +237,14 @@ function EpisodeRatingCard({
   episode,
   currentLabel,
   onLabel,
+  categories,
   categoryLabels,
   isDocente,
 }: {
   episode: EpisodeToRate
-  currentLabel?: AppropriationLabel
-  onLabel: (l: AppropriationLabel) => void
+  currentLabel?: RatingLabel
+  onLabel: (l: RatingLabel) => void
+  categories: RatingLabel[]
   categoryLabels: Record<string, string>
   isDocente: boolean
 }) {
@@ -247,15 +302,15 @@ function EpisodeRatingCard({
         <div className="text-[11px] font-semibold text-muted mb-1.5 uppercase tracking-wider">
           {isDocente ? "¿Cómo lo evaluarías vos?" : "Tu rating"}
         </div>
-        <div className="flex gap-2">
-          {CATEGORIES.map((cat) => {
+        <div className="flex flex-wrap gap-2">
+          {categories.map((cat) => {
             const selected = currentLabel === cat
             return (
               <button
                 key={cat}
                 type="button"
                 onClick={() => onLabel(cat)}
-                className={`flex-1 px-3 py-2 rounded text-white text-xs font-medium transition ${CATEGORY_COLORS[cat]} ${
+                className={`flex-1 min-w-[120px] px-3 py-2 rounded text-white text-xs font-medium transition ${CATEGORY_COLORS[cat] ?? "bg-stone-400 hover:bg-stone-500"} ${
                   selected ? "ring-2 ring-offset-2 ring-[#111111]" : "opacity-70 hover:opacity-100"
                 }`}
               >
@@ -269,7 +324,7 @@ function EpisodeRatingCard({
   )
 }
 
-function appropriationDotColor(label: AppropriationLabel): string {
+function appropriationDotColor(label: RatingLabel): string {
   if (label === "apropiacion_reflexiva") return "#16a34a"
   if (label === "apropiacion_superficial") return "#f59e0b"
   return "#dc2626" // delegacion_pasiva
@@ -298,7 +353,7 @@ function DocenteResultPanel({
       <div className="rounded-xl border border-border bg-white p-4">
         <h3 className="font-medium mb-3 text-sm">Coincidencia por tipo</h3>
         <div className="space-y-2">
-          {CATEGORIES.map((c) => {
+          {Object.keys(result.per_class_agreement).map((c) => {
             const val = result.per_class_agreement[c] ?? 0
             return (
               <div key={c} className="flex items-center gap-3">
@@ -345,6 +400,8 @@ function InvestigadorResultPanel({
   onReset: () => void
 }) {
   const { kappa, interpretation, confusion_matrix, per_class_agreement } = result
+  // Categorias presentes en el resultado (soporta cualquier protocolo elegido).
+  const cats = Object.keys(confusion_matrix)
 
   const interpretationColor =
     kappa >= 0.81
@@ -384,7 +441,7 @@ function InvestigadorResultPanel({
           <thead>
             <tr className="border-b border-border">
               <th className="text-left py-2 font-medium"> </th>
-              {CATEGORIES.map((c) => (
+              {cats.map((c) => (
                 <th key={c} className="text-center py-2 font-medium text-xs px-2">
                   {APPROPRIATION_INVESTIGADOR[c] ?? c}
                 </th>
@@ -392,12 +449,12 @@ function InvestigadorResultPanel({
             </tr>
           </thead>
           <tbody>
-            {CATEGORIES.map((row) => (
+            {cats.map((row) => (
               <tr key={row} className="border-b border-border/50">
                 <td className="py-2 pr-4 text-xs text-muted">
                   {APPROPRIATION_INVESTIGADOR[row] ?? row}
                 </td>
-                {CATEGORIES.map((col) => {
+                {cats.map((col) => {
                   const val = confusion_matrix[row]?.[col] ?? 0
                   const isDiagonal = row === col
                   return (
@@ -420,7 +477,7 @@ function InvestigadorResultPanel({
       <div className="rounded-xl border border-border bg-white p-4">
         <h3 className="font-medium mb-3">Acuerdo por clase</h3>
         <div className="space-y-2">
-          {CATEGORIES.map((c) => {
+          {cats.map((c) => {
             const val = per_class_agreement[c] ?? 0
             return (
               <div key={c} className="flex items-center gap-3">
