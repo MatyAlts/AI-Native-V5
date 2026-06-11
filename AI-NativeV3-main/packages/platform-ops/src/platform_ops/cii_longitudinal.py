@@ -229,11 +229,20 @@ def compute_cii_evolution_longitudinal(
     """
     per_template = compute_evolution_per_template(classifications)
     per_unidad = compute_evolution_per_unidad(classifications, unidad_map)
-    mean_slope = compute_mean_slope(per_template)
 
-    n_groups_evaluated = sum(1 for entry in per_template if not entry.get("insufficient_data"))
-    n_groups_insufficient = len(per_template) - n_groups_evaluated
-    n_episodes_total = sum(entry["n_episodes"] for entry in per_template)
+    # Las plantillas ya no se usan en el piloto (template_id NULL) -> per_template
+    # queda vacio y el resumen (slope/grupos/sufficient) daria 0 / "sin datos
+    # suficientes" aunque el alumno tenga episodios. Fallback al agrupamiento por
+    # Unidad para que el resumen refleje la trazabilidad real. Si en el futuro
+    # vuelven los templates, per_template tiene prioridad (BC con la tesis / ADR-018).
+    summary_groups = per_template if per_template else [
+        g for g in per_unidad if g.get("unidad_id") != "sin_unidad"
+    ]
+    mean_slope = compute_mean_slope(summary_groups)
+
+    n_groups_evaluated = sum(1 for entry in summary_groups if not entry.get("insufficient_data"))
+    n_groups_insufficient = len(summary_groups) - n_groups_evaluated
+    n_episodes_total = sum(entry["n_episodes"] for entry in summary_groups)
 
     return {
         "n_groups_evaluated": n_groups_evaluated,
