@@ -435,7 +435,11 @@ function DocenteAppropriationVerdict({
       )
     : null
 
-  const explicacion = explicarEstadoDocente(classification, eventosCognitivos)
+  // Fix 2026-06-10 #6: el texto del estado sale del subgrupo real del
+  // episodio (Autonomo competente ≠ texto generico de "apropiacion
+  // reflexiva"). Colores/severidad siguen mapeando al eje canonico.
+  const subgrupoKey = classification.subgrupo?.key ?? null
+  const explicacion = explicarEstadoDocente(classification, eventosCognitivos, subgrupoKey)
   const display = APPROPRIATION_DISPLAY[classification.appropriation]
 
   // Episodio sin actividad: chip neutro en vez del veredicto de apropiación
@@ -444,7 +448,11 @@ function DocenteAppropriationVerdict({
   const chipCls = explicacion.sinActividad
     ? "bg-surface border border-border text-muted"
     : display.chip
-  const chipLabel = explicacion.sinActividad ? "Sin actividad evaluable" : display.label
+  const subgrupoChip =
+    subgrupoKey && subgrupoKey !== "indeterminado" ? classification.subgrupo?.label : null
+  const chipLabel = explicacion.sinActividad
+    ? "Sin actividad evaluable"
+    : (subgrupoChip ?? display.label)
 
   return (
     <div className={`rounded-xl border px-6 py-4 ${containerCls}`}>

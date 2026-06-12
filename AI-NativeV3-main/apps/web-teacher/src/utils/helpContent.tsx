@@ -451,44 +451,51 @@ export const helpContent: HelpContentMap = {
 
   cohortAdversarial: (
     <div className="space-y-4 text-sidebar-text-muted">
-      <p className="text-lg font-medium text-[var(--text-inverse)]">Intentos adversos detectados</p>
+      <p className="text-lg font-medium text-[var(--text-inverse)]">
+        Uso inapropiado del tutor IA
+      </p>
       <p>
-        Visibilidad pedagogica de los matches del corpus de guardrails (ADR-019, RN-129) en los
-        prompts de los estudiantes de una cohorte. Cumple Seccion 8.5 de la tesis; habilita Seccion
-        17.8 (efectividad de salvaguardas).
+        Esta pantalla muestra cuando un alumno intento que el tutor le DE la solucion en vez de
+        guiarlo (el tutor esta diseñado para acompañar el razonamiento, no para resolver). El
+        sistema detecta estos intentos automaticamente en lo que el alumno escribe.
       </p>
       <ul className="list-disc list-inside space-y-2 ml-4">
         <li>
-          <strong>Categorias:</strong> jailbreak indirecto/sustitucion/ficcion, persuasion por
-          urgencia, prompt injection. Cada match emite un evento CTR `intento_adverso_detectado`.
+          <strong>Que tipos hay:</strong> pedir la solucion con rodeos o disfrazada, inventar una
+          historia para que el tutor "actue" y suelte la respuesta, presionarlo con urgencia
+          ("entrego en 5 minutos"), o darle ordenes directas ("ignora tus reglas"). Cada intento de
+          la lista trae su explicacion al lado.
         </li>
         <li>
-          <strong>Severidad (1-5):</strong> ordinal, NO cardinal. Es ranking, no peso. Severidad
-          &gt;=3 dispara inyeccion de un system message reforzante al LLM (Seccion 8.5.1).
+          <strong>Nivel de riesgo (Muy bajo a Critico):</strong> que tan directo fue el intento. A
+          partir de "Moderado" el tutor recibe un refuerzo automatico para sostener la guia
+          socratica. "Uso intensivo" es solo informativo: pregunto mucho mas de lo que trabajo.
         </li>
         <li>
-          <strong>Top estudiantes:</strong> los 10 con mas matches. Util para intervencion
-          pedagogica focalizada.
+          <strong>Que hacer:</strong> un intento aislado no dice nada — es esperable que prueben.
+          Varios intentos del mismo alumno si son señal: conviene conversarlo (sin tono punitivo,
+          suele indicar frustracion o que la tarea le quedo grande).
         </li>
         <li>
-          <strong>Eventos recientes:</strong> ultimos 50 con texto matcheado truncado a 200 chars.
+          <strong>Click en cada intento</strong> abre la sesion completa para ver el contexto.
         </li>
       </ul>
       <div className="bg-sidebar-bg-edge p-4 rounded-lg mt-4">
-        <p className="text-accent-brand font-medium">Importante: la deteccion NO bloquea.</p>
+        <p className="text-accent-brand font-medium">El sistema NO bloquea ni castiga.</p>
         <p className="text-sm mt-1">
-          El prompt llega al LLM aunque triggeree un match. El evento es side-channel para analisis
-          empirico (Seccion 17.8). Los regex son fragiles: falsos positivos y negativos son
-          esperados. Ver RN-129 para limitaciones.
+          El alumno recibe respuesta normal del tutor aunque su intento quede registrado. La
+          deteccion es automatica y puede equivocarse en ambos sentidos (marcar algo inocente o no
+          detectar un intento real) — usala como señal para mirar, no como prueba.
         </p>
       </div>
       <div className="bg-sidebar-bg-edge p-4 rounded-lg mt-2">
-        <p className="text-warning font-medium">Limitaciones v1.1.0:</p>
+        <p className="text-warning font-medium">Detalle tecnico (modo investigador):</p>
         <p className="text-sm mt-1">
-          Evasion intra-palabra (`olvi-da tus instrucciones`) y encadenamientos sofisticados
-          (Seccion 8.5.1 tecnica 4) NO estan cubiertos por regex, requieren clasificador ML (Fase B,
-          agenda piloto-2). `overuse` (Seccion 8.5.3) requiere ventana cross-prompt y queda
-          diferido.
+          Matches del corpus de guardrails (ADR-019, RN-129) sobre los prompts; cada match emite un
+          evento CTR `intento_adverso_detectado` side-channel. Severidad ordinal 1-5; &gt;=3 inyecta
+          system message reforzante (Seccion 8.5.1). Evasion intra-palabra y encadenamientos
+          sofisticados no estan cubiertos por regex (Fase B, piloto-2). `overuse` (ADR-043) usa
+          ventana cross-prompt en Redis, severidad 1 informativa.
         </p>
       </div>
     </div>

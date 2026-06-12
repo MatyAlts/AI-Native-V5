@@ -11,7 +11,12 @@ import {
   getCohortAdversarialEvents,
   getCohortIntegrityEvents,
 } from "../lib/api"
-import { ADVERSARIAL_DOCENTE, SEVERITY_DOCENTE, studentShortLabel } from "../utils/docenteLabels"
+import {
+  ADVERSARIAL_DOCENTE,
+  ADVERSARIAL_DOCENTE_DESC,
+  SEVERITY_DOCENTE,
+  studentShortLabel,
+} from "../utils/docenteLabels"
 import { helpContent } from "../utils/helpContent"
 import { useStudentProfiles } from "../hooks/useStudentProfiles"
 
@@ -91,6 +96,25 @@ function resolveCategoryLabel(category: string, isDocente: boolean): string {
     return isDocente ? "Intento de persuadir al tutor" : "Persuasion (generica)"
   }
   return category
+}
+
+/**
+ * Explicacion docente de la categoria (fix 2026-06-10 #4): que hizo el alumno
+ * y por que importa. Mismos fallbacks por prefijo que resolveCategoryLabel
+ * para categorias genericas del seed.
+ */
+function resolveCategoryDesc(category: string): string | null {
+  if (ADVERSARIAL_DOCENTE_DESC[category]) return ADVERSARIAL_DOCENTE_DESC[category] as string
+  if (category.startsWith("jailbreak")) {
+    return ADVERSARIAL_DOCENTE_DESC.jailbreak_indirect ?? null
+  }
+  if (category.includes("injection")) {
+    return ADVERSARIAL_DOCENTE_DESC.prompt_injection ?? null
+  }
+  if (category.includes("persuasion")) {
+    return ADVERSARIAL_DOCENTE_DESC.persuasion_urgency ?? null
+  }
+  return null
 }
 
 function CategoryBars({
@@ -395,6 +419,7 @@ export function CohortAdversarialView({ getToken, initialComisionId }: Props) {
                     .map(([cat, count]) => (
                       <span
                         key={cat}
+                        title={isDocente ? (resolveCategoryDesc(cat) ?? undefined) : undefined}
                         className="inline-flex items-center gap-1.5 text-xs text-muted"
                       >
                         <span
@@ -577,6 +602,12 @@ export function CohortAdversarialView({ getToken, initialComisionId }: Props) {
                                 <span className="mx-1.5">·</span>
                                 Riesgo: {SEVERITY_DOCENTE[String(ev.severity)] ?? ev.severity}
                               </div>
+                              {/* Fix 2026-06-10 #4: que hizo y por que importa, sin jerga. */}
+                              {resolveCategoryDesc(ev.category) && (
+                                <div className="text-xs text-muted mt-1 leading-relaxed">
+                                  {resolveCategoryDesc(ev.category)}
+                                </div>
+                              )}
                               {ev.matched_text && (
                                 <div className="mt-2 text-xs text-muted bg-canvas border border-border rounded-md px-2.5 py-1.5 font-mono break-words">
                                   <span className="text-[10px] uppercase tracking-wider text-muted/70 mr-1">
