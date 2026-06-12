@@ -1337,6 +1337,8 @@ export async function getCohortIntegrityEvents(
 export interface StudentEpisode {
   episode_id: string
   problema_id: string
+  /** "closed" | "paused" — paused = abandonado y retomable por el alumno (ADR-055). */
+  estado: string
   tarea_codigo: string | null
   tarea_titulo: string | null
   template_id: string | null

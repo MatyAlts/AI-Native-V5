@@ -306,7 +306,14 @@ class PartitionWorker:
             # 5. Actualizar el episodio
             ep.events_count = expected_seq + 1
             ep.last_chain_hash = chain_hash
-            if event["event_type"] == "episodio_cerrado":
+            if event["event_type"] == "episodio_abandonado":
+                # ADR-055 (fix 2026-06-10 #2): el abandono pausa el episodio en
+                # vez de dejarlo "open" indefinido. El estudiante puede retomar
+                # via POST /episodes/{id}/resume (tutor-service) y el docente lo
+                # ve marcado "paused" en el analisis. Es metadata del Episode —
+                # los eventos siguen append-only, sin tipos nuevos.
+                ep.estado = "paused"
+            elif event["event_type"] == "episodio_cerrado":
                 ep.estado = "closed"
                 ep.closed_at = utc_now()
                 # ADR-021: capturar payload de attestation para emitir POST-COMMIT.
@@ -320,6 +327,12 @@ class PartitionWorker:
                     "total_events": ep.events_count,
                     "ts_episode_closed": event["ts"],
                 }
+            elif ep.estado == "paused":
+                # ADR-055: cualquier actividad posterior a un abandono reanuda
+                # el episodio (el estudiante retomo via resume). No requiere
+                # evento dedicado — la reanudacion es derivable de la cadena
+                # (episodio_abandonado seguido de mas eventos).
+                ep.estado = "open"
 
         # Salir del context manager → tenant_session hace commit. Si hubo
         # excepcion, attestation_payload sigue siendo None (no se emite).

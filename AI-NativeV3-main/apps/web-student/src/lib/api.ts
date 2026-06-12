@@ -164,12 +164,45 @@ export interface EpisodeStateResponse {
   episode_id: string
   tarea_practica_id: string
   comision_id: string
-  estado: "open" | "closed"
+  estado: "open" | "closed" | "paused"
   opened_at: string
   closed_at: string | null
   last_code_snapshot: string | null
   messages: Array<{ role: "user" | "assistant"; content: string; ts: string }>
   notes: Array<{ contenido: string; ts: string }>
+  /** Ejercicio del banco asociado (null = TP monolítica). ADR-049/055. */
+  ejercicio_id: string | null
+  ejercicio_orden: number | null
+}
+
+/**
+ * Reanuda un episodio pausado por abandono (ADR-055, fix 2026-06-10 #2).
+ *
+ * El backend reconstruye la sesión Redis desde la cadena CTR (seq,
+ * conversación, último código) sin emitir eventos nuevos — el episodio
+ * vuelve a "open" con el primer evento posterior. Idempotente.
+ *
+ * Errores: 404 episodio/TP inexistente, 403 episodio ajeno, 409 episodio
+ * cerrado o TP fuera de plazo.
+ */
+export interface ResumeEpisodeResponse {
+  episode_id: string
+  problema_id: string | null
+  comision_id: string
+  ejercicio_id: string | null
+  ejercicio_orden: number | null
+}
+
+export async function resumeEpisode(
+  episodeId: string,
+  getToken?: TokenGetter,
+): Promise<ResumeEpisodeResponse> {
+  const r = await fetch(`/api/v1/episodes/${episodeId}/resume`, {
+    method: "POST",
+    headers: await authHeaders(getToken),
+  })
+  if (!r.ok) throw new EpisodeStateError(r.status, `resume episode failed: ${r.status}`)
+  return r.json()
 }
 
 export class EpisodeStateError extends Error {
@@ -591,6 +624,8 @@ export const tareasPracticasApi = {
 export interface StudentEpisode {
   episode_id: string
   problema_id: string
+  /** "closed" | "paused" — paused = abandonado, retomable via resumeEpisode (ADR-055). */
+  estado: string
   tarea_codigo: string | null
   tarea_titulo: string | null
   template_id: string | null

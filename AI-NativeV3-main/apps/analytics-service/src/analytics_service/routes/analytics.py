@@ -62,9 +62,7 @@ async def get_user_id(x_user_id: str | None = Header(default=None)) -> UUID:
         )
 
 
-async def assert_comision_member(
-    user_id: UUID, comision_id: UUID, tenant_id: UUID
-) -> None:
+async def assert_comision_member(user_id: UUID, comision_id: UUID, tenant_id: UUID) -> None:
     """Lanza 403 si `user_id` no es docente asignado a `comision_id`.
 
     El análisis se aísla por comisión: en prod todos los docentes comparten
@@ -143,12 +141,25 @@ async def require_comision_access(
 #  - Subgrupos: los 8 reales de classifier-service/services/subgrupo.py.
 #  - A: niveles cognitivos N1-N4.
 # kappa_analysis.py ya soporta categorias arbitrarias; solo validamos la entrada.
-VALID_APPROPRIATION_LABELS: frozenset[str] = frozenset({
-    "delegacion_pasiva", "apropiacion_superficial", "apropiacion_reflexiva",
-    "autonomo_competente", "autonomo_trabado", "escribe_sin_validar", "desenganchado",
-    "colaborador_reflexivo", "colaborador_funcional", "dependiente", "indeterminado",
-    "N1", "N2", "N3", "N4",
-})
+VALID_APPROPRIATION_LABELS: frozenset[str] = frozenset(
+    {
+        "delegacion_pasiva",
+        "apropiacion_superficial",
+        "apropiacion_reflexiva",
+        "autonomo_competente",
+        "autonomo_trabado",
+        "escribe_sin_validar",
+        "desenganchado",
+        "colaborador_reflexivo",
+        "colaborador_funcional",
+        "dependiente",
+        "indeterminado",
+        "N1",
+        "N2",
+        "N3",
+        "N4",
+    }
+)
 
 
 class KappaRatingIn(BaseModel):
@@ -316,7 +327,10 @@ async def get_kappa_sample(
 
     logger.info(
         "kappa_sample tenant_id=%s user_id=%s comision_id=%s n=%d",
-        tenant_id, user_id, comision_id, len(episodes),
+        tenant_id,
+        user_id,
+        comision_id,
+        len(episodes),
     )
     return KappaSampleOut(comision_id=str(comision_id), episodes=episodes)
 
@@ -837,9 +851,7 @@ async def get_cii_evolution_longitudinal(
         # Recopilar los unidad_ids no-None de las classifications.
         from uuid import UUID as _UUID
 
-        unidad_ids_raw = {
-            c["unidad_id"] for c in classifications if c.get("unidad_id") is not None
-        }
+        unidad_ids_raw = {c["unidad_id"] for c in classifications if c.get("unidad_id") is not None}
         unidad_ids = [_UUID(str(uid)) for uid in unidad_ids_raw]
         unidad_map = await ds.list_unidades_by_ids(
             unidad_ids=unidad_ids,
@@ -875,6 +887,9 @@ async def get_cii_evolution_longitudinal(
 class StudentEpisodeOut(BaseModel):
     episode_id: str
     problema_id: str
+    # "closed" | "paused" — los paused son episodios abandonados que el alumno
+    # puede retomar (ADR-055); el docente los ve marcados en el drill-down.
+    estado: str
     tarea_codigo: str | None
     tarea_titulo: str | None
     template_id: str | None
@@ -1546,7 +1561,9 @@ class IntegrityRecentEventOut(BaseModel):
     episode_id: str
     student_pseudonym: str
     ts: str
-    event_type: str  # "pestana_perdida" | "pestana_recuperada" | "copia_intentada" | "pega_intentada"
+    event_type: (
+        str  # "pestana_perdida" | "pestana_recuperada" | "copia_intentada" | "pega_intentada"
+    )
     payload: dict  # shape específico por event_type — el frontend formatea
 
 
@@ -1626,8 +1643,7 @@ async def get_cohort_integrity_events(
     ]
 
     logger.info(
-        "cohort_integrity_events_computed tenant_id=%s user_id=%s "
-        "comision_id=%s n_events=%d",
+        "cohort_integrity_events_computed tenant_id=%s user_id=%s comision_id=%s n_events=%d",
         tenant_id,
         user_id,
         comision_id,

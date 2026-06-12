@@ -351,12 +351,17 @@ class RealLongitudinalDataSource:
         comision_id: UUID,
         academic_session: AsyncSession,
     ) -> list[dict]:
-        """ADR-018 + drill-down: lista de episodios CERRADOS del estudiante con
+        """ADR-018 + drill-down: lista de episodios del estudiante con
         classification + template_id. Pensado para que el frontend muestre un
         dropdown "selectable" en vez de pedir UUIDs pegados.
 
+        Incluye cerrados y pausados (ADR-055, fix 2026-06-10 #2): el episodio
+        abandonado queda `paused` y el docente lo ve marcado para decidir qué
+        hacer. `open` sigue afuera (sesión en vivo, sin señal útil todavía).
+
         Triple cross-DB ctr + classifier + academic. Ordenado por
-        `closed_at` desc (más recientes primero — UX típico).
+        `closed_at` desc con NULLs primero (los paused, que no tienen
+        closed_at, arriba — son los que piden atención).
         """
         from academic_service.models.operacional import TareaPractica
         from classifier_service.models import Classification
@@ -374,8 +379,8 @@ class RealLongitudinalDataSource:
             .where(Episode.comision_id == comision_id)
             .where(Episode.tenant_id == self.tenant_id)
             .where(Episode.student_pseudonym == student_pseudonym)
-            .where(Episode.estado == "closed")
-            .order_by(Episode.closed_at.desc())
+            .where(Episode.estado.in_(["closed", "paused"]))
+            .order_by(Episode.closed_at.desc().nullsfirst())
         )
         ep_result = await self.ctr.execute(ep_stmt)
         episodes_raw = ep_result.all()
@@ -426,6 +431,7 @@ class RealLongitudinalDataSource:
                 {
                     "episode_id": str(row.id),
                     "problema_id": str(row.problema_id),
+                    "estado": row.estado,
                     "tarea_codigo": tp.get("codigo"),
                     "tarea_titulo": tp.get("titulo"),
                     "template_id": str(tp["template_id"]) if tp.get("template_id") else None,
@@ -512,8 +518,12 @@ class RealLongitudinalDataSource:
                 {
                     "episode_id": c.episode_id,
                     "problema_id": problema_id,
-                    "template_id": tp.get("template_id"),  # None si TP huerfana → skipped downstream
-                    "unidad_id": tp.get("unidad_id"),  # None si sin unidad → "sin_unidad" downstream
+                    "template_id": tp.get(
+                        "template_id"
+                    ),  # None si TP huerfana → skipped downstream
+                    "unidad_id": tp.get(
+                        "unidad_id"
+                    ),  # None si sin unidad → "sin_unidad" downstream
                     "classified_at": c.classified_at,
                     "appropriation": c.appropriation,
                 }
