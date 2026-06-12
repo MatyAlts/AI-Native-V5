@@ -12,7 +12,10 @@
  * Limitaciones:
  *  - Network calls bloqueadas (Pyodide corre en worker aislado)
  *  - Stdlib completa, pero paquetes PyPI requieren micropip
- *  - Ejecución sincrónica; para loops largos el navegador se cuelga
+ *  - Ejecución sincrónica en el main thread: un bucle infinito congela la
+ *    pestaña, pero el watchdog (sys.settrace + deadline de 3s) lo corta con
+ *    TimeoutError. Solo cubre loops a nivel Python — una única llamada C
+ *    larga (ej. 10**10**8) no dispara trace events y no es interrumpible.
  */
 import type { editor as MonacoEditor } from "monaco-editor"
 import { type ReactNode, useEffect, useRef, useState } from "react"
@@ -35,6 +38,13 @@ declare global {
 
 const PYODIDE_VERSION = "0.26.3"
 const PYODIDE_URL = `https://cdn.jsdelivr.net/pyodide/v${PYODIDE_VERSION}/full/`
+
+// Fix plataforma 2026-06-10 #1: presupuesto de ejecución del código del
+// alumno. Pasado este tiempo, el watchdog Python (sys.settrace) aborta la
+// corrida con TimeoutError — protege contra bucles infinitos sin mover
+// Pyodide a un Web Worker (que rompería input() vía window.prompt y
+// exigiría COOP/COEP para SharedArrayBuffer).
+const EXECUTION_TIMEOUT_SECONDS = 3
 
 export interface CodeEditorProps {
   initialCode?: string
@@ -369,10 +379,63 @@ export function CodeEditor({
         return value
       }
       py.globals.set("__tutor_ask_input", askForInput)
+
+      // Watchdog de ejecución (fix 2026-06-10 #1): sys.settrace chequea un
+      // deadline en cada trace event y aborta con una BaseException propia
+      // (un `except Exception:` del alumno no la traga). El tiempo que el
+      // alumno tarda en responder input() extiende el deadline — solo cuenta
+      // el tiempo de cómputo. `exec(..., globals())` preserva la semántica
+      // previa de runPythonAsync: las variables persisten entre corridas.
+      await py.runPythonAsync(`
+import sys as _tutor_wd_sys
+import time as _tutor_time
+
+_TUTOR_TIMEOUT_SECONDS = ${EXECUTION_TIMEOUT_SECONDS}.0
+
+
+class _TutorTimeout(BaseException):
+    pass
+
+
+_tutor_watchdog = {"deadline": None}
+
+
+def _tutor_trace(frame, event, arg):
+    deadline = _tutor_watchdog["deadline"]
+    if deadline is not None and _tutor_time.monotonic() > deadline:
+        raise _TutorTimeout()
+    return _tutor_trace
+
+
+def _tutor_extend_deadline(seconds):
+    if _tutor_watchdog["deadline"] is not None:
+        _tutor_watchdog["deadline"] += seconds
+
+
+def __tutor_run_student_code(code):
+    _tutor_watchdog["deadline"] = _tutor_time.monotonic() + _TUTOR_TIMEOUT_SECONDS
+    _tutor_wd_sys.settrace(_tutor_trace)
+    try:
+        exec(compile(code, "<editor>", "exec"), globals())
+    except _TutorTimeout:
+        raise TimeoutError(
+            f"La ejecucion supero los {int(_TUTOR_TIMEOUT_SECONDS)} segundos y fue interrumpida. "
+            "Revisa si tenes un bucle infinito (por ejemplo, un while cuya condicion nunca cambia)."
+        ) from None
+    finally:
+        _tutor_wd_sys.settrace(None)
+        _tutor_watchdog["deadline"] = None
+`)
+
       await py.runPythonAsync(
         "import builtins as __tutor_builtins\n" +
+          "import time as __tutor_time_mod\n" +
           "def __tutor_input(prompt=''):\n" +
-          "    return __tutor_ask_input(str(prompt))\n" +
+          "    _t0 = __tutor_time_mod.monotonic()\n" +
+          "    try:\n" +
+          "        return __tutor_ask_input(str(prompt))\n" +
+          "    finally:\n" +
+          "        _tutor_extend_deadline(__tutor_time_mod.monotonic() - _t0)\n" +
           "__tutor_builtins.input = __tutor_input\n",
       )
       // Fallback para sys.stdin.read() crudo (sin prompt inline).
@@ -424,13 +487,24 @@ for _m in [k for k in list(_tutor_sys.modules) if k.split(".")[0] in _TUTOR_BLOC
     const started = performance.now()
 
     try {
-      await pyodideRef.current.runPythonAsync(code)
+      // La corrida pasa por el watchdog Python (deadline de
+      // EXECUTION_TIMEOUT_SECONDS). El código viaja por globals para no
+      // tener que escapar el string dentro de un literal Python.
+      pyodideRef.current.globals.set("__tutor_student_code", code)
+      await pyodideRef.current.runPythonAsync("__tutor_run_student_code(__tutor_student_code)")
       const elapsed = performance.now() - started
       // outputBufferRef (no el state `output`, que es stale por el closure)
       // tiene la salida real acumulada que viaja en el evento CTR codigo_ejecutado.
       onCodeExecuted?.({ code, output: outputBufferRef.current, error: null, durationMs: elapsed })
     } catch (e) {
-      const errMsg = String(e)
+      const raw = String(e)
+      // Para el timeout mostramos solo el mensaje pedagógico (la última línea
+      // del traceback), no el stack del wrapper. El CTR registra lo mismo que
+      // ve el alumno.
+      const timeoutLine = raw
+        .split("\n")
+        .find((line) => line.startsWith("TimeoutError:"))
+      const errMsg = timeoutLine ? timeoutLine.replace("TimeoutError: ", "⏱ ") : raw
       setError(errMsg)
       const elapsed = performance.now() - started
       onCodeExecuted?.({ code, output: outputBufferRef.current, error: errMsg, durationMs: elapsed })
