@@ -6,6 +6,24 @@ Bitácora de sesiones de trabajo significativas. Lo que vive acá es **changelog
 
 ---
 
+## 2026-06-12 — Fixes plataforma N4 (lista 2026-06-10) + incidente Clerk en prod
+
+Sesión doble: cierre de los 7 fixes pedidos por la cátedra el 10/06 (`fixes-plataforma-n4.md`) y un incidente de producción en el medio.
+
+### Incidente prod: secret key de Clerk en el bundle del frontend
+
+`tutor.active-ia.com` caído: se ejecutó la Sección 4 del runbook Clerk dev→prod pegando la **secret key** (`sk_live_...`) en `VITE_CLERK_PUBLISHABLE_KEY` del servicio frontend de EasyPanel. Doble problema: la app explotaba al cargar (`throwInvalidPublishableKeyError`) y la secret key quedó **pública** dentro del JS bundle. Además `clerk.tutor.active-ia.com` apunta al VPS (187.77.41.214) en vez de a Clerk — la instancia Production NO está operativa (DNS de la Sección 1 mal cargado). Resolución: rollback a la `pk_test` de la instancia dev (`keen-adder-74`), commit vacío a `main` para bustear el cache de Docker de EasyPanel (el redeploy con "Implementar" devolvía Success en 1s sin recompilar), verificado `window.Clerk.publishableKey = pk_test...` en el sitio vivo. **Pendiente humano: rotar la sk_live expuesta en el dashboard de Clerk** y rehacer el DNS de Clerk Production antes de reintentar la migración.
+
+### Fixes de plataforma (1-7)
+
+1. **Timeout 3s bucles infinitos** (`web-student/CodeEditor.tsx`): watchdog `sys.settrace` + deadline en Pyodide; `TimeoutError` pedagógico; el tiempo en `input()` extiende el deadline. Solo cubre loops Python-level (una llamada C larga no dispara trace events).
+2. **Reingreso a episodios — ADR-055** (`docs/adr/055-reingreso-episodio-pausado.md`): `episodio_abandonado` → `Episode.estado="paused"` (partition_worker); evento posterior lo repone a `open`; `POST /episodes/{id}/resume` (tutor-service) reconstruye la sesión Redis desde la cadena (seq=events_count, historia, código, prompt original) sin emitir eventos; el docente ve badge "En pausa" en el drill-down longitudinal (datasource ahora incluye `estado IN (closed, paused)`); web-student reanuda en hydration (F5) y al re-elegir la TP con mismo contexto de ejercicio. 8 tests unit nuevos (`test_resume_episode.py`) + integración e2e del ciclo pausa/reanuda/cierre en ctr-service.
+3. **Episodios agrupados por TP** (`StudentLongitudinalView`): `groupEpisodesByTp` — grupos por instancia con orden numérico de código (TP2 < TP10), episodios cronológicos ("Sesión 1, 2..."), huérfanos al final.
+4. **Intentos adversos entendibles** (`docenteLabels` + `CohortAdversarialView` + `helpContent`): labels en lenguaje de aula ("Invento una historia para sacarle la respuesta"), `ADVERSARIAL_DOCENTE_DESC` con qué-hizo + por-qué-importa debajo de cada evento, label faltante de `overuse`, help reescrito docente-first (qué hacer con la señal) con el detalle técnico al final.
+5. **Editar fecha_fin de TP publicada** (`tarea_practica_service` + `TareasPracticasView`): `fecha_fin` entra a `_MUTABLE_REGARDLESS_OF_ESTADO` (metadata operacional, sigue siendo drift-triggering); guard 422 para PATCH parcial que invierta fechas; modal "Fecha" con aviso de drift para instancias de template. 2 tests integración.
+6. **Estado del alumno según subgrupo** (`docenteLabels.explicarEstadoDocente` + `EpisodeNLevelView`): el resumen y el chip salen del subgrupo real (`SUBGRUPO_RESUMEN_DOCENTE`, 8 entradas) en vez del eje macro — un "Autónomo competente" ya no recibe el texto de "apropiación reflexiva". El factor código-sin-diálogo se redacta neutro para la rama sin-tutor. Solo presentación; clasificación intacta.
+7. **QA / fugas**: 17 tests de web-student que venían rotos en `desarrollo` quedaron verdes — `HomePage.test` (mock de `Link` del router + empty state que migró al onboarding por invite code), `AuditFooter.test` (prompt v1.2.0, ahora sin pin de patch), `ExerciseListView.test` (migrado al contrato ADR-047: `TpEjercicio[]` vía `/tareas-practicas/{id}/ejercicios`, nueva firma de `onSelectEjercicio`). Suites verdes: tutor 178, ctr+academic 82, analytics 121, web-teacher 30, web-student 47. Deuda visible NO tocada: ~40 errores biome preexistentes (a11y/routeTree.gen) en ambos frontends.
+
 ## 2026-05-17 — PlanMejora.md ejecutado: P1 conceptual + P2-4 protocolo + P2-1/2/3 esqueleto técnico end-to-end
 
 Sesión de ejecución del `PlanMejora.md` (root del wrapper `AI-Native-V4-main/`) que el usuario produjo tras auditar la versión 2026-05-16 del paper (`paper_conaiisi.pdf`) contra el código. Tres sub-sprints encadenados: brechas conceptuales P1 (cerradas con escritura), instrumentos quasi-experimentales P2-1/2/3 (esqueleto técnico end-to-end con placeholders académicos), y trazabilidad estática + navegabilidad + seeds demo.
