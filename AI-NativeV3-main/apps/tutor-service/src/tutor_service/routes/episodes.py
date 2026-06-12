@@ -5,6 +5,7 @@ GET  /api/v1/episodes/{id}               estado del episodio (recovery del front
 POST /api/v1/episodes/{id}/message       SSE con la respuesta del tutor
 POST /api/v1/episodes/{id}/close         cerrar episodio (emite evento cierre)
 POST /api/v1/episodes/{id}/abandoned     ADR-025: emite EpisodioAbandonado (idempotente)
+POST /api/v1/episodes/{id}/resume        ADR-055: reanuda episodio pausado (reconstruye sesión)
 POST /api/v1/episodes/{id}/reflection    ADR-035: emite ReflexionCompletada (post-cierre, opcional)
 POST /api/v1/episodes/{id}/run-tests     ADR-033/034: emite TestsEjecutados (conteos de Pyodide)
 """
@@ -139,12 +140,18 @@ class EpisodeStateResponse(BaseModel):
     episode_id: UUID
     tarea_practica_id: UUID
     comision_id: UUID
-    estado: str  # open | closed
+    estado: str  # open | paused | closed
     opened_at: datetime
     closed_at: datetime | None = None
     last_code_snapshot: str | None = None
     messages: list[dict[str, Any]] = Field(default_factory=list)
     notes: list[dict[str, Any]] = Field(default_factory=list)
+    # ADR-049/055: ejercicio del banco asociado al episodio (None = TP
+    # monolítica). Sale del payload de episodio_abierto — el frontend lo usa
+    # para decidir si un episodio pausado corresponde al contexto que el
+    # alumno quiere retomar.
+    ejercicio_id: UUID | None = None
+    ejercicio_orden: int | None = None
 
 
 # ── Endpoints ────────────────────────────────────────────────────────
@@ -207,6 +214,20 @@ def _build_episode_state(episode_id: UUID, ep: dict[str, Any]) -> EpisodeStateRe
     # Asegurar orden por seq aún si el ctr-service no garantiza el orden.
     events = sorted(events, key=lambda e: e.get("seq", 0))
 
+    # ADR-049/055: contexto de ejercicio desde el episodio_abierto (seq=0).
+    ejercicio_id: UUID | None = None
+    ejercicio_orden: int | None = None
+    if events and events[0].get("event_type") == "episodio_abierto":
+        abierto = events[0].get("payload") or {}
+        ej_raw = abierto.get("ejercicio_id")
+        if ej_raw:
+            try:
+                ejercicio_id = UUID(str(ej_raw))
+            except ValueError:
+                ejercicio_id = None
+        orden_raw = abierto.get("ejercicio_orden")
+        ejercicio_orden = orden_raw if isinstance(orden_raw, int) else None
+
     last_code: str | None = None
     messages: list[dict[str, Any]] = []
     notes: list[dict[str, Any]] = []
@@ -242,6 +263,8 @@ def _build_episode_state(episode_id: UUID, ep: dict[str, Any]) -> EpisodeStateRe
         last_code_snapshot=last_code,
         messages=messages,
         notes=notes,
+        ejercicio_id=ejercicio_id,
+        ejercicio_orden=ejercicio_orden,
     )
 
 
@@ -416,6 +439,53 @@ async def emit_episodio_abandonado(
         last_activity_seconds_ago=req.last_activity_seconds_ago,
         user_id=user.id,
     )
+
+
+class ResumeEpisodeResponse(BaseModel):
+    """Contexto del episodio reanudado (ADR-055, fix 2026-06-10 #2).
+
+    `problema_id` puede venir None en el caso idempotente (la sesión ya
+    estaba viva y no guarda la TP) — el frontend que reanuda desde el
+    selector de TPs ya conoce la tarea; el que reanuda por hydration usa
+    GET /episodes/{id} para el detalle.
+    """
+
+    episode_id: UUID
+    problema_id: UUID | None = None
+    comision_id: UUID
+    ejercicio_id: UUID | None = None
+    ejercicio_orden: int | None = None
+
+
+@router.post("/{episode_id}/resume", response_model=ResumeEpisodeResponse)
+async def resume_episode(
+    episode_id: UUID,
+    user: User = Depends(require_role("estudiante", "docente", "docente_admin", "superadmin")),
+) -> ResumeEpisodeResponse:
+    """Reanuda un episodio pausado por abandono (ADR-055, fix 2026-06-10 #2).
+
+    Reconstruye la sesión Redis desde la cadena CTR persistida (seq =
+    events_count, historia conversacional, último código). NO emite evento:
+    la reanudación es derivable de la cadena (episodio_abandonado seguido de
+    más eventos) y el partition_worker repone `estado=open` con el primer
+    evento posterior.
+
+    Solo el estudiante dueño puede retomar su episodio, y la TP tiene que
+    seguir vigente (mismas validaciones que la apertura).
+
+    Estados:
+      - 200: sesión reconstruida (o ya viva — idempotente).
+      - 404: episodio o TP inexistente.
+      - 403: episodio de otro estudiante / otro tenant.
+      - 409: episodio cerrado o TP fuera de plazo.
+    """
+    tutor = _get_tutor()
+    ctx = await tutor.resume_episode(
+        episode_id=episode_id,
+        tenant_id=user.tenant_id,
+        user_id=user.id,
+    )
+    return ResumeEpisodeResponse(**ctx)
 
 
 class CodigoEjecutadoRequest(BaseModel):
@@ -835,9 +905,7 @@ async def emit_tests_ejecutados(
         msg = str(e)
         # 422 si conteos inconsistentes; 409 si sesion no existe.
         if "Conteos inconsistentes" in msg or "tests_hidden" in msg:
-            raise HTTPException(
-                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=msg
-            )
+            raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=msg)
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=msg)
     return {"status": "accepted", "seq": str(seq)}
 

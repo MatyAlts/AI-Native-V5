@@ -37,6 +37,7 @@ import {
   getTareaById,
   listEjerciciosTp,
   markEjercicioCompleted,
+  resumeEpisode,
   sendMessage,
 } from "../lib/api"
 import { helpContent } from "../utils/helpContent"
@@ -195,6 +196,13 @@ export function EpisodeView({ episodeId, onExit, ejercicioContext }: EpisodeView
           window.sessionStorage.removeItem(ACTIVE_EPISODE_KEY)
           onExit()
           return
+        }
+        if (state.estado === "paused") {
+          // ADR-055 (fix 2026-06-10 #2): el episodio fue abandonado (cierre de
+          // pestaña o timeout) — reconstruir la sesión del tutor antes de
+          // seguir, sino todo evento posterior rebota contra sesión inexistente.
+          await resumeEpisode(episodeId)
+          if (cancelled) return
         }
         const t = await getTareaById(state.tarea_practica_id)
         if (cancelled) return

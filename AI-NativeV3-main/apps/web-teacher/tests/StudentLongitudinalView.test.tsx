@@ -116,7 +116,7 @@ describe("StudentLongitudinalView", () => {
     )
     await waitFor(() => {
       // Resumen denso: numero de episodios en el strip de stats (texto exacto del span)
-      expect(screen.getByText("episodios")).toBeInTheDocument()
+      expect(screen.getByText("episodios analizables")).toBeInTheDocument()
       expect(screen.getByText("6")).toBeInTheDocument()
     })
   })

@@ -43,7 +43,6 @@ from tutor_service.services.guardrails import detect as detect_adversarial_defau
 from tutor_service.services.postprocess import infer_prompt_kind
 from tutor_service.services.session import SessionManager, SessionState
 
-
 # Mapping del infer_prompt_kind (postprocess.py) al `prompt_kind` del contrato
 # CTR (PromptEnviadoPayload). El postprocess clasifica en 3 buckets coarsos
 # (direct / reflective / neutral) determinísticamente sobre el texto. Acá
@@ -451,8 +450,7 @@ class TutorCore:
         # instrucción es que USE este contexto SIN dar la solución.
         if state.current_code and state.current_code.strip():
             numbered = "\n".join(
-                f"{i + 1:3d}  {line}"
-                for i, line in enumerate(state.current_code.splitlines())
+                f"{i + 1:3d}  {line}" for i, line in enumerate(state.current_code.splitlines())
             )
             messages.append(
                 {
@@ -670,6 +668,218 @@ class TutorCore:
         # Métrica: sesión abandonada (cuenta junto a las cerradas).
         tutor_active_sessions_count.add(-1)
         return seq
+
+    # ── Reanudación de episodio pausado (ADR-055, fix 2026-06-10 #2) ────
+
+    async def resume_episode(  # noqa: PLR0912, PLR0915 — reconstrucción de sesión con branches inherentes (gates, prompt, ejercicio, historia); mismo criterio que interact()
+        self,
+        episode_id: UUID,
+        tenant_id: UUID,
+        user_id: UUID,
+    ) -> dict:
+        """Reconstruye la sesión Redis de un episodio pausado para retomarlo.
+
+        Contraparte del abandono (ADR-025): el abandono borra la sesión y el
+        partition_worker marca el episodio `paused`. Reanudar NO emite evento
+        al CTR — la reanudación es derivable de la cadena (episodio_abandonado
+        seguido de más eventos) y el worker repone `estado=open` con el
+        primer evento posterior. Esto preserva append-only sin tipos nuevos.
+
+        El `seq` de la sesión reconstruida sale de `events_count` del episodio
+        persistido. Gate de consistencia: solo se reanuda con `estado=paused`
+        (garantiza que el episodio_abandonado ya fue drenado del stream — no
+        hay eventos en vuelo que puedan colisionar seq) o `estado=open` SIN
+        sesión viva (sesión expirada por TTL sin abandono: heal del episodio
+        huérfano, misma garantía porque sin sesión nadie pudo emitir).
+
+        Idempotente: si la sesión ya existe (doble click, dos pestañas),
+        devuelve el contexto vigente sin tocar nada.
+
+        Returns:
+            dict con episode_id, problema_id, comision_id, ejercicio_id y
+            ejercicio_orden — el frontend lo usa para navegar al contexto
+            correcto (TP monolítica vs ejercicio del banco).
+
+        Raises:
+            HTTPException 404/403/409 — episodio inexistente, de otro
+            estudiante, o no reanudable (cerrado / TP fuera de plazo).
+        """
+        existing = await self.sessions.get(episode_id)
+        if existing is not None:
+            return {
+                "episode_id": existing.episode_id,
+                "problema_id": None,  # la sesión no guarda problema_id; el caller ya lo tiene
+                "comision_id": existing.comision_id,
+                "ejercicio_id": existing.ejercicio_id,
+                "ejercicio_orden": existing.ejercicio_orden,
+            }
+
+        ep = await self.ctr.get_episode(episode_id, tenant_id, TUTOR_SERVICE_USER_ID)
+        if ep is None:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"Episode {episode_id} no encontrado",
+            )
+        if str(ep.get("tenant_id")) != str(tenant_id):
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Episode pertenece a otro tenant",
+            )
+        if str(ep.get("student_pseudonym")) != str(user_id):
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Solo el estudiante dueño del episodio puede retomarlo",
+            )
+        estado = ep.get("estado")
+        if estado not in ("paused", "open"):
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail=f"Episodio en estado '{estado}' — solo se reanudan episodios en pausa",
+            )
+
+        problema_id = UUID(str(ep["problema_id"]))
+        comision_id = UUID(str(ep["comision_id"]))
+
+        # La TP tiene que seguir vigente (published, en plazo) — mismas 5
+        # condiciones que open_episode. Si el deadline pasó, el episodio queda
+        # en pausa para el docente pero el alumno ya no puede retomarlo.
+        if self.academic is not None:
+            await self._validate_tarea_practica(
+                tarea_id=problema_id,
+                tenant_id=tenant_id,
+                comision_id=comision_id,
+            )
+
+        events: list[dict] = sorted(ep.get("events") or [], key=lambda e: e.get("seq", 0))
+
+        # Contexto del episodio_abierto: model y ejercicio (ADR-049).
+        model = self.default_model
+        ejercicio_id: UUID | None = None
+        ejercicio_orden: int | None = None
+        if events and events[0].get("event_type") == "episodio_abierto":
+            abierto = events[0].get("payload") or {}
+            model = abierto.get("model") or self.default_model
+            ej_raw = abierto.get("ejercicio_id")
+            ejercicio_id = UUID(str(ej_raw)) if ej_raw else None
+            ejercicio_orden = abierto.get("ejercicio_orden")
+
+        # Prompt del sistema: misma versión que usó el episodio (los eventos
+        # nuevos siguen llevando el prompt_system_hash original del episodio).
+        prompt_version = (
+            events[0].get("prompt_system_version") if events else None
+        ) or self.default_prompt_version
+        try:
+            prompt = await self.governance.get_prompt(self.default_prompt_name, prompt_version)
+        except Exception:
+            logger.warning(
+                "resume: prompt v%s no disponible; fallback a v%s para episode_id=%s",
+                prompt_version,
+                self.default_prompt_version,
+                episode_id,
+                exc_info=True,
+            )
+            prompt = await self.governance.get_prompt(
+                self.default_prompt_name, self.default_prompt_version
+            )
+
+        # Contexto pedagógico del ejercicio (ADR-048) — best-effort, igual que open.
+        system_content = prompt.content
+        rubrica_context: str | None = None
+        if ejercicio_id is not None and self.academic is not None:
+            try:
+                ejercicio_data = await self.academic.get_ejercicio_by_id(
+                    ejercicio_id=ejercicio_id,
+                    tenant_id=tenant_id,
+                    caller_id=TUTOR_SERVICE_USER_ID,
+                )
+                if ejercicio_data is not None:
+                    system_content += self._build_ejercicio_context(ejercicio_data, ejercicio_orden)
+                    formatted = self._format_rubric_context(
+                        ejercicio_data.get("rubrica"), ejercicio_data.get("titulo")
+                    )
+                    rubrica_context = formatted if formatted else None
+            except Exception:
+                logger.warning(
+                    "resume: get_ejercicio_by_id failed para ejercicio=%s; "
+                    "se reanuda sin contexto pedagógico",
+                    ejercicio_id,
+                    exc_info=True,
+                )
+
+        # materia_id para BYOK (ADR-040) — best-effort, igual que open.
+        materia_id: UUID | None = None
+        if self.academic is not None:
+            try:
+                comision = await self.academic.get_comision(
+                    comision_id=comision_id,
+                    tenant_id=tenant_id,
+                    caller_id=TUTOR_SERVICE_USER_ID,
+                )
+                if comision is not None:
+                    materia_id = comision.materia_id
+            except Exception:
+                logger.warning(
+                    "resume: academic.get_comision failed; materia_id=None para episode_id=%s",
+                    episode_id,
+                    exc_info=True,
+                )
+
+        # Historia conversacional + último código desde la cadena persistida.
+        messages: list[dict[str, str]] = [{"role": "system", "content": system_content}]
+        current_code: str | None = None
+        for ev in events:
+            et = ev.get("event_type")
+            payload = ev.get("payload") or {}
+            if et == "prompt_enviado":
+                content = payload.get("content")
+                if isinstance(content, str):
+                    messages.append({"role": "user", "content": content})
+            elif et == "tutor_respondio":
+                content = payload.get("content")
+                if isinstance(content, str):
+                    messages.append({"role": "assistant", "content": content})
+            elif et in ("edicion_codigo", "codigo_ejecutado"):
+                code = payload.get("snapshot") or payload.get("code")
+                if isinstance(code, str):
+                    current_code = code
+
+        state = SessionState(
+            episode_id=episode_id,
+            tenant_id=tenant_id,
+            comision_id=comision_id,
+            student_pseudonym=UUID(str(ep["student_pseudonym"])),
+            # El worker exige seq == events_count del episodio persistido.
+            seq=int(ep["events_count"]),
+            messages=messages,
+            prompt_system_hash=ep["prompt_system_hash"],
+            prompt_system_version=prompt_version,
+            classifier_config_hash=ep["classifier_config_hash"],
+            curso_config_hash=ep["curso_config_hash"],
+            model=model,
+            materia_id=materia_id,
+            ejercicio_id=ejercicio_id,
+            ejercicio_orden=ejercicio_orden,
+            rubrica_context=rubrica_context,
+            current_code=current_code,
+        )
+        await self.sessions.set(state)
+
+        # Métrica: la sesión reaparece como activa.
+        tutor_active_sessions_count.add(1)
+
+        logger.info(
+            "episodio reanudado episode_id=%s estado_previo=%s seq=%d",
+            episode_id,
+            estado,
+            state.seq,
+        )
+        return {
+            "episode_id": episode_id,
+            "problema_id": problema_id,
+            "comision_id": comision_id,
+            "ejercicio_id": ejercicio_id,
+            "ejercicio_orden": ejercicio_orden,
+        }
 
     # ── Evento codigo_ejecutado (emitido por el frontend con Pyodide) ───
 

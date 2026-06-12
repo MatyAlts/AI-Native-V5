@@ -9,6 +9,7 @@ Skip automático si Docker no está disponible.
 
 from __future__ import annotations
 
+import itertools
 from datetime import UTC, datetime
 from uuid import UUID, uuid4
 
@@ -334,5 +335,130 @@ async def test_evento_duplicado_es_idempotente(pg_engine, session_factory, redis
             )
         ).scalar_one()
         assert count == 1
+
+    await r.aclose()
+
+
+async def test_abandono_pausa_y_actividad_posterior_reanuda(
+    pg_engine, session_factory, redis_container
+) -> None:
+    """ADR-055 (fix 2026-06-10 #2): episodio_abandonado → estado=paused;
+    cualquier evento posterior (el alumno retomó) → estado=open de nuevo.
+    La cadena sigue intacta y sin tipos de evento nuevos."""
+    import redis.asyncio as redis
+    from ctr_service.services.producer import EventProducer
+    from ctr_service.workers.partition_worker import (
+        PartitionConfig,
+        PartitionWorker,
+    )
+
+    redis_url = (
+        f"redis://{redis_container.get_container_host_ip()}:"
+        f"{redis_container.get_exposed_port(6379)}/0"
+    )
+    r = redis.from_url(redis_url, decode_responses=False)
+    producer = EventProducer(r, num_partitions=1)
+
+    tenant = uuid4()
+    episode_id = uuid4()
+
+    def _event(seq: int, event_type: str, payload: dict) -> dict:
+        return {
+            "event_uuid": str(uuid4()),
+            "episode_id": str(episode_id),
+            "tenant_id": str(tenant),
+            "seq": seq,
+            "event_type": event_type,
+            "ts": datetime.now(UTC).isoformat().replace("+00:00", "Z"),
+            "payload": payload,
+            "prompt_system_hash": "a" * 64,
+            "prompt_system_version": "v1.0.0",
+            "classifier_config_hash": "b" * 64,
+        }
+
+    worker = PartitionWorker(
+        config=PartitionConfig(partition=0, block_ms=500),
+        redis_client=r,
+        session_factory=session_factory,
+    )
+    await worker.ensure_consumer_group()
+
+    from ctr_service.models import Episode
+    from sqlalchemy import select
+
+    async def _estado() -> str:
+        async with session_factory() as s:
+            await s.execute(
+                text("SELECT set_config('app.current_tenant', :t, true)"),
+                {"t": str(tenant)},
+            )
+            ep = (await s.execute(select(Episode).where(Episode.id == episode_id))).scalar_one()
+            return ep.estado
+
+    # seq=0: apertura → open
+    await producer.publish(
+        _event(
+            0,
+            "episodio_abierto",
+            {
+                "student_pseudonym": str(uuid4()),
+                "problema_id": str(uuid4()),
+                "comision_id": str(uuid4()),
+                "curso_config_hash": "c" * 64,
+            },
+        )
+    )
+    await worker._process_batch()
+    assert await _estado() == "open"
+
+    # seq=1: abandono → paused
+    await producer.publish(
+        _event(
+            1,
+            "episodio_abandonado",
+            {"reason": "beforeunload", "last_activity_seconds_ago": 0.0},
+        )
+    )
+    await worker._process_batch()
+    assert await _estado() == "paused"
+
+    # seq=2: el alumno retomó y siguió trabajando → open de nuevo
+    await producer.publish(
+        _event(
+            2,
+            "edicion_codigo",
+            {"snapshot": "print('volvi')", "origin": "typed"},
+        )
+    )
+    await worker._process_batch()
+    assert await _estado() == "open"
+
+    # seq=3: cierre → closed (la pausa intermedia no altera el cierre normal)
+    await producer.publish(
+        _event(3, "episodio_cerrado", {"reason": "student_closed", "total_events": 4})
+    )
+    await worker._process_batch()
+    assert await _estado() == "closed"
+
+    # La cadena quedó íntegra: 4 eventos encadenados sin saltos de seq.
+    from ctr_service.models import Event
+
+    async with session_factory() as s:
+        await s.execute(
+            text("SELECT set_config('app.current_tenant', :t, true)"),
+            {"t": str(tenant)},
+        )
+        events = (
+            (
+                await s.execute(
+                    select(Event).where(Event.episode_id == episode_id).order_by(Event.seq)
+                )
+            )
+            .scalars()
+            .all()
+        )
+        assert [e.seq for e in events] == [0, 1, 2, 3]
+        for prev, curr in itertools.pairwise(events):
+            assert curr.prev_chain_hash == prev.chain_hash
 
     await r.aclose()

@@ -8,6 +8,25 @@
  */
 import { fireEvent, render, screen } from "@testing-library/react"
 import { describe, expect, it, vi } from "vitest"
+
+// La home renderiza <Link> de TanStack Router (header "Mis reflexiones") —
+// sin RouterProvider el hook useLinkProps explota. Mock minimo: Link → <a>.
+vi.mock("@tanstack/react-router", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@tanstack/react-router")>()
+  return {
+    ...actual,
+    Link: (props: Record<string, unknown>) => {
+      const { to, children, search: _search, params: _params, ...rest } = props
+      return (
+        <a href={String(to)} {...rest}>
+          {children as React.ReactNode}
+        </a>
+      )
+    },
+    useNavigate: () => vi.fn(),
+  }
+})
+
 import { HomeContent } from "../src/routes/index"
 import type { MateriaInscripta } from "../src/lib/api"
 
@@ -47,12 +66,14 @@ describe("HomeContent", () => {
     expect(screen.getByText(/500 internal/i)).toBeInTheDocument()
   })
 
-  it("muestra empty state honesto con mensaje gap B.2 cuando materias=[]", () => {
+  it("muestra empty state con onboarding por codigo de comision cuando materias=[]", () => {
+    // El empty state migro del mensaje pasivo gap B.2 al onboarding activo
+    // por invite code (feature join-comision post-Clerk).
     render(<HomeContent isLoading={false} error={null} materias={[]} onEnter={() => {}} />)
     const empty = screen.getByTestId("home-empty-gap-b2")
     expect(empty).toBeInTheDocument()
-    expect(empty.textContent).toMatch(/no estas viendo tus materias/i)
-    expect(empty.textContent).toMatch(/gap-b\.2/i)
+    expect(empty.textContent).toMatch(/unite a tu comisi/i)
+    expect(empty.textContent).toMatch(/c[oó]digo/i)
   })
 
   it("empty state muestra strip N1-N4 (los 4 niveles del modelo)", () => {

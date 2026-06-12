@@ -863,6 +863,51 @@ function TemplateSecondarySection({
   )
 }
 
+// Fix plataforma 2026-06-10 #3: los episodios se agrupan por TP (instancia
+// `problema_id`) en vez de listarse planos. Grupos ordenados por codigo de
+// TP con comparacion numerica (TP2 antes que TP10); episodios de cada grupo
+// en orden cronologico de apertura (intento 1, 2, ...). Huerfanos al final.
+interface EpisodeGroup {
+  problemaId: string
+  codigo: string | null
+  titulo: string | null
+  episodes: StudentEpisode[]
+}
+
+function groupEpisodesByTp(episodes: StudentEpisode[]): EpisodeGroup[] {
+  const byTp = new Map<string, EpisodeGroup>()
+  for (const ep of episodes) {
+    const key = ep.problema_id
+    let group = byTp.get(key)
+    if (!group) {
+      group = {
+        problemaId: key,
+        codigo: ep.tarea_codigo,
+        titulo: ep.tarea_titulo,
+        episodes: [],
+      }
+      byTp.set(key, group)
+    }
+    group.episodes.push(ep)
+  }
+  const groups = [...byTp.values()]
+  for (const g of groups) {
+    g.episodes.sort((a, b) => {
+      // opened_at null va al final del grupo.
+      if (a.opened_at === null) return b.opened_at === null ? 0 : 1
+      if (b.opened_at === null) return -1
+      return a.opened_at.localeCompare(b.opened_at)
+    })
+  }
+  groups.sort((a, b) => {
+    // Sin codigo (TP huerfana / sin asignar) al final.
+    if (a.codigo === null) return b.codigo === null ? 0 : 1
+    if (b.codigo === null) return -1
+    return a.codigo.localeCompare(b.codigo, "es", { numeric: true, sensitivity: "base" })
+  })
+  return groups
+}
+
 function EpisodesList({
   episodes,
   isDocente,
@@ -881,6 +926,7 @@ function EpisodesList({
   }
 
   const aprLabels = isDocente ? APPROPRIATION_DOCENTE : APPROPRIATION_INVESTIGADOR
+  const groups = groupEpisodesByTp(episodes)
 
   return (
     <section className="rounded-xl border border-border bg-surface overflow-hidden">
@@ -889,57 +935,95 @@ function EpisodesList({
           {isDocente ? "Trabajos del alumno" : "Episodios del estudiante"}
         </span>
         <span className="text-xs text-muted">
-          · {isDocente ? "click para ver detalle" : "click para ver distribucion N1-N4"}
+          · agrupados por TP ·{" "}
+          {isDocente ? "click para ver detalle" : "click para ver distribucion N1-N4"}
         </span>
       </header>
-      <ul className="divide-y divide-[#EAEAEA]" data-testid="student-episodes-list">
-        {episodes.map((ep) => {
-          const aprKey = ep.appropriation
-          const aprText = aprKey ? (aprLabels[aprKey] ?? aprKey) : null
-          return (
-            <li key={ep.episode_id}>
-              <Link
-                to="/episode-n-level"
-                search={{ episodeId: ep.episode_id }}
-                data-testid="student-episode-row"
-                className="flex items-center gap-3 px-4 py-3 hover:bg-canvas transition-colors"
-              >
-                <span
-                  aria-hidden="true"
-                  className="inline-block w-2.5 h-2.5 rounded-full shrink-0"
-                  style={{ backgroundColor: appropriationDot(ep.appropriation) }}
-                />
-                {!isDocente && (
-                  <span className="font-mono text-xs text-muted shrink-0">
-                    {ep.episode_id.slice(0, 8)}...{ep.episode_id.slice(-4)}
-                  </span>
-                )}
-                <span className="flex-1 min-w-0 truncate text-sm text-ink">
-                  {ep.tarea_codigo ? (
-                    <>
-                      <span className="font-medium">{ep.tarea_codigo}</span>
-                      {ep.tarea_titulo && <span className="text-muted"> {ep.tarea_titulo}</span>}
-                    </>
-                  ) : (
-                    <span className="text-muted italic">
-                      {isDocente ? "Trabajo sin asignar" : "TP huerfana"}
-                    </span>
+      <div data-testid="student-episodes-list">
+        {groups.map((group) => (
+          <div key={group.problemaId} data-testid="student-episodes-tp-group">
+            <div className="flex items-baseline gap-2 px-4 pt-3 pb-1.5 border-t border-border-soft first:border-t-0">
+              {group.codigo ? (
+                <>
+                  <span className="text-sm font-semibold text-ink">{group.codigo}</span>
+                  {group.titulo && (
+                    <span className="text-xs text-muted truncate min-w-0">{group.titulo}</span>
                   )}
+                </>
+              ) : (
+                <span className="text-sm italic text-muted">
+                  {isDocente ? "Trabajo sin asignar" : "TP huerfana"}
                 </span>
-                <span className="text-xs text-muted shrink-0 hidden sm:inline">
-                  {formatShortDate(ep.opened_at)}
-                </span>
-                <span className="text-xs font-mono text-muted shrink-0 w-28 text-right">
-                  {aprText ?? (isDocente ? "sin evaluar" : "sin clasif.")}
-                </span>
-                <span aria-hidden="true" className="text-border shrink-0">
-                  ›
-                </span>
-              </Link>
-            </li>
-          )
-        })}
-      </ul>
+              )}
+              <span className="ml-auto text-[11px] text-muted-soft tabular-nums shrink-0">
+                {group.episodes.length}{" "}
+                {group.episodes.length === 1
+                  ? isDocente
+                    ? "sesion"
+                    : "episodio"
+                  : isDocente
+                    ? "sesiones"
+                    : "episodios"}
+              </span>
+            </div>
+            <ul className="divide-y divide-[#EAEAEA]">
+              {group.episodes.map((ep, idx) => {
+                const aprKey = ep.appropriation
+                const aprText = aprKey ? (aprLabels[aprKey] ?? aprKey) : null
+                return (
+                  <li key={ep.episode_id}>
+                    <Link
+                      to="/episode-n-level"
+                      search={{ episodeId: ep.episode_id }}
+                      data-testid="student-episode-row"
+                      className="flex items-center gap-3 pl-8 pr-4 py-2.5 hover:bg-canvas transition-colors"
+                    >
+                      <span
+                        aria-hidden="true"
+                        className="inline-block w-2.5 h-2.5 rounded-full shrink-0"
+                        style={{ backgroundColor: appropriationDot(ep.appropriation) }}
+                      />
+                      <span className="flex-1 min-w-0 truncate text-sm text-ink">
+                        {group.episodes.length > 1
+                          ? `${isDocente ? "Sesion" : "Intento"} ${idx + 1}`
+                          : isDocente
+                            ? "Sesion unica"
+                            : "Episodio"}
+                        {!isDocente && (
+                          <span className="font-mono text-xs text-muted ml-2">
+                            {ep.episode_id.slice(0, 8)}...{ep.episode_id.slice(-4)}
+                          </span>
+                        )}
+                        {/* ADR-055 (fix 2026-06-10 #2): episodio abandonado, retomable
+                            por el alumno. El docente decide si esperarlo o conversarlo. */}
+                        {ep.estado === "paused" && (
+                          <span
+                            data-testid="episode-paused-badge"
+                            className="ml-2 inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-semibold uppercase tracking-wide bg-warning-soft text-warning border border-warning/30"
+                          >
+                            En pausa
+                          </span>
+                        )}
+                      </span>
+                      <span className="text-xs text-muted shrink-0 hidden sm:inline">
+                        {formatShortDate(ep.opened_at)}
+                      </span>
+                      <span className="text-xs font-mono text-muted shrink-0 w-28 text-right">
+                        {ep.estado === "paused"
+                          ? "sin terminar"
+                          : (aprText ?? (isDocente ? "sin evaluar" : "sin clasif."))}
+                      </span>
+                      <span aria-hidden="true" className="text-border shrink-0">
+                        ›
+                      </span>
+                    </Link>
+                  </li>
+                )
+              })}
+            </ul>
+          </div>
+        ))}
+      </div>
       {!isDocente && (
         <footer className="border-t border-border bg-canvas px-4 py-2">
           <p

@@ -110,8 +110,12 @@ class TareaPracticaService:
         return tarea
 
     # Campos que se pueden actualizar en TPs published/archived (metadata
-    # organizativa, NO contenido pedagógico inmutable).
-    _MUTABLE_REGARDLESS_OF_ESTADO = {"unidad_id"}
+    # organizativa/operacional, NO contenido pedagógico inmutable).
+    # `fecha_fin`: el docente necesita extender la fecha límite de un TP
+    # publicado sin forkear una versión nueva (fix plataforma 2026-06-10 #5).
+    # Sigue siendo DRIFT_TRIGGERING_FIELD: en instancias derivadas de template
+    # el cambio marca has_drift como cualquier edición de campo canónico.
+    _MUTABLE_REGARDLESS_OF_ESTADO = {"unidad_id", "fecha_fin"}
 
     async def update(self, id_: UUID, data: TareaPracticaUpdate, user: User) -> TareaPractica:
         obj = await self.repo.get_or_404(id_)
@@ -150,6 +154,20 @@ class TareaPracticaService:
 
         for k, v in changes.items():
             setattr(obj, k, v)
+
+        # Coherencia de fechas contra el estado persistido: el validador del
+        # schema (TareaPracticaBase.check_dates) no corre en PATCHes parciales
+        # porque TareaPracticaUpdate no hereda de Base. Sin este guard, un
+        # PATCH de solo fecha_fin podría dejar fecha_fin <= fecha_inicio.
+        if (
+            obj.fecha_inicio is not None
+            and obj.fecha_fin is not None
+            and obj.fecha_fin <= obj.fecha_inicio
+        ):
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail="fecha_fin debe ser posterior a fecha_inicio",
+            )
 
         # Aplicar unidad_id por separado para que null sea válido (quitar asignación)
         if unidad_id_explicitly_set:

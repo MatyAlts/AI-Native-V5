@@ -32,10 +32,13 @@ import {
   type Entrega,
   type MateriaInscripta,
   fetchConfigHashes,
+  getEpisodeState,
   getTareaById,
   listEjerciciosTp,
   listMisMaterias,
+  listStudentEpisodes,
   openEpisode,
+  resumeEpisode,
 } from "../lib/api"
 
 /** Contexto que se persiste en sessionStorage cuando el alumno entra a un ejercicio. */
@@ -147,6 +150,36 @@ function MateriaPage() {
       error: null,
     })
     try {
+      // ADR-055 (fix 2026-06-10 #2): si el alumno tiene un episodio PAUSADO de
+      // esta TP con el mismo contexto (mismo ejercicio, o ambos monolíticos),
+      // lo retoma en vez de abrir uno nuevo. Best-effort: cualquier falla acá
+      // cae al flujo normal de apertura.
+      try {
+        const my = await listStudentEpisodes(materia!.comision_id)
+        const paused = my.episodes.filter(
+          (e) => e.estado === "paused" && e.problema_id === tarea.id,
+        )
+        for (const candidate of paused) {
+          const st = await getEpisodeState(candidate.episode_id)
+          if ((st.ejercicio_id ?? null) !== (ejercicio?.id ?? null)) continue
+          await resumeEpisode(candidate.episode_id)
+          if (ejercicio != null && entregaId) {
+            const ctx: ActiveExerciseContext = {
+              materia_id: id,
+              tarea_id: tarea.id,
+              entrega_id: entregaId,
+              ejercicio_id: ejercicio.id,
+              ejercicio_orden: ejercicio.orden,
+            }
+            window.sessionStorage.setItem(ACTIVE_EXERCISE_CONTEXT_KEY, JSON.stringify(ctx))
+          }
+          navigate({ to: "/episodio/$id", params: { id: candidate.episode_id } })
+          return
+        }
+      } catch (e) {
+        console.warn("resume de episodio pausado fallo; se abre uno nuevo:", e)
+      }
+
       // Bootstrap F9: resolver hashes vigentes desde el backend. Si falla,
       // caemos al fallback hardcoded del piloto para no bloquear apertura.
       let cursoHash = "c".repeat(64)
