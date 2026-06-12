@@ -12,7 +12,7 @@
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react"
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 import { ExerciseListView } from "../src/components/ExerciseListView"
-import type { AvailableTarea, Entrega } from "../src/lib/api"
+import type { AvailableTarea, Entrega, TpEjercicio } from "../src/lib/api"
 import { setupFetchMock } from "./_mocks"
 
 const COMISION_ID = "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa"
@@ -38,6 +38,47 @@ function makeEntrega(overrides: Partial<Entrega> = {}): Entrega {
   }
 }
 
+// ADR-047: los ejercicios ya no vienen embebidos en AvailableTarea — la UI
+// los resuelve via GET /tareas-practicas/{id}/ejercicios (TpEjercicio[]).
+function makePairs(): TpEjercicio[] {
+  const base = {
+    tarea_practica_id: TAREA_ID,
+    peso_en_tp: "0.50",
+  }
+  return [
+    {
+      ...base,
+      id: "pair-1",
+      ejercicio_id: "ejejejej-0001-0001-0001-000000000001",
+      orden: 1,
+      ejercicio: {
+        id: "ejejejej-0001-0001-0001-000000000001",
+        titulo: "Suma",
+        enunciado_md: "Implementar suma",
+        inicial_codigo: null,
+        unidad_tematica: "funciones",
+        dificultad: "basica",
+        test_cases: [],
+      },
+    },
+    {
+      ...base,
+      id: "pair-2",
+      ejercicio_id: "ejejejej-0002-0002-0002-000000000002",
+      orden: 2,
+      ejercicio: {
+        id: "ejejejej-0002-0002-0002-000000000002",
+        titulo: "Resta",
+        enunciado_md: "Implementar resta",
+        inicial_codigo: null,
+        unidad_tematica: "funciones",
+        dificultad: "basica",
+        test_cases: [],
+      },
+    },
+  ]
+}
+
 function makeTarea(overrides: Partial<AvailableTarea> = {}): AvailableTarea {
   return {
     id: TAREA_ID,
@@ -50,22 +91,6 @@ function makeTarea(overrides: Partial<AvailableTarea> = {}): AvailableTarea {
     estado: "published",
     version: 1,
     inicial_codigo: null,
-    ejercicios: [
-      {
-        orden: 1,
-        titulo: "Suma",
-        enunciado_md: "Implementar suma",
-        inicial_codigo: null,
-        peso: 0.5,
-      },
-      {
-        orden: 2,
-        titulo: "Resta",
-        enunciado_md: "Implementar resta",
-        inicial_codigo: null,
-        peso: 0.5,
-      },
-    ],
     ...overrides,
   }
 }
@@ -80,7 +105,8 @@ describe("ExerciseListView", () => {
     beforeEach(() => {
       const entrega = makeEntrega()
       setupFetchMock({
-        "/api/v1/entregas": () => ({ data: [entrega], meta: { cursor_next: null } }),
+        "/ejercicios": () => makePairs(),
+        "/api/v1/entregas": () => entrega,
       })
     })
 
@@ -124,6 +150,7 @@ describe("ExerciseListView", () => {
     it("muestra barra de progreso con 0/2 completados", async () => {
       const entrega = makeEntrega()
       setupFetchMock({
+        "/ejercicios": () => makePairs(),
         "/api/v1/entregas": () => entrega,
       })
       const tarea = makeTarea()
@@ -150,6 +177,7 @@ describe("ExerciseListView", () => {
         ],
       })
       setupFetchMock({
+        "/ejercicios": () => makePairs(),
         "/api/v1/entregas": () => entrega,
       })
       const tarea = makeTarea()
@@ -172,6 +200,7 @@ describe("ExerciseListView", () => {
     it("el ejercicio 2 esta bloqueado cuando el 1 no esta completado", async () => {
       const entrega = makeEntrega()
       setupFetchMock({
+        "/ejercicios": () => makePairs(),
         "/api/v1/entregas": () => entrega,
       })
       const tarea = makeTarea()
@@ -194,6 +223,7 @@ describe("ExerciseListView", () => {
     it("muestra boton de empezar en ejercicio 1", async () => {
       const entrega = makeEntrega()
       setupFetchMock({
+        "/ejercicios": () => makePairs(),
         "/api/v1/entregas": () => entrega,
       })
       const tarea = makeTarea()
@@ -214,6 +244,7 @@ describe("ExerciseListView", () => {
     it("click en ejercicio disponible llama onSelectEjercicio con el orden correcto", async () => {
       const entrega = makeEntrega()
       setupFetchMock({
+        "/ejercicios": () => makePairs(),
         "/api/v1/entregas": () => entrega,
       })
       const tarea = makeTarea()
@@ -231,7 +262,11 @@ describe("ExerciseListView", () => {
         expect(screen.getByTestId("ejercicio-start-1")).toBeDefined()
       })
       fireEvent.click(screen.getByTestId("ejercicio-start-1"))
-      expect(onSelectEjercicio).toHaveBeenCalledWith(tarea, 1, ENTREGA_ID)
+      expect(onSelectEjercicio).toHaveBeenCalledWith(
+        tarea,
+        { id: "ejejejej-0001-0001-0001-000000000001", orden: 1 },
+        ENTREGA_ID,
+      )
     })
   })
 
@@ -239,6 +274,7 @@ describe("ExerciseListView", () => {
     it("NO muestra el boton cuando hay ejercicios incompletos", async () => {
       const entrega = makeEntrega()
       setupFetchMock({
+        "/ejercicios": () => makePairs(),
         "/api/v1/entregas": () => entrega,
       })
       const tarea = makeTarea()
@@ -265,6 +301,7 @@ describe("ExerciseListView", () => {
         ],
       })
       setupFetchMock({
+        "/ejercicios": () => makePairs(),
         "/api/v1/entregas": () => entrega,
       })
       const tarea = makeTarea()
@@ -287,6 +324,7 @@ describe("ExerciseListView", () => {
     it("muestra badge 'Entregada' cuando estado=submitted", async () => {
       const entrega = makeEntrega({ estado: "submitted" })
       setupFetchMock({
+        "/ejercicios": () => makePairs(),
         "/api/v1/entregas": () => entrega,
       })
       const tarea = makeTarea()
@@ -314,6 +352,7 @@ describe("ExerciseListView", () => {
         ],
       })
       setupFetchMock({
+        "/ejercicios": () => makePairs(),
         "/api/v1/entregas": () => entrega,
       })
       const tarea = makeTarea()

@@ -26,7 +26,9 @@ describe("AuditFooter", () => {
     render(<AuditFooter episodeId={null} />)
 
     const footer = screen.getByTestId("audit-footer")
-    expect(footer).toHaveTextContent(/prompt: tutor\/v1\.0\.0/i)
+    // PROMPT_VERSION vive en packages/ui/AuditFooter.tsx — matchear sin pin
+    // de patch version para que el bump del prompt no rompa este test.
+    expect(footer).toHaveTextContent(/prompt: tutor\/v1\./i)
     expect(screen.getByTestId("audit-classifier-hash")).toHaveTextContent("pendiente")
     expect(screen.getByTestId("audit-chain-label")).toHaveTextContent(
       /sin verificacion previa/i,
