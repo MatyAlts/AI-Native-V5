@@ -10,6 +10,7 @@ El test de RLS multi-tenant a nivel DB vive en test_rls_isolation.py.
 
 from __future__ import annotations
 
+from datetime import datetime, timedelta, timezone
 from decimal import Decimal
 from unittest.mock import AsyncMock, MagicMock
 from uuid import UUID, uuid4
@@ -253,6 +254,67 @@ async def test_update_published_falla_409(
         if isinstance(c.args[0], AuditLog) and c.args[0].action == "tarea_practica.update"
     ]
     assert len(audit_updates) == 0
+
+
+async def test_update_fecha_fin_en_published_ok(
+    mock_session, user_docente_admin_a: User, tenant_a_id: UUID
+) -> None:
+    """PATCH de solo fecha_fin sobre TP publicada procede (extensión de fecha
+    límite es metadata operacional mutable, fix 2026-06-10 #5)."""
+    svc = TareaPracticaService(mock_session)
+
+    tid = uuid4()
+    inicio = datetime(2026, 6, 1, tzinfo=timezone.utc)
+    obj = _fake_tarea(
+        tid,
+        tenant_a_id,
+        uuid4(),
+        estado="published",
+        fecha_inicio=inicio,
+        fecha_fin=inicio + timedelta(days=14),
+    )
+    svc.repo.get_or_404 = AsyncMock(return_value=obj)
+
+    nueva_fecha = inicio + timedelta(days=21)
+    result = await svc.update(tid, TareaPracticaUpdate(fecha_fin=nueva_fecha), user_docente_admin_a)
+
+    assert result is obj
+    assert obj.fecha_fin == nueva_fecha
+    audit_updates = [
+        c.args[0]
+        for c in mock_session.add.call_args_list
+        if isinstance(c.args[0], AuditLog) and c.args[0].action == "tarea_practica.update"
+    ]
+    assert len(audit_updates) == 1
+
+
+async def test_update_fecha_fin_anterior_a_inicio_falla_422(
+    mock_session, user_docente_admin_a: User, tenant_a_id: UUID
+) -> None:
+    """PATCH parcial que deja fecha_fin <= fecha_inicio retorna 422 (el
+    validador del schema no cubre PATCHes parciales)."""
+    svc = TareaPracticaService(mock_session)
+
+    tid = uuid4()
+    inicio = datetime(2026, 6, 1, tzinfo=timezone.utc)
+    obj = _fake_tarea(
+        tid,
+        tenant_a_id,
+        uuid4(),
+        estado="published",
+        fecha_inicio=inicio,
+        fecha_fin=inicio + timedelta(days=14),
+    )
+    svc.repo.get_or_404 = AsyncMock(return_value=obj)
+
+    with pytest.raises(HTTPException) as exc_info:
+        await svc.update(
+            tid,
+            TareaPracticaUpdate(fecha_fin=inicio - timedelta(days=1)),
+            user_docente_admin_a,
+        )
+
+    assert exc_info.value.status_code == 422
 
 
 async def test_soft_delete(mock_session, user_docente_admin_a: User, tenant_a_id: UUID) -> None:

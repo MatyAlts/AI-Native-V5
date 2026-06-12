@@ -23,6 +23,7 @@ import {
   Archive,
   ArrowDown,
   ArrowUp,
+  CalendarClock,
   Eye,
   FileText,
   GitBranch,
@@ -74,6 +75,7 @@ type ModalState =
   | { kind: "closed" }
   | { kind: "create" }
   | { kind: "edit"; tarea: TareaPractica }
+  | { kind: "edit-fecha"; tarea: TareaPractica }
   | { kind: "view"; tarea: TareaPractica }
   | { kind: "versioning"; tarea: TareaPractica }
   | { kind: "versions-list"; tarea: TareaPractica }
@@ -345,6 +347,7 @@ export function TareasPracticasView({ comisionId, getToken }: Props) {
                   tarea={t}
                   onView={() => setModal({ kind: "view", tarea: t })}
                   onEdit={() => setModal({ kind: "edit", tarea: t })}
+                  onEditFecha={() => setModal({ kind: "edit-fecha", tarea: t })}
                   onPublish={() => handlePublish(t)}
                   onArchive={() => handleArchive(t)}
                   onNewVersion={() => setModal({ kind: "versioning", tarea: t })}
@@ -437,6 +440,26 @@ export function TareasPracticasView({ comisionId, getToken }: Props) {
           />
         )}
 
+        {/* Modal: editar fecha límite de TP publicado (fix 2026-06-10 #5).
+            El backend permite PATCH de solo fecha_fin sin importar el estado
+            (_MUTABLE_REGARDLESS_OF_ESTADO) — el contenido pedagógico sigue
+            inmutable y exige nueva versión. */}
+        {modal.kind === "edit-fecha" && (
+          <FechaFinModal
+            tarea={modal.tarea}
+            onClose={closeModal}
+            onSubmit={async (fechaFinIso) => {
+              await tareasPracticasApi.update(
+                modal.tarea.id,
+                { fecha_fin: fechaFinIso },
+                getToken,
+              )
+              closeModal()
+              await refreshList()
+            }}
+          />
+        )}
+
         {/* Modal: ver detalle TP (solo lectura) */}
         {modal.kind === "view" && (
           <TareaViewModal
@@ -463,6 +486,7 @@ function TareaCard({
   tarea,
   onView,
   onEdit,
+  onEditFecha,
   onPublish,
   onArchive,
   onNewVersion,
@@ -473,6 +497,7 @@ function TareaCard({
   tarea: TareaPractica
   onView: () => void
   onEdit: () => void
+  onEditFecha: () => void
   onPublish: () => void
   onArchive: () => void
   onNewVersion: () => void
@@ -585,6 +610,13 @@ function TareaCard({
               icon={<Eye className="h-3.5 w-3.5" />}
               label="Ver"
               tone="muted"
+            />
+            <ActionButton
+              onClick={onEditFecha}
+              icon={<CalendarClock className="h-3.5 w-3.5" />}
+              label="Fecha"
+              tone="brand"
+              title="Editar fecha límite de entrega"
             />
             <ActionButton
               onClick={onNewVersion}
@@ -977,6 +1009,142 @@ function TareaFormModal({
             className="px-3 py-1.5 bg-accent-brand text-white rounded text-sm hover:bg-accent-brand-deep disabled:opacity-50"
           >
             {submitting ? "Guardando..." : isEditing ? "Guardar cambios" : "Crear TP"}
+          </button>
+        </div>
+      </div>
+    </Modal>
+  )
+}
+
+// ── Fecha límite modal (fix 2026-06-10 #5) ─────────────────────────────
+// Edición acotada a `fecha_fin` para TPs publicados: extender (o acortar)
+// la fecha de entrega sin pasar por el fork de versión. El resto del TP
+// sigue inmutable. Editar la fecha de una instancia derivada de template
+// marca drift igual que cualquier campo canónico (ADR-016) — se avisa.
+
+function FechaFinModal({
+  tarea,
+  onClose,
+  onSubmit,
+}: {
+  tarea: TareaPractica
+  onClose: () => void
+  onSubmit: (fechaFinIso: string) => Promise<void>
+}) {
+  const [fechaFin, setFechaFin] = useState(isoToLocalInput(tarea.fecha_fin))
+  const [submitting, setSubmitting] = useState(false)
+  const [formError, setFormError] = useState<string | null>(null)
+
+  const willDrift = Boolean(tarea.template_id && !tarea.has_drift)
+  const [driftAck, setDriftAck] = useState(false)
+
+  const handleSubmit = async () => {
+    setFormError(null)
+    const iso = localInputToIso(fechaFin)
+    if (!iso) {
+      setFormError("Indicá la nueva fecha límite (el backend no permite quitarla en este modal)")
+      return
+    }
+    if (tarea.fecha_inicio && new Date(iso) <= new Date(tarea.fecha_inicio)) {
+      setFormError("La fecha límite debe ser posterior a la fecha de inicio")
+      return
+    }
+    if (willDrift && !driftAck) {
+      setFormError("Confirmá que entendés que este cambio marca drift respecto del template")
+      return
+    }
+    setSubmitting(true)
+    try {
+      await onSubmit(iso)
+    } catch (e) {
+      setFormError(String(e))
+    } finally {
+      setSubmitting(false)
+    }
+  }
+
+  return (
+    <Modal
+      isOpen={true}
+      onClose={onClose}
+      title={`Fecha límite · ${tarea.codigo}: ${tarea.titulo}`}
+      size="md"
+    >
+      <div className="space-y-4">
+        <p className="text-sm text-muted leading-relaxed">
+          Solo se modifica la fecha de entrega. El enunciado, peso y rúbrica del TP publicado
+          siguen inmutables: para cambiarlos, creá una nueva versión.
+        </p>
+
+        {willDrift && (
+          <div className="rounded-lg border border-warning/30 bg-warning-soft p-3 text-sm">
+            <p className="font-semibold text-warning">Este TP viene de una plantilla de catedra.</p>
+            <p className="mt-1 text-warning/90">
+              Cambiar la fecha lo marca como drift y deja de recibir actualizaciones automaticas
+              del template.
+            </p>
+            <label className="mt-2 inline-flex items-center gap-2 text-xs text-warning">
+              <input
+                type="checkbox"
+                checked={driftAck}
+                onChange={(e) => setDriftAck(e.target.checked)}
+              />
+              Entiendo y quiero continuar
+            </label>
+          </div>
+        )}
+
+        {formError && (
+          <div className="rounded border border-danger/30 bg-danger-soft p-2 text-xs text-danger">
+            {formError}
+          </div>
+        )}
+
+        <div className="grid grid-cols-2 gap-3 text-xs">
+          <div>
+            <div className="text-muted">Inicio</div>
+            <div className="font-medium">
+              {tarea.fecha_inicio ? formatDateTime(tarea.fecha_inicio) : "sin fecha"}
+            </div>
+          </div>
+          <div>
+            <div className="text-muted">Fin actual</div>
+            <div className="font-medium">
+              {tarea.fecha_fin ? formatDateTime(tarea.fecha_fin) : "sin fecha"}
+            </div>
+          </div>
+        </div>
+
+        <div>
+          <label htmlFor="tp-fecha-fin-edit" className="block text-xs text-muted mb-1">
+            Nueva fecha límite
+          </label>
+          <input
+            id="tp-fecha-fin-edit"
+            name="fecha_fin"
+            data-testid="tp-fecha-fin-edit"
+            type="datetime-local"
+            value={fechaFin}
+            onChange={(e) => setFechaFin(e.target.value)}
+            className="w-full border border-border rounded px-2 py-1 text-sm"
+          />
+        </div>
+
+        <div className="flex justify-end gap-2 pt-3 border-t border-border">
+          <button
+            type="button"
+            onClick={onClose}
+            className="px-3 py-1.5 border border-border rounded text-sm hover:bg-surface-alt"
+          >
+            Cancelar
+          </button>
+          <button
+            type="button"
+            onClick={handleSubmit}
+            disabled={submitting}
+            className="px-3 py-1.5 bg-accent-brand text-white rounded text-sm hover:bg-accent-brand-deep disabled:opacity-50"
+          >
+            {submitting ? "Guardando..." : "Guardar fecha"}
           </button>
         </div>
       </div>
