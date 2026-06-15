@@ -32,10 +32,31 @@ Limitaciones declaradas en el ADR-019 + revisión adversarial 2026-04-27:
 - Fuzzy `{e<=1}` aumenta levemente la tasa esperada de falsos positivos en
   palabras de 6-7 caracteres (`prompt`, `urgente`); aceptable porque el
   evento es side-channel (NO bloquea el flow) y el docente puede inspeccionar.
+
+v1.5.0 (2026-06-15, fix #11 QA seguridad): cierra el SUBCONTEO de jailbreaks
+OFUSCADOS en la telemetría de adversos (métrica §17.8 de la tesis). NO busca
+atrapar todo — la defensa real sigue siendo el LLM (defensa en profundidad).
+Dos cambios deterministas:
+
+1. **Decodificación base64 pre-match**: `detect()` busca tokens base64-like en
+   el prompt, los decodifica (si dan UTF-8 imprimible y con pinta de texto
+   natural), y corre el corpus TAMBIÉN sobre el texto decodificado. Un
+   jailbreak en base64 ("aWdub3JhIHR1cyBpbnN0cnVjY2lvbmVz" → "ignora tus
+   instrucciones") queda CONTADO con su categoría real en vez de subcontarse.
+   El texto decodificado entra al JSON canónico del hash (vía el flag
+   `BASE64_PREMATCH_ENABLED` + los parámetros de heurística), porque cambia
+   QUÉ se matchea y debe ser determinista/versionado.
+2. **Role-play genérico mínimo**: 2 patrones nuevos en `jailbreak_fiction`
+   (severidad 2 — NO dispara `_REINFORCEMENT_SYSTEM_MESSAGE` que requiere
+   sev≥3) para el caso "sos/actúa como X sin reglas/filtros/límites" que el
+   corpus v1.4.0 dejaba pasar. CUENTA sin alterar el comportamiento del tutor
+   ni inflar falsos positivos de severidad alta.
 """
 
 from __future__ import annotations
 
+import base64
+import binascii
 import hashlib
 import json
 from dataclasses import dataclass
@@ -53,7 +74,7 @@ from uuid import UUID
 # (`regex` ya estaba como transitiva).
 import regex as re
 
-GUARDRAILS_CORPUS_VERSION = "1.4.0"
+GUARDRAILS_CORPUS_VERSION = "1.5.0"
 
 Category = Literal[
     "jailbreak_indirect",
@@ -115,6 +136,32 @@ OVERUSE_PROPORTION_THRESHOLD = 0.7
 OVERUSE_MIN_EVENTS_FOR_PROPORTION = 5  # piso anti-falso-positivo en episodios cortos
 
 
+# v1.5.0 (fix #11): preprocesamiento base64. Parámetros de la heurística de
+# decodificación. Entran al JSON canónico del hash (`compute_guardrails_corpus_hash`)
+# porque cambian QUÉ texto se matchea — para que la telemetría de adversos sea
+# reproducible bit-a-bit hay que versionar también el preprocesamiento, no solo
+# el corpus regex. Cualquier cambio acá cambia `guardrails_corpus_hash` y exige
+# bumpear GUARDRAILS_CORPUS_VERSION.
+#
+# Heurística (conservadora, anti-falso-positivo):
+# - Solo se consideran tokens `[A-Za-z0-9+/]{N,}={0,2}` con longitud múltiplo de 4
+#   (los datos base64 válidos lo son) y N = BASE64_MIN_TOKEN_LEN.
+# - Se decodifica con validación estricta; si no decodifica o el resultado no es
+#   UTF-8, se ignora (texto crudo común NO tiene base64 → no rompe nada).
+# - El resultado debe "parecer texto natural": ratio de chars imprimibles ≥
+#   BASE64_MIN_PRINTABLE_RATIO y al menos BASE64_MIN_DECODED_LEN chars. Esto evita
+#   decodificar palabras inocuas que casualmente son base64-válidas (ej. "test").
+BASE64_PREMATCH_ENABLED = True
+BASE64_MIN_TOKEN_LEN = 16  # múltiplo de 4 razonable; <16 son demasiado cortos/ambiguos
+BASE64_MIN_DECODED_LEN = 8
+BASE64_MIN_PRINTABLE_RATIO = 0.85
+BASE64_MAX_TOKENS = 8  # cap defensivo: no decodificar prompts con cientos de tokens
+
+# Regex de candidatos base64. Longitud mínima ya filtra ruido; el múltiplo-de-4
+# y la decodificación estricta se validan en `_decode_base64_segments`.
+_BASE64_TOKEN_RE = re.compile(rf"[A-Za-z0-9+/]{{{BASE64_MIN_TOKEN_LEN},}}={{0,2}}")
+
+
 # Patrones por categoria. Cada string es una regex case-insensitive.
 # Convenciones:
 # - Separar palabras con `[\s\-_.]+` (no solo `\s+`) para tolerar guiones/puntos/
@@ -167,6 +214,14 @@ _PATTERNS: dict[Category, list[str]] = {
         r"in\s+an?\s+fictional\s+(scenario|world|setting)",
         # "escribi(endo)? un cuento/relato/historia donde"
         r"escrib(i|í|iendo)\s+(un\s+)?(cuento|relato|historia)\s+donde",
+        # v1.5.0 (fix #11): role-play genérico acotado — "sos/eres/actúa como X
+        # sin reglas/filtros/límites/restricciones/censura". Mapea a severidad 2
+        # (NO dispara refuerzo) para CONTAR el intento sin alterar el flow.
+        # Acotado a "sin <eximente>" cercano (≤40 chars) para no inflar falsos
+        # positivos de role-play pedagógico legítimo ("actúa como un compilador").
+        r"(sos|eres|act(u|ú)a\s+como|comport(a|á)te\s+como)[\s\-_.]+.{0,40}?\bsin\b[\s\-_.]+(regl|filtro|l(i|í)mit|(?:restricci){e<=1}|censura|moral|(?:directiv){e<=1})",
+        # EN: "you are / act as X with no rules/filter/limits/restrictions"
+        r"(you\s+are|act\s+as|behave\s+(as|like))\s+.{0,40}?\bwith\s+no\b\s+(rule|filter|limit|restrict|censorship|moral)",
     ],
     "persuasion_urgency": [
         # Familia enfermo/muriendo (manipulacion emocional clara). v1.4.0 amplia
@@ -254,6 +309,16 @@ def compute_guardrails_corpus_hash() -> str:
                 "proportion_threshold": OVERUSE_PROPORTION_THRESHOLD,
                 "min_events_for_proportion": OVERUSE_MIN_EVENTS_FOR_PROPORTION,
             },
+            # v1.5.0 (fix #11): el preprocesamiento base64 cambia QUÉ se matchea,
+            # así que sus parámetros deben versionarse en el hash para preservar
+            # reproducibilidad bit-a-bit de la telemetría de adversos.
+            "base64_prematch": {
+                "enabled": BASE64_PREMATCH_ENABLED,
+                "min_token_len": BASE64_MIN_TOKEN_LEN,
+                "min_decoded_len": BASE64_MIN_DECODED_LEN,
+                "min_printable_ratio": BASE64_MIN_PRINTABLE_RATIO,
+                "max_tokens": BASE64_MAX_TOKENS,
+            },
         },
         sort_keys=True,
         ensure_ascii=False,
@@ -271,20 +336,63 @@ GUARDRAILS_CORPUS_HASH = compute_guardrails_corpus_hash()
 _MAX_MATCHED_TEXT = 200
 
 
-def detect(content: str) -> list[Match]:
-    """Devuelve TODOS los matches del corpus para el prompt dado.
+def _looks_like_natural_text(decoded: str) -> bool:
+    """Heurística anti-falso-positivo: ¿el texto decodificado parece lenguaje
+    natural (vs bytes binarios o ruido)?
 
-    Lista vacia si nada matchea. Multiples matches del mismo patron en el
-    mismo prompt cuentan UNA sola vez (re.search, no re.findall) — un evento
-    CTR por (patron, prompt). Multiples patrones distintos que matcheen
-    generan multiples eventos.
-
-    Funcion pura, idempotente, sin side-effects. Latencia <1ms para prompts
-    de hasta ~10k chars (validado en tests).
+    Pide longitud mínima + ratio alto de caracteres imprimibles. Conservadora a
+    propósito: preferimos NO decodificar (subcontar un caso raro) antes que
+    inyectar ruido binario al matcheo (que podría dar falsos positivos espurios).
     """
-    if not content:
+    if len(decoded) < BASE64_MIN_DECODED_LEN:
+        return False
+    printable = sum(1 for ch in decoded if ch.isprintable() or ch in " \t\n\r")
+    return (printable / len(decoded)) >= BASE64_MIN_PRINTABLE_RATIO
+
+
+def _decode_base64_segments(content: str) -> list[str]:
+    """Extrae tokens base64-like del prompt y devuelve los que decodifican a
+    texto natural UTF-8.
+
+    Determinista y defensivo: ignora tokens que no son múltiplo de 4, que no
+    decodifican estrictamente, que no son UTF-8, o que no parecen texto natural.
+    Caso común (prompt sin base64): devuelve `[]` sin tocar nada.
+    """
+    if not BASE64_PREMATCH_ENABLED:
         return []
 
+    decoded_segments: list[str] = []
+    seen: set[str] = set()
+    for token_match in _BASE64_TOKEN_RE.finditer(content):
+        token = token_match.group(0)
+        # base64 estándar válido tiene longitud múltiplo de 4.
+        if len(token) % 4 != 0:
+            continue
+        try:
+            raw = base64.b64decode(token, validate=True)
+        except (binascii.Error, ValueError):
+            continue
+        try:
+            decoded = raw.decode("utf-8")
+        except UnicodeDecodeError:
+            continue
+        if not _looks_like_natural_text(decoded):
+            continue
+        if decoded in seen:
+            continue
+        seen.add(decoded)
+        decoded_segments.append(decoded)
+        if len(decoded_segments) >= BASE64_MAX_TOKENS:
+            break
+    return decoded_segments
+
+
+def _match_corpus(content: str) -> list[Match]:
+    """Corre el corpus regex sobre un único texto y devuelve los matches.
+
+    Multiples matches del mismo patron en el mismo texto cuentan UNA sola vez
+    (re.search, no re.findall).
+    """
     matches: list[Match] = []
     for category, items in _COMPILED.items():
         severity = _SEVERITY[category]
@@ -303,6 +411,44 @@ def detect(content: str) -> list[Match]:
                     matched_text=matched,
                 )
             )
+    return matches
+
+
+def detect(content: str) -> list[Match]:
+    """Devuelve TODOS los matches del corpus para el prompt dado.
+
+    Lista vacia si nada matchea. Multiples matches del mismo patron en el
+    mismo prompt cuentan UNA sola vez (re.search, no re.findall) — un evento
+    CTR por (patron, prompt). Multiples patrones distintos que matcheen
+    generan multiples eventos.
+
+    v1.5.0 (fix #11): además del texto crudo, corre el corpus sobre cualquier
+    segmento base64 que decodifique a texto natural. Esto CUENTA jailbreaks
+    ofuscados en base64 con su categoría real (cierra el subconteo de la métrica
+    §17.8) sin inflar falsos positivos: un prompt benigno con un blob base64
+    inocuo no produce matches porque el texto decodificado tampoco matchea el
+    corpus. Los matches del texto decodificado se deduplican por (pattern_id,
+    category) contra los del crudo para no doble-contar.
+
+    Funcion pura, idempotente, sin side-effects. Latencia <1ms para prompts
+    de hasta ~10k chars (validado en tests).
+    """
+    if not content:
+        return []
+
+    matches: list[Match] = _match_corpus(content)
+
+    # Preprocesamiento base64: corre el corpus también sobre cada segmento
+    # decodificado, sumando matches NUEVOS (dedup por pattern_id — un mismo
+    # patrón que ya disparó en el crudo no se cuenta otra vez).
+    seen_pattern_ids = {m.pattern_id for m in matches}
+    for decoded in _decode_base64_segments(content):
+        for dm in _match_corpus(decoded):
+            if dm.pattern_id in seen_pattern_ids:
+                continue
+            seen_pattern_ids.add(dm.pattern_id)
+            matches.append(dm)
+
     return matches
 
 
