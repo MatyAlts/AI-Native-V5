@@ -6,7 +6,6 @@ from contextlib import asynccontextmanager
 import redis.asyncio as redis
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-
 from slowapi.errors import RateLimitExceeded
 
 from api_gateway.config import settings
@@ -34,6 +33,11 @@ app = FastAPI(
     description="Entrada única de la plataforma — JWT + rate limit + proxy",
     version="0.1.0",
     lifespan=lifespan,
+    # SAFETY: /docs, /redoc y /openapi.json apagados por default (enable_docs=False).
+    # En prod exponen esquemas y rutas internas; activar solo en dev via ENABLE_DOCS=true.
+    docs_url="/docs" if settings.enable_docs else None,
+    redoc_url="/redoc" if settings.enable_docs else None,
+    openapi_url="/openapi.json" if settings.enable_docs else None,
 )
 
 app.add_middleware(

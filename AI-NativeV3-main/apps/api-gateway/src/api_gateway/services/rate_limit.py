@@ -51,6 +51,12 @@ class RateLimitResult:
 
 DEFAULT_LIMIT = RateLimitConfig(window_seconds=60, max_requests=300)
 
+# Límite más estricto para principals anónimos (fallback por IP, prefijo "ip:").
+# Un cliente sin X-User-Id no está autenticado y no debería gozar del mismo
+# presupuesto que un usuario logueado — además el bucket por IP puede ser
+# compartido por muchos clientes (NAT/proxy), así que se mantiene bajo.
+ANON_DEFAULT_LIMIT = RateLimitConfig(window_seconds=60, max_requests=30)
+
 # Override por path prefix (del más específico al más genérico)
 PATH_LIMITS: list[tuple[str, RateLimitConfig]] = [
     ("/api/v1/episodes", RateLimitConfig(window_seconds=60, max_requests=1000)),
@@ -66,6 +72,21 @@ def config_for_path(path: str) -> RateLimitConfig:
         if path.startswith(prefix):
             return config
     return DEFAULT_LIMIT
+
+
+def config_for(principal: str, path: str) -> RateLimitConfig:
+    """Config efectivo combinando principal + path.
+
+    Para principals anónimos (prefijo "ip:" — sin X-User-Id) aplica el límite
+    más estricto entre `ANON_DEFAULT_LIMIT` y el config del path, para no
+    relajar el cap anónimo en endpoints del flujo crítico (1000/min). Los
+    autenticados (prefijo "u:"/"t:") usan el config del path tal cual.
+    """
+    path_config = config_for_path(path)
+    if principal.startswith("ip:"):
+        if ANON_DEFAULT_LIMIT.max_requests < path_config.max_requests:
+            return ANON_DEFAULT_LIMIT
+    return path_config
 
 
 class RateLimiter:
