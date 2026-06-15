@@ -280,6 +280,15 @@ class TareaPractica(Base, TenantMixin, TimestampMixin):
         Boolean, nullable=False, default=False, server_default=sa.false()
     )
 
+    # El docente decide por TP si el alumno puede pausar un episodio (botón
+    # "Seguir después") y retomarlo luego. False = la TP debe completarse en
+    # una sola sesión: el resume de un episodio pausado se rechaza (tutor-
+    # service). server_default=true preserva el comportamiento histórico de
+    # pausa/reanudación (ADR-025/055).
+    permite_pausa: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=True, server_default=sa.true()
+    )
+
     created_by: Mapped[uuid.UUID] = mapped_column(PgUUID(as_uuid=True), nullable=False)
 
     # ADR-041: agrupación temática por Unidad (nullable — TPs sin asignar

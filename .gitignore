@@ -78,3 +78,9 @@ test-results/
 
 # ── Claude Code / agente ──────────────────────────────────────────────
 .claude/projects/
+
+# ── QA / red-team artefactos (PoCs de explotación + datos de alumnos) ──
+# NO versionar: contienen PoCs de bypass de auth, hostnames internos y
+# pseudónimos/notas de alumnos reales del piloto (privacidad RN-090).
+_qa-artifacts/
+_monitoring/

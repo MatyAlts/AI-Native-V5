@@ -29,7 +29,11 @@ from sqlalchemy.ext.asyncio import async_sessionmaker
 
 from analytics_service.config import settings
 from analytics_service.db import get_ctr_engine
-from analytics_service.routes.analytics import get_tenant_id, get_user_id
+from analytics_service.routes.analytics import (
+    assert_comision_member,
+    get_tenant_id,
+    get_user_id,
+)
 from analytics_service.services.caliper_xapi_exporter import to_caliper, to_xapi
 
 logger = logging.getLogger(__name__)
@@ -38,15 +42,19 @@ router = APIRouter(prefix="/api/v1/export", tags=["export-standards"])
 
 async def _fetch_episode_events(
     episode_id: UUID, tenant_id: UUID
-) -> list[dict]:
-    """Fetch eventos del episodio del ctr_store con RLS por tenant.
+) -> tuple[UUID, list[dict]]:
+    """Fetch comision_id + eventos del episodio del ctr_store con RLS por tenant.
+
+    Devuelve `(comision_id, events)`. El `comision_id` se resuelve desde el
+    `Episode` (ctr_store) en la MISMA sesion RLS, asi el caller puede gatear el
+    acceso por membresia (`assert_comision_member`) antes de devolver el export.
 
     Replica el patron de `analytics.py` para fetch de eventos. NO duplica la
     helper porque el original es local a otra funcion — extraerla sin sub-clase
     excederia el scope del MVP.
     """
     # Imports diferidos para evitar startup cost (mismo pattern que analytics.py)
-    from ctr_service.models import Event
+    from ctr_service.models import Episode, Event
     from platform_ops import set_tenant_rls
 
     if not settings.ctr_store_url:
@@ -59,6 +67,21 @@ async def _fetch_episode_events(
     ctr_maker = async_sessionmaker(ctr_engine, expire_on_commit=False)
     async with ctr_maker() as ctr_s:
         await set_tenant_rls(ctr_s, tenant_id)
+        # Resolver la comision del episodio para el gate de membresia. Va por la
+        # misma sesion RLS (tenant) — el `comision_id` vive en `Episode`, no en
+        # el payload del evento (la fuente canonica es la tabla episodes).
+        comision_id = (
+            await ctr_s.execute(
+                select(Episode.comision_id)
+                .where(Episode.id == episode_id)
+                .where(Episode.tenant_id == tenant_id)
+            )
+        ).scalar_one_or_none()
+        if comision_id is None:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"Episode {episode_id} no encontrado en este tenant",
+            )
         stmt = (
             select(Event)
             .where(Event.episode_id == episode_id)
@@ -88,22 +111,28 @@ async def _fetch_episode_events(
             status_code=status.HTTP_404_NOT_FOUND,
             detail=f"Episode {episode_id} no encontrado o sin eventos en este tenant",
         )
-    return events
+    return comision_id, events
 
 
 @router.get("/caliper/{episode_id}")
 async def export_caliper(
     episode_id: UUID,
     tenant_id: UUID = Depends(get_tenant_id),
-    _user_id: UUID = Depends(get_user_id),
+    user_id: UUID = Depends(get_user_id),
 ) -> dict:
     """Exporta los eventos del episodio en formato Caliper Analytics 1.2.
 
     Devuelve envelope con `data: [Event, ...]`. NO altera el CTR (read-only).
     Para verificacion sintactica del output: validar contra JSON Schema de
     Caliper 1.2 (https://www.imsglobal.org/spec/caliper/v1p2/schema).
+
+    Acceso: gateado por membresia a la comision del episodio
+    (`assert_comision_member` → 403). El registro de aprendizaje completo
+    (pseudonimo, eventos, hashes) NO se entrega a quien no pertenece a la
+    comision, aunque traiga un X-User-Roles forjado.
     """
-    events = await _fetch_episode_events(episode_id, tenant_id)
+    comision_id, events = await _fetch_episode_events(episode_id, tenant_id)
+    await assert_comision_member(user_id, comision_id, tenant_id)
     context = {"episode_id": str(episode_id)}
     return to_caliper(events, context)
 
@@ -112,14 +141,19 @@ async def export_caliper(
 async def export_xapi(
     episode_id: UUID,
     tenant_id: UUID = Depends(get_tenant_id),
-    _user_id: UUID = Depends(get_user_id),
+    user_id: UUID = Depends(get_user_id),
 ) -> list[dict]:
     """Exporta los eventos del episodio como lista de xAPI 1.0.3 statements.
 
     A diferencia de Caliper que envuelve, xAPI cada statement es self-contained.
     Para verificacion sintactica: validar contra xAPI 1.0.3 statement schema
     (https://github.com/adlnet/xapi-spec/blob/master/xAPI-Data.md).
+
+    Acceso: mismo gate de membresia que `/caliper` (`assert_comision_member`
+    → 403). Sin pertenencia a la comision del episodio no se entrega el
+    registro, aunque el caller infle X-User-Roles.
     """
-    events = await _fetch_episode_events(episode_id, tenant_id)
+    comision_id, events = await _fetch_episode_events(episode_id, tenant_id)
+    await assert_comision_member(user_id, comision_id, tenant_id)
     context = {"episode_id": str(episode_id)}
     return to_xapi(events, context)

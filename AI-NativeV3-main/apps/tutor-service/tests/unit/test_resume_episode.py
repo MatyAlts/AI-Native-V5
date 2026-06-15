@@ -275,13 +275,17 @@ async def test_resume_heal_de_episodio_open_sin_sesion(
 
 
 async def test_resume_idempotente_con_sesion_viva(tutor: TutorCore, fake_ctr: _FakeCTR) -> None:
-    """Si la sesión ya existe (doble click / dos pestañas), el resume no
-    relee el CTR ni resetea el seq."""
+    """Si la sesión ya existe (doble click / dos pestañas), el resume devuelve
+    el atajo idempotente sin resetear el seq.
+
+    Nota authz (fix #12): el GET al CTR corre ANTES del atajo idempotente para
+    validar dueño/tenant, por lo que el caso idempotente SÍ relee el CTR (1 GET
+    extra). Lo que se preserva es no tocar la sesión ni recomputar el estado.
+    """
     tenant_id, student_id, episode_id = uuid4(), uuid4(), uuid4()
     fake_ctr.episodes[str(episode_id)] = _paused_episode(episode_id, tenant_id, student_id)
 
     await tutor.resume_episode(episode_id=episode_id, tenant_id=tenant_id, user_id=student_id)
-    calls_after_first = fake_ctr.get_episode_calls
     state_before = await tutor.sessions.get(episode_id)
     assert state_before is not None
 
@@ -290,8 +294,36 @@ async def test_resume_idempotente_con_sesion_viva(tutor: TutorCore, fake_ctr: _F
 
     ctx = await tutor.resume_episode(episode_id=episode_id, tenant_id=tenant_id, user_id=student_id)
 
-    assert fake_ctr.get_episode_calls == calls_after_first  # no releyó el CTR
     state_after = await tutor.sessions.get(episode_id)
     assert state_after is not None
     assert state_after.seq == 6  # NO se reseteó al events_count persistido
     assert ctx["episode_id"] == episode_id
+
+
+async def test_resume_403_si_estudiante_ajeno_con_sesion_viva(
+    tutor: TutorCore, fake_ctr: _FakeCTR
+) -> None:
+    """Regresión authz (fix #12): un no-dueño NO puede colarse por el atajo
+    idempotente. Aunque el episodio tenga sesión viva, el resume valida
+    dueño/tenant ANTES del early-return y devuelve 403 — nunca 200 con el
+    contexto de otro alumno.
+    """
+    tenant_id, student_id, episode_id = uuid4(), uuid4(), uuid4()
+    fake_ctr.episodes[str(episode_id)] = _paused_episode(episode_id, tenant_id, student_id)
+
+    # El dueño legítimo reanuda: queda una sesión viva en Redis.
+    await tutor.resume_episode(episode_id=episode_id, tenant_id=tenant_id, user_id=student_id)
+    assert await tutor.sessions.get(episode_id) is not None
+
+    # Un estudiante ajeno intenta reanudar el MISMO episodio con sesión viva.
+    intruder = uuid4()
+    with pytest.raises(HTTPException) as exc_info:
+        await tutor.resume_episode(
+            episode_id=episode_id, tenant_id=tenant_id, user_id=intruder
+        )
+    assert exc_info.value.status_code == 403
+
+    # La sesión del dueño sigue intacta — no se devolvió su contexto al intruso.
+    state = await tutor.sessions.get(episode_id)
+    assert state is not None
+    assert state.student_pseudonym == student_id

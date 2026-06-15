@@ -95,6 +95,19 @@ class Settings(BaseSettings):
     # mandan X-User-Id / X-Tenant-Id / X-User-Roles via Vite proxy). En piloto-2
     # PROD esto NUNCA debe ir a True — habilitaria impersonacion sin credenciales.
     dev_trust_headers: bool = False
+    # SAFETY: default False — /docs, /redoc y /openapi.json exponen la superficie
+    # interna del gateway (esquemas, rutas). En prod NUNCA debe ir a True; activar
+    # solo en dev local seteando ENABLE_DOCS=true explicito en .env.
+    enable_docs: bool = False
+    # Defensa en profundidad cross-service: secreto compartido con los
+    # servicios internos para firmar (HMAC-SHA256) los headers X-* de
+    # identidad que el gateway inyecta. Prueba la PROCEDENCIA de los headers
+    # (vienen del gateway, no de un cliente forjando contra un servicio interno
+    # expuesto) sin re-verificar el JWT aguas abajo. El gateway SIEMPRE firma
+    # si este secreto está seteado; los servicios solo EXIGEN la firma cuando
+    # su flag REQUIRE_GATEWAY_SIGNATURE=true. Orden de activación seguro:
+    # deployar el gateway con el secreto ANTES de prender el flag en servicios.
+    gateway_shared_secret: str = ""
     # Fallback demo cuando dev_trust_headers=True y no llegan X-* desde proxy.
     # Deben matchear el seed oficial (`tests/e2e/smoke/_helpers.py`).
     demo_user_id: str = "b1b1b1b1-0001-0001-0001-000000000001"

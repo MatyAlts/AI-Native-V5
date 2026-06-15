@@ -134,7 +134,9 @@ class JWTValidator:
         try:
             unverified_header = jwt.get_unverified_header(token)
         except jwt.InvalidTokenError as e:
-            raise JWTValidationError(f"Token malformado: {e}") from e
+            # No filtrar el detalle de decodificacion al cliente; loguear server-side.
+            logger.warning("JWT header malformado: %s", e)
+            raise JWTValidationError("Token inválido") from e
 
         kid = unverified_header.get("kid")
         alg = unverified_header.get("alg", "")
@@ -167,11 +169,16 @@ class JWTValidator:
         except jwt.ExpiredSignatureError:
             raise JWTValidationError("Token expirado")
         except jwt.InvalidAudienceError:
-            raise JWTValidationError(f"Audience inválida; se esperaba {self.config.audience}")
+            # No revelar la audience esperada al cliente; loguear server-side.
+            logger.warning("JWT audience inválida; se esperaba %s", self.config.audience)
+            raise JWTValidationError("Token inválido")
         except jwt.InvalidIssuerError:
-            raise JWTValidationError(f"Issuer inválido; se esperaba {self.config.issuer}")
+            # No revelar el issuer esperado al cliente; loguear server-side.
+            logger.warning("JWT issuer inválido; se esperaba %s", self.config.issuer)
+            raise JWTValidationError("Token inválido")
         except jwt.InvalidTokenError as e:
-            raise JWTValidationError(f"Token inválido: {e}") from e
+            logger.warning("JWT inválido: %s", e)
+            raise JWTValidationError("Token inválido") from e
 
         # 4. Extraer claims custom
         return self._build_principal(claims)
@@ -234,7 +241,9 @@ class ClerkJWTValidator(JWTValidator):
         try:
             unverified_header = jwt.get_unverified_header(token)
         except jwt.InvalidTokenError as e:
-            raise JWTValidationError(f"Token malformado: {e}") from e
+            # No filtrar el detalle de decodificacion al cliente; loguear server-side.
+            logger.warning("JWT header malformado (clerk): %s", e)
+            raise JWTValidationError("Token inválido") from e
 
         kid = unverified_header.get("kid")
         alg = unverified_header.get("alg", "")
@@ -264,9 +273,12 @@ class ClerkJWTValidator(JWTValidator):
         except jwt.ExpiredSignatureError:
             raise JWTValidationError("Token expirado")
         except jwt.InvalidIssuerError:
-            raise JWTValidationError(f"Issuer inválido; se esperaba {self.config.issuer}")
+            # No revelar el issuer esperado al cliente; loguear server-side.
+            logger.warning("JWT issuer inválido (clerk); se esperaba %s", self.config.issuer)
+            raise JWTValidationError("Token inválido")
         except jwt.InvalidTokenError as e:
-            raise JWTValidationError(f"Token inválido: {e}") from e
+            logger.warning("JWT inválido (clerk): %s", e)
+            raise JWTValidationError("Token inválido") from e
 
         clerk_sub = claims["sub"]
         email = claims.get("email")

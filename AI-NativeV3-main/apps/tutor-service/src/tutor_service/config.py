@@ -22,6 +22,16 @@ class Settings(BaseSettings):
     otel_endpoint: str = "http://127.0.0.1:4317"
     sentry_dsn: str = ""
 
+    # Defensa en profundidad cross-service (firma HMAC del gateway).
+    # require_gateway_signature=False (default) => comportamiento actual: se
+    # confía en los headers X-* del gateway sin más. Cuando se prende, se exige
+    # que el gateway haya firmado los headers de identidad (X-Gateway-Signature
+    # + X-Gateway-Ts) con gateway_shared_secret; firma ausente/inválida => 401.
+    # ORDEN DE ACTIVACIÓN: primero deployar el gateway firmando (con el secreto
+    # compartido seteado) y RECIÉN DESPUÉS prender este flag, o se cae todo.
+    require_gateway_signature: bool = False
+    gateway_shared_secret: str = ""
+
     redis_url: str = "redis://127.0.0.1:6379/2"
 
     # Rate limit del POST /episodes/{id}/message por usuario. Protege el budget

@@ -35,6 +35,16 @@ class Settings(BaseSettings):
     keycloak_url: str = Field(default="http://127.0.0.1:8180")
     keycloak_realm: str = Field(default="demo_uni")
 
+    # Defensa en profundidad cross-service (firma HMAC del gateway).
+    # require_gateway_signature=False (default) => comportamiento actual: se
+    # confía en los headers X-* del gateway sin más. Cuando se prende, se exige
+    # que el gateway haya firmado los headers de identidad (X-Gateway-Signature
+    # + X-Gateway-Ts) con gateway_shared_secret; firma ausente/inválida => 401.
+    # ORDEN DE ACTIVACIÓN: primero deployar el gateway firmando (con el secreto
+    # compartido seteado) y RECIÉN DESPUÉS prender este flag, o se cae todo.
+    require_gateway_signature: bool = Field(default=False)
+    gateway_shared_secret: str = Field(default="")
+
     # Database
     academic_db_url: str = Field(
         default="postgresql+asyncpg://academic_user:academic_pass@127.0.0.1:5432/academic_main"

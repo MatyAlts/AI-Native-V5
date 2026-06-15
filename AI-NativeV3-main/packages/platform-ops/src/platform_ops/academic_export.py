@@ -19,7 +19,7 @@ real (F7), un worker corre periódicamente y sube el dataset a un
 bucket de solo-lectura para investigadores acreditados.
 
 Uso:
-    exporter = AcademicExporter(data_source, salt="pilot_utn_2026")
+    exporter = AcademicExporter(data_source, salt="pilot_utn_2026_research")
     dataset = await exporter.export_cohort(
         comision_id=UUID("..."),
         include_prompts=False,

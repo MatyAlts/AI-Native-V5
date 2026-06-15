@@ -29,6 +29,9 @@ class TareaPracticaResponse:
     estado: str
     fecha_inicio: datetime | None
     fecha_fin: datetime | None
+    # El docente decide por TP si el alumno puede pausar/retomar episodios.
+    # Default True para retrocompat si el academic-service no lo informa.
+    permite_pausa: bool = True
 
 
 @dataclass
@@ -95,6 +98,7 @@ class AcademicClient:
             estado=data["estado"],
             fecha_inicio=_parse_datetime(data.get("fecha_inicio")),
             fecha_fin=_parse_datetime(data.get("fecha_fin")),
+            permite_pausa=bool(data.get("permite_pausa", True)),
         )
 
     async def get_comision(

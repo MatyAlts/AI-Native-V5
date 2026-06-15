@@ -29,6 +29,12 @@ export const Route = createFileRoute("/episodio/$id")({
 function EpisodioPage() {
   const { id } = useParams({ from: "/episodio/$id" })
   const navigate = useNavigate()
+  // getToken viene del router context (seteado desde useAuth() de Clerk en
+  // main.tsx; en dev sin Clerk devuelve null). Se lo pasamos a EpisodeView
+  // para que el emit de abandono use fetch(keepalive) con Bearer en vez de
+  // sendBeacon (que no pasa por el override de window.fetch y llega sin token
+  // → 401 → el evento nunca se appendea). Fix QA 2026-06-15 #9.
+  const { getToken } = Route.useRouteContext()
 
   // Leer contexto de ejercicio del sessionStorage (si existe).
   const ejercicioContext = readEjercicioContext()
@@ -49,6 +55,7 @@ function EpisodioPage() {
     <EpisodeView
       episodeId={id}
       onExit={handleExit}
+      getToken={getToken}
       {...(ejercicioContext
         ? {
             ejercicioContext: {

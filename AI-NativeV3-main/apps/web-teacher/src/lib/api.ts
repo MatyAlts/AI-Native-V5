@@ -374,6 +374,8 @@ export interface TareaPractica {
   }> | null
   // Unidades de trazabilidad — FK nullable a la unidad de la comision (ADR-041)
   unidad_id: string | null
+  // El docente decide si el alumno puede pausar/retomar episodios de esta TP.
+  permite_pausa: boolean
   // Ejercicios asociados a la TP via tp_ejercicios (banco reusable, ADR-047).
   // Opcional: solo presente en endpoints que populan la relacion (ej. GET /tareas-practicas/{id}?include=ejercicios).
   ejercicios?: Array<{
@@ -395,6 +397,7 @@ export interface TareaPracticaCreate {
   rubrica?: Record<string, unknown> | null
   created_via_ai?: boolean
   template_id?: string | null
+  permite_pausa?: boolean
 }
 
 export interface TareaPracticaUpdate {
@@ -406,6 +409,7 @@ export interface TareaPracticaUpdate {
   peso?: string
   rubrica?: Record<string, unknown> | null
   unidad_id?: string | null
+  permite_pausa?: boolean
 }
 
 export interface TareaPracticaListResponse {

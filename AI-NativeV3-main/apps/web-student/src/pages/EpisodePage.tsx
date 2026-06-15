@@ -14,11 +14,12 @@
  * limpiamos sessionStorage y llamamos onExit().
  */
 import { HelpButton, MarkdownRenderer } from "@platform/ui"
-import { Bot, BookOpen, Code2, LogOut, MessageSquare, Send, ShieldAlert, Sparkles, User } from "lucide-react"
+import { Bot, BookOpen, Code2, LogOut, MessageSquare, PauseCircle, Send, ShieldAlert, Sparkles, User } from "lucide-react"
 import { useCallback, useEffect, useRef, useState } from "react"
 import { Group as PanelGroup, Panel, Separator as PanelResizeHandle } from "react-resizable-panels"
 import { CodeEditor } from "../components/CodeEditor"
 import { ReflectionModal } from "../components/ReflectionModal"
+import { useMediaQuery } from "../hooks/useMediaQuery"
 import {
   type AvailableTarea,
   type Classification,
@@ -63,6 +64,14 @@ export interface EpisodeViewProps {
   onExit: () => void
   /** Si viene de un ejercicio especifico, contiene entregaId y orden. */
   ejercicioContext?: EjercicioContext
+  /**
+   * Token getter de Clerk (via router context). Con esto el emit de abandono
+   * usa fetch(keepalive) con `Authorization: Bearer` en vez de sendBeacon —
+   * que no lleva el header y rebota 401 en prod (ver emitEpisodioAbandonado).
+   * En dev sin Clerk devuelve null y se cae a sendBeacon (proxy Vite inyecta
+   * los X-* headers). Fix QA 2026-06-15 #9.
+   */
+  getToken?: () => Promise<string | null>
 }
 
 /**
@@ -75,7 +84,7 @@ function resolveCodigoInicial(tarea: AvailableTarea): string | null {
   return tarea.inicial_codigo ?? null
 }
 
-export function EpisodeView({ episodeId, onExit, ejercicioContext }: EpisodeViewProps) {
+export function EpisodeView({ episodeId, onExit, ejercicioContext, getToken }: EpisodeViewProps) {
   const [tarea, setTarea] = useState<AvailableTarea | null>(null)
   // Default neutro: si el ejercicio trae `inicial_codigo` se usa eso (ver
   // resolveCodigoInicial); este fallback NO debe sugerir una consigna concreta
@@ -109,9 +118,21 @@ export function EpisodeView({ episodeId, onExit, ejercicioContext }: EpisodeView
   // salida solo se registra en el CTR (politica server-side:
   // tutor-service config.enable_distraction_worker=False).
   const [tabExit, setTabExit] = useState<{ count: number; secondsAway: number } | null>(null)
+  // Mobile (< lg / 1024px): los 3 paneles redimensionables se comprimen a
+  // ~130px c/u e inutilizan el episodio (fix QA #14). Bajo ese breakpoint
+  // mostramos UN panel full-width a la vez via tabs. Los 3 paneles siguen
+  // SIEMPRE montados (Monaco posee su buffer; el IntersectionObserver del
+  // reporter de lectura de la Consigna debe seguir corriendo) — alternamos
+  // visibilidad con CSS, no con render condicional.
+  const isMobile = useMediaQuery("(max-width: 1023px)")
+  const [activeTab, setActiveTab] = useState<"consigna" | "editor" | "tutor">("editor")
   const tabExitCountRef = useRef(0)
   const hiddenAtRef = useRef<number | null>(null)
   const messagesEndRef = useRef<HTMLDivElement>(null)
+  // Guard de idempotencia local del abandono: el backend ya es idempotente por
+  // estado de sesion (ADR-025), pero esto evita spamear el endpoint cuando
+  // beforeunload y visibilitychange→hidden disparan en sucesion (fix QA #9).
+  const abandonEmittedRef = useRef(false)
 
   const ejercicioOrden = ejercicioContext?.ejercicioOrden ?? null
 
@@ -137,16 +158,24 @@ export function EpisodeView({ episodeId, onExit, ejercicioContext }: EpisodeView
     if (typeof window === "undefined") return
     if (closed) return
     const handler = (event: BeforeUnloadEvent) => {
-      void emitEpisodioAbandonado(episodeId, {
-        reason: "beforeunload",
-        last_activity_seconds_ago: 0,
-      })
+      // Pasamos getToken: con el 3er arg, emitEpisodioAbandonado usa
+      // fetch(keepalive) con Bearer (sobrevive el unload y lleva el token);
+      // sin el, caia a sendBeacon → sin Authorization → 401 en prod → el
+      // evento nunca se appendea (fix QA #9). Guard local para no spamear.
+      if (!abandonEmittedRef.current) {
+        abandonEmittedRef.current = true
+        void emitEpisodioAbandonado(
+          episodeId,
+          { reason: "beforeunload", last_activity_seconds_ago: 0 },
+          getToken,
+        )
+      }
       event.preventDefault()
       event.returnValue = ""
     }
     window.addEventListener("beforeunload", handler)
     return () => window.removeEventListener("beforeunload", handler)
-  }, [episodeId, closed])
+  }, [episodeId, closed, getToken])
 
   // Integridad de pestaña: detecta cuando el alumno deja de ver el episodio
   // y vuelve. Usamos SOLO `visibilitychange` (NO `window blur`): blur se
@@ -165,6 +194,11 @@ export function EpisodeView({ episodeId, onExit, ejercicioContext }: EpisodeView
         void emitPestanaPerdida(episodeId, { trigger: "visibilitychange" }).catch((e) =>
           console.warn("emit pestana_perdida failed:", e),
         )
+        // NO emitimos episodio_abandonado acá: salir de la pestaña NO debe
+        // pausar el episodio (decisión de producto, ver fix/remove-tab-away-
+        // autoclose). El abandono real se persiste por `beforeunload` (cierre/
+        // navegación, ahora con getToken — fix QA #9) y el worker server-side
+        // de timeout (30min) como red de seguridad.
         return
       }
       // El alumno volvió a la pestaña.
@@ -333,6 +367,25 @@ export function EpisodeView({ episodeId, onExit, ejercicioContext }: EpisodeView
     window.sessionStorage.removeItem(ACTIVE_EPISODE_KEY)
   }
 
+  // Salir SIN cerrar: abandono explícito (reason="explicit", caller=alumno).
+  // El backend lo registra en la cadena CTR y el partition_worker deja el
+  // episodio en `paused` (ADR-025/055); al volver, la hidratación lo reanuda
+  // sola via resumeEpisode (línea ~238) y sigue justo donde lo dejó. A
+  // diferencia de handleClose, NO clasificamos ni disparamos reflexión, y NO
+  // borramos ACTIVE_EPISODE_KEY: queremos que el home le ofrezca retomarlo.
+  // Seteamos el guard local para no re-emitir en el beforeunload que dispara
+  // al desmontar/navegar (idempotente igual en backend, fix QA #9).
+  async function handlePauseExit() {
+    setError(null)
+    abandonEmittedRef.current = true
+    await emitEpisodioAbandonado(
+      episodeId,
+      { reason: "explicit", last_activity_seconds_ago: 0 },
+      getToken,
+    )
+    onExit()
+  }
+
   const elapsedSeconds = useElapsedSeconds(closed ? null : episodeId)
 
   if (hydrating) {
@@ -414,6 +467,240 @@ export function EpisodeView({ episodeId, onExit, ejercicioContext }: EpisodeView
     )
   }
 
+  // Los 3 paneles como JSX compartido entre el layout desktop (PanelGroup
+  // redimensionable) y el mobile (tabs). NO duplicamos la logica/markup —
+  // ambos layouts renderizan estos mismos nodos. Ver fix QA #14.
+  const consignaPanel = (
+    <section
+      className="animate-fade-in-up animate-delay-50 flex-1 flex flex-col rounded-xl border border-border bg-surface overflow-hidden shadow-[0_1px_3px_-1px_rgba(0,0,0,0.04)]"
+      aria-label="Consigna del problema"
+    >
+      <PanelHeader
+        level="N1"
+        label="Consigna"
+        icon={<BookOpen className="h-3.5 w-3.5" />}
+        colorVar="var(--color-level-n1)"
+      />
+      <EnunciadoPanel
+        tarea={tarea}
+        episodeId={closed ? null : episodeId}
+        ejercicioOrden={ejercicioContext?.ejercicioOrden ?? null}
+      />
+    </section>
+  )
+
+  const editorPanel = (
+    <section
+      className="animate-fade-in-up animate-delay-100 flex-1 flex flex-col rounded-xl border border-border bg-surface overflow-hidden shadow-[0_1px_3px_-1px_rgba(0,0,0,0.04)]"
+      aria-label="Editor de código"
+    >
+      <PanelHeader
+        level="N3"
+        label="Editor de código"
+        icon={<Code2 className="h-3.5 w-3.5" />}
+        colorVar="var(--color-level-n3)"
+        badge="Python"
+      />
+      <CodeEditor
+        initialCode={code}
+        onCodeExecuted={(result) => {
+          setCode(result.code)
+          setMaxActividad((a) => (a < 3 ? 3 : a))
+          // P0 (QA 2026-05-29): emitir codigo_ejecutado al CTR. Sin esto el
+          // classifier no distingue N3/N4 y todo cae a apropiacion_superficial.
+          void emitCodigoEjecutado(episodeId, {
+            code: result.code,
+            stdout: result.output,
+            stderr: result.error ?? "",
+            duration_ms: Math.round(result.durationMs),
+          }).catch((e) => {
+            console.warn("emit codigo_ejecutado failed:", e)
+          })
+        }}
+        onEditDebounced={(snapshot, diffChars, origin) => {
+          setMaxActividad((a) => (a < 2 ? 2 : a))
+          void emitEdicionCodigo(episodeId, {
+            snapshot,
+            diff_chars: Math.abs(diffChars),
+            language: "python",
+            origin,
+          }).catch((e) => {
+            console.warn("emit edicion_codigo failed:", e)
+          })
+        }}
+        onPasteAttempt={(payload) => {
+          void emitPegaIntentada(episodeId, {
+            contenido_longitud: payload.contenidoLongitud,
+            contenido_preview: payload.contenidoPreview,
+            metodo: payload.metodo,
+          }).catch((e) => {
+            console.warn("emit pega_intentada failed:", e)
+          })
+        }}
+        onCopyAttempt={(payload) => {
+          void emitCopiaIntentada(episodeId, {
+            seleccion_chars: payload.seleccionChars,
+            metodo: payload.metodo,
+          }).catch((e) => {
+            console.warn("emit copia_intentada failed:", e)
+          })
+        }}
+      />
+    </section>
+  )
+
+  const tutorPanel = (
+    <section
+      className="animate-fade-in-up animate-delay-150 flex-1 flex flex-col rounded-xl border border-border bg-surface overflow-hidden shadow-[0_1px_3px_-1px_rgba(0,0,0,0.04)]"
+      aria-label="Tutor socrático"
+    >
+      <PanelHeader
+        level="N4"
+        label="Tutor socrático"
+        icon={<MessageSquare className="h-3.5 w-3.5" />}
+        colorVar="var(--color-level-n4)"
+        badge={streaming ? "escribiendo…" : "Mistral"}
+        badgePulse={streaming}
+      />
+
+      <div className="flex-1 overflow-y-auto px-4 py-4 space-y-4">
+        {messages.length === 0 && (
+          <div
+            data-testid="chat-pedagogical-contract"
+            className="animate-fade-in mx-auto max-w-prose"
+          >
+            <div className="rounded-xl border border-level-n4/20 bg-level-n4/5 p-5 relative overflow-hidden">
+              <div
+                aria-hidden="true"
+                className="absolute left-0 top-0 bottom-0 w-1"
+                style={{ background: "var(--color-level-n4)" }}
+              />
+              <div className="flex items-center gap-2 mb-3">
+                <Sparkles
+                  className="h-4 w-4"
+                  style={{ color: "var(--color-level-n4)" }}
+                />
+                <span className="text-[10px] uppercase tracking-[0.12em] font-semibold text-muted">
+                  Contrato pedagógico
+                </span>
+              </div>
+              <p className="text-sm font-semibold text-ink mb-1.5 leading-snug">
+                El tutor no te da la respuesta.
+              </p>
+              <p className="text-sm text-body leading-relaxed mb-3">
+                Te hace preguntas para que llegues vos.
+              </p>
+              <p className="text-xs text-muted leading-relaxed">
+                Empezás vos: contale en qué estás pensando para resolver este ejercicio.
+              </p>
+            </div>
+          </div>
+        )}
+        {messages.map((m, i) => {
+          const isLastTutor =
+            m.role === "tutor" && messages.findLastIndex((mm) => mm.role === "tutor") === i
+          const isUser = m.role === "user"
+          return (
+            <div
+              key={`${m.ts}-${i}`}
+              className={`animate-fade-in-up flex items-start gap-2.5 ${
+                isUser ? "flex-row-reverse" : ""
+              }`}
+            >
+              {/* Avatar */}
+              <div
+                aria-hidden="true"
+                className={`shrink-0 inline-flex h-7 w-7 items-center justify-center rounded-full ${
+                  isUser
+                    ? "bg-accent-brand text-white"
+                    : "bg-level-n4/10 text-level-n4 border border-level-n4/30"
+                }`}
+                style={!isUser ? { color: "var(--color-level-n4)" } : undefined}
+              >
+                {isUser ? (
+                  <User className="h-3.5 w-3.5" />
+                ) : (
+                  <Bot className="h-3.5 w-3.5" />
+                )}
+              </div>
+              {/* Burbuja */}
+              <div className={`flex flex-col gap-1 max-w-[80%] ${isUser ? "items-end" : ""}`}>
+                <span className="text-[10px] uppercase tracking-wider font-semibold text-muted">
+                  {isUser ? "Vos" : "Tutor"}
+                </span>
+                <div
+                  data-testid={isLastTutor ? "tutor-message-last" : undefined}
+                  className={`rounded-2xl px-3.5 py-2.5 text-sm whitespace-pre-wrap leading-relaxed ${
+                    isUser
+                      ? "bg-accent-brand text-white rounded-tr-sm"
+                      : "bg-surface-alt text-body border border-border-soft rounded-tl-sm"
+                  }`}
+                >
+                  {m.content ||
+                    (m.role === "tutor" && streaming ? (
+                      <span className="inline-flex gap-1 items-center text-muted">
+                        <span className="inline-block w-1.5 h-1.5 rounded-full bg-muted animate-pulse-soft" />
+                        <span className="inline-block w-1.5 h-1.5 rounded-full bg-muted animate-pulse-soft animate-delay-150" />
+                        <span className="inline-block w-1.5 h-1.5 rounded-full bg-muted animate-pulse-soft animate-delay-300" />
+                      </span>
+                    ) : (
+                      ""
+                    ))}
+                </div>
+              </div>
+            </div>
+          )
+        })}
+        <div ref={messagesEndRef} />
+      </div>
+
+      <div className="border-t border-border-soft p-3 bg-surface-alt/40">
+        <div className="flex gap-2 items-end">
+          <textarea
+            data-testid="tutor-input"
+            value={input}
+            onChange={(e) => setInput(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === "Enter" && !e.shiftKey) {
+                e.preventDefault()
+                handleSend()
+              }
+            }}
+            placeholder="Escribí tu mensaje · Enter para enviar"
+            rows={2}
+            disabled={streaming}
+            className="flex-1 px-3 py-2 text-sm rounded-lg border border-border bg-surface text-ink resize-none focus:outline-none focus:border-accent-brand focus:ring-2 focus:ring-accent-brand/20 transition-all placeholder:text-muted-soft"
+          />
+          <button
+            type="button"
+            onClick={handleSend}
+            disabled={streaming || !input.trim()}
+            aria-label="Enviar mensaje"
+            className="press-shrink shrink-0 inline-flex items-center justify-center h-[42px] w-[42px] rounded-lg bg-accent-brand text-white hover:bg-accent-brand-deep disabled:bg-border-strong disabled:cursor-not-allowed transition-colors"
+          >
+            {streaming ? (
+              <span className="inline-block w-3.5 h-3.5 border-2 border-white/40 border-t-white rounded-full motion-safe:animate-spin" />
+            ) : (
+              <Send className="h-4 w-4" />
+            )}
+          </button>
+        </div>
+      </div>
+    </section>
+  )
+
+  // Tabs mobile: metadata declarativa (reusa los colores de nivel del header).
+  const mobileTabs: {
+    key: "consigna" | "editor" | "tutor"
+    label: string
+    icon: React.ReactNode
+    colorVar: string
+  }[] = [
+    { key: "consigna", label: "Consigna", icon: <BookOpen className="h-4 w-4" />, colorVar: "var(--color-level-n1)" },
+    { key: "editor", label: "Editor", icon: <Code2 className="h-4 w-4" />, colorVar: "var(--color-level-n3)" },
+    { key: "tutor", label: "Tutor", icon: <MessageSquare className="h-4 w-4" />, colorVar: "var(--color-level-n4)" },
+  ]
+
   return (
     // Wrapper de altura fija — clave para que los 3 paneles (Consigna /
     // Editor / Tutor) tengan scroll INDEPENDIENTE. Sin este wrapper, el
@@ -460,6 +747,20 @@ export function EpisodeView({ episodeId, onExit, ejercicioContext }: EpisodeView
         })()}
         <div className="ml-auto flex items-center gap-1">
           <HelpButton title="Tutor Socratico" content={helpContent.episode} />
+          {/* El docente decide por TP si se puede pausar/retomar (permite_pausa).
+              undefined = backwards-compat (endpoint que no lo popula) → permitido. */}
+          {tarea?.permite_pausa !== false && (
+            <button
+              type="button"
+              onClick={handlePauseExit}
+              data-testid="pause-episode-button"
+              title="Salí ahora y retomá este episodio más tarde, justo donde lo dejaste. Tu progreso queda guardado."
+              className="press-shrink inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium border border-border rounded-md text-body hover:bg-surface-alt transition-colors"
+            >
+              <PauseCircle className="h-3 w-3" />
+              Seguir después
+            </button>
+          )}
           <button
             type="button"
             onClick={handleClose}
@@ -488,241 +789,78 @@ export function EpisodeView({ episodeId, onExit, ejercicioContext }: EpisodeView
         </div>
       )}
 
-      {/* ═══ 3 PANELES REDIMENSIONABLES: Consigna · Editor · Tutor ═══════ */}
-      <PanelGroup
-        orientation="horizontal"
-        className="flex-1 p-4 min-h-0"
-      >
-        <Panel defaultSize={33} minSize={15} className="flex">
-        {/* Panel 1 — Consigna (N1) */}
-        <section
-          className="animate-fade-in-up animate-delay-50 flex-1 flex flex-col rounded-xl border border-border bg-surface overflow-hidden shadow-[0_1px_3px_-1px_rgba(0,0,0,0.04)]"
-          aria-label="Consigna del problema"
-        >
-          <PanelHeader
-            level="N1"
-            label="Consigna"
-            icon={<BookOpen className="h-3.5 w-3.5" />}
-            colorVar="var(--color-level-n1)"
-          />
-          <EnunciadoPanel
-            tarea={tarea}
-            episodeId={closed ? null : episodeId}
-            ejercicioOrden={ejercicioContext?.ejercicioOrden ?? null}
-          />
-        </section>
-        </Panel>
-
-        <PanelResizeHandle className="group relative w-2 mx-0.5 flex items-center justify-center cursor-col-resize">
-          <span className="block h-12 w-0.5 rounded-full bg-border-soft group-hover:bg-accent-brand group-data-[resize-handle-active]:bg-accent-brand transition-colors" />
-        </PanelResizeHandle>
-
-        <Panel defaultSize={34} minSize={15} className="flex">
-        {/* Panel 2 — Editor (N3) */}
-        <section
-          className="animate-fade-in-up animate-delay-100 flex-1 flex flex-col rounded-xl border border-border bg-surface overflow-hidden shadow-[0_1px_3px_-1px_rgba(0,0,0,0.04)]"
-          aria-label="Editor de código"
-        >
-          <PanelHeader
-            level="N3"
-            label="Editor de código"
-            icon={<Code2 className="h-3.5 w-3.5" />}
-            colorVar="var(--color-level-n3)"
-            badge="Python"
-          />
-          <CodeEditor
-            initialCode={code}
-            onCodeExecuted={(result) => {
-              setCode(result.code)
-              setMaxActividad((a) => (a < 3 ? 3 : a))
-              // P0 (QA 2026-05-29): emitir codigo_ejecutado al CTR. Sin esto el
-              // classifier no distingue N3/N4 y todo cae a apropiacion_superficial.
-              void emitCodigoEjecutado(episodeId, {
-                code: result.code,
-                stdout: result.output,
-                stderr: result.error ?? "",
-                duration_ms: Math.round(result.durationMs),
-              }).catch((e) => {
-                console.warn("emit codigo_ejecutado failed:", e)
-              })
-            }}
-            onEditDebounced={(snapshot, diffChars, origin) => {
-              setMaxActividad((a) => (a < 2 ? 2 : a))
-              void emitEdicionCodigo(episodeId, {
-                snapshot,
-                diff_chars: Math.abs(diffChars),
-                language: "python",
-                origin,
-              }).catch((e) => {
-                console.warn("emit edicion_codigo failed:", e)
-              })
-            }}
-            onPasteAttempt={(payload) => {
-              void emitPegaIntentada(episodeId, {
-                contenido_longitud: payload.contenidoLongitud,
-                contenido_preview: payload.contenidoPreview,
-                metodo: payload.metodo,
-              }).catch((e) => {
-                console.warn("emit pega_intentada failed:", e)
-              })
-            }}
-            onCopyAttempt={(payload) => {
-              void emitCopiaIntentada(episodeId, {
-                seleccion_chars: payload.seleccionChars,
-                metodo: payload.metodo,
-              }).catch((e) => {
-                console.warn("emit copia_intentada failed:", e)
-              })
-            }}
-          />
-        </section>
-        </Panel>
-
-        <PanelResizeHandle className="group relative w-2 mx-0.5 flex items-center justify-center cursor-col-resize">
-          <span className="block h-12 w-0.5 rounded-full bg-border-soft group-hover:bg-accent-brand group-data-[resize-handle-active]:bg-accent-brand transition-colors" />
-        </PanelResizeHandle>
-
-        <Panel defaultSize={33} minSize={15} className="flex">
-        {/* Panel 3 — Tutor (N4) */}
-        <section
-          className="animate-fade-in-up animate-delay-150 flex-1 flex flex-col rounded-xl border border-border bg-surface overflow-hidden shadow-[0_1px_3px_-1px_rgba(0,0,0,0.04)]"
-          aria-label="Tutor socrático"
-        >
-          <PanelHeader
-            level="N4"
-            label="Tutor socrático"
-            icon={<MessageSquare className="h-3.5 w-3.5" />}
-            colorVar="var(--color-level-n4)"
-            badge={streaming ? "escribiendo…" : "Mistral"}
-            badgePulse={streaming}
-          />
-
-          <div className="flex-1 overflow-y-auto px-4 py-4 space-y-4">
-            {messages.length === 0 && (
-              <div
-                data-testid="chat-pedagogical-contract"
-                className="animate-fade-in mx-auto max-w-prose"
-              >
-                <div className="rounded-xl border border-level-n4/20 bg-level-n4/5 p-5 relative overflow-hidden">
-                  <div
-                    aria-hidden="true"
-                    className="absolute left-0 top-0 bottom-0 w-1"
-                    style={{ background: "var(--color-level-n4)" }}
-                  />
-                  <div className="flex items-center gap-2 mb-3">
-                    <Sparkles
-                      className="h-4 w-4"
-                      style={{ color: "var(--color-level-n4)" }}
-                    />
-                    <span className="text-[10px] uppercase tracking-[0.12em] font-semibold text-muted">
-                      Contrato pedagógico
-                    </span>
-                  </div>
-                  <p className="text-sm font-semibold text-ink mb-1.5 leading-snug">
-                    El tutor no te da la respuesta.
-                  </p>
-                  <p className="text-sm text-body leading-relaxed mb-3">
-                    Te hace preguntas para que llegues vos.
-                  </p>
-                  <p className="text-xs text-muted leading-relaxed">
-                    Empezás vos: contale en qué estás pensando para resolver este ejercicio.
-                  </p>
-                </div>
-              </div>
-            )}
-            {messages.map((m, i) => {
-              const isLastTutor =
-                m.role === "tutor" && messages.findLastIndex((mm) => mm.role === "tutor") === i
-              const isUser = m.role === "user"
+      {/* ═══ PANELES: Consigna · Editor · Tutor ═════════════════════════
+          Desktop (lg+): PanelGroup horizontal redimensionable.
+          Mobile (< lg): tabs con UN panel full-width visible a la vez —
+          a 390px los 3 paneles se comprimian a ~130px c/u, inusable (QA #14).
+          Los 3 paneles estan SIEMPRE montados en ambos layouts: alternamos
+          visibilidad con `hidden`, no con render condicional, para que Monaco
+          conserve su buffer y no haya que re-medir/re-crear el editor. */}
+      {isMobile ? (
+        <div className="flex-1 flex flex-col min-h-0 p-3 gap-3">
+          {/* Selector de tabs */}
+          <div
+            role="tablist"
+            aria-label="Paneles del episodio"
+            className="shrink-0 grid grid-cols-3 gap-1 rounded-lg border border-border-soft bg-surface-alt/60 p-1"
+          >
+            {mobileTabs.map((t) => {
+              const active = activeTab === t.key
               return (
-                <div
-                  key={`${m.ts}-${i}`}
-                  className={`animate-fade-in-up flex items-start gap-2.5 ${
-                    isUser ? "flex-row-reverse" : ""
+                <button
+                  key={t.key}
+                  type="button"
+                  role="tab"
+                  aria-selected={active}
+                  data-testid={`episode-tab-${t.key}`}
+                  onClick={() => setActiveTab(t.key)}
+                  className={`inline-flex items-center justify-center gap-1.5 rounded-md px-2 py-2 text-xs font-medium transition-colors ${
+                    active
+                      ? "bg-surface text-ink shadow-[0_1px_2px_-1px_rgba(0,0,0,0.12)]"
+                      : "text-muted hover:text-body"
                   }`}
+                  style={active ? { color: t.colorVar } : undefined}
                 >
-                  {/* Avatar */}
-                  <div
-                    aria-hidden="true"
-                    className={`shrink-0 inline-flex h-7 w-7 items-center justify-center rounded-full ${
-                      isUser
-                        ? "bg-accent-brand text-white"
-                        : "bg-level-n4/10 text-level-n4 border border-level-n4/30"
-                    }`}
-                    style={!isUser ? { color: "var(--color-level-n4)" } : undefined}
-                  >
-                    {isUser ? (
-                      <User className="h-3.5 w-3.5" />
-                    ) : (
-                      <Bot className="h-3.5 w-3.5" />
-                    )}
-                  </div>
-                  {/* Burbuja */}
-                  <div className={`flex flex-col gap-1 max-w-[80%] ${isUser ? "items-end" : ""}`}>
-                    <span className="text-[10px] uppercase tracking-wider font-semibold text-muted">
-                      {isUser ? "Vos" : "Tutor"}
-                    </span>
-                    <div
-                      data-testid={isLastTutor ? "tutor-message-last" : undefined}
-                      className={`rounded-2xl px-3.5 py-2.5 text-sm whitespace-pre-wrap leading-relaxed ${
-                        isUser
-                          ? "bg-accent-brand text-white rounded-tr-sm"
-                          : "bg-surface-alt text-body border border-border-soft rounded-tl-sm"
-                      }`}
-                    >
-                      {m.content ||
-                        (m.role === "tutor" && streaming ? (
-                          <span className="inline-flex gap-1 items-center text-muted">
-                            <span className="inline-block w-1.5 h-1.5 rounded-full bg-muted animate-pulse-soft" />
-                            <span className="inline-block w-1.5 h-1.5 rounded-full bg-muted animate-pulse-soft animate-delay-150" />
-                            <span className="inline-block w-1.5 h-1.5 rounded-full bg-muted animate-pulse-soft animate-delay-300" />
-                          </span>
-                        ) : (
-                          ""
-                        ))}
-                    </div>
-                  </div>
-                </div>
+                  <span aria-hidden="true">{t.icon}</span>
+                  {t.label}
+                </button>
               )
             })}
-            <div ref={messagesEndRef} />
           </div>
+          {/* Paneles: todos montados, solo el activo visible */}
+          <div className={`flex-1 min-h-0 ${activeTab === "consigna" ? "flex" : "hidden"}`}>
+            {consignaPanel}
+          </div>
+          <div className={`flex-1 min-h-0 ${activeTab === "editor" ? "flex" : "hidden"}`}>
+            {editorPanel}
+          </div>
+          <div className={`flex-1 min-h-0 ${activeTab === "tutor" ? "flex" : "hidden"}`}>
+            {tutorPanel}
+          </div>
+        </div>
+      ) : (
+        <PanelGroup orientation="horizontal" className="flex-1 p-4 min-h-0">
+          <Panel defaultSize={33} minSize={15} className="flex">
+            {consignaPanel}
+          </Panel>
 
-          <div className="border-t border-border-soft p-3 bg-surface-alt/40">
-            <div className="flex gap-2 items-end">
-              <textarea
-                data-testid="tutor-input"
-                value={input}
-                onChange={(e) => setInput(e.target.value)}
-                onKeyDown={(e) => {
-                  if (e.key === "Enter" && !e.shiftKey) {
-                    e.preventDefault()
-                    handleSend()
-                  }
-                }}
-                placeholder="Escribí tu mensaje · Enter para enviar"
-                rows={2}
-                disabled={streaming}
-                className="flex-1 px-3 py-2 text-sm rounded-lg border border-border bg-surface text-ink resize-none focus:outline-none focus:border-accent-brand focus:ring-2 focus:ring-accent-brand/20 transition-all placeholder:text-muted-soft"
-              />
-              <button
-                type="button"
-                onClick={handleSend}
-                disabled={streaming || !input.trim()}
-                aria-label="Enviar mensaje"
-                className="press-shrink shrink-0 inline-flex items-center justify-center h-[42px] w-[42px] rounded-lg bg-accent-brand text-white hover:bg-accent-brand-deep disabled:bg-border-strong disabled:cursor-not-allowed transition-colors"
-              >
-                {streaming ? (
-                  <span className="inline-block w-3.5 h-3.5 border-2 border-white/40 border-t-white rounded-full motion-safe:animate-spin" />
-                ) : (
-                  <Send className="h-4 w-4" />
-                )}
-              </button>
-            </div>
-          </div>
-        </section>
-        </Panel>
-      </PanelGroup>
+          <PanelResizeHandle className="group relative w-2 mx-0.5 flex items-center justify-center cursor-col-resize">
+            <span className="block h-12 w-0.5 rounded-full bg-border-soft group-hover:bg-accent-brand group-data-[resize-handle-active]:bg-accent-brand transition-colors" />
+          </PanelResizeHandle>
+
+          <Panel defaultSize={34} minSize={15} className="flex">
+            {editorPanel}
+          </Panel>
+
+          <PanelResizeHandle className="group relative w-2 mx-0.5 flex items-center justify-center cursor-col-resize">
+            <span className="block h-12 w-0.5 rounded-full bg-border-soft group-hover:bg-accent-brand group-data-[resize-handle-active]:bg-accent-brand transition-colors" />
+          </PanelResizeHandle>
+
+          <Panel defaultSize={33} minSize={15} className="flex">
+            {tutorPanel}
+          </Panel>
+        </PanelGroup>
+      )}
 
       <ReflectionModal
         isOpen={reflectionTargetId !== null}

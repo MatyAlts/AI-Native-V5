@@ -84,7 +84,11 @@ class ComisionOut(ComisionBase):
     model_config = ConfigDict(from_attributes=True)
 
     id: UUID
-    tenant_id: UUID
+    # `tenant_id` puede salir `None` cuando el response se redacta para un
+    # cliente no privilegiado (alumno) — ver `_redact_tenant` en
+    # routes/comisiones. El `tenant_id` real habilitaría forjar headers
+    # X-Tenant-Id contra los servicios internos (fix QA #2).
+    tenant_id: UUID | None = None
     materia_id: UUID
     periodo_id: UUID
     # Nombre/código de la materia, para distinguir comisiones de distintas

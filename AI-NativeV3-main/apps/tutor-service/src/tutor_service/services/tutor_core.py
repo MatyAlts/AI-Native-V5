@@ -27,7 +27,7 @@ from tutor_service.metrics import (
     tutor_active_sessions_count,
     tutor_response_duration_seconds,
 )
-from tutor_service.services.academic_client import AcademicClient
+from tutor_service.services.academic_client import AcademicClient, TareaPracticaResponse
 from tutor_service.services.clients import (
     AIGatewayClient,
     ContentClient,
@@ -704,16 +704,11 @@ class TutorCore:
             HTTPException 404/403/409 — episodio inexistente, de otro
             estudiante, o no reanudable (cerrado / TP fuera de plazo).
         """
-        existing = await self.sessions.get(episode_id)
-        if existing is not None:
-            return {
-                "episode_id": existing.episode_id,
-                "problema_id": None,  # la sesión no guarda problema_id; el caller ya lo tiene
-                "comision_id": existing.comision_id,
-                "ejercicio_id": existing.ejercicio_id,
-                "ejercicio_orden": existing.ejercicio_orden,
-            }
-
+        # Authz ANTES del atajo idempotente: validar existencia/tenant/dueño
+        # contra el CTR antes de mirar la sesión Redis. Si el early-return por
+        # `existing` corriera primero, un no-dueño con sesión viva recibiría
+        # 200 con el contexto de OTRO alumno. Costo: 1 GET extra al CTR en el
+        # caso idempotente — aceptable y seguro.
         ep = await self.ctr.get_episode(episode_id, tenant_id, TUTOR_SERVICE_USER_ID)
         if ep is None:
             raise HTTPException(
@@ -730,6 +725,20 @@ class TutorCore:
                 status_code=status.HTTP_403_FORBIDDEN,
                 detail="Solo el estudiante dueño del episodio puede retomarlo",
             )
+
+        # Idempotente (solo el dueño legítimo llega acá): si la sesión ya
+        # existe (doble click, dos pestañas), devolvé el contexto vigente sin
+        # tocar nada ni recomputar el estado.
+        existing = await self.sessions.get(episode_id)
+        if existing is not None:
+            return {
+                "episode_id": existing.episode_id,
+                "problema_id": None,  # la sesión no guarda problema_id; el caller ya lo tiene
+                "comision_id": existing.comision_id,
+                "ejercicio_id": existing.ejercicio_id,
+                "ejercicio_orden": existing.ejercicio_orden,
+            }
+
         estado = ep.get("estado")
         if estado not in ("paused", "open"):
             raise HTTPException(
@@ -744,11 +753,20 @@ class TutorCore:
         # condiciones que open_episode. Si el deadline pasó, el episodio queda
         # en pausa para el docente pero el alumno ya no puede retomarlo.
         if self.academic is not None:
-            await self._validate_tarea_practica(
+            tarea = await self._validate_tarea_practica(
                 tarea_id=problema_id,
                 tenant_id=tenant_id,
                 comision_id=comision_id,
             )
+            # Gate de pausa por TP: el docente puede deshabilitar la pausa
+            # voluntaria. Si lo hizo, un episodio que igual quedó `paused`
+            # (timeout o cierre de pestaña) NO es reanudable — la TP debe
+            # completarse en una sola sesión (ej. evaluaciones).
+            if not tarea.permite_pausa:
+                raise HTTPException(
+                    status_code=status.HTTP_409_CONFLICT,
+                    detail="Esta tarea práctica no permite pausar y retomar episodios",
+                )
 
         events: list[dict] = sorted(ep.get("events") or [], key=lambda e: e.get("seq", 0))
 
@@ -1366,9 +1384,13 @@ class TutorCore:
         tenant_id: UUID,
         comision_id: UUID,
         is_recheck: bool = False,
-    ) -> None:
+    ) -> TareaPracticaResponse:
         """Valida que la TP exista, esté publicada, en plazo y de la
         comisión correcta.
+
+        Devuelve la `TareaPracticaResponse` validada (los callers que solo
+        necesitan el efecto de validación pueden ignorar el return; `resume`
+        lo usa para chequear `permite_pausa`).
 
         Hace 5 chequeos. Cada falla escala como HTTPException con status
         code apropiado para que el route handler la propague tal cual.
@@ -1463,6 +1485,7 @@ class TutorCore:
                     detail="Tarea práctica fuera de plazo (deadline pasado)",
                 )
             )
+        return tarea
 
     async def _validate_ejercicio_secuencialidad(
         self,

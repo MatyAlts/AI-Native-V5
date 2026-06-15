@@ -195,3 +195,84 @@ def test_download_200_eventualmente(client: TestClient) -> None:
 def test_download_404_si_job_no_existe(client: TestClient) -> None:
     r = client.get("/api/v1/analytics/cohort/export/00000000-0000-0000-0000-000000000001/download")
     assert r.status_code == 404
+
+
+# ── Gate de membresía en export Caliper/xAPI por episodio (FIX #15) ─────
+# Los endpoints `/export/caliper/{id}` y `/export/xapi/{id}` entregan el
+# registro de aprendizaje completo (pseudónimo, eventos, hashes). NO deben
+# servirlo a quien no pertenece a la comisión del episodio, aunque traiga un
+# X-User-Roles forjado. El gate resuelve la comisión del episodio (desde el
+# `Episode` del ctr_store) y delega en `assert_comision_member` → 403.
+
+EPISODE_ID = "cccccccc-cccc-cccc-cccc-cccccccccccc"
+COMISION_ID = "dddddddd-dddd-dddd-dddd-dddddddddddd"
+
+_FAKE_EVENTS = [
+    {
+        "id": "1",
+        "seq": 0,
+        "event_type": "episodio_abierto",
+        "ts": "2026-06-01T10:00:00Z",
+        "payload": {},
+        "self_hash": "a" * 64,
+        "chain_hash": "b" * 64,
+        "prev_chain_hash": "0" * 64,
+        "labeler_version": "1.2.0",
+        "n_level": None,
+        "student_pseudonym": USER_ID,
+    }
+]
+
+
+@pytest.fixture
+def _gate_setup(monkeypatch):
+    """Prende el enforcement y stubea el fetch de eventos del episodio.
+
+    Devuelve `(comision_id, events)` fijos para no depender de la DB real;
+    el gate (`assert_comision_member`) lo controla cada test por separado.
+    """
+    from analytics_service import config
+    from analytics_service.routes import export_standards
+
+    monkeypatch.setattr(config.settings, "enforce_comision_access", True)
+
+    async def _fake_fetch(episode_id, tenant_id):
+        from uuid import UUID
+
+        return UUID(COMISION_ID), _FAKE_EVENTS
+
+    monkeypatch.setattr(export_standards, "_fetch_episode_events", _fake_fetch)
+    return monkeypatch, export_standards
+
+
+@pytest.mark.parametrize("fmt", ["caliper", "xapi"])
+def test_export_standards_miembro_200(client: TestClient, _gate_setup, fmt: str) -> None:
+    """Dueño/staff miembro de la comisión → 200 con el export."""
+    monkeypatch, export_standards = _gate_setup
+
+    async def _member_ok(user_id, comision_id, tenant_id):
+        return None  # miembro: no levanta
+
+    monkeypatch.setattr(export_standards, "assert_comision_member", _member_ok)
+
+    r = client.get(f"/api/v1/export/{fmt}/{EPISODE_ID}", headers=AUTH_HEADERS)
+    assert r.status_code == 200
+
+
+@pytest.mark.parametrize("fmt", ["caliper", "xapi"])
+def test_export_standards_no_miembro_403(client: TestClient, _gate_setup, fmt: str) -> None:
+    """No-miembro (X-User-Roles forjado) → 403, sin entregar el registro."""
+    from fastapi import HTTPException, status
+
+    monkeypatch, export_standards = _gate_setup
+
+    async def _member_denied(user_id, comision_id, tenant_id):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="No tenes acceso al analisis de esta comision.",
+        )
+
+    monkeypatch.setattr(export_standards, "assert_comision_member", _member_denied)
+
+    r = client.get(f"/api/v1/export/{fmt}/{EPISODE_ID}", headers=AUTH_HEADERS)
+    assert r.status_code == 403

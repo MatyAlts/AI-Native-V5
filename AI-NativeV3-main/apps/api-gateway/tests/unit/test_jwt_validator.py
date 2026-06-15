@@ -128,13 +128,16 @@ async def test_token_expirado_falla(validator, rsa_key_pair) -> None:
 
 async def test_token_con_issuer_incorrecto_falla(validator, rsa_key_pair) -> None:
     token = _make_token(rsa_key_pair["private_pem"], issuer="http://evil/realms/fake")
-    with pytest.raises(JWTValidationError, match="[Ii]ssuer inválido"):
+    # fix QA #5: el mensaje al cliente es genérico (no revela el issuer esperado);
+    # el detalle queda solo en logs server-side.
+    with pytest.raises(JWTValidationError, match="Token inválido"):
         await validator.validate(token)
 
 
 async def test_token_con_audience_incorrecta_falla(validator, rsa_key_pair) -> None:
     token = _make_token(rsa_key_pair["private_pem"], audience="other-service")
-    with pytest.raises(JWTValidationError, match="[Aa]udience inválida"):
+    # fix QA #5: mensaje genérico (no revela la audience esperada).
+    with pytest.raises(JWTValidationError, match="Token inválido"):
         await validator.validate(token)
 
 

@@ -94,6 +94,8 @@ class TareaPracticaService:
                 "created_via_ai": data.created_via_ai,
                 # ADR-041: propagate unidad_id at creation
                 "unidad_id": getattr(data, "unidad_id", None),
+                # El docente decide si los episodios de esta TP son pausables.
+                "permite_pausa": data.permite_pausa,
             }
         )
 
@@ -115,7 +117,10 @@ class TareaPracticaService:
     # publicado sin forkear una versión nueva (fix plataforma 2026-06-10 #5).
     # Sigue siendo DRIFT_TRIGGERING_FIELD: en instancias derivadas de template
     # el cambio marca has_drift como cualquier edición de campo canónico.
-    _MUTABLE_REGARDLESS_OF_ESTADO = {"unidad_id", "fecha_fin"}
+    # `permite_pausa`: decisión operativa del docente (no contenido pedagógico),
+    # editable en TPs published sin forkear versión. NO está en
+    # DRIFT_TRIGGERING_FIELDS — no forma parte de la fuente canónica del template.
+    _MUTABLE_REGARDLESS_OF_ESTADO = {"unidad_id", "fecha_fin", "permite_pausa"}
 
     async def update(self, id_: UUID, data: TareaPracticaUpdate, user: User) -> TareaPractica:
         obj = await self.repo.get_or_404(id_)

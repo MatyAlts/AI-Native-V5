@@ -13,7 +13,7 @@ from starlette.responses import JSONResponse
 
 from api_gateway.services.rate_limit import (
     RateLimiter,
-    config_for_path,
+    config_for,
     principal_from_request,
 )
 
@@ -44,7 +44,9 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
             tenant_id=request.headers.get("x-tenant-id"),
             client_host=request.client.host if request.client else None,
         )
-        config = config_for_path(path)
+        # Anónimos (principal "ip:", sin X-User-Id) caen al cap estricto;
+        # autenticados ("u:"/"t:") usan el config del path sin cambios.
+        config = config_for(principal, path)
 
         try:
             result = await self.limiter.check(principal, config)

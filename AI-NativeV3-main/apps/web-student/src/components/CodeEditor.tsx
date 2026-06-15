@@ -19,6 +19,7 @@
  */
 import type { editor as MonacoEditor } from "monaco-editor"
 import { type ReactNode, useEffect, useRef, useState } from "react"
+import { extractPyodideErrorLine } from "../lib/pyodideError"
 
 type PyodideAPI = {
   runPythonAsync(code: string): Promise<unknown>
@@ -497,14 +498,10 @@ for _m in [k for k in list(_tutor_sys.modules) if k.split(".")[0] in _TUTOR_BLOC
       // tiene la salida real acumulada que viaja en el evento CTR codigo_ejecutado.
       onCodeExecuted?.({ code, output: outputBufferRef.current, error: null, durationMs: elapsed })
     } catch (e) {
-      const raw = String(e)
-      // Para el timeout mostramos solo el mensaje pedagógico (la última línea
-      // del traceback), no el stack del wrapper. El CTR registra lo mismo que
-      // ve el alumno.
-      const timeoutLine = raw
-        .split("\n")
-        .find((line) => line.startsWith("TimeoutError:"))
-      const errMsg = timeoutLine ? timeoutLine.replace("TimeoutError: ", "⏱ ") : raw
+      // Mostramos SOLO la última línea de excepción del traceback (ver
+      // extractPyodideErrorLine), nunca el stack completo de Pyodide. El CTR
+      // registra lo mismo que ve el alumno (errMsg viaja al evento de abajo).
+      const errMsg = extractPyodideErrorLine(String(e))
       setError(errMsg)
       const elapsed = performance.now() - started
       onCodeExecuted?.({ code, output: outputBufferRef.current, error: errMsg, durationMs: elapsed })

@@ -494,28 +494,28 @@ class ComisionService:
 
     # ── Inscripciones de comision ──────────────────────────────────────
 
-    # Roles privilegiados que pueden ver pseudonyms de toda la comisión.
-    # Cualquier otro rol (estudiante, oyente, etc.) recibe SOLO su propia
-    # inscripción (filtrada por student_pseudonym = user.id) — fix QA A11
-    # contra el leak de student_pseudonyms a estudiantes.
-    _PRIVILEGED_ROLES_INSCRIPCIONES: frozenset[str] = frozenset(
-        {"docente", "docente_admin", "superadmin", "jtp", "auxiliar"}
-    )
-
     async def list_inscripciones(
-        self, comision_id: UUID, user: User | None = None
+        self,
+        comision_id: UUID,
+        user: User | None = None,
+        is_staff: bool = True,
     ) -> builtins.list[Inscripcion]:
         """Devuelve las inscripciones activas de una comision.
 
-        Filtrado por rol (fix QA A11):
-          - Roles privilegiados (docente / docente_admin / superadmin /
-            jtp / auxiliar) → ven todos los pseudonyms.
-          - Cualquier otro caller (estudiante) → solo ve su propia
+        Filtrado por MEMBRESÍA de comisión (fix QA #10), NO por rol: el
+        gateway le infla el rol `docente` a todo alumno, así que filtrar
+        por rol era inútil. El caller (ruta) ya resolvió la membresía con
+        `assert_comision_access` (que además tira 403 si el caller no
+        pertenece a la comisión) y propaga el resultado en `is_staff`:
+          - `is_staff=True` (staff/oversight con membresía en
+            `usuarios_comision`) → ve todos los pseudonyms.
+          - `is_staff=False` (alumno inscripto) → solo ve su propia
             inscripción (`WHERE student_pseudonym = user.id`); si no
-            está inscripto, response vacío.
+            tiene fila propia, response vacío. Cierra el leak de
+            pseudonyms entre alumnos.
 
         `user=None` mantiene compat con callers internos que ya filtraron
-        autorización aguas arriba — tratado como privilegiado.
+        autorización aguas arriba — tratado como staff.
         """
         await self.repo.get_or_404(comision_id)
         stmt = (
@@ -526,10 +526,8 @@ class ComisionService:
             )
             .order_by(Inscripcion.id)
         )
-        if user is not None and not (
-            user.roles & self._PRIVILEGED_ROLES_INSCRIPCIONES
-        ):
-            # Caller no privilegiado (estudiante) — solo su propia fila
+        if user is not None and not is_staff:
+            # Caller no-staff (alumno inscripto) — solo su propia fila
             stmt = stmt.where(Inscripcion.student_pseudonym == user.id)
         result = await self.session.execute(stmt)
         return list(result.scalars().all())
