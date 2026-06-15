@@ -407,6 +407,7 @@ export function TareasPracticasView({ comisionId, getToken }: Props) {
                 fecha_fin: values.fecha_fin,
                 peso: values.peso,
                 rubrica: values.rubrica,
+                permite_pausa: values.permite_pausa,
               }
               await tareasPracticasApi.update(modal.tarea.id, patch, getToken)
               closeModal()
@@ -432,6 +433,7 @@ export function TareasPracticasView({ comisionId, getToken }: Props) {
                 fecha_fin: values.fecha_fin,
                 peso: values.peso,
                 rubrica: values.rubrica,
+                permite_pausa: values.permite_pausa,
               }
               await tareasPracticasApi.newVersion(modal.tarea.id, patch, getToken)
               closeModal()
@@ -712,6 +714,7 @@ interface FormValues {
   fecha_fin: string | null
   peso: string
   rubrica: Record<string, unknown> | null
+  permite_pausa: boolean
   template_id?: string | null
 }
 
@@ -745,6 +748,9 @@ function TareaFormModal({
   const [rubricaRaw, setRubricaRaw] = useState(() =>
     initial?.rubrica ? JSON.stringify(initial.rubrica, null, 2) : "",
   )
+  // permite_pausa: en create arranca habilitado (default del backend); en
+  // edit/version respeta el valor de la TP existente.
+  const [permitePausa, setPermitePausa] = useState(initial?.permite_pausa ?? true)
 
   const [submitting, setSubmitting] = useState(false)
   const [formError, setFormError] = useState<string | null>(null)
@@ -824,6 +830,7 @@ function TareaFormModal({
         fecha_fin: localInputToIso(fechaFin),
         peso,
         rubrica,
+        permite_pausa: permitePausa,
         ...(mode === "create" && templateId ? { template_id: templateId } : {}),
       })
     } catch (e) {
@@ -951,6 +958,25 @@ function TareaFormModal({
             ejercicios, el alumno verá el enunciado de cada ejercicio y este campo queda
             ignorado en runtime (fallback histórico pre-ADR-047).
           </p>
+        </div>
+
+        <div className="rounded-lg border border-border bg-surface-alt/40 p-3">
+          <label className="flex items-start gap-2 cursor-pointer">
+            <input
+              type="checkbox"
+              data-testid="tp-form-permite-pausa"
+              checked={permitePausa}
+              onChange={(e) => setPermitePausa(e.target.checked)}
+              className="mt-0.5"
+            />
+            <span className="text-sm text-ink">
+              <span className="font-medium">Permitir pausar y retomar</span>
+              <span className="block text-xs text-muted leading-snug mt-0.5">
+                El alumno puede salir de un episodio y continuarlo despues donde lo dejo.
+                Desactivalo si la TP debe resolverse en una sola sesion (ej. evaluacion).
+              </span>
+            </span>
+          </label>
         </div>
 
         <div className="grid grid-cols-2 gap-3">

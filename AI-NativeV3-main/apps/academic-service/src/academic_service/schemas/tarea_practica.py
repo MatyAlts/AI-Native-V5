@@ -29,6 +29,9 @@ class TareaPracticaBase(BaseModel):
     # ADR-034 (Sec 9): test cases ejecutables. Cada elemento:
     # {id, name, type, code, expected, is_public, weight}.
     test_cases: list[dict[str, Any]] = Field(default_factory=list)
+    # El docente decide si el alumno puede pausar/retomar episodios de esta TP
+    # (botón "Seguir después"). True por default (retrocompat ADR-025/055).
+    permite_pausa: bool = True
 
     @model_validator(mode="after")
     def check_dates(self) -> TareaPracticaBase:
@@ -63,6 +66,8 @@ class TareaPracticaUpdate(BaseModel):
     test_cases: list[dict[str, Any]] | None = None
     # ADR-041: asignación opcional a Unidad temática. null = quitar de la Unidad.
     unidad_id: UUID | None = None
+    # Editable incluso en TPs published (decisión operativa, no contenido).
+    permite_pausa: bool | None = None
 
 
 class TareaPracticaOut(TareaPracticaBase):

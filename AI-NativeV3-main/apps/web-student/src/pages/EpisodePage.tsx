@@ -14,7 +14,7 @@
  * limpiamos sessionStorage y llamamos onExit().
  */
 import { HelpButton, MarkdownRenderer } from "@platform/ui"
-import { Bot, BookOpen, Code2, LogOut, MessageSquare, Send, ShieldAlert, Sparkles, User } from "lucide-react"
+import { Bot, BookOpen, Code2, LogOut, MessageSquare, PauseCircle, Send, ShieldAlert, Sparkles, User } from "lucide-react"
 import { useCallback, useEffect, useRef, useState } from "react"
 import { Group as PanelGroup, Panel, Separator as PanelResizeHandle } from "react-resizable-panels"
 import { CodeEditor } from "../components/CodeEditor"
@@ -365,6 +365,25 @@ export function EpisodeView({ episodeId, onExit, ejercicioContext, getToken }: E
       setClassificationFailed(true)
     }
     window.sessionStorage.removeItem(ACTIVE_EPISODE_KEY)
+  }
+
+  // Salir SIN cerrar: abandono explícito (reason="explicit", caller=alumno).
+  // El backend lo registra en la cadena CTR y el partition_worker deja el
+  // episodio en `paused` (ADR-025/055); al volver, la hidratación lo reanuda
+  // sola via resumeEpisode (línea ~238) y sigue justo donde lo dejó. A
+  // diferencia de handleClose, NO clasificamos ni disparamos reflexión, y NO
+  // borramos ACTIVE_EPISODE_KEY: queremos que el home le ofrezca retomarlo.
+  // Seteamos el guard local para no re-emitir en el beforeunload que dispara
+  // al desmontar/navegar (idempotente igual en backend, fix QA #9).
+  async function handlePauseExit() {
+    setError(null)
+    abandonEmittedRef.current = true
+    await emitEpisodioAbandonado(
+      episodeId,
+      { reason: "explicit", last_activity_seconds_ago: 0 },
+      getToken,
+    )
+    onExit()
   }
 
   const elapsedSeconds = useElapsedSeconds(closed ? null : episodeId)
@@ -728,6 +747,20 @@ export function EpisodeView({ episodeId, onExit, ejercicioContext, getToken }: E
         })()}
         <div className="ml-auto flex items-center gap-1">
           <HelpButton title="Tutor Socratico" content={helpContent.episode} />
+          {/* El docente decide por TP si se puede pausar/retomar (permite_pausa).
+              undefined = backwards-compat (endpoint que no lo popula) → permitido. */}
+          {tarea?.permite_pausa !== false && (
+            <button
+              type="button"
+              onClick={handlePauseExit}
+              data-testid="pause-episode-button"
+              title="Salí ahora y retomá este episodio más tarde, justo donde lo dejaste. Tu progreso queda guardado."
+              className="press-shrink inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium border border-border rounded-md text-body hover:bg-surface-alt transition-colors"
+            >
+              <PauseCircle className="h-3 w-3" />
+              Seguir después
+            </button>
+          )}
           <button
             type="button"
             onClick={handleClose}

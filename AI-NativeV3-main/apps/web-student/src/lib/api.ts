@@ -521,6 +521,9 @@ export interface AvailableTarea {
   /** Unidad temática a la que pertenece la TP (null si está sin asignar).
    * Opcional para backwards-compat con endpoints que no la populan. */
   unidad_id?: string | null
+  /** El docente decide si el alumno puede pausar/retomar episodios de esta TP.
+   * Opcional para backwards-compat: undefined se trata como permitido (true). */
+  permite_pausa?: boolean
   /** Ejercicios asociados (banco reusable, ADR-047). Opcional — solo presente
    * cuando el endpoint los popula via `?include=ejercicios`. */
   ejercicios?: Array<{
