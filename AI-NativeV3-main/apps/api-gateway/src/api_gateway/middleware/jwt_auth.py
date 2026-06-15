@@ -16,10 +16,12 @@ Al validar exitosamente:
 from __future__ import annotations
 
 import logging
+import time
 import uuid
 from collections.abc import Callable
 
 from fastapi import Request, Response
+from platform_observability import sign_headers
 from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.responses import JSONResponse
 
@@ -61,6 +63,7 @@ class JWTMiddleware(BaseHTTPMiddleware):
         demo_user_email: str = "",
         demo_user_roles: str = "",
         demo_user_realm: str = "",
+        gateway_shared_secret: str = "",
     ) -> None:
         super().__init__(app)
         self.validator = validator
@@ -70,6 +73,11 @@ class JWTMiddleware(BaseHTTPMiddleware):
         self.demo_user_email = demo_user_email
         self.demo_user_roles = demo_user_roles
         self.demo_user_realm = demo_user_realm
+        # Defensa en profundidad: si está seteado, el gateway firma los
+        # headers X-* de identidad (HMAC-SHA256) para que los servicios
+        # internos puedan PROBAR que vienen del gateway. Vacío => no firma
+        # (comportamiento legacy intacto).
+        self.gateway_shared_secret = gateway_shared_secret
 
     async def dispatch(self, request: Request, call_next: Callable) -> Response:
         path = request.url.path
@@ -141,6 +149,8 @@ class JWTMiddleware(BaseHTTPMiddleware):
 
         # Reescribir headers X-* autoritativamente
         # (scope["headers"] es una lista de tuplas byte-encoded)
+        # También se purgan los headers de firma que pudiera traer el cliente
+        # (x-gateway-signature/x-gateway-ts): solo el gateway los emite.
         headers = [
             (k, v)
             for k, v in request.scope["headers"]
@@ -151,17 +161,38 @@ class JWTMiddleware(BaseHTTPMiddleware):
                 b"x-user-email",
                 b"x-user-roles",
                 b"x-user-realm",
+                b"x-gateway-signature",
+                b"x-gateway-ts",
             )
         ]
+        roles_str = ",".join(sorted(principal.roles))
         headers.extend(
             [
                 (b"x-user-id", principal.user_id.encode()),
                 (b"x-tenant-id", principal.tenant_id.encode()),
                 (b"x-user-email", principal.email.encode()),
-                (b"x-user-roles", ",".join(sorted(principal.roles)).encode()),
+                (b"x-user-roles", roles_str.encode()),
                 (b"x-user-realm", principal.realm.encode()),
             ]
         )
+        # Defensa en profundidad: firmar los headers de identidad para que el
+        # servicio downstream pueda probar que vienen del gateway. Solo si hay
+        # secreto compartido configurado (default vacío => no firma).
+        if self.gateway_shared_secret:
+            ts = int(time.time())
+            signature = sign_headers(
+                self.gateway_shared_secret,
+                principal.user_id,
+                principal.tenant_id,
+                roles_str,
+                ts,
+            )
+            headers.extend(
+                [
+                    (b"x-gateway-signature", signature.encode()),
+                    (b"x-gateway-ts", str(ts).encode()),
+                ]
+            )
         request.scope["headers"] = headers
 
         return await _add_request_id(request, call_next)

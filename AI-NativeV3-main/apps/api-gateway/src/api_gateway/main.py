@@ -79,6 +79,7 @@ app.add_middleware(
     demo_user_email=settings.demo_user_email,
     demo_user_roles=settings.demo_user_roles,
     demo_user_realm=settings.demo_user_realm,
+    gateway_shared_secret=settings.gateway_shared_secret,
 )
 
 # ── Rate limit (F4) ─────────────────────────────────────────────────

@@ -12,9 +12,42 @@ from dataclasses import dataclass
 from uuid import UUID
 
 from fastapi import Depends, Header, HTTPException, status
+from platform_observability import verify_gateway_signature
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from academic_service.config import settings
 from academic_service.db import tenant_session
+
+
+def _enforce_gateway_signature(
+    x_user_id: str | None,
+    x_tenant_id: str | None,
+    x_user_roles: str | None,
+    x_gateway_signature: str | None,
+    x_gateway_ts: str | None,
+) -> None:
+    """Defensa en profundidad: exige firma HMAC del gateway si el flag está ON.
+
+    Con ``require_gateway_signature=False`` (default) es un no-op total — el
+    comportamiento runtime no cambia. Con el flag ON, valida que los headers
+    de identidad vengan firmados por el gateway (procedencia), sin re-verificar
+    el JWT. Firma ausente o inválida => 401.
+    """
+    if not settings.require_gateway_signature:
+        return
+    ok = verify_gateway_signature(
+        settings.gateway_shared_secret,
+        x_user_id or "",
+        x_tenant_id or "",
+        x_user_roles or "",
+        x_gateway_ts,  # type: ignore[arg-type]  # verify maneja None/no-int
+        x_gateway_signature or "",
+    )
+    if not ok:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Firma del gateway ausente o invalida",
+        )
 
 
 @dataclass(frozen=True)
@@ -35,6 +68,8 @@ async def get_current_user(
     x_user_id: str | None = Header(default=None),
     x_user_email: str | None = Header(default=None),
     x_user_roles: str | None = Header(default=None),
+    x_gateway_signature: str | None = Header(default=None),
+    x_gateway_ts: str | None = Header(default=None),
 ) -> User:
     """Extrae el usuario del header Authorization (JWT Keycloak).
 
@@ -44,6 +79,11 @@ async def get_current_user(
     servicios downstream solo los leen, confiando en la validación
     del gateway.
     """
+    # Defensa en profundidad (default OFF): si el flag está ON, exigir que el
+    # gateway haya firmado los headers de identidad ANTES de confiar en ellos.
+    _enforce_gateway_signature(
+        x_user_id, x_tenant_id, x_user_roles, x_gateway_signature, x_gateway_ts
+    )
     # Path de desarrollo/test: headers X-* inyectados por el api-gateway
     # o por el cliente de tests
     if x_user_id and x_tenant_id and x_user_email:

@@ -424,6 +424,10 @@ class _NoopInstrument:
         pass
 
 
+from platform_observability.gateway_trust import (
+    sign_headers,
+    verify_gateway_signature,
+)
 from platform_observability.health import (
     DEFAULT_HTTP_CACHE_TTL_SEC,
     DEFAULT_TIMEOUT_SEC,
@@ -449,4 +453,6 @@ __all__ = [
     "get_tracer",
     "setup_metrics",
     "setup_observability",
+    "sign_headers",
+    "verify_gateway_signature",
 ]
