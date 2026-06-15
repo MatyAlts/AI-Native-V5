@@ -30,6 +30,7 @@ from academic_service.schemas import (
     UsuarioComisionOut,
 )
 from academic_service.services import ComisionService, PeriodoService
+from academic_service.services.comision_service import assert_comision_access
 
 logger = logging.getLogger(__name__)
 
@@ -42,9 +43,9 @@ _CLASSIFIER_HASH_FALLBACK = "d" * 64
 periodos_router = APIRouter(prefix="/api/v1/periodos", tags=["periodos"])
 comisiones_router = APIRouter(prefix="/api/v1/comisiones", tags=["comisiones"])
 
-# Roles que pueden ver el `invite_code` de una comisión. El estudiante NO:
-# con el código se auto-inscribe sin invitación del docente (RN privacy del
-# piloto). Mismo set que `_PRIVILEGED_ROLES_INSCRIPCIONES` del service.
+# Roles que pueden ver el `invite_code` (y el `tenant_id`) de una comisión.
+# El estudiante NO: con el código se auto-inscribe sin invitación del docente
+# (RN privacy del piloto); el `tenant_id` habilitaría forjar X-Tenant-Id.
 _INVITE_CODE_PRIVILEGED_ROLES: frozenset[str] = frozenset(
     {"docente", "docente_admin", "superadmin", "jtp", "auxiliar"}
 )
@@ -55,6 +56,20 @@ def _redact_invite_code(item: ComisionOut, user: User) -> ComisionOut:
     if user.roles & _INVITE_CODE_PRIVILEGED_ROLES:
         return item
     return item.model_copy(update={"invite_code": None})
+
+
+def _redact_tenant(item: ComisionOut, user: User) -> ComisionOut:
+    """Oculta `tenant_id` a usuarios no privilegiados (fix QA #2).
+
+    El `tenant_id` es la pieza que habilita el bypass del aislamiento
+    multi-tenant: un alumno que lo conoce puede forjar headers
+    `X-Tenant-Id` contra los servicios internos expuestos. NO debe salir
+    al cliente alumno. Los roles docente/admin sí pueden verlo (lo
+    necesitan para operar). Mismo set que `_redact_invite_code`.
+    """
+    if user.roles & _INVITE_CODE_PRIVILEGED_ROLES:
+        return item
+    return item.model_copy(update={"tenant_id": None})
 
 
 # ── Periodos ───────────────────────────────────────────
@@ -139,7 +154,11 @@ async def join_comision(
     """
     svc = ComisionService(db)
     comision = await svc.join_by_invite_code(data.invite_code, user)
-    return _redact_invite_code(ComisionOut.model_validate(comision), user)
+    out = ComisionOut.model_validate(comision)
+    # El `tenant_id` NO debe salir al alumno (habilitaría forjar
+    # X-Tenant-Id contra servicios internos — fix QA #2). El web-student
+    # ignora el body del join (recarga la lista), así que no rompe nada.
+    return _redact_tenant(_redact_invite_code(out, user), user)
 
 
 @comisiones_router.get("", response_model=ListResponse[ComisionOut])
@@ -351,16 +370,23 @@ async def list_inscripciones(
     user: User = Depends(require_permission("inscripcion", "read")),
     db: AsyncSession = Depends(get_db),
 ) -> ListResponse[InscripcionOut]:
-    """Lista inscripciones de una comisión con filtrado por rol (fix QA A11).
+    """Lista inscripciones de una comisión con filtrado por membresía (fix QA #10).
 
-    - Roles privilegiados (docente, docente_admin, superadmin, jtp,
-      auxiliar) → ven todos los pseudonyms inscriptos.
-    - Estudiantes → solo ven su propia inscripción (WHERE
-      student_pseudonym = user.id); si no están inscriptos, devuelve
-      lista vacía. Cierra el leak de pseudonyms entre alumnos.
+    Autorización por MEMBRESÍA de comisión, no por rol: el gateway le
+    infla el rol `docente` a todo alumno, así que un gate por rol es
+    inútil. `assert_comision_access`:
+    - Lanza 403 si el caller NO pertenece a la comisión (ni staff ni
+      inscripto). Cierra el IDOR que dejaba enumerar inscripciones de
+      cualquier comisión.
+    - Devuelve `True` para staff/oversight (membresía en
+      `usuarios_comision`) → ve todas las inscripciones.
+    - Devuelve `False` para alumno inscripto → solo su propia
+      inscripción (WHERE student_pseudonym = user.id). Cierra el leak de
+      pseudonyms entre alumnos.
     """
+    is_staff = await assert_comision_access(db, user, comision_id)
     svc = ComisionService(db)
-    objs = await svc.list_inscripciones(comision_id, user=user)
+    objs = await svc.list_inscripciones(comision_id, user=user, is_staff=is_staff)
     items = [InscripcionOut.model_validate(o) for o in objs]
     return ListResponse(data=items, meta=ListMeta(cursor_next=None))
 

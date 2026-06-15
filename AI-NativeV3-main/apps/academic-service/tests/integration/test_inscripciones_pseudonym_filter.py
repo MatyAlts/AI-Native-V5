@@ -1,9 +1,16 @@
-"""Tests del filtrado por rol en `list_inscripciones` (fix QA A11).
+"""Tests del filtrado por membresía en `list_inscripciones` (fix QA #10).
 
-Cubre el leak de `student_pseudonym` reportado en CLAUDE.md:
-- Estudiante A pega → solo ve su propia inscripción (NO la de B).
-- Docente / docente_admin / superadmin / jtp / auxiliar → ven todas.
-- Estudiante a una comisión donde NO está inscripto → response vacío.
+Cubre el IDOR + leak de `student_pseudonym` reportado en CLAUDE.md. El
+contrato cambió de "filtrado por ROL" a "filtrado por MEMBRESÍA": como el
+gateway le infla el rol `docente` a TODO alumno, filtrar por rol era
+inútil. La ruta resuelve la membresía con `assert_comision_access` (que
+tira 403 si el caller no pertenece a la comisión) y propaga el resultado
+al service vía el parámetro `is_staff`:
+
+- `is_staff=False` (alumno inscripto) → solo ve su propia inscripción
+  (WHERE student_pseudonym = user.id).
+- `is_staff=True` (staff con membresía) → ve todas.
+- `user=None` (caller interno) → ve todas (legacy).
 
 Mock-based (siguen el estilo de `test_tareas_practicas_crud.py`): se
 mockea el repo y la session para validar que el `WHERE` se construya
@@ -73,13 +80,18 @@ def _execute_returning(rows: list) -> AsyncMock:
     return AsyncMock(return_value=result_obj)
 
 
-# ── Caso A: estudiante A solo ve su pseudonym ─────────────────────────
+# ── Caso A: alumno inscripto (is_staff=False) solo ve su pseudonym ─────
 
 
-async def test_estudiante_solo_ve_su_propia_inscripcion(
+async def test_alumno_inscripto_solo_ve_su_propia_inscripcion(
     mock_session, tenant_a_id: UUID
 ) -> None:
-    """Caso A — estudiante A pega, solo recibe su fila (NO la de B)."""
+    """Caso A — alumno inscripto pega, solo recibe su fila (NO la de B).
+
+    `is_staff=False` lo computa la ruta vía `assert_comision_access`
+    (devolvió False = alumno inscripto). El rol `docente` inflado por el
+    gateway YA NO importa — el filtro depende solo de la membresía.
+    """
     svc = ComisionService(mock_session)
     comision_id = uuid4()
     student_a_id = uuid4()
@@ -92,8 +104,9 @@ async def test_estudiante_solo_ve_su_propia_inscripcion(
     only_a = [_fake_inscripcion(uuid4(), tenant_a_id, comision_id, student_a_id)]
     mock_session.execute = _execute_returning(only_a)
 
-    user_a = _user(student_a_id, tenant_a_id, "estudiante")
-    result = await svc.list_inscripciones(comision_id, user=user_a)
+    # Rol `docente` inflado por el gateway — irrelevante: is_staff manda.
+    user_a = _user(student_a_id, tenant_a_id, "estudiante", "docente")
+    result = await svc.list_inscripciones(comision_id, user=user_a, is_staff=False)
 
     assert len(result) == 1
     assert result[0].student_pseudonym == student_a_id
@@ -109,14 +122,19 @@ async def test_estudiante_solo_ve_su_propia_inscripcion(
     assert "student_pseudonym" in where_text
 
 
-# ── Caso B: docente ve todos ──────────────────────────────────────────
+# ── Caso B: staff con membresía (is_staff=True) ve todos ──────────────
 
 
 @pytest.mark.parametrize("rol", ["docente", "docente_admin", "superadmin", "jtp", "auxiliar"])
-async def test_rol_privilegiado_ve_todas_las_inscripciones(
+async def test_staff_con_membresia_ve_todas_las_inscripciones(
     mock_session, tenant_a_id: UUID, rol: str
 ) -> None:
-    """Caso B — roles privilegiados ven todos los pseudonyms."""
+    """Caso B — staff con membresía de comisión ve todos los pseudonyms.
+
+    `is_staff=True` lo computa la ruta vía `assert_comision_access`
+    (membresía en `usuarios_comision` u oversight). El rol acá es
+    ilustrativo; lo que habilita la vista total es `is_staff`.
+    """
     svc = ComisionService(mock_session)
     comision_id = uuid4()
 
@@ -131,30 +149,31 @@ async def test_rol_privilegiado_ve_todas_las_inscripciones(
     mock_session.execute = _execute_returning(rows)
 
     docente = _user(uuid4(), tenant_a_id, rol)
-    result = await svc.list_inscripciones(comision_id, user=docente)
+    result = await svc.list_inscripciones(comision_id, user=docente, is_staff=True)
 
     assert len(result) == 3
     pseudonyms = {r.student_pseudonym for r in result}
     assert pseudonyms == {a, b, c}
 
-    # Validar que el WHERE NO filtró por student_pseudonym (caller priv.)
+    # Validar que el WHERE NO filtró por student_pseudonym (caller staff)
     call_args = mock_session.execute.call_args
     stmt = call_args.args[0]
     where_text = str(stmt.whereclause)
     assert "student_pseudonym" not in where_text
 
 
-# ── Caso C: estudiante en comisión a la que NO está inscripto ─────────
+# ── Caso C: alumno inscripto sin fila propia → lista vacía ────────────
 
 
-async def test_estudiante_no_inscripto_recibe_lista_vacia(
+async def test_alumno_sin_fila_propia_recibe_lista_vacia(
     mock_session, tenant_a_id: UUID
 ) -> None:
-    """Caso C — estudiante pide comisión a la que NO está inscripto.
+    """Caso C — alumno inscripto cuyo pseudonym no matchea ninguna fila.
 
-    El filtro `WHERE student_pseudonym = user.id` no matchea ninguna
-    fila, entonces el response es vacío. NO es 200 con datos (eso era
-    el bug).
+    El filtro `WHERE student_pseudonym = user.id` no matchea, entonces el
+    response es vacío. (El caso del caller que NO pertenece a la comisión
+    se corta antes en la ruta con 403 vía `assert_comision_access` — no
+    llega al service.)
     """
     svc = ComisionService(mock_session)
     comision_id = uuid4()
@@ -165,8 +184,8 @@ async def test_estudiante_no_inscripto_recibe_lista_vacia(
     # Sin filas que matcheen el filtro
     mock_session.execute = _execute_returning([])
 
-    user_outsider = _user(student_id, tenant_a_id, "estudiante")
-    result = await svc.list_inscripciones(comision_id, user=user_outsider)
+    user_alumno = _user(student_id, tenant_a_id, "estudiante", "docente")
+    result = await svc.list_inscripciones(comision_id, user=user_alumno, is_staff=False)
 
     assert result == []
 
@@ -180,7 +199,8 @@ async def test_caller_interno_sin_user_no_filtra(
     """`user=None` mantiene comportamiento legacy (sin filtrado adicional).
 
     Aplica para callers internos que ya filtraron autorización aguas
-    arriba. El WHERE no incluye student_pseudonym.
+    arriba. El WHERE no incluye student_pseudonym. El default
+    `is_staff=True` no afecta este camino (la guarda es `user is not None`).
     """
     svc = ComisionService(mock_session)
     comision_id = uuid4()
