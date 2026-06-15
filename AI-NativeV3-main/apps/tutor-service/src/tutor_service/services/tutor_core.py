@@ -704,16 +704,11 @@ class TutorCore:
             HTTPException 404/403/409 — episodio inexistente, de otro
             estudiante, o no reanudable (cerrado / TP fuera de plazo).
         """
-        existing = await self.sessions.get(episode_id)
-        if existing is not None:
-            return {
-                "episode_id": existing.episode_id,
-                "problema_id": None,  # la sesión no guarda problema_id; el caller ya lo tiene
-                "comision_id": existing.comision_id,
-                "ejercicio_id": existing.ejercicio_id,
-                "ejercicio_orden": existing.ejercicio_orden,
-            }
-
+        # Authz ANTES del atajo idempotente: validar existencia/tenant/dueño
+        # contra el CTR antes de mirar la sesión Redis. Si el early-return por
+        # `existing` corriera primero, un no-dueño con sesión viva recibiría
+        # 200 con el contexto de OTRO alumno. Costo: 1 GET extra al CTR en el
+        # caso idempotente — aceptable y seguro.
         ep = await self.ctr.get_episode(episode_id, tenant_id, TUTOR_SERVICE_USER_ID)
         if ep is None:
             raise HTTPException(
@@ -730,6 +725,20 @@ class TutorCore:
                 status_code=status.HTTP_403_FORBIDDEN,
                 detail="Solo el estudiante dueño del episodio puede retomarlo",
             )
+
+        # Idempotente (solo el dueño legítimo llega acá): si la sesión ya
+        # existe (doble click, dos pestañas), devolvé el contexto vigente sin
+        # tocar nada ni recomputar el estado.
+        existing = await self.sessions.get(episode_id)
+        if existing is not None:
+            return {
+                "episode_id": existing.episode_id,
+                "problema_id": None,  # la sesión no guarda problema_id; el caller ya lo tiene
+                "comision_id": existing.comision_id,
+                "ejercicio_id": existing.ejercicio_id,
+                "ejercicio_orden": existing.ejercicio_orden,
+            }
+
         estado = ep.get("estado")
         if estado not in ("paused", "open"):
             raise HTTPException(
