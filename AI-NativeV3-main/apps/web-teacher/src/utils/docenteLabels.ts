@@ -18,7 +18,7 @@ export const SUBGRUPO_DOCENTE: Record<string, string> = {
   desenganchado: "Poco enganchado con la tarea",
   colaborador_reflexivo: "Colaboro con la IA reflexionando",
   colaborador_funcional: "Uso la IA de forma funcional",
-  dependiente: "Dependio de la IA",
+  dependiente_delegador: "Dependio de la IA",
   indeterminado: "Sesion muy corta / sin señal",
 }
 
@@ -237,7 +237,10 @@ export function studentShortLabel(
 // para auditoría/investigador (paper §4.4 + ADR-053).
 export interface EstadoDocenteExplicado {
   resumen: string
-  factores: string[]
+  // Acciones concretas para acompañar al alumno, derivadas de las coherencias
+  // bajas. NO son "observaciones" que juzgan (eso disonaba con el perfil del
+  // subgrupo): son qué puede hacer el docente. Vacío = nada urgente a reforzar.
+  acciones: string[]
   sinActividad?: boolean
 }
 
@@ -260,7 +263,7 @@ const SUBGRUPO_RESUMEN_DOCENTE: Record<string, string> = {
     "Uso el tutor para pensar: pregunto, experimento por su cuenta y siguio elaborando sobre lo que recibia.",
   colaborador_funcional:
     "Uso el tutor de forma funcional: pidio lo que necesitaba y avanzo, aunque con poca experimentacion propia.",
-  dependiente:
+  dependiente_delegador:
     "Se apoyo en el tutor para resolver, con poca elaboracion propia. Conviene conversarlo con el alumno.",
 }
 
@@ -285,72 +288,52 @@ export function explicarEstadoDocente(
   subgrupoKey?: string | null,
 ): EstadoDocenteExplicado {
   // Episodio vacío: solo abrió/cerró, sin actividad cognitiva (niveles N1-N4).
-  // Las métricas de coherencia caen a defaults neutros (~0.5) que NO
-  // representan trabajo real — afirmar "trabajo ordenado" seria falso.
   // Decimos la verdad en lugar de inventar señales.
   if (eventosCognitivos === 0) {
     return {
       sinActividad: true,
       resumen:
         "La sesion fue demasiado corta para evaluar: el alumno practicamente solo abrio y cerro el episodio, sin trabajar en el problema.",
-      factores: [
-        "No se registro lectura del enunciado, escritura de codigo, ejecucion ni dialogo con el tutor.",
-      ],
+      acciones: ["Invitalo a retomar el ejercicio en una sesion con mas tiempo."],
     }
   }
 
-  const factores: string[] = []
+  // El RESUMEN sale del subgrupo (perfil real del episodio). Las coherencias NO
+  // se listan como observaciones (disonaban con el perfil): se traducen a
+  // ACCIONES concretas, solo cuando hay algo a reforzar. Una coherencia alta no
+  // genera ruido. Asi la narrativa no se contradice consigo misma.
+  const acciones: string[] = []
+  const sinTutor = !!(subgrupoKey && SUBGRUPOS_SIN_TUTOR.has(subgrupoKey))
 
-  // Ritmo de trabajo (coherencia temporal)
-  if (c.ct_summary !== null) {
-    if (c.ct_summary >= 0.65)
-      factores.push("Trabajo de forma ordenada y sostenida en el tiempo.")
-    else if (c.ct_summary >= 0.35)
-      factores.push("Tuvo un ritmo de trabajo irregular, con idas y vueltas.")
-    else factores.push("Trabajo de forma muy fragmentada, con muchas interrupciones.")
+  // Ritmo de trabajo bajo (coherencia temporal) → continuidad.
+  if ((c.ct_summary ?? 1) < 0.35)
+    acciones.push("Proponele sesiones mas continuas, con menos interrupciones.")
+
+  // Código sin diálogo (coherencia código-discurso). Para los perfiles que
+  // trabajaron SIN tutor, hacerlo es la definicion del perfil, no una falta:
+  // ahi no se sugiere "dialogar mas con el tutor".
+  if (!sinTutor) {
+    if ((c.ccd_orphan_ratio ?? 0) >= 0.5)
+      acciones.push("Pedile que le cuente al tutor que espera lograr antes de ejecutar el codigo.")
+    else if ((c.ccd_mean ?? 1) < 0.35)
+      acciones.push("Animalo a dialogar mas con el tutor mientras programa, para ordenar el razonamiento.")
   }
 
-  // Código vs. diálogo (coherencia código-discurso)
-  if (c.ccd_orphan_ratio !== null && c.ccd_orphan_ratio >= 0.5) {
-    factores.push(
-      subgrupoKey && SUBGRUPOS_SIN_TUTOR.has(subgrupoKey)
-        ? "Trabajo el codigo por su cuenta, sin apoyarse en el tutor."
-        : "Ejecuto o edito codigo sin explicar que buscaba ni consultarlo con el tutor.",
-    )
-  } else if (c.ccd_mean !== null && c.ccd_mean >= 0.65) {
-    factores.push(
-      "Acompano lo que programaba con lo que conversaba: codigo y razonamiento fueron de la mano.",
-    )
-  } else if (c.ccd_mean !== null && c.ccd_mean < 0.35) {
-    factores.push("Casi no verbalizo su razonamiento mientras programaba.")
-  } else if (c.ccd_mean !== null) {
-    factores.push("En parte explico lo que hacia, en parte trabajo sin verbalizar.")
-  }
+  // Poca profundización (estabilidad inter-iteración) → sostener una linea.
+  if ((c.cii_stability ?? 1) <= 0.2)
+    acciones.push("Ayudalo a sostener una estrategia en vez de cambiar de enfoque entre intentos.")
 
-  // Profundización (estabilidad inter-iteración)
-  if (c.cii_stability !== null) {
-    if (c.cii_stability > 0.2)
-      factores.push(
-        "Se mantuvo enfocado en el mismo problema, profundizando en lugar de saltar de tema.",
-      )
-    else
-      factores.push(
-        "No llego a profundizar: toco varias cosas sin sostener una sola linea de trabajo.",
-      )
-  }
-
-  // Resumen por subgrupo (fix #6): describe el perfil REAL del episodio.
+  // Resumen por subgrupo: describe el perfil REAL del episodio.
   // Sin subgrupo (classifications viejas) o `indeterminado` → eje macro.
   const porSubgrupo = subgrupoKey ? SUBGRUPO_RESUMEN_DOCENTE[subgrupoKey] : undefined
   if (porSubgrupo) {
-    return { resumen: porSubgrupo, factores }
+    return { resumen: porSubgrupo, acciones }
   }
 
   let resumen: string
   switch (c.appropriation) {
     case "apropiacion_reflexiva":
-      resumen =
-        "En conjunto, fue un trabajo reflexivo y autonomo: las tres dimensiones se acompanaron."
+      resumen = "En conjunto, fue un trabajo reflexivo y autonomo."
       break
     case "delegacion_pasiva":
       resumen =
@@ -361,5 +344,5 @@ export function explicarEstadoDocente(
         "Hubo intento y actividad, pero sin evidencia suficiente de comprension profunda. Vale la pena preguntarle como llego a su solucion."
   }
 
-  return { resumen, factores }
+  return { resumen, acciones }
 }

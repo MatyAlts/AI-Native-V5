@@ -1235,6 +1235,65 @@ function buildSinReflexionFeedback(): {
   }
 }
 
+// Feedback al alumno POR SUBGRUPO (8 perfiles, modo sombra). Es la fuente
+// narrativa principal: cuenta la MISMA historia que ve el docente sobre este
+// episodio, en segunda persona. Marcador anti-reificacion: describe lo que paso
+// "en este episodio", no atributos del alumno (PRODUCT.md + ADR-053). El tono
+// hereda del eje (reflexiva=positivo, superficial=neutro, delegacion=atencion).
+const FEEDBACK_SUBGRUPO: Record<
+  string,
+  { tono: "positivo" | "neutro" | "atencion"; titulo: string; mensaje: string }
+> = {
+  autonomo_competente: {
+    tono: "positivo",
+    titulo: "¡Muy bien!",
+    mensaje:
+      "Resolviste por tu cuenta, sin apoyarte en el tutor: mostraste autonomia y la sostuviste hasta llegar a la solucion. Asi se construye criterio propio.",
+  },
+  colaborador_reflexivo: {
+    tono: "positivo",
+    titulo: "¡Muy bien!",
+    mensaje:
+      "Usaste el tutor para pensar, no para que te resuelva: preguntaste, probaste por tu cuenta y seguiste elaborando sobre lo que te devolvia. Ese es el uso que mas te hace aprender.",
+  },
+  autonomo_trabado: {
+    tono: "neutro",
+    titulo: "Vas por buen camino",
+    mensaje:
+      "Insististe por tu cuenta un buen rato, pero te quedaste trabado sin llegar a destrabarte. Intentar solo esta perfecto; cuando te frenes mucho, pedile una pista al tutor para avanzar sin que te de la solucion.",
+  },
+  escribe_sin_validar: {
+    tono: "neutro",
+    titulo: "Buen avance",
+    mensaje:
+      "Escribiste bastante codigo, pero casi no lo ejecutaste para comprobar si hacia lo que esperabas. Correr lo que vas armando seguido te muestra los errores temprano y te ahorra vueltas.",
+  },
+  colaborador_funcional: {
+    tono: "neutro",
+    titulo: "Buen trabajo",
+    mensaje:
+      "Usaste el tutor para avanzar y llegaste a una solucion, aunque probaste poco por tu cuenta. La proxima, antes de preguntar, tira tu propia idea: aunque falle, te hace pensar mas.",
+  },
+  desenganchado: {
+    tono: "neutro",
+    titulo: "Quedo a mitad de camino",
+    mensaje:
+      "En este episodio hubo poca actividad sobre el problema: ni trabajo sostenido sobre el codigo ni dialogo con el tutor. Cuando tengas un rato sin apuro, retomalo y dale una vuelta tranquilo.",
+  },
+  dependiente_delegador: {
+    tono: "atencion",
+    titulo: "Hay algo importante que repasar",
+    mensaje:
+      "En este episodio, la mayor parte del trabajo lo hizo el tutor, no vos. La IA esta para ayudarte a pensar, no para reemplazarte. La proxima, pone TU idea primero (aunque este incompleta) y usa al tutor para discutirla, no para que te de la respuesta.",
+  },
+  indeterminado: {
+    tono: "neutro",
+    titulo: "Episodio corto",
+    mensaje:
+      "La sesion fue demasiado corta para evaluar como trabajaste. Proba un episodio mas largo, donde puedas trabajar el problema y dialogar con el tutor.",
+  },
+}
+
 function buildPedagogicalFeedback(c: Classification): {
   tono: "positivo" | "neutro" | "atencion"
   titulo: string
@@ -1265,6 +1324,24 @@ function buildPedagogicalFeedback(c: Classification): {
     sugerencias.push(
       "Cambiaste mucho de estrategia entre intentos. Probá quedarte con una idea y refinarla, en lugar de empezar de cero.",
     )
+  }
+
+  // El SUBGRUPO manda la narrativa (misma historia que el docente). Las
+  // coherencias de arriba quedan como sugerencias accionables subordinadas.
+  // Sin subgrupo (classifications viejas) cae al switch por eje de abajo.
+  const porSubgrupo = c.subgrupo?.key ? FEEDBACK_SUBGRUPO[c.subgrupo.key] : undefined
+  if (porSubgrupo) {
+    return {
+      tono: porSubgrupo.tono,
+      titulo: porSubgrupo.titulo,
+      mensaje: porSubgrupo.mensaje,
+      sugerencias:
+        sugerencias.length > 0
+          ? sugerencias
+          : porSubgrupo.tono === "positivo"
+            ? ["Proba un ejercicio mas desafiante para seguir creciendo."]
+            : [],
+    }
   }
 
   switch (c.appropriation) {

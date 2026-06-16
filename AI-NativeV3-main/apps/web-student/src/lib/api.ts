@@ -23,6 +23,23 @@ export interface OpenEpisodeResponse {
   episode_id: string
 }
 
+// Subgrupo (modo sombra B1 Fase 2): el classifier lo calcula y lo deja en
+// features['subgrupo']. Es la fuente narrativa principal del feedback al
+// alumno (8 perfiles), alineada con lo que ve el docente. Espejo del tipo en
+// web-teacher/lib/api.ts.
+export interface Subgrupo {
+  key: string
+  label: string
+  eje: string
+  dimensiones: {
+    autonomia: number
+    experimentacion: number
+    persistencia: number
+    foco: number
+  }
+  accion_docente: string
+}
+
 export interface Classification {
   episode_id: string
   comision_id: string
@@ -35,6 +52,8 @@ export interface Classification {
   cii_stability: number | null
   cii_evolution: number | null
   is_current: boolean
+  // null en classifications viejas (pre-modo-sombra) → feedback cae al eje.
+  subgrupo?: Subgrupo | null
 }
 
 type TokenGetter = () => Promise<string | null>

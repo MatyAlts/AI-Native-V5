@@ -450,9 +450,10 @@ function DocenteAppropriationVerdict({
     : display.chip
   const subgrupoChip =
     subgrupoKey && subgrupoKey !== "indeterminado" ? classification.subgrupo?.label : null
-  const chipLabel = explicacion.sinActividad
-    ? "Sin actividad evaluable"
-    : (subgrupoChip ?? display.label)
+  // El EJE (grupo macro de apropiacion) es el chip principal con color; el
+  // SUBGRUPO va al lado como chip neutro. Antes se mostraba SOLO el subgrupo
+  // y el eje quedaba invisible — el docente no veia a que grupo pertenecia.
+  const ejeLabel = explicacion.sinActividad ? "Sin actividad evaluable" : display.label
 
   return (
     <div className={`rounded-xl border px-6 py-4 ${containerCls}`}>
@@ -461,17 +462,22 @@ function DocenteAppropriationVerdict({
         <span
           className={`inline-flex items-center px-2.5 py-1 rounded-full text-xs font-semibold ${chipCls}`}
         >
-          {chipLabel}
+          {ejeLabel}
         </span>
+        {!explicacion.sinActividad && subgrupoChip && (
+          <span className="inline-flex items-center px-2.5 py-1 rounded-full text-xs font-medium bg-surface border border-border text-ink">
+            {subgrupoChip}
+          </span>
+        )}
       </div>
       <p className="text-sm text-ink font-medium">{explicacion.resumen}</p>
-      {explicacion.factores.length > 0 && (
+      {explicacion.acciones.length > 0 && (
         <div className="mt-3">
           <span className="text-xs font-semibold uppercase tracking-wider text-muted">
-            Que se observo
+            Para acompañarlo
           </span>
           <ul className="mt-1.5 space-y-1">
-            {explicacion.factores.map((f) => (
+            {explicacion.acciones.map((f) => (
               <li key={f} className="flex gap-2 text-xs text-muted leading-relaxed">
                 <span
                   aria-hidden="true"
