@@ -369,12 +369,16 @@ export function EpisodeView({ episodeId, onExit, ejercicioContext, getToken }: E
 
   // Salir SIN cerrar: abandono explícito (reason="explicit", caller=alumno).
   // El backend lo registra en la cadena CTR y el partition_worker deja el
-  // episodio en `paused` (ADR-025/055); al volver, la hidratación lo reanuda
-  // sola via resumeEpisode (línea ~238) y sigue justo donde lo dejó. A
-  // diferencia de handleClose, NO clasificamos ni disparamos reflexión, y NO
-  // borramos ACTIVE_EPISODE_KEY: queremos que el home le ofrezca retomarlo.
-  // Seteamos el guard local para no re-emitir en el beforeunload que dispara
-  // al desmontar/navegar (idempotente igual en backend, fix QA #9).
+  // episodio en `paused` (ADR-025/055). Para retomar, el alumno entra al
+  // ejercicio y toca "Continuar": ese flujo SÍ persiste el contexto del
+  // ejercicio (active-exercise-context) y la hidratación reanuda con
+  // resumeEpisode. NO clasificamos ni disparamos reflexión.
+  //
+  // BORRAMOS ACTIVE_EPISODE_KEY (igual que handleClose). Si no, el recovery del
+  // home (routes/index.tsx) rebota a /episodio/:id SIN el contexto de ejercicio,
+  // y el episodio se abre "como TP" en vez del ejercicio que estabas haciendo
+  // (bug 2026-06-16). El guard local evita re-emitir en el beforeunload del
+  // unmount (idempotente igual en backend, fix QA #9).
   async function handlePauseExit() {
     setError(null)
     abandonEmittedRef.current = true
@@ -383,6 +387,7 @@ export function EpisodeView({ episodeId, onExit, ejercicioContext, getToken }: E
       { reason: "explicit", last_activity_seconds_ago: 0 },
       getToken,
     )
+    window.sessionStorage.removeItem(ACTIVE_EPISODE_KEY)
     onExit()
   }
 
