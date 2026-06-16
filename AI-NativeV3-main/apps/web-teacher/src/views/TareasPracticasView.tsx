@@ -599,9 +599,8 @@ function TareaCard({
             <ActionButton
               onClick={onDelete}
               icon={<Trash2 className="h-3.5 w-3.5" />}
-              label=""
+              label="Eliminar"
               tone="danger"
-              title="Eliminar"
             />
           </>
         )}
@@ -630,9 +629,8 @@ function TareaCard({
             <ActionButton
               onClick={onArchive}
               icon={<Archive className="h-3.5 w-3.5" />}
-              label=""
+              label="Archivar"
               tone="warning"
-              title="Archivar"
             />
           </>
         )}
