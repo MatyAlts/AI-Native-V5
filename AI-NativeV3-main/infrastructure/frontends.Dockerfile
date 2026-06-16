@@ -45,6 +45,14 @@ COPY packages/ctr-client/package.json   packages/ctr-client/package.json
 # Instala todas las deps del workspace (frozen lockfile = reproducible).
 RUN pnpm install --frozen-lockfile
 
+# Cache-bust: en el deploy managed (EasyPanel) la cache de build a veces NO se
+# invalida aunque el código source cambie, sirviendo un bundle viejo (gotcha
+# 2026-06-16: el checkbox permite_pausa no aparecía en prod pese a estar en
+# main). Bumpear este valor rompe la cache desde acá y fuerza recompilar los 3
+# frontends con el código actual.
+ARG FRONTEND_CACHEBUST=20260616-1
+RUN echo "frontend cachebust: $FRONTEND_CACHEBUST"
+
 # Ahora sí copia el código source de apps y packages necesarios.
 COPY packages/ packages/
 COPY apps/web-admin/   apps/web-admin/
