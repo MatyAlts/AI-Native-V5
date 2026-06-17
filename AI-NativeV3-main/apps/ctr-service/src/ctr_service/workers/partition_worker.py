@@ -341,6 +341,15 @@ class PartitionWorker:
     async def _create_episode(self, session: AsyncSession, event: dict[str, Any]) -> Episode:
         """Crea el episodio al recibir el primer evento (episodio_abierto)."""
         payload = event.get("payload", {})
+        # Idempotencia de apertura (fix episodios fantasma, 2026-06-17): persistir
+        # el `ejercicio_id` del payload en `Episode.meta` para que el tutor-service
+        # pueda buscar un episodio sin cerrar del mismo (alumno, problema, ejercicio)
+        # SIN joinear contra la tabla `events`. Solo metadata mutable del Episode —
+        # NO toca la cadena criptográfica (los eventos siguen append-only).
+        meta: dict[str, Any] = {}
+        ejercicio_id_raw = payload.get("ejercicio_id")
+        if ejercicio_id_raw is not None:
+            meta["ejercicio_id"] = str(ejercicio_id_raw)
         ep = Episode(
             id=UUID(event["episode_id"]),
             tenant_id=UUID(event["tenant_id"]),
@@ -352,6 +361,7 @@ class PartitionWorker:
             classifier_config_hash=event["classifier_config_hash"],
             curso_config_hash=payload.get("curso_config_hash", "0" * 64),
             estado="open",
+            meta=meta,
         )
         session.add(ep)
         await session.flush()

@@ -150,16 +150,25 @@ function MateriaPage() {
       error: null,
     })
     try {
-      // ADR-055 (fix 2026-06-10 #2): si el alumno tiene un episodio PAUSADO de
+      // ADR-055 (fix 2026-06-10 #2): si el alumno tiene un episodio SIN CERRAR de
       // esta TP con el mismo contexto (mismo ejercicio, o ambos monolíticos),
       // lo retoma en vez de abrir uno nuevo. Best-effort: cualquier falla acá
       // cae al flujo normal de apertura.
+      //
+      // Fix episodios fantasma (2026-06-17): considerar también episodios en
+      // estado "open", no solo "paused". El alumno puede reabrir el ejercicio
+      // antes de que el worker server-side pase el episodio anterior de "open"
+      // a "paused" (race del worker de abandono). Filtrar solo "paused" dejaba
+      // ese episodio sin matchear y abría uno nuevo → fantasmas. El backend
+      // (tutor_core.open_episode) tiene la red de seguridad real e idempotente;
+      // este filtro evita el round-trip de apertura cuando ya es detectable acá.
       try {
         const my = await listStudentEpisodes(materia!.comision_id)
-        const paused = my.episodes.filter(
-          (e) => e.estado === "paused" && e.problema_id === tarea.id,
+        const reanudables = my.episodes.filter(
+          (e) =>
+            (e.estado === "paused" || e.estado === "open") && e.problema_id === tarea.id,
         )
-        for (const candidate of paused) {
+        for (const candidate of reanudables) {
           const st = await getEpisodeState(candidate.episode_id)
           if ((st.ejercicio_id ?? null) !== (ejercicio?.id ?? null)) continue
           await resumeEpisode(candidate.episode_id)

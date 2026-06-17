@@ -80,6 +80,20 @@ class EpisodeWithEvents(EpisodeOut):
     events: list[EventOut]
 
 
+class OpenEpisodeMatch(BaseModel):
+    """Episodio sin cerrar (open|paused) que matchea un contexto de apertura.
+
+    Devuelto por el lookup de idempotencia del tutor-service (fix episodios
+    fantasma, 2026-06-17). `ejercicio_id` sale de `Episode.meta` (None para TP
+    monolítica).
+    """
+
+    episode_id: UUID
+    estado: str
+    problema_id: UUID
+    ejercicio_id: UUID | None = None
+
+
 class ChainVerificationResult(BaseModel):
     episode_id: UUID
     valid: bool

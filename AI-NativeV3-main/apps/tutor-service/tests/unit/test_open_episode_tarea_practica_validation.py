@@ -75,6 +75,18 @@ class FakeCTRClient:
         self.published_events.append(event)
         return f"msg-{len(self.published_events)}"
 
+    async def find_open_episode(
+        self,
+        tenant_id: UUID,
+        caller_id: UUID,
+        student_pseudonym: UUID,
+        problema_id: UUID,
+        ejercicio_id: UUID | None = None,
+    ) -> dict | None:
+        # Sin episodio existente → la idempotencia no dispara y open_episode
+        # crea uno nuevo (estos tests verifican validación de TP, no idempotencia).
+        return None
+
 
 # ── Fixtures ──────────────────────────────────────────────────────────
 

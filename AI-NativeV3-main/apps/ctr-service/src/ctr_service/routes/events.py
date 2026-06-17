@@ -37,6 +37,7 @@ from ctr_service.schemas import (
     EventOut,
     EventPublishRequest,
     EventPublishResponse,
+    OpenEpisodeMatch,
 )
 from ctr_service.services import (
     EventProducer,
@@ -99,6 +100,57 @@ async def publish_event(
     msg_id = await producer.publish(event_dict)
     partition = shard_of(req.episode_id, settings.num_partitions)
     return EventPublishResponse(message_id=msg_id, partition=partition)
+
+
+@router.get("/episodes/open-match", response_model=OpenEpisodeMatch | None)
+async def find_open_episode(
+    student_pseudonym: UUID,
+    problema_id: UUID,
+    ejercicio_id: UUID | None = None,
+    user: User = Depends(require_role(*READ_ROLES)),
+    db: AsyncSession = Depends(get_db),
+) -> OpenEpisodeMatch | None:
+    """Busca un episodio sin cerrar (open|paused) del mismo contexto de apertura.
+
+    Red de seguridad de idempotencia (fix episodios fantasma, 2026-06-17): el
+    tutor-service consulta este endpoint ANTES de crear un episodio nuevo. Si
+    existe un episodio del mismo (tenant, alumno, problema, ejercicio) en estado
+    `open` o `paused`, lo reanuda en vez de abrir uno nuevo.
+
+    El `tenant_id` viene de los headers del gateway (RLS lo fuerza vía
+    `tenant_session`); acá filtramos explícitamente por `student_pseudonym`,
+    `problema_id`, `estado in (open, paused)` y matcheamos `ejercicio_id` contra
+    `Episode.meta['ejercicio_id']`:
+      - `ejercicio_id` provisto → match exacto `meta->>'ejercicio_id'`.
+      - `ejercicio_id is None` (TP monolítica) → `meta` sin clave `ejercicio_id`.
+
+    Devuelve el MÁS RECIENTE por `opened_at` si hubiera más de uno (no debería
+    pasar una vez que la idempotencia está activa, pero cubre fantasmas legacy).
+    Devuelve `null` (204-equivalente como body) si no hay match.
+    """
+    stmt = (
+        select(Episode)
+        .where(Episode.tenant_id == user.tenant_id)
+        .where(Episode.student_pseudonym == student_pseudonym)
+        .where(Episode.problema_id == problema_id)
+        .where(Episode.estado.in_(("open", "paused")))
+        .order_by(Episode.opened_at.desc())
+    )
+    result = await db.execute(stmt)
+    candidates = list(result.scalars().all())
+
+    target = str(ejercicio_id) if ejercicio_id is not None else None
+    for ep in candidates:
+        meta = ep.meta or {}
+        ep_ejercicio = meta.get("ejercicio_id")
+        if ep_ejercicio == target:
+            return OpenEpisodeMatch(
+                episode_id=ep.id,
+                estado=ep.estado,
+                problema_id=ep.problema_id,
+                ejercicio_id=UUID(ep_ejercicio) if ep_ejercicio else None,
+            )
+    return None
 
 
 @router.get("/episodes/{episode_id}", response_model=EpisodeWithEvents)

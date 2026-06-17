@@ -64,6 +64,7 @@ def tutor_with_academic(fake_redis):
     academic.get_comision.return_value = None  # BYOK degrada a tenant
     ctr = MagicMock()
     ctr.publish_event = AsyncMock()
+    ctr.find_open_episode = AsyncMock(return_value=None)
 
     return TutorCore(
         governance=FakeGovernanceClient(),

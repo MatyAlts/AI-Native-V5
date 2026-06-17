@@ -121,7 +121,7 @@ class TutorCore:
 
     # ── Abrir episodio ─────────────────────────────────────────────────
 
-    async def open_episode(
+    async def open_episode(  # noqa: PLR0912, PLR0915 — validación TP + idempotencia (lookup/resume fail-soft) + setup de sesión; branches inherentes, mismo criterio que interact()/resume_episode()
         self,
         tenant_id: UUID,
         comision_id: UUID,
@@ -197,6 +197,68 @@ class TutorCore:
                 ejercicio_orden=ejercicio_orden,
                 tenant_id=tenant_id,
             )
+
+        # 0d. Idempotencia (fix episodios fantasma, 2026-06-17): ANTES de
+        # generar un episode_id nuevo, consultar al CTR si ya existe un episodio
+        # sin cerrar (estado open|paused) para el mismo (tenant, alumno,
+        # problema, ejercicio). Si existe → reanudarlo en vez de abrir uno
+        # nuevo. Esto previene la multiplicación de episodios cuando el alumno
+        # reabre un ejercicio rápido (el episodio anterior puede seguir en
+        # estado "open" porque el worker todavía no lo pasó a "paused", o ya
+        # está "paused"). El frontend ya intenta esto best-effort, pero esta es
+        # la red de seguridad real porque pega al CTR (fuente de verdad) y no
+        # depende del timing del worker.
+        #
+        # Fail-soft: cualquier error consultando o reanudando NO bloquea la
+        # apertura — se degrada a crear un episodio nuevo (mejor un fantasma
+        # ocasional que un alumno que no puede abrir el ejercicio).
+        try:
+            existing = await self.ctr.find_open_episode(
+                tenant_id=tenant_id,
+                caller_id=TUTOR_SERVICE_USER_ID,
+                student_pseudonym=student_pseudonym,
+                problema_id=problema_id,
+                ejercicio_id=ejercicio_id,
+            )
+        except Exception:
+            logger.warning(
+                "find_open_episode falló para alumno=%s problema=%s ejercicio=%s; "
+                "se abre un episodio nuevo (fail-soft)",
+                student_pseudonym,
+                problema_id,
+                ejercicio_id,
+                exc_info=True,
+            )
+            existing = None
+
+        if existing is not None:
+            existing_id = UUID(str(existing["episode_id"]))
+            try:
+                await self.resume_episode(
+                    episode_id=existing_id,
+                    tenant_id=tenant_id,
+                    user_id=student_pseudonym,
+                )
+                logger.info(
+                    "open_episode idempotente: reanudado episode_id=%s "
+                    "(estado_previo=%s) para alumno=%s problema=%s ejercicio=%s",
+                    existing_id,
+                    existing.get("estado"),
+                    student_pseudonym,
+                    problema_id,
+                    ejercicio_id,
+                )
+                return existing_id
+            except Exception:
+                # Si la reanudación falla (ej. la TP dejó de permitir pausa, o
+                # el CTR devolvió un estado no reanudable), degradamos a abrir
+                # un episodio nuevo en vez de propagar el error al alumno.
+                logger.warning(
+                    "resume del episodio existente %s falló; se abre uno nuevo "
+                    "(fail-soft)",
+                    existing_id,
+                    exc_info=True,
+                )
 
         episode_id = uuid4()
 

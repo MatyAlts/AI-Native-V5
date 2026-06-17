@@ -122,6 +122,17 @@ class FakeCTRClient:
         self.published_events.append(event)
         return f"fake-msg-id-{len(self.published_events)}"
 
+    async def find_open_episode(
+        self,
+        tenant_id: UUID,
+        caller_id: UUID,
+        student_pseudonym: UUID,
+        problema_id: UUID,
+        ejercicio_id: UUID | None = None,
+    ) -> dict | None:
+        # Sin episodio existente por default → open_episode crea uno nuevo.
+        return None
+
 
 # ── Fixtures ────────────────────────────────────────────────────────
 
