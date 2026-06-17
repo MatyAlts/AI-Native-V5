@@ -355,13 +355,24 @@ class RealLongitudinalDataSource:
         classification + template_id. Pensado para que el frontend muestre un
         dropdown "selectable" en vez de pedir UUIDs pegados.
 
-        Incluye cerrados y pausados (ADR-055, fix 2026-06-10 #2): el episodio
-        abandonado queda `paused` y el docente lo ve marcado para decidir qué
-        hacer. `open` sigue afuera (sesión en vivo, sin señal útil todavía).
+        Incluye cerrados y pausados (ADR-055): el episodio abandonado queda
+        `paused` y el docente lo ve marcado para decidir qué hacer. NO incluye
+        `open` a propósito: son episodios en curso (o transitorios por el race
+        del worker) y no deben aparecer como "sesiones" en el drill-down del
+        docente. La reanudación de un `open` sin cerrar la garantiza la
+        idempotencia server-side de `open_episode` (find_open_episode), no esta
+        lista — así no se ensucia la vista del docente. Read-only; no toca CTR.
 
         Triple cross-DB ctr + classifier + academic. Ordenado por
-        `closed_at` desc con NULLs primero (los paused, que no tienen
-        closed_at, arriba — son los que piden atención).
+        `closed_at` desc con NULLs primero (paused, que no tienen closed_at,
+        arriba — son los que piden atención).
+
+        Excluye episodios fantasma (`meta['superseded'] == True`, marcados por
+        `scripts/mark-ghost-episodes.py`): son intentos redundantes de un
+        ejercicio ya completado en otra sesion (ghost_resume_duplicate) y NO
+        deben contar como "sesiones" en el drill-down. El filtro se aplica en
+        Python sobre el `meta` (JSONB) traido en el SELECT — robusto contra
+        diferencias de operador JSONB entre Postgres y el SQLite de los tests.
         """
         from academic_service.models.operacional import TareaPractica
         from classifier_service.models import Classification
@@ -375,6 +386,7 @@ class RealLongitudinalDataSource:
                 Episode.closed_at,
                 Episode.estado,
                 Episode.events_count,
+                Episode.meta,
             )
             .where(Episode.comision_id == comision_id)
             .where(Episode.tenant_id == self.tenant_id)
@@ -383,7 +395,11 @@ class RealLongitudinalDataSource:
             .order_by(Episode.closed_at.desc().nullsfirst())
         )
         ep_result = await self.ctr.execute(ep_stmt)
-        episodes_raw = ep_result.all()
+        # Excluir superseded (ghost resume duplicates) — filtro en Python sobre
+        # el meta JSONB para no depender del operador JSONB del backend.
+        episodes_raw = [
+            row for row in ep_result.all() if not (row.meta or {}).get("superseded")
+        ]
         if not episodes_raw:
             return []
 
