@@ -45,7 +45,13 @@ const PYODIDE_URL = `https://cdn.jsdelivr.net/pyodide/v${PYODIDE_VERSION}/full/`
 // corrida con TimeoutError — protege contra bucles infinitos sin mover
 // Pyodide a un Web Worker (que rompería input() vía window.prompt y
 // exigiría COOP/COEP para SharedArrayBuffer).
-const EXECUTION_TIMEOUT_SECONDS = 3
+//
+// IMPORTANTE: es presupuesto de CÓMPUTO, no de tiempo real. Mientras el
+// programa espera input() (tiempo humano), el watchdog se pausa por completo
+// y al volver arranca un presupuesto fresco (ver __tutor_input). Antes el
+// reloj corría durante el input y, si el alumno tardaba > timeout en tipear,
+// lo mataba con un falso "bucle infinito" (bug reportado por alumnos 2026-06).
+const EXECUTION_TIMEOUT_SECONDS = 5
 
 export interface CodeEditorProps {
   initialCode?: string
@@ -383,10 +389,11 @@ export function CodeEditor({
 
       // Watchdog de ejecución (fix 2026-06-10 #1): sys.settrace chequea un
       // deadline en cada trace event y aborta con una BaseException propia
-      // (un `except Exception:` del alumno no la traga). El tiempo que el
-      // alumno tarda en responder input() extiende el deadline — solo cuenta
-      // el tiempo de cómputo. `exec(..., globals())` preserva la semántica
-      // previa de runPythonAsync: las variables persisten entre corridas.
+      // (un `except Exception:` del alumno no la traga). Solo cuenta el tiempo
+      // de CÓMPUTO: mientras el programa espera input() el watchdog se pausa
+      // (deadline=None) y al volver se reinicia con un presupuesto fresco (ver
+      // __tutor_input). `exec(..., globals())` preserva la semántica previa de
+      // runPythonAsync: las variables persisten entre corridas.
       await py.runPythonAsync(`
 import sys as _tutor_wd_sys
 import time as _tutor_time
@@ -408,9 +415,17 @@ def _tutor_trace(frame, event, arg):
     return _tutor_trace
 
 
-def _tutor_extend_deadline(seconds):
-    if _tutor_watchdog["deadline"] is not None:
-        _tutor_watchdog["deadline"] += seconds
+def _tutor_pause_deadline():
+    # Suspende el watchdog (p.ej. mientras se espera input() humano): con
+    # deadline=None, _tutor_trace nunca aborta.
+    _tutor_watchdog["deadline"] = None
+
+
+def _tutor_reset_deadline():
+    # Presupuesto de cómputo fresco. Se llama al volver de un input(): el
+    # tiempo que el alumno tardó en tipear no cuenta, y el tramo de cómputo
+    # siguiente arranca con _TUTOR_TIMEOUT_SECONDS completos.
+    _tutor_watchdog["deadline"] = _tutor_time.monotonic() + _TUTOR_TIMEOUT_SECONDS
 
 
 def __tutor_run_student_code(code):
@@ -430,13 +445,15 @@ def __tutor_run_student_code(code):
 
       await py.runPythonAsync(
         "import builtins as __tutor_builtins\n" +
-          "import time as __tutor_time_mod\n" +
           "def __tutor_input(prompt=''):\n" +
-          "    _t0 = __tutor_time_mod.monotonic()\n" +
+          "    # Pausamos el watchdog mientras el alumno tipea (tiempo humano):\n" +
+          "    # sin esto, si tardaba mas que el timeout lo mataba con un falso\n" +
+          "    # 'bucle infinito'. Al volver, presupuesto de computo fresco.\n" +
+          "    _tutor_pause_deadline()\n" +
           "    try:\n" +
           "        return __tutor_ask_input(str(prompt))\n" +
           "    finally:\n" +
-          "        _tutor_extend_deadline(__tutor_time_mod.monotonic() - _t0)\n" +
+          "        _tutor_reset_deadline()\n" +
           "__tutor_builtins.input = __tutor_input\n",
       )
       // Fallback para sys.stdin.read() crudo (sin prompt inline).
