@@ -562,12 +562,14 @@ function TareaCard({
         </dl>
       </div>
 
-      {/* Footer con acciones */}
-      <footer className="flex items-stretch border-t border-border-soft">
+      {/* Footer con acciones. flex-wrap: en cards angostos (grid de 3 col) los
+          botones no entran en una fila y se cortaban (Archivar quedaba fuera de
+          vista, 2026-06-17). Con basis-1/3 entran ~3 por fila y wrapean el resto. */}
+      <footer className="flex flex-wrap items-stretch border-t border-border-soft">
         <button
           type="button"
           onClick={onComposicion}
-          className="press-shrink flex-1 inline-flex items-center justify-center gap-1.5 px-3 py-2.5 text-xs font-medium text-muted hover:bg-surface-alt hover:text-ink transition-colors"
+          className="press-shrink grow basis-1/3 inline-flex items-center justify-center gap-1.5 px-3 py-2.5 text-xs font-medium text-muted hover:bg-surface-alt hover:text-ink transition-colors"
           title="Gestionar ejercicios del TP"
         >
           <FileText className="h-3.5 w-3.5" />
@@ -576,7 +578,7 @@ function TareaCard({
         <button
           type="button"
           onClick={onShowVersions}
-          className="press-shrink flex-1 inline-flex items-center justify-center gap-1.5 px-3 py-2.5 text-xs font-medium text-muted hover:bg-surface-alt hover:text-ink transition-colors"
+          className="press-shrink grow basis-1/3 inline-flex items-center justify-center gap-1.5 px-3 py-2.5 text-xs font-medium text-muted hover:bg-surface-alt hover:text-ink transition-colors"
           title="Ver historial de versiones"
         >
           <History className="h-3.5 w-3.5" />
@@ -695,7 +697,7 @@ function ActionButton({
       type="button"
       onClick={onClick}
       title={title}
-      className={`press-shrink inline-flex items-center justify-center gap-1.5 px-3 py-2.5 text-xs font-medium border-l border-border-soft transition-colors ${toneCls[tone]}`}
+      className={`press-shrink grow basis-1/3 inline-flex items-center justify-center gap-1.5 px-3 py-2.5 text-xs font-medium border-l border-border-soft transition-colors ${toneCls[tone]}`}
     >
       {icon}
       {label}
