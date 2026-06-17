@@ -309,7 +309,7 @@ export function EpisodeView({ episodeId, onExit, ejercicioContext, getToken }: E
           const msg = event.message ?? ""
           if (/no existe|expir|cerrad/i.test(msg)) {
             setError(
-              'Tu episodio se cerró automáticamente por inactividad. Hacé clic en "Salir" para volver al inicio y abrir uno nuevo.',
+              'Tu episodio se pausó por inactividad. Hacé clic en "Salir" y volvé a entrar al ejercicio: vas a retomarlo donde lo dejaste.',
             )
             setClosed(true)
             window.sessionStorage.removeItem(ACTIVE_EPISODE_KEY)
@@ -325,7 +325,7 @@ export function EpisodeView({ episodeId, onExit, ejercicioContext, getToken }: E
       const msg = String(e)
       if (msg.includes("404") || msg.includes("409")) {
         setError(
-          'Tu episodio se cerró automáticamente por inactividad. Hacé clic en "Salir" para volver al inicio y abrir uno nuevo.',
+          'Tu episodio se pausó por inactividad. Hacé clic en "Salir" y volvé a entrar al ejercicio: vas a retomarlo donde lo dejaste.',
         )
         setClosed(true)
         window.sessionStorage.removeItem(ACTIVE_EPISODE_KEY)

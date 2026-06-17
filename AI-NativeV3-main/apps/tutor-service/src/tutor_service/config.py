@@ -71,7 +71,10 @@ class Settings(BaseSettings):
     # inactivas y emite EpisodioAbandonado(reason="timeout"). El frontend
     # cubre el caso normal con beforeunload + reason="beforeunload"; el
     # worker cubre mobile, crashes, conexion caida, etc.
-    episode_idle_timeout_seconds: int = 30 * 60  # 30 min de inactividad
+    # 2026-06: subido de 30 a 45 min. Alumnos reportaron que se los sacaba
+    # mientras pensaban un ejercicio. 45 min da aire para razonar sin que sea
+    # tan largo que deje sesiones zombie. Override por env EPISODE_IDLE_TIMEOUT_SECONDS.
+    episode_idle_timeout_seconds: int = 45 * 60  # 45 min de inactividad
     abandonment_check_interval_seconds: int = 60  # sweep cada 1 min
     enable_abandonment_worker: bool = True  # apagable para tests / dev
 
