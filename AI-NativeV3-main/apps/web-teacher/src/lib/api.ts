@@ -1375,20 +1375,6 @@ export async function getStudentEpisodes(
   return r.json()
 }
 
-export async function reopenEpisode(
-  episodeId: string,
-  razon: string,
-  getToken?: TokenGetter,
-): Promise<{ episode_id: string; estado: string }> {
-  const r = await fetch(`/api/v1/episodes/${episodeId}/reopen`, {
-    method: "POST",
-    headers: await authHeaders(getToken),
-    body: JSON.stringify({ razon }),
-  })
-  await throwIfNotOk(r)
-  return r.json()
-}
-
 export interface CohortCIIQuartiles {
   comision_id: string
   labeler_version: string
@@ -1621,11 +1607,6 @@ export async function getEntrega(id: string, getToken?: TokenGetter): Promise<En
 /**
  * GET /api/v1/entregas filtrado por (tarea_practica_id, comision_id,
  * student_pseudonym). Devuelve solo el array `data` del envelope.
- *
- * Usado por el flujo de reapertura de episodios (StudentLongitudinalView):
- * tras reabrir el episodio en el CTR hay que resetear la completitud del
- * ejercicio en la entrega del evaluation-service para que el alumno lo
- * vuelva a ver pendiente.
  */
 export async function getEntregas(
   params: {

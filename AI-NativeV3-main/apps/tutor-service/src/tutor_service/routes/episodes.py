@@ -6,7 +6,6 @@ POST /api/v1/episodes/{id}/message       SSE con la respuesta del tutor
 POST /api/v1/episodes/{id}/close         cerrar episodio (emite evento cierre)
 POST /api/v1/episodes/{id}/abandoned     ADR-025: emite EpisodioAbandonado (idempotente)
 POST /api/v1/episodes/{id}/resume        ADR-055: reanuda episodio pausado (reconstruye sesión)
-POST /api/v1/episodes/{id}/reopen        reapertura docente de un episodio cerrado (emite episodio_reabierto)
 POST /api/v1/episodes/{id}/reflection    ADR-035: emite ReflexionCompletada (post-cierre, opcional)
 POST /api/v1/episodes/{id}/run-tests     ADR-033/034: emite TestsEjecutados (conteos de Pyodide)
 """
@@ -487,58 +486,6 @@ async def resume_episode(
         user_id=user.id,
     )
     return ResumeEpisodeResponse(**ctx)
-
-
-class ReopenEpisodeRequest(BaseModel):
-    """Payload del POST /episodes/{id}/reopen (acción docente, 2026-06-19)."""
-
-    razon: str = Field(
-        default="",
-        max_length=500,
-        description="Justificación opcional del docente, persistida para auditoría.",
-    )
-
-
-class ReopenEpisodeResponse(BaseModel):
-    episode_id: UUID
-    problema_id: UUID
-    comision_id: UUID
-    estado: str
-
-
-@router.post("/{episode_id}/reopen", response_model=ReopenEpisodeResponse)
-async def reopen_episode(
-    episode_id: UUID,
-    req: ReopenEpisodeRequest,
-    user: User = Depends(require_role("docente", "docente_admin", "superadmin")),
-) -> ReopenEpisodeResponse:
-    """Reabre un episodio CERRADO para que el alumno lo retome (acción docente).
-
-    A diferencia de /resume (que usa el alumno dueño), esto lo dispara un
-    docente: emite `episodio_reabierto` al CTR y el partition_worker revierte
-    estado closed→open. El alumno levanta el episodio en su próximo ingreso a
-    la TP (listStudentEpisodes ya devuelve los `open`); no hay notificación
-    proactiva en esta versión.
-
-    Autorización: rol docente/docente_admin/superadmin Y pertenencia a la
-    comisión del episodio (validada contra usuarios_comision; superadmin la
-    saltea). En prod el tenant es compartido, así que el rol solo no alcanza.
-
-    Estados:
-      - 200: episodio reabierto (estado="open").
-      - 403: episodio de otro tenant, o docente ajeno a la comisión.
-      - 404: episodio inexistente.
-      - 409: el episodio no está cerrado (o no tiene eventos).
-    """
-    tutor = _get_tutor()
-    ctx = await tutor.reopen_episode(
-        episode_id=episode_id,
-        tenant_id=user.tenant_id,
-        docente_id=user.id,
-        docente_roles=user.roles,
-        razon=req.razon,
-    )
-    return ReopenEpisodeResponse(**ctx)
 
 
 class CodigoEjecutadoRequest(BaseModel):
