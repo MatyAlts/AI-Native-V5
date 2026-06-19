@@ -143,6 +143,45 @@ class AcademicClient:
             periodo_id=UUID(data["periodo_id"]),
         )
 
+    async def list_docentes_comision(
+        self,
+        comision_id: UUID,
+        tenant_id: UUID,
+        caller_id: UUID,
+    ) -> list[dict]:
+        """Lista los docentes/JTP asignados a una comision (usuarios_comision).
+
+        Reapertura docente (2026-06-19): se usa para validar pertenencia
+        docente->comision antes de reabrir un episodio. En prod el tenant es
+        compartido, asi que el aislamiento docente es por `usuarios_comision`,
+        no por tenant.
+
+        Returns:
+            Lista de dicts con la forma de UsuarioComisionOut (incluye `user_id`,
+            que puede venir None si el docente todavia no se logueo). Lista
+            vacia si la comision no existe o no tiene docentes asignados.
+
+        Raises:
+            httpx.HTTPStatusError: en 5xx u otros errores no-404.
+        """
+        headers = {
+            "X-User-Id": str(caller_id),
+            "X-Tenant-Id": str(tenant_id),
+            "X-User-Email": "tutor-service@platform.internal",
+            "X-User-Roles": "tutor_service",
+        }
+        client = self._client
+        resp = await client.get(
+            f"{self.base_url}/api/v1/comisiones/{comision_id}/docentes",
+            headers=headers,
+        )
+        if resp.status_code == 404:
+            return []
+        resp.raise_for_status()
+        data = resp.json()
+        if isinstance(data, dict):
+            return data.get("data", [])
+        return []
 
     async def get_tarea_practica_full(
         self,

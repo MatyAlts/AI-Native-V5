@@ -37,7 +37,9 @@ _REFLECTIVE_KINDS = frozenset(
     {"exploracion", "aclaracion_enunciado", "comparativa", "epistemologica", "validacion"}
 )
 # Mismas exclusiones que pipeline._EXCLUDED_FROM_FEATURES
-_EXCLUDED = frozenset({"reflexion_completada", "tp_entregada", "tp_calificada"})
+_EXCLUDED = frozenset(
+    {"reflexion_completada", "tp_entregada", "tp_calificada", "episodio_reabierto"}
+)
 
 
 @dataclass(frozen=True)

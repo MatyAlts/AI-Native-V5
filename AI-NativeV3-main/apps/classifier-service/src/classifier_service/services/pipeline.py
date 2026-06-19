@@ -68,6 +68,7 @@ _EXCLUDED_FROM_FEATURES = frozenset(
         "tp_calificada",         # tp-entregas-correccion: meta-evento de calificacion docente
         "pestana_perdida",       # side-channel integridad de foco — NO cognitivo
         "pestana_recuperada",    # side-channel integridad de foco — NO cognitivo
+        "episodio_reabierto",    # reapertura docente (2026-06-19): meta-evento de gobernanza
     }
 )
 

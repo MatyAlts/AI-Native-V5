@@ -224,6 +224,11 @@ POLICIES: list[tuple[str, str, str, str]] = [
     ("role:tutor_service", "*", "tarea_practica:*", "read"),
     ("role:tutor_service", "*", "tarea_practica_template:*", "read"),
     ("role:tutor_service", "*", "comision:*", "read"),
+    # Reapertura docente (2026-06-19): el tutor-service valida que el docente
+    # que reabre un episodio pertenezca a la comision (usuarios_comision) antes
+    # de emitir episodio_reabierto. En prod el tenant es compartido, asi que el
+    # aislamiento docente NO es por tenant — es por esta tabla.
+    ("role:tutor_service", "*", "usuario_comision:*", "read"),
     ("role:evaluation_service", "*", "entrega:*", "read"),
     # ── Ejercicios reusables (ADR-047 + ADR-048) ─────────────────────
     # Banco de ejercicios standalone por tenant. CRUD para superadmin,
