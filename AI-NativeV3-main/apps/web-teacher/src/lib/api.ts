@@ -1629,9 +1629,9 @@ export async function getEntrega(id: string, getToken?: TokenGetter): Promise<En
  */
 export async function getEntregas(
   params: {
-    tarea_practica_id?: string
-    comision_id?: string
-    student_pseudonym?: string
+    tarea_practica_id?: string | undefined
+    comision_id?: string | undefined
+    student_pseudonym?: string | undefined
   },
   getToken?: TokenGetter,
 ): Promise<EntregaDocente[]> {
