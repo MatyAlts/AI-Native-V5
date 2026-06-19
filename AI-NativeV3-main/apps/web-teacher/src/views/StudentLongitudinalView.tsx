@@ -1,4 +1,4 @@
-import { Badge, Modal, PageContainer } from "@platform/ui"
+import { Badge, PageContainer } from "@platform/ui"
 import { Link } from "@tanstack/react-router"
 import { TriangleAlert } from "lucide-react"
 import { useEffect, useMemo, useState } from "react"
@@ -10,12 +10,9 @@ import {
   type StudentAlertsPayload,
   type StudentEpisode,
   type StudentEpisodesPayload,
-  getEntregas,
   getStudentAlerts,
   getStudentCIIEvolution,
   getStudentEpisodes,
-  reopenEpisode,
-  setEjercicioCompletado,
 } from "../lib/api"
 import {
   APPROPRIATION_DOCENTE,
@@ -164,7 +161,6 @@ export function StudentLongitudinalView({ getToken, initialComisionId, initialSt
   const [episodesData, setEpisodesData] = useState<StudentEpisodesPayload | null>(null)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
-  const [reloadTick, setReloadTick] = useState(0)
   const [viewMode] = useViewMode()
   const isDocente = viewMode === "docente"
   const profilesMap = useStudentProfiles(comisionId, getToken)
@@ -190,7 +186,7 @@ export function StudentLongitudinalView({ getToken, initialComisionId, initialSt
       })
       .catch((e) => setError(String(e)))
       .finally(() => setLoading(false))
-  }, [studentId, comisionId, getToken, reloadTick])
+  }, [studentId, comisionId, getToken])
 
   const meanLabel = data ? slopeLabel(data.mean_slope) : null
   const docenteSlope = data ? slopeToDocente(data.mean_slope) : null
@@ -405,14 +401,7 @@ export function StudentLongitudinalView({ getToken, initialComisionId, initialSt
             )}
 
             {episodesData && Array.isArray(episodesData.episodes) && (
-              <EpisodesList
-                episodes={episodesData.episodes}
-                isDocente={isDocente}
-                getToken={getToken}
-                comisionId={comisionId}
-                studentId={studentId}
-                onReopened={() => setReloadTick((t) => t + 1)}
-              />
+              <EpisodesList episodes={episodesData.episodes} isDocente={isDocente} />
             )}
           </div>
         )}
@@ -922,98 +911,10 @@ function groupEpisodesByTp(episodes: StudentEpisode[]): EpisodeGroup[] {
 function EpisodesList({
   episodes,
   isDocente,
-  getToken,
-  comisionId,
-  studentId,
-  onReopened,
 }: {
   episodes: StudentEpisode[]
   isDocente: boolean
-  getToken: () => Promise<string | null>
-  comisionId: string | null
-  studentId: string | null
-  onReopened: () => void
 }) {
-  const [reopenTarget, setReopenTarget] = useState<StudentEpisode | null>(null)
-  const [reopening, setReopening] = useState(false)
-  const [reopenError, setReopenError] = useState<string | null>(null)
-  // Mensaje de éxito (todo OK) o aviso parcial (episodio reabierto pero la
-  // completitud no se pudo resetear — ej. entrega ya enviada/calificada).
-  const [reopenSuccess, setReopenSuccess] = useState<string | null>(null)
-  const [reopenWarning, setReopenWarning] = useState<string | null>(null)
-
-  const closeReopenModal = () => {
-    if (reopening) return
-    setReopenTarget(null)
-    setReopenError(null)
-    setReopenSuccess(null)
-    setReopenWarning(null)
-  }
-
-  const handleReopen = async () => {
-    if (!reopenTarget) return
-    const ep = reopenTarget
-    setReopening(true)
-    setReopenError(null)
-    setReopenSuccess(null)
-    setReopenWarning(null)
-    try {
-      // 1. Reabrir el episodio en el CTR (flipea estado -> "open").
-      await reopenEpisode(ep.episode_id, "reabierto_por_docente", getToken)
-
-      // 2. Resetear la completitud del ejercicio en la entrega (evaluation-service)
-      //    para que el alumno lo vuelva a ver pendiente. La completitud vive en
-      //    `entregas.ejercicio_estados[].completado`, que el reopen no toca.
-      try {
-        const entregas = await getEntregas(
-          {
-            tarea_practica_id: ep.problema_id,
-            comision_id: comisionId ?? undefined,
-            student_pseudonym: studentId ?? undefined,
-          },
-          getToken,
-        )
-        let entregaMatch: (typeof entregas)[number] | null = null
-        let estMatch: { orden: number; ejercicio_id: string | null } | null = null
-        for (const e of entregas) {
-          const est = e.ejercicio_estados?.find((x) => x.episode_id === ep.episode_id)
-          if (est) {
-            entregaMatch = e
-            estMatch = est
-            break
-          }
-        }
-        if (entregaMatch && estMatch) {
-          await setEjercicioCompletado(
-            entregaMatch.id,
-            estMatch.orden,
-            false,
-            ep.episode_id,
-            estMatch.ejercicio_id,
-            getToken,
-          )
-        }
-        // Si no hay entrega/estado (TP monolítica sin ejercicio_estados, o entrega
-        // inexistente) no es error: el episodio igual quedó reabierto.
-      } catch (entregaErr) {
-        // El reopen ya pasó; el reset de completitud falló (ej. 409 entrega
-        // enviada/calificada). No es fatal — avisamos al docente sin romper.
-        setReopenWarning(String(entregaErr))
-      }
-
-      setReopenSuccess(
-        isDocente
-          ? "Episodio reabierto. El alumno ya puede retomar el ejercicio."
-          : "Episodio reabierto. El estudiante ya puede retomar el ejercicio.",
-      )
-      onReopened()
-    } catch (e) {
-      setReopenError(String(e))
-    } finally {
-      setReopening(false)
-    }
-  }
-
   if (episodes.length === 0) {
     return (
       <div className="rounded-xl border border-dashed border-border bg-surface p-6 text-center text-sm text-muted">
@@ -1116,19 +1017,6 @@ function EpisodesList({
                         ›
                       </span>
                     </Link>
-                    {ep.estado === "closed" && (
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setReopenError(null)
-                          setReopenTarget(ep)
-                        }}
-                        data-testid="episode-reopen-button"
-                        className="mr-4 shrink-0 px-2.5 py-1 border border-border rounded text-xs text-ink hover:bg-canvas transition-colors"
-                      >
-                        Reabrir
-                      </button>
-                    )}
                   </li>
                 )
               })}
@@ -1145,69 +1033,6 @@ function EpisodesList({
             {APPROPRIATION_REIFICATION_DISCLAIMER}
           </p>
         </footer>
-      )}
-
-      {reopenTarget && (
-        <Modal isOpen={true} onClose={closeReopenModal} title="Reabrir episodio" size="sm">
-          {reopenSuccess ? (
-            <>
-              <div
-                className="rounded-lg border border-success/30 bg-success-soft p-3 text-sm text-success"
-                data-testid="episode-reopen-success"
-              >
-                {reopenSuccess}
-              </div>
-              {reopenWarning && (
-                <div
-                  className="mt-3 rounded-lg border border-warning/30 bg-warning-soft p-3 text-sm text-warning"
-                  data-testid="episode-reopen-warning"
-                >
-                  El episodio se reabrió, pero el ejercicio no se pudo habilitar:{" "}
-                  <span className="font-mono text-xs break-all">{reopenWarning}</span>
-                </div>
-              )}
-              <div className="flex justify-end gap-2 mt-4">
-                <button
-                  type="button"
-                  onClick={closeReopenModal}
-                  className="px-3 py-1.5 bg-ink text-white rounded text-sm hover:opacity-90"
-                >
-                  Listo
-                </button>
-              </div>
-            </>
-          ) : (
-            <>
-              <p className="text-sm">
-                Vas a reabrir este episodio. El alumno va a poder retomar el ejercicio: vuelve a
-                quedar pendiente y lo puede continuar desde donde lo dejo.
-              </p>
-              {reopenError && (
-                <p className="mt-3 text-sm text-red-600" data-testid="episode-reopen-error">
-                  {reopenError}
-                </p>
-              )}
-              <div className="flex justify-end gap-2 mt-4">
-                <button
-                  type="button"
-                  onClick={closeReopenModal}
-                  disabled={reopening}
-                  className="px-3 py-1.5 border border-border rounded text-sm hover:bg-canvas disabled:opacity-50"
-                >
-                  Cancelar
-                </button>
-                <button
-                  type="button"
-                  onClick={handleReopen}
-                  disabled={reopening}
-                  className="px-3 py-1.5 bg-ink text-white rounded text-sm hover:opacity-90 disabled:opacity-50"
-                >
-                  {reopening ? "Reabriendo..." : "Reabrir"}
-                </button>
-              </div>
-            </>
-          )}
-        </Modal>
       )}
     </section>
   )

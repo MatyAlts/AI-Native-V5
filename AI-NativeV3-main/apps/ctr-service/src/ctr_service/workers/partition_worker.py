@@ -328,11 +328,12 @@ class PartitionWorker:
                     "ts_episode_closed": event["ts"],
                 }
             elif event["event_type"] == "episodio_reabierto":
-                # Reapertura docente (2026-06-19): revierte un episodio CERRADO a
-                # "open" para que el alumno lo retome. Append-only — la cadena
-                # criptografica continua (este evento liga seq+1 al last_chain_hash);
-                # solo se revierte la metadata de estado. `closed_at` vuelve a None
-                # para que find_open_episode (open|paused) y el alumno lo levanten.
+                # Reapertura docente (2026-06-19): revertia un episodio CERRADO a
+                # "open" para que el alumno lo retome. La feature de reapertura fue
+                # RETIRADA (2026-06-19): ya no hay endpoint ni UI que emita este
+                # evento. Esta rama se conserva INERTE a proposito — append-only:
+                # si quedara algun `episodio_reabierto` historico en la cadena, su
+                # proyeccion de estado se sigue resolviendo bien (no rompe verify).
                 ep.estado = "open"
                 ep.closed_at = None
             elif ep.estado == "paused":
