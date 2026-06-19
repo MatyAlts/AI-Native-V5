@@ -231,10 +231,14 @@ export function EpisodeView({ episodeId, onExit, ejercicioContext, getToken }: E
           onExit()
           return
         }
-        if (state.estado === "paused") {
+        if (state.estado === "paused" || state.estado === "open") {
           // ADR-055 (fix 2026-06-10 #2): el episodio fue abandonado (cierre de
           // pestaña o timeout) — reconstruir la sesión del tutor antes de
           // seguir, sino todo evento posterior rebota contra sesión inexistente.
+          // 2026-06-19: tambien para `open` — un episodio REABIERTO por el docente
+          // queda `open` SIN sesion viva; sin este resume el alumno entra pero no
+          // puede trabajar ni cerrar. resumeEpisode es idempotente: si la sesion
+          // ya existe (open normal en curso), devuelve la vigente sin rehacer nada.
           await resumeEpisode(episodeId)
           if (cancelled) return
         }
