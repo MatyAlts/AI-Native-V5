@@ -1,4 +1,4 @@
-import { Badge, PageContainer } from "@platform/ui"
+import { Badge, Modal, PageContainer } from "@platform/ui"
 import { Link } from "@tanstack/react-router"
 import { TriangleAlert } from "lucide-react"
 import { useEffect, useMemo, useState } from "react"
@@ -13,6 +13,7 @@ import {
   getStudentAlerts,
   getStudentCIIEvolution,
   getStudentEpisodes,
+  reopenEpisode,
 } from "../lib/api"
 import {
   APPROPRIATION_DOCENTE,
@@ -161,6 +162,7 @@ export function StudentLongitudinalView({ getToken, initialComisionId, initialSt
   const [episodesData, setEpisodesData] = useState<StudentEpisodesPayload | null>(null)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [reloadTick, setReloadTick] = useState(0)
   const [viewMode] = useViewMode()
   const isDocente = viewMode === "docente"
   const profilesMap = useStudentProfiles(comisionId, getToken)
@@ -186,7 +188,7 @@ export function StudentLongitudinalView({ getToken, initialComisionId, initialSt
       })
       .catch((e) => setError(String(e)))
       .finally(() => setLoading(false))
-  }, [studentId, comisionId, getToken])
+  }, [studentId, comisionId, getToken, reloadTick])
 
   const meanLabel = data ? slopeLabel(data.mean_slope) : null
   const docenteSlope = data ? slopeToDocente(data.mean_slope) : null
@@ -401,7 +403,12 @@ export function StudentLongitudinalView({ getToken, initialComisionId, initialSt
             )}
 
             {episodesData && Array.isArray(episodesData.episodes) && (
-              <EpisodesList episodes={episodesData.episodes} isDocente={isDocente} />
+              <EpisodesList
+                episodes={episodesData.episodes}
+                isDocente={isDocente}
+                getToken={getToken}
+                onReopened={() => setReloadTick((t) => t + 1)}
+              />
             )}
           </div>
         )}
@@ -911,10 +918,39 @@ function groupEpisodesByTp(episodes: StudentEpisode[]): EpisodeGroup[] {
 function EpisodesList({
   episodes,
   isDocente,
+  getToken,
+  onReopened,
 }: {
   episodes: StudentEpisode[]
   isDocente: boolean
+  getToken: () => Promise<string | null>
+  onReopened: () => void
 }) {
+  const [reopenTarget, setReopenTarget] = useState<StudentEpisode | null>(null)
+  const [reopening, setReopening] = useState(false)
+  const [reopenError, setReopenError] = useState<string | null>(null)
+
+  const closeReopenModal = () => {
+    if (reopening) return
+    setReopenTarget(null)
+    setReopenError(null)
+  }
+
+  const handleReopen = async () => {
+    if (!reopenTarget) return
+    setReopening(true)
+    setReopenError(null)
+    try {
+      await reopenEpisode(reopenTarget.episode_id, "reabierto_por_docente", getToken)
+      setReopenTarget(null)
+      onReopened()
+    } catch (e) {
+      setReopenError(String(e))
+    } finally {
+      setReopening(false)
+    }
+  }
+
   if (episodes.length === 0) {
     return (
       <div className="rounded-xl border border-dashed border-border bg-surface p-6 text-center text-sm text-muted">
@@ -971,12 +1007,12 @@ function EpisodesList({
                 const aprKey = ep.appropriation
                 const aprText = aprKey ? (aprLabels[aprKey] ?? aprKey) : null
                 return (
-                  <li key={ep.episode_id}>
+                  <li key={ep.episode_id} className="flex items-center">
                     <Link
                       to="/episode-n-level"
                       search={{ episodeId: ep.episode_id }}
                       data-testid="student-episode-row"
-                      className="flex items-center gap-3 pl-8 pr-4 py-2.5 hover:bg-canvas transition-colors"
+                      className="flex flex-1 min-w-0 items-center gap-3 pl-8 pr-4 py-2.5 hover:bg-canvas transition-colors"
                     >
                       <span
                         aria-hidden="true"
@@ -1017,6 +1053,19 @@ function EpisodesList({
                         ›
                       </span>
                     </Link>
+                    {ep.estado === "closed" && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setReopenError(null)
+                          setReopenTarget(ep)
+                        }}
+                        data-testid="episode-reopen-button"
+                        className="mr-4 shrink-0 px-2.5 py-1 border border-border rounded text-xs text-ink hover:bg-canvas transition-colors"
+                      >
+                        Reabrir
+                      </button>
+                    )}
                   </li>
                 )
               })}
@@ -1033,6 +1082,37 @@ function EpisodesList({
             {APPROPRIATION_REIFICATION_DISCLAIMER}
           </p>
         </footer>
+      )}
+
+      {reopenTarget && (
+        <Modal isOpen={true} onClose={closeReopenModal} title="Reabrir episodio" size="sm">
+          <p className="text-sm">
+            Vas a reabrir este episodio. El alumno podra retomarlo desde donde lo dejo.
+          </p>
+          {reopenError && (
+            <p className="mt-3 text-sm text-red-600" data-testid="episode-reopen-error">
+              {reopenError}
+            </p>
+          )}
+          <div className="flex justify-end gap-2 mt-4">
+            <button
+              type="button"
+              onClick={closeReopenModal}
+              disabled={reopening}
+              className="px-3 py-1.5 border border-border rounded text-sm hover:bg-canvas disabled:opacity-50"
+            >
+              Cancelar
+            </button>
+            <button
+              type="button"
+              onClick={handleReopen}
+              disabled={reopening}
+              className="px-3 py-1.5 bg-ink text-white rounded text-sm hover:opacity-90 disabled:opacity-50"
+            >
+              {reopening ? "Reabriendo..." : "Reabrir"}
+            </button>
+          </div>
+        </Modal>
       )}
     </section>
   )

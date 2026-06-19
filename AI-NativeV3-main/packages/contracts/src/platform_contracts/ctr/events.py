@@ -102,6 +102,29 @@ class EpisodioAbandonado(CTRBaseEvent):
     payload: EpisodioAbandonadoPayload
 
 
+# Reapertura docente de un episodio CERRADO (2026-06-19). Se appendea al CTR
+# DESPUES de `episodio_cerrado` — mismo patron append-only que
+# `reflexion_completada` (la cadena criptografica continua, chain_hash sigue
+# ligando seq+1 al anterior). El worker del CTR revierte estado closed->open al
+# persistir este evento. Solo lo emite un docente (autoria explicita), nunca el
+# alumno. Es un meta-evento de gobernanza: el classifier lo IGNORA
+# (_EXCLUDED_FROM_FEATURES) para no contaminar la clasificacion del episodio.
+class EpisodioReabiertoPayload(BaseModel):
+    docente_id: UUID = Field(
+        description="Docente que reabrio el episodio (autoria para auditoria)."
+    )
+    razon: str = Field(
+        default="",
+        max_length=500,
+        description="Justificacion opcional del docente para auditoria.",
+    )
+
+
+class EpisodioReabierto(CTRBaseEvent):
+    event_type: Literal["episodio_reabierto"] = "episodio_reabierto"
+    payload: EpisodioReabiertoPayload
+
+
 # ── Interacción con el tutor ──────────────────────────────────────────
 
 

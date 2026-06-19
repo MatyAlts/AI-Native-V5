@@ -1375,6 +1375,20 @@ export async function getStudentEpisodes(
   return r.json()
 }
 
+export async function reopenEpisode(
+  episodeId: string,
+  razon: string,
+  getToken?: TokenGetter,
+): Promise<{ episode_id: string; estado: string }> {
+  const r = await fetch(`/api/v1/episodes/${episodeId}/reopen`, {
+    method: "POST",
+    headers: await authHeaders(getToken),
+    body: JSON.stringify({ razon }),
+  })
+  await throwIfNotOk(r)
+  return r.json()
+}
+
 export interface CohortCIIQuartiles {
   comision_id: string
   labeler_version: string
