@@ -341,7 +341,7 @@ function EntregasListView({ comisionId, getToken, onSelectEntrega }: EntregasLis
 // ─── EjercicioPanel (codigo del estudiante por episodio) ───────────────
 
 interface EjercicioPanelProps {
-  ej: { orden: number; completado: boolean; completado_at: string | null }
+  ej: { orden: number; completado: boolean; completed_at: string | null }
   resolvedEpisodeId: string | null
   tarea: TareaPractica | null
   getToken: () => Promise<string | null>

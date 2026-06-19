@@ -272,10 +272,17 @@ async def mark_ejercicio_completado(
     user: User = Depends(require_permission("entrega", "create")),
     db: AsyncSession = Depends(get_db),
 ) -> EntregaOut:
-    """Marca un ejercicio como completado (asociado a un episode_id).
+    """Marca un ejercicio como completado/no-completado (asociado a un episode_id).
+
+    `body.completado` (default True) decide el sentido:
+      - True  → marca completado (flujo normal del alumno al cerrar el ejercicio).
+      - False → lo des-marca (reapertura docente 2026-06-19: el docente reabrió el
+                episodio para que el alumno lo retome, así que el ejercicio vuelve a
+                quedar pendiente). Solo aplica si el ejercicio ya existía; si no
+                estaba, es un no-op (no se agrega un estado "incompleto" vacío).
 
     Si el ejercicio ya existe en ejercicio_estados, lo actualiza.
-    Si no existe, lo agrega.
+    Si no existe y se marca completado, lo agrega.
     """
     entrega = await _get_or_404(db, entrega_id)
     _assert_can_write(entrega, user)
@@ -286,6 +293,7 @@ async def mark_ejercicio_completado(
             detail=f"No se puede modificar ejercicios en estado '{entrega.estado}'",
         )
 
+    completado = body.completado if body else True
     episode_id = body.episode_id if body else None
     ejercicio_id = body.ejercicio_id if body else None
 
@@ -301,8 +309,8 @@ async def mark_ejercicio_completado(
         )
         matches_by_orden = est.get("orden") == orden and est.get("ejercicio_id") is None
         if matches_by_uuid or matches_by_orden:
-            est["completado"] = True
-            est["completed_at"] = datetime.now(UTC).isoformat()
+            est["completado"] = completado
+            est["completed_at"] = datetime.now(UTC).isoformat() if completado else None
             if episode_id:
                 est["episode_id"] = str(episode_id)
             # Backfill `ejercicio_id` si llegó por primera vez en esta llamada
@@ -313,7 +321,9 @@ async def mark_ejercicio_completado(
             found = True
             break
 
-    if not found:
+    # Solo agregamos un estado nuevo al MARCAR completado. Des-marcar un ejercicio
+    # que no figura es un no-op (no tiene sentido un registro "incompleto" vacío).
+    if not found and completado:
         estados.append({
             "ejercicio_id": str(ejercicio_id) if ejercicio_id else None,
             "orden": orden,

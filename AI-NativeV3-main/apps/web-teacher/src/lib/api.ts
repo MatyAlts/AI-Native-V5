@@ -1533,7 +1533,12 @@ export interface EjercicioEstado {
   orden: number
   completado: boolean
   episode_id: string | null
-  completado_at: string | null
+  // ADR-047: identidad permanente del ejercicio reusable. Nullable en
+  // entregas legacy (pre-refactor) — el match cae al `orden` como fallback.
+  ejercicio_id: string | null
+  // Backend serializa `completed_at` (no `completado_at` — el contrato TS
+  // estaba en drift; ver evaluation-service/schemas/entrega.py EjercicioEstadoSchema).
+  completed_at: string | null
 }
 
 export interface EntregaDocente {
@@ -1608,6 +1613,65 @@ export async function listEntregas(
 export async function getEntrega(id: string, getToken?: TokenGetter): Promise<EntregaDocente> {
   const r = await fetch(`/api/v1/entregas/${id}`, {
     headers: await authHeaders(getToken),
+  })
+  await throwIfNotOk(r)
+  return r.json()
+}
+
+/**
+ * GET /api/v1/entregas filtrado por (tarea_practica_id, comision_id,
+ * student_pseudonym). Devuelve solo el array `data` del envelope.
+ *
+ * Usado por el flujo de reapertura de episodios (StudentLongitudinalView):
+ * tras reabrir el episodio en el CTR hay que resetear la completitud del
+ * ejercicio en la entrega del evaluation-service para que el alumno lo
+ * vuelva a ver pendiente.
+ */
+export async function getEntregas(
+  params: {
+    tarea_practica_id?: string
+    comision_id?: string
+    student_pseudonym?: string
+  },
+  getToken?: TokenGetter,
+): Promise<EntregaDocente[]> {
+  const qs = new URLSearchParams()
+  if (params.tarea_practica_id) qs.set("tarea_practica_id", params.tarea_practica_id)
+  if (params.comision_id) qs.set("comision_id", params.comision_id)
+  if (params.student_pseudonym) qs.set("student_pseudonym", params.student_pseudonym)
+  const r = await fetch(`/api/v1/entregas?${qs.toString()}`, {
+    headers: await authHeaders(getToken),
+  })
+  await throwIfNotOk(r)
+  const body = (await r.json()) as EntregaListResponse
+  return body.data
+}
+
+/**
+ * PATCH /api/v1/entregas/{entrega_id}/ejercicio/{orden} — marca/des-marca la
+ * completitud de un ejercicio dentro de la entrega. Con `completado=false`
+ * vuelve a dejar el ejercicio pendiente para el alumno.
+ *
+ * Puede devolver 409 si la entrega está en estado 'submitted'/'graded' (solo
+ * 'draft'/'returned' admiten cambios) — el caller decide cómo presentarlo.
+ */
+export async function setEjercicioCompletado(
+  entregaId: string,
+  orden: number,
+  completado: boolean,
+  episodeId: string,
+  ejercicioId: string | null,
+  getToken?: TokenGetter,
+): Promise<EntregaDocente> {
+  const body: { completado: boolean; episode_id: string; ejercicio_id?: string } = {
+    completado,
+    episode_id: episodeId,
+  }
+  if (ejercicioId) body.ejercicio_id = ejercicioId
+  const r = await fetch(`/api/v1/entregas/${entregaId}/ejercicio/${orden}`, {
+    method: "PATCH",
+    headers: await authHeaders(getToken),
+    body: JSON.stringify(body),
   })
   await throwIfNotOk(r)
   return r.json()
