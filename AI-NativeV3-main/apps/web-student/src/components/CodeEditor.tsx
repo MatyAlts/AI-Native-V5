@@ -387,13 +387,23 @@ export function CodeEditor({
       }
       py.globals.set("__tutor_ask_input", askForInput)
 
-      // Watchdog de ejecución (fix 2026-06-10 #1): sys.settrace chequea un
-      // deadline en cada trace event y aborta con una BaseException propia
-      // (un `except Exception:` del alumno no la traga). Solo cuenta el tiempo
-      // de CÓMPUTO: mientras el programa espera input() el watchdog se pausa
-      // (deadline=None) y al volver se reinicia con un presupuesto fresco (ver
-      // __tutor_input). `exec(..., globals())` preserva la semántica previa de
-      // runPythonAsync: las variables persisten entre corridas.
+      // Watchdog de ejecución (fix 2026-06-10 #1, endurecido 2026-06-19):
+      // sys.settrace chequea un deadline en cada trace event y aborta con una
+      // BaseException propia (un `except Exception:` del alumno no la traga).
+      // El límite es de 5s de cómputo CONTINUO entre inputs (NO acumulado en
+      // toda la sesión): mientras el programa espera input() —que bloquea en
+      // window.prompt, tiempo humano— el watchdog se pausa (deadline=None) y al
+      // volver arranca un presupuesto fresco. Así una sesión interactiva larga
+      // (muchos input, el alumno tardando lo que quiera en tipear) NO da falso
+      // positivo; solo se corta una ráfaga de cómputo ininterrumpida > 5s.
+      //
+      // Refuerzo 2026-06-19: tracing por OPCODE (f_trace_opcodes). Sin esto
+      // settrace solo dispara al CAMBIAR de línea, y un loop apretado de una
+      // sola línea (ej. `while True: pass`) nunca re-invocaba el watchdog → no
+      // cortaba. Con opcodes dispara en cada bytecode y corta igual.
+      // (Sigue sin cubrir una única llamada C eterna —ej. time.sleep(1e9)—:
+      // eso requeriría mover Pyodide a un Web Worker con terminate().)
+      // `exec(..., globals())` preserva que las variables persistan entre corridas.
       await py.runPythonAsync(`
 import sys as _tutor_wd_sys
 import time as _tutor_time
@@ -409,6 +419,9 @@ _tutor_watchdog = {"deadline": None}
 
 
 def _tutor_trace(frame, event, arg):
+    # Tracing por opcode: dispara en cada bytecode, no solo al cambiar de
+    # línea, para cortar también loops apretados de una sola línea.
+    frame.f_trace_opcodes = True
     deadline = _tutor_watchdog["deadline"]
     if deadline is not None and _tutor_time.monotonic() > deadline:
         raise _TutorTimeout()
@@ -416,15 +429,15 @@ def _tutor_trace(frame, event, arg):
 
 
 def _tutor_pause_deadline():
-    # Suspende el watchdog (p.ej. mientras se espera input() humano): con
-    # deadline=None, _tutor_trace nunca aborta.
+    # Suspende el watchdog mientras input() bloquea en window.prompt (tiempo
+    # humano): con deadline=None, _tutor_trace nunca aborta.
     _tutor_watchdog["deadline"] = None
 
 
 def _tutor_reset_deadline():
-    # Presupuesto de cómputo fresco. Se llama al volver de un input(): el
-    # tiempo que el alumno tardó en tipear no cuenta, y el tramo de cómputo
-    # siguiente arranca con _TUTOR_TIMEOUT_SECONDS completos.
+    # Presupuesto de cómputo fresco. Se llama al volver de un input(): el tiempo
+    # que el alumno tardó en tipear no cuenta, y el tramo de cómputo siguiente
+    # arranca con _TUTOR_TIMEOUT_SECONDS completos.
     _tutor_watchdog["deadline"] = _tutor_time.monotonic() + _TUTOR_TIMEOUT_SECONDS
 
 
