@@ -167,11 +167,15 @@ async def list_entregas(
             conditions.append(Entrega.comision_id.in_(my_comisiones))
         if student_pseudonym:
             conditions.append(Entrega.student_pseudonym == student_pseudonym)
-        # NEW-004 QA: la cola de correccion del docente NO debe mostrar entregas
+        # NEW-004 QA: la COLA de correccion del docente NO debe mostrar entregas
         # en 'draft' (el alumno todavia esta trabajando, no entrego). Solo se
         # ocultan si no pidio un estado explicito (puede filtrar estado=draft a
         # proposito). El estudiante SI ve su propio draft (rama else).
-        if not estado:
+        # 2026-06-19: el ocultamiento aplica SOLO a la cola general. Si se pide
+        # un `student_pseudonym` concreto es un lookup puntual (ej. reabrir un
+        # episodio para que el alumno retome) y ahi SI hay que ver su draft, que
+        # es justamente la entrega en curso a resetear.
+        if not estado and not student_pseudonym:
             conditions.append(Entrega.estado != "draft")
     else:
         conditions.append(Entrega.student_pseudonym == user.id)
