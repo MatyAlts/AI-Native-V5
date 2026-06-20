@@ -185,9 +185,8 @@ describe("HomeView", () => {
     await waitFor(() => {
       expect(screen.getByText(/Herramientas transversales/i)).toBeInTheDocument()
     })
-    // Las 3 tools son line-items (no cards)
+    // Las tools son line-items (no cards)
     expect(screen.getByText(/Plantillas/i)).toBeInTheDocument()
-    expect(screen.getByText(/Inter-rater/i)).toBeInTheDocument()
     expect(screen.getByText(/Exportar dataset/i)).toBeInTheDocument()
   })
 })

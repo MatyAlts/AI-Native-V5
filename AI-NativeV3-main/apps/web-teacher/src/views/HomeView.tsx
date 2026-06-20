@@ -15,7 +15,7 @@
  */
 import { HelpButton } from "@platform/ui"
 import { Link } from "@tanstack/react-router"
-import { Download, FileText, Scale, Users } from "lucide-react"
+import { Download, FileText, Users } from "lucide-react"
 import { useCallback, useEffect, useState } from "react"
 import { ComisionDelDocenteCard, type ComisionKpis } from "../components/ComisionDelDocenteCard"
 import { comisionLabel } from "../components/ComisionSelector"
@@ -241,12 +241,6 @@ export function HomeView({ getToken }: Props) {
               icon={<FileText className="h-4 w-4" />}
               title="Plantillas"
               description="Catálogo de TPs canónicos por materia"
-            />
-            <ToolCard
-              to="/kappa"
-              icon={<Scale className="h-4 w-4" />}
-              title="Inter-rater κ"
-              description="Acuerdo entre coders sobre clasificación N4"
             />
             <ToolCard
               to="/export"
