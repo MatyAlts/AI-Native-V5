@@ -16,6 +16,8 @@ import { Route as StudentLongitudinalRouteImport } from './routes/student-longit
 import { Route as ProgressionRouteImport } from './routes/progression'
 import { Route as MaterialesRouteImport } from './routes/materiales'
 import { Route as KappaRouteImport } from './routes/kappa'
+import { Route as InterraterAdminRouteImport } from './routes/interrater-admin'
+import { Route as InterraterRouteImport } from './routes/interrater'
 import { Route as InstrumentosCohorteRouteImport } from './routes/instrumentos-cohorte'
 import { Route as ExportRouteImport } from './routes/export'
 import { Route as EpisodeTimelineRouteImport } from './routes/episode-timeline'
@@ -59,6 +61,16 @@ const MaterialesRoute = MaterialesRouteImport.update({
 const KappaRoute = KappaRouteImport.update({
   id: '/kappa',
   path: '/kappa',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const InterraterAdminRoute = InterraterAdminRouteImport.update({
+  id: '/interrater-admin',
+  path: '/interrater-admin',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const InterraterRoute = InterraterRouteImport.update({
+  id: '/interrater',
+  path: '/interrater',
   getParentRoute: () => rootRouteImport,
 } as any)
 const InstrumentosCohorteRoute = InstrumentosCohorteRouteImport.update({
@@ -117,6 +129,8 @@ export interface FileRoutesByFullPath {
   '/episode-timeline': typeof EpisodeTimelineRoute
   '/export': typeof ExportRoute
   '/instrumentos-cohorte': typeof InstrumentosCohorteRoute
+  '/interrater': typeof InterraterRoute
+  '/interrater-admin': typeof InterraterAdminRoute
   '/kappa': typeof KappaRoute
   '/materiales': typeof MaterialesRoute
   '/progression': typeof ProgressionRoute
@@ -135,6 +149,8 @@ export interface FileRoutesByTo {
   '/episode-timeline': typeof EpisodeTimelineRoute
   '/export': typeof ExportRoute
   '/instrumentos-cohorte': typeof InstrumentosCohorteRoute
+  '/interrater': typeof InterraterRoute
+  '/interrater-admin': typeof InterraterAdminRoute
   '/kappa': typeof KappaRoute
   '/materiales': typeof MaterialesRoute
   '/progression': typeof ProgressionRoute
@@ -154,6 +170,8 @@ export interface FileRoutesById {
   '/episode-timeline': typeof EpisodeTimelineRoute
   '/export': typeof ExportRoute
   '/instrumentos-cohorte': typeof InstrumentosCohorteRoute
+  '/interrater': typeof InterraterRoute
+  '/interrater-admin': typeof InterraterAdminRoute
   '/kappa': typeof KappaRoute
   '/materiales': typeof MaterialesRoute
   '/progression': typeof ProgressionRoute
@@ -174,6 +192,8 @@ export interface FileRouteTypes {
     | '/episode-timeline'
     | '/export'
     | '/instrumentos-cohorte'
+    | '/interrater'
+    | '/interrater-admin'
     | '/kappa'
     | '/materiales'
     | '/progression'
@@ -192,6 +212,8 @@ export interface FileRouteTypes {
     | '/episode-timeline'
     | '/export'
     | '/instrumentos-cohorte'
+    | '/interrater'
+    | '/interrater-admin'
     | '/kappa'
     | '/materiales'
     | '/progression'
@@ -210,6 +232,8 @@ export interface FileRouteTypes {
     | '/episode-timeline'
     | '/export'
     | '/instrumentos-cohorte'
+    | '/interrater'
+    | '/interrater-admin'
     | '/kappa'
     | '/materiales'
     | '/progression'
@@ -229,6 +253,8 @@ export interface RootRouteChildren {
   EpisodeTimelineRoute: typeof EpisodeTimelineRoute
   ExportRoute: typeof ExportRoute
   InstrumentosCohorteRoute: typeof InstrumentosCohorteRoute
+  InterraterRoute: typeof InterraterRoute
+  InterraterAdminRoute: typeof InterraterAdminRoute
   KappaRoute: typeof KappaRoute
   MaterialesRoute: typeof MaterialesRoute
   ProgressionRoute: typeof ProgressionRoute
@@ -287,6 +313,20 @@ declare module '@tanstack/react-router' {
       path: '/kappa'
       fullPath: '/kappa'
       preLoaderRoute: typeof KappaRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/interrater-admin': {
+      id: '/interrater-admin'
+      path: '/interrater-admin'
+      fullPath: '/interrater-admin'
+      preLoaderRoute: typeof InterraterAdminRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/interrater': {
+      id: '/interrater'
+      path: '/interrater'
+      fullPath: '/interrater'
+      preLoaderRoute: typeof InterraterRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/instrumentos-cohorte': {
@@ -365,6 +405,8 @@ const rootRouteChildren: RootRouteChildren = {
   EpisodeTimelineRoute: EpisodeTimelineRoute,
   ExportRoute: ExportRoute,
   InstrumentosCohorteRoute: InstrumentosCohorteRoute,
+  InterraterRoute: InterraterRoute,
+  InterraterAdminRoute: InterraterAdminRoute,
   KappaRoute: KappaRoute,
   MaterialesRoute: MaterialesRoute,
   ProgressionRoute: ProgressionRoute,

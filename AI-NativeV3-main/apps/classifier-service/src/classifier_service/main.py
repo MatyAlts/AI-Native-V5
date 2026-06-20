@@ -8,7 +8,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from classifier_service.config import settings
 from classifier_service.observability import setup_observability
-from classifier_service.routes import classify_ep, health
+from classifier_service.routes import classify_ep, health, interrater
 
 
 @asynccontextmanager
@@ -35,6 +35,7 @@ app.add_middleware(
 app.include_router(health.router)
 app.include_router(health.config_router)
 app.include_router(classify_ep.router)
+app.include_router(interrater.router)
 
 
 @app.get("/")

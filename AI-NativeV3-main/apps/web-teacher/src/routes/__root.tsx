@@ -31,8 +31,10 @@ import {
   Home,
   Layers,
   PieChart,
+  Scale,
   ShieldAlert,
   TrendingUp,
+  Users,
 } from "lucide-react"
 import { useCallback } from "react"
 import { ComisionSelectorRouted } from "../components/ComisionSelectorRouted"
@@ -70,6 +72,8 @@ const NAV_GROUPS: NavGroup[] = [
       { id: "/episode-n-level", label: "Niveles N1-N4", icon: Layers },
       { id: "/cohort-adversarial", label: "Intentos adversos", icon: ShieldAlert },
       { id: "/kappa", label: "Inter-rater", icon: FileBarChart },
+      { id: "/interrater", label: "Codificación (inter-jueces)", icon: Users },
+      { id: "/interrater-admin", label: "Acuerdo κ (admin)", icon: Scale },
       { id: "/instrumentos-cohorte", label: "Instrumentos research", icon: FlaskConical },
     ],
   },

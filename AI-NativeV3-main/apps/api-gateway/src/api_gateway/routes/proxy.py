@@ -59,6 +59,9 @@ ROUTE_MAP: dict[str, str] = {
     "/api/v1/episodes": settings.tutor_service_url,
     "/api/v1/classify_episode": settings.classifier_service_url,
     "/api/v1/classifications": settings.classifier_service_url,
+    # Codificación inter-jueces (validación κ): el docente etiqueta episodios a
+    # ciegas y se persiste en classifier_db (la agregación/κ vive en analytics).
+    "/api/v1/interrater": settings.classifier_service_url,
     # `/api/v1/classifier` (singular) removido del ROUTE_MAP (2026-05-17): el
     # comentario histórico afirmaba que web-student consumía
     # /api/v1/classifier/config-hash, pero es falso — web-student usa

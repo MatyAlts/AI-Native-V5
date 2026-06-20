@@ -192,6 +192,92 @@ export async function getKappaSample(
   return r.json()
 }
 
+// ── Inter-rater (codificación a ciegas + agregación κ) ────────────────
+
+export interface InterraterSample {
+  comision_id: string
+  n: number
+  episodes: { episode_id: string }[]
+}
+
+export async function getInterraterSample(
+  comisionId: string,
+  getToken?: TokenGetter,
+  limit = 50,
+): Promise<InterraterSample> {
+  const r = await fetch(
+    `/api/v1/interrater/sample?comision_id=${comisionId}&limit=${limit}`,
+    { headers: await authHeaders(getToken) },
+  )
+  await throwIfNotOk(r)
+  return r.json()
+}
+
+export async function saveInterraterRating(
+  body: {
+    episode_id: string
+    comision_id: string
+    label: string
+    protocol?: string
+    notes?: string | undefined
+  },
+  getToken?: TokenGetter,
+): Promise<void> {
+  const r = await fetch("/api/v1/interrater/ratings", {
+    method: "POST",
+    headers: await authHeaders(getToken),
+    body: JSON.stringify(body),
+  })
+  await throwIfNotOk(r)
+}
+
+export interface InterraterProgress {
+  comision_id: string
+  rated_episode_ids: string[]
+}
+
+export async function getInterraterProgress(
+  comisionId: string,
+  getToken?: TokenGetter,
+): Promise<InterraterProgress> {
+  const r = await fetch(`/api/v1/interrater/my-progress?comision_id=${comisionId}`, {
+    headers: await authHeaders(getToken),
+  })
+  await throwIfNotOk(r)
+  return r.json()
+}
+
+export interface InterraterPair {
+  rater_a: string
+  rater_b: string
+  n_episodes: number
+  kappa: number | null
+  interpretation: string | null
+}
+
+export interface InterraterAggregate {
+  comision_id: string
+  protocol: string
+  n_raters: number
+  n_episodes_codificados: number
+  distribution: Record<string, number>
+  pares_humano_humano: InterraterPair[]
+  pares_maquina_humano: InterraterPair[]
+}
+
+export async function getInterraterAggregate(
+  comisionId: string,
+  protocol = "ejes",
+  getToken?: TokenGetter,
+): Promise<InterraterAggregate> {
+  const r = await fetch(
+    `/api/v1/analytics/interrater/aggregate?comision_id=${comisionId}&protocol=${protocol}`,
+    { headers: await authHeaders(getToken) },
+  )
+  await throwIfNotOk(r)
+  return r.json()
+}
+
 // ── Export dataset ────────────────────────────────────────────────────
 
 export async function requestCohortExport(

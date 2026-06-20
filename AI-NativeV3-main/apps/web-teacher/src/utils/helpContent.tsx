@@ -668,4 +668,54 @@ export const helpContent: HelpContentMap = {
       </ul>
     </div>
   ),
+
+  interraterCoding: (
+    <div className="space-y-4 text-sidebar-text-muted">
+      <p className="text-lg font-medium text-[var(--text-inverse)]">Codificacion a ciegas</p>
+      <p>
+        Etiquetas episodios reales de la comision SIN ver la etiqueta del clasificador. Es la
+        codificacion inter-jueces: varios docentes codifican el mismo set, y despues se mide el
+        acuerdo (kappa) entre ellos y contra la maquina.
+      </p>
+      <ul className="list-disc list-inside space-y-2 ml-4">
+        <li>
+          <strong>Ver proceso:</strong> abre la traza cruda del episodio (prompts, ediciones de
+          codigo, ejecuciones). Es la unica evidencia que ves para codificar; la etiqueta de la
+          maquina queda oculta a proposito.
+        </li>
+        <li>
+          <strong>Perfiles (3 ejes):</strong> Delegacion pasiva, Apropiacion superficial,
+          Apropiacion reflexiva. Elegi el que mejor describe el proceso del alumno.
+        </li>
+        <li>
+          <strong>Re-etiquetar:</strong> podes cambiar tu codificacion cuando quieras; se guarda
+          por upsert. El avance muestra cuantos codificaste sobre el total.
+        </li>
+      </ul>
+    </div>
+  ),
+
+  interraterAdmin: (
+    <div className="space-y-4 text-sidebar-text-muted">
+      <p className="text-lg font-medium text-[var(--text-inverse)]">Acuerdo kappa (admin)</p>
+      <p>
+        Vista agregada del acuerdo inter-jueces de la comision. Calcula el kappa entre cada par de
+        docentes (humano-humano) y entre el clasificador y cada docente (maquina-humano).
+      </p>
+      <ul className="list-disc list-inside space-y-2 ml-4">
+        <li>
+          <strong>Distribucion:</strong> cuantas codificaciones cayeron en cada etiqueta sobre el
+          total.
+        </li>
+        <li>
+          <strong>kappa &gt;= 0.70:</strong> acuerdo sustancial (Landis y Koch 1977), resaltado en
+          verde. Por debajo, en rojo. "—" cuando no hay episodios en comun para computar el par.
+        </li>
+        <li>
+          <strong>Rater id:</strong> se muestran acortados a los primeros 8 caracteres para que sea
+          legible.
+        </li>
+      </ul>
+    </div>
+  ),
 }

@@ -335,6 +335,121 @@ async def get_kappa_sample(
     return KappaSampleOut(comision_id=str(comision_id), episodes=episodes)
 
 
+# ── Interrater: agregación + κ desde la tabla persistida ──────────────
+class PairKappaOut(BaseModel):
+    rater_a: str
+    rater_b: str
+    n_episodes: int
+    kappa: float | None = None
+    interpretation: str | None = None
+
+
+class InterraterAggregateOut(BaseModel):
+    comision_id: str
+    protocol: str
+    n_raters: int
+    n_episodes_codificados: int
+    distribution: dict[str, int]
+    pares_humano_humano: list[PairKappaOut]
+    pares_maquina_humano: list[PairKappaOut]
+
+
+@router.get("/interrater/aggregate", response_model=InterraterAggregateOut)
+async def interrater_aggregate(
+    comision_id: UUID,
+    protocol: str = "ejes",
+    tenant_id: UUID = Depends(get_tenant_id),
+    user_id: UUID = Depends(get_user_id),
+    _comision_access: None = Depends(require_comision_access),
+) -> InterraterAggregateOut:
+    """Cruza las etiquetas humanas guardadas (`interrater_ratings`) y computa κ:
+    entre cada par de codificadores humanos, y máquina-vs-codificador (solo
+    `protocol='ejes'`, usando `classifications.appropriation`). Cada κ se calcula
+    SOLO sobre los episodios que ambos codificaron (overlap)."""
+    from collections import defaultdict
+    from itertools import combinations
+
+    from classifier_service.models import Classification, InterraterRating
+    from platform_ops import set_tenant_rls
+    from platform_ops.kappa_analysis import KappaRating, compute_cohen_kappa
+    from sqlalchemy import select
+    from sqlalchemy.ext.asyncio import async_sessionmaker
+
+    cls_engine = get_classifier_engine()
+    async with async_sessionmaker(cls_engine, expire_on_commit=False)() as s:
+        await set_tenant_rls(s, tenant_id)
+        rows = (
+            await s.execute(
+                select(
+                    InterraterRating.episode_id,
+                    InterraterRating.rater_id,
+                    InterraterRating.label,
+                ).where(
+                    InterraterRating.comision_id == comision_id,
+                    InterraterRating.protocol == protocol,
+                )
+            )
+        ).all()
+        machine: dict[str, str] = {}
+        if protocol == "ejes":
+            mrows = (
+                await s.execute(
+                    select(
+                        Classification.episode_id, Classification.appropriation
+                    ).where(
+                        Classification.comision_id == comision_id,
+                        Classification.is_current.is_(True),
+                    )
+                )
+            ).all()
+            machine = {str(e): a for e, a in mrows}
+
+    by_rater: dict[str, dict[str, str]] = defaultdict(dict)
+    dist: dict[str, int] = defaultdict(int)
+    episodes_set: set[str] = set()
+    for ep, rater, label in rows:
+        by_rater[str(rater)][str(ep)] = label
+        dist[label] += 1
+        episodes_set.add(str(ep))
+
+    def _kappa(a_map: dict[str, str], b_map: dict[str, str]):
+        common = sorted(set(a_map) & set(b_map))
+        if not common:
+            return 0, None, None
+        ratings = [
+            KappaRating(episode_id=e, rater_a=a_map[e], rater_b=b_map[e]) for e in common
+        ]
+        cats = sorted({r.rater_a for r in ratings} | {r.rater_b for r in ratings})
+        try:
+            res = compute_cohen_kappa(ratings, categories=cats)
+            return len(common), res.kappa, res.interpretation
+        except Exception:  # noqa: BLE001 — par sin señal (1 sola categoría, etc.)
+            return len(common), None, None
+
+    raters = sorted(by_rater)
+    hh: list[PairKappaOut] = []
+    for a, b in combinations(raters, 2):
+        n, k, interp = _kappa(by_rater[a], by_rater[b])
+        hh.append(PairKappaOut(rater_a=a, rater_b=b, n_episodes=n, kappa=k, interpretation=interp))
+    mh: list[PairKappaOut] = []
+    if machine:
+        for r in raters:
+            n, k, interp = _kappa(machine, by_rater[r])
+            mh.append(
+                PairKappaOut(rater_a="maquina", rater_b=r, n_episodes=n, kappa=k, interpretation=interp)
+            )
+
+    return InterraterAggregateOut(
+        comision_id=str(comision_id),
+        protocol=protocol,
+        n_raters=len(raters),
+        n_episodes_codificados=len(episodes_set),
+        distribution=dict(dist),
+        pares_humano_humano=hh,
+        pares_maquina_humano=mh,
+    )
+
+
 # ── Cohort export endpoint ─────────────────────────────────────────────
 # El export real requiere acceso a varias DBs (episodes, events, classifications).
 # Este endpoint es un stub que documenta la API; la integración con el

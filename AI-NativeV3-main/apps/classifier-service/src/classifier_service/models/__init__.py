@@ -99,3 +99,52 @@ class Classification(Base, TenantMixin):
         ),
         Index("ix_classifications_episode_current", "episode_id", "is_current"),
     )
+
+
+class InterraterRating(Base, TenantMixin):
+    """Etiqueta HUMANA de un episodio para validación inter-jueces (κ de Cohen).
+
+    Un docente clasifica un episodio A CIEGAS (sin ver la etiqueta de la máquina
+    ni la de otros codificadores) en uno de los perfiles. Una fila por
+    (episodio, codificador): dos docentes etiquetando el mismo episodio = dos
+    filas, que se cruzan para computar el acuerdo (κ).
+
+    Upsert por (tenant, episode, rater): si el docente re-etiqueta el mismo
+    episodio, se ACTUALIZA su fila (no se acumulan duplicados). La etiqueta de
+    la máquina NO se guarda acá — al agregar se compara contra `classifications`
+    (rater "máquina" vs rater docente).
+    """
+
+    __tablename__ = "interrater_ratings"
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
+    episode_id: Mapped[uuid.UUID] = mapped_column(
+        PgUUID(as_uuid=True), nullable=False, index=True
+    )
+    comision_id: Mapped[uuid.UUID] = mapped_column(
+        PgUUID(as_uuid=True), nullable=False, index=True
+    )
+    # Docente que puso la etiqueta (del header X-User-Id).
+    rater_id: Mapped[uuid.UUID] = mapped_column(
+        PgUUID(as_uuid=True), nullable=False, index=True
+    )
+    # Perfil asignado por el humano. String libre (validado en la capa de ruta
+    # contra el protocolo): ejes canónicos / 8 subgrupos / N1-N4.
+    label: Mapped[str] = mapped_column(String(40), nullable=False)
+    # Qué vocabulario usa la etiqueta: "ejes" | "subgrupos" | "niveles".
+    protocol: Mapped[str] = mapped_column(String(20), nullable=False, default="ejes")
+    notes: Mapped[str | None] = mapped_column(Text, nullable=True)
+    rated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=utc_now_f, nullable=False
+    )
+
+    __table_args__ = (
+        # Un codificador tiene UNA etiqueta por episodio (upsert al re-etiquetar).
+        UniqueConstraint(
+            "tenant_id",
+            "episode_id",
+            "rater_id",
+            name="uq_interrater_episode_rater",
+        ),
+        Index("ix_interrater_comision", "comision_id"),
+    )
