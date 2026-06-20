@@ -78,3 +78,30 @@ def test_subgrupo_no_afecta_el_classifier_config_hash() -> None:
     h1 = compute_classifier_config_hash(DEFAULT_REFERENCE_PROFILE)
     h2 = compute_classifier_config_hash(DEFAULT_REFERENCE_PROFILE)
     assert h1 == h2 and len(h1) == 64
+
+
+def _colaborador_reflexivo() -> list[dict]:
+    """Usó el tutor reflexivamente + experimentó, SIN sobreuso."""
+    ev = [_ev(0, "lectura_enunciado")]
+    ev.append(_ev(1, "prompt_enviado", prompt_kind="exploracion", content="que pasa si..."))
+    for k in range(6):
+        ev.append(_ev(2 + 2 * k, "edicion_codigo", origin="student_typed"))
+        ev.append(_ev(3 + 2 * k, "codigo_ejecutado", stdout="ok\n", stderr=""))
+    return ev
+
+
+def test_sin_sobreuso_es_colaborador_reflexivo() -> None:
+    sg = clasificar_subgrupo(_colaborador_reflexivo())
+    assert sg.key == "colaborador_reflexivo"
+    assert sg.eje == "reflexiva"
+
+
+def test_sobreuso_marca_dependiente_no_reflexivo() -> None:
+    """v3.1.0 (hallazgo 2026-06-20): el sobreuso del tutor (overuse) saca al
+    alumno de 'reflexiva' y lo marca dependiente — antes inflaba reflexiva."""
+    ev = _colaborador_reflexivo()
+    ev.append(_ev(50, "intento_adverso_detectado", category="overuse"))
+    ev.append(_ev(51, "intento_adverso_detectado", category="overuse"))
+    sg = clasificar_subgrupo(ev)
+    assert sg.key == "dependiente_sobreuso"
+    assert sg.eje == "delegacion_pasiva"

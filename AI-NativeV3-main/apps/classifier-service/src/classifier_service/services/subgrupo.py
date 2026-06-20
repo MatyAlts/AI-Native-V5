@@ -31,6 +31,13 @@ DEP_EXP = 0.4
 REFLEX_EXP = 0.4
 TRABADO_MIN_EJEC = 2
 EDIT_MIN = 10
+# Sobreuso del tutor (v3.1.0, hallazgo 2026-06-20): cantidad de marcas
+# `intento_adverso_detectado` (category=overuse) a partir de la cual el alumno
+# se considera DEPENDIENTE (se apoya de mas en el tutor) en lugar de reflexivo.
+# Antes el motor ignoraba esta senal e inflaba "apropiacion_reflexiva" con
+# alumnos que en realidad abusaban del tutor. Umbral CALIBRABLE — confirmar con
+# direccion de tesis (ver 00-Inbox/2026-06-20-hallazgo-clasificador-...).
+OVERUSE_DEP_THRESHOLD = 2
 
 # Mismos kinds reflexivos que ccd.py
 _REFLECTIVE_KINDS = frozenset(
@@ -56,6 +63,7 @@ AUTONOMO_TRABADO = Subgrupo("autonomo_trabado", "Autonomo trabado", "Ofrecer sca
 DESENGANCHADO = Subgrupo("desenganchado", "Desenganchado", "Re-enganchar", "superficial")
 ESCRIBE_SIN_VALIDAR = Subgrupo("escribe_sin_validar", "Escribio sin validar", "Fomentar ejecutar y probar el codigo", "superficial")
 DEPENDIENTE = Subgrupo("dependiente_delegador", "Dependiente / delegador", "Intervenir (copio de la IA)", "delegacion_pasiva")
+DEPENDIENTE_SOBREUSO = Subgrupo("dependiente_sobreuso", "Dependiente (sobreuso)", "Intervenir - se apoya de mas en el tutor (overuse)", "delegacion_pasiva")
 COLABORADOR_REFLEXIVO = Subgrupo("colaborador_reflexivo", "Colaborador reflexivo", "Va bien", "reflexiva")
 COLABORADOR_FUNCIONAL = Subgrupo("colaborador_funcional", "Colaborador funcional", "Empujar a profundizar", "superficial")
 
@@ -144,6 +152,12 @@ def clasificar_subgrupo(events: list[dict]) -> Subgrupo:
         if e.get("event_type") == "prompt_enviado" and _kind(e) == "solicitud_directa"
     )
     poco_trabajo = ediciones < EDIT_MIN and ejec < TRABADO_MIN_EJEC
+    overuse = sum(
+        1
+        for e in events
+        if e.get("event_type") == "intento_adverso_detectado"
+        and (e.get("payload") or {}).get("category") == "overuse"
+    )
 
     if prompts == 0:
         if poco_trabajo:
@@ -154,7 +168,14 @@ def clasificar_subgrupo(events: list[dict]) -> Subgrupo:
             return AUTONOMO_TRABADO
         return ESCRIBE_SIN_VALIDAR
 
-    # con prompts: delegación ANTES que "poco trabajo" (el delegador copia, no trabaja)
+    # con prompts: la dependencia se decide ANTES que reflexivo/funcional.
+    # Sobreuso (v3.1.0): el alumno se apoya compulsivamente en el tutor
+    # (intento_adverso_detectado category=overuse). Es dependencia, no reflexion —
+    # antes caia en colaborador_reflexivo e inflaba "apropiacion_reflexiva"
+    # (hallazgo 2026-06-20). Por eso se chequea primero.
+    if overuse >= OVERUSE_DEP_THRESHOLD:
+        return DEPENDIENTE_SOBREUSO
+    # delegación por solicitud directa ANTES que "poco trabajo" (el delegador copia, no trabaja)
     if sol_directa >= DEP_SOLICITA and exp < DEP_EXP and not _verbaliza(events):
         return DEPENDIENTE
     if poco_trabajo:
