@@ -50,7 +50,7 @@ RUN pnpm install --frozen-lockfile
 # 2026-06-16: el checkbox permite_pausa no aparecía en prod pese a estar en
 # main). Bumpear este valor rompe la cache desde acá y fuerza recompilar los 3
 # frontends con el código actual.
-ARG FRONTEND_CACHEBUST=20260621-2
+ARG FRONTEND_CACHEBUST=20260621-3
 RUN echo "frontend cachebust: $FRONTEND_CACHEBUST"
 
 # Ahora sí copia el código source de apps y packages necesarios.
@@ -74,7 +74,7 @@ FROM nginx:alpine
 # el `pnpm build` corría 87s pero el COPY del dist salía CACHED → servía el
 # bundle viejo). Re-declarar el ARG acá invalida el stage 2 y fuerza re-copiar
 # los `dist/` recién compilados. Bumpear el valor en un rebuild futuro.
-ARG FRONTEND_CACHEBUST=20260621-2
+ARG FRONTEND_CACHEBUST=20260621-3
 RUN echo "stage2 cachebust: $FRONTEND_CACHEBUST"
 
 # Quita config default y mete la nuestra.

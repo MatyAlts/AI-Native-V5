@@ -190,6 +190,26 @@ class SenalesBlock(BaseModel):
     por_perfil: list[SenalesPerfil]
 
 
+class KappaPar(BaseModel):
+    rater_a: str
+    rater_b: str
+    n_episodios: int
+    kappa: float | None
+    interpretacion: str | None
+
+
+class KappaBlock(BaseModel):
+    """Acuerdo inter-codificador (Cohen's κ). Validación empírica del classifier:
+    κ máquina–humano mide qué tan cerca está la máquina de los humanos; κ
+    humano–humano es el techo (los humanos no concuerdan perfecto entre sí)."""
+
+    disponible: bool
+    n_codificadores: int
+    n_episodios_codificados: int
+    pares_humano_humano: list[KappaPar]
+    pares_maquina_humano: list[KappaPar]
+
+
 class PedagogiaOut(BaseModel):
     scope_label: str
     comisiones_incluidas: list[str]
@@ -197,6 +217,7 @@ class PedagogiaOut(BaseModel):
     distribucion: DistribucionBlock
     curva_apropiacion: CurvaApropiacionBlock
     curva_adversa: CurvaAdversaBlock
+    validacion_kappa: KappaBlock
     trayectoria: TrayectoriaBlock
     matriz: MatrizBlock
     triangulacion: TriangulacionBlock
@@ -322,7 +343,10 @@ async def get_pedagogia(
 ) -> PedagogiaOut:
     """Bundle pedagógico sobre un scope. Pasar `comision_id` (una comisión) o
     `materia_id` (todas las comisiones de la materia = "General")."""
+    from itertools import combinations
+
     from platform_ops import set_tenant_rls
+    from platform_ops.kappa_analysis import KappaRating, compute_cohen_kappa
     from platform_ops.longitudinal import StudentTrajectory, summarize_cohort
     from platform_ops.longitudinal import ClassificationPoint as _CP
     from sqlalchemy import bindparam, text
@@ -418,7 +442,7 @@ async def get_pedagogia(
     for r in sorted(ep_rows, key=lambda x: (str(x.student_pseudonym), x.opened_at)):
         episodios_por_alumno[str(r.student_pseudonym)].append(str(r.id))
 
-    # 3. Clasificaciones current del scope (classifier_db).
+    # 3. Clasificaciones current + ratings inter-rater del scope (classifier_db).
     async with cls_maker() as cls_s:
         await set_tenant_rls(cls_s, tenant_id)
         cls_stmt = text(
@@ -429,6 +453,14 @@ async def get_pedagogia(
             "ORDER BY classified_at ASC"
         ).bindparams(bindparam("cids", expanding=True))
         cls_rows = (await cls_s.execute(cls_stmt, {"t": str(tenant_id), "cids": cids})).all()
+
+        # Etiquetas humanas inter-rater (protocolo 'ejes' = los 3 ejes canónicos,
+        # comparables con classifications.appropriation).
+        rat_stmt = text(
+            "SELECT episode_id, rater_id, label FROM interrater_ratings "
+            "WHERE tenant_id = :t AND protocol = 'ejes' AND comision_id IN :cids"
+        ).bindparams(bindparam("cids", expanding=True))
+        rat_rows = (await cls_s.execute(rat_stmt, {"t": str(tenant_id), "cids": cids})).all()
 
     # ── Bloque 1: distribución (+ mapa episodio→ordinal para las curvas) ──
     por_apropiacion: dict[str, int] = defaultdict(int)
@@ -633,6 +665,41 @@ async def get_pedagogia(
         ]
     )
 
+    # ── Validación: Cohen's κ (máquina–humano y humano–humano) ──────────
+    by_rater: dict[str, dict[str, str]] = defaultdict(dict)
+    for ep, rater, label in rat_rows:
+        by_rater[str(rater)][str(ep)] = label
+    machine_appr = {str(r.episode_id): r.appropriation for r in cls_rows}
+
+    def _kappa_pair(a_map: dict[str, str], b_map: dict[str, str]):
+        common = sorted(set(a_map) & set(b_map))
+        if not common:
+            return 0, None, None
+        ratings = [KappaRating(episode_id=e, rater_a=a_map[e], rater_b=b_map[e]) for e in common]
+        cats = sorted({r.rater_a for r in ratings} | {r.rater_b for r in ratings})
+        try:
+            res = compute_cohen_kappa(ratings, categories=cats)
+            return len(common), round(res.kappa, 3), res.interpretation
+        except Exception:  # noqa: BLE001 — par sin señal (1 sola categoría, etc.)
+            return len(common), None, None
+
+    raters = sorted(by_rater)
+    hh: list[KappaPar] = []
+    for ra, rb in combinations(raters, 2):
+        n, k, interp = _kappa_pair(by_rater[ra], by_rater[rb])
+        hh.append(KappaPar(rater_a=ra[:8], rater_b=rb[:8], n_episodios=n, kappa=k, interpretacion=interp))
+    mh: list[KappaPar] = []
+    for r in raters:
+        n, k, interp = _kappa_pair(machine_appr, by_rater[r])
+        mh.append(KappaPar(rater_a="máquina", rater_b=r[:8], n_episodios=n, kappa=k, interpretacion=interp))
+    validacion_kappa = KappaBlock(
+        disponible=len(rat_rows) > 0,
+        n_codificadores=len(raters),
+        n_episodios_codificados=len({str(ep) for ep, _r, _l in rat_rows}),
+        pares_humano_humano=hh,
+        pares_maquina_humano=mh,
+    )
+
     logger.info(
         "pedagogia_computed tenant=%s scope=%s comisiones=%d episodios=%d clasificados=%d alumnos=%d",
         tenant_id,
@@ -650,6 +717,7 @@ async def get_pedagogia(
         distribucion=distribucion,
         curva_apropiacion=curva_apropiacion,
         curva_adversa=curva_adversa,
+        validacion_kappa=validacion_kappa,
         trayectoria=trayectoria,
         matriz=matriz,
         triangulacion=triangulacion,

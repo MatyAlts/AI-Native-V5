@@ -117,6 +117,20 @@ interface SenalesPerfil {
 interface SenalesBlock {
   por_perfil: SenalesPerfil[]
 }
+interface KappaPar {
+  rater_a: string
+  rater_b: string
+  n_episodios: number
+  kappa: number | null
+  interpretacion: string | null
+}
+interface KappaBlock {
+  disponible: boolean
+  n_codificadores: number
+  n_episodios_codificados: number
+  pares_humano_humano: KappaPar[]
+  pares_maquina_humano: KappaPar[]
+}
 interface PedagogiaOut {
   scope_label: string
   comisiones_incluidas: string[]
@@ -124,6 +138,7 @@ interface PedagogiaOut {
   distribucion: DistribucionBlock
   curva_apropiacion: CurvaApropiacionBlock
   curva_adversa: CurvaAdversaBlock
+  validacion_kappa: KappaBlock
   trayectoria: TrayectoriaBlock
   matriz: MatrizBlock
   triangulacion: TriangulacionBlock
@@ -311,6 +326,7 @@ export function PedagogiaPage(): ReactNode {
           <div className={loading ? "space-y-8 opacity-50 transition-opacity" : "space-y-8"}>
             <CurvaApropiacionSection block={data.curva_apropiacion} />
             <CurvaAdversaSection block={data.curva_adversa} />
+            <KappaSection block={data.validacion_kappa} />
             <DistribucionSection block={data.distribucion} />
             <TrayectoriaSection block={data.trayectoria} />
             <MatrizSection block={data.matriz} />
@@ -531,6 +547,92 @@ function LineChart({
         Número de episodio del alumno
       </text>
     </svg>
+  )
+}
+
+// ── Bloque ⭐ C: Validación con Cohen's κ ─────────────────────────────────
+
+function KappaSection({ block }: { block: KappaBlock }): ReactNode {
+  if (!block.disponible || block.n_codificadores === 0) {
+    return (
+      <Section
+        n="★"
+        title="Validación: acuerdo máquina–humano (κ)"
+        subtitle="Cohen's kappa"
+      >
+        <Empty>
+          Todavía no hay codificación humana cargada en este scope. Cuando los docentes etiqueten
+          episodios, acá aparece el κ máquina–humano y entre docentes.
+        </Empty>
+      </Section>
+    )
+  }
+  return (
+    <Section
+      n="★"
+      title="Validación: acuerdo máquina–humano (κ)"
+      subtitle={`${block.n_episodios_codificados} episodios codificados · ${block.n_codificadores} codificadores`}
+    >
+      <div className="space-y-5 rounded-lg border border-border bg-surface p-4">
+        <div>
+          <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-muted">
+            Máquina vs humanos
+          </p>
+          <div className="grid gap-3 sm:grid-cols-2">
+            {block.pares_maquina_humano.map((p) => (
+              <KappaStat key={p.rater_b} pair={p} label={`Clasificador vs ${p.rater_b}`} />
+            ))}
+          </div>
+        </div>
+        {block.pares_humano_humano.length > 0 && (
+          <div>
+            <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-muted">
+              Entre docentes (techo de acuerdo)
+            </p>
+            <div className="grid gap-3 sm:grid-cols-2">
+              {block.pares_humano_humano.map((p, i) => (
+                <KappaStat key={i} pair={p} label={`${p.rater_a} vs ${p.rater_b}`} />
+              ))}
+            </div>
+          </div>
+        )}
+      </div>
+      <p className="mt-3 text-xs text-muted">
+        κ de Cohen, interpretación de Landis &amp; Koch. El acuerdo máquina–humano no puede superar
+        el acuerdo entre los propios docentes (el "techo"): si los humanos no concuerdan perfecto
+        entre sí, no se le puede exigir más a la máquina. Un κ bajo también es un hallazgo válido,
+        no se maquilla.
+      </p>
+    </Section>
+  )
+}
+
+function KappaStat({ pair, label }: { pair: KappaPar; label: string }): ReactNode {
+  const k = pair.kappa
+  const color = k == null ? "text-muted" : k >= 0.6 ? "text-success" : k >= 0.4 ? "text-warning" : "text-danger"
+  const badge =
+    k == null
+      ? "bg-surface-alt text-muted"
+      : k >= 0.6
+        ? "bg-success-soft text-success"
+        : k >= 0.4
+          ? "bg-warning-soft text-[#854d0e]"
+          : "bg-danger-soft text-danger"
+  return (
+    <div className="rounded-md border border-border p-3">
+      <div className="flex items-baseline justify-between gap-2">
+        <span className="text-sm text-ink">{label}</span>
+        <span className="font-mono text-xs text-muted tabular-nums">n={pair.n_episodios}</span>
+      </div>
+      <div className="mt-1.5 flex items-baseline gap-2">
+        <span className={`font-mono text-2xl tabular-nums ${color}`}>
+          {k == null ? "—" : `κ ${k.toFixed(2)}`}
+        </span>
+        {pair.interpretacion && (
+          <span className={`rounded-full px-2 py-0.5 text-xs ${badge}`}>{pair.interpretacion}</span>
+        )}
+      </div>
+    </div>
   )
 }
 
