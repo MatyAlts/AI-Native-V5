@@ -1,4 +1,4 @@
-import { ClerkProvider } from "@clerk/clerk-react"
+import { ClerkProvider, SignedIn, SignedOut, SignIn } from "@clerk/clerk-react"
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query"
 import { StrictMode } from "react"
 import { createRoot } from "react-dom/client"
@@ -14,7 +14,38 @@ const DEV_NO_CLERK = !CLERK_PUBLISHABLE_KEY
 
 const originalFetch = window.fetch.bind(window)
 const apiBase = (import.meta.env.VITE_API_URL ?? "").replace(/\/$/, "")
-window.fetch = (input, init) => {
+
+// Espera robusta del token de Clerk para requests /api/ (mismo patrón que
+// web-teacher). Sin esto, el panel admin mandaba los requests SIN Bearer y el
+// gateway respondía 401 a todo (no hay proxy de Vite en prod que inyecte X-*).
+type ClerkLike = {
+  loaded?: boolean
+  load?: () => Promise<unknown>
+  user?: unknown
+  session?: { getToken: () => Promise<string | null> } | null
+}
+async function getClerkToken(): Promise<string | null> {
+  if (DEV_NO_CLERK) return null
+  const deadlineMs = Date.now() + 5000
+  const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms))
+  const readClerk = () => (window as unknown as { Clerk?: ClerkLike }).Clerk
+  let clerk = readClerk()
+  while (!clerk && Date.now() < deadlineMs) {
+    await sleep(50)
+    clerk = readClerk()
+  }
+  if (!clerk) return null
+  if (clerk.loaded === false && clerk.load) await clerk.load()
+  while (Date.now() < deadlineMs) {
+    const token = await clerk.session?.getToken().catch(() => null)
+    if (token) return token
+    if (clerk.loaded && !clerk.session && !clerk.user) return null
+    await sleep(50)
+  }
+  return null
+}
+
+window.fetch = async (input, init) => {
   const rawUrl = typeof input === "string" ? input : input instanceof URL ? input.href : input.url
   const isRelativeApi = rawUrl.startsWith("/api/")
   const targetUrl = isRelativeApi && apiBase ? `${apiBase}${rawUrl}` : rawUrl
@@ -23,6 +54,10 @@ window.fetch = (input, init) => {
   const headers = new Headers(init?.headers ?? {})
   const tenantId = window.localStorage.getItem(SELECTED_TENANT_STORAGE_KEY)
   if (tenantId) headers.set("x-selected-tenant", tenantId)
+  if (!headers.has("Authorization")) {
+    const token = await getClerkToken()
+    if (token) headers.set("Authorization", `Bearer ${token}`)
+  }
   return originalFetch(targetUrl, { ...init, headers })
 }
 
@@ -49,7 +84,16 @@ createRoot(rootElement).render(
     {DEV_NO_CLERK ? (
       appTree
     ) : (
-      <ClerkProvider publishableKey={CLERK_PUBLISHABLE_KEY}>{appTree}</ClerkProvider>
+      <ClerkProvider publishableKey={CLERK_PUBLISHABLE_KEY}>
+        {/* Sin sesión: pantalla de login de Clerk. Con sesión: la app. El acceso
+            real al panel lo da el rol superadmin (gateway CLERK_ADMIN_EMAILS). */}
+        <SignedOut>
+          <div className="min-h-screen flex items-center justify-center">
+            <SignIn forceRedirectUrl="/admin/" signUpForceRedirectUrl="/admin/" />
+          </div>
+        </SignedOut>
+        <SignedIn>{appTree}</SignedIn>
+      </ClerkProvider>
     )}
   </StrictMode>,
 )

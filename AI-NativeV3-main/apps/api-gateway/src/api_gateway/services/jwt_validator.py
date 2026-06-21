@@ -232,10 +232,15 @@ class ClerkJWTValidator(JWTValidator):
         fixed_tenant_id: str,
         base_roles: frozenset[str],
         jwks_cache: JWKSCache | None = None,
+        admin_emails: frozenset[str] = frozenset(),
     ) -> None:
         super().__init__(config, jwks_cache)
         self.fixed_tenant_id = fixed_tenant_id
         self.base_roles = base_roles
+        # Emails (lowercase) a los que se les concede rol admin además del base.
+        # Clerk solo provee `email`; este allowlist permite tener superadmins sin
+        # depender de la metadata por-usuario de Clerk (que el validator ignora).
+        self.admin_emails = admin_emails
 
     async def validate(self, token: str) -> ValidatedPrincipal:
         try:
@@ -288,11 +293,16 @@ class ClerkJWTValidator(JWTValidator):
             )
         derived_user_id = str(uuid.uuid5(self.CLERK_PSEUDONYM_NAMESPACE, clerk_sub))
 
+        # Roles base + admin si el email está en el allowlist (panel /admin/).
+        roles = self.base_roles
+        if email.lower() in self.admin_emails:
+            roles = roles | {"superadmin", "docente_admin"}
+
         return ValidatedPrincipal(
             user_id=derived_user_id,
             tenant_id=self.fixed_tenant_id,
             email=email,
-            roles=self.base_roles,
+            roles=roles,
             realm="clerk",
             raw_claims=claims,
         )

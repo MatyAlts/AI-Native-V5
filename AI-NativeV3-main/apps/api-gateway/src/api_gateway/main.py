@@ -66,6 +66,11 @@ if settings.jwt_issuer:
             base_roles=frozenset(
                 r.strip() for r in settings.clerk_base_roles.split(",") if r.strip()
             ),
+            admin_emails=frozenset(
+                e.strip().lower()
+                for e in settings.clerk_admin_emails.split(",")
+                if e.strip()
+            ),
         )
     else:
         _jwt_validator = JWTValidator(config=_validator_config)

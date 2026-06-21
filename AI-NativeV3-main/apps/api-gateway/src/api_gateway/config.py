@@ -90,6 +90,10 @@ class Settings(BaseSettings):
     # Roles base que recibe todo usuario logueado con Clerk. La distincion real
     # docente/alumno la da usuarios_comision/inscripciones por identidad, no el token.
     clerk_base_roles: str = "estudiante,docente"
+    # Emails (CSV) a los que el gateway concede rol admin (superadmin +
+    # docente_admin) además del base — para entrar al panel /admin/. Se setea por
+    # env CLERK_ADMIN_EMAILS. Vacío = ningún admin (comportamiento actual).
+    clerk_admin_emails: str = ""
     # SAFETY: default False — auth via JWT obligatorio. Para dev local sin
     # Keycloak setear DEV_TRUST_HEADERS=true explicito en .env (los frontends
     # mandan X-User-Id / X-Tenant-Id / X-User-Roles via Vite proxy). En piloto-2
