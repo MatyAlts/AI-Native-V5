@@ -123,6 +123,9 @@ interface KappaPar {
   n_episodios: number
   kappa: number | null
   interpretacion: string | null
+  ac1: number | null
+  ac1_interpretacion: string | null
+  acuerdo_observado: number | null
 }
 interface KappaBlock {
   disponible: boolean
@@ -598,24 +601,25 @@ function KappaSection({ block }: { block: KappaBlock }): ReactNode {
         )}
       </div>
       <p className="mt-3 text-xs text-muted">
-        κ de Cohen, interpretación de Landis &amp; Koch. El acuerdo máquina–humano no puede superar
-        el acuerdo entre los propios docentes (el "techo"): si los humanos no concuerdan perfecto
-        entre sí, no se le puede exigir más a la máquina. Un κ bajo también es un hallazgo válido,
-        no se maquilla.
+        Titular: <strong>Gwet's AC1</strong>, robusto a la paradoja de prevalencia (cuando una
+        categoría domina, el κ se defla pese a alto acuerdo crudo). Se muestran también el κ de
+        Cohen y el acuerdo crudo para total transparencia. El acuerdo máquina–humano no puede
+        superar el techo humano–humano: si los docentes no concuerdan entre sí, no se le exige más
+        a la máquina. Un valor bajo es un hallazgo válido, no se maquilla.
       </p>
     </Section>
   )
 }
 
 function KappaStat({ pair, label }: { pair: KappaPar; label: string }): ReactNode {
-  const k = pair.kappa
-  const color = k == null ? "text-muted" : k >= 0.6 ? "text-success" : k >= 0.4 ? "text-warning" : "text-danger"
-  const badge =
-    k == null
+  const colorFor = (v: number | null) =>
+    v == null ? "text-muted" : v >= 0.6 ? "text-success" : v >= 0.4 ? "text-warning" : "text-danger"
+  const badgeFor = (v: number | null) =>
+    v == null
       ? "bg-surface-alt text-muted"
-      : k >= 0.6
+      : v >= 0.6
         ? "bg-success-soft text-success"
-        : k >= 0.4
+        : v >= 0.4
           ? "bg-warning-soft text-[#854d0e]"
           : "bg-danger-soft text-danger"
   return (
@@ -624,12 +628,33 @@ function KappaStat({ pair, label }: { pair: KappaPar; label: string }): ReactNod
         <span className="text-sm text-ink">{label}</span>
         <span className="font-mono text-xs text-muted tabular-nums">n={pair.n_episodios}</span>
       </div>
+      {/* AC1 como titular (corregido por prevalencia) */}
       <div className="mt-1.5 flex items-baseline gap-2">
-        <span className={`font-mono text-2xl tabular-nums ${color}`}>
-          {k == null ? "—" : `κ ${k.toFixed(2)}`}
+        <span className={`font-mono text-2xl tabular-nums ${colorFor(pair.ac1)}`}>
+          {pair.ac1 == null ? "—" : `AC1 ${pair.ac1.toFixed(2)}`}
         </span>
-        {pair.interpretacion && (
-          <span className={`rounded-full px-2 py-0.5 text-xs ${badge}`}>{pair.interpretacion}</span>
+        {pair.ac1_interpretacion && (
+          <span className={`rounded-full px-2 py-0.5 text-xs ${badgeFor(pair.ac1)}`}>
+            {pair.ac1_interpretacion}
+          </span>
+        )}
+      </div>
+      {/* κ y acuerdo crudo como contexto */}
+      <div className="mt-1 flex flex-wrap gap-x-3 gap-y-0.5 text-xs text-muted">
+        <span>
+          κ{" "}
+          <span className="font-mono tabular-nums text-ink">
+            {pair.kappa == null ? "—" : pair.kappa.toFixed(2)}
+          </span>
+          {pair.interpretacion ? ` (${pair.interpretacion})` : ""}
+        </span>
+        {pair.acuerdo_observado != null && (
+          <span>
+            · acuerdo crudo{" "}
+            <span className="font-mono tabular-nums text-ink">
+              {Math.round(pair.acuerdo_observado * 100)}%
+            </span>
+          </span>
         )}
       </div>
     </div>

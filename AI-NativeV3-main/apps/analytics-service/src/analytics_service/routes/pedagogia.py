@@ -196,6 +196,11 @@ class KappaPar(BaseModel):
     n_episodios: int
     kappa: float | None
     interpretacion: str | None
+    # Gwet's AC1: robusto a la paradoja de prevalencia (cuando una categoría
+    # domina y defla el κ pese a alto acuerdo crudo).
+    ac1: float | None
+    ac1_interpretacion: str | None
+    acuerdo_observado: float | None  # proporción de acuerdo crudo [0,1]
 
 
 class KappaBlock(BaseModel):
@@ -671,27 +676,35 @@ async def get_pedagogia(
         by_rater[str(rater)][str(ep)] = label
     machine_appr = {str(r.episode_id): r.appropriation for r in cls_rows}
 
-    def _kappa_pair(a_map: dict[str, str], b_map: dict[str, str]):
+    def _kappa_par(a_label: str, b_label: str, a_map: dict[str, str], b_map: dict[str, str]) -> KappaPar:
         common = sorted(set(a_map) & set(b_map))
+        base = {"rater_a": a_label, "rater_b": b_label, "n_episodios": len(common)}
         if not common:
-            return 0, None, None
+            return KappaPar(
+                **base, kappa=None, interpretacion=None, ac1=None,
+                ac1_interpretacion=None, acuerdo_observado=None,
+            )
         ratings = [KappaRating(episode_id=e, rater_a=a_map[e], rater_b=b_map[e]) for e in common]
         cats = sorted({r.rater_a for r in ratings} | {r.rater_b for r in ratings})
         try:
             res = compute_cohen_kappa(ratings, categories=cats)
-            return len(common), round(res.kappa, 3), res.interpretation
+            return KappaPar(
+                **base,
+                kappa=round(res.kappa, 3),
+                interpretacion=res.interpretation,
+                ac1=round(res.ac1, 3),
+                ac1_interpretacion=res.ac1_interpretation,
+                acuerdo_observado=round(res.observed_agreement, 3),
+            )
         except Exception:  # noqa: BLE001 — par sin señal (1 sola categoría, etc.)
-            return len(common), None, None
+            return KappaPar(
+                **base, kappa=None, interpretacion=None, ac1=None,
+                ac1_interpretacion=None, acuerdo_observado=None,
+            )
 
     raters = sorted(by_rater)
-    hh: list[KappaPar] = []
-    for ra, rb in combinations(raters, 2):
-        n, k, interp = _kappa_pair(by_rater[ra], by_rater[rb])
-        hh.append(KappaPar(rater_a=ra[:8], rater_b=rb[:8], n_episodios=n, kappa=k, interpretacion=interp))
-    mh: list[KappaPar] = []
-    for r in raters:
-        n, k, interp = _kappa_pair(machine_appr, by_rater[r])
-        mh.append(KappaPar(rater_a="máquina", rater_b=r[:8], n_episodios=n, kappa=k, interpretacion=interp))
+    hh = [_kappa_par(ra[:8], rb[:8], by_rater[ra], by_rater[rb]) for ra, rb in combinations(raters, 2)]
+    mh = [_kappa_par("máquina", r[:8], machine_appr, by_rater[r]) for r in raters]
     validacion_kappa = KappaBlock(
         disponible=len(rat_rows) > 0,
         n_codificadores=len(raters),
