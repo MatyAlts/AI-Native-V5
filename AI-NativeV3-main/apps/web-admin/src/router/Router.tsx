@@ -26,6 +26,7 @@ import {
   Library,
   ShieldAlert,
   ShieldCheck,
+  TrendingUp,
   Upload,
   Users,
 } from "lucide-react"
@@ -40,6 +41,7 @@ import { FacultadesPage } from "../pages/FacultadesPage"
 import { GovernanceEventsPage } from "../pages/GovernanceEventsPage"
 import { HomePage } from "../pages/HomePage"
 import { MateriasPage } from "../pages/MateriasPage"
+import { PedagogiaPage } from "../pages/PedagogiaPage"
 import { PeriodosPage } from "../pages/PeriodosPage"
 import { PlanesPage } from "../pages/PlanesPage"
 import { UniversidadesPage } from "../pages/UniversidadesPage"
@@ -59,6 +61,7 @@ export type Route =
   | "planes"
   | "materias"
   | "comisiones"
+  | "pedagogia"
   | "clasificaciones"
   | "periodos"
   | "bulk-import"
@@ -88,7 +91,10 @@ const NAV_GROUPS: NavGroup[] = [
   },
   {
     label: "Pedagogía",
-    items: [{ id: "clasificaciones", label: "Clasificaciones N4", icon: FileBarChart }],
+    items: [
+      { id: "pedagogia", label: "Pedagogía", icon: TrendingUp },
+      { id: "clasificaciones", label: "Clasificaciones N4", icon: FileBarChart },
+    ],
   },
   {
     label: "Auditoria",
@@ -135,6 +141,7 @@ export function Router(): ReactNode {
           {current === "planes" && <PlanesPage />}
           {current === "materias" && <MateriasPage />}
           {current === "comisiones" && <ComisionesPage />}
+          {current === "pedagogia" && <PedagogiaPage />}
           {current === "clasificaciones" && <ClasificacionesPage />}
           {current === "periodos" && <PeriodosPage />}
           {current === "bulk-import" && <BulkImportPage />}

@@ -8,7 +8,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from analytics_service.config import settings
 from analytics_service.observability import setup_observability
-from analytics_service.routes import analytics, export_standards, health
+from analytics_service.routes import analytics, export_standards, health, pedagogia
 
 
 @asynccontextmanager
@@ -50,6 +50,9 @@ app.include_router(analytics.router)
 
 # Caliper Analytics 1.2 + xAPI 1.0.3 exporters (P3-1 del PlanMejora.md, paper §5.1)
 app.include_router(export_standards.router)
+
+# Dashboard pedagógico agregado para el panel admin (sección "Pedagogía")
+app.include_router(pedagogia.router)
 
 
 @app.get("/")

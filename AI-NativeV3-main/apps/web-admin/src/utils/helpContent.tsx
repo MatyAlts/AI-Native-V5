@@ -49,6 +49,48 @@ export const helpContent: HelpContentMap = {
     </div>
   ),
 
+  pedagogia: (
+    <div className="space-y-4 text-muted-soft">
+      <p className="text-lg font-medium text-[var(--text-inverse)]">Pedagogía</p>
+      <p>
+        Análisis pedagógico agregado sobre TODOS los episodios de un scope (una materia entera o
+        una comisión puntual). Se construye a partir de datos que ya existen — no requiere
+        codificación manual de docentes.
+      </p>
+      <ul className="list-disc list-inside space-y-2 ml-4">
+        <li>
+          <strong>Distribución:</strong> en qué perfil de apropiación (reflexiva / superficial /
+          delegación) cae cada episodio clasificado, con desglose por subgrupo.
+        </li>
+        <li>
+          <strong>Trayectoria:</strong> para cada alumno con 3+ episodios, si su apropiación
+          mejora, se mantiene o empeora a lo largo del tiempo. Usa la misma operacionalización
+          longitudinal de la tesis (último tercio vs primero).
+        </li>
+        <li>
+          <strong>Matriz alumno x perfil:</strong> cuántos episodios de cada perfil tuvo cada
+          alumno.
+        </li>
+        <li>
+          <strong>Triangulación:</strong> perfil de apropiación vs completitud de ejercicios. El
+          piloto no tiene notas finales cargadas, asi que se usa completitud como proxy (declarado
+          explicito).
+        </li>
+        <li>
+          <strong>Señales:</strong> coherencias CT / CCD / CII promedio por perfil — la evidencia
+          cuantitativa que respalda cada etiqueta.
+        </li>
+      </ul>
+      <div className="bg-sidebar-bg-edge p-4 rounded-lg mt-4">
+        <p className="text-warning font-medium">Nota metodologica:</p>
+        <p className="text-sm mt-1">
+          La trayectoria solo computa alumnos con 3+ episodios. Los de 1-2 episodios aparecen como
+          "datos insuficientes" — no se infiere progresión sobre un solo punto.
+        </p>
+      </div>
+    </div>
+  ),
+
   universidades: (
     <div className="space-y-4 text-muted-soft">
       <p className="text-lg font-medium text-[var(--text-inverse)]">Universidades</p>
