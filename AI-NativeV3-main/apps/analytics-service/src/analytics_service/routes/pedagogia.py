@@ -90,13 +90,47 @@ class ScopesOut(BaseModel):
 
 class SubgrupoCount(BaseModel):
     key: str
+    label: str
     n: int
 
 
 class DistribucionBlock(BaseModel):
     n_episodios_clasificados: int
+    n_indeterminados: int
     por_apropiacion: dict[str, int]
     por_subgrupo: list[SubgrupoCount]
+
+
+class CurvaPunto(BaseModel):
+    posicion: int  # n-ésimo episodio del alumno (1-indexed)
+    media_ordinal: float | None  # apropiación promedio (0=deleg, 1=superf, 2=reflex)
+    n_alumnos: int
+
+
+class CurvaApropiacionBlock(BaseModel):
+    """Evolución agregada de la cohorte: apropiación media según el orden de
+    episodio. Consistente con (no prueba de) un efecto del tutor a lo largo del
+    uso. Sin grupo control, la inferencia causal no es posible."""
+
+    puntos: list[CurvaPunto]
+    min_alumnos: int  # umbral de corte (posiciones con menos alumnos se omiten)
+
+
+class CurvaAdversaPunto(BaseModel):
+    posicion: int
+    media_adversos: float  # intentos adversos promedio por alumno en ese episodio
+    n_alumnos: int
+
+
+class CurvaAdversaBlock(BaseModel):
+    """Intentos adversos (tratar de sacarle la respuesta al tutor) promedio por
+    alumno según el orden de episodio. Señal de comportamiento INDEPENDIENTE del
+    classifier (no hay circularidad). Una curva descendente es consistente con el
+    tutor moldeando la conducta hacia un uso legítimo."""
+
+    n_eventos_total: int
+    puntos: list[CurvaAdversaPunto]
+    min_alumnos: int
 
 
 class TrayectoriaAlumno(BaseModel):
@@ -161,6 +195,8 @@ class PedagogiaOut(BaseModel):
     comisiones_incluidas: list[str]
     n_episodios_total: int
     distribucion: DistribucionBlock
+    curva_apropiacion: CurvaApropiacionBlock
+    curva_adversa: CurvaAdversaBlock
     trayectoria: TrayectoriaBlock
     matriz: MatrizBlock
     triangulacion: TriangulacionBlock
@@ -347,16 +383,40 @@ async def get_pedagogia(
             await acad_s.execute(ent_stmt, {"t": str(tenant_id), "cids": cids})
         ).all()
 
-    # 2. Episodios del scope (ctr_store) → episode_id → student_pseudonym.
+    # 2. Episodios del scope (ctr_store) → episode_id → student + orden temporal.
     async with ctr_maker() as ctr_s:
         await set_tenant_rls(ctr_s, tenant_id)
         ep_stmt = text(
-            "SELECT id, student_pseudonym FROM episodes "
+            "SELECT id, student_pseudonym, opened_at FROM episodes "
             "WHERE tenant_id = :t AND comision_id IN :cids"
         ).bindparams(bindparam("cids", expanding=True))
         ep_rows = (await ctr_s.execute(ep_stmt, {"t": str(tenant_id), "cids": cids})).all()
-    ep_to_student: dict[str, str] = {str(r.id): str(r.student_pseudonym) for r in ep_rows}
-    n_episodios_total = len(ep_to_student)
+
+        ep_to_student: dict[str, str] = {str(r.id): str(r.student_pseudonym) for r in ep_rows}
+        n_episodios_total = len(ep_to_student)
+
+        # 2b. Intentos adversos (event_type='intento_adverso_detectado') por episodio.
+        # Señal independiente del classifier. Filtrada por los episodios del scope.
+        adversos_por_episodio: dict[str, int] = defaultdict(int)
+        n_adversos_total = 0
+        ep_ids = list(ep_to_student.keys())
+        if ep_ids:
+            adv_stmt = text(
+                "SELECT episode_id, count(*) AS n FROM events "
+                "WHERE tenant_id = :t AND event_type = 'intento_adverso_detectado' "
+                "AND episode_id IN :eids GROUP BY episode_id"
+            ).bindparams(bindparam("eids", expanding=True))
+            adv_rows = (
+                await ctr_s.execute(adv_stmt, {"t": str(tenant_id), "eids": ep_ids})
+            ).all()
+            for r in adv_rows:
+                adversos_por_episodio[str(r.episode_id)] = int(r.n)
+                n_adversos_total += int(r.n)
+
+    # Orden temporal de los episodios de cada alumno (por opened_at).
+    episodios_por_alumno: dict[str, list[str]] = defaultdict(list)
+    for r in sorted(ep_rows, key=lambda x: (str(x.student_pseudonym), x.opened_at)):
+        episodios_por_alumno[str(r.student_pseudonym)].append(str(r.id))
 
     # 3. Clasificaciones current del scope (classifier_db).
     async with cls_maker() as cls_s:
@@ -370,23 +430,73 @@ async def get_pedagogia(
         ).bindparams(bindparam("cids", expanding=True))
         cls_rows = (await cls_s.execute(cls_stmt, {"t": str(tenant_id), "cids": cids})).all()
 
-    # ── Bloque 1: distribución ──────────────────────────────────────────
+    # ── Bloque 1: distribución (+ mapa episodio→ordinal para las curvas) ──
     por_apropiacion: dict[str, int] = defaultdict(int)
     por_subgrupo: dict[str, int] = defaultdict(int)
+    subgrupo_labels: dict[str, str] = {}
+    appr_por_episodio: dict[str, int] = {}
+    n_indeterminados = 0
     for r in cls_rows:
         por_apropiacion[r.appropriation] += 1
+        if r.appropriation in _ORDINAL:
+            appr_por_episodio[str(r.episode_id)] = _ORDINAL[r.appropriation]
+        else:
+            n_indeterminados += 1
         feats = _as_json(r.features) or {}
-        sg = (feats.get("subgrupo") or {}).get("key") if isinstance(feats, dict) else None
-        if sg and sg != "indeterminado":
-            por_subgrupo[sg] += 1
+        sgd = feats.get("subgrupo") if isinstance(feats, dict) else None
+        if isinstance(sgd, dict):
+            sg = sgd.get("key")
+            if sg and sg != "indeterminado":
+                por_subgrupo[sg] += 1
+                subgrupo_labels.setdefault(sg, sgd.get("label") or sg)
     distribucion = DistribucionBlock(
         n_episodios_clasificados=len(cls_rows),
+        n_indeterminados=n_indeterminados,
         por_apropiacion=dict(por_apropiacion),
         por_subgrupo=sorted(
-            (SubgrupoCount(key=k, n=v) for k, v in por_subgrupo.items()),
+            (SubgrupoCount(key=k, label=subgrupo_labels.get(k, k), n=v) for k, v in por_subgrupo.items()),
             key=lambda s: s.n,
             reverse=True,
         ),
+    )
+
+    # ── Curvas agregadas de cohorte (por orden de episodio) ─────────────
+    MIN_ALUMNOS_CURVA = 3
+    ord_acc: dict[int, list[int]] = defaultdict(list)  # posición → ordinales de apropiación
+    adv_acc: dict[int, list[int]] = defaultdict(list)  # posición → conteos de adversos
+    max_pos = 0
+    for _student, eps in episodios_por_alumno.items():
+        for idx, ep_id in enumerate(eps, start=1):
+            max_pos = max(max_pos, idx)
+            if ep_id in appr_por_episodio:
+                ord_acc[idx].append(appr_por_episodio[ep_id])
+            # cada episodio del alumno cuenta para adversos (0 si no hubo)
+            adv_acc[idx].append(adversos_por_episodio.get(ep_id, 0))
+
+    curva_apropiacion = CurvaApropiacionBlock(
+        min_alumnos=MIN_ALUMNOS_CURVA,
+        puntos=[
+            CurvaPunto(
+                posicion=p,
+                media_ordinal=round(sum(ord_acc[p]) / len(ord_acc[p]), 3),
+                n_alumnos=len(ord_acc[p]),
+            )
+            for p in range(1, max_pos + 1)
+            if len(ord_acc.get(p, [])) >= MIN_ALUMNOS_CURVA
+        ],
+    )
+    curva_adversa = CurvaAdversaBlock(
+        n_eventos_total=n_adversos_total,
+        min_alumnos=MIN_ALUMNOS_CURVA,
+        puntos=[
+            CurvaAdversaPunto(
+                posicion=p,
+                media_adversos=round(sum(adv_acc[p]) / len(adv_acc[p]), 3),
+                n_alumnos=len(adv_acc[p]),
+            )
+            for p in range(1, max_pos + 1)
+            if len(adv_acc.get(p, [])) >= MIN_ALUMNOS_CURVA
+        ],
     )
 
     # ── Bloques 2/3/5: agrupar puntos por estudiante ────────────────────
@@ -538,6 +648,8 @@ async def get_pedagogia(
         comisiones_incluidas=[str(c) for c in comision_ids],
         n_episodios_total=n_episodios_total,
         distribucion=distribucion,
+        curva_apropiacion=curva_apropiacion,
+        curva_adversa=curva_adversa,
         trayectoria=trayectoria,
         matriz=matriz,
         triangulacion=triangulacion,

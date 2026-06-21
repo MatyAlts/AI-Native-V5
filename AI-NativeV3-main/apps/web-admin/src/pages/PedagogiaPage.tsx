@@ -40,12 +40,33 @@ interface ScopesOut {
 
 interface SubgrupoCount {
   key: string
+  label: string
   n: number
 }
 interface DistribucionBlock {
   n_episodios_clasificados: number
+  n_indeterminados: number
   por_apropiacion: Record<string, number>
   por_subgrupo: SubgrupoCount[]
+}
+interface CurvaPunto {
+  posicion: number
+  media_ordinal: number | null
+  n_alumnos: number
+}
+interface CurvaApropiacionBlock {
+  puntos: CurvaPunto[]
+  min_alumnos: number
+}
+interface CurvaAdversaPunto {
+  posicion: number
+  media_adversos: number
+  n_alumnos: number
+}
+interface CurvaAdversaBlock {
+  n_eventos_total: number
+  puntos: CurvaAdversaPunto[]
+  min_alumnos: number
 }
 interface TrayectoriaAlumno {
   student: string
@@ -101,6 +122,8 @@ interface PedagogiaOut {
   comisiones_incluidas: string[]
   n_episodios_total: number
   distribucion: DistribucionBlock
+  curva_apropiacion: CurvaApropiacionBlock
+  curva_adversa: CurvaAdversaBlock
   trayectoria: TrayectoriaBlock
   matriz: MatrizBlock
   triangulacion: TriangulacionBlock
@@ -286,6 +309,8 @@ export function PedagogiaPage(): ReactNode {
 
         {data && (
           <div className={loading ? "space-y-8 opacity-50 transition-opacity" : "space-y-8"}>
+            <CurvaApropiacionSection block={data.curva_apropiacion} />
+            <CurvaAdversaSection block={data.curva_adversa} />
             <DistribucionSection block={data.distribucion} />
             <TrayectoriaSection block={data.trayectoria} />
             <MatrizSection block={data.matriz} />
@@ -295,6 +320,217 @@ export function PedagogiaPage(): ReactNode {
         )}
       </div>
     </PageContainer>
+  )
+}
+
+// ── Bloque ⭐ A: Curva agregada de apropiación ────────────────────────────
+
+function CurvaApropiacionSection({ block }: { block: CurvaApropiacionBlock }): ReactNode {
+  const pts = block.puntos
+    .filter((p) => p.media_ordinal != null)
+    .map((p) => ({ x: p.posicion, y: p.media_ordinal as number, n: p.n_alumnos }))
+  const first = pts[0]
+  const last = pts[pts.length - 1]
+  const delta = first && last ? last.y - first.y : 0
+
+  return (
+    <Section
+      n="★"
+      title="Evolución de la cohorte"
+      subtitle="¿Sube la apropiación a medida que usan el tutor?"
+    >
+      {pts.length < 2 ? (
+        <Empty>
+          Datos insuficientes para la curva (se necesitan posiciones con {block.min_alumnos}+
+          alumnos).
+        </Empty>
+      ) : (
+        <div className="rounded-lg border border-border bg-surface p-4">
+          <div className="mb-3 flex items-center gap-3">
+            <span className={`text-sm font-medium ${delta > 0.05 ? "text-success" : delta < -0.05 ? "text-danger" : "text-muted"}`}>
+              {delta > 0 ? "↑" : delta < 0 ? "↓" : "→"} {delta >= 0 ? "+" : ""}
+              {delta.toFixed(2)} niveles entre el 1.º y el último episodio
+            </span>
+          </div>
+          <LineChart
+            points={pts}
+            yMin={0}
+            yMax={2}
+            yTicks={[
+              { value: 0, label: "Delegación" },
+              { value: 1, label: "Superficial" },
+              { value: 2, label: "Reflexiva" },
+            ]}
+            stroke="var(--color-success)"
+            area
+          />
+          <p className="mt-3 text-xs text-muted">
+            Apropiación promedio de la cohorte según el <strong>número de episodio</strong> del
+            alumno (1.º, 2.º, 3.º…). Una pendiente ascendente es <strong>consistente con</strong> —
+            no prueba de — un efecto del tutor: el piloto es observacional, sin grupo control. Cada
+            punto agrega solo posiciones con {block.min_alumnos}+ alumnos.
+          </p>
+        </div>
+      )}
+    </Section>
+  )
+}
+
+// ── Bloque ⭐ B: Intentos adversos en el tiempo ───────────────────────────
+
+function CurvaAdversaSection({ block }: { block: CurvaAdversaBlock }): ReactNode {
+  const pts = block.puntos.map((p) => ({ x: p.posicion, y: p.media_adversos, n: p.n_alumnos }))
+  const first = pts[0]
+  const last = pts[pts.length - 1]
+  const delta = first && last ? last.y - first.y : 0
+  const yMax = Math.max(0.5, ...pts.map((p) => p.y)) * 1.15
+
+  return (
+    <Section
+      n="★"
+      title="Intentos de sacarle la respuesta al tutor"
+      subtitle="¿Dejan de intentar gamear al tutor con el tiempo?"
+    >
+      {block.n_eventos_total === 0 ? (
+        <Empty>No se registraron intentos adversos en este scope.</Empty>
+      ) : pts.length < 2 ? (
+        <Empty>
+          Datos insuficientes para la curva (posiciones con {block.min_alumnos}+ alumnos).
+        </Empty>
+      ) : (
+        <div className="rounded-lg border border-border bg-surface p-4">
+          <div className="mb-3 flex items-center gap-3">
+            <span className={`text-sm font-medium ${delta < -0.02 ? "text-success" : delta > 0.02 ? "text-danger" : "text-muted"}`}>
+              {delta < 0 ? "↓" : delta > 0 ? "↑" : "→"} {delta >= 0 ? "+" : ""}
+              {delta.toFixed(2)} intentos/alumno entre el 1.º y el último episodio
+            </span>
+            <span className="font-mono text-xs text-muted tabular-nums">
+              {block.n_eventos_total} eventos en total
+            </span>
+          </div>
+          <LineChart
+            points={pts}
+            yMin={0}
+            yMax={yMax}
+            yTicks={[
+              { value: 0, label: "0" },
+              { value: yMax / 2, label: (yMax / 2).toFixed(1) },
+              { value: yMax, label: yMax.toFixed(1) },
+            ]}
+            stroke="var(--color-danger)"
+            area
+          />
+          <p className="mt-3 text-xs text-muted">
+            Intentos adversos promedio por alumno (tratar de que el tutor dé la respuesta) según el
+            número de episodio. Esta señal es <strong>independiente del classifier</strong> (no hay
+            circularidad). Una curva <strong>descendente</strong> es consistente con el tutor
+            moldeando la conducta hacia un uso legítimo.
+          </p>
+        </div>
+      )}
+    </Section>
+  )
+}
+
+// ── LineChart SVG genérico (sin chart libs, DESIGN.md) ────────────────────
+
+function LineChart({
+  points,
+  yMin,
+  yMax,
+  yTicks,
+  stroke,
+  area = false,
+}: {
+  points: { x: number; y: number; n: number }[]
+  yMin: number
+  yMax: number
+  yTicks: { value: number; label: string }[]
+  stroke: string
+  area?: boolean
+}): ReactNode {
+  const W = 640
+  const H = 220
+  const padL = 92
+  const padR = 18
+  const padT = 14
+  const padB = 30
+  const xs = points.map((p) => p.x)
+  const xMin = Math.min(...xs)
+  const xMax = Math.max(...xs)
+  const xFor = (x: number) =>
+    padL + (xMax === xMin ? 0.5 : (x - xMin) / (xMax - xMin)) * (W - padL - padR)
+  const yFor = (y: number) =>
+    H - padB - ((y - yMin) / (yMax - yMin || 1)) * (H - padT - padB)
+  const linePts = points.map((p) => `${xFor(p.x).toFixed(1)},${yFor(p.y).toFixed(1)}`).join(" ")
+  const areaPts = `${xFor(points[0]?.x ?? 0).toFixed(1)},${(H - padB).toFixed(1)} ${linePts} ${xFor(points[points.length - 1]?.x ?? 0).toFixed(1)},${(H - padB).toFixed(1)}`
+  // Etiquetas de eje X: cada N para no saturar.
+  const step = Math.max(1, Math.ceil(points.length / 10))
+
+  return (
+    <svg
+      viewBox={`0 0 ${W} ${H}`}
+      className="w-full"
+      style={{ maxHeight: H }}
+      role="img"
+      preserveAspectRatio="xMidYMid meet"
+    >
+      {/* Gridlines + labels Y */}
+      {yTicks.map((t) => (
+        <g key={t.value}>
+          <line
+            x1={padL}
+            x2={W - padR}
+            y1={yFor(t.value)}
+            y2={yFor(t.value)}
+            stroke="var(--color-border)"
+            strokeWidth={1}
+            strokeDasharray="2 3"
+          />
+          <text
+            x={padL - 10}
+            y={yFor(t.value) + 4}
+            textAnchor="end"
+            className="fill-[var(--color-muted)]"
+            fontSize={11}
+          >
+            {t.label}
+          </text>
+        </g>
+      ))}
+      {/* Área */}
+      {area && <polygon points={areaPts} fill={stroke} opacity={0.08} />}
+      {/* Línea */}
+      <polyline points={linePts} fill="none" stroke={stroke} strokeWidth={2.5} strokeLinejoin="round" />
+      {/* Puntos + eje X */}
+      {points.map((p, i) => (
+        <g key={p.x}>
+          <circle cx={xFor(p.x)} cy={yFor(p.y)} r={3.5} fill={stroke}>
+            <title>{`Episodio ${p.x}: ${p.y.toFixed(2)} (n=${p.n})`}</title>
+          </circle>
+          {i % step === 0 && (
+            <text
+              x={xFor(p.x)}
+              y={H - padB + 16}
+              textAnchor="middle"
+              className="fill-[var(--color-muted-soft)]"
+              fontSize={10}
+            >
+              {p.x}
+            </text>
+          )}
+        </g>
+      ))}
+      <text
+        x={(padL + W - padR) / 2}
+        y={H - 2}
+        textAnchor="middle"
+        className="fill-[var(--color-muted)]"
+        fontSize={10}
+      >
+        Número de episodio del alumno
+      </text>
+    </svg>
   )
 }
 
@@ -351,6 +587,12 @@ function DistribucionSection({ block }: { block: DistribucionBlock }): ReactNode
                 )
               })}
             </div>
+            {block.n_indeterminados > 0 && (
+              <p className="mt-2 text-xs text-muted-soft">
+                {block.n_indeterminados} episodios quedaron indeterminados (sin perfil asignable);
+                se excluyen de la trayectoria y las curvas.
+              </p>
+            )}
           </div>
 
           {/* Desglose por subgrupo */}
@@ -363,7 +605,7 @@ function DistribucionSection({ block }: { block: DistribucionBlock }): ReactNode
                 {block.por_subgrupo.map((sg) => (
                   <div key={sg.key} className="flex items-center gap-3">
                     <span className="w-48 shrink-0 truncate text-sm text-ink" title={sg.key}>
-                      {sg.key}
+                      {sg.label}
                     </span>
                     <div className="h-4 flex-1 overflow-hidden rounded bg-surface-alt">
                       <div
