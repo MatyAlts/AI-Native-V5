@@ -345,7 +345,7 @@ class PairKappaOut(BaseModel):
 
 
 class InterraterAggregateOut(BaseModel):
-    comision_id: str
+    materia_id: str
     protocol: str
     n_raters: int
     n_episodes_codificados: int
@@ -356,16 +356,17 @@ class InterraterAggregateOut(BaseModel):
 
 @router.get("/interrater/aggregate", response_model=InterraterAggregateOut)
 async def interrater_aggregate(
-    comision_id: UUID,
+    materia_id: UUID,
     protocol: str = "ejes",
     tenant_id: UUID = Depends(get_tenant_id),
     user_id: UUID = Depends(get_user_id),
-    _comision_access: None = Depends(require_comision_access),
 ) -> InterraterAggregateOut:
-    """Cruza las etiquetas humanas guardadas (`interrater_ratings`) y computa κ:
-    entre cada par de codificadores humanos, y máquina-vs-codificador (solo
-    `protocol='ejes'`, usando `classifications.appropriation`). Cada κ se calcula
-    SOLO sobre los episodios que ambos codificaron (overlap)."""
+    """Cruza las etiquetas humanas guardadas (`interrater_ratings`) y computa κ a
+    nivel MATERIA (cruzando comisiones): entre cada par de codificadores humanos, y
+    máquina-vs-codificador (solo `protocol='ejes'`, usando
+    `classifications.appropriation`). Cada κ se calcula SOLO sobre los episodios que
+    ambos codificaron (overlap). Acceso: tenant-scoped por RLS (materia-global, como
+    el banco de ejercicios / materiales)."""
     from collections import defaultdict
     from itertools import combinations
 
@@ -385,19 +386,23 @@ async def interrater_aggregate(
                     InterraterRating.rater_id,
                     InterraterRating.label,
                 ).where(
-                    InterraterRating.comision_id == comision_id,
+                    InterraterRating.materia_id == materia_id,
                     InterraterRating.protocol == protocol,
                 )
             )
         ).all()
+        # Etiqueta de la máquina para los MISMOS episodios codificados a mano
+        # (filtrar por el set de episodios, no por comisión: el corpus es de
+        # materia y `classifications` no tiene materia_id).
+        ep_ids = {e for e, _r, _l in rows}
         machine: dict[str, str] = {}
-        if protocol == "ejes":
+        if protocol == "ejes" and ep_ids:
             mrows = (
                 await s.execute(
                     select(
                         Classification.episode_id, Classification.appropriation
                     ).where(
-                        Classification.comision_id == comision_id,
+                        Classification.episode_id.in_(ep_ids),
                         Classification.is_current.is_(True),
                     )
                 )
@@ -423,7 +428,7 @@ async def interrater_aggregate(
         try:
             res = compute_cohen_kappa(ratings, categories=cats)
             return len(common), res.kappa, res.interpretation
-        except Exception:  # noqa: BLE001 — par sin señal (1 sola categoría, etc.)
+        except Exception:  # par sin señal (1 sola categoría, etc.)
             return len(common), None, None
 
     raters = sorted(by_rater)
@@ -440,7 +445,7 @@ async def interrater_aggregate(
             )
 
     return InterraterAggregateOut(
-        comision_id=str(comision_id),
+        materia_id=str(materia_id),
         protocol=protocol,
         n_raters=len(raters),
         n_episodes_codificados=len(episodes_set),

@@ -195,20 +195,25 @@ export async function getKappaSample(
 // ── Inter-rater (codificación a ciegas + agregación κ) ────────────────
 
 export interface InterraterSample {
-  comision_id: string
   n: number
-  episodes: { episode_id: string }[]
+  episodes: { episode_id: string; comision_id: string }[]
 }
 
+/**
+ * Muestra a codificar A CIEGAS, GLOBAL de materia. El front resuelve la materia
+ * a su conjunto de comisiones (`comisionesApi.listByMateria`) y las pasa todas,
+ * para que TODOS los codificadores reciban el MISMO set (overlap → κ).
+ */
 export async function getInterraterSample(
-  comisionId: string,
+  comisionIds: string[],
   getToken?: TokenGetter,
   limit = 50,
 ): Promise<InterraterSample> {
-  const r = await fetch(
-    `/api/v1/interrater/sample?comision_id=${comisionId}&limit=${limit}`,
-    { headers: await authHeaders(getToken) },
-  )
+  const qs = new URLSearchParams({ limit: String(limit) })
+  for (const id of comisionIds) qs.append("comision_id", id)
+  const r = await fetch(`/api/v1/interrater/sample?${qs.toString()}`, {
+    headers: await authHeaders(getToken),
+  })
   await throwIfNotOk(r)
   return r.json()
 }
@@ -217,6 +222,7 @@ export async function saveInterraterRating(
   body: {
     episode_id: string
     comision_id: string
+    materia_id: string
     label: string
     protocol?: string
     notes?: string | undefined
@@ -232,15 +238,15 @@ export async function saveInterraterRating(
 }
 
 export interface InterraterProgress {
-  comision_id: string
+  materia_id: string
   rated_episode_ids: string[]
 }
 
 export async function getInterraterProgress(
-  comisionId: string,
+  materiaId: string,
   getToken?: TokenGetter,
 ): Promise<InterraterProgress> {
-  const r = await fetch(`/api/v1/interrater/my-progress?comision_id=${comisionId}`, {
+  const r = await fetch(`/api/v1/interrater/my-progress?materia_id=${materiaId}`, {
     headers: await authHeaders(getToken),
   })
   await throwIfNotOk(r)
@@ -256,7 +262,7 @@ export interface InterraterPair {
 }
 
 export interface InterraterAggregate {
-  comision_id: string
+  materia_id: string
   protocol: string
   n_raters: number
   n_episodes_codificados: number
@@ -266,12 +272,12 @@ export interface InterraterAggregate {
 }
 
 export async function getInterraterAggregate(
-  comisionId: string,
+  materiaId: string,
   protocol = "ejes",
   getToken?: TokenGetter,
 ): Promise<InterraterAggregate> {
   const r = await fetch(
-    `/api/v1/analytics/interrater/aggregate?comision_id=${comisionId}&protocol=${protocol}`,
+    `/api/v1/analytics/interrater/aggregate?materia_id=${materiaId}&protocol=${protocol}`,
     { headers: await authHeaders(getToken) },
   )
   await throwIfNotOk(r)
@@ -744,8 +750,28 @@ export async function listMyComisiones(
   return { items: body.data, next_cursor: body.meta.cursor_next }
 }
 
+/**
+ * TODAS las comisiones de una materia en el tenant (no solo las del docente
+ * actual). Backend: `GET /api/v1/comisiones?materia_id=` (permiso comision:read,
+ * tenant-scoped por RLS). Se usa para el scope global de materia de la
+ * codificación inter-jueces: todos los codificadores resuelven la materia al
+ * MISMO conjunto de comisiones.
+ */
+export async function listComisionesByMateria(
+  materiaId: string,
+  getToken?: TokenGetter,
+): Promise<Comision[]> {
+  const r = await fetch(`/api/v1/comisiones?materia_id=${materiaId}&limit=200`, {
+    headers: await authHeaders(getToken),
+  })
+  await throwIfNotOk(r)
+  const body = (await r.json()) as { data: Comision[]; meta: { cursor_next: string | null } }
+  return body.data
+}
+
 export const comisionesApi = {
   listMine: listMyComisiones,
+  listByMateria: listComisionesByMateria,
 }
 
 // ── Tareas Prácticas Templates (ADR-016) ──────────────────────────────

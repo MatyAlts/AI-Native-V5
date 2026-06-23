@@ -124,6 +124,11 @@ class InterraterRating(Base, TenantMixin):
     comision_id: Mapped[uuid.UUID] = mapped_column(
         PgUUID(as_uuid=True), nullable=False, index=True
     )
+    # Materia del episodio. Permite agregar el acuerdo a nivel MATERIA (cruzando
+    # comisiones). Nullable: las filas viejas (comisión-scoped) quedan en NULL.
+    materia_id: Mapped[uuid.UUID | None] = mapped_column(
+        PgUUID(as_uuid=True), nullable=True
+    )
     # Docente que puso la etiqueta (del header X-User-Id).
     rater_id: Mapped[uuid.UUID] = mapped_column(
         PgUUID(as_uuid=True), nullable=False, index=True
@@ -147,4 +152,5 @@ class InterraterRating(Base, TenantMixin):
             name="uq_interrater_episode_rater",
         ),
         Index("ix_interrater_comision", "comision_id"),
+        Index("ix_interrater_materia", "materia_id"),
     )

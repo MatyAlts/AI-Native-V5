@@ -1,25 +1,30 @@
 import { PageContainer } from "@platform/ui"
 import { useState } from "react"
+import {
+  AcademicContextSelector,
+  type AcademicContext,
+} from "../components/AcademicContextSelector"
 import { getInterraterAggregate, type InterraterAggregate, type InterraterPair } from "../lib/api"
 import { helpContent } from "../utils/helpContent"
 
 interface Props {
-  comisionId: string
   getToken: () => Promise<string | null>
 }
 
 const short = (id: string) => id.slice(0, 8)
 
-export function InterraterAdminView({ comisionId, getToken }: Props) {
+export function InterraterAdminView({ getToken }: Props) {
+  const [ctx, setCtx] = useState<AcademicContext | null>(null)
   const [data, setData] = useState<InterraterAggregate | null>(null)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
   const handleCompute = async () => {
+    if (!ctx) return
     setLoading(true)
     setError(null)
     try {
-      const d = await getInterraterAggregate(comisionId, "ejes", getToken)
+      const d = await getInterraterAggregate(ctx.materiaId, "ejes", getToken)
       setData(d)
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e))
@@ -31,18 +36,26 @@ export function InterraterAdminView({ comisionId, getToken }: Props) {
   return (
     <PageContainer
       title="Acuerdo κ inter-jueces (admin)"
-      description="Acuerdo agregado entre los docentes que codificaron a ciegas, y entre el clasificador y cada docente. Protocolo de 3 ejes."
+      description="Acuerdo agregado por MATERIA entre los docentes que codificaron a ciegas, y entre el clasificador y cada docente. Protocolo de 3 ejes."
       helpContent={helpContent.interraterAdmin}
     >
       <div className="space-y-6 max-w-5xl">
+        <AcademicContextSelector value={ctx} onChange={setCtx} getToken={getToken} />
+
         <div className="flex items-center justify-between border-b border-border pb-3">
           <div className="text-sm text-muted">
-            Comisión <span className="font-mono text-ink">{short(comisionId)}</span>
+            {ctx ? (
+              <>
+                Materia <span className="font-mono text-ink">{short(ctx.materiaId)}</span>
+              </>
+            ) : (
+              "Elegí una materia para calcular el acuerdo."
+            )}
           </div>
           <button
             type="button"
             onClick={() => void handleCompute()}
-            disabled={loading}
+            disabled={loading || !ctx}
             className="px-4 py-1.5 text-sm bg-accent-brand hover:bg-accent-brand-deep disabled:bg-border disabled:text-muted text-white rounded font-medium"
           >
             {loading ? "Calculando…" : "Calcular acuerdo"}

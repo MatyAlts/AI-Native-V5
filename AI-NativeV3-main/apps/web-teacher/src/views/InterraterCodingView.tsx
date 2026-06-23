@@ -1,42 +1,92 @@
 import { PageContainer } from "@platform/ui"
 import { useCallback, useEffect, useMemo, useState } from "react"
 import {
-  type CTREvent,
-  getEpisodeEvents,
+  AcademicContextSelector,
+  type AcademicContext,
+} from "../components/AcademicContextSelector"
+import {
+  comisionesApi,
   getInterraterProgress,
   getInterraterSample,
   saveInterraterRating,
 } from "../lib/api"
-import { getEventMeta, relativeTs } from "../utils/eventDisplay"
 import { helpContent } from "../utils/helpContent"
+import { EpisodeProcessTrace, PROFILES } from "./interraterShared"
+import { InterraterTraining } from "./InterraterTraining"
 
-interface Props {
-  comisionId: string
+interface OrchestratorProps {
   getToken: () => Promise<string | null>
 }
 
-// Perfiles del protocolo "ejes" (codificación a ciegas). Las etiquetas
-// (label) son las canónicas del classifier; el texto es lo que ve el docente.
-const PROFILES: { label: string; display: string; color: string }[] = [
-  {
-    label: "delegacion_pasiva",
-    display: "Delegación pasiva",
-    color: "bg-danger hover:bg-danger",
-  },
-  {
-    label: "apropiacion_superficial",
-    display: "Apropiación superficial",
-    color: "bg-warning hover:bg-warning",
-  },
-  {
-    label: "apropiacion_reflexiva",
-    display: "Apropiación reflexiva",
-    color: "bg-green-600 hover:bg-green-700",
-  },
-]
+// El entrenamiento se aprueba UNA vez por materia (v1: flag en localStorage por
+// browser; un flag por-docente persistido en backend queda como mejora futura).
+const trainedKey = (materiaId: string) => `interrater_trained_${materiaId}`
 
-export function InterraterCodingView({ comisionId, getToken }: Props) {
-  const [episodes, setEpisodes] = useState<{ episode_id: string }[]>([])
+/**
+ * Orquestador de la codificación inter-jueces, GLOBAL de materia:
+ *   1. El docente elige una materia (AcademicContextSelector).
+ *   2. Si no pasó el entrenamiento de esa materia → gate de entrenamiento
+ *      (enseñanza de los 3 ejes + calibración con 7 anclas, ≥6/7 para desbloquear).
+ *   3. Desbloqueado → codifica a ciegas el corpus de TODA la materia.
+ */
+export function InterraterView({ getToken }: OrchestratorProps) {
+  const [ctx, setCtx] = useState<AcademicContext | null>(null)
+  const [trained, setTrained] = useState(false)
+
+  useEffect(() => {
+    if (!ctx) {
+      setTrained(false)
+      return
+    }
+    setTrained(localStorage.getItem(trainedKey(ctx.materiaId)) === "1")
+  }, [ctx])
+
+  const handlePass = useCallback(() => {
+    if (ctx) localStorage.setItem(trainedKey(ctx.materiaId), "1")
+    setTrained(true)
+  }, [ctx])
+
+  const handleReview = useCallback(() => setTrained(false), [])
+
+  return (
+    <PageContainer
+      title="Codificación a ciegas (inter-jueces)"
+      description="Elegí una materia, hacé el entrenamiento y codificá su corpus de episodios SIN ver la etiqueta de la máquina. Tu codificación se cruza con la de otros jueces y con el clasificador para computar κ."
+      helpContent={helpContent.interraterCoding}
+    >
+      <div className="space-y-6 max-w-4xl">
+        <AcademicContextSelector value={ctx} onChange={setCtx} getToken={getToken} />
+
+        {!ctx && (
+          <div className="rounded-xl border border-border bg-canvas px-6 py-8 text-center text-sm text-muted">
+            Elegí una materia arriba para empezar.
+          </div>
+        )}
+
+        {ctx && !trained && (
+          <InterraterTraining materiaId={ctx.materiaId} getToken={getToken} onPass={handlePass} />
+        )}
+
+        {ctx && trained && (
+          <InterraterCoding
+            materiaId={ctx.materiaId}
+            getToken={getToken}
+            onReviewTraining={handleReview}
+          />
+        )}
+      </div>
+    </PageContainer>
+  )
+}
+
+interface CodingProps {
+  materiaId: string
+  getToken: () => Promise<string | null>
+  onReviewTraining: () => void
+}
+
+function InterraterCoding({ materiaId, getToken, onReviewTraining }: CodingProps) {
+  const [episodes, setEpisodes] = useState<{ episode_id: string; comision_id: string }[]>([])
   const [coded, setCoded] = useState<Set<string>>(new Set())
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -45,9 +95,17 @@ export function InterraterCodingView({ comisionId, getToken }: Props) {
     setLoading(true)
     setError(null)
     try {
+      // Materia → TODAS sus comisiones (mismo set para todos los codificadores).
+      const comisiones = await comisionesApi.listByMateria(materiaId, getToken)
+      const comisionIds = comisiones.map((c) => c.id)
+      if (comisionIds.length === 0) {
+        setEpisodes([])
+        setCoded(new Set())
+        return
+      }
       const [sample, progress] = await Promise.all([
-        getInterraterSample(comisionId, getToken),
-        getInterraterProgress(comisionId, getToken),
+        getInterraterSample(comisionIds, getToken),
+        getInterraterProgress(materiaId, getToken),
       ])
       setEpisodes(sample.episodes)
       setCoded(new Set(progress.rated_episode_ids))
@@ -56,7 +114,7 @@ export function InterraterCodingView({ comisionId, getToken }: Props) {
     } finally {
       setLoading(false)
     }
-  }, [comisionId, getToken])
+  }, [materiaId, getToken])
 
   useEffect(() => {
     void load()
@@ -76,72 +134,78 @@ export function InterraterCodingView({ comisionId, getToken }: Props) {
   )
 
   return (
-    <PageContainer
-      title="Codificación a ciegas (inter-jueces)"
-      description="Etiquetá cada episodio según el proceso del alumno, SIN ver la etiqueta de la máquina. Tu codificación se compara después con la de otros jueces y con el clasificador."
-      helpContent={helpContent.interraterCoding}
-    >
-      <div className="space-y-6 max-w-4xl">
-        <div className="rounded-xl border border-amber-300 bg-amber-50 px-6 py-4 text-sm text-amber-900">
-          <p className="font-semibold mb-1">Codificación a ciegas</p>
-          <p>
-            En esta vista <strong>no se muestra la etiqueta del clasificador</strong>. Revisá la
-            traza cruda de cada episodio (prompts, ediciones, ejecuciones) con "Ver proceso" y
-            elegí el perfil que mejor lo describa. Podés re-etiquetar las veces que quieras.
-          </p>
-        </div>
-
-        {loading && <div className="text-sm text-muted">Cargando episodios de la comisión…</div>}
-        {error && <div className="p-3 rounded bg-danger-soft text-danger text-sm">{error}</div>}
-
-        {!loading && !error && (
-          <>
-            <div className="flex items-center justify-between border-b border-border pb-3">
-              <div className="text-sm">
-                <span className="font-medium">{codedCount}</span> de{" "}
-                <span className="font-medium">{episodes.length}</span> codificados
-              </div>
-              <button
-                type="button"
-                onClick={() => void load()}
-                className="px-3 py-1.5 text-sm border border-border rounded hover:bg-canvas"
-              >
-                Recargar
-              </button>
-            </div>
-
-            {episodes.length === 0 && (
-              <div className="text-sm text-muted">No hay episodios para codificar en esta comisión.</div>
-            )}
-
-            <div className="space-y-3">
-              {episodes.map((ep) => (
-                <EpisodeCodingCard
-                  key={ep.episode_id}
-                  episodeId={ep.episode_id}
-                  comisionId={comisionId}
-                  getToken={getToken}
-                  isCoded={coded.has(ep.episode_id)}
-                  onCoded={() => markCoded(ep.episode_id)}
-                />
-              ))}
-            </div>
-          </>
-        )}
+    <div className="space-y-6">
+      <div className="rounded-xl border border-green-300 bg-green-50 px-6 py-4 text-sm text-green-900">
+        <p className="font-semibold mb-1">Entrenamiento aprobado ✓ — ya podés codificar</p>
+        <p>
+          No se muestra la etiqueta del clasificador. Revisá la traza de cada episodio con "Ver
+          proceso" y elegí el perfil. Podés re-etiquetar las veces que quieras.{" "}
+          <button
+            type="button"
+            onClick={onReviewTraining}
+            className="underline font-medium hover:opacity-80"
+          >
+            Repasar el entrenamiento
+          </button>
+          .
+        </p>
       </div>
-    </PageContainer>
+
+      {loading && <div className="text-sm text-muted">Cargando episodios de la materia…</div>}
+      {error && <div className="p-3 rounded bg-danger-soft text-danger text-sm">{error}</div>}
+
+      {!loading && !error && (
+        <>
+          <div className="flex items-center justify-between border-b border-border pb-3">
+            <div className="text-sm">
+              <span className="font-medium">{codedCount}</span> de{" "}
+              <span className="font-medium">{episodes.length}</span> codificados
+            </div>
+            <button
+              type="button"
+              onClick={() => void load()}
+              className="px-3 py-1.5 text-sm border border-border rounded hover:bg-canvas"
+            >
+              Recargar
+            </button>
+          </div>
+
+          {episodes.length === 0 && (
+            <div className="text-sm text-muted">
+              No hay episodios codificables en esta materia todavía.
+            </div>
+          )}
+
+          <div className="space-y-3">
+            {episodes.map((ep) => (
+              <EpisodeCodingCard
+                key={ep.episode_id}
+                episodeId={ep.episode_id}
+                comisionId={ep.comision_id}
+                materiaId={materiaId}
+                getToken={getToken}
+                isCoded={coded.has(ep.episode_id)}
+                onCoded={() => markCoded(ep.episode_id)}
+              />
+            ))}
+          </div>
+        </>
+      )}
+    </div>
   )
 }
 
 function EpisodeCodingCard({
   episodeId,
   comisionId,
+  materiaId,
   getToken,
   isCoded,
   onCoded,
 }: {
   episodeId: string
   comisionId: string
+  materiaId: string
   getToken: () => Promise<string | null>
   isCoded: boolean
   onCoded: () => void
@@ -156,7 +220,13 @@ function EpisodeCodingCard({
     setSaveError(null)
     try {
       await saveInterraterRating(
-        { episode_id: episodeId, comision_id: comisionId, label, protocol: "ejes" },
+        {
+          episode_id: episodeId,
+          comision_id: comisionId,
+          materia_id: materiaId,
+          label,
+          protocol: "ejes",
+        },
         getToken,
       )
       setSelected(label)
@@ -224,146 +294,5 @@ function EpisodeCodingCard({
         {saveError && <p className="mt-2 text-xs text-danger">No se pudo guardar: {saveError}</p>}
       </div>
     </div>
-  )
-}
-
-interface EnrichedEvent extends CTREvent {
-  meta: ReturnType<typeof getEventMeta>
-  relTs: string
-}
-
-// Traza CRUDA del episodio (reusa getEpisodeEvents + getEventMeta de la
-// EpisodeTimelineView). NO trae ni muestra la etiqueta de la máquina.
-function EpisodeProcessTrace({
-  episodeId,
-  getToken,
-}: {
-  episodeId: string
-  getToken: () => Promise<string | null>
-}) {
-  const [events, setEvents] = useState<EnrichedEvent[] | null>(null)
-  const [loading, setLoading] = useState(false)
-  const [error, setError] = useState<string | null>(null)
-
-  useEffect(() => {
-    let cancelled = false
-    setLoading(true)
-    setError(null)
-    setEvents(null)
-    void (async () => {
-      try {
-        const res = await getEpisodeEvents(episodeId, getToken)
-        if (cancelled) return
-        const opened = res.events.find((e) => e.event_type === "episodio_abierto")
-        const openedMs = opened ? Date.parse(opened.ts) : Date.parse(res.events[0]?.ts ?? "")
-        const enriched = res.events
-          .slice()
-          .sort((a, b) => a.seq - b.seq)
-          .map((e) => ({
-            ...e,
-            meta: getEventMeta(e.event_type),
-            relTs: relativeTs(e.ts, openedMs),
-          }))
-        setEvents(enriched)
-      } catch (e) {
-        if (!cancelled) setError(e instanceof Error ? e.message : String(e))
-      } finally {
-        if (!cancelled) setLoading(false)
-      }
-    })()
-    return () => {
-      cancelled = true
-    }
-  }, [episodeId, getToken])
-
-  if (loading) return <div className="text-xs text-muted">Cargando traza…</div>
-  if (error) return <div className="text-xs text-danger">No se pudo cargar la traza: {error}</div>
-  if (!events || events.length === 0)
-    return <div className="text-xs text-muted">Sin eventos registrados.</div>
-
-  return (
-    <div className="rounded border border-border-soft bg-surface overflow-hidden">
-      <table className="w-full text-sm">
-        <thead className="bg-surface-alt text-muted text-xs uppercase">
-          <tr>
-            <th className="px-3 py-2 text-left w-16">+ts</th>
-            <th className="px-3 py-2 text-left w-12">seq</th>
-            <th className="px-3 py-2 text-left">Evento</th>
-            <th className="px-3 py-2 text-left">Detalle</th>
-          </tr>
-        </thead>
-        <tbody>
-          {events.map((e) => (
-            <EventRow key={e.seq} event={e} />
-          ))}
-        </tbody>
-      </table>
-    </div>
-  )
-}
-
-function EventRow({ event }: { event: EnrichedEvent }) {
-  const [open, setOpen] = useState(false)
-  const snapshot =
-    event.event_type === "edicion_codigo" && typeof event.payload.snapshot === "string"
-      ? (event.payload.snapshot as string)
-      : null
-  const content =
-    (event.event_type === "prompt_enviado" || event.event_type === "tutor_respondio") &&
-    typeof event.payload.content === "string"
-      ? (event.payload.content as string)
-      : null
-
-  return (
-    <>
-      <tr
-        onClick={() => setOpen((v) => !v)}
-        className="cursor-pointer border-t border-border-soft hover:bg-surface-alt"
-      >
-        <td className="px-3 py-2 font-mono text-xs text-muted">{event.relTs}</td>
-        <td className="px-3 py-2 font-mono text-xs text-muted">{event.seq}</td>
-        <td className="px-3 py-2">
-          <span className="mr-1.5">{event.meta.icon}</span>
-          {event.meta.label}
-        </td>
-        <td className="px-3 py-2 text-xs text-body truncate max-w-md">
-          {event.meta.summary(event.payload)}
-        </td>
-      </tr>
-      {open && (
-        <tr className="border-t border-border-soft bg-surface-alt/40">
-          <td colSpan={4} className="px-3 py-3">
-            {snapshot && (
-              <div className="mb-3">
-                <p className="text-xs font-mono uppercase tracking-wider text-muted mb-1">
-                  Snapshot de código
-                </p>
-                <pre className="text-xs bg-slate-950 text-slate-100 p-3 rounded overflow-x-auto max-h-64">
-                  {snapshot}
-                </pre>
-              </div>
-            )}
-            {content && (
-              <div className="mb-3">
-                <p className="text-xs font-mono uppercase tracking-wider text-muted mb-1">
-                  Contenido
-                </p>
-                <div className="text-sm bg-surface p-3 rounded whitespace-pre-wrap max-h-64 overflow-y-auto">
-                  {content}
-                </div>
-              </div>
-            )}
-            <div>
-              <p className="text-xs font-mono uppercase tracking-wider text-muted mb-1">
-                Payload (JSON)
-              </p>
-              <pre className="text-[10px] bg-surface p-2 rounded overflow-x-auto max-h-48">
-                {JSON.stringify(event.payload, null, 2)}
-              </pre>
-            </div>
-          </td>
-        </tr>
-      )}
-    </>
   )
 }

@@ -55,28 +55,38 @@ _LABELS: dict[str, frozenset[str]] = {
 
 class SampleEpisode(BaseModel):
     episode_id: str
+    # Comisión del episodio: el front la necesita para guardar el rating
+    # (la fila exige comision_id). NO es la etiqueta de la máquina → no rompe
+    # el "a ciegas".
+    comision_id: str
 
 
 class SampleOut(BaseModel):
-    comision_id: str
     n: int
     episodes: list[SampleEpisode]
 
 
 @router.get("/sample", response_model=SampleOut)
 async def get_sample(
-    comision_id: UUID,
+    comision_id: list[UUID] = Query(default=[]),
     limit: int = Query(50, ge=1, le=500),
     user: User = Depends(require_role(*CODER_ROLES)),
 ) -> SampleOut:
-    """Episodios a codificar A CIEGAS. Devuelve SOLO los `episode_id` (NUNCA la
-    etiqueta de la máquina). Orden estable por `episode_id` para que todos los
+    """Episodios a codificar A CIEGAS, GLOBAL de materia. El front resuelve la
+    materia a su conjunto de comisiones (`GET /comisiones?materia_id=`) y las pasa
+    acá (`?comision_id=a&comision_id=b&...`). Devuelve SOLO los `episode_id` (NUNCA
+    la etiqueta de la máquina). Orden estable por `episode_id` para que todos los
     codificadores reciban el MISMO conjunto → overlap → se puede computar κ."""
+    if not comision_id:
+        raise HTTPException(
+            status.HTTP_400_BAD_REQUEST,
+            detail="Falta comision_id (el conjunto de comisiones de la materia).",
+        )
     async with tenant_session(user.tenant_id) as session:
         rows = await session.execute(
-            select(Classification.episode_id)
+            select(Classification.episode_id, Classification.comision_id)
             .where(
-                Classification.comision_id == comision_id,
+                Classification.comision_id.in_(comision_id),
                 Classification.is_current.is_(True),
                 # Excluir "indeterminado": episodios demasiado cortos / sin traza
                 # suficiente. No son codificables a mano (el docente no tiene qué
@@ -86,13 +96,17 @@ async def get_sample(
             .order_by(Classification.episode_id)
             .limit(limit)
         )
-        eps = [SampleEpisode(episode_id=str(r[0])) for r in rows.all()]
-    return SampleOut(comision_id=str(comision_id), n=len(eps), episodes=eps)
+        eps = [
+            SampleEpisode(episode_id=str(ep), comision_id=str(com))
+            for ep, com in rows.all()
+        ]
+    return SampleOut(n=len(eps), episodes=eps)
 
 
 class RatingIn(BaseModel):
     episode_id: UUID
     comision_id: UUID
+    materia_id: UUID | None = None
     label: str = Field(..., max_length=40)
     protocol: str = Field(default="ejes")
     notes: str | None = Field(default=None, max_length=1000)
@@ -123,6 +137,7 @@ async def save_rating(
                 tenant_id=user.tenant_id,
                 episode_id=body.episode_id,
                 comision_id=body.comision_id,
+                materia_id=body.materia_id,
                 rater_id=user.id,
                 label=body.label,
                 protocol=body.protocol,
@@ -131,6 +146,7 @@ async def save_rating(
             .on_conflict_do_update(
                 constraint="uq_interrater_episode_rater",
                 set_={
+                    "materia_id": body.materia_id,
                     "label": body.label,
                     "protocol": body.protocol,
                     "notes": body.notes,
@@ -142,23 +158,23 @@ async def save_rating(
 
 
 class ProgressOut(BaseModel):
-    comision_id: str
+    materia_id: str
     rated_episode_ids: list[str]
 
 
 @router.get("/my-progress", response_model=ProgressOut)
 async def my_progress(
-    comision_id: UUID,
+    materia_id: UUID,
     user: User = Depends(require_role(*CODER_ROLES)),
 ) -> ProgressOut:
-    """Episodios que el docente actual YA codificó en esta comisión (para que la
+    """Episodios que el docente actual YA codificó en esta materia (para que la
     UI marque avance y no re-muestre lo hecho)."""
     async with tenant_session(user.tenant_id) as session:
         rows = await session.execute(
             select(InterraterRating.episode_id).where(
-                InterraterRating.comision_id == comision_id,
+                InterraterRating.materia_id == materia_id,
                 InterraterRating.rater_id == user.id,
             )
         )
         ids = [str(r[0]) for r in rows.all()]
-    return ProgressOut(comision_id=str(comision_id), rated_episode_ids=ids)
+    return ProgressOut(materia_id=str(materia_id), rated_episode_ids=ids)
