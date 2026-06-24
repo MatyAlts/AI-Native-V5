@@ -1,4 +1,5 @@
 import { PageContainer } from "@platform/ui"
+import { Link } from "@tanstack/react-router"
 import { useCallback, useEffect, useMemo, useState } from "react"
 import {
   AcademicContextSelector,
@@ -12,46 +13,48 @@ import {
 } from "../lib/api"
 import { helpContent } from "../utils/helpContent"
 import { EpisodeProcessTrace, PROFILES } from "./interraterShared"
-import { InterraterTraining } from "./InterraterTraining"
 
 interface OrchestratorProps {
   getToken: () => Promise<string | null>
 }
 
-// El entrenamiento se aprueba UNA vez por materia (v1: flag en localStorage por
-// browser; un flag por-docente persistido en backend queda como mejora futura).
-const trainedKey = (materiaId: string) => `interrater_trained_${materiaId}`
+// El docente confirma que hizo el entrenamiento (sección Entrenamiento /
+// Recalibración) con una casilla. Se recuerda por materia en localStorage.
+const attestKey = (materiaId: string) => `interrater_attested_${materiaId}`
 
 /**
  * Orquestador de la codificación inter-jueces, GLOBAL de materia:
  *   1. El docente elige una materia (AcademicContextSelector).
- *   2. Si no pasó el entrenamiento de esa materia → gate de entrenamiento
- *      (enseñanza de los 3 ejes + calibración con 7 anclas, ≥6/7 para desbloquear).
- *   3. Desbloqueado → codifica a ciegas el corpus de TODA la materia.
+ *   2. Marca la casilla "Realicé el entrenamiento de recalibración".
+ *   3. Codifica a ciegas el corpus con-tutor de la materia (los ~113 episodios).
+ * El entrenamiento en sí vive en su propia sección (`/entrenamiento-recalibracion`).
  */
 export function InterraterView({ getToken }: OrchestratorProps) {
   const [ctx, setCtx] = useState<AcademicContext | null>(null)
-  const [trained, setTrained] = useState(false)
+  const [attested, setAttested] = useState(false)
 
   useEffect(() => {
     if (!ctx) {
-      setTrained(false)
+      setAttested(false)
       return
     }
-    setTrained(localStorage.getItem(trainedKey(ctx.materiaId)) === "1")
+    setAttested(localStorage.getItem(attestKey(ctx.materiaId)) === "1")
   }, [ctx])
 
-  const handlePass = useCallback(() => {
-    if (ctx) localStorage.setItem(trainedKey(ctx.materiaId), "1")
-    setTrained(true)
-  }, [ctx])
-
-  const handleReview = useCallback(() => setTrained(false), [])
+  const handleAttest = useCallback(
+    (value: boolean) => {
+      if (!ctx) return
+      if (value) localStorage.setItem(attestKey(ctx.materiaId), "1")
+      else localStorage.removeItem(attestKey(ctx.materiaId))
+      setAttested(value)
+    },
+    [ctx],
+  )
 
   return (
     <PageContainer
       title="Codificación a ciegas (inter-jueces)"
-      description="Elegí una materia, hacé el entrenamiento y codificá su corpus de episodios SIN ver la etiqueta de la máquina. Tu codificación se cruza con la de otros jueces y con el clasificador para computar κ."
+      description="Elegí una materia, confirmá que hiciste el entrenamiento y codificá su corpus de episodios SIN ver la etiqueta de la máquina. Tu codificación se cruza con la de otros jueces y con el clasificador para computar κ."
       helpContent={helpContent.interraterCoding}
     >
       <div className="space-y-6 max-w-4xl">
@@ -63,29 +66,59 @@ export function InterraterView({ getToken }: OrchestratorProps) {
           </div>
         )}
 
-        {ctx && !trained && (
-          <InterraterTraining materiaId={ctx.materiaId} getToken={getToken} onPass={handlePass} />
-        )}
-
-        {ctx && trained && (
-          <InterraterCoding
-            materiaId={ctx.materiaId}
-            getToken={getToken}
-            onReviewTraining={handleReview}
-          />
+        {ctx && (
+          <>
+            <AttestCheckbox attested={attested} onChange={handleAttest} />
+            {attested && <InterraterCoding materiaId={ctx.materiaId} getToken={getToken} />}
+          </>
         )}
       </div>
     </PageContainer>
   )
 }
 
+function AttestCheckbox({
+  attested,
+  onChange,
+}: {
+  attested: boolean
+  onChange: (value: boolean) => void
+}) {
+  return (
+    <div className="rounded-xl border border-border bg-white px-6 py-4">
+      <label className="flex items-start gap-3 cursor-pointer">
+        <input
+          type="checkbox"
+          checked={attested}
+          onChange={(e) => onChange(e.target.checked)}
+          className="mt-0.5 h-4 w-4 shrink-0"
+        />
+        <span className="text-sm">
+          <strong>Realicé el entrenamiento de recalibración</strong> y voy a completar los
+          episodios.
+          <br />
+          <span className="text-muted">
+            ¿No lo hiciste todavía?{" "}
+            <Link
+              to="/entrenamiento-recalibracion"
+              className="underline font-medium hover:opacity-80"
+            >
+              Ir al entrenamiento
+            </Link>
+            .
+          </span>
+        </span>
+      </label>
+    </div>
+  )
+}
+
 interface CodingProps {
   materiaId: string
   getToken: () => Promise<string | null>
-  onReviewTraining: () => void
 }
 
-function InterraterCoding({ materiaId, getToken, onReviewTraining }: CodingProps) {
+function InterraterCoding({ materiaId, getToken }: CodingProps) {
   const [episodes, setEpisodes] = useState<{ episode_id: string; comision_id: string }[]>([])
   const [coded, setCoded] = useState<Set<string>>(new Set())
   const [loading, setLoading] = useState(false)
@@ -135,18 +168,17 @@ function InterraterCoding({ materiaId, getToken, onReviewTraining }: CodingProps
 
   return (
     <div className="space-y-6">
-      <div className="rounded-xl border border-green-300 bg-green-50 px-6 py-4 text-sm text-green-900">
-        <p className="font-semibold mb-1">Entrenamiento aprobado ✓ — ya podés codificar</p>
-        <p>
+      <div className="rounded-xl border border-border bg-canvas px-6 py-4 text-sm">
+        <p className="font-semibold mb-1">Codificación a ciegas — corpus con tutor</p>
+        <p className="text-muted">
           No se muestra la etiqueta del clasificador. Revisá la traza de cada episodio con "Ver
           proceso" y elegí el perfil. Podés re-etiquetar las veces que quieras.{" "}
-          <button
-            type="button"
-            onClick={onReviewTraining}
+          <Link
+            to="/entrenamiento-recalibracion"
             className="underline font-medium hover:opacity-80"
           >
             Repasar el entrenamiento
-          </button>
+          </Link>
           .
         </p>
       </div>

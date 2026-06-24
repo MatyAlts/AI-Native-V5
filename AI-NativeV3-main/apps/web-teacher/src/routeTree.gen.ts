@@ -22,6 +22,7 @@ import { Route as InstrumentosCohorteRouteImport } from './routes/instrumentos-c
 import { Route as ExportRouteImport } from './routes/export'
 import { Route as EpisodeTimelineRouteImport } from './routes/episode-timeline'
 import { Route as EpisodeNLevelRouteImport } from './routes/episode-n-level'
+import { Route as EntrenamientoRecalibracionRouteImport } from './routes/entrenamiento-recalibracion'
 import { Route as EjerciciosRouteImport } from './routes/ejercicios'
 import { Route as CorreccionesRouteImport } from './routes/correcciones'
 import { Route as CohortQuartilesRouteImport } from './routes/cohort-quartiles'
@@ -93,6 +94,12 @@ const EpisodeNLevelRoute = EpisodeNLevelRouteImport.update({
   path: '/episode-n-level',
   getParentRoute: () => rootRouteImport,
 } as any)
+const EntrenamientoRecalibracionRoute =
+  EntrenamientoRecalibracionRouteImport.update({
+    id: '/entrenamiento-recalibracion',
+    path: '/entrenamiento-recalibracion',
+    getParentRoute: () => rootRouteImport,
+  } as any)
 const EjerciciosRoute = EjerciciosRouteImport.update({
   id: '/ejercicios',
   path: '/ejercicios',
@@ -125,6 +132,7 @@ export interface FileRoutesByFullPath {
   '/cohort-quartiles': typeof CohortQuartilesRoute
   '/correcciones': typeof CorreccionesRoute
   '/ejercicios': typeof EjerciciosRoute
+  '/entrenamiento-recalibracion': typeof EntrenamientoRecalibracionRoute
   '/episode-n-level': typeof EpisodeNLevelRoute
   '/episode-timeline': typeof EpisodeTimelineRoute
   '/export': typeof ExportRoute
@@ -145,6 +153,7 @@ export interface FileRoutesByTo {
   '/cohort-quartiles': typeof CohortQuartilesRoute
   '/correcciones': typeof CorreccionesRoute
   '/ejercicios': typeof EjerciciosRoute
+  '/entrenamiento-recalibracion': typeof EntrenamientoRecalibracionRoute
   '/episode-n-level': typeof EpisodeNLevelRoute
   '/episode-timeline': typeof EpisodeTimelineRoute
   '/export': typeof ExportRoute
@@ -166,6 +175,7 @@ export interface FileRoutesById {
   '/cohort-quartiles': typeof CohortQuartilesRoute
   '/correcciones': typeof CorreccionesRoute
   '/ejercicios': typeof EjerciciosRoute
+  '/entrenamiento-recalibracion': typeof EntrenamientoRecalibracionRoute
   '/episode-n-level': typeof EpisodeNLevelRoute
   '/episode-timeline': typeof EpisodeTimelineRoute
   '/export': typeof ExportRoute
@@ -188,6 +198,7 @@ export interface FileRouteTypes {
     | '/cohort-quartiles'
     | '/correcciones'
     | '/ejercicios'
+    | '/entrenamiento-recalibracion'
     | '/episode-n-level'
     | '/episode-timeline'
     | '/export'
@@ -208,6 +219,7 @@ export interface FileRouteTypes {
     | '/cohort-quartiles'
     | '/correcciones'
     | '/ejercicios'
+    | '/entrenamiento-recalibracion'
     | '/episode-n-level'
     | '/episode-timeline'
     | '/export'
@@ -228,6 +240,7 @@ export interface FileRouteTypes {
     | '/cohort-quartiles'
     | '/correcciones'
     | '/ejercicios'
+    | '/entrenamiento-recalibracion'
     | '/episode-n-level'
     | '/episode-timeline'
     | '/export'
@@ -249,6 +262,7 @@ export interface RootRouteChildren {
   CohortQuartilesRoute: typeof CohortQuartilesRoute
   CorreccionesRoute: typeof CorreccionesRoute
   EjerciciosRoute: typeof EjerciciosRoute
+  EntrenamientoRecalibracionRoute: typeof EntrenamientoRecalibracionRoute
   EpisodeNLevelRoute: typeof EpisodeNLevelRoute
   EpisodeTimelineRoute: typeof EpisodeTimelineRoute
   ExportRoute: typeof ExportRoute
@@ -357,6 +371,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof EpisodeNLevelRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/entrenamiento-recalibracion': {
+      id: '/entrenamiento-recalibracion'
+      path: '/entrenamiento-recalibracion'
+      fullPath: '/entrenamiento-recalibracion'
+      preLoaderRoute: typeof EntrenamientoRecalibracionRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/ejercicios': {
       id: '/ejercicios'
       path: '/ejercicios'
@@ -401,6 +422,7 @@ const rootRouteChildren: RootRouteChildren = {
   CohortQuartilesRoute: CohortQuartilesRoute,
   CorreccionesRoute: CorreccionesRoute,
   EjerciciosRoute: EjerciciosRoute,
+  EntrenamientoRecalibracionRoute: EntrenamientoRecalibracionRoute,
   EpisodeNLevelRoute: EpisodeNLevelRoute,
   EpisodeTimelineRoute: EpisodeTimelineRoute,
   ExportRoute: ExportRoute,

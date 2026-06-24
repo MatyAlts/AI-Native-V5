@@ -2,7 +2,6 @@ import { useState } from "react"
 import { EpisodeProcessTrace, PROFILES } from "./interraterShared"
 
 interface Props {
-  materiaId: string
   getToken: () => Promise<string | null>
   onPass: () => void
 }
