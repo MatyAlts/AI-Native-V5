@@ -21,7 +21,7 @@ from __future__ import annotations
 import httpx
 import structlog
 from fastapi import APIRouter, HTTPException, Request, status
-from fastapi.responses import JSONResponse, StreamingResponse
+from fastapi.responses import StreamingResponse
 
 from api_gateway.config import settings
 
