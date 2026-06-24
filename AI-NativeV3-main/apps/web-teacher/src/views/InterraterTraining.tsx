@@ -109,7 +109,7 @@ export function InterraterTraining({ getToken, onPass }: Props) {
     setPicked(null)
   }
 
-  if (phase === "teaching") return <Teaching onStart={start} />
+  if (phase === "teaching") return <Teaching onStart={start} getToken={getToken} />
   if (phase === "result")
     return <Result correct={correct} onPass={onPass} onRetry={start} />
 
@@ -240,136 +240,365 @@ function Result({
 }
 
 // ── Enseñanza completa de los 3 ejes ────────────────────────────────────────
-function Teaching({ onStart }: { onStart: () => void }) {
+const TONE: Record<string, { dot: string; border: string; bg: string; text: string }> = {
+  green: { dot: "bg-green-600", border: "border-green-300", bg: "bg-green-50", text: "text-green-900" },
+  amber: { dot: "bg-amber-500", border: "border-amber-300", bg: "bg-amber-50", text: "text-amber-900" },
+  red: { dot: "bg-red-600", border: "border-red-300", bg: "bg-red-50", text: "text-red-900" },
+}
+
+function Teaching({
+  onStart,
+  getToken,
+}: {
+  onStart: () => void
+  getToken: () => Promise<string | null>
+}) {
   return (
-    <div className="space-y-6">
-      <div className="rounded-xl border border-border bg-white p-6 space-y-5 text-sm leading-relaxed">
-        <div>
-          <h3 className="text-lg font-bold mb-1">Antes de codificar: cómo se reconoce cada eje</h3>
-          <p className="text-muted">
-            Vas a clasificar cada episodio en <strong>uno de tres ejes</strong>. Lo único que medís
-            es <strong>cómo se apropió el alumno de la IA</strong>: no si le fue bien en el
-            ejercicio, no si se portó bien. Solo cómo pensó con la herramienta.
-          </p>
-        </div>
-
-        <Eje
-          color="bg-green-600"
-          title="Apropiación reflexiva"
-          definition="Piensa, verifica y justifica — solo o colaborando con el tutor."
-          forms={[
-            "Lo resolvió solo, sin usar el tutor, y lo logró.",
-            "Usó el tutor pero razonando: pregunta el porqué, prueba, itera, integra lo que el tutor le devuelve.",
-          ]}
-          tell="Hay razonamiento propio Y verificación. Construye sobre lo que recibe."
-        />
-        <Eje
-          color="bg-warning"
-          title="Apropiación superficial"
-          definition="Hace algo propio, pero sin verificar críticamente ni fundamentar."
-          forms={[
-            "Usa el tutor de forma operativa ('dame una pista', 'qué herramienta'), sin profundizar.",
-            "Lo intenta solo pero se traba y no llega.",
-            "Escribe código pero no lo prueba.",
-            "Se desengancha: actividad mínima, casi no labura.",
-          ]}
-          tell="Hay interacción o trabajo propio, pero falta la verificación crítica o la justificación."
-        />
-        <Eje
-          color="bg-danger"
-          title="Delegación pasiva"
-          definition="Terceriza el trabajo o el juicio. Inversión cognitiva mínima."
-          forms={[
-            "Sobreusa el tutor: le pregunta todo y le hace revisar cada paso, aunque tipee su propio código. Delega el JUICIO.",
-          ]}
-          tell="Se apoya compulsivamente en el tutor. La plataforma marca 'sobreuso' (overuse)."
-        />
-
+    <div className="space-y-6 text-sm leading-relaxed">
+      {/* Portada */}
+      <section className="rounded-xl border border-border bg-white p-6 space-y-3">
+        <h3 className="text-xl font-bold">Cómo reconocer los 3 tipos de alumno</h3>
+        <p className="text-muted">
+          Leé esto tranquilo antes de empezar. Te enseña a mirar <strong>cómo pensó</strong> cada
+          alumno mientras hacía el ejercicio con la IA. Después hacés una práctica corta con 7
+          ejemplos reales.
+        </p>
         <div className="rounded-lg bg-canvas border border-border p-4">
-          <p className="font-semibold mb-2">Tres reglas para tener grabadas</p>
-          <ol className="list-decimal pl-5 space-y-1">
-            <li>
-              <strong>No usó el tutor y resolvió → reflexiva</strong> (no pasiva). No usar la IA no
-              es delegar: es no necesitarla.
-            </li>
-            <li>
-              <strong>Sobreusa el tutor → pasiva</strong>, aunque tipee su propio código. Delega el
-              juicio.
-            </li>
-            <li>
-              <strong>Sin evidencia suficiente → no clasificable.</strong> No fuerces una categoría.
-            </li>
-          </ol>
-        </div>
-
-        <div className="rounded-lg bg-canvas border border-border p-4">
-          <p className="font-semibold mb-2">Cómo decidir en 10 segundos</p>
-          <ul className="list-disc pl-5 space-y-1">
-            <li>¿Resolvió por su cuenta? → reflexiva (si lo logró) · superficial (si se trabó).</li>
-            <li>¿Verificó y justificó? → reflexiva. ¿Usó la respuesta sin más? → superficial.</li>
-            <li>¿Sobreusó el tutor (le terceriza el juicio)? → pasiva.</li>
-          </ul>
-        </div>
-
-        <div className="rounded-lg bg-amber-50 border border-amber-300 p-4 text-amber-900">
-          <p className="font-semibold mb-1">⚠️ La trampa más común</p>
+          <p className="font-semibold mb-1">🎯 La regla de oro</p>
           <p>
-            Un alumno que escribe su código y lo prueba <em>parece</em> reflexivo. Pero si le
-            pregunta TODO al tutor ('¿está bien?', '¿en qué me equivoqué?') en vez de decidir él,
-            está <strong>delegando el juicio = pasiva</strong>, aunque tipee cada línea. Si hay
-            sobreuso, es pasiva.
+            No mires <strong>si le fue bien</strong> en el ejercicio. No mires{" "}
+            <strong>si se portó bien</strong>. Mirá una sola cosa: <strong>cómo pensó.</strong>
+          </p>
+          <p className="text-muted mt-2">
+            Es como corregir un examen de matemática: no le bajás la nota de mate porque se copió en
+            geografía. Son cosas distintas. Acá te importa solo cómo razonó con la herramienta.
           </p>
         </div>
-      </div>
+      </section>
 
+      {/* Los 3 tipos */}
+      <section className="space-y-3">
+        <h3 className="text-lg font-bold">Los 3 tipos, en una frase</h3>
+        <TipoCard
+          tone="green"
+          emoji="🟢"
+          titulo="Reflexivo"
+          frase="Piensa, prueba y entiende lo que hace."
+          detalle="El que razona: se pregunta por qué, prueba su código, y si le preguntás después sabe explicar qué hizo. Puede lograrlo solo o ayudándose con la IA — lo importante es que la cabeza la pone él."
+        />
+        <TipoCard
+          tone="amber"
+          emoji="🟡"
+          titulo="Superficial"
+          frase="Hace las cosas, pero sin pensarlas mucho."
+          detalle="Avanza, usa la IA o trabaja solo, pero no se detiene a verificar ni a entender el porqué. 'Anduvo y listo'. Es el más común de los tres."
+        />
+        <TipoCard
+          tone="red"
+          emoji="🔴"
+          titulo="Pasivo"
+          frase="Quiere que se lo resuelvan; no pone la cabeza."
+          detalle="Usa a la IA como una máquina de respuestas: le tira el error y espera la solución, o le hace revisar TODO sin decidir nada él. Aunque tipee el código, el que piensa es el tutor."
+        />
+      </section>
+
+      {/* Las 5 cosas */}
+      <section className="rounded-xl border border-border bg-white p-6 space-y-4">
+        <div>
+          <h3 className="text-lg font-bold">Las 5 cosas que mirás en cada alumno</h3>
+          <p className="text-muted">
+            Fijate en estas 5 cosas y vas a saber qué tipo es. (Verde = reflexivo, amarillo =
+            superficial, rojo = pasivo.)
+          </p>
+        </div>
+        <Mira
+          n="1"
+          q="¿Cómo le pregunta a la IA?"
+          reflex="Pregunta para entender: '¿por qué da error?', 'qué pasa si…'."
+          sup="Pide cosas operativas: 'dame una pista', 'corregime', 'qué herramienta uso'."
+          pas="Le tira el error pelado y espera la respuesta servida; o pregunta de a una palabra ('¿en qué línea?', 'int?')."
+        />
+        <Mira
+          n="2"
+          q="¿Hace algo con lo que le responden?"
+          reflex="Usa la respuesta para mejorar, cambia su enfoque."
+          sup="La usa tal cual, sin darle muchas vueltas."
+          pas="La ignora, o repite el mismo error sin conectar nada."
+        />
+        <Mira
+          n="3"
+          q="¿Prueba su código?"
+          reflex="Lo corre, mira qué pasó, lo arregla, vuelve a probar."
+          sup="Lo corre pero no profundiza; o directamente no lo prueba."
+          pas="No prueba, o tira el código a ver si pega (fuerza bruta), sin entender."
+        />
+        <Mira
+          n="4"
+          q="¿Explica por qué hace las cosas?"
+          reflex="Dice el porqué de cada decisión."
+          sup="Cuenta qué hizo, pero no por qué."
+          pas="No explica; respuestas de una palabra."
+        />
+        <Mira
+          n="5"
+          q="Si le preguntás después, ¿sabe qué hizo?"
+          reflex="Reconstruye su razonamiento, con sentido."
+          sup="Cuenta los pasos, pero no los fundamentos."
+          pas="No puede, o repite lo que le dijo la IA."
+        />
+        <p className="text-xs text-muted border-t border-border pt-3">
+          <strong>El atajo:</strong> reflexivo = <strong>prueba (3) Y explica (4-5)</strong>, las dos
+          cosas. Si falta una, es superficial. Si le terceriza todo a la IA, es pasivo.
+        </p>
+      </section>
+
+      {/* Ejemplos reales */}
+      <section className="space-y-3">
+        <h3 className="text-lg font-bold">Cómo se ve cada tipo, con alumnos de verdad</h3>
+        <p className="text-muted text-xs">
+          Episodios reales. Tocá "Ver el proceso" para mirar lo que hizo el alumno paso a paso.
+        </p>
+        <Ejemplo
+          tone="green"
+          tipo="Reflexivo · lo hizo solo"
+          episodeId="02205295-67ab-45d5-a07e-22be5585cf2a"
+          getToken={getToken}
+          resumen="No le habló al tutor ni una vez y resolvió el ejercicio. El que la rema solo y le sale, es reflexivo — no necesitó ayuda."
+        />
+        <Ejemplo
+          tone="green"
+          tipo="Reflexivo · colabora bien con el tutor"
+          episodeId="a8150302-988b-4313-921d-49c672301b59"
+          getToken={getToken}
+          resumen="Usó el tutor pero pensando: explica qué hace su código, lo ejecuta dos veces para verificar, y justifica sus decisiones."
+          frases={[
+            "esta escrito en ingles open, basicamente abrir el archivo",
+            "lo acabo de ejecutar dos veces y termina exactamente igual",
+            "usaria 'a' porque agrega sin borrar lo que habia antes, no?",
+          ]}
+        />
+        <Ejemplo
+          tone="amber"
+          tipo="Superficial · usa el tutor sin profundizar"
+          episodeId="2b083646-c873-4323-8bd9-cd674273fee8"
+          getToken={getToken}
+          resumen="Una pregunta práctica, usó la respuesta y siguió. No verificó ni explicó nada."
+          frases={["que herramienta me das para poder redondear"]}
+        />
+        <Ejemplo
+          tone="amber"
+          tipo="Superficial · lo intentó solo pero se trabó"
+          episodeId="06ddbc14-d1f1-42cf-a128-201dce7d9c2c"
+          getToken={getToken}
+          resumen="Sin tutor, peleó el ejercicio por su cuenta pero quedó a medias (lo corrió varias veces sin lograrlo)."
+        />
+        <Ejemplo
+          tone="red"
+          tipo="Pasivo · sobreusa el tutor (¡la trampa!)"
+          episodeId="0a3d4388-c4e1-4333-b495-7e7e889d48dd"
+          getToken={getToken}
+          resumen="Escribió su código, sí, PERO le pregunta TODO al tutor y le hace revisar cada paso. El que decide si está bien es el tutor, no él."
+          frases={[
+            "tu puedes ver el codigo?",
+            "en que me equivoque?",
+            "pero mira el codigo por vos mismo",
+          ]}
+        />
+      </section>
+
+      {/* Fronteras */}
+      <section className="rounded-xl border border-amber-300 bg-amber-50 p-6 space-y-3">
+        <h3 className="text-lg font-bold text-amber-900">Cuándo dudás entre dos (lo más difícil)</h3>
+        <Duda
+          titulo="“Hizo cosas pero no sé si pensó” — ¿superficial o reflexivo?"
+          regla="Preguntate: ¿probó su código Y explicó el porqué? Las DOS = reflexivo. Si falta una de las dos = superficial. Esta es la frontera donde más se confunde la gente."
+        />
+        <Duda
+          titulo="“Le preguntó un montón a la IA” — ¿colabora o delega?"
+          regla="Si le terceriza el JUICIO (le hace revisar todo, le pregunta si está bien a cada paso, sobreuso) = pasivo, aunque escriba su propio código. Si pregunta para ENTENDER y después decide él = reflexivo."
+        />
+        <Duda
+          titulo="“No usó la IA para nada”"
+          regla="¡Ojo, este engaña! Si NO usó el tutor pero resolvió → es REFLEXIVO (no pasivo). No usar la IA no es delegar, es no necesitarla. Si lo intentó solo pero no llegó → superficial."
+        />
+        <Duda
+          titulo="“Casi no hay nada para mirar”"
+          regla="Si el episodio es muy cortito o no hay evidencia, marcá 'no clasificable'. No lo metas a la fuerza en una caja."
+        />
+        <Duda
+          titulo="“Parece que no hizo nada, pero después explica perfecto”"
+          regla="Algunos piensan en la cabeza y dejan poco rastro. Si después explica con sentido qué hizo, esa explicación puede subirlo de categoría. No lo castigues por dejar poco rastro."
+        />
+      </section>
+
+      {/* La trampa */}
+      <section className="rounded-xl border border-red-300 bg-red-50 p-6 text-red-900">
+        <h3 className="font-bold mb-1">⚠️ La trampa más común</h3>
+        <p>
+          Un alumno que escribe su código y lo prueba <em>parece</em> reflexivo. Pero si le pregunta
+          TODO al tutor ('¿está bien?', '¿en qué me equivoqué?', 'mirá por vos mismo') en vez de
+          decidir él, está <strong>delegando el juicio = pasivo</strong>, aunque tipee cada línea.{" "}
+          <strong>Si ves que sobreusa al tutor, es pasivo</strong> — no te dejes engañar por el
+          "parece que piensa".
+        </p>
+      </section>
+
+      {/* Decidir rápido */}
+      <section className="rounded-xl border border-border bg-white p-6 space-y-2">
+        <h3 className="text-lg font-bold">Para decidir rápido: 3 preguntas en orden</h3>
+        <ol className="list-decimal pl-5 space-y-1">
+          <li>
+            ¿Resolvió por su cuenta? → si lo logró, <strong>reflexivo</strong>; si se trabó,{" "}
+            <strong>superficial</strong>.
+          </li>
+          <li>
+            ¿Probó (verificó) Y explicó el porqué? → las dos, <strong>reflexivo</strong>; solo usó la
+            respuesta, <strong>superficial</strong>.
+          </li>
+          <li>
+            ¿Le terceriza todo a la IA (sobreuso)? → <strong>pasivo</strong>.
+          </li>
+        </ol>
+      </section>
+
+      {/* CTA */}
       <div className="flex items-center justify-between rounded-xl border border-border bg-white px-6 py-4">
         <p className="text-sm text-muted">
-          Cuando lo tengas claro, hacé el entrenamiento: {TOTAL} episodios reales. Necesitás{" "}
-          <strong>{PASS_THRESHOLD}/{TOTAL}</strong> para desbloquear la codificación.
+          Cuando lo tengas claro, hacé la práctica: {TOTAL} ejemplos reales. Necesitás{" "}
+          <strong>
+            {PASS_THRESHOLD} de {TOTAL}
+          </strong>{" "}
+          para empezar a codificar.
         </p>
         <button
           type="button"
           onClick={onStart}
           className="shrink-0 px-6 py-2.5 rounded-lg bg-[#111111] text-white font-medium hover:opacity-90"
         >
-          Empezar el entrenamiento
+          Empezar la práctica
         </button>
       </div>
     </div>
   )
 }
 
-function Eje({
-  color,
-  title,
-  definition,
-  forms,
-  tell,
+function TipoCard({
+  tone,
+  emoji,
+  titulo,
+  frase,
+  detalle,
 }: {
-  color: string
-  title: string
-  definition: string
-  forms: string[]
-  tell: string
+  tone: string
+  emoji: string
+  titulo: string
+  frase: string
+  detalle: string
+}) {
+  const t = TONE[tone] ?? TONE.green
+  return (
+    <div className={`rounded-xl border ${t?.border} ${t?.bg} p-4`}>
+      <p className={`font-bold ${t?.text}`}>
+        {emoji} {titulo} — <span className="font-semibold">{frase}</span>
+      </p>
+      <p className={`mt-1 ${t?.text} opacity-90`}>{detalle}</p>
+    </div>
+  )
+}
+
+function Mira({
+  n,
+  q,
+  reflex,
+  sup,
+  pas,
+}: {
+  n: string
+  q: string
+  reflex: string
+  sup: string
+  pas: string
 }) {
   return (
-    <div className="border-t border-border pt-4">
-      <div className="flex items-center gap-2 mb-1">
-        <span className={`inline-block w-3 h-3 rounded-full ${color}`} />
-        <h4 className="font-semibold">{title}</h4>
+    <div className="border-t border-border pt-3">
+      <p className="font-semibold mb-1.5">
+        {n}. {q}
+      </p>
+      <div className="grid gap-1.5 sm:grid-cols-3 text-xs">
+        <p className="rounded bg-green-50 border border-green-200 px-2 py-1.5 text-green-900">
+          <strong>🟢 </strong>
+          {reflex}
+        </p>
+        <p className="rounded bg-amber-50 border border-amber-200 px-2 py-1.5 text-amber-900">
+          <strong>🟡 </strong>
+          {sup}
+        </p>
+        <p className="rounded bg-red-50 border border-red-200 px-2 py-1.5 text-red-900">
+          <strong>🔴 </strong>
+          {pas}
+        </p>
       </div>
-      <p className="mb-2">{definition}</p>
-      <p className="text-xs font-semibold text-muted uppercase tracking-wider mb-1">
-        Formas en que aparece
-      </p>
-      <ul className="list-disc pl-5 space-y-0.5 mb-2">
-        {forms.map((f) => (
-          <li key={f}>{f}</li>
-        ))}
-      </ul>
-      <p className="text-xs text-muted">
-        <strong>Cómo lo reconocés:</strong> {tell}
-      </p>
+    </div>
+  )
+}
+
+function Ejemplo({
+  tone,
+  tipo,
+  episodeId,
+  getToken,
+  resumen,
+  frases,
+}: {
+  tone: string
+  tipo: string
+  episodeId: string
+  getToken: () => Promise<string | null>
+  resumen: string
+  frases?: string[]
+}) {
+  const [open, setOpen] = useState(false)
+  const t = TONE[tone] ?? TONE.green
+  return (
+    <div className={`rounded-xl border ${t?.border} bg-white p-4`}>
+      <div className="flex items-center gap-2">
+        <span className={`inline-block w-2.5 h-2.5 rounded-full ${t?.dot}`} />
+        <p className="font-semibold">{tipo}</p>
+        <button
+          type="button"
+          onClick={() => setOpen((v) => !v)}
+          className="ml-auto px-3 py-1 text-xs border border-border rounded hover:bg-canvas"
+        >
+          {open ? "Ocultar proceso" : "Ver el proceso"}
+        </button>
+      </div>
+      <p className="mt-2 text-muted">{resumen}</p>
+      {frases && frases.length > 0 && (
+        <ul className="mt-2 space-y-1">
+          {frases.map((f) => (
+            <li
+              key={f}
+              className="text-xs italic text-body bg-canvas border border-border rounded px-2 py-1"
+            >
+              “{f}”
+            </li>
+          ))}
+        </ul>
+      )}
+      {open && (
+        <div className="mt-3">
+          <EpisodeProcessTrace episodeId={episodeId} getToken={getToken} />
+        </div>
+      )}
+    </div>
+  )
+}
+
+function Duda({ titulo, regla }: { titulo: string; regla: string }) {
+  return (
+    <div className="rounded-lg bg-white border border-amber-200 p-3">
+      <p className="font-semibold text-amber-900">{titulo}</p>
+      <p className="text-amber-900 opacity-90 mt-0.5">{regla}</p>
     </div>
   )
 }
