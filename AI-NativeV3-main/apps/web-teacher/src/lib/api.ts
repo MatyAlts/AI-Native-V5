@@ -200,16 +200,17 @@ export interface InterraterSample {
 }
 
 /**
- * Muestra a codificar A CIEGAS, GLOBAL de materia. El front resuelve la materia
- * a su conjunto de comisiones (`comisionesApi.listByMateria`) y las pasa todas,
- * para que TODOS los codificadores reciban el MISMO set (overlap → κ).
+ * Corpus a codificar A CIEGAS, GLOBAL de materia: SOLO episodios con-tutor y
+ * BALANCEADO (tope `perEje` por eje, default 50). El front resuelve la materia a
+ * sus comisiones (`comisionesApi.listByMateria`) y las pasa todas, para que TODOS
+ * los codificadores reciban el MISMO set (overlap → κ).
  */
 export async function getInterraterSample(
   comisionIds: string[],
   getToken?: TokenGetter,
-  limit = 50,
+  perEje = 50,
 ): Promise<InterraterSample> {
-  const qs = new URLSearchParams({ limit: String(limit) })
+  const qs = new URLSearchParams({ per_eje: String(perEje) })
   for (const id of comisionIds) qs.append("comision_id", id)
   const r = await fetch(`/api/v1/interrater/sample?${qs.toString()}`, {
     headers: await authHeaders(getToken),

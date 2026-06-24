@@ -32,11 +32,11 @@ const ANCHORS: Anchor[] = [
       "NO pasiva: el que no usa el tutor es el más autónomo, no el que más delega (ese es el error clásico a evitar).",
   },
   {
-    episode_id: "0f0ecc5f-bdfc-4fb7-8b8b-fadead81bfd3",
+    episode_id: "a8150302-988b-4313-921d-49c672301b59",
     context: "Colabora bien con el tutor",
     label: "apropiacion_reflexiva",
-    why: "Usó el tutor razonando los errores ('significa que tengo un...'), valida con .isalpha(). Integra lo que el tutor le devuelve.",
-    whyNot: "NO superficial: hay razonamiento propio, no solo usar la respuesta.",
+    why: "Explica qué hace su código ('open abre el archivo', 'el print muestra un mensaje'), lo ejecuta dos veces para verificar, y justifica usar el modo 'a' ('agrega sin borrar lo que había antes').",
+    whyNot: "NO superficial: hay verbalización, verificación propia y justificación, no solo usar la respuesta.",
   },
   {
     episode_id: "2b083646-c873-4323-8bd9-cd674273fee8",

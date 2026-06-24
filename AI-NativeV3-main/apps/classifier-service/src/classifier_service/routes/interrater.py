@@ -19,7 +19,7 @@ from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from pydantic import BaseModel, Field
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 
 from classifier_service.auth import User, require_role
@@ -66,35 +66,64 @@ class SampleOut(BaseModel):
     episodes: list[SampleEpisode]
 
 
+# Solo episodios DONDE EL ALUMNO HABLÓ CON EL TUTOR (los 4 subgrupos del brazo
+# con-prompts del clasificador). Son los casos interesantes para calibrar el κ; los
+# autónomos sin IA (autonomo_*, escribe_sin_validar) y "indeterminado" quedan fuera
+# del corpus inter-jueces.
+_WITH_TUTOR_SUBGRUPOS = (
+    "colaborador_reflexivo",
+    "colaborador_funcional",
+    "dependiente_sobreuso",
+    "dependiente_delegador",
+)
+
+
 @router.get("/sample", response_model=SampleOut)
 async def get_sample(
     comision_id: list[UUID] = Query(default=[]),
-    limit: int = Query(50, ge=1, le=500),
+    per_eje: int = Query(50, ge=1, le=200),
     user: User = Depends(require_role(*CODER_ROLES)),
 ) -> SampleOut:
-    """Episodios a codificar A CIEGAS, GLOBAL de materia. El front resuelve la
-    materia a su conjunto de comisiones (`GET /comisiones?materia_id=`) y las pasa
-    acá (`?comision_id=a&comision_id=b&...`). Devuelve SOLO los `episode_id` (NUNCA
-    la etiqueta de la máquina). Orden estable por `episode_id` para que todos los
-    codificadores reciban el MISMO conjunto → overlap → se puede computar κ."""
+    """Corpus a codificar A CIEGAS, GLOBAL de materia, SOLO con-tutor y BALANCEADO.
+
+    El front resuelve la materia a sus comisiones (`GET /comisiones?materia_id=`) y
+    las pasa (`?comision_id=a&comision_id=b&...`). Se devuelven SOLO episodios donde
+    el alumno habló con el tutor (los 4 subgrupos con-prompts), con un tope de
+    `per_eje` por cada eje (default 50) para que la reflexiva no domine y el κ no se
+    hunda por prevalencia. Orden estable por `episode_id` → todos los codificadores
+    reciben el MISMO set → overlap → κ. NUNCA se devuelve la etiqueta de la máquina."""
     if not comision_id:
         raise HTTPException(
             status.HTTP_400_BAD_REQUEST,
             detail="Falta comision_id (el conjunto de comisiones de la materia).",
         )
     async with tenant_session(user.tenant_id) as session:
-        rows = await session.execute(
-            select(Classification.episode_id, Classification.comision_id)
+        # Tope por eje vía window function: hasta `per_eje` episodios por cada
+        # `appropriation`, ordenados estable por episode_id (mismo set para todos).
+        ranked = (
+            select(
+                Classification.episode_id.label("episode_id"),
+                Classification.comision_id.label("comision_id"),
+                func.row_number()
+                .over(
+                    partition_by=Classification.appropriation,
+                    order_by=Classification.episode_id,
+                )
+                .label("rn"),
+            )
             .where(
                 Classification.comision_id.in_(comision_id),
                 Classification.is_current.is_(True),
-                # Excluir "indeterminado": episodios demasiado cortos / sin traza
-                # suficiente. No son codificables a mano (el docente no tiene qué
-                # mirar) → no entran al set de validación.
-                Classification.features["subgrupo"]["key"].astext != "indeterminado",
+                Classification.features["subgrupo"]["key"].astext.in_(
+                    _WITH_TUTOR_SUBGRUPOS
+                ),
             )
-            .order_by(Classification.episode_id)
-            .limit(limit)
+            .subquery()
+        )
+        rows = await session.execute(
+            select(ranked.c.episode_id, ranked.c.comision_id)
+            .where(ranked.c.rn <= per_eje)
+            .order_by(ranked.c.episode_id)
         )
         eps = [
             SampleEpisode(episode_id=str(ep), comision_id=str(com))
