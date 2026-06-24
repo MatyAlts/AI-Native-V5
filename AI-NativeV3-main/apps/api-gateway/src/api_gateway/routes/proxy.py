@@ -133,7 +133,11 @@ async def proxy(full_path: str, request: Request) -> StreamingResponse:
         upstream = await client.request(
             request.method,
             url,
-            params=request.query_params,
+            # `.multi_items()` preserva los parámetros REPETIDOS (ej.
+            # `?comision_id=a&comision_id=b` del corpus inter-jueces). Pasar el
+            # QueryParams directo a httpx los colapsa a uno solo (se queda con el
+            # último) — bug silencioso para cualquier endpoint con params repetidos.
+            params=request.query_params.multi_items(),
             headers=headers,
             content=body,
         )
