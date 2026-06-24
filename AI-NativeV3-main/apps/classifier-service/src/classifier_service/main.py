@@ -38,6 +38,17 @@ app.include_router(classify_ep.router)
 app.include_router(interrater.router)
 
 
+# Marcador de build: bump para forzar rebuild/recreación del container en EasyPanel
+# e invalidar la caché de Docker. Verificación: tras redeployar, `GET /` debe
+# devolver este `build_marker` → confirma que el container nuevo tomó el código nuevo.
+BUILD_MARKER = "interrater-corpus-con-tutor-2026-06-24"
+
+
 @app.get("/")
 async def root() -> dict[str, str]:
-    return {"service": "classifier-service", "version": "0.1.0", "status": "operational"}
+    return {
+        "service": "classifier-service",
+        "version": "0.1.0",
+        "status": "operational",
+        "build_marker": BUILD_MARKER,
+    }
