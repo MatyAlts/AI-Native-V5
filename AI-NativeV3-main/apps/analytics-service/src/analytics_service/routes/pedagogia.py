@@ -190,6 +190,11 @@ class SenalesBlock(BaseModel):
     por_perfil: list[SenalesPerfil]
 
 
+# Codificaciones mínimas para que un codificador entre a la validación.
+# Descarta cuentas de prueba / ruido (ej. 1-2 filas sueltas) que dan κ degenerado.
+_MIN_RATINGS_VALIDOS = 5
+
+
 class KappaPar(BaseModel):
     rater_a: str
     rater_b: str
@@ -211,8 +216,9 @@ class KappaBlock(BaseModel):
     disponible: bool
     n_codificadores: int
     n_episodios_codificados: int
-    pares_humano_humano: list[KappaPar]
-    pares_maquina_humano: list[KappaPar]
+    n_gold: int  # episodios de consenso (todos los codificadores válidos coinciden)
+    maquina_vs_consenso: KappaPar | None  # κ máquina vs consenso docente (gold)
+    pares_humano_humano: list[KappaPar]  # techo: acuerdo entre codificadores
 
 
 class PedagogiaOut(BaseModel):
@@ -459,13 +465,8 @@ async def get_pedagogia(
         ).bindparams(bindparam("cids", expanding=True))
         cls_rows = (await cls_s.execute(cls_stmt, {"t": str(tenant_id), "cids": cids})).all()
 
-        # Etiquetas humanas inter-rater (protocolo 'ejes' = los 3 ejes canónicos,
-        # comparables con classifications.appropriation).
-        rat_stmt = text(
-            "SELECT episode_id, rater_id, label FROM interrater_ratings "
-            "WHERE tenant_id = :t AND protocol = 'ejes' AND comision_id IN :cids"
-        ).bindparams(bindparam("cids", expanding=True))
-        rat_rows = (await cls_s.execute(rat_stmt, {"t": str(tenant_id), "cids": cids})).all()
+        # (Las etiquetas humanas para la validación κ se leen GLOBAL —todo el
+        # corpus del clasificador, no por scope— en el bloque "Validación: κ".)
 
     # ── Bloque 1: distribución (+ mapa episodio→ordinal para las curvas) ──
     por_apropiacion: dict[str, int] = defaultdict(int)
@@ -670,11 +671,39 @@ async def get_pedagogia(
         ]
     )
 
-    # ── Validación: Cohen's κ (máquina–humano y humano–humano) ──────────
+    # ── Validación: Cohen's κ — máquina vs CONSENSO docente + techo humano ──
+    # GLOBAL (todo el corpus del clasificador, NO el scope de comisión): se valida
+    # el MODELO, no una comisión. Gold/consenso = episodios donde los codificadores
+    # válidos coinciden. Se reporta máquina-vs-consenso (número robusto) y el techo
+    # humano-humano. Codificadores con < _MIN_RATINGS_VALIDOS se descartan (ruido).
+    async with cls_maker() as kappa_s:
+        await set_tenant_rls(kappa_s, tenant_id)
+        rat_g = (
+            await kappa_s.execute(
+                text(
+                    "SELECT episode_id, rater_id, label FROM interrater_ratings "
+                    "WHERE tenant_id = :t AND protocol = 'ejes'"
+                ),
+                {"t": str(tenant_id)},
+            )
+        ).all()
+        coded_eps = {str(ep) for ep, _r, _l in rat_g}
+        machine_g: dict[str, str] = {}
+        if coded_eps:
+            mg_rows = (
+                await kappa_s.execute(
+                    text(
+                        "SELECT episode_id, appropriation FROM classifications "
+                        "WHERE tenant_id = :t AND is_current = true AND episode_id IN :eps"
+                    ).bindparams(bindparam("eps", expanding=True)),
+                    {"t": str(tenant_id), "eps": list(coded_eps)},
+                )
+            ).all()
+            machine_g = {str(e): a for e, a in mg_rows}
+
     by_rater: dict[str, dict[str, str]] = defaultdict(dict)
-    for ep, rater, label in rat_rows:
+    for ep, rater, label in rat_g:
         by_rater[str(rater)][str(ep)] = label
-    machine_appr = {str(r.episode_id): r.appropriation for r in cls_rows}
 
     def _kappa_par(a_label: str, b_label: str, a_map: dict[str, str], b_map: dict[str, str]) -> KappaPar:
         common = sorted(set(a_map) & set(b_map))
@@ -702,15 +731,31 @@ async def get_pedagogia(
                 ac1_interpretacion=None, acuerdo_observado=None,
             )
 
-    raters = sorted(by_rater)
-    hh = [_kappa_par(ra[:8], rb[:8], by_rater[ra], by_rater[rb]) for ra, rb in combinations(raters, 2)]
-    mh = [_kappa_par("máquina", r[:8], machine_appr, by_rater[r]) for r in raters]
+    # Codificadores con masa suficiente (descarta cuentas de prueba / ruido).
+    raters_validos = sorted(r for r in by_rater if len(by_rater[r]) >= _MIN_RATINGS_VALIDOS)
+
+    # Consenso ("gold"): episodio codificado por >=2 codificadores válidos que
+    # coinciden todos. Es el ground-truth robusto contra el que se mide la máquina.
+    consenso: dict[str, str] = {}
+    for ep in coded_eps:
+        votos = [by_rater[r][ep] for r in raters_validos if ep in by_rater[r]]
+        if len(votos) >= 2 and len(set(votos)) == 1:
+            consenso[ep] = votos[0]
+
+    maquina_vs_consenso = (
+        _kappa_par("máquina", "consenso docente", machine_g, consenso) if consenso else None
+    )
+    hh = [
+        _kappa_par(ra[:8], rb[:8], by_rater[ra], by_rater[rb])
+        for ra, rb in combinations(raters_validos, 2)
+    ]
     validacion_kappa = KappaBlock(
-        disponible=len(rat_rows) > 0,
-        n_codificadores=len(raters),
-        n_episodios_codificados=len({str(ep) for ep, _r, _l in rat_rows}),
+        disponible=len(rat_g) > 0,
+        n_codificadores=len(raters_validos),
+        n_episodios_codificados=len(coded_eps),
+        n_gold=len(consenso),
+        maquina_vs_consenso=maquina_vs_consenso,
         pares_humano_humano=hh,
-        pares_maquina_humano=mh,
     )
 
     logger.info(

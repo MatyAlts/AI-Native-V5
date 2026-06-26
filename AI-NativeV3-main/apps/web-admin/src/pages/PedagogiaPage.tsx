@@ -131,8 +131,9 @@ interface KappaBlock {
   disponible: boolean
   n_codificadores: number
   n_episodios_codificados: number
+  n_gold: number
+  maquina_vs_consenso: KappaPar | null
   pares_humano_humano: KappaPar[]
-  pares_maquina_humano: KappaPar[]
 }
 interface PedagogiaOut {
   scope_label: string
@@ -574,17 +575,24 @@ function KappaSection({ block }: { block: KappaBlock }): ReactNode {
     <Section
       n="★"
       title="Validación: acuerdo máquina–humano (κ)"
-      subtitle={`${block.n_episodios_codificados} episodios codificados · ${block.n_codificadores} codificadores`}
+      subtitle={`${block.n_episodios_codificados} codificados · ${block.n_gold} de consenso · ${block.n_codificadores} codificadores`}
     >
       <div className="space-y-5 rounded-lg border border-border bg-surface p-4">
         <div>
           <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-muted">
-            Máquina vs humanos
+            Máquina vs consenso docente (gold)
           </p>
           <div className="grid gap-3 sm:grid-cols-2">
-            {block.pares_maquina_humano.map((p) => (
-              <KappaStat key={p.rater_b} pair={p} label={`Clasificador vs ${p.rater_b}`} />
-            ))}
+            {block.maquina_vs_consenso ? (
+              <KappaStat
+                pair={block.maquina_vs_consenso}
+                label="Clasificador vs consenso docente"
+              />
+            ) : (
+              <p className="text-xs text-muted">
+                Aún no hay episodios de consenso (codificados igual por ≥2 docentes).
+              </p>
+            )}
           </div>
         </div>
         {block.pares_humano_humano.length > 0 && (
@@ -603,9 +611,12 @@ function KappaSection({ block }: { block: KappaBlock }): ReactNode {
       <p className="mt-3 text-xs text-muted">
         Titular: <strong>Gwet's AC1</strong>, robusto a la paradoja de prevalencia (cuando una
         categoría domina, el κ se defla pese a alto acuerdo crudo). Se muestran también el κ de
-        Cohen y el acuerdo crudo para total transparencia. El acuerdo máquina–humano no puede
-        superar el techo humano–humano: si los docentes no concuerdan entre sí, no se le exige más
-        a la máquina. Un valor bajo es un hallazgo válido, no se maquilla.
+        Cohen y el acuerdo crudo para total transparencia. El acuerdo se mide contra el{" "}
+        <strong>consenso docente</strong> (episodios codificados igual por ≥2 docentes), no contra
+        cada docente por separado, y no puede superar el techo humano–humano: si los docentes no
+        concuerdan entre sí, no se le exige más a la máquina. La brecha vive sobre todo en el eje
+        superficial↔reflexiva (la máquina decide por señales conductuales; el criterio docente lee
+        la conversación). Un valor bajo es un hallazgo válido, no se maquilla.
       </p>
     </Section>
   )
