@@ -34,6 +34,17 @@ class Settings(BaseSettings):
 
     # URLs de servicios dependientes
     ctr_service_url: str = "http://127.0.0.1:8007"
+    ai_gateway_url: str = "http://127.0.0.1:8011"
+
+    # Componente de contenido (juez LLM) para el eje superficial↔reflexiva
+    # (Diseno-clasificador-cognitivo-LLM-v4). OFF por default = MODO SOMBRA:
+    # el resultado se persiste en `Classification.features['regimen_llm']` sin
+    # tocar `appropriation` ni el `classifier_config_hash` (aditivo, reversible,
+    # no rompe la reproducibilidad bit-a-bit del piloto-1). Activación bloqueada
+    # hasta validación k-fold con κ del juez por encima del azar (§6.1 del diseño).
+    # `eje_fino_model`: modelo CAPAZ para validar; bajar a uno chico tras validar.
+    eje_fino_llm_enabled: bool = False
+    eje_fino_model: str = "gpt-4o"
 
     # ADR-023 / ADR-045 (Mejora 3 plan post-piloto-1, sub-componente G8b):
     # override lexico de `anotacion_creada` sobre contenido textual con

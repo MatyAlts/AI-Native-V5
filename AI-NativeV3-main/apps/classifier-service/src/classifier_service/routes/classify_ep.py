@@ -28,6 +28,11 @@ from classifier_service.services import (
     persist_classification,
 )
 from classifier_service.services.aggregation import aggregate_by_comision
+from classifier_service.services.clients import AIGatewayClient
+from classifier_service.services.regimen_llm import (
+    ZONA_GRIS_SUBGRUPOS,
+    clasificar_regimen_llm,
+)
 
 router = APIRouter(prefix="/api/v1", tags=["classifier"])
 
@@ -97,6 +102,52 @@ async def _find_current_classification(
     return result.scalar_one_or_none()
 
 
+async def _aplicar_juez_eje_fino_sombra(
+    result: object,
+    events: list[dict],
+    episode_id: UUID,
+    episode: dict,
+    tenant_id: UUID,
+) -> None:
+    """MODO SOMBRA del juez LLM del eje superficial↔reflexiva.
+
+    Si `eje_fino_llm_enabled` está ON y el episodio cae en la zona gris de
+    colaboradores, corre el juez (`regimen_llm`) y guarda su veredicto en
+    `result.features['regimen_llm']`. NO toca `appropriation` ni el
+    `classifier_config_hash`. Best-effort: cualquier fallo se loguea y la
+    clasificación oficial sigue intacta — el LLM nunca puede romper el flujo.
+    """
+    if not settings.eje_fino_llm_enabled:
+        return
+    features = getattr(result, "features", None) or {}
+    sg = features.get("subgrupo") or {}
+    if sg.get("key") not in ZONA_GRIS_SUBGRUPOS:
+        return
+    try:
+        materia = episode.get("materia_id")
+        client = AIGatewayClient(base_url=settings.ai_gateway_url)
+        res = await clasificar_regimen_llm(
+            events=events,
+            enunciado=episode.get("enunciado", "") or "",
+            episode_id=str(episode_id),
+            complete=client.complete,
+            model=settings.eje_fino_model,
+            tenant_id=tenant_id,
+            materia_id=UUID(materia) if materia else None,
+        )
+        features["regimen_llm"] = res.model_dump(mode="json")
+        result.features = features  # type: ignore[attr-defined]
+        logger.info(
+            "eje_fino_llm_sombra",
+            extra={"episode_id": str(episode_id), "estado": res.estado, "regimen": res.regimen},
+        )
+    except Exception as exc:
+        logger.warning(
+            "eje_fino_llm_sombra_fallo",
+            extra={"episode_id": str(episode_id), "error": str(exc)},
+        )
+
+
 @router.post(
     "/classify_episode/{episode_id}",
     response_model=ClassificationOut,
@@ -146,6 +197,8 @@ async def classify_episode(
 
     events = episode.get("events", [])
     result = classify_episode_from_events(events, reference_profile=profile)
+    # Modo sombra del juez LLM del eje fino (no-op si el flag está OFF).
+    await _aplicar_juez_eje_fino_sombra(result, events, episode_id, episode, user.tenant_id)
 
     async with tenant_session(user.tenant_id) as session:
         try:
