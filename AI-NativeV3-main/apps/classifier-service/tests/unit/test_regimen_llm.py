@@ -170,3 +170,41 @@ async def test_sombra_noop_fuera_de_zona_gris(monkeypatch) -> None:
     result = _FakeResult({"subgrupo": {"key": "dependiente_sobreuso"}})
     await _aplicar_juez_eje_fino_sombra(result, [], uuid4(), {}, uuid4())
     assert "regimen_llm" not in result.features
+
+
+@pytest.mark.asyncio
+async def test_sombra_mete_veredicto_en_features_cuando_on(monkeypatch) -> None:
+    """Flag ON + zona gris + LLM consistente → el veredicto va a features['regimen_llm']."""
+    from classifier_service.services.clients import AIGatewayClient
+
+    monkeypatch.setattr(_settings, "eje_fino_llm_enabled", True)
+    salida = _raw(True, True, True, False, "REFLEXIVA", conf=0.95).model_dump()
+
+    async def _fake_complete(self, **_kwargs):  # bound method: recibe self
+        return SimpleNamespace(content=json.dumps(salida, ensure_ascii=False))
+
+    monkeypatch.setattr(AIGatewayClient, "complete", _fake_complete)
+    result = _FakeResult({"subgrupo": {"key": "colaborador_funcional"}})
+    await _aplicar_juez_eje_fino_sombra(result, _EVENTS, uuid4(), {}, uuid4())
+
+    rl = result.features.get("regimen_llm")
+    assert rl is not None and rl["estado"] == "ok"
+    assert rl["regimen"] == "REFLEXIVA"
+    assert rl["prompt_version"]  # pinneado
+
+
+@pytest.mark.asyncio
+async def test_sombra_no_rompe_si_el_llm_falla(monkeypatch) -> None:
+    """Best-effort: si el ai-gateway falla, el modo sombra loguea y NO propaga."""
+    from classifier_service.services.clients import AIGatewayClient
+
+    monkeypatch.setattr(_settings, "eje_fino_llm_enabled", True)
+
+    async def _boom(self, **_kwargs):
+        raise RuntimeError("ai-gateway caído")
+
+    monkeypatch.setattr(AIGatewayClient, "complete", _boom)
+    result = _FakeResult({"subgrupo": {"key": "colaborador_reflexivo"}})
+    # No debe levantar excepción (best-effort) ni escribir un veredicto.
+    await _aplicar_juez_eje_fino_sombra(result, _EVENTS, uuid4(), {}, uuid4())
+    assert "regimen_llm" not in result.features
