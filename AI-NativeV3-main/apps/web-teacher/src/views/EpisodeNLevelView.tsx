@@ -6,6 +6,7 @@ import { useViewMode } from "../hooks/useViewMode"
 import {
   type AppropriationLabel,
   type EpisodeClassification,
+  type RegimenLLM,
   type NLevel,
   type NLevelDistribution,
   getEpisodeClassification,
@@ -290,6 +291,9 @@ export function EpisodeNLevelView({ getToken, initialEpisodeId }: Props) {
             {isDocente && (
               <DocenteAppropriationVerdict classification={classification} distribution={data} />
             )}
+            {isDocente && classification?.regimen_llm && (
+              <DocenteJuezLLM regimen={classification.regimen_llm} />
+            )}
             <div className="rounded-xl border border-border bg-white overflow-hidden">
               <div className="flex items-start justify-between gap-4 border-b border-border px-6 py-4">
                 <div>
@@ -358,6 +362,86 @@ export function EpisodeNLevelView({ getToken, initialEpisodeId }: Props) {
         )}
       </div>
     </PageContainer>
+  )
+}
+
+const REGIMEN_JUEZ_DISPLAY: Record<
+  "REFLEXIVA" | "SUPERFICIAL",
+  { label: string; dot: string }
+> = {
+  REFLEXIVA: { label: "Reflexiva", dot: "bg-success" },
+  SUPERFICIAL: { label: "Superficial", dot: "bg-warning" },
+}
+
+const JUEZ_REVISION_MSG: Record<string, string> = {
+  inconsistente: "La lectura del modelo no fue consistente con la regla; el episodio va a revision humana.",
+  baja_confianza: "El modelo no tuvo confianza suficiente; el episodio va a revision humana.",
+  error_parseo: "El modelo no devolvio una lectura valida para este episodio.",
+}
+
+// Veredicto del juez LLM del eje fino (modo sombra). Informativo: acompana al
+// veredicto oficial sin reemplazarlo. Cita la evidencia textual del alumno por
+// cada una de las 4 dimensiones de la rubrica.
+function DocenteJuezLLM({ regimen }: { regimen: RegimenLLM }) {
+  const kicker = (
+    <div className="text-xs uppercase tracking-wider text-muted">
+      Lectura del juez IA{" "}
+      <span className="font-normal normal-case">· modo sombra (informativo)</span>
+    </div>
+  )
+
+  if (regimen.estado !== "ok" || regimen.regimen === null || regimen.raw === null) {
+    return (
+      <div className="rounded-xl border border-dashed border-border bg-canvas px-6 py-4">
+        {kicker}
+        <p className="text-sm text-muted mt-1.5">
+          {JUEZ_REVISION_MSG[regimen.estado] ?? "Sin lectura disponible."}
+        </p>
+      </div>
+    )
+  }
+
+  const raw = regimen.raw
+  const disp = REGIMEN_JUEZ_DISPLAY[regimen.regimen]
+  const conf = regimen.confianza !== null ? Math.round(regimen.confianza * 100) : null
+  const dims = [
+    { nombre: "Verbalizacion", on: raw.verbalizacion.presente, estado: raw.verbalizacion.presente ? "presente" : "ausente", ev: raw.verbalizacion.evidencia },
+    { nombre: "Verificacion", on: raw.verificacion.presente, estado: raw.verificacion.presente ? "presente" : "ausente", ev: raw.verificacion.evidencia },
+    { nombre: "Justificacion", on: raw.justificacion.presente, estado: raw.justificacion.presente ? "presente" : "ausente", ev: raw.justificacion.evidencia },
+    { nombre: "Autonomia", on: !raw.autonomia.oraculo, estado: raw.autonomia.oraculo ? "oraculo" : "interlocutor", ev: raw.autonomia.evidencia },
+  ]
+
+  return (
+    <div className="rounded-xl border border-border bg-canvas px-6 py-5">
+      {kicker}
+      <div className="flex items-baseline gap-3 mt-3 mb-4">
+        <span className={`inline-block w-2 h-2 rounded-full ${disp.dot}`} aria-hidden />
+        <span className="text-lg font-semibold text-ink">{disp.label}</span>
+        {conf !== null && <span className="text-sm text-muted">confianza {conf}%</span>}
+      </div>
+
+      <dl className="space-y-2.5">
+        {dims.map((d) => (
+          <div
+            key={d.nombre}
+            className="grid grid-cols-[7.5rem_5.5rem_1fr] gap-x-3 items-baseline text-sm"
+          >
+            <dt className="text-ink">{d.nombre}</dt>
+            <dd className={d.on ? "text-ink" : "text-muted"}>{d.estado}</dd>
+            <dd className="text-muted italic">
+              {d.ev ? `“${d.ev}”` : ""}
+            </dd>
+          </div>
+        ))}
+      </dl>
+
+      <p className="text-sm text-ink mt-4 pt-3 border-t border-border">
+        {raw.justificacion_global}
+      </p>
+      <p className="text-xs text-muted mt-2">
+        No reemplaza la clasificacion oficial. Modelo {regimen.model_used} · {regimen.prompt_version}.
+      </p>
+    </div>
   )
 }
 

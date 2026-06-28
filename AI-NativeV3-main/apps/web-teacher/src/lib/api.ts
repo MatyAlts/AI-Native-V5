@@ -1290,6 +1290,31 @@ export interface Subgrupo {
   accion_docente: string
 }
 
+// Veredicto del juez LLM del eje fino (features['regimen_llm']). Modo sombra:
+// es informativo, NO gobierna `appropriation`. Lo produce regimen_llm.py.
+export interface RegimenLLMDimension {
+  presente: boolean
+  evidencia: string
+}
+export interface RegimenLLMRaw {
+  verbalizacion: RegimenLLMDimension
+  verificacion: RegimenLLMDimension
+  justificacion: RegimenLLMDimension
+  autonomia: { oraculo: boolean; evidencia: string }
+  regimen: 'REFLEXIVA' | 'SUPERFICIAL'
+  confianza: number
+  justificacion_global: string
+}
+export interface RegimenLLM {
+  estado: 'ok' | 'inconsistente' | 'baja_confianza' | 'error_parseo'
+  regimen: 'REFLEXIVA' | 'SUPERFICIAL' | null
+  confianza: number | null
+  raw: RegimenLLMRaw | null
+  razon: string
+  model_used: string
+  prompt_version: string
+}
+
 export interface EpisodeClassification {
   episode_id: string
   comision_id: string
@@ -1303,6 +1328,7 @@ export interface EpisodeClassification {
   cii_evolution: number | null
   is_current: boolean
   subgrupo: Subgrupo | null
+  regimen_llm: RegimenLLM | null
 }
 
 export async function getEpisodeClassification(
