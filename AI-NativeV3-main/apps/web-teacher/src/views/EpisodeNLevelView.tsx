@@ -291,7 +291,7 @@ export function EpisodeNLevelView({ getToken, initialEpisodeId }: Props) {
             {isDocente && (
               <DocenteAppropriationVerdict classification={classification} distribution={data} />
             )}
-            {isDocente && classification?.regimen_llm && (
+            {classification?.regimen_llm && (
               <DocenteJuezLLM regimen={classification.regimen_llm} />
             )}
             <div className="rounded-xl border border-border bg-white overflow-hidden">
