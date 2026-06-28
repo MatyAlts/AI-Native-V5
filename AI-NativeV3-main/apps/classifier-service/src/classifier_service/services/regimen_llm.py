@@ -37,7 +37,7 @@ logger = logging.getLogger(__name__)
 # Versión del prompt congelado. Bumpear ante CUALQUIER cambio del system prompt
 # o de los ejemplos few-shot — la salida del modelo puede cambiar, y el κ
 # reportado se ancla a una versión concreta (snapshot reproducible).
-PROMPT_VERSION = "eje_fino_v1.0.0"
+PROMPT_VERSION = "eje_fino_v1.1.0"
 
 # Solo estos subgrupos (zona gris de colaboradores) pasan al juez. El resto
 # (pasiva por overuse, autónomos, desenganchado) ya está resuelto por el árbol.
@@ -210,24 +210,28 @@ def armar_contexto(events: list[dict]) -> dict[str, Any]:
 
 # ── Prompt (system + few-shot + user) — §5 del diseño ─────────────────────
 SYSTEM_PROMPT = """\
-Sos un evaluador experto en didáctica de la programación. Tu tarea es clasificar UN episodio de trabajo de un alumno que resolvió un ejercicio de programación usando un tutor de IA, en UNO de dos regímenes de apropiación cognitiva: SUPERFICIAL o REFLEXIVA.
+Sos un evaluador experto en didáctica de la programación. Clasificás UN episodio de un alumno que resolvió un ejercicio con un tutor de IA en UNO de dos regímenes: SUPERFICIAL o REFLEXIVA.
 
-NO clasifiques por cantidad de actividad (número de ejecuciones, de prompts o de intentos). Esa señal NO distingue estos dos regímenes. Clasificás leyendo el CONTENIDO de lo que el alumno escribió y razonó.
+NO clasifiques por cantidad de actividad (ejecuciones, prompts, intentos). Clasificás leyendo el CONTENIDO de lo que el alumno escribió y razonó.
 
 DEFINICIONES
-- REFLEXIVA: el alumno razonó Y (verificó conceptualmente O justificó sus decisiones). Explica el porqué, no solo el qué; anticipa o contrasta resultados; defiende sus elecciones con criterio. Puede haber ejecutado poco si entendía lo que hacía.
-- SUPERFICIAL: el alumno hizo algo y obtuvo un resultado, pero sin verificación crítica ni justificación. Volcó síntomas/errores y esperó la solución, o "anduvo y listo". Puede haber ejecutado mucho a fuerza bruta sin comprender.
+- REFLEXIVA: el alumno razonó con su cabeza Y (verificó conceptualmente O justificó sus decisiones). Explica el porqué, anticipa o contrasta resultados, o defiende sus elecciones con criterio propio. Puede haber ejecutado poco si entendía lo que hacía.
+- SUPERFICIAL: hizo algo y obtuvo un resultado sin razonamiento crítico. Pidió la solución/corrección y la aplicó, volcó errores y esperó respuesta, o "anduvo y listo".
 
-RÚBRICA (evaluá cada dimensión; si no hay evidencia en el texto, marcá esa dimensión con presente=false y evidencia="" — no inventes evidencia):
-1. VERBALIZACIÓN DEL RAZONAMIENTO — ¿explica el porqué de sus decisiones?
+DOS DISTINCIONES CLAVE (afinan el juicio, pero NO te vuelvas injusto con quien sí razonó):
+- NARRAR no es RAZONAR: describir qué hace el código ("la línea 8 abre el archivo") por sí solo no es verbalizar el porqué. La verbalización está presente cuando el alumno explica la RAZÓN de una decisión o muestra un criterio propio. PERO si el alumno da una razón, una causa, una comparación o un criterio ("uso 'a' porque necesito conservar lo anterior", "tiene que ser un for porque recorro la lista"), eso SÍ es verbalización: contala.
+- PEDIR LA SOLUCIÓN es ORÁCULO: si el alumno pidió "cómo lo arreglo", "corregime", "está bien así?" o volcó un error esperando la respuesta, la autonomía es oráculo, y entonces es SUPERFICIAL aunque narre o explique algo después. PERO preguntar para DISCUTIR una idea, contrastar un razonamiento propio o confirmar una hipótesis que él mismo formuló ("pensé que con 'a' se agrega al final, ¿es así?") NO es oráculo: es usar la IA como interlocutor.
+
+RÚBRICA (marcá presente=false y evidencia="" si no hay evidencia clara; no inventes):
+1. VERBALIZACIÓN DEL RAZONAMIENTO — ¿explica el porqué de sus decisiones o muestra un criterio propio?
 2. VERIFICACIÓN CONCEPTUAL — ¿contrasta/anticipa resultados o razona el error con su cabeza, más allá de ejecutar?
-3. JUSTIFICACIÓN DE DECISIONES — ¿defiende sus elecciones con criterio?
-4. AUTONOMÍA COGNITIVA — ¿usa la IA para pensar (interlocutor) o para extraer la solución (oráculo)?
+3. JUSTIFICACIÓN DE DECISIONES — ¿defiende sus elecciones con criterio propio?
+4. AUTONOMÍA COGNITIVA — ¿usa la IA para PENSAR (interlocutor) o para EXTRAER la solución/corrección (oráculo)?
 
-REGLA DE DECISIÓN (aplicá las tres condiciones; todas deben cumplirse)
-REFLEXIVA si y solo si: (a) VERBALIZACIÓN presente, Y (b) VERIFICACIÓN presente O JUSTIFICACIÓN presente, Y (c) AUTONOMÍA no es de tipo oráculo. Si la autonomía es oráculo (el alumno extrae la solución sin pensar), la clasificación es SUPERFICIAL aunque haya verbalizado o justificado algo. En cualquier otro caso, SUPERFICIAL.
+REGLA DE DECISIÓN (las tres condiciones deben cumplirse)
+REFLEXIVA si y solo si: (a) VERBALIZACIÓN del porqué presente, Y (b) VERIFICACIÓN presente O JUSTIFICACIÓN presente, Y (c) AUTONOMÍA no es oráculo. Si la autonomía es oráculo, SUPERFICIAL siempre. En cualquier otro caso, SUPERFICIAL.
 
-Para cada dimensión citá la frase textual del alumno que la sustenta. La confianza es un número entre 0 y 1: si la evidencia es ambigua o insuficiente para decidir con seguridad, asigná confianza menor a 0,70.
+Para cada dimensión citá la frase textual del alumno que la sustenta. La confianza es un decimal entre 0 y 1: si la evidencia es ambigua, asigná confianza menor a 0,70.
 
 SALIDA — devolvé EXCLUSIVAMENTE el JSON con la estructura pedida, sin texto adicional. Para cada dimensión, "presente"/"oraculo" es un booleano real y "evidencia" es la frase textual (o cadena vacía). "regimen" es "REFLEXIVA" o "SUPERFICIAL". "confianza" es un decimal entre 0 y 1."""
 
@@ -236,8 +240,9 @@ SALIDA — devolvé EXCLUSIVAMENTE el JSON con la estructura pedida, sin texto a
 # DEBEN salir del split de entrenamiento del fold en curso (nunca del fold de
 # evaluación) para evitar data leakage. Acá quedan como default para uso en
 # producción/sombra una vez validados.
-# PENDIENTE (§5.2): falta un 3er ejemplo "verbaliza PERO autonomía=oráculo →
-# SUPERFICIAL" extraído de un episodio real, para enseñar la condición (c).
+# v1.1.0: 3 ejemplos. El 3ro enseña la condición (c) — narra/pide pero autonomía
+# es oráculo → SUPERFICIAL — que era la principal fuente de falsos positivos en la
+# validación sobre el corpus real (informe-validacion-juez-llm).
 _FEWSHOT: list[tuple[str, dict[str, Any]]] = [
     (
         # Episodio 01ab7004 — consenso docente = SUPERFICIAL
@@ -273,6 +278,26 @@ _FEWSHOT: list[tuple[str, dict[str, Any]]] = [
             "justificacion_global": (
                 "Justifica cada decisión y explica qué hace cada línea, con pocas "
                 "ejecuciones porque comprende. Razonamiento de sobra."
+            ),
+        },
+    ),
+    (
+        # Caso oráculo (condición c): pide la corrección a la IA y después narra
+        # qué hace el código, sin razonar el porqué → SUPERFICIAL.
+        'ALUMNO: "tutor no me anda, me tira error en la linea 8, como lo arreglo?"\n'
+        'TUTOR: "fijate el modo de apertura del archivo"\n'
+        'ALUMNO: "ah ok ya esta, entonces la linea 8 abre el archivo y la 9 lee las '
+        'lineas"\n[ejecutó el código 6 veces]',
+        {
+            "verbalizacion": {"presente": False, "evidencia": ""},
+            "verificacion": {"presente": False, "evidencia": ""},
+            "justificacion": {"presente": False, "evidencia": ""},
+            "autonomia": {"oraculo": True, "evidencia": "pidió 'como lo arreglo' en vez de razonar el error él mismo"},
+            "regimen": "SUPERFICIAL",
+            "confianza": 0.9,
+            "justificacion_global": (
+                "Pidió la corrección a la IA (oráculo) y después solo narró qué hacen "
+                "las líneas, sin razonar el porqué. Condición (c) no se cumple."
             ),
         },
     ),

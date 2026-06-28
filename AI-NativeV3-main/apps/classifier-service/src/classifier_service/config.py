@@ -44,7 +44,11 @@ class Settings(BaseSettings):
     # hasta validación k-fold con κ del juez por encima del azar (§6.1 del diseño).
     # `eje_fino_model`: modelo CAPAZ para validar; bajar a uno chico tras validar.
     eje_fino_llm_enabled: bool = False
-    eje_fino_model: str = "gpt-4o"
+    # Modelo validado sobre el corpus real (κ 0,68 con gold refinado). El tutor usa
+    # gemini-2.5-flash-lite; el juez usa el flash "full" porque flash-lite mostró
+    # 503 persistentes y menor consistencia en salida estructurada. Va por el
+    # ai-gateway (mismo proveedor que el tutor). Ver informe-validacion-juez-llm.
+    eje_fino_model: str = "gemini-2.5-flash"
 
     # ADR-023 / ADR-045 (Mejora 3 plan post-piloto-1, sub-componente G8b):
     # override lexico de `anotacion_creada` sobre contenido textual con
