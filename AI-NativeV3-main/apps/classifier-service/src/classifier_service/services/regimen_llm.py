@@ -152,6 +152,20 @@ def _hay_evidencia_citable(raw: RegimenLLMRaw) -> bool:
     )
 
 
+def _limpiar_json(texto: str) -> str:
+    """Extrae el objeto JSON de la respuesta, tolerando fences ```json ... ```.
+
+    Algunos modelos (según el provider que resuelva el ai-gateway) envuelven la
+    salida en un bloque de código markdown. Quita el fence y toma desde la
+    primera `{` hasta la última `}`; si no encuentra objeto, devuelve el texto tal cual.
+    """
+    t = texto.strip()
+    if t.startswith("```"):
+        t = t.removeprefix("```json").removeprefix("```").removesuffix("```").strip()
+    i, j = t.find("{"), t.rfind("}")
+    return t[i : j + 1] if (i != -1 and j != -1) else t
+
+
 # ── Armado del contexto del episodio (la evidencia cruda que lee el juez) ──
 _REFLECTIVE_KINDS = frozenset(
     {"exploracion", "aclaracion_enunciado", "comparativa", "epistemologica", "validacion"}
@@ -391,10 +405,14 @@ async def clasificar_regimen_llm(
             materia_id=materia_id,
             temperature=0.0,  # determinismo (§4.3)
             max_tokens=700,
-            response_format=RESPONSE_JSON_SCHEMA,
+            # El ai-gateway acepta response_format como dict[str,str] (JSON mode
+            # simple), NO el json_schema anidado. El esquema lo garantizan el
+            # prompt + la validación de RegimenLLMRaw aguas abajo (RESPONSE_JSON_SCHEMA
+            # queda como documentación del contrato de salida).
+            response_format={"type": "json_object"},
         )
         try:
-            data = json.loads(res.content)
+            data = json.loads(_limpiar_json(res.content))
             raw = RegimenLLMRaw.model_validate(data)
             break
         except (json.JSONDecodeError, ValidationError) as exc:
