@@ -54,6 +54,10 @@ class ClassificationOut(BaseModel):
     # Modo sombra (B1 Fase 2): subgrupo + 4 dimensiones, derivado de features.
     # None para clasificaciones viejas (pre-modo-sombra) — el front cae a la etiqueta clásica.
     subgrupo: dict | None = None
+    # Juez LLM del eje fino (eje_fino_v1.1.0): veredicto + evidencia citada de las 4
+    # dimensiones. None si el episodio no pasó por el juez (fuera de zona gris, flag OFF,
+    # o clasificación previa a la activación). Es INFORMATIVO: NO gobierna `appropriation`.
+    regimen_llm: dict | None = None
 
     class Config:
         from_attributes = True
@@ -332,5 +336,7 @@ async def get_current_classification(
             detail=f"Sin clasificación actual para episodio {episode_id}",
         )
     out = ClassificationOut.model_validate(c)
-    out.subgrupo = (c.features or {}).get("subgrupo")
+    feats = c.features or {}
+    out.subgrupo = feats.get("subgrupo")
+    out.regimen_llm = feats.get("regimen_llm")
     return out
