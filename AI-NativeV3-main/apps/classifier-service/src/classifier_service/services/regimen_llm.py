@@ -404,7 +404,10 @@ async def clasificar_regimen_llm(
             tenant_id=tenant_id,
             materia_id=materia_id,
             temperature=0.0,  # determinismo (§4.3)
-            max_tokens=700,
+            # Gemini 2.5 consume tokens de "thinking" del presupuesto de salida;
+            # con 700 el JSON se truncaba (~89 tokens visibles). 3000 deja margen
+            # para el thinking + el JSON completo de las 4 dimensiones.
+            max_tokens=3000,
             # El ai-gateway acepta response_format como dict[str,str] (JSON mode
             # simple), NO el json_schema anidado. El esquema lo garantizan el
             # prompt + la validación de RegimenLLMRaw aguas abajo (RESPONSE_JSON_SCHEMA
