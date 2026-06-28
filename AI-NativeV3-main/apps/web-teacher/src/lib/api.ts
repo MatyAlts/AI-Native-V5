@@ -32,10 +32,7 @@ export type AppropriationLabel = AppropriationCanonical
 
 // Etiqueta para RATING inter-rater (kappa): ademas de las 3 canonicas admite
 // subgrupos diagnosticos y niveles N1-N4 (protocolos configurables).
-export type RatingLabel =
-  | AppropriationCanonical
-  | AppropriationSubgroup
-  | CognitiveLevelLabel
+export type RatingLabel = AppropriationCanonical | AppropriationSubgroup | CognitiveLevelLabel
 
 export interface TrajectoryPoint {
   episode_id: string
@@ -184,10 +181,9 @@ export async function getKappaSample(
   getToken?: TokenGetter,
   limit = 30,
 ): Promise<{ comision_id: string; episodes: KappaSampleEpisode[] }> {
-  const r = await fetch(
-    `/api/v1/analytics/kappa/sample?comision_id=${comisionId}&limit=${limit}`,
-    { headers: await authHeaders(getToken) },
-  )
+  const r = await fetch(`/api/v1/analytics/kappa/sample?comision_id=${comisionId}&limit=${limit}`, {
+    headers: await authHeaders(getToken),
+  })
   await throwIfNotOk(r)
   return r.json()
 }
@@ -1112,12 +1108,14 @@ export async function listPlanes(carreraId: string, getToken?: TokenGetter): Pro
 }
 
 export async function listMaterias(planId: string, getToken?: TokenGetter): Promise<Materia[]> {
-  const materias = await fetchList<Materia>(`/api/v1/materias?plan_id=${planId}&limit=200`, getToken)
+  const materias = await fetchList<Materia>(
+    `/api/v1/materias?plan_id=${planId}&limit=200`,
+    getToken,
+  )
   // Orden pedagógico para todos los dropdowns/listas del panel docente:
   // por cuatrimestre y luego por código (antes salían mezcladas).
   return materias.sort(
-    (a, b) =>
-      a.cuatrimestre_sugerido - b.cuatrimestre_sugerido || a.codigo.localeCompare(b.codigo),
+    (a, b) => a.cuatrimestre_sugerido - b.cuatrimestre_sugerido || a.codigo.localeCompare(b.codigo),
   )
 }
 
@@ -1301,13 +1299,13 @@ export interface RegimenLLMRaw {
   verificacion: RegimenLLMDimension
   justificacion: RegimenLLMDimension
   autonomia: { oraculo: boolean; evidencia: string }
-  regimen: 'REFLEXIVA' | 'SUPERFICIAL'
+  regimen: "REFLEXIVA" | "SUPERFICIAL"
   confianza: number
   justificacion_global: string
 }
 export interface RegimenLLM {
-  estado: 'ok' | 'inconsistente' | 'baja_confianza' | 'error_parseo'
-  regimen: 'REFLEXIVA' | 'SUPERFICIAL' | null
+  estado: "ok" | "inconsistente" | "baja_confianza" | "error_parseo"
+  regimen: "REFLEXIVA" | "SUPERFICIAL" | null
   confianza: number | null
   raw: RegimenLLMRaw | null
   razon: string

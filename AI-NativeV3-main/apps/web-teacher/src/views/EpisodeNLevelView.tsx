@@ -6,13 +6,13 @@ import { useViewMode } from "../hooks/useViewMode"
 import {
   type AppropriationLabel,
   type EpisodeClassification,
-  type RegimenLLM,
   type NLevel,
   type NLevelDistribution,
+  type RegimenLLM,
   getEpisodeClassification,
   getEpisodeNLevelDistribution,
 } from "../lib/api"
-import { explicarEstadoDocente, NLEVEL_DOCENTE, NLEVEL_INVESTIGADOR } from "../utils/docenteLabels"
+import { NLEVEL_DOCENTE, NLEVEL_INVESTIGADOR, explicarEstadoDocente } from "../utils/docenteLabels"
 import { helpContent } from "../utils/helpContent"
 
 interface Props {
@@ -365,16 +365,14 @@ export function EpisodeNLevelView({ getToken, initialEpisodeId }: Props) {
   )
 }
 
-const REGIMEN_JUEZ_DISPLAY: Record<
-  "REFLEXIVA" | "SUPERFICIAL",
-  { label: string; dot: string }
-> = {
+const REGIMEN_JUEZ_DISPLAY: Record<"REFLEXIVA" | "SUPERFICIAL", { label: string; dot: string }> = {
   REFLEXIVA: { label: "Reflexiva", dot: "bg-success" },
   SUPERFICIAL: { label: "Superficial", dot: "bg-warning" },
 }
 
 const JUEZ_REVISION_MSG: Record<string, string> = {
-  inconsistente: "La lectura del modelo no fue consistente con la regla; el episodio va a revision humana.",
+  inconsistente:
+    "La lectura del modelo no fue consistente con la regla; el episodio va a revision humana.",
   baja_confianza: "El modelo no tuvo confianza suficiente; el episodio va a revision humana.",
   error_parseo: "El modelo no devolvio una lectura valida para este episodio.",
 }
@@ -405,10 +403,30 @@ function DocenteJuezLLM({ regimen }: { regimen: RegimenLLM }) {
   const disp = REGIMEN_JUEZ_DISPLAY[regimen.regimen]
   const conf = regimen.confianza !== null ? Math.round(regimen.confianza * 100) : null
   const dims = [
-    { nombre: "Verbalizacion", on: raw.verbalizacion.presente, estado: raw.verbalizacion.presente ? "presente" : "ausente", ev: raw.verbalizacion.evidencia },
-    { nombre: "Verificacion", on: raw.verificacion.presente, estado: raw.verificacion.presente ? "presente" : "ausente", ev: raw.verificacion.evidencia },
-    { nombre: "Justificacion", on: raw.justificacion.presente, estado: raw.justificacion.presente ? "presente" : "ausente", ev: raw.justificacion.evidencia },
-    { nombre: "Autonomia", on: !raw.autonomia.oraculo, estado: raw.autonomia.oraculo ? "oraculo" : "interlocutor", ev: raw.autonomia.evidencia },
+    {
+      nombre: "Verbalizacion",
+      on: raw.verbalizacion.presente,
+      estado: raw.verbalizacion.presente ? "presente" : "ausente",
+      ev: raw.verbalizacion.evidencia,
+    },
+    {
+      nombre: "Verificacion",
+      on: raw.verificacion.presente,
+      estado: raw.verificacion.presente ? "presente" : "ausente",
+      ev: raw.verificacion.evidencia,
+    },
+    {
+      nombre: "Justificacion",
+      on: raw.justificacion.presente,
+      estado: raw.justificacion.presente ? "presente" : "ausente",
+      ev: raw.justificacion.evidencia,
+    },
+    {
+      nombre: "Autonomia",
+      on: !raw.autonomia.oraculo,
+      estado: raw.autonomia.oraculo ? "oraculo" : "interlocutor",
+      ev: raw.autonomia.evidencia,
+    },
   ]
 
   return (
@@ -428,9 +446,7 @@ function DocenteJuezLLM({ regimen }: { regimen: RegimenLLM }) {
           >
             <dt className="text-ink">{d.nombre}</dt>
             <dd className={d.on ? "text-ink" : "text-muted"}>{d.estado}</dd>
-            <dd className="text-muted italic">
-              {d.ev ? `“${d.ev}”` : ""}
-            </dd>
+            <dd className="text-muted italic">{d.ev ? `“${d.ev}”` : ""}</dd>
           </div>
         ))}
       </dl>
@@ -439,7 +455,8 @@ function DocenteJuezLLM({ regimen }: { regimen: RegimenLLM }) {
         {raw.justificacion_global}
       </p>
       <p className="text-xs text-muted mt-2">
-        No reemplaza la clasificacion oficial. Modelo {regimen.model_used} · {regimen.prompt_version}.
+        No reemplaza la clasificacion oficial. Modelo {regimen.model_used} ·{" "}
+        {regimen.prompt_version}.
       </p>
     </div>
   )
@@ -489,8 +506,7 @@ const APPROPRIATION_DISPLAY: Record<
     label: "Apropiacion reflexiva",
     chip: "bg-success text-white",
     container: "border-success/30 bg-success-soft",
-    headline:
-      "Trabajo sostenido y coherente: ritmo, verbalizaciones e iteraciones se acompanaron.",
+    headline: "Trabajo sostenido y coherente: ritmo, verbalizaciones e iteraciones se acompanaron.",
   },
 }
 
