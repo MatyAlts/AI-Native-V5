@@ -241,6 +241,48 @@ async def test_fallback_proxy_y_needs_review_si_veredicto_no_ok(monkeypatch) -> 
 
 
 @pytest.mark.asyncio
+async def test_fallback_proxy_y_needs_review_si_veredicto_inconsistente(monkeypatch) -> None:
+    """Veredicto inconsistente (modelo contradice la regla) → proxy + needs_review."""
+    from classifier_service.services.clients import AIGatewayClient
+
+    monkeypatch.setattr(_settings, "eje_fino_llm_enabled", True)
+    # Modelo dice REFLEXIVA pero autonomía=oráculo → la regla da SUPERFICIAL.
+    salida = _raw(True, True, True, True, "REFLEXIVA", conf=0.9).model_dump()
+
+    async def _fake_complete(self, **_kwargs):
+        return SimpleNamespace(content=json.dumps(salida, ensure_ascii=False))
+
+    monkeypatch.setattr(AIGatewayClient, "complete", _fake_complete)
+    result = _FakeResult({"subgrupo": {"key": "colaborador_reflexivo"}})
+    await _aplicar_juez_eje_fino(result, _EVENTS, uuid4(), {}, uuid4())
+
+    assert result.features["regimen_llm"]["estado"] == "inconsistente"
+    assert result.appropriation == "apropiacion_superficial"  # proxy conservado
+    assert result.features["needs_review"] is True
+    assert "inconsistente" in result.features["needs_review_reason"]
+
+
+@pytest.mark.asyncio
+async def test_fallback_proxy_y_needs_review_si_error_parseo(monkeypatch) -> None:
+    """Veredicto error_parseo (JSON inválido) → proxy + needs_review."""
+    from classifier_service.services.clients import AIGatewayClient
+
+    monkeypatch.setattr(_settings, "eje_fino_llm_enabled", True)
+
+    async def _fake_complete(self, **_kwargs):
+        return SimpleNamespace(content="esto no es json")
+
+    monkeypatch.setattr(AIGatewayClient, "complete", _fake_complete)
+    result = _FakeResult({"subgrupo": {"key": "desenganchado"}})
+    await _aplicar_juez_eje_fino(result, _EVENTS, uuid4(), {}, uuid4())
+
+    assert result.features["regimen_llm"]["estado"] == "error_parseo"
+    assert result.appropriation == "apropiacion_superficial"  # proxy conservado
+    assert result.features["needs_review"] is True
+    assert "error_parseo" in result.features["needs_review_reason"]
+
+
+@pytest.mark.asyncio
 async def test_fallback_no_rompe_el_cierre_si_el_gateway_falla(monkeypatch) -> None:
     """Crítico: si el ai-gateway falla, NO se propaga; se conserva el proxy + needs_review."""
     from classifier_service.services.clients import AIGatewayClient

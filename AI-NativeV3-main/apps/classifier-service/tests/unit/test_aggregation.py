@@ -113,6 +113,44 @@ async def test_agregacion_cuenta_por_tipo() -> None:
     assert stats.distribution.apropiacion_reflexiva == 2
 
 
+async def test_agregacion_cuenta_autonomo() -> None:
+    """v4.0.0: el eje `autonomo` (brazo sin-tutor, prompts==0) se cuenta como
+    bucket propio en la distribución y entra al total."""
+    session = FakeSession(
+        canned=[
+            [
+                {
+                    "appropriation": "autonomo",
+                    "n": 4,
+                    "avg_ct": 0.6,
+                    "avg_ccd_mean": 0.6,
+                    "avg_ccd_orphan": 0.2,
+                    "avg_cii_stab": 0.5,
+                    "avg_cii_evo": 0.5,
+                },
+                {
+                    "appropriation": "apropiacion_reflexiva",
+                    "n": 1,
+                    "avg_ct": 0.8,
+                    "avg_ccd_mean": 0.8,
+                    "avg_ccd_orphan": 0.1,
+                    "avg_cii_stab": 0.7,
+                    "avg_cii_evo": 0.7,
+                },
+            ],
+            [],
+        ]
+    )
+
+    stats = await aggregate_by_comision(session, uuid4(), period_days=30)
+
+    assert stats.distribution.autonomo == 4
+    assert stats.distribution.apropiacion_reflexiva == 1
+    # autonomo entra al total ponderado (4 + 1 = 5).
+    assert stats.total_episodes == 5
+    assert stats.distribution.total == 5
+
+
 async def test_avg_es_ponderado_por_n() -> None:
     """Promedio debe ser ponderado por cantidad de episodios en cada bucket."""
     session = FakeSession(
@@ -159,6 +197,7 @@ async def test_timeseries_agrupa_por_dia() -> None:
             [
                 {"day": d1, "appropriation": "apropiacion_reflexiva", "n": 3},
                 {"day": d1, "appropriation": "apropiacion_superficial", "n": 2},
+                {"day": d1, "appropriation": "autonomo", "n": 5},
                 {"day": d2, "appropriation": "delegacion_pasiva", "n": 1},
                 {"day": d2, "appropriation": "apropiacion_reflexiva", "n": 4},
             ],
@@ -171,8 +210,10 @@ async def test_timeseries_agrupa_por_dia() -> None:
     assert stats.timeseries[0].date == "2026-10-01"
     assert stats.timeseries[0].counts.apropiacion_reflexiva == 3
     assert stats.timeseries[0].counts.apropiacion_superficial == 2
+    assert stats.timeseries[0].counts.autonomo == 5  # v4.0.0: bucket autonomo
     assert stats.timeseries[0].counts.delegacion_pasiva == 0
 
     assert stats.timeseries[1].date == "2026-10-02"
     assert stats.timeseries[1].counts.delegacion_pasiva == 1
     assert stats.timeseries[1].counts.apropiacion_reflexiva == 4
+    assert stats.timeseries[1].counts.autonomo == 0

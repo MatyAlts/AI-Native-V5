@@ -125,6 +125,47 @@ def test_desenganchado_split_por_brazo() -> None:
     assert sg_con.eje == "superficial"
 
 
+def _autonomo_trabado() -> list[dict]:
+    """0 prompts, ejecutó >=2 veces, última ejecución NO limpia (sigue trabado)."""
+    ev = [_ev(0, "lectura_enunciado")]
+    for k in range(3):
+        ev.append(_ev(1 + 2 * k, "edicion_codigo", origin="student_typed"))
+        ev.append(_ev(2 + 2 * k, "codigo_ejecutado", stdout="", stderr="NameError"))
+    return ev
+
+
+def test_los_4_subgrupos_sin_tutor_rollean_a_eje_autonomo() -> None:
+    """v4.0.0: TODO el brazo prompts==0 rollea al eje `autonomo` — los 4 subgrupos
+    sin-tutor (competente, trabado, escribe_sin_validar, autonomo_desenganchado).
+
+    Ninguno debe caer en superficial/delegacion: el brazo sin conversación no
+    tiene apropiación reflexiva/superficial que juzgar contra el discurso.
+    """
+    competente = clasificar_subgrupo(_autonomo_competente())
+    trabado = clasificar_subgrupo(_autonomo_trabado())
+    # escribe_sin_validar: >=10 ediciones, casi sin ejecutar.
+    sin_validar_ev = [_ev(0, "lectura_enunciado")]
+    for k in range(15):
+        sin_validar_ev.append(_ev(1 + k, "edicion_codigo", origin="student_typed"))
+    sin_validar = clasificar_subgrupo(sin_validar_ev)
+    # autonomo_desenganchado: poco trabajo, 0 prompts.
+    deseng_ev = [
+        _ev(0, "lectura_enunciado"),
+        _ev(1, "edicion_codigo", origin="student_typed"),
+        _ev(2, "edicion_codigo", origin="student_typed"),
+        _ev(3, "edicion_codigo", origin="student_typed"),
+    ]
+    desenganchado = clasificar_subgrupo(deseng_ev)
+
+    assert competente.key == "autonomo_competente"
+    assert trabado.key == "autonomo_trabado"
+    assert sin_validar.key == "escribe_sin_validar"
+    assert desenganchado.key == "autonomo_desenganchado"
+    # El invariante central: los 4 al mismo eje.
+    for sg in (competente, trabado, sin_validar, desenganchado):
+        assert sg.eje == "autonomo", f"{sg.key} debería rollear a autonomo, dio {sg.eje}"
+
+
 def test_sobreuso_marca_dependiente_no_reflexivo() -> None:
     """v3.1.0 (hallazgo 2026-06-20): el sobreuso del tutor (overuse) saca al
     alumno de 'reflexiva' y lo marca dependiente — antes inflaba reflexiva."""
