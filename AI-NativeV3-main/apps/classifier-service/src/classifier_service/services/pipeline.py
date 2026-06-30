@@ -72,7 +72,7 @@ _EXCLUDED_FROM_FEATURES = frozenset(
     }
 )
 
-# Roll-up del eje del subgrupo a la etiqueta oficial (3 categorias del schema).
+# Roll-up del eje del subgrupo a la etiqueta oficial (4 categorias del schema: 3 del continuo + autonomo ortogonal).
 # REEMPLAZO 2026-06-11 (tree_version v3.0.0): el subgrupo pasa a decidir la etiqueta.
 # Indeterminado (episodios muy cortos, sin señal) -> superficial (default acordado).
 _EJE_TO_APPROPRIATION = {

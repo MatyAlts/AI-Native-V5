@@ -54,7 +54,8 @@ class Classification(Base, TenantMixin):
     """Clasificación N4 de un episodio.
 
     Campos:
-      - appropriation: "delegacion_pasiva" | "apropiacion_superficial" | "apropiacion_reflexiva"
+      - appropriation: "delegacion_pasiva" | "apropiacion_superficial" | "apropiacion_reflexiva" | "autonomo"
+        (los 3 primeros son el continuo superficial↔reflexiva; "autonomo" es un 4º eje ORTOGONAL al continuo — brazo sin-tutor, prompts == 0)
       - appropriation_reason: texto justificando la decisión del árbol
       - ct_summary: coherencia temporal (0-1, ventanas de trabajo consecutivas)
       - ccd_mean: coherencia código-discurso (0-1, alineación código/texto)
@@ -134,7 +135,7 @@ class InterraterRating(Base, TenantMixin):
         PgUUID(as_uuid=True), nullable=False, index=True
     )
     # Perfil asignado por el humano. String libre (validado en la capa de ruta
-    # contra el protocolo): ejes canónicos / 8 subgrupos / N1-N4.
+    # contra el protocolo): ejes canónicos / 10 subgrupos / N1-N4.
     label: Mapped[str] = mapped_column(String(40), nullable=False)
     # Qué vocabulario usa la etiqueta: "ejes" | "subgrupos" | "niveles".
     protocol: Mapped[str] = mapped_column(String(20), nullable=False, default="ejes")

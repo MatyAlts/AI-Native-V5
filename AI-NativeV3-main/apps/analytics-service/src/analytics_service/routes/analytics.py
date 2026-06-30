@@ -137,8 +137,8 @@ async def require_comision_access(
 
 
 # Etiquetas validas para rating inter-rater. Soporta 3 protocolos configurables:
-#  - B: 3 ejes canonicos (lo que el classifier da como etiqueta oficial).
-#  - Subgrupos: los 8 reales de classifier-service/services/subgrupo.py.
+#  - B: 4 ejes canonicos (3 del continuo + autonomo ortogonal; lo que el classifier da como etiqueta oficial).
+#  - Subgrupos: los 10 reales de classifier-service/services/subgrupo.py.
 #  - A: niveles cognitivos N1-N4.
 # kappa_analysis.py ya soporta categorias arbitrarias; solo validamos la entrada.
 VALID_APPROPRIATION_LABELS: frozenset[str] = frozenset(
@@ -225,8 +225,9 @@ async def compute_kappa(
         for r in req.ratings
     ]
     # Derivar las categorias presentes en los ratings (soporta los 3 protocolos:
-    # 3 ejes canonicos / 8 subgrupos / N1-N4). kappa_analysis usa estas categorias
-    # en vez de las 3 default, asi el calculo no rompe con subgrupos o niveles.
+    # 4 ejes canonicos (3 del continuo + autonomo ortogonal) / 10 subgrupos / N1-N4).
+    # kappa_analysis usa estas categorias en vez de las 3 default, asi el calculo no
+    # rompe con subgrupos o niveles.
     cats = sorted({r.rater_a for r in ratings} | {r.rater_b for r in ratings})
     try:
         result = compute_cohen_kappa(ratings, categories=cats)

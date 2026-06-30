@@ -56,7 +56,7 @@ class Subgrupo:
     key: str
     label: str
     accion_docente: str
-    eje: str  # roll-up: reflexiva | superficial | delegacion_pasiva | sin_clasificar
+    eje: str  # roll-up: reflexiva | superficial | delegacion_pasiva | autonomo | sin_clasificar
 
 
 INDETERMINADO = Subgrupo("indeterminado", "Indeterminado", "No concluir - episodio muy corto", "sin_clasificar")
@@ -147,7 +147,7 @@ def _verbaliza(events: list[dict]) -> bool:
 
 
 def clasificar_subgrupo(events: list[dict]) -> Subgrupo:
-    """Árbol de 8 subgrupos. El gate `prompts == 0` corrige la inversión:
+    """Árbol de 10 subgrupos. El gate `prompts == 0` corrige la inversión:
     sin prompts, delegar es imposible → rama autónoma."""
     sig = _significativos(events)
     if len(sig) < MIN_EVENTS:

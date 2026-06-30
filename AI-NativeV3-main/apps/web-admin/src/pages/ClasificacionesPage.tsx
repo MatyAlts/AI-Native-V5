@@ -6,7 +6,7 @@
  *
  * F2 — nueva medición (modo sombra):
  * Consume GET /api/v1/classifications/subgrupos del classifier-service.
- * Muestra los 8 subgrupos con roll-up a los 3 ejes y las 4 dimensiones.
+ * Muestra los 10 subgrupos con roll-up a los 4 ejes (3 del continuo + autonomo ortogonal) y las 4 dimensiones.
  */
 import { PageContainer } from "@platform/ui"
 import { type ReactNode, useEffect, useState } from "react"
@@ -256,7 +256,7 @@ export function ClasificacionesPage(): ReactNode {
               </section>
             )}
 
-            {/* Nueva medición — 8 subgrupos (modo sombra) */}
+            {/* Nueva medición — 10 subgrupos (modo sombra) */}
             <NuevaMedicionSection
               stats={subgruposStats}
               pending={subgruposPending}
@@ -447,7 +447,7 @@ function NuevaMedicionSection({
     <section className="rounded-lg border border-border-soft bg-surface p-4 space-y-4">
       <div className="flex items-center gap-2">
         <h2 className="text-sm font-semibold uppercase text-muted">
-          Nueva medición — 4 dimensiones / 8 subgrupos
+          Nueva medición — 4 dimensiones / 10 subgrupos
         </h2>
         <span className="rounded-full bg-surface-alt border border-border-soft px-2 py-0.5 text-xs text-muted">
           modo sombra
