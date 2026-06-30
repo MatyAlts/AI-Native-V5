@@ -36,10 +36,12 @@ from ai_gateway.providers.base import (
     GeminiProvider,
     MistralProvider,
     OpenAIProvider,
+    OpenRouterProvider,
     get_provider,
 )
 from ai_gateway.services.budget_and_cache import BudgetTracker, ResponseCache
 from ai_gateway.services.byok import (
+    ResolvedKey,
     increment_env_fallback_usage,
     increment_usage,
     resolve_byok_key,
@@ -209,11 +211,23 @@ _MODEL_TO_PROVIDER: dict[str, str] = {
 
 
 def _infer_provider_name(model: str) -> str:
+    # Regla OpenRouter (motor global): cualquier modelo namespaced (`openai/...`,
+    # `google/...`, `anthropic/...`) se rutea por OpenRouter. La seguridad keyless
+    # (strip de namespace + fallback nativo si NO hay key openrouter) vive en
+    # `_resolve_provider_and_model` — esta funcion solo clasifica el string.
+    if "/" in model:
+        return "openrouter"
     model_lower = model.lower()
     for prefix, prov in _MODEL_TO_PROVIDER.items():
         if prefix in model_lower:
             return prov
     return "anthropic"
+
+
+def _strip_namespace(model: str) -> str:
+    """Saca el namespace de un modelo OpenRouter: `google/gemini-2.5-flash`
+    → `gemini-2.5-flash`, `openai/gpt-4o-mini` → `gpt-4o-mini`. Sin `/`, no-op."""
+    return model.split("/", 1)[1] if "/" in model else model
 
 
 def _make_provider(provider_name: str, api_key: str) -> BaseProvider:
@@ -225,7 +239,55 @@ def _make_provider(provider_name: str, api_key: str) -> BaseProvider:
         return OpenAIProvider(api_key=api_key)
     if provider_name == "gemini":
         return GeminiProvider(api_key=api_key)
+    if provider_name == "openrouter":
+        return OpenRouterProvider(api_key=api_key)
     return AnthropicProvider(api_key=api_key)
+
+
+async def _resolve_provider_and_model(
+    tenant_id: UUID, model: str, materia_id: UUID | None
+) -> tuple[BaseProvider, str, ResolvedKey | None]:
+    """Resuelve `(provider, modelo_efectivo, resolved_key)` con SEGURIDAD KEYLESS.
+
+    - Modelo namespaced (`openai/gpt-4o-mini`) → se intenta OpenRouter. Si hay key
+      openrouter resoluble (BYOK por scope o env `OPENROUTER_API_KEY`), se usa
+      `OpenRouterProvider` con el modelo namespaced tal cual.
+    - Si NO hay key openrouter, se STRIPPEA el namespace y se re-infiere el provider
+      nativo (`google/gemini-2.5-flash` → gemini + `gemini-2.5-flash`;
+      `openai/gpt-4o-mini` → openai + `gpt-4o-mini`), resolviendo la key NATIVA por
+      el mismo resolver jerarquico. Asi un deploy sin OPENROUTER_API_KEY es no-op de
+      ruteo: se comporta igual que hoy (provider nativo directo).
+    - Si tampoco hay key nativa, cae a `get_provider()` (mock en dev) con el modelo
+      ya strippeado.
+    - Modelo sin namespace → provider nativo directo, igual que antes.
+
+    Devuelve el modelo EFECTIVO que debe ir al provider (strippeado cuando se cae a
+    nativo) y el `ResolvedKey` (o None) para el audit trail de BYOK/env_fallback.
+    """
+    provider_name = _infer_provider_name(model)
+
+    if provider_name == "openrouter":
+        resolved = await resolve_byok_key(
+            tenant_id=tenant_id, provider="openrouter", materia_id=materia_id
+        )
+        if resolved and resolved.plaintext:
+            return _make_provider("openrouter", resolved.plaintext), model, resolved
+        # Keyless fallback: strip namespace + provider nativo.
+        native_model = _strip_namespace(model)
+        native_name = _infer_provider_name(native_model)
+        resolved = await resolve_byok_key(
+            tenant_id=tenant_id, provider=native_name, materia_id=materia_id
+        )
+        if resolved and resolved.plaintext:
+            return _make_provider(resolved.provider, resolved.plaintext), native_model, resolved
+        return get_provider(), native_model, None
+
+    resolved = await resolve_byok_key(
+        tenant_id=tenant_id, provider=provider_name, materia_id=materia_id
+    )
+    if resolved and resolved.plaintext:
+        return _make_provider(resolved.provider, resolved.plaintext), model, resolved
+    return get_provider(), model, None
 
 
 # ── Endpoints ────────────────────────────────────────────────────────
@@ -294,27 +356,28 @@ async def complete(
             },
         )
 
-    # 4. Resolver provider: BYOK/env key → provider dinámico, fallback → get_provider()
-    resolved = await resolve_byok_key(
-        tenant_id=caller.tenant_id,
-        provider=_infer_provider_name(req.model),
-        materia_id=req.materia_id,
+    # 4. Resolver provider + modelo efectivo con SEGURIDAD KEYLESS: modelo
+    # namespaced → OpenRouter si hay key; si no, strip de namespace + provider
+    # nativo (no-op de ruteo sin OPENROUTER_API_KEY). El modelo efectivo puede
+    # diferir de req.model (strippeado), pero la cache se mantiene keyeada por
+    # `internal_req` (req.model) para que get/set sean consistentes.
+    provider, effective_model, resolved = await _resolve_provider_and_model(
+        tenant_id=caller.tenant_id, model=req.model, materia_id=req.materia_id
     )
-    if resolved and resolved.plaintext:
-        provider = _make_provider(resolved.provider, resolved.plaintext)
+    if resolved is not None:
         logger.info(
-            "byok_resolved tenant=%s scope=%s provider=%s key_id=%s",
+            "byok_resolved tenant=%s scope=%s provider=%s key_id=%s model=%s",
             caller.tenant_id,
             resolved.scope_resolved,
             resolved.provider,
             resolved.key_id,
+            effective_model,
         )
-    else:
-        provider = get_provider()
+    provider_req = replace(internal_req, model=effective_model)
 
     _provider_start = time.perf_counter()
     try:
-        response = await provider.complete(internal_req)
+        response = await provider.complete(provider_req)
     except Exception as e:
         ai_gateway_fallback_total.add(1, {"reason": "provider_error"})
         logger.exception("provider_error")
@@ -423,39 +486,36 @@ async def stream_complete(
             detail="Budget excedido",
         )
 
+    # Resolver provider + modelo efectivo con SEGURIDAD KEYLESS (mismo criterio
+    # que /complete): modelo namespaced → OpenRouter si hay key; si no, strip de
+    # namespace + provider nativo. El `internal_req` se arma con el modelo EFECTIVO.
+    provider, effective_model, resolved = await _resolve_provider_and_model(
+        tenant_id=caller.tenant_id, model=req.model, materia_id=req.materia_id
+    )
+    if resolved is not None:
+        logger.info(
+            "byok_stream_resolved tenant=%s scope=%s provider=%s key_id=%s model=%s",
+            caller.tenant_id,
+            resolved.scope_resolved,
+            resolved.provider,
+            resolved.key_id,
+            effective_model,
+        )
+
     internal_req = CompletionRequest(
         messages=[m.model_dump() for m in req.messages],
-        model=req.model,
+        model=effective_model,
         temperature=req.temperature,
         max_tokens=req.max_tokens,
         stream=True,
     )
 
-    resolved = await resolve_byok_key(
-        tenant_id=caller.tenant_id,
-        provider=_infer_provider_name(req.model),
-        materia_id=req.materia_id,
-    )
-    if resolved and resolved.plaintext:
-        provider = _make_provider(resolved.provider, resolved.plaintext)
-        logger.info(
-            "byok_stream_resolved tenant=%s scope=%s provider=%s key_id=%s",
-            caller.tenant_id,
-            resolved.scope_resolved,
-            resolved.provider,
-            resolved.key_id,
-        )
-    else:
-        provider = get_provider()
-
-    # Capturar el provider name efectivo (anthropic|mistral|mock|...). El
-    # SDK de streaming no expone usage final en el mismo objeto que el
-    # iterator de chunks, asi que aproximamos por char-count (mismo criterio
-    # que la estimacion de cost previa). El campo `provider` viaja exacto.
+    # Capturar el provider name efectivo (openrouter|anthropic|mistral|mock|...).
+    # El SDK de streaming no expone usage final en el mismo objeto que el iterator
+    # de chunks, asi que aproximamos por char-count (mismo criterio que la
+    # estimacion de cost previa). El campo `provider` viaja exacto.
     effective_provider_name = (
-        resolved.provider
-        if (resolved and resolved.plaintext)
-        else getattr(provider, "name", "mock")
+        resolved.provider if resolved is not None else getattr(provider, "name", "mock")
     )
     # Aproximacion grosera de input tokens basada en el largo de los messages
     # (~4 chars por token, heuristica estandar). Para Anthropic real el usage

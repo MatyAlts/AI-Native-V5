@@ -28,10 +28,11 @@ def _autonomo_competente() -> list[dict]:
 
 
 def test_autonomo_sin_prompts_NO_cae_en_delegacion() -> None:
-    """El fix central: sin prompts, delegar es imposible → rama autónoma, NO delegación."""
+    """El fix central: sin prompts, delegar es imposible → rama autónoma, NO delegación.
+    v4.0.0: el brazo sin-tutor rollea al eje propio `autonomo`."""
     sg = clasificar_subgrupo(_autonomo_competente())
     assert sg.key == "autonomo_competente"
-    assert sg.eje == "reflexiva"
+    assert sg.eje == "autonomo"
     assert sg.eje != "delegacion_pasiva"
 
 
@@ -64,13 +65,11 @@ def test_compute_subgrupo_trae_dimensiones() -> None:
     assert sg["dimensiones"]["autonomia"] == 1.0  # sin prompts ni pegados
 
 
-def test_subgrupo_es_aditivo_no_cambia_appropriation_oficial() -> None:
-    """El subgrupo convive con la clasificación oficial sin alterarla."""
+def test_subgrupo_decide_eje_autonomo_para_brazo_sin_tutor() -> None:
+    """v4.0.0: el subgrupo decide la etiqueta; el brazo sin-tutor → eje/etiqueta `autonomo`."""
     result = classify_episode_from_events(_autonomo_competente())
-    # el motor oficial sigue su lógica vieja (acá, de hecho, lo invierte a delegación)
-    assert result.appropriation in ("delegacion_pasiva", "apropiacion_superficial", "apropiacion_reflexiva")
-    # y el subgrupo additivo lo ubica bien en features
-    assert result.features["subgrupo"]["eje"] == "reflexiva"
+    assert result.appropriation == "autonomo"
+    assert result.features["subgrupo"]["eje"] == "autonomo"
 
 
 def test_subgrupo_no_afecta_el_classifier_config_hash() -> None:
@@ -94,6 +93,36 @@ def test_sin_sobreuso_es_colaborador_reflexivo() -> None:
     sg = clasificar_subgrupo(_colaborador_reflexivo())
     assert sg.key == "colaborador_reflexivo"
     assert sg.eje == "reflexiva"
+
+
+def test_desenganchado_split_por_brazo() -> None:
+    """GOTCHA v4.0.0: el `desenganchado` se separa por brazo.
+
+    - prompts == 0 + poco trabajo → `autonomo_desenganchado` (eje autonomo).
+    - prompts >  0 + poco trabajo → `desenganchado` compartido (eje superficial).
+    El brazo sin-tutor NUNCA debe emitir el `desenganchado` superficial.
+    """
+    # Brazo SIN tutor: poco trabajo, 0 prompts.
+    sin_tutor = [
+        _ev(0, "lectura_enunciado"),
+        _ev(1, "edicion_codigo", origin="student_typed"),
+        _ev(2, "edicion_codigo", origin="student_typed"),
+        _ev(3, "edicion_codigo", origin="student_typed"),
+    ]
+    sg_sin = clasificar_subgrupo(sin_tutor)
+    assert sg_sin.key == "autonomo_desenganchado"
+    assert sg_sin.eje == "autonomo"
+
+    # Brazo CON tutor: poco trabajo, prompts > 0 (sin solicitud_directa → no delegador).
+    con_tutor = [
+        _ev(0, "lectura_enunciado"),
+        _ev(1, "prompt_enviado", prompt_kind="exploracion", content="que hace esto?"),
+        _ev(2, "prompt_enviado", prompt_kind="exploracion", content="y esto?"),
+        _ev(3, "edicion_codigo", origin="student_typed"),
+    ]
+    sg_con = clasificar_subgrupo(con_tutor)
+    assert sg_con.key == "desenganchado"
+    assert sg_con.eje == "superficial"
 
 
 def test_sobreuso_marca_dependiente_no_reflexivo() -> None:

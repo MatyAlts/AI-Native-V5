@@ -37,18 +37,18 @@ class Settings(BaseSettings):
     ai_gateway_url: str = "http://127.0.0.1:8011"
 
     # Componente de contenido (juez LLM) para el eje superficial↔reflexiva
-    # (Diseno-clasificador-cognitivo-LLM-v4). OFF por default = MODO SOMBRA:
-    # el resultado se persiste en `Classification.features['regimen_llm']` sin
-    # tocar `appropriation` ni el `classifier_config_hash` (aditivo, reversible,
-    # no rompe la reproducibilidad bit-a-bit del piloto-1). Activación bloqueada
-    # hasta validación k-fold con κ del juez por encima del azar (§6.1 del diseño).
-    # `eje_fino_model`: modelo CAPAZ para validar; bajar a uno chico tras validar.
-    eje_fino_llm_enabled: bool = False
-    # Modelo validado sobre el corpus real (κ 0,68 con gold refinado). El tutor usa
-    # gemini-2.5-flash-lite; el juez usa el flash "full" porque flash-lite mostró
-    # 503 persistentes y menor consistencia en salida estructurada. Va por el
+    # (Diseno-clasificador-cognitivo-LLM-v4). ON por default (v4.0.0): el juez
+    # GOBIERNA la etiqueta oficial `appropriation` de los episodios CON-TUTOR que
+    # NO son delegacion pasiva (REFLEXIVA -> apropiacion_reflexiva, SUPERFICIAL ->
+    # apropiacion_superficial). Ya NO es modo sombra. La delegacion pasiva la
+    # resuelve la etapa dura; el brazo autonomo (prompts == 0) no pasa por el juez.
+    # FALLBACK obligatorio (classify_ep): si el juez no responde "ok" o el gateway
+    # falla, se conserva la etiqueta del proxy conductual (subgrupo) y el episodio
+    # se marca needs_review — cerrar el episodio NUNCA debe fallar por el LLM.
+    eje_fino_llm_enabled: bool = True
+    # Modelo del juez ruteado por OpenRouter (contrato v4.0.0). Va por el
     # ai-gateway (mismo proveedor que el tutor). Ver informe-validacion-juez-llm.
-    eje_fino_model: str = "gemini-2.5-flash"
+    eje_fino_model: str = "google/gemini-2.5-flash"
 
     # ADR-023 / ADR-045 (Mejora 3 plan post-piloto-1, sub-componente G8b):
     # override lexico de `anotacion_creada` sobre contenido textual con

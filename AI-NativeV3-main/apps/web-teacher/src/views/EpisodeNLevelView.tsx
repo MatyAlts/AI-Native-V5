@@ -377,14 +377,14 @@ const JUEZ_REVISION_MSG: Record<string, string> = {
   error_parseo: "El modelo no devolvio una lectura valida para este episodio.",
 }
 
-// Veredicto del juez LLM del eje fino (modo sombra). Informativo: acompana al
-// veredicto oficial sin reemplazarlo. Cita la evidencia textual del alumno por
-// cada una de las 4 dimensiones de la rubrica.
+// Veredicto del juez LLM del eje fino. Es la clasificacion OFICIAL del episodio
+// (ya no es modo sombra): gobierna la etiqueta de apropiacion. Cita la evidencia
+// textual del alumno por cada una de las 4 dimensiones de la rubrica.
 function DocenteJuezLLM({ regimen }: { regimen: RegimenLLM }) {
   const kicker = (
     <div className="text-xs uppercase tracking-wider text-muted">
-      Lectura del juez IA{" "}
-      <span className="font-normal normal-case">· modo sombra (informativo)</span>
+      Veredicto del juez IA{" "}
+      <span className="font-normal normal-case">· clasificacion oficial</span>
     </div>
   )
 
@@ -455,7 +455,7 @@ function DocenteJuezLLM({ regimen }: { regimen: RegimenLLM }) {
         {raw.justificacion_global}
       </p>
       <p className="text-xs text-muted mt-2">
-        No reemplaza la clasificacion oficial. Modelo {regimen.model_used} ·{" "}
+        Esta es la clasificacion oficial del episodio. Modelo {regimen.model_used} ·{" "}
         {regimen.prompt_version}.
       </p>
     </div>
@@ -507,6 +507,14 @@ const APPROPRIATION_DISPLAY: Record<
     chip: "bg-success text-white",
     container: "border-success/30 bg-success-soft",
     headline: "Trabajo sostenido y coherente: ritmo, verbalizaciones e iteraciones se acompanaron.",
+  },
+  // Eje ORTOGONAL (gris): trabajo autonomo sin tutor. No esta en el continuo
+  // superficial↔reflexiva — no se interpreta como "mejor" ni "peor".
+  autonomo: {
+    label: "Autonomo (sin tutor)",
+    chip: "bg-neutral text-white",
+    container: "border-border-strong/40 bg-surface-alt",
+    headline: "El alumno trabajo por su cuenta, sin apoyarse en el tutor. Es un perfil propio, no un punto de la escala de apropiacion.",
   },
 }
 

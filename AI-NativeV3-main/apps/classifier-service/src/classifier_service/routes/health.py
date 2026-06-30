@@ -41,9 +41,11 @@ VERSION = "0.1.0"
 # Tree version vigente — sincronizar con el árbol de decisión activo.
 # v3.0.0 (2026-06-11): reemplazo — la etiqueta oficial deriva del subgrupo.
 # v3.1.0 (2026-06-20): el sobreuso del tutor (overuse) pasa a dependiente, ya no
-# infla "apropiacion_reflexiva". Bump fuerza re-clasificacion (cambia el hash).
-# Idéntico al que usa /classify_episode/{id}.
-_TREE_VERSION = "v3.1.0"
+# infla "apropiacion_reflexiva".
+# v4.0.0 (2026-06-30): (B) el juez LLM GOBIERNA la etiqueta de los con-tutor
+# no-delegación + (C) nuevo eje `autonomo` que se lleva todo el brazo sin-tutor.
+# Bump fuerza re-clasificacion (cambia el hash). Idéntico al que usa /classify_episode/{id}.
+_TREE_VERSION = "v4.0.0"
 
 
 @router.get("", response_model=HealthResponse)

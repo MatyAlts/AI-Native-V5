@@ -12,8 +12,9 @@
  *   5. Señales: coherencias CT/CCD/CII promedio por perfil.
  *
  * Dataviz SVG inline (sin chart libs, ver DESIGN.md). Color semántico: verde =
- * reflexiva, ámbar = superficial, rojo = delegación. Headers X-* + Bearer los
- * inyecta el monkey-patch de `main.tsx`. Backend: GET /api/v1/analytics/pedagogia.
+ * reflexiva, ámbar = superficial, rojo = delegación, gris = autónomo (eje
+ * ortogonal, fuera del continuo ordinal). Headers X-* + Bearer los inyecta el
+ * monkey-patch de `main.tsx`. Backend: GET /api/v1/analytics/pedagogia.
  */
 import { PageContainer } from "@platform/ui"
 import { type ReactNode, useEffect, useMemo, useState } from "react"
@@ -183,6 +184,16 @@ const APR = {
     text: "text-danger",
     soft: "bg-danger-soft",
     hex: "var(--color-danger)",
+  },
+  // Eje ORTOGONAL al continuo: trabajo autonomo (sin tutor). Gris = token
+  // neutral del design system. No participa de la curva/slope longitudinal.
+  autonomo: {
+    label: "Autónomo (sin tutor)",
+    short: "Autónomo",
+    bar: "bg-neutral",
+    text: "text-neutral",
+    soft: "bg-surface-alt",
+    hex: "var(--color-neutral)",
   },
   indeterminado: {
     label: "Indeterminado",
@@ -676,7 +687,11 @@ function KappaStat({ pair, label }: { pair: KappaPar; label: string }): ReactNod
 
 function DistribucionSection({ block }: { block: DistribucionBlock }): ReactNode {
   const total = block.n_episodios_clasificados
-  const order = [...APR_ORDER, "indeterminado"].filter((k) => (block.por_apropiacion[k] ?? 0) > 0)
+  // `autonomo` es eje ortogonal (gris): aparece en la distribucion pero NO en la
+  // curva/matriz/senales (que viven en el continuo ordinal del backend).
+  const order = [...APR_ORDER, "autonomo", "indeterminado"].filter(
+    (k) => (block.por_apropiacion[k] ?? 0) > 0,
+  )
   const maxSub = Math.max(1, ...block.por_subgrupo.map((s) => s.n))
 
   return (

@@ -156,7 +156,12 @@ async def reclassify_one(
 async def main(dry_run: bool, service_url: str, db_url: str) -> int:
     # 1. Calcular el hash vigente local (debe coincidir con el que computa
     # el classifier-service endpoint — ambos usan la misma funcion pura).
-    vigente_hash = compute_classifier_config_hash(DEFAULT_REFERENCE_PROFILE, "v1.0.0")
+    # BUGFIX: antes hardcodeaba "v1.0.0" (desactualizado) → el hash "vigente" no
+    # coincidia con el real del pipeline y la query no filtraba nada / filtraba mal.
+    # Ahora se usa el DEFAULT canonico de compute_classifier_config_hash (hoy
+    # "v4.0.0"): la version vigente se mantiene en UN solo lugar (la firma de la
+    # funcion pura), no se duplica aca.
+    vigente_hash = compute_classifier_config_hash(DEFAULT_REFERENCE_PROFILE)
     print(f"Hash vigente: {vigente_hash}")
     print(f"DB: {_redact(db_url)}")
     print(f"Service URL: {service_url}")

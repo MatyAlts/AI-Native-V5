@@ -7,6 +7,10 @@ export const APPROPRIATION_DOCENTE: Record<string, string> = {
   delegacion_pasiva: "En este episodio: dependio de la IA",
   apropiacion_superficial: "En este episodio: uso superficial de la IA",
   apropiacion_reflexiva: "En este episodio: trabajo de forma autonoma",
+  // Eje ORTOGONAL (color gris): el alumno trabajo sin apoyarse en el tutor.
+  // NO esta en el continuo superficial↔reflexiva — es un perfil propio, no un
+  // punto de la escala ordinal de apropiacion.
+  autonomo: "En este episodio: trabajo sin usar el tutor",
 }
 
 // Subgrupos en lenguaje docente (selector de protocolo del inter-rater).
@@ -32,6 +36,9 @@ export const APPROPRIATION_INVESTIGADOR: Record<string, string> = {
   delegacion_pasiva: "Perfil tipologico: delegacion pasiva",
   apropiacion_superficial: "Perfil tipologico: apropiacion superficial",
   apropiacion_reflexiva: "Perfil tipologico: apropiacion reflexiva",
+  // Eje ortogonal (sin ordinal): trabajo autonomo sin tutor — fuera del
+  // continuo superficial↔reflexiva (color gris en las vistas).
+  autonomo: "Perfil tipologico: trabajo autonomo (sin tutor)",
 }
 
 /**
@@ -270,6 +277,8 @@ const SUBGRUPO_RESUMEN_DOCENTE: Record<string, string> = {
 // Subgrupos de la rama "sin prompts" del arbol (el alumno NO uso el tutor).
 // Para ellos, el factor de codigo-sin-dialogo se redacta en neutro: trabajar
 // sin consultar al tutor es la definicion del perfil, no una falta.
+// Estos subgrupos hacen roll-up al eje ORTOGONAL `autonomo` (gris) — coherentes
+// con esa etiqueta macro, que tampoco esta en el continuo superficial↔reflexiva.
 const SUBGRUPOS_SIN_TUTOR = new Set([
   "autonomo_competente",
   "autonomo_trabado",

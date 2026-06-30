@@ -34,12 +34,14 @@ CODER_ROLES = ("docente", "docente_admin", "superadmin")
 # Etiquetas válidas por protocolo (mismo vocabulario que el clasificador).
 _LABELS: dict[str, frozenset[str]] = {
     "ejes": frozenset(
-        {"delegacion_pasiva", "apropiacion_superficial", "apropiacion_reflexiva"}
+        # `autonomo` (v4.0.0): eje del brazo sin-tutor (prompts == 0).
+        {"delegacion_pasiva", "apropiacion_superficial", "apropiacion_reflexiva", "autonomo"}
     ),
     "subgrupos": frozenset(
         {
             "autonomo_competente",
             "autonomo_trabado",
+            "autonomo_desenganchado",
             "escribe_sin_validar",
             "desenganchado",
             "colaborador_reflexivo",

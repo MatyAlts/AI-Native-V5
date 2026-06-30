@@ -418,6 +418,111 @@ class GeminiProvider(BaseProvider):
                 yield text
 
 
+class OpenRouterProvider(BaseProvider):
+    """Provider de OpenRouter (https://openrouter.ai) — motor principal global.
+
+    OpenRouter expone una API OpenAI-compatible que rutea a decenas de modelos
+    de distintos proveedores via un namespace en el nombre del modelo
+    (`openai/gpt-4o-mini`, `google/gemini-2.5-flash`, `anthropic/claude-...`).
+    Reusamos el mismo cliente `AsyncOpenAI` apuntando al `base_url` de OpenRouter
+    + los headers de atribucion que OpenRouter recomienda (HTTP-Referer / X-Title).
+
+    PRICING: NO mantenemos tabla propia — seria inmanejable (un namespace por
+    cada provider/modelo del catalogo de OpenRouter). En su lugar confiamos en el
+    `usage` REAL que devuelve OpenRouter: pidiendo `usage: {include: true}` en el
+    body, la respuesta trae `usage.cost` en USD ya calculado por OpenRouter. Si
+    por algun motivo no viene, el costo cae a 0.0 (token counts se siguen
+    registrando para auditoria). Ver riesgo de budget en el reporte.
+    """
+
+    name = "openrouter"
+
+    def __init__(self, api_key: str | None = None) -> None:
+        self.api_key = api_key or os.environ.get("OPENROUTER_API_KEY", "")
+        self._client: Any = None
+
+    def _ensure_client(self) -> Any:
+        if self._client is None:
+            from openai import AsyncOpenAI
+
+            # Import diferido de settings para no acoplar el modulo de providers
+            # a la config en import-time (mismo patron que get_provider).
+            from ai_gateway.config import settings
+
+            self._client = AsyncOpenAI(
+                api_key=self.api_key or "sk-no-key-needed",
+                base_url=os.environ.get("OPENROUTER_BASE_URL", "").strip()
+                or "https://openrouter.ai/api/v1",
+                default_headers={
+                    "HTTP-Referer": settings.openrouter_referer,
+                    "X-Title": settings.openrouter_title,
+                },
+            )
+        return self._client
+
+    @staticmethod
+    def _extract_cost(usage: Any) -> float:
+        """Lee el costo REAL en USD que OpenRouter adjunta al `usage`.
+
+        Con `usage: {include: true}` OpenRouter agrega `cost` (creditos = USD).
+        Si no esta presente, 0.0 — el budget de ese request no se carga (riesgo
+        documentado: la cuota la controla el dashboard de OpenRouter / BYOK).
+        """
+        if usage is None:
+            return 0.0
+        return float(getattr(usage, "cost", 0.0) or 0.0)
+
+    async def complete(self, request: CompletionRequest) -> CompletionResponse:
+        client = self._ensure_client()
+
+        kwargs: dict[str, Any] = {
+            "model": request.model,
+            "messages": request.messages,
+            "temperature": request.temperature,
+            "max_tokens": request.max_tokens,
+            # Pide el costo real de OpenRouter en el usage (sin tabla PRICING propia).
+            "extra_body": {"usage": {"include": True}},
+        }
+        if request.response_format:
+            kwargs["response_format"] = request.response_format
+
+        result = await client.chat.completions.create(**kwargs)
+
+        choice = result.choices[0]
+        content = choice.message.content or ""
+        usage = result.usage
+        input_tok = usage.prompt_tokens if usage else 0
+        output_tok = usage.completion_tokens if usage else 0
+        cost = self._extract_cost(usage)
+
+        return CompletionResponse(
+            content=content,
+            model=request.model,
+            provider="openrouter",
+            input_tokens=input_tok,
+            output_tokens=output_tok,
+            cost_usd=cost,
+        )
+
+    async def stream_complete(self, request: CompletionRequest) -> AsyncIterator[str]:
+        client = self._ensure_client()
+
+        stream = await client.chat.completions.create(
+            model=request.model,
+            messages=request.messages,
+            temperature=request.temperature,
+            max_tokens=request.max_tokens,
+            stream=True,
+        )
+
+        async for chunk in stream:
+            if not chunk.choices:
+                continue
+            delta = chunk.choices[0].delta
+            if delta and delta.content:
+                yield delta.content
+
+
 @lru_cache(maxsize=1)
 def get_provider(name: str = "") -> BaseProvider:
     """Factory de providers. name='mock' para tests.
@@ -453,6 +558,13 @@ def get_provider(name: str = "") -> BaseProvider:
         return OpenAIProvider()
     if which == "gemini":
         return GeminiProvider()
+    if which == "openrouter":
+        # Motor global: LLM_PROVIDER=openrouter rutea TODO por OpenRouter. La key
+        # se lee de OPENROUTER_API_KEY en el __init__. Si no hay key, el provider
+        # se instancia igual pero falla recien al primer call — por eso el default
+        # de `llm_provider` se mantiene en `mock` (ver config.py) y el ruteo real
+        # se hace por modelo namespaced + seguridad keyless en routes/complete.py.
+        return OpenRouterProvider()
     if from_runtime_config:
         import logging
 

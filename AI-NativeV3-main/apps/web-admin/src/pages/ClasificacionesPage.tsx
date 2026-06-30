@@ -15,7 +15,13 @@ import { helpContent } from "../utils/helpContent"
 
 // ── Tipos — medición oficial ──────────────────────────────────────────────
 
-type Appropriation = "delegacion_pasiva" | "apropiacion_superficial" | "apropiacion_reflexiva"
+// Las 3 del continuo ordinal + el eje ORTOGONAL `autonomo` (sin tutor, gris).
+// Debe coincidir con classifier-service.
+type Appropriation =
+  | "delegacion_pasiva"
+  | "apropiacion_superficial"
+  | "apropiacion_reflexiva"
+  | "autonomo"
 
 interface AggregatedStats {
   comision_id: string
@@ -187,8 +193,15 @@ export function ClasificacionesPage(): ReactNode {
 
         {comisionId && stats && stats.total_episodes > 0 && (
           <>
-            {/* Distribución por tipo */}
-            <section className="grid grid-cols-1 md:grid-cols-3 gap-4">
+            {/* Distribución por tipo. `autonomo` es eje ortogonal (gris): solo
+                se muestra cuando hay episodios clasificados asi. */}
+            <section
+              className={`grid grid-cols-1 gap-4 ${
+                (stats.distribution.autonomo ?? 0) > 0
+                  ? "md:grid-cols-2 lg:grid-cols-4"
+                  : "md:grid-cols-3"
+              }`}
+            >
               <DistributionCard
                 label="Delegación pasiva"
                 count={stats.distribution.delegacion_pasiva}
@@ -210,6 +223,15 @@ export function ClasificacionesPage(): ReactNode {
                 color="green"
                 emoji="🌟"
               />
+              {(stats.distribution.autonomo ?? 0) > 0 && (
+                <DistributionCard
+                  label="Autónomo (sin tutor)"
+                  count={stats.distribution.autonomo ?? 0}
+                  total={stats.total_episodes}
+                  color="gray"
+                  emoji="🧭"
+                />
+              )}
             </section>
 
             {/* Promedios de las 3 coherencias */}
@@ -259,7 +281,7 @@ function DistributionCard({
   label: string
   count: number
   total: number
-  color: "red" | "yellow" | "green"
+  color: "red" | "yellow" | "green" | "gray"
   emoji: string
 }): ReactNode {
   const pct = total > 0 ? Math.round((count / total) * 100) : 0
@@ -267,11 +289,13 @@ function DistributionCard({
     red: "bg-danger-soft border-danger/30",
     yellow: "bg-warning-soft border-warning/30",
     green: "bg-success-soft border-success/30",
+    gray: "bg-surface-alt border-border-strong/40",
   }[color]
   const textColor = {
     red: "text-danger",
     yellow: "text-warning",
     green: "text-success",
+    gray: "text-neutral",
   }[color]
 
   return (

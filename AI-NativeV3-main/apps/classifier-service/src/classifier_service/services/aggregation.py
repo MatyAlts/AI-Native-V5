@@ -17,10 +17,16 @@ class AppropriationCounts:
     delegacion_pasiva: int = 0
     apropiacion_superficial: int = 0
     apropiacion_reflexiva: int = 0
+    autonomo: int = 0
 
     @property
     def total(self) -> int:
-        return self.delegacion_pasiva + self.apropiacion_superficial + self.apropiacion_reflexiva
+        return (
+            self.delegacion_pasiva
+            + self.apropiacion_superficial
+            + self.apropiacion_reflexiva
+            + self.autonomo
+        )
 
 
 @dataclass
@@ -84,6 +90,8 @@ async def aggregate_by_comision(
             dist.apropiacion_superficial = n
         elif appropriation == "apropiacion_reflexiva":
             dist.apropiacion_reflexiva = n
+        elif appropriation == "autonomo":
+            dist.autonomo = n
         all_avgs.append(dict(row))
 
     # Promedio global (ponderado por n por appropriation)
@@ -129,6 +137,8 @@ async def aggregate_by_comision(
             counts.apropiacion_superficial = n
         elif row["appropriation"] == "apropiacion_reflexiva":
             counts.apropiacion_reflexiva = n
+        elif row["appropriation"] == "autonomo":
+            counts.autonomo = n
 
     timeseries = [DailyCounts(date=day, counts=counts) for day, counts in sorted(ts_map.items())]
 

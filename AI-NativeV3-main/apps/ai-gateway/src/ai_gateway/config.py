@@ -28,6 +28,14 @@ class Settings(BaseSettings):
     # test suite y los smoke locales no requieran API keys reales. Override via
     # env var `LLM_PROVIDER=anthropic` (o el provider real que corresponda) cuando
     # haya keys configuradas.
+    #
+    # NOTA OpenRouter (motor global): NO cambiamos el default a `openrouter` a
+    # proposito. El ruteo global por OpenRouter se logra por el MODELO namespaced
+    # (`openai/gpt-4o-mini` → OpenRouter) + seguridad keyless en routes/complete.py,
+    # no por flipear este default. Flipearlo (a) rompe el test suite que asume
+    # `mock` y (b) seria inseguro: sin OPENROUTER_API_KEY, get_provider() devolveria
+    # un OpenRouterProvider sin key que falla al primer call. Setear
+    # `LLM_PROVIDER=openrouter` explicitamente sigue funcionando (rama en el factory).
     llm_provider: str = "mock"
 
     # Resiliencia del streaming del tutor. El modelo (ej. Gemini) puede tirar
@@ -45,6 +53,13 @@ class Settings(BaseSettings):
     openai_api_key: str = ""
     gemini_api_key: str = ""
     mistral_api_key: str = ""
+    # OpenRouter (motor principal global, API OpenAI-compatible). Si esta vacia,
+    # el ruteo namespaced cae de forma segura al provider nativo (seguridad
+    # keyless, ver routes/complete.py::_resolve_provider_and_model). Los headers
+    # referer/title son la atribucion que OpenRouter recomienda enviar.
+    openrouter_api_key: str = ""
+    openrouter_referer: str = "https://active-ia.com"
+    openrouter_title: str = "AI-Native"
 
     # ── BYOK (Sec 5+7 epic ai-native-completion / ADR-038-039) ──────────
     # Master key (32 bytes base64) para encriptacion AES-GCM at-rest de las

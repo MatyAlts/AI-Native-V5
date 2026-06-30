@@ -60,7 +60,10 @@ export const helpContent: HelpContentMap = {
       <ul className="list-disc list-inside space-y-2 ml-4">
         <li>
           <strong>Distribución:</strong> en qué perfil de apropiación (reflexiva / superficial /
-          delegación) cae cada episodio clasificado, con desglose por subgrupo.
+          delegación) cae cada episodio clasificado, con desglose por subgrupo. El eje{" "}
+          <strong>autónomo</strong> (gris) agrupa a quienes trabajaron sin el tutor; es ortogonal al
+          continuo, así que aparece en la distribución pero queda fuera de la curva y la trayectoria
+          longitudinal.
         </li>
         <li>
           <strong>Trayectoria:</strong> para cada alumno con 3+ episodios, si su apropiación
@@ -327,7 +330,9 @@ export const helpContent: HelpContentMap = {
         </li>
         <li>
           <strong>Distribucion:</strong> Muestra cuantos episodios cayeron en cada categoria N4:
-          Delegacion Pasiva, Apropiacion Superficial, Apropiacion Reflexiva.
+          Delegacion Pasiva, Apropiacion Superficial, Apropiacion Reflexiva. Cuando hay episodios
+          de trabajo autonomo (sin tutor) aparece tambien el eje Autonomo (gris), ortogonal al
+          continuo.
         </li>
         <li>
           <strong>Coherencias:</strong> Promedios de las 3 coherencias: Temporal (CT), Codigo vs
