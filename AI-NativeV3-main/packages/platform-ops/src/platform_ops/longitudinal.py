@@ -31,7 +31,10 @@ AppropriationValue = Literal[
     "delegacion_pasiva", "apropiacion_superficial", "apropiacion_reflexiva"
 ]
 
-# Ordinal scores para comparar progresión (mayor = mejor)
+# Ordinal scores para comparar progresión (mayor = mejor). SOLO el continuo
+# superficial↔reflexiva tiene ordinal. Etiquetas oficiales ortogonales al
+# continuo (ej. `autonomo` = trabajo sin tutor) NO están acá: los consumidores
+# del slope/tercil las SALTEAN (no asumir que toda etiqueta tiene ordinal).
 APPROPRIATION_ORDINAL: dict[str, int] = {
     "delegacion_pasiva": 0,
     "apropiacion_superficial": 1,
@@ -76,11 +79,17 @@ class StudentTrajectory:
     def tercile_means(self) -> tuple[float, float, float] | None:
         """Devuelve (media_primer_tercio, medio, último_tercio) en escala ordinal.
 
-        Con al menos 3 episodios; si hay menos, devuelve None.
+        Con al menos 3 episodios con ordinal; si hay menos, devuelve None.
+        Los episodios con etiqueta ortogonal (sin ordinal, ej. `autonomo`) se
+        saltean — no participan del continuo longitudinal.
         """
-        if self.n_episodes < 3:
+        scores = [
+            APPROPRIATION_ORDINAL[p.appropriation]
+            for p in self.points
+            if p.appropriation in APPROPRIATION_ORDINAL
+        ]
+        if len(scores) < 3:
             return None
-        scores = [APPROPRIATION_ORDINAL[p.appropriation] for p in self.points]
         n = len(scores)
         size = n // 3
         first = scores[:size]
@@ -114,10 +123,17 @@ class StudentTrajectory:
         return "estable"
 
     def max_appropriation_reached(self) -> str | None:
-        """La clasificación máxima alcanzada en algún punto."""
-        if not self.points:
+        """La clasificación máxima (en el continuo ordinal) alcanzada en algún
+        punto. Episodios con etiqueta ortogonal (sin ordinal, ej. `autonomo`) se
+        saltean; si NINGÚN punto tiene ordinal, devuelve None."""
+        ordinals = [
+            APPROPRIATION_ORDINAL[p.appropriation]
+            for p in self.points
+            if p.appropriation in APPROPRIATION_ORDINAL
+        ]
+        if not ordinals:
             return None
-        max_ordinal = max(APPROPRIATION_ORDINAL[p.appropriation] for p in self.points)
+        max_ordinal = max(ordinals)
         for a, o in APPROPRIATION_ORDINAL.items():
             if o == max_ordinal:
                 return a

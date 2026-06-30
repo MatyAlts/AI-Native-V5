@@ -1,8 +1,10 @@
 """Medición de apropiación por subgrupos (modo sombra — B1 Fase 2).
 
 Calcula, sobre los eventos del episodio, **4 dimensiones observables** y un
-**subgrupo** (1 de 8) que hace roll-up a los 3 ejes clásicos (reflexiva /
-superficial / delegacion_pasiva).
+**subgrupo** que hace roll-up a los ejes (reflexiva / superficial /
+delegacion_pasiva / autonomo / sin_clasificar). El eje `autonomo` (v4.0.0) se
+lleva TODO el brazo sin-tutor (`prompts == 0`): sin conversación que juzgar, no
+hay apropiación reflexiva/superficial que medir contra el discurso.
 
 ADITIVO Y REVERSIBLE: el resultado se persiste en `Classification.features['subgrupo']`
 (JSONB) — NO toca `appropriation` ni `classifier_config_hash` (features no entra al
@@ -54,14 +56,22 @@ class Subgrupo:
     key: str
     label: str
     accion_docente: str
-    eje: str  # roll-up: reflexiva | superficial | delegacion_pasiva | sin_clasificar
+    eje: str  # roll-up: reflexiva | superficial | delegacion_pasiva | autonomo | sin_clasificar
 
 
 INDETERMINADO = Subgrupo("indeterminado", "Indeterminado", "No concluir - episodio muy corto", "sin_clasificar")
-AUTONOMO_COMPETENTE = Subgrupo("autonomo_competente", "Autonomo competente", "Darle mas desafio", "reflexiva")
-AUTONOMO_TRABADO = Subgrupo("autonomo_trabado", "Autonomo trabado", "Ofrecer scaffolding", "superficial")
+# Brazo sin-tutor (prompts == 0): TODO el brazo rollea al eje `autonomo` (v4.0.0).
+# Estos subgrupos son SOLO alcanzables desde el gate `prompts == 0` en
+# `clasificar_subgrupo`, por eso su eje fijo es `autonomo` sin ambiguedad.
+AUTONOMO_COMPETENTE = Subgrupo("autonomo_competente", "Autonomo competente", "Darle mas desafio", "autonomo")
+AUTONOMO_TRABADO = Subgrupo("autonomo_trabado", "Autonomo trabado", "Ofrecer scaffolding", "autonomo")
+ESCRIBE_SIN_VALIDAR = Subgrupo("escribe_sin_validar", "Escribio sin validar", "Fomentar ejecutar y probar el codigo", "autonomo")
+# `autonomo_desenganchado` = el "poco trabajo" del brazo SIN tutor. Es un subgrupo
+# PROPIO (no el `desenganchado` compartido) justamente para que el brazo prompts==0
+# NUNCA emita el `desenganchado` (eje superficial) — el `desenganchado` queda
+# reservado al brazo CON tutor (prompts > 0), que sigue rolleando a `superficial`.
+AUTONOMO_DESENGANCHADO = Subgrupo("autonomo_desenganchado", "Autonomo desenganchado", "Re-enganchar (trabajo solo, sin avance)", "autonomo")
 DESENGANCHADO = Subgrupo("desenganchado", "Desenganchado", "Re-enganchar", "superficial")
-ESCRIBE_SIN_VALIDAR = Subgrupo("escribe_sin_validar", "Escribio sin validar", "Fomentar ejecutar y probar el codigo", "superficial")
 DEPENDIENTE = Subgrupo("dependiente_delegador", "Dependiente / delegador", "Intervenir (copio de la IA)", "delegacion_pasiva")
 DEPENDIENTE_SOBREUSO = Subgrupo("dependiente_sobreuso", "Dependiente (sobreuso)", "Intervenir - se apoya de mas en el tutor (overuse)", "delegacion_pasiva")
 COLABORADOR_REFLEXIVO = Subgrupo("colaborador_reflexivo", "Colaborador reflexivo", "Va bien", "reflexiva")
@@ -137,7 +147,7 @@ def _verbaliza(events: list[dict]) -> bool:
 
 
 def clasificar_subgrupo(events: list[dict]) -> Subgrupo:
-    """Árbol de 8 subgrupos. El gate `prompts == 0` corrige la inversión:
+    """Árbol de 10 subgrupos. El gate `prompts == 0` corrige la inversión:
     sin prompts, delegar es imposible → rama autónoma."""
     sig = _significativos(events)
     if len(sig) < MIN_EVENTS:
@@ -160,8 +170,12 @@ def clasificar_subgrupo(events: list[dict]) -> Subgrupo:
     )
 
     if prompts == 0:
+        # Brazo SIN tutor: todo rollea al eje `autonomo`. Ojo: el "poco trabajo"
+        # de acá emite `autonomo_desenganchado` (eje autonomo), NUNCA el
+        # `desenganchado` compartido (eje superficial) — ese queda solo para el
+        # brazo con-tutor de mas abajo.
         if poco_trabajo:
-            return DESENGANCHADO
+            return AUTONOMO_DESENGANCHADO
         if _resolvio(events):
             return AUTONOMO_COMPETENTE
         if ejec >= TRABADO_MIN_EJEC:

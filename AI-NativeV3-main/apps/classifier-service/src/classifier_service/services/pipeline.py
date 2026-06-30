@@ -38,7 +38,7 @@ logger = logging.getLogger(__name__)
 
 
 def compute_classifier_config_hash(
-    reference_profile: dict[str, Any], tree_version: str = "v3.1.0"
+    reference_profile: dict[str, Any], tree_version: str = "v4.0.0"
 ) -> str:
     """Hash determinista del config del classifier.
 
@@ -72,13 +72,17 @@ _EXCLUDED_FROM_FEATURES = frozenset(
     }
 )
 
-# Roll-up del eje del subgrupo a la etiqueta oficial (3 categorias del schema).
+# Roll-up del eje del subgrupo a la etiqueta oficial (4 categorias del schema: 3 del continuo + autonomo ortogonal).
 # REEMPLAZO 2026-06-11 (tree_version v3.0.0): el subgrupo pasa a decidir la etiqueta.
 # Indeterminado (episodios muy cortos, sin señal) -> superficial (default acordado).
 _EJE_TO_APPROPRIATION = {
     "reflexiva": "apropiacion_reflexiva",
     "superficial": "apropiacion_superficial",
     "delegacion_pasiva": "delegacion_pasiva",
+    # Eje autonomo (v4.0.0): todo el brazo sin-tutor (prompts == 0). Se persiste
+    # como su propio valor de `appropriation` — no se colapsa en reflexiva/superficial
+    # porque no hubo conversacion con el tutor que permita juzgar la apropiacion.
+    "autonomo": "autonomo",
     "sin_clasificar": "apropiacion_superficial",
 }
 

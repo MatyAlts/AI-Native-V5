@@ -72,7 +72,7 @@ async def _get_actor(
 class CreateKeyRequest(BaseModel):
     scope_type: Literal["tenant", "facultad", "materia"]
     scope_id: UUID | None = None
-    provider: Literal["anthropic", "gemini", "mistral", "openai"]
+    provider: Literal["anthropic", "gemini", "mistral", "openai", "openrouter"]
     plaintext_value: str = Field(min_length=8, max_length=512)
     monthly_budget_usd: float | None = Field(default=None, ge=0.0)
 

@@ -134,6 +134,62 @@ def test_appropriation_ordinal_preserva_orden() -> None:
     )
 
 
+# ── Eje ORTOGONAL `autonomo` (sin ordinal) ────────────────────────────
+# `autonomo` es una etiqueta oficial pero NO está en APPROPRIATION_ORDINAL.
+# Los consumidores del continuo longitudinal deben SALTEARLA (no KeyError),
+# no contarla como "indeterminado" ni como parte del slope/tercil.
+
+
+def test_autonomo_intercalado_se_saltea_en_terciles_y_slope() -> None:
+    """Puntos `autonomo` intercalados no participan del continuo: el cálculo
+    se hace solo sobre los 6 puntos con ordinal → mejorando, sin KeyError."""
+    points = [
+        _cp(0, "delegacion_pasiva"),
+        _cp(50, "autonomo"),  # ortogonal: se saltea
+        _cp(100, "delegacion_pasiva"),
+        _cp(150, "autonomo"),  # ortogonal: se saltea
+        _cp(200, "apropiacion_superficial"),
+        _cp(300, "apropiacion_superficial"),
+        _cp(400, "apropiacion_reflexiva"),
+        _cp(450, "autonomo"),  # ortogonal: se saltea
+        _cp(500, "apropiacion_reflexiva"),
+    ]
+    t = StudentTrajectory(student_pseudonym="s_1", points=points)
+    # scores ordinales (autonomo excluido) = [0, 0, 1, 1, 2, 2]
+    assert t.tercile_means() == (0.0, 1.0, 2.0)
+    assert t.progression_label() == "mejorando"
+    assert t.max_appropriation_reached() == "apropiacion_reflexiva"
+
+
+def test_solo_autonomo_es_insuficiente_sin_keyerror() -> None:
+    """Un alumno con SOLO episodios `autonomo` no tiene puntos en el continuo:
+    tercile_means None, label insuficiente, max None — y nada de KeyError."""
+    t = StudentTrajectory(
+        student_pseudonym="s_1",
+        points=[_cp(i * 100, "autonomo") for i in range(5)],
+    )
+    assert t.tercile_means() is None
+    assert t.progression_label() == "insuficiente"
+    assert t.max_appropriation_reached() is None
+
+
+def test_autonomo_no_alcanza_minimo_ordinal_es_insuficiente() -> None:
+    """Con muchos `autonomo` pero solo 2 puntos ordinales (< 3) → insuficiente:
+    el mínimo de 3 se cuenta sobre puntos CON ordinal, no sobre el total."""
+    points = [
+        _cp(0, "autonomo"),
+        _cp(100, "apropiacion_superficial"),
+        _cp(200, "autonomo"),
+        _cp(300, "apropiacion_reflexiva"),
+        _cp(400, "autonomo"),
+    ]
+    t = StudentTrajectory(student_pseudonym="s_1", points=points)
+    assert t.tercile_means() is None
+    assert t.progression_label() == "insuficiente"
+    # max sí se computa sobre los 2 ordinales presentes
+    assert t.max_appropriation_reached() == "apropiacion_reflexiva"
+
+
 # ── build_trajectories ────────────────────────────────────────────────
 
 

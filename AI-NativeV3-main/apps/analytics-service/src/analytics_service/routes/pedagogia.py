@@ -42,12 +42,17 @@ logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/v1/analytics/pedagogia", tags=["pedagogia"])
 
 # Ordinal de apropiación (mayor = mejor). Re-exportado desde platform_ops para
-# mantener UNA sola operacionalización en toda la tesis.
+# mantener UNA sola operacionalización en toda la tesis. SOLO las 3 etiquetas del
+# continuo superficial↔reflexiva tienen ordinal.
 _ORDINAL: dict[str, int] = {
     "delegacion_pasiva": 0,
     "apropiacion_superficial": 1,
     "apropiacion_reflexiva": 2,
 }
+# Ejes ORTOGONALES al continuo ordinal: son etiquetas oficiales válidas pero NO
+# entran en la curva/slope longitudinal ni cuentan como "indeterminado". `autonomo`
+# = trabajo sin tutor (color gris en la UI).
+_APROPIACION_ORTOGONAL: frozenset[str] = frozenset({"autonomo"})
 # Orden canónico de presentación de los perfiles.
 _APROPIACION_ORDER = ["apropiacion_reflexiva", "apropiacion_superficial", "delegacion_pasiva"]
 
@@ -475,10 +480,15 @@ async def get_pedagogia(
     appr_por_episodio: dict[str, int] = {}
     n_indeterminados = 0
     for r in cls_rows:
+        # Todas las etiquetas (incluido el eje ortogonal `autonomo`) entran a la
+        # distribución por apropiación.
         por_apropiacion[r.appropriation] += 1
         if r.appropriation in _ORDINAL:
+            # Solo las del continuo alimentan el mapa episodio→ordinal (curvas).
             appr_por_episodio[str(r.episode_id)] = _ORDINAL[r.appropriation]
-        else:
+        elif r.appropriation not in _APROPIACION_ORTOGONAL:
+            # `autonomo` NO es indeterminado: es un eje propio sin ordinal. Solo
+            # las etiquetas realmente sin perfil cuentan como indeterminadas.
             n_indeterminados += 1
         feats = _as_json(r.features) or {}
         sgd = feats.get("subgrupo") if isinstance(feats, dict) else None

@@ -33,6 +33,10 @@ CODER_ROLES = ("docente", "docente_admin", "superadmin")
 
 # Etiquetas válidas por protocolo (mismo vocabulario que el clasificador).
 _LABELS: dict[str, frozenset[str]] = {
+    # El eje `autonomo` (v4.0.0, brazo sin-tutor prompts==0) NO entra al protocolo
+    # κ: es un pre-filtro mecánico ortogonal al continuo de apropiación, nunca se
+    # muestrea (el corpus inter-jueces es con-tutor) y `kappa_analysis.CATEGORIES`
+    # son las 3 categorías del continuo. Mantenerlo acá rompería el cómputo de κ.
     "ejes": frozenset(
         {"delegacion_pasiva", "apropiacion_superficial", "apropiacion_reflexiva"}
     ),
@@ -40,6 +44,7 @@ _LABELS: dict[str, frozenset[str]] = {
         {
             "autonomo_competente",
             "autonomo_trabado",
+            "autonomo_desenganchado",
             "escribe_sin_validar",
             "desenganchado",
             "colaborador_reflexivo",
@@ -66,15 +71,17 @@ class SampleOut(BaseModel):
     episodes: list[SampleEpisode]
 
 
-# Solo episodios DONDE EL ALUMNO HABLÓ CON EL TUTOR (los 4 subgrupos del brazo
+# Solo episodios DONDE EL ALUMNO HABLÓ CON EL TUTOR (los 5 subgrupos del brazo
 # con-prompts del clasificador). Son los casos interesantes para calibrar el κ; los
 # autónomos sin IA (autonomo_*, escribe_sin_validar) y "indeterminado" quedan fuera
-# del corpus inter-jueces.
+# del corpus inter-jueces. `desenganchado` (v4.0.0) es ahora exclusivo del brazo
+# con-tutor (prompts>0) y rollea a superficial, así que entra al corpus.
 _WITH_TUTOR_SUBGRUPOS = (
     "colaborador_reflexivo",
     "colaborador_funcional",
     "dependiente_sobreuso",
     "dependiente_delegador",
+    "desenganchado",
 )
 
 
@@ -88,7 +95,7 @@ async def get_sample(
 
     El front resuelve la materia a sus comisiones (`GET /comisiones?materia_id=`) y
     las pasa (`?comision_id=a&comision_id=b&...`). Se devuelven SOLO episodios donde
-    el alumno habló con el tutor (los 4 subgrupos con-prompts), con un tope de
+    el alumno habló con el tutor (los 5 subgrupos con-prompts), con un tope de
     `per_eje` por cada eje (default 50) para que la reflexiva no domine y el κ no se
     hunda por prevalencia. Orden estable por `episode_id` → todos los codificadores
     reciben el MISMO set → overlap → κ. NUNCA se devuelve la etiqueta de la máquina."""

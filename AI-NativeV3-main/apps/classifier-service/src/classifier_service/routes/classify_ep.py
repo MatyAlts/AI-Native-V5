@@ -30,7 +30,8 @@ from classifier_service.services import (
 from classifier_service.services.aggregation import aggregate_by_comision
 from classifier_service.services.clients import AIGatewayClient
 from classifier_service.services.regimen_llm import (
-    ZONA_GRIS_SUBGRUPOS,
+    REGIMEN_TO_APPROPRIATION,
+    SUBGRUPOS_JUZGADOS_POR_JUEZ,
     clasificar_regimen_llm,
 )
 
@@ -55,8 +56,10 @@ class ClassificationOut(BaseModel):
     # None para clasificaciones viejas (pre-modo-sombra) — el front cae a la etiqueta clásica.
     subgrupo: dict | None = None
     # Juez LLM del eje fino (eje_fino_v1.1.0): veredicto + evidencia citada de las 4
-    # dimensiones. None si el episodio no pasó por el juez (fuera de zona gris, flag OFF,
-    # o clasificación previa a la activación). Es INFORMATIVO: NO gobierna `appropriation`.
+    # dimensiones. None si el episodio no pasó por el juez (no es con-tutor no-delegación,
+    # flag OFF, o clasificación previa a la activación). v4.0.0: cuando `estado=="ok"` el
+    # veredicto GOBIERNA `appropriation`; si no, se conserva el proxy conductual y el
+    # episodio queda marcado `needs_review` (ver features).
     regimen_llm: dict | None = None
 
     class Config:
@@ -106,27 +109,49 @@ async def _find_current_classification(
     return result.scalar_one_or_none()
 
 
-async def _aplicar_juez_eje_fino_sombra(
+def _marcar_para_revision(features: dict, result: object, razon: str) -> None:
+    """Conserva la etiqueta del proxy conductual (subgrupo) y marca revisión humana.
+
+    El fallback obligatorio (contrato v4.0.0): cuando el juez no puede gobernar
+    (veredicto no-ok o gateway caído) NO tocamos `result.appropriation` — queda
+    la etiqueta que derivó del subgrupo — y dejamos una marca auditable para que
+    un docente revise. Cerrar el episodio nunca depende del LLM.
+    """
+    features["needs_review"] = True
+    features["needs_review_reason"] = razon
+    result.features = features  # type: ignore[attr-defined]
+
+
+async def _aplicar_juez_eje_fino(
     result: object,
     events: list[dict],
     episode_id: UUID,
     episode: dict,
     tenant_id: UUID,
 ) -> None:
-    """MODO SOMBRA del juez LLM del eje superficial↔reflexiva.
+    """El juez LLM GOBIERNA la etiqueta oficial del eje superficial↔reflexiva (v4.0.0).
 
-    Si `eje_fino_llm_enabled` está ON y el episodio cae en la zona gris de
-    colaboradores, corre el juez (`regimen_llm`) y guarda su veredicto en
-    `result.features['regimen_llm']`. NO toca `appropriation` ni el
-    `classifier_config_hash`. Best-effort: cualquier fallo se loguea y la
-    clasificación oficial sigue intacta — el LLM nunca puede romper el flujo.
+    Si `eje_fino_llm_enabled` está ON y el episodio es CON-TUTOR no-delegación
+    (subgrupo en `SUBGRUPOS_JUZGADOS_POR_JUEZ`), corre el juez y:
+      - estado == "ok"  → la etiqueta oficial `appropriation` se deriva del
+        veredicto (REFLEXIVA→apropiacion_reflexiva, SUPERFICIAL→apropiacion_superficial),
+        sustituyendo al proxy conductual. El veredicto va a features['regimen_llm'].
+      - estado != "ok" (inconsistente / baja_confianza / error_parseo) → FALLBACK:
+        se conserva la etiqueta del proxy conductual (subgrupo) y el episodio se
+        marca `features['needs_review']=True`. El veredicto crudo igual se guarda.
+      - gateway caído / excepción → FALLBACK idéntico (revisión humana), sin propagar.
+
+    NUNCA toca `appropriation` de delegación pasiva ni del eje autónomo: esos
+    subgrupos no entran a `SUBGRUPOS_JUZGADOS_POR_JUEZ` y salen por el gate de arriba.
+    Cerrar el episodio jamás puede fallar por el LLM — todo error degrada a fallback.
     """
     if not settings.eje_fino_llm_enabled:
         return
     features = getattr(result, "features", None) or {}
     sg = features.get("subgrupo") or {}
-    if sg.get("key") not in ZONA_GRIS_SUBGRUPOS:
+    if sg.get("key") not in SUBGRUPOS_JUZGADOS_POR_JUEZ:
         return
+
     try:
         materia = episode.get("materia_id")
         client = AIGatewayClient(base_url=settings.ai_gateway_url)
@@ -139,16 +164,45 @@ async def _aplicar_juez_eje_fino_sombra(
             tenant_id=tenant_id,
             materia_id=UUID(materia) if materia else None,
         )
-        features["regimen_llm"] = res.model_dump(mode="json")
+    except Exception as exc:
+        # Gateway caído / cualquier error: el cierre NO falla — fallback a proxy.
+        _marcar_para_revision(
+            features, result, f"juez_eje_fino_error_gateway: {exc}"
+        )
+        logger.warning(
+            "eje_fino_llm_fallback_gateway",
+            extra={"episode_id": str(episode_id), "error": str(exc)},
+        )
+        return
+
+    # El veredicto crudo siempre se persiste (auditoría), gobierne o no.
+    features["regimen_llm"] = res.model_dump(mode="json")
+
+    if res.estado == "ok" and res.regimen is not None:
+        appropriation = REGIMEN_TO_APPROPRIATION[res.regimen]
+        result.appropriation = appropriation  # type: ignore[attr-defined]
+        result.reason = (  # type: ignore[attr-defined]
+            f"Juez LLM (eje fino) gobierna: regimen {res.regimen} -> {appropriation}. "
+            f"{res.razon}"
+        )
         result.features = features  # type: ignore[attr-defined]
         logger.info(
-            "eje_fino_llm_sombra",
-            extra={"episode_id": str(episode_id), "estado": res.estado, "regimen": res.regimen},
+            "eje_fino_llm_gobierna",
+            extra={
+                "episode_id": str(episode_id),
+                "estado": res.estado,
+                "regimen": res.regimen,
+                "appropriation": appropriation,
+            },
         )
-    except Exception as exc:
-        logger.warning(
-            "eje_fino_llm_sombra_fallo",
-            extra={"episode_id": str(episode_id), "error": str(exc)},
+    else:
+        # Veredicto no-ok: conservar proxy conductual + marcar revisión humana.
+        _marcar_para_revision(
+            features, result, f"juez_eje_fino_{res.estado}: {res.razon}"
+        )
+        logger.info(
+            "eje_fino_llm_fallback_proxy",
+            extra={"episode_id": str(episode_id), "estado": res.estado},
         )
 
 
@@ -178,7 +232,7 @@ async def classify_episode(
     devuelve la fila ganadora con 200 OK.
     """
     profile = DEFAULT_REFERENCE_PROFILE
-    config_hash = compute_classifier_config_hash(profile, "v3.1.0")
+    config_hash = compute_classifier_config_hash(profile, "v4.0.0")
 
     # Pre-check idempotencia: si ya existe la classification current con este
     # hash, devolvemos 200 sin pegarle al ctr-service (ahorro de roundtrip).
@@ -201,8 +255,10 @@ async def classify_episode(
 
     events = episode.get("events", [])
     result = classify_episode_from_events(events, reference_profile=profile)
-    # Modo sombra del juez LLM del eje fino (no-op si el flag está OFF).
-    await _aplicar_juez_eje_fino_sombra(result, events, episode_id, episode, user.tenant_id)
+    # Juez LLM del eje fino: GOBIERNA la etiqueta oficial de los con-tutor
+    # no-delegación (v4.0.0). No-op si el flag está OFF; degrada a proxy +
+    # needs_review si el juez no responde "ok" o el gateway falla.
+    await _aplicar_juez_eje_fino(result, events, episode_id, episode, user.tenant_id)
 
     async with tenant_session(user.tenant_id) as session:
         try:
@@ -250,6 +306,7 @@ class AppropriationCountsOut(BaseModel):
     delegacion_pasiva: int
     apropiacion_superficial: int
     apropiacion_reflexiva: int
+    autonomo: int = 0
 
 
 class DailyCountsOut(BaseModel):
@@ -294,6 +351,7 @@ async def get_aggregated_classifications(
             delegacion_pasiva=stats.distribution.delegacion_pasiva,
             apropiacion_superficial=stats.distribution.apropiacion_superficial,
             apropiacion_reflexiva=stats.distribution.apropiacion_reflexiva,
+            autonomo=stats.distribution.autonomo,
         ),
         avg_ct_summary=stats.avg_ct_summary,
         avg_ccd_mean=stats.avg_ccd_mean,
@@ -307,6 +365,7 @@ async def get_aggregated_classifications(
                     delegacion_pasiva=d.counts.delegacion_pasiva,
                     apropiacion_superficial=d.counts.apropiacion_superficial,
                     apropiacion_reflexiva=d.counts.apropiacion_reflexiva,
+                    autonomo=d.counts.autonomo,
                 ),
             )
             for d in stats.timeseries

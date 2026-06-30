@@ -142,39 +142,45 @@ async def test_error_parseo_si_json_invalido() -> None:
     assert r.regimen is None
 
 
-# ── Modo sombra en el pipeline (helper de classify_ep) ────────────────────
+# ── El juez GOBIERNA la etiqueta en el pipeline (helper de classify_ep, v4.0.0) ──
 from classifier_service.config import settings as _settings
 from classifier_service.routes.classify_ep import (
-    _aplicar_juez_eje_fino_sombra,
+    _aplicar_juez_eje_fino,
 )
 
 
 class _FakeResult:
-    def __init__(self, features: dict) -> None:
+    """Mimetiza ClassificationResult: el juez puede gobernar appropriation/reason."""
+
+    def __init__(self, features: dict, appropriation: str = "apropiacion_superficial") -> None:
         self.features = features
+        self.appropriation = appropriation
+        self.reason = "proxy conductual (subgrupo)"
 
 
 @pytest.mark.asyncio
-async def test_sombra_noop_con_flag_off(monkeypatch) -> None:
-    """Con el flag OFF (default), el modo sombra no toca nada ni llama al LLM."""
+async def test_juez_noop_con_flag_off(monkeypatch) -> None:
+    """Con el flag OFF, el juez no corre: ni veredicto ni cambio de etiqueta."""
     monkeypatch.setattr(_settings, "eje_fino_llm_enabled", False)
     result = _FakeResult({"subgrupo": {"key": "colaborador_reflexivo"}})
-    await _aplicar_juez_eje_fino_sombra(result, [], uuid4(), {}, uuid4())
+    await _aplicar_juez_eje_fino(result, [], uuid4(), {}, uuid4())
     assert "regimen_llm" not in result.features
+    assert result.appropriation == "apropiacion_superficial"
 
 
 @pytest.mark.asyncio
-async def test_sombra_noop_fuera_de_zona_gris(monkeypatch) -> None:
-    """Aunque el flag esté ON, la pasiva (no zona gris) no pasa por el juez."""
+async def test_juez_noop_para_delegacion_pasiva(monkeypatch) -> None:
+    """La delegación pasiva (overuse) la resuelve la etapa dura, NO el juez."""
     monkeypatch.setattr(_settings, "eje_fino_llm_enabled", True)
-    result = _FakeResult({"subgrupo": {"key": "dependiente_sobreuso"}})
-    await _aplicar_juez_eje_fino_sombra(result, [], uuid4(), {}, uuid4())
+    result = _FakeResult({"subgrupo": {"key": "dependiente_sobreuso"}}, appropriation="delegacion_pasiva")
+    await _aplicar_juez_eje_fino(result, [], uuid4(), {}, uuid4())
     assert "regimen_llm" not in result.features
+    assert result.appropriation == "delegacion_pasiva"  # intacto
 
 
 @pytest.mark.asyncio
-async def test_sombra_mete_veredicto_en_features_cuando_on(monkeypatch) -> None:
-    """Flag ON + zona gris + LLM consistente → el veredicto va a features['regimen_llm']."""
+async def test_juez_gobierna_appropriation_cuando_ok(monkeypatch) -> None:
+    """Flag ON + con-tutor no-delegación + veredicto OK → el juez GOBIERNA la etiqueta."""
     from classifier_service.services.clients import AIGatewayClient
 
     monkeypatch.setattr(_settings, "eje_fino_llm_enabled", True)
@@ -184,18 +190,101 @@ async def test_sombra_mete_veredicto_en_features_cuando_on(monkeypatch) -> None:
         return SimpleNamespace(content=json.dumps(salida, ensure_ascii=False))
 
     monkeypatch.setattr(AIGatewayClient, "complete", _fake_complete)
+    # Arranca como superficial (proxy) y el juez lo sube a reflexiva.
     result = _FakeResult({"subgrupo": {"key": "colaborador_funcional"}})
-    await _aplicar_juez_eje_fino_sombra(result, _EVENTS, uuid4(), {}, uuid4())
+    await _aplicar_juez_eje_fino(result, _EVENTS, uuid4(), {}, uuid4())
 
     rl = result.features.get("regimen_llm")
-    assert rl is not None and rl["estado"] == "ok"
-    assert rl["regimen"] == "REFLEXIVA"
-    assert rl["prompt_version"]  # pinneado
+    assert rl is not None and rl["estado"] == "ok" and rl["regimen"] == "REFLEXIVA"
+    assert result.appropriation == "apropiacion_reflexiva"  # gobernada por el juez
+    assert "needs_review" not in result.features
 
 
 @pytest.mark.asyncio
-async def test_sombra_no_rompe_si_el_llm_falla(monkeypatch) -> None:
-    """Best-effort: si el ai-gateway falla, el modo sombra loguea y NO propaga."""
+async def test_juez_desenganchado_con_tutor_pasa_por_el_juez(monkeypatch) -> None:
+    """v4.0.0: el `desenganchado` (con-tutor) ahora también lo gobierna el juez."""
+    from classifier_service.services.clients import AIGatewayClient
+
+    monkeypatch.setattr(_settings, "eje_fino_llm_enabled", True)
+    salida = _raw(False, False, False, True, "SUPERFICIAL", conf=0.9).model_dump()
+
+    async def _fake_complete(self, **_kwargs):
+        return SimpleNamespace(content=json.dumps(salida, ensure_ascii=False))
+
+    monkeypatch.setattr(AIGatewayClient, "complete", _fake_complete)
+    result = _FakeResult({"subgrupo": {"key": "desenganchado"}})
+    await _aplicar_juez_eje_fino(result, _EVENTS, uuid4(), {}, uuid4())
+    assert result.features["regimen_llm"]["estado"] == "ok"
+    assert result.appropriation == "apropiacion_superficial"
+
+
+@pytest.mark.asyncio
+async def test_fallback_proxy_y_needs_review_si_veredicto_no_ok(monkeypatch) -> None:
+    """Veredicto no-ok (baja confianza) → se conserva el proxy + needs_review."""
+    from classifier_service.services.clients import AIGatewayClient
+
+    monkeypatch.setattr(_settings, "eje_fino_llm_enabled", True)
+    salida = _raw(True, True, True, False, "REFLEXIVA", conf=0.3).model_dump()  # conf < 0.70
+
+    async def _fake_complete(self, **_kwargs):
+        return SimpleNamespace(content=json.dumps(salida, ensure_ascii=False))
+
+    monkeypatch.setattr(AIGatewayClient, "complete", _fake_complete)
+    result = _FakeResult({"subgrupo": {"key": "colaborador_reflexivo"}})
+    await _aplicar_juez_eje_fino(result, _EVENTS, uuid4(), {}, uuid4())
+
+    # El veredicto crudo se guarda, pero NO gobierna: etiqueta del proxy intacta.
+    assert result.features["regimen_llm"]["estado"] == "baja_confianza"
+    assert result.appropriation == "apropiacion_superficial"  # proxy conservado
+    assert result.features["needs_review"] is True
+    assert "baja_confianza" in result.features["needs_review_reason"]
+
+
+@pytest.mark.asyncio
+async def test_fallback_proxy_y_needs_review_si_veredicto_inconsistente(monkeypatch) -> None:
+    """Veredicto inconsistente (modelo contradice la regla) → proxy + needs_review."""
+    from classifier_service.services.clients import AIGatewayClient
+
+    monkeypatch.setattr(_settings, "eje_fino_llm_enabled", True)
+    # Modelo dice REFLEXIVA pero autonomía=oráculo → la regla da SUPERFICIAL.
+    salida = _raw(True, True, True, True, "REFLEXIVA", conf=0.9).model_dump()
+
+    async def _fake_complete(self, **_kwargs):
+        return SimpleNamespace(content=json.dumps(salida, ensure_ascii=False))
+
+    monkeypatch.setattr(AIGatewayClient, "complete", _fake_complete)
+    result = _FakeResult({"subgrupo": {"key": "colaborador_reflexivo"}})
+    await _aplicar_juez_eje_fino(result, _EVENTS, uuid4(), {}, uuid4())
+
+    assert result.features["regimen_llm"]["estado"] == "inconsistente"
+    assert result.appropriation == "apropiacion_superficial"  # proxy conservado
+    assert result.features["needs_review"] is True
+    assert "inconsistente" in result.features["needs_review_reason"]
+
+
+@pytest.mark.asyncio
+async def test_fallback_proxy_y_needs_review_si_error_parseo(monkeypatch) -> None:
+    """Veredicto error_parseo (JSON inválido) → proxy + needs_review."""
+    from classifier_service.services.clients import AIGatewayClient
+
+    monkeypatch.setattr(_settings, "eje_fino_llm_enabled", True)
+
+    async def _fake_complete(self, **_kwargs):
+        return SimpleNamespace(content="esto no es json")
+
+    monkeypatch.setattr(AIGatewayClient, "complete", _fake_complete)
+    result = _FakeResult({"subgrupo": {"key": "desenganchado"}})
+    await _aplicar_juez_eje_fino(result, _EVENTS, uuid4(), {}, uuid4())
+
+    assert result.features["regimen_llm"]["estado"] == "error_parseo"
+    assert result.appropriation == "apropiacion_superficial"  # proxy conservado
+    assert result.features["needs_review"] is True
+    assert "error_parseo" in result.features["needs_review_reason"]
+
+
+@pytest.mark.asyncio
+async def test_fallback_no_rompe_el_cierre_si_el_gateway_falla(monkeypatch) -> None:
+    """Crítico: si el ai-gateway falla, NO se propaga; se conserva el proxy + needs_review."""
     from classifier_service.services.clients import AIGatewayClient
 
     monkeypatch.setattr(_settings, "eje_fino_llm_enabled", True)
@@ -205,6 +294,9 @@ async def test_sombra_no_rompe_si_el_llm_falla(monkeypatch) -> None:
 
     monkeypatch.setattr(AIGatewayClient, "complete", _boom)
     result = _FakeResult({"subgrupo": {"key": "colaborador_reflexivo"}})
-    # No debe levantar excepción (best-effort) ni escribir un veredicto.
-    await _aplicar_juez_eje_fino_sombra(result, _EVENTS, uuid4(), {}, uuid4())
-    assert "regimen_llm" not in result.features
+    # No debe levantar excepción (cerrar el episodio nunca falla por el LLM).
+    await _aplicar_juez_eje_fino(result, _EVENTS, uuid4(), {}, uuid4())
+    assert "regimen_llm" not in result.features  # nunca llegó a tener veredicto
+    assert result.appropriation == "apropiacion_superficial"  # proxy conservado
+    assert result.features["needs_review"] is True
+    assert "error_gateway" in result.features["needs_review_reason"]

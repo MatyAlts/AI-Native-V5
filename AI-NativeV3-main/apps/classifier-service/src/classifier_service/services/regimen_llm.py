@@ -39,9 +39,27 @@ logger = logging.getLogger(__name__)
 # reportado se ancla a una versión concreta (snapshot reproducible).
 PROMPT_VERSION = "eje_fino_v1.1.0"
 
-# Solo estos subgrupos (zona gris de colaboradores) pasan al juez. El resto
-# (pasiva por overuse, autónomos, desenganchado) ya está resuelto por el árbol.
+# Zona gris histórica de colaboradores (se conserva por referencia / compat).
 ZONA_GRIS_SUBGRUPOS = frozenset({"colaborador_reflexivo", "colaborador_funcional"})
+
+# v4.0.0 — el juez GOBIERNA la etiqueta oficial de estos subgrupos: todos los
+# CON-TUTOR (prompts > 0) que NO son delegación pasiva. Incluye `desenganchado`
+# (con-tutor), que tras la separación del eje autónomo es exclusivo del brazo
+# prompts>0 (el "poco trabajo" sin tutor ahora es `autonomo_desenganchado`).
+# Quedan FUERA del juez (los resuelve la etapa dura / el árbol, §7 del contrato):
+#   - delegación pasiva: dependiente_delegador, dependiente_sobreuso (overuse)
+#   - eje autónomo (prompts == 0): autonomo_*, escribe_sin_validar (no hubo
+#     conversación que juzgar)
+#   - indeterminado (episodio muy corto)
+SUBGRUPOS_JUZGADOS_POR_JUEZ = frozenset(
+    {"colaborador_reflexivo", "colaborador_funcional", "desenganchado"}
+)
+
+# Mapa del veredicto del juez a la etiqueta oficial `appropriation` (v4.0.0).
+REGIMEN_TO_APPROPRIATION: dict[str, str] = {
+    "REFLEXIVA": "apropiacion_reflexiva",
+    "SUPERFICIAL": "apropiacion_superficial",
+}
 
 
 # ── Contrato de salida del juez (validado contra el LLM) ──────────────────

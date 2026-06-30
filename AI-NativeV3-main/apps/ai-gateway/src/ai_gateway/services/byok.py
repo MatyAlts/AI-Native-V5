@@ -177,6 +177,7 @@ def _env_fallback_key(provider: str) -> str | None:
         "openai": settings.openai_api_key,
         "gemini": settings.gemini_api_key,
         "mistral": settings.mistral_api_key,
+        "openrouter": settings.openrouter_api_key,
     }
     val = mapping.get(provider, "")
     return val if val else None
@@ -389,7 +390,7 @@ async def create_byok_key(
         raise ValueError("scope_type=tenant requiere scope_id=None")
     if scope_type in ("facultad", "materia") and scope_id is None:
         raise ValueError(f"scope_type={scope_type} requiere scope_id NOT NULL")
-    if provider not in ("anthropic", "gemini", "mistral", "openai"):
+    if provider not in ("anthropic", "gemini", "mistral", "openai", "openrouter"):
         raise ValueError(f"provider invalido: {provider!r}")
     if len(plaintext_value) < 8:
         raise ValueError("plaintext_value demasiado corto (probablemente invalido)")

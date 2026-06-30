@@ -84,3 +84,30 @@ async def test_root(client: AsyncClient) -> None:
     response = await client.get("/")
     assert response.status_code == 200
     assert response.json()["service"] == "classifier-service"
+
+
+async def test_config_hash_reporta_v4_consistente_con_classify_ep(
+    client: AsyncClient,
+) -> None:
+    """`GET /api/v1/classifier/config-hash` reporta tree_version v4.0.0 y un hash
+    idéntico al que `classify_ep.classify_episode` persiste.
+
+    Invariante doctoral (ADR-020): el hash que el endpoint expone DEBE ser el
+    mismo que la fila persiste, o la reproducibilidad se rompe. Ambos calculan
+    `compute_classifier_config_hash(DEFAULT_REFERENCE_PROFILE, "v4.0.0")` — este
+    test ancla esa igualdad para que un futuro bump no desincronice los callers.
+    """
+    from classifier_service.services import (
+        DEFAULT_REFERENCE_PROFILE,
+        compute_classifier_config_hash,
+    )
+
+    response = await client.get("/api/v1/classifier/config-hash")
+    assert response.status_code == 200
+    body = response.json()
+    assert body["tree_version"] == "v4.0.0"
+
+    # Mismo cómputo que hace classify_ep.classify_episode (config_hash con "v4.0.0").
+    esperado = compute_classifier_config_hash(DEFAULT_REFERENCE_PROFILE, "v4.0.0")
+    assert body["classifier_config_hash"] == esperado
+    assert len(body["classifier_config_hash"]) == 64

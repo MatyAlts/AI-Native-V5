@@ -5,11 +5,18 @@
  * un TokenGetter como primer parámetro.
  */
 
-// Categorias canonicas (Protocolo B — etiqueta oficial del classifier).
+// Categorias canonicas del CONTINUO ordinal (Protocolo B). Estas 3 tienen un
+// orden superficial↔reflexiva (APPROPRIATION_ORDINAL en classifier-service /
+// platform-ops). Deben coincidir con classifier-service.
 export type AppropriationCanonical =
   | "delegacion_pasiva"
   | "apropiacion_superficial"
   | "apropiacion_reflexiva"
+
+// Eje ORTOGONAL al continuo: el alumno trabajo sin apoyarse en el tutor. NO
+// tiene ordinal (no entra en APPROPRIATION_ORDINAL) — se ignora en curvas/slopes
+// longitudinales y se pinta en GRIS. Debe coincidir con classifier-service.
+export type AppropriationAutonomo = "autonomo"
 
 // Subgrupos diagnosticos (capa de analisis sobre episodios ya clasificados).
 // Deben coincidir con classifier-service/services/subgrupo.py.
@@ -26,13 +33,14 @@ export type AppropriationSubgroup =
 // Niveles cognitivos del Protocolo A.
 export type CognitiveLevelLabel = "N1" | "N2" | "N3" | "N4"
 
-// La etiqueta OFICIAL del classifier es SIEMPRE una de las 3 canonicas.
-// (classification.appropriation, trajectories, displays, etc. usan este tipo).
-export type AppropriationLabel = AppropriationCanonical
+// La etiqueta OFICIAL del classifier es una de las 3 canonicas del continuo o el
+// eje ortogonal `autonomo`. (classification.appropriation, trajectories,
+// displays, etc. usan este tipo).
+export type AppropriationLabel = AppropriationCanonical | AppropriationAutonomo
 
-// Etiqueta para RATING inter-rater (kappa): ademas de las 3 canonicas admite
-// subgrupos diagnosticos y niveles N1-N4 (protocolos configurables).
-export type RatingLabel = AppropriationCanonical | AppropriationSubgroup | CognitiveLevelLabel
+// Etiqueta para RATING inter-rater (kappa): ademas de las etiquetas oficiales
+// admite subgrupos diagnosticos y niveles N1-N4 (protocolos configurables).
+export type RatingLabel = AppropriationLabel | AppropriationSubgroup | CognitiveLevelLabel
 
 export interface TrajectoryPoint {
   episode_id: string
@@ -1288,8 +1296,9 @@ export interface Subgrupo {
   accion_docente: string
 }
 
-// Veredicto del juez LLM del eje fino (features['regimen_llm']). Modo sombra:
-// es informativo, NO gobierna `appropriation`. Lo produce regimen_llm.py.
+// Veredicto del juez LLM del eje fino (features['regimen_llm']). YA NO es modo
+// sombra: gobierna la etiqueta oficial `appropriation` del episodio. Lo produce
+// regimen_llm.py.
 export interface RegimenLLMDimension {
   presente: boolean
   evidencia: string

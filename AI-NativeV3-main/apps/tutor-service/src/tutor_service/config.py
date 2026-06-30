@@ -60,7 +60,13 @@ class Settings(BaseSettings):
     # Cambiado 2026-05-19: default a gpt-4o-mini para usar copilot-api proxy
     # (Mistral free tier saturado, ver SESSION-LOG). Restaurar a
     # mistral-small-latest si se vuelve a usar la BYOK key de Mistral.
-    default_model: str = "gpt-4o-mini"
+    #
+    # Cambiado (OpenRouter como motor global): namespaced a `openai/gpt-4o-mini`
+    # para que el ai-gateway lo rutee por OpenRouter (regla "/" → openrouter).
+    # SEGURIDAD KEYLESS: si el gateway NO tiene OPENROUTER_API_KEY resoluble,
+    # strippea el namespace y cae al provider nativo openai con `gpt-4o-mini`
+    # (idéntico comportamiento al anterior) — el cambio es no-op sin key.
+    default_model: str = "openai/gpt-4o-mini"
     opus_model: str = "claude-opus-4-7"
 
     # Feature flags por tenant (F6)

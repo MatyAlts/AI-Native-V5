@@ -28,6 +28,8 @@ const LABEL_COLOR_VAR: Record<string, string> = {
   delegacion_pasiva: "var(--color-appropriation-delegacion)",
   apropiacion_superficial: "var(--color-appropriation-superficial)",
   apropiacion_reflexiva: "var(--color-appropriation-reflexiva)",
+  // Eje ortogonal: gris (token neutral del design system).
+  autonomo: "var(--color-neutral)",
 }
 
 interface Props {

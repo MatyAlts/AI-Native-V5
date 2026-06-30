@@ -1,6 +1,6 @@
 """Re-clasifica TODOS los episodios con la versión vigente del classifier.
 
-Tras deployar el classifier (v3.1.0), correr DENTRO del contenedor
+Tras deployar el classifier (v4.0.0), correr DENTRO del contenedor
 `tutor-socratico-classifier-service`:
 
     python -m classifier_service.reclassify_all <TENANT_ID>
@@ -9,7 +9,11 @@ Recorre los `episode_id` de la tabla `classifications` (is_current) y dispara
 `POST /api/v1/classify_episode/{id}` contra el propio servicio (localhost). El
 endpoint recomputa con el `classifier_config_hash` vigente, marca la
 clasificación vieja `is_current=false` e inserta la nueva (append-only,
-ADR-010). Las etiquetas v3.0.0 NO se borran — quedan para comparar.
+ADR-010). Las etiquetas previas NO se borran — quedan para comparar.
+
+OJO v4.0.0: el juez LLM gobierna la etiqueta de los con-tutor no-delegación,
+así que este backfill llama al ai-gateway (OpenRouter, google/gemini-2.5-flash)
+por cada episodio con-tutor — implica costo/latencia y dependencia del gateway.
 
 Idempotente: re-correrlo no duplica. Si un episodio ya está en la versión nueva
 devuelve 200 (no-op); si recomputa con hash nuevo devuelve 201.

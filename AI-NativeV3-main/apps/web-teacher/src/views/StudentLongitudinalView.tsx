@@ -115,6 +115,8 @@ function appropriationDot(label: string | null): string {
   if (label === "apropiacion_reflexiva") return "var(--color-appropriation-reflexiva)"
   if (label === "apropiacion_superficial") return "var(--color-appropriation-superficial)"
   if (label === "delegacion_pasiva") return "var(--color-appropriation-delegacion)"
+  // Eje ortogonal `autonomo`: gris (token neutral). No esta en el continuo ordinal.
+  if (label === "autonomo") return "var(--color-neutral)"
   return "var(--color-level-meta)"
 }
 
