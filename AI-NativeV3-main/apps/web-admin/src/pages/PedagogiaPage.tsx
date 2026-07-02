@@ -342,6 +342,7 @@ export function PedagogiaPage(): ReactNode {
             <CurvaApropiacionSection block={data.curva_apropiacion} />
             <CurvaAdversaSection block={data.curva_adversa} />
             <KappaSection block={data.validacion_kappa} />
+            <AblacionSection />
             <DistribucionSection block={data.distribucion} />
             <TrayectoriaSection block={data.trayectoria} />
             <MatrizSection block={data.matriz} />
@@ -627,7 +628,10 @@ function KappaSection({ block }: { block: KappaBlock }): ReactNode {
         cada docente por separado, y no puede superar el techo humano–humano: si los docentes no
         concuerdan entre sí, no se le exige más a la máquina. La brecha vive sobre todo en el eje
         superficial↔reflexiva (la máquina decide por señales conductuales; el criterio docente lee
-        la conversación). Un valor bajo es un hallazgo válido, no se maquilla.
+        la conversación). Un valor bajo es un hallazgo válido, no se maquilla. El piloto held-out del
+        paper reporta κ = 0.68 sobre el <strong>juez aislado</strong> en el eje fino (n=95); este
+        panel mide el <strong>sistema completo</strong> contra consenso docente, por eso los valores
+        difieren sin contradecirse.
       </p>
     </Section>
   )
@@ -680,6 +684,85 @@ function KappaStat({ pair, label }: { pair: KappaPar; label: string }): ReactNod
         )}
       </div>
     </div>
+  )
+}
+
+// ── Bloque ⭐ D: Ablación — cuánto aporta el árbol de decisión ─────────────
+// Resultado FIJO del piloto held-out 2026 (Tabla 4 del paper). No depende del
+// scope en vivo: valida la ARQUITECTURA, no el corpus. Se recomputa offline
+// (correr el juez sin el árbol consume LLM), por eso los números van pineados.
+
+const ABLACION = {
+  ceiling: 0.77,
+  lift: 0.54,
+  nGrises: 95,
+  filas: [
+    { label: "Baseline (clase mayoritaria)", kappa: 0.0, detalle: "κ = 0 por construcción", tono: "muted" },
+    { label: "Mismo LLM, sin el árbol", kappa: 0.14, detalle: "zero-shot: solo los nombres de clase", tono: "danger" },
+    { label: "Modelo abierto + árbol", kappa: 0.47, detalle: "Llama 3.3 70B, self-hosteable (n=92)", tono: "brand" },
+    { label: "Juez + árbol de decisión", kappa: 0.68, detalle: "Gemini 2.5 Flash · IC 95% 0.53–0.83", tono: "success" },
+  ],
+} as const
+
+const ABL_BAR: Record<string, string> = {
+  muted: "bg-border-strong",
+  danger: "bg-danger",
+  brand: "bg-accent-brand",
+  success: "bg-success",
+}
+
+function AblacionSection(): ReactNode {
+  return (
+    <Section
+      n="★"
+      title="¿Cuánto aporta el árbol de decisión?"
+      subtitle="El mismo LLM, con y sin el árbol de 7 reglas · piloto held-out 2026"
+    >
+      <div className="rounded-lg border border-border bg-surface p-4">
+        <p className="mb-5 text-sm text-ink">
+          <span className="font-semibold text-success">+{ABLACION.lift.toFixed(2)} de κ</span> es lo
+          que aporta el árbol: el mismo modelo, sin él, cae de{" "}
+          <span className="font-mono tabular-nums">0.68</span> a{" "}
+          <span className="font-mono tabular-nums">0.14</span>.
+        </p>
+        <div className="relative">
+          {/* Techo humano calibrado (κ = 0.77): cota superior de lo alcanzable */}
+          <div
+            className="pointer-events-none absolute bottom-8 top-4 border-l border-dashed border-border-strong"
+            style={{ left: `${ABLACION.ceiling * 100}%` }}
+          >
+            <span className="absolute -top-4 left-1.5 whitespace-nowrap text-[10px] font-medium text-muted">
+              techo humano {ABLACION.ceiling.toFixed(2)}
+            </span>
+          </div>
+          <div className="space-y-3.5 pt-4">
+            {ABLACION.filas.map((f) => (
+              <div key={f.label}>
+                <div className="mb-1 flex items-baseline justify-between gap-2">
+                  <span className="text-sm text-ink">{f.label}</span>
+                  <span className="font-mono text-sm tabular-nums text-ink">κ {f.kappa.toFixed(2)}</span>
+                </div>
+                <div className="h-5 overflow-hidden rounded bg-surface-alt">
+                  <div
+                    className={`h-full ${ABL_BAR[f.tono]}`}
+                    style={{ width: `${Math.max(f.kappa * 100, 1)}%` }}
+                  />
+                </div>
+                <p className="mt-1 text-xs text-muted-soft">{f.detalle}</p>
+              </div>
+            ))}
+          </div>
+        </div>
+        <p className="mt-5 text-xs text-muted">
+          Acuerdo (Cohen's κ) contra la referencia humana sobre los mismos {ABLACION.nGrises}{" "}
+          episodios grises del eje fino (superficial↔reflexiva). El árbol de decisión,{" "}
+          <strong>no el modelo</strong>, carga el desempeño: sin él, el LLM colapsa a la clase
+          mayoritaria. Es un resultado <strong>fijo del piloto held-out</strong> (no se recomputa en
+          vivo: correr el juez sin árbol consume LLM). La contraparte reproducible, un modelo abierto
+          self-hosteable, llega a 0.47 (trade-off precisión / reproducibilidad).
+        </p>
+      </div>
+    </Section>
   )
 }
 
