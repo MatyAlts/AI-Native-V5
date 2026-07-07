@@ -429,6 +429,7 @@ export function EjerciciosView({ comisionId, getToken }: Props) {
       {modal.kind === "ai-wizard" && (
         <EjercicioAIWizard
           getToken={getToken}
+          comisionMateriaId={materiaId ?? ""}
           onClose={closeModal}
           onGenerated={(borrador) => setModal({ kind: "create", initial: borrador })}
         />
@@ -823,11 +824,14 @@ interface AIWizardProps {
   getToken: () => Promise<string | null>
   onClose: () => void
   onGenerated: (borrador: EjercicioCreate) => void
+  // Materia de la comision activa: el wizard arranca con ella pre-seleccionada
+  // para que las unidades se filtren de entrada (Prog 1 vs Prog 2).
+  comisionMateriaId: string
 }
 
-function EjercicioAIWizard({ getToken, onClose, onGenerated }: AIWizardProps) {
+function EjercicioAIWizard({ getToken, onClose, onGenerated, comisionMateriaId }: AIWizardProps) {
   const [materias, setMaterias] = useState<Materia[]>([])
-  const [materiaId, setMateriaId] = useState<string>("")
+  const [materiaId, setMateriaId] = useState<string>(comisionMateriaId)
   const [descripcionNl, setDescripcionNl] = useState("")
   const [unidad, setUnidad] = useState<UnidadTematica>("secuenciales")
   const [dificultad, setDificultad] = useState<Dificultad | "">("")
