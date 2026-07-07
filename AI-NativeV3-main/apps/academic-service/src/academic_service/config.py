@@ -59,12 +59,17 @@ class Settings(BaseSettings):
     # handler degrada al fallback hardcoded "d"*64 (warning en log).
     classifier_service_url: str = Field(default="http://127.0.0.1:8008")
     tp_generator_prompt_version: str = Field(default="v1.0.0")
-    tp_generator_default_model: str = Field(default="mistral-small-latest")
+    # Default Gemini (namespaced → OpenRouter con fallback keyless a Gemini nativo).
+    # Antes era "mistral-small-latest" (sin key de Mistral configurada → 502).
+    # Override por env TP_GENERATOR_DEFAULT_MODEL.
+    tp_generator_default_model: str = Field(default="google/gemini-2.0-flash")
     # ADR-047 + ADR-048: wizard IA standalone para generar Ejercicios
     # reusables del banco. Devuelve borrador con todos los campos
     # pedagógicos (banco N1-N4, misconceptions, tutor_rules, etc.).
     ejercicio_generator_prompt_version: str = Field(default="v1.0.0")
-    ejercicio_generator_default_model: str = Field(default="mistral-small-latest")
+    # Default Gemini (namespaced → OpenRouter con fallback keyless a Gemini nativo).
+    # Override por env EJERCICIO_GENERATOR_DEFAULT_MODEL.
+    ejercicio_generator_default_model: str = Field(default="google/gemini-2.0-flash")
 
 
 @lru_cache

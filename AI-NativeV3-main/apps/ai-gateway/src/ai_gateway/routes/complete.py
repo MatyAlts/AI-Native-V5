@@ -104,6 +104,32 @@ async def _collect_with_retry(
     raise last_err if last_err else RuntimeError("stream failed")
 
 
+async def _complete_with_retry(
+    provider: BaseProvider, req: CompletionRequest, max_attempts: int
+):
+    """Llama a provider.complete reintentando errores transitorios.
+
+    Paridad con `_collect_with_retry` del path de streaming: los picos de
+    'model overloaded' (503) de Gemini u otros se reintentan con backoff en vez
+    de reventar el request del caller. Los errores permanentes fallan rápido.
+    """
+    last_err: Exception | None = None
+    for attempt in range(max_attempts):
+        try:
+            return await provider.complete(req)
+        except Exception as exc:
+            last_err = exc
+            if not _is_retriable(exc) or attempt == max_attempts - 1:
+                raise
+            backoff = 0.6 * (2**attempt)
+            logger.warning(
+                "llm_complete_retry attempt=%d/%d model=%s backoff=%.1fs err=%s",
+                attempt + 1, max_attempts, req.model, backoff, exc,
+            )
+            await asyncio.sleep(backoff)
+    raise last_err if last_err else RuntimeError("complete failed")
+
+
 def _emit_text_chunks(text: str, size: int = 48):
     """Parte el texto completo en chunks para re-emitir con efecto de tipeo,
     preservando TODOS los caracteres (incluidos saltos de línea)."""
@@ -376,15 +402,38 @@ async def complete(
     provider_req = replace(internal_req, model=effective_model)
 
     _provider_start = time.perf_counter()
+    # Retry de errores transitorios (503 "model overloaded", timeouts) + fallback
+    # a modelo secundario, en paridad con /stream. Antes, un solo 503 de Gemini
+    # tumbaba el request del generador (ejercicio/TP) mientras el tutor —que usa
+    # /stream con retry— lo absorbía. Ahora ambos paths son igual de resilientes.
     try:
-        response = await provider.complete(provider_req)
-    except Exception as e:
-        ai_gateway_fallback_total.add(1, {"reason": "provider_error"})
-        logger.exception("provider_error")
-        raise HTTPException(
-            status_code=status.HTTP_502_BAD_GATEWAY,
-            detail=f"LLM provider error: {e}",
+        response = await _complete_with_retry(
+            provider, provider_req, settings.llm_stream_max_attempts
         )
+    except Exception as primary_err:
+        response = None
+        fb_model = settings.llm_fallback_model
+        if fb_model and fb_model != provider_req.model:
+            ai_gateway_fallback_total.add(1, {"reason": "complete_model_fallback"})
+            logger.warning(
+                "llm_complete_fallback primary=%s fallback=%s err=%s",
+                provider_req.model, fb_model, primary_err,
+            )
+            try:
+                response = await _complete_with_retry(
+                    provider,
+                    replace(provider_req, model=fb_model),
+                    settings.llm_stream_max_attempts,
+                )
+            except Exception:
+                logger.exception("llm_complete_fallback_failed")
+        if response is None:
+            ai_gateway_fallback_total.add(1, {"reason": "provider_error"})
+            logger.exception("provider_error")
+            raise HTTPException(
+                status_code=status.HTTP_502_BAD_GATEWAY,
+                detail=f"LLM provider error: {primary_err}",
+            )
 
     # Métrica: latencia del request al provider real (excluye cache hits).
     ai_gateway_request_duration_seconds.record(
