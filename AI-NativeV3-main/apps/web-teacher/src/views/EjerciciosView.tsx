@@ -51,9 +51,35 @@ type ModalState =
   | { kind: "ai-wizard" }
   | { kind: "confirm-delete"; ejercicio: Ejercicio }
 
-// Fuente unica de las unidades del banco. Agregar una unidad nueva aca y
-// aparece en todos los selectores. El backend acepta cualquiera (texto libre),
-// asi que esto es solo la lista sugerida/visible.
+// Unidades tematicas por materia. El backend acepta cualquiera (texto libre),
+// asi que esto es solo la lista sugerida/visible en los selectores.
+// - Prog 1: temas imperativos (secuenciales -> recursividad).
+// - Prog 2: temas de POO (introduccion -> bases de datos).
+// El selector se filtra por la materia activa (ver unidadKeysParaMateria);
+// UNIDAD_LABEL es la UNION global para que cualquier ejercicio muestre su label.
+const UNIDADES_PROG1 = [
+  "secuenciales",
+  "condicionales",
+  "repetitivas",
+  "mixtos",
+  "funciones",
+  "manejo_errores",
+  "manejo_archivos",
+  "estructura_datos",
+  "recursividad",
+]
+
+const UNIDADES_PROG2 = [
+  "poo",
+  "poo_avanzada",
+  "relaciones_uml",
+  "colecciones",
+  "herencia_polimorfismo",
+  "interfaces_excepciones",
+  "genericos",
+  "bases_datos",
+]
+
 const UNIDAD_LABEL: Record<string, string> = {
   secuenciales: "Secuenciales",
   condicionales: "Condicionales",
@@ -64,19 +90,29 @@ const UNIDAD_LABEL: Record<string, string> = {
   manejo_archivos: "Manejo de archivos",
   estructura_datos: "Estructura de datos",
   recursividad: "Recursividad",
+  poo: "Introduccion a POO",
+  poo_avanzada: "POO II",
+  relaciones_uml: "Relaciones UML",
+  colecciones: "Colecciones",
+  herencia_polimorfismo: "Herencia y Polimorfismo",
+  interfaces_excepciones: "Interfaces y Excepciones",
+  genericos: "Genericos",
+  bases_datos: "Bases de Datos",
 }
 
-// Orden pedagógico de los temas para listar el banco (no alfabético).
-const UNIDAD_ORDER: Record<string, number> = {
-  secuenciales: 0,
-  condicionales: 1,
-  repetitivas: 2,
-  mixtos: 3,
-  funciones: 4,
-  manejo_errores: 5,
-  manejo_archivos: 6,
-  estructura_datos: 7,
-  recursividad: 8,
+// Orden pedagogico (no alfabetico). Prog 2 va despues de Prog 1.
+const UNIDAD_ORDER: Record<string, number> = Object.fromEntries(
+  [...UNIDADES_PROG1, ...UNIDADES_PROG2].map((k, i): [string, number] => [k, i]),
+)
+
+// Elige la lista de unidades segun la materia activa. Keyea por el nombre
+// ("Programacion 2" / "Programacion II" -> Prog 2; "...1" / "I" -> Prog 1).
+// Sin nombre resoluble -> union (no bloquea la carga).
+function unidadKeysParaMateria(nombre: string | null | undefined): string[] {
+  const n = (nombre ?? "").toLowerCase()
+  if (/\b(2|ii)\b/.test(n)) return UNIDADES_PROG2
+  if (/\b(1|i)\b/.test(n)) return UNIDADES_PROG1
+  return [...UNIDADES_PROG1, ...UNIDADES_PROG2]
 }
 
 function sortEjerciciosPorTema(ejs: Ejercicio[]): Ejercicio[] {
@@ -130,24 +166,33 @@ export function EjerciciosView({ comisionId, getToken }: Props) {
   // El banco se filtra por la materia de la comisión activa (Prog 1, Prog 2…).
   // null = todavía resolviendo o la comisión no es del docente.
   const [materiaId, setMateriaId] = useState<string | null>(null)
+  const [materiaNombre, setMateriaNombre] = useState<string | null>(null)
 
   useEffect(() => {
     let cancelled = false
     setMateriaId(null)
+    setMateriaNombre(null)
     comisionesApi
       .listMine()
       .then((res) => {
         if (cancelled) return
         const c = res.items.find((x) => x.id === comisionId)
         setMateriaId(c?.materia_id ?? null)
+        setMateriaNombre(c?.materia_nombre ?? null)
       })
       .catch(() => {
-        if (!cancelled) setMateriaId(null)
+        if (!cancelled) {
+          setMateriaId(null)
+          setMateriaNombre(null)
+        }
       })
     return () => {
       cancelled = true
     }
   }, [comisionId])
+
+  // Unidades tematicas visibles segun la materia de la comision activa.
+  const unidadesComision = unidadKeysParaMateria(materiaNombre)
 
   const fetchList = useCallback(() => {
     // Sin materia resuelta no listamos: evita mostrar el banco global de
@@ -229,9 +274,9 @@ export function EjerciciosView({ comisionId, getToken }: Props) {
             className="border border-border rounded px-2 py-1 text-sm bg-white"
           >
             <option value="">Todas las unidades</option>
-            {Object.entries(UNIDAD_LABEL).map(([v, l]) => (
+            {unidadesComision.map((v) => (
               <option key={v} value={v}>
-                {l}
+                {UNIDAD_LABEL[v] ?? v}
               </option>
             ))}
           </select>
@@ -367,6 +412,7 @@ export function EjerciciosView({ comisionId, getToken }: Props) {
         <EjercicioFormModal
           initial={modal.kind === "edit" ? toCreate(modal.ejercicio) : modal.initial}
           title={modal.kind === "create" ? "Crear ejercicio" : "Editar ejercicio"}
+          unidades={unidadesComision}
           onClose={closeModal}
           onSubmit={(body) =>
             modal.kind === "edit"
@@ -447,14 +493,23 @@ function toCreate(ej: Ejercicio): EjercicioCreate {
 interface FormModalProps {
   initial?: EjercicioCreate | undefined
   title: string
+  unidades: string[]
   onClose: () => void
   onSubmit: (body: EjercicioCreate) => Promise<void>
 }
 
-function EjercicioFormModal({ initial, title, onClose, onSubmit }: FormModalProps) {
-  const [draft, setDraft] = useState<EjercicioCreate>(initial ?? emptyEjercicio())
+function EjercicioFormModal({ initial, title, unidades, onClose, onSubmit }: FormModalProps) {
+  const [draft, setDraft] = useState<EjercicioCreate>(
+    initial ?? emptyEjercicio((unidades[0] ?? "secuenciales") as UnidadTematica),
+  )
   const [submitting, setSubmitting] = useState(false)
   const [error, setError] = useState<string | null>(null)
+
+  // Opciones del selector: las de la materia + la actual si el ejercicio ya
+  // tiene una fuera de esa lista (caso edit), para no perderla.
+  const opcionesUnidad = unidades.includes(draft.unidad_tematica)
+    ? unidades
+    : [draft.unidad_tematica, ...unidades]
 
   function set<K extends keyof EjercicioCreate>(key: K, value: EjercicioCreate[K]) {
     setDraft((d) => ({ ...d, [key]: value }))
@@ -519,9 +574,9 @@ function EjercicioFormModal({ initial, title, onClose, onSubmit }: FormModalProp
                 onChange={(e) => set("unidad_tematica", e.target.value as UnidadTematica)}
                 className="w-full border border-border rounded px-2 py-1 text-sm bg-white"
               >
-                {Object.entries(UNIDAD_LABEL).map(([v, l]) => (
+                {opcionesUnidad.map((v) => (
                   <option key={v} value={v}>
-                    {l}
+                    {UNIDAD_LABEL[v] ?? v}
                   </option>
                 ))}
               </select>
@@ -786,6 +841,20 @@ function EjercicioAIWizard({ getToken, onClose, onGenerated }: AIWizardProps) {
       .catch(() => setMaterias([]))
   }, [getToken])
 
+  // Unidades segun la materia elegida en el wizard (sin materia -> union).
+  const unidadesWizard = unidadKeysParaMateria(
+    materias.find((m) => m.id === materiaId)?.nombre,
+  )
+  // Si al cambiar de materia la unidad actual ya no aplica, elegir la primera.
+  useEffect(() => {
+    const keys = unidadKeysParaMateria(
+      materias.find((m) => m.id === materiaId)?.nombre,
+    )
+    setUnidad((prev) =>
+      keys.includes(prev) ? prev : ((keys[0] ?? "secuenciales") as UnidadTematica),
+    )
+  }, [materiaId, materias])
+
   async function handleGenerate() {
     setError(null)
     if (descripcionNl.trim().length < 10) {
@@ -859,9 +928,9 @@ function EjercicioAIWizard({ getToken, onClose, onGenerated }: AIWizardProps) {
               onChange={(e) => setUnidad(e.target.value as UnidadTematica)}
               className="w-full border border-border rounded px-2 py-1 text-sm bg-white"
             >
-              {Object.entries(UNIDAD_LABEL).map(([v, l]) => (
+              {unidadesWizard.map((v) => (
                 <option key={v} value={v}>
-                  {l}
+                  {UNIDAD_LABEL[v] ?? v}
                 </option>
               ))}
             </select>
