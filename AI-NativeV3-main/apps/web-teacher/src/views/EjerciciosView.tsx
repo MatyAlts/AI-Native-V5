@@ -19,7 +19,7 @@
  *  - PageContainer + helpContent (key "ejercicios")
  */
 import { Badge, Modal, PageContainer } from "@platform/ui"
-import { Pencil, Plus, Sparkles, Trash2 } from "lucide-react"
+import { Pencil, Plus, Sparkles, Trash2, Upload } from "lucide-react"
 import { useCallback, useEffect, useState } from "react"
 import {
   type Dificultad,
@@ -49,6 +49,7 @@ type ModalState =
   | { kind: "edit"; ejercicio: Ejercicio }
   | { kind: "view"; ejercicio: Ejercicio }
   | { kind: "ai-wizard" }
+  | { kind: "import" }
   | { kind: "confirm-delete"; ejercicio: Ejercicio }
 
 // Unidades tematicas por materia. El backend acepta cualquiera (texto libre),
@@ -317,6 +318,14 @@ export function EjerciciosView({ comisionId, getToken }: Props) {
             <Plus className="w-4 h-4" />
             Crear manual
           </button>
+          <button
+            type="button"
+            onClick={() => setModal({ kind: "import" })}
+            className="flex items-center gap-1.5 border border-border rounded px-3 py-1.5 text-sm hover:bg-canvas"
+          >
+            <Upload className="w-4 h-4" />
+            Importar JSON
+          </button>
         </div>
       </div>
 
@@ -432,6 +441,15 @@ export function EjerciciosView({ comisionId, getToken }: Props) {
           comisionMateriaId={materiaId ?? ""}
           onClose={closeModal}
           onGenerated={(borrador) => setModal({ kind: "create", initial: borrador })}
+        />
+      )}
+
+      {modal.kind === "import" && (
+        <ImportJsonModal
+          materiaId={materiaId}
+          getToken={getToken}
+          onClose={closeModal}
+          onImported={fetchList}
         />
       )}
 
@@ -981,6 +999,201 @@ function EjercicioAIWizard({ getToken, onClose, onGenerated, comisionMateriaId }
           >
             <Sparkles className="w-4 h-4" />
             {generating ? "Generando..." : "Generar borrador"}
+          </button>
+        </div>
+      </div>
+    </Modal>
+  )
+}
+
+// ── Import desde JSON ───────────────────────────────────────────────────
+//
+// El tutor genera un ejercicio con SU PROPIA IA (ChatGPT, Claude, etc.) usando
+// este prompt, y pega el JSON resultante. Se crea con el endpoint de create
+// existente (un ejercicio por JSON). El prompt vive acá para poder copiarlo
+// desde el modal.
+
+const MASTER_PROMPT = `Sos un asistente que genera ejercicios de programacion en Python para una plataforma de tutor socratico (UTN). A partir de la consigna que te doy al final, genera UN ejercicio como un UNICO objeto JSON valido, sin ningun texto antes ni despues del JSON (tiene que poder pegarse directo en la plataforma).
+
+REGLA CRITICA (un solo archivo): el alumno resuelve TODO en UN solo archivo. La(s) clase(s) o funcion(es) y su bloque de prueba if __name__ == "__main__": van juntas. NUNCA pidas varios archivos ni uses import de modulos del alumno. Los test_cases deben referenciar las clases/funciones directamente (estan definidas en el mismo archivo), sin "from ... import ...".
+
+Devolve EXACTAMENTE esta estructura, respetando los nombres de campo tal cual:
+
+{
+  "titulo": "string (1 a 200 caracteres)",
+  "enunciado_md": "string en markdown con la consigna completa",
+  "inicial_codigo": "string con codigo scaffold, o null si no aplica",
+  "unidad_tematica": "UNO de: secuenciales | condicionales | repetitivas | mixtos | funciones | manejo_errores | manejo_archivos | estructura_datos | recursividad | poo | poo_avanzada | relaciones_uml | colecciones | herencia_polimorfismo | interfaces_excepciones | genericos | bases_datos",
+  "dificultad": "basica | intermedia | avanzada (o null)",
+  "prerequisitos": { "sintacticos": ["..."], "conceptuales": ["..."] },
+  "test_cases": [
+    { "id": "t1", "name": "descripcion corta del test", "type": "pytest_assert", "code": "lineas de assert que referencian la clase/funcion directamente", "expected": null, "is_public": true, "weight": 1.0 }
+  ],
+  "rubrica": { "criterios": [ { "nombre": "...", "descripcion": "...", "puntaje_max": 5 } ] },
+  "tutor_rules": { "prohibido_dar_solucion": true, "forzar_pregunta_antes_de_hint": false, "nivel_socratico_minimo": 1, "instrucciones_adicionales": "reglas especificas de este ejercicio, o null" },
+  "banco_preguntas": {
+    "n1": [ { "texto": "pregunta socratica", "senal_comprension": "que respuesta indica que entendio", "senal_alerta": "que respuesta indica confusion" } ],
+    "n2": [], "n3": [], "n4": []
+  },
+  "misconceptions": [ { "descripcion": "error comun anticipado", "probabilidad_estimada": 0.6, "pregunta_diagnostica": "pregunta que lo hace visible" } ],
+  "respuesta_pista": [ { "nivel": 1, "pista": "anti-solucion, nunca el codigo entero" } ],
+  "heuristica_cierre": { "tests_min_pasados": 1, "heuristica": "cuando se puede dar por cerrado el ejercicio" },
+  "anti_patrones": [ { "patron": "que NO debe hacer el tutor", "descripcion": "por que", "mensaje_orientacion": "que hacer en su lugar" } ],
+  "created_via_ai": true
+}
+
+Reglas de contenido:
+- test_cases: usa "pytest_assert" para clases/funciones (code = los asserts); usa "stdin_stdout" para programas con input()/print (code = "", expected = la salida esperada exacta). is_public true = el alumno lo ve; false = test oculto de control. weight es un numero mayor o igual a 0.
+- banco_preguntas: N1 comprension del concepto, N2 aplicacion, N3 analisis/validacion, N4 sintesis. Cada pregunta es un objeto con texto + senal_comprension + senal_alerta (NUNCA strings sueltas).
+- rubrica: cada criterio con puntaje_max mayor a 0 (el campo se llama puntaje_max, NO peso).
+- No inventes misconceptions implausibles. Mejor pocas y buenas.
+
+CONSIGNA DEL EJERCICIO (reemplaza esta linea por lo que quieras que resuelva el alumno):
+[Describi aca el ejercicio: clase(s)/funcion(es), atributos, validaciones, metodos, lo que debe probar, etc.]`
+
+interface ImportModalProps {
+  materiaId: string | null
+  getToken: () => Promise<string | null>
+  onClose: () => void
+  onImported: () => void
+}
+
+function ImportJsonModal({ materiaId, getToken, onClose, onImported }: ImportModalProps) {
+  const [jsonText, setJsonText] = useState("")
+  const [error, setError] = useState<string | null>(null)
+  const [result, setResult] = useState<string | null>(null)
+  const [importing, setImporting] = useState(false)
+  const [copied, setCopied] = useState(false)
+
+  async function copyPrompt() {
+    try {
+      await navigator.clipboard.writeText(MASTER_PROMPT)
+      setCopied(true)
+      setTimeout(() => setCopied(false), 1500)
+    } catch {
+      setError("No se pudo copiar automaticamente; seleccionalo y copialo a mano.")
+    }
+  }
+
+  async function handleImport() {
+    setError(null)
+    setResult(null)
+    let parsed: unknown
+    try {
+      parsed = JSON.parse(jsonText)
+    } catch (e) {
+      setError(`El JSON no es valido: ${String(e)}`)
+      return
+    }
+    const items: EjercicioCreate[] = Array.isArray(parsed)
+      ? (parsed as EjercicioCreate[])
+      : [parsed as EjercicioCreate]
+    if (items.length === 0) {
+      setError("No encontre ningun ejercicio en el JSON.")
+      return
+    }
+    setImporting(true)
+    let ok = 0
+    const errs: string[] = []
+    for (const [i, item] of items.entries()) {
+      try {
+        await createEjercicio({ ...item, materia_id: materiaId }, getToken)
+        ok++
+      } catch (e) {
+        errs.push(`Ejercicio ${i + 1}: ${String(e)}`)
+      }
+    }
+    setImporting(false)
+    onImported()
+    if (errs.length === 0) {
+      setResult(`Listo: ${ok} ejercicio${ok !== 1 ? "s" : ""} importado${ok !== 1 ? "s" : ""}.`)
+      setJsonText("")
+    } else {
+      setResult(`Importados ${ok}. Con errores:\n${errs.join("\n")}`)
+    }
+  }
+
+  return (
+    <Modal isOpen={true} onClose={onClose} title="Importar ejercicio desde JSON" size="md">
+      <div className="space-y-3 text-sm">
+        <details className="border border-border rounded">
+          <summary className="cursor-pointer px-3 py-2 font-medium bg-canvas">
+            No tenes el JSON? Copia este prompt y pegalo en tu IA (ChatGPT, Claude, etc.)
+          </summary>
+          <div className="p-3 space-y-2">
+            <button
+              type="button"
+              onClick={copyPrompt}
+              className="flex items-center gap-1.5 border border-border rounded px-3 py-1 text-xs hover:bg-canvas"
+            >
+              {copied ? "Copiado!" : "Copiar prompt"}
+            </button>
+            <pre className="max-h-48 overflow-auto text-[11px] bg-canvas p-2 rounded border border-border whitespace-pre-wrap">
+              {MASTER_PROMPT}
+            </pre>
+            <p className="text-xs text-muted">
+              Pega el prompt en tu IA, agrega tu consigna al final, y trae aca el JSON que te devuelva.
+            </p>
+          </div>
+        </details>
+
+        <div>
+          <label className="block text-xs text-muted mb-1">Pega el JSON del ejercicio</label>
+          <textarea
+            value={jsonText}
+            onChange={(e) => setJsonText(e.target.value)}
+            rows={10}
+            className="w-full border border-border rounded px-2 py-1 font-mono text-xs"
+            placeholder={'{ "titulo": "...", "enunciado_md": "...", "unidad_tematica": "...", ... }'}
+          />
+        </div>
+
+        <div className="flex items-center gap-2">
+          <label className="text-xs text-muted">o subi un archivo:</label>
+          <input
+            type="file"
+            accept=".json,application/json"
+            onChange={(e) => {
+              const f = e.target.files?.[0]
+              if (!f) return
+              f.text()
+                .then((t) => {
+                  setJsonText(t)
+                  setError(null)
+                })
+                .catch(() => setError("No se pudo leer el archivo."))
+            }}
+            className="text-xs"
+          />
+        </div>
+
+        {error && (
+          <div className="text-red-600 bg-red-50 border border-red-200 rounded p-2 whitespace-pre-wrap">
+            {error}
+          </div>
+        )}
+        {result && (
+          <div className="text-emerald-700 bg-emerald-50 border border-emerald-200 rounded p-2 whitespace-pre-wrap">
+            {result}
+          </div>
+        )}
+
+        <div className="flex justify-end gap-2 pt-2 border-t border-border">
+          <button
+            type="button"
+            onClick={onClose}
+            className="px-3 py-1.5 border border-border rounded hover:bg-canvas"
+          >
+            Cerrar
+          </button>
+          <button
+            type="button"
+            onClick={handleImport}
+            disabled={importing || !jsonText.trim() || !materiaId}
+            className="flex items-center gap-1.5 px-3 py-1.5 bg-accent-brand text-white rounded hover:opacity-90 disabled:opacity-50"
+          >
+            <Upload className="w-4 h-4" />
+            {importing ? "Importando..." : "Importar"}
           </button>
         </div>
       </div>
