@@ -59,6 +59,29 @@ interface Zones {
   vencidas: AvailableTarea[]
 }
 
+/**
+ * NB-19: la API de TPs pagina por cursor (`meta.cursor_next`). El selector
+ * filtra por unidad del lado del cliente, asi que una TP que caiga en una
+ * pagina posterior queda invisible si no se recorren todas. Sigue el cursor
+ * hasta agotarlo, acumulando, para que el listado sea completo. El tope
+ * defensivo evita un loop infinito si el backend devolviera un cursor que
+ * no avanza.
+ */
+async function fetchAllAvailableTareas(comisionId: string): Promise<AvailableTarea[]> {
+  const all: AvailableTarea[] = []
+  const seenCursors = new Set<string>()
+  let cursor: string | undefined
+  for (let page = 0; page < 100; page++) {
+    const res = await tareasPracticasApi.listAvailable(comisionId, cursor)
+    all.push(...res.data)
+    const next = res.meta.cursor_next
+    if (!next || seenCursors.has(next)) break
+    seenCursors.add(next)
+    cursor = next
+  }
+  return all
+}
+
 function partitionTareas(
   tareas: AvailableTarea[],
   _episodes: StudentEpisode[],
@@ -115,11 +138,8 @@ export function TareaSelector({
   onViewGrade,
 }: TareaSelectorProps) {
   const [tareas, setTareas] = useState<AvailableTarea[]>([])
-  const [nextCursor, setNextCursor] = useState<string | null>(null)
   const [loading, setLoading] = useState(true)
-  const [loadingMore, setLoadingMore] = useState(false)
   const [error, setError] = useState<string | null>(null)
-  const [loadMoreError, setLoadMoreError] = useState<string | null>(null)
   const [episodes, setEpisodes] = useState<StudentEpisode[]>([])
   // Map de tarea_practica_id → entrega (best-effort, no bloquea el selector)
   const [entregasByTareaId, setEntregasByTareaId] = useState<Record<string, Entrega>>({})
@@ -128,16 +148,14 @@ export function TareaSelector({
     let cancelled = false
     setLoading(true)
     setError(null)
-    setLoadMoreError(null)
     setTareas([])
-    setNextCursor(null)
     setEpisodes([])
-    tareasPracticasApi
-      .listAvailable(comisionId)
-      .then((page) => {
+    // NB-19: traer TODAS las paginas (no solo la primera) para que el
+    // filtrado por unidad y las zonas vean el listado completo.
+    fetchAllAvailableTareas(comisionId)
+      .then((all) => {
         if (cancelled) return
-        setTareas(page.data)
-        setNextCursor(page.meta.cursor_next)
+        setTareas(all)
       })
       .catch((e) => {
         if (!cancelled) setError(String(e))
@@ -193,21 +211,6 @@ export function TareaSelector({
       cancelled = true
     }
   }, [comisionId])
-
-  async function handleLoadMore() {
-    if (!nextCursor || loadingMore) return
-    setLoadingMore(true)
-    setLoadMoreError(null)
-    try {
-      const page = await tareasPracticasApi.listAvailable(comisionId, nextCursor)
-      setTareas((prev) => [...prev, ...page.data])
-      setNextCursor(page.meta.cursor_next)
-    } catch (e) {
-      setLoadMoreError(String(e))
-    } finally {
-      setLoadingMore(false)
-    }
-  }
 
   const filteredTareas = useMemo(() => {
     if (unidadId === undefined) return tareas
@@ -317,28 +320,6 @@ export function TareaSelector({
             entregasByTareaId={entregasByTareaId}
             onViewGrade={onViewGrade}
           />
-        )}
-
-        {nextCursor !== null && (
-          <div className="mt-8 flex flex-col items-center gap-2">
-            {loadMoreError && (
-              <div
-                role="alert"
-                className="w-full max-w-md rounded-lg border border-danger/40 bg-danger-soft p-3 text-xs text-danger"
-              >
-                <p className="font-medium mb-1">No pudimos cargar mas trabajos practicos.</p>
-                <p className="font-mono">{loadMoreError}</p>
-              </div>
-            )}
-            <button
-              type="button"
-              onClick={handleLoadMore}
-              disabled={loadingMore}
-              className="px-4 py-2 rounded border border-border bg-surface text-sm font-medium text-body hover:bg-surface-alt disabled:opacity-60"
-            >
-              {loadingMore ? "Cargando..." : "Cargar mas"}
-            </button>
-          </div>
         )}
       </div>
     </div>

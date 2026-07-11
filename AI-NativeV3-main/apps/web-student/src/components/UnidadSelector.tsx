@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react"
-import { type Unidad, listUnidades, tareasPracticasApi } from "../lib/api"
+import { type AvailableTarea, type Unidad, listUnidades, tareasPracticasApi } from "../lib/api"
 
 export interface UnidadSelectorProps {
   comisionId: string
@@ -9,6 +9,29 @@ export interface UnidadSelectorProps {
 interface UnidadConCount {
   unidad: Unidad | null
   cantidad: number
+}
+
+/**
+ * NB-19: la API de TPs pagina por cursor (`meta.cursor_next`). Los conteos
+ * por unidad deben cubrir TODAS las paginas, no solo la primera; de lo
+ * contrario una unidad cuyas TPs caen en paginas posteriores aparece con
+ * 0 TPs (o el bucket "sin unidad" queda incompleto). Sigue el cursor hasta
+ * agotarlo, acumulando. El tope defensivo evita un loop infinito si el
+ * backend devolviera un cursor que no avanza.
+ */
+async function fetchAllAvailableTareas(comisionId: string): Promise<AvailableTarea[]> {
+  const all: AvailableTarea[] = []
+  const seenCursors = new Set<string>()
+  let cursor: string | undefined
+  for (let page = 0; page < 100; page++) {
+    const res = await tareasPracticasApi.listAvailable(comisionId, cursor)
+    all.push(...res.data)
+    const next = res.meta.cursor_next
+    if (!next || seenCursors.has(next)) break
+    seenCursors.add(next)
+    cursor = next
+  }
+  return all
 }
 
 export function UnidadSelector({ comisionId, onSelect }: UnidadSelectorProps) {
@@ -21,10 +44,7 @@ export function UnidadSelector({ comisionId, onSelect }: UnidadSelectorProps) {
     setLoading(true)
     setError(null)
 
-    Promise.all([
-      listUnidades(comisionId),
-      tareasPracticasApi.listAvailable(comisionId).then((p) => p.data),
-    ])
+    Promise.all([listUnidades(comisionId), fetchAllAvailableTareas(comisionId)])
       .then(([unidades, tareas]) => {
         if (cancelled) return
         const countByUnidad = new Map<string | null, number>()
