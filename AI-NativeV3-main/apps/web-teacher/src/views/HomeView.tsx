@@ -14,15 +14,13 @@
  *   (insufficient_data por k-anonymity, RN-131); UI muestra "—".
  */
 import { HelpButton } from "@platform/ui"
+import { useQueries, useQuery } from "@tanstack/react-query"
 import { Link } from "@tanstack/react-router"
 import { Download, FileText, Users } from "lucide-react"
-import { useCallback, useEffect, useState } from "react"
 import { ComisionDelDocenteCard, type ComisionKpis } from "../components/ComisionDelDocenteCard"
 import { comisionLabel } from "../components/ComisionSelector"
 import {
-  type CohortAdversarialEvents,
   type CohortAlertsSummary,
-  type CohortProgression,
   type Comision,
   comisionesApi,
   getCohortAdversarialEvents,
@@ -52,63 +50,82 @@ interface ComisionWithKpis {
 }
 
 export function HomeView({ getToken }: Props) {
-  const [items, setItems] = useState<ComisionWithKpis[] | null>(null)
-  const [error, setError] = useState<string | null>(null)
-  const [loading, setLoading] = useState(true)
+  // Lista de comisiones del docente. Query key estable → se cachea y comparte
+  // con cualquier otra vista que liste "mis comisiones".
+  const comisionesQuery = useQuery({
+    queryKey: ["comisiones-mias"],
+    queryFn: () => comisionesApi.listMine(getToken),
+  })
+  const comisiones = comisionesQuery.data?.items ?? []
 
-  const load = useCallback(async () => {
-    setLoading(true)
-    setError(null)
-    try {
-      const { items: comisiones } = await comisionesApi.listMine(getToken)
-      const enriched = await Promise.all(
-        comisiones.map(async (c) => {
-          const [prog, adv, alertsSummary] = await Promise.allSettled([
-            getCohortProgression(c.id, getToken) as Promise<CohortProgression>,
-            getCohortAdversarialEvents(c.id, getToken) as Promise<CohortAdversarialEvents>,
-            getCohortAlertsSummary(c.id, undefined, getToken) as Promise<CohortAlertsSummary>,
-          ])
-          const alumnos = prog.status === "fulfilled" ? prog.value.n_students : null
-          const episodiosSemana =
-            prog.status === "fulfilled"
-              ? prog.value.trajectories.reduce((a, t) => a + t.n_episodes, 0)
-              : null
-          const adversosSemana =
-            adv.status === "fulfilled" ? countLastWeek(adv.value.recent_events) : null
-          // ADR-022: KPI alertas = n estudiantes con al menos una alerta.
-          // Si insufficient_data (N<5 k-anonymity) → null → UI muestra "—".
-          const alertas: number | null =
-            alertsSummary.status === "fulfilled" &&
-            !alertsSummary.value.insufficient_data &&
-            alertsSummary.value.alerts_summary
-              ? alertsSummary.value.alerts_summary.students_with_any_alert
-              : null
-          const alertsBreakdown: CohortAlertsSummary | null =
-            alertsSummary.status === "fulfilled" ? alertsSummary.value : null
-          return {
-            comision: c,
-            displayName: comisionLabel(c),
-            kpis: {
-              alumnos,
-              episodiosSemana,
-              alertas,
-              adversosSemana,
-              ...(alertsBreakdown ? { alertsBreakdown } : {}),
-            },
-          }
-        }),
-      )
-      setItems(enriched)
-    } catch (e) {
-      setError(String(e))
-    } finally {
-      setLoading(false)
+  // Las 3 métricas por cohorte, cada una como query independiente con key
+  // estable `["cohort-<métrica>", comisionId]`. Es la convención para el resto
+  // de las vistas de cohorte (progression/adversarial/alerts): mismo dato →
+  // misma key → mismo cache. useQueries dispara UN fetch por (comisión, métrica)
+  // y lo dedupe/cachea dentro del staleTime del QueryClient, reemplazando el
+  // patrón useState+useEffect que hacía 1+3×N requests EN CADA render (y
+  // arriesgaba el loop 429). Ya no hay refetch por render — sólo al invalidar
+  // la key o vencer el staleTime.
+  const progressionQueries = useQueries({
+    queries: comisiones.map((c) => ({
+      queryKey: ["cohort-progression", c.id],
+      queryFn: () => getCohortProgression(c.id, getToken),
+    })),
+  })
+  const adversarialQueries = useQueries({
+    queries: comisiones.map((c) => ({
+      queryKey: ["cohort-adversarial", c.id],
+      queryFn: () => getCohortAdversarialEvents(c.id, getToken),
+    })),
+  })
+  const alertsQueries = useQueries({
+    queries: comisiones.map((c) => ({
+      queryKey: ["cohort-alerts", c.id],
+      queryFn: () => getCohortAlertsSummary(c.id, undefined, getToken),
+    })),
+  })
+
+  // UX idéntica al patrón previo: skeleton único hasta que la lista y TODAS las
+  // métricas de primera carga resuelven. Una métrica que falla degrada a null
+  // por card (equivalente al Promise.allSettled anterior) sin bloquear el
+  // render ni contar como "loading".
+  const metricsPending =
+    progressionQueries.some((q) => q.isLoading) ||
+    adversarialQueries.some((q) => q.isLoading) ||
+    alertsQueries.some((q) => q.isLoading)
+  const loading = comisionesQuery.isLoading || (comisiones.length > 0 && metricsPending)
+  const error = comisionesQuery.error ? String(comisionesQuery.error) : null
+
+  const enriched: ComisionWithKpis[] = comisiones.map((c, i) => {
+    const prog = progressionQueries[i]?.data
+    const adv = adversarialQueries[i]?.data
+    const alertsSummary = alertsQueries[i]?.data
+    const alumnos = prog ? prog.n_students : null
+    const episodiosSemana = prog ? prog.trajectories.reduce((a, t) => a + t.n_episodes, 0) : null
+    const adversosSemana = adv ? countLastWeek(adv.recent_events) : null
+    // ADR-022: KPI alertas = n estudiantes con al menos una alerta.
+    // Si insufficient_data (N<5 k-anonymity) → null → UI muestra "—".
+    const alertas: number | null =
+      alertsSummary && !alertsSummary.insufficient_data && alertsSummary.alerts_summary
+        ? alertsSummary.alerts_summary.students_with_any_alert
+        : null
+    const alertsBreakdown: CohortAlertsSummary | null = alertsSummary ?? null
+    return {
+      comision: c,
+      displayName: comisionLabel(c),
+      kpis: {
+        alumnos,
+        episodiosSemana,
+        alertas,
+        adversosSemana,
+        ...(alertsBreakdown ? { alertsBreakdown } : {}),
+      },
     }
-  }, [getToken])
+  })
 
-  useEffect(() => {
-    void load()
-  }, [load])
+  // `items` conserva la semántica del original: null mientras carga, array
+  // cuando terminó — así todo el JSX de abajo queda intacto.
+  const items = loading ? null : enriched
 
   const totalAlumnos = items?.reduce((s, e) => s + (e.kpis.alumnos ?? 0), 0) ?? null
   const totalEpisodios = items?.reduce((s, e) => s + (e.kpis.episodiosSemana ?? 0), 0) ?? null
