@@ -146,6 +146,9 @@ function EntregasListView({ comisionId, getToken, onSelectEntrega }: EntregasLis
         const map: Record<string, TareaPractica> = {}
         for (const r of results) {
           if (r.status === "fulfilled") map[r.value.id] = r.value.t
+          // Enriquecimiento best-effort: si una TP falla, la fila cae al
+          // fallback "TP: {id}", pero dejamos rastro en consola (no lo tragamos).
+          else console.error("[CorreccionesView] no se pudo cargar una TP:", r.reason)
         }
         setTareasByID(map)
       })
@@ -472,6 +475,8 @@ function GradingFormView({ entrega, tarea, getToken, onBack, onUpdated }: Gradin
     graded_at: string
   } | null>(null)
   const [loadingCalificacion, setLoadingCalificacion] = useState(false)
+  const [calificacionError, setCalificacionError] = useState<string | null>(null)
+  const [episodeResolveError, setEpisodeResolveError] = useState<string | null>(null)
   const [devolviendo, setDevolviendo] = useState(false)
 
   const yaCalificada = entrega.estado === "graded" || entrega.estado === "returned"
@@ -491,8 +496,11 @@ function GradingFormView({ entrega, tarea, getToken, onBack, onUpdated }: Gradin
       .then((items) => {
         if (!cancelled) setTpEjercicios(items)
       })
-      .catch(() => {
+      .catch((e) => {
+        // Sin la composicion no resolvemos titulos → caemos al fallback
+        // "Ejercicio {orden}". Es degradacion aceptable, pero la reportamos.
         if (!cancelled) setTpEjercicios([])
+        console.error("[CorreccionesView] no se pudo cargar la composicion de la TP:", e)
       })
     return () => {
       cancelled = true
@@ -501,6 +509,7 @@ function GradingFormView({ entrega, tarea, getToken, onBack, onUpdated }: Gradin
 
   useEffect(() => {
     const estados = entrega.ejercicio_estados ?? []
+    setEpisodeResolveError(null)
     const allHaveEpisodeId = estados.every((e) => e.episode_id)
     if (allHaveEpisodeId && estados.length > 0) {
       const map: Record<number, string> = {}
@@ -540,7 +549,20 @@ function GradingFormView({ entrega, tarea, getToken, onBack, onUpdated }: Gradin
         }
         setResolvedEpisodeMap(map)
       })
-      .catch(() => {})
+      .catch((e) => {
+        // Fallback: mapear al menos los episode_id que ya venian en los estados,
+        // asi no perdemos los enlaces que si teniamos. Y avisamos al docente que
+        // la resolucion quedo incompleta en vez de tragar el error.
+        const fallback: Record<number, string> = {}
+        for (const est of estados) {
+          if (est.episode_id) fallback[est.orden] = est.episode_id
+        }
+        setResolvedEpisodeMap(fallback)
+        setEpisodeResolveError(
+          "No pudimos resolver todos los episodios de esta entrega; algunos ejercicios pueden aparecer sin enlace al detalle.",
+        )
+        console.error("[CorreccionesView] no se pudieron resolver los episodios:", e)
+      })
   }, [
     entrega.id,
     entrega.student_pseudonym,
@@ -555,13 +577,25 @@ function GradingFormView({ entrega, tarea, getToken, onBack, onUpdated }: Gradin
     if (!yaCalificada) return
     let cancelled = false
     setLoadingCalificacion(true)
+    setCalificacionError(null)
     entregasDocenteApi
       .getCalificacion(entrega.id, getToken)
       .then((c) => {
-        if (cancelled || !c) return
+        if (cancelled) return
+        if (!c) {
+          // La entrega figura como calificada pero no vino la calificacion:
+          // NO dejar el form vacio en silencio (bug NB-21).
+          setCalificacionError(
+            "Esta entrega figura como calificada pero no pudimos recuperar la nota y el feedback guardados. Recargá la página o volvé a intentar.",
+          )
+          return
+        }
         setCalificacion(c)
         setNota(String(c.nota_final))
         setFeedback(c.feedback_general)
+      })
+      .catch((e) => {
+        if (!cancelled) setCalificacionError(String(e))
       })
       .finally(() => {
         if (!cancelled) setLoadingCalificacion(false)
@@ -646,6 +680,14 @@ function GradingFormView({ entrega, tarea, getToken, onBack, onUpdated }: Gradin
       {entrega.ejercicio_estados && entrega.ejercicio_estados.length > 0 && (
         <div className="rounded-xl border border-border bg-surface p-5 shadow-[0_1px_2px_0_rgba(0,0,0,0.04)]">
           <p className="text-xs font-mono uppercase tracking-wider text-muted mb-4">Ejercicios</p>
+          {episodeResolveError && (
+            <div
+              className="mb-4 rounded-lg border border-warning/30 bg-warning-soft p-3 text-xs text-warning"
+              data-testid="episode-resolve-error"
+            >
+              {episodeResolveError}
+            </div>
+          )}
           <div className="space-y-3" data-testid="ejercicios-estados-list">
             {entrega.ejercicio_estados
               .slice()
@@ -675,6 +717,15 @@ function GradingFormView({ entrega, tarea, getToken, onBack, onUpdated }: Gradin
               className="inline-block w-5 h-5 border-2 border-t-transparent rounded-full motion-safe:animate-spin"
               style={{ borderColor: "var(--color-accent-brand)", borderTopColor: "transparent" }}
             />
+          </div>
+        )}
+
+        {!loadingCalificacion && calificacionError && (
+          <div
+            className="mb-4 rounded-lg border border-danger/30 bg-danger-soft p-3 text-xs text-danger"
+            data-testid="calificacion-load-error"
+          >
+            {calificacionError}
           </div>
         )}
 
