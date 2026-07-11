@@ -85,6 +85,24 @@ class CalificacionCreate(BaseModel):
     detalle_criterios: list[CriterioCalificacion] = Field(default_factory=list)
 
 
+class CalificacionUpdate(BaseModel):
+    """Body del PATCH /entregas/{id}/calificacion (NB-4: re-calificar).
+
+    Update parcial: solo los campos presentes en el request se aplican
+    (semantica PATCH via `model_fields_set` / `exclude_unset`). Permite al
+    docente corregir una nota ya puesta actualizando la fila existente
+    in-place, sin violar el `UNIQUE(entrega_id)` (no inserta una segunda
+    calificacion). Al menos un campo debe venir.
+
+    `nota_final` es opcional (para poder tocar solo el feedback), pero si
+    viene NO puede ser null: la columna es NOT NULL.
+    """
+
+    nota_final: Decimal | None = Field(default=None, ge=0, le=10)
+    feedback_general: str | None = None
+    detalle_criterios: list[CriterioCalificacion] | None = None
+
+
 class CalificacionOut(BaseModel):
     """Response model de Calificacion.
 
@@ -106,6 +124,7 @@ class CalificacionOut(BaseModel):
     feedback_general: str | None = None
     detalle_criterios: list[dict[str, Any]] = Field(default_factory=list)
     graded_at: datetime
+    updated_at: datetime | None = None
     created_at: datetime
 
     @field_validator("nota_final", mode="before")

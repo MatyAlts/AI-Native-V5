@@ -10,6 +10,7 @@ Endpoints:
   POST   /api/v1/entregas/{id}/submit          draft -> submitted + audit tp_entregada
   PATCH  /api/v1/entregas/{id}/ejercicio/{n}   marcar ejercicio completado
   POST   /api/v1/entregas/{id}/calificar       crear calificacion + audit tp_calificada
+  PATCH  /api/v1/entregas/{id}/calificacion    re-calificar in-place + audit tp_recalificada (NB-4)
   GET    /api/v1/entregas/{id}/calificacion    leer calificacion
   POST   /api/v1/entregas/{id}/return          graded -> returned
 """
@@ -32,6 +33,7 @@ from evaluation_service.models.entregas import Calificacion, Entrega
 from evaluation_service.schemas.entrega import (
     CalificacionCreate,
     CalificacionOut,
+    CalificacionUpdate,
     EntregaCreate,
     EntregaListMeta,
     EntregaListResponse,
@@ -399,6 +401,101 @@ async def calificar_entrega(
         entrega_id=str(entrega_id),
         calificacion_id=str(cal.id),
         nota_final=float(data.nota_final),
+        graded_by=str(user.id),
+        tenant_id=str(user.tenant_id),
+    )
+
+    return CalificacionOut.model_validate(cal)
+
+
+@router.patch("/{entrega_id}/calificacion", response_model=CalificacionOut)
+async def recalificar_entrega(
+    entrega_id: UUID,
+    data: CalificacionUpdate,
+    user: User = Depends(require_permission("calificacion", "update")),
+    db: AsyncSession = Depends(get_db),
+) -> CalificacionOut:
+    """Re-califica una entrega actualizando la calificacion existente in-place (NB-4).
+
+    Antes no habia forma de corregir una nota ya puesta: `POST /calificar`
+    rechaza con 409 si ya existe calificacion, y el `UNIQUE(entrega_id)`
+    bloquea insertar una segunda. Este PATCH resuelve ese bloqueo actualizando
+    la MISMA fila (nunca inserta), por lo que el `UNIQUE(entrega_id)` se respeta
+    trivialmente.
+
+    Semantica:
+    - Solo docentes (require_permission calificacion:update) — el docente sigue
+      gobernando la nota; los estudiantes no pueden actualizar calificaciones.
+    - Requiere que la calificacion YA exista (si no, 404 → usar POST /calificar
+      para la primera). PATCH actualiza, POST crea.
+    - Update parcial: solo los campos presentes en el body se tocan.
+    - `graded_by` pasa al docente que re-califica (gobierna la nota vigente);
+      `graded_at` preserva la primera calificacion, `updated_at` marca esta.
+    - Deja la entrega en `graded` (normaliza el caso de una entrega re-enviada
+      que quedo en `submitted` con la calificacion vieja adherida — NB-4).
+    - Emite audit log `tp_recalificada` (structlog, NO va al CTR chain — ADR-010)
+      con la nota anterior y la nueva.
+    """
+    entrega = await _get_or_404(db, entrega_id)
+
+    stmt = select(Calificacion).where(
+        and_(
+            Calificacion.entrega_id == entrega_id,
+            Calificacion.deleted_at.is_(None),
+        )
+    )
+    cal = (await db.execute(stmt)).scalar_one_or_none()
+    if cal is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=(
+                f"No hay calificacion para la entrega {entrega_id}. "
+                "Usa POST /calificar para la primera calificacion."
+            ),
+        )
+
+    updates = data.model_dump(exclude_unset=True)
+    if not updates:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="Nada para actualizar: envia al menos un campo.",
+        )
+    if "nota_final" in updates and data.nota_final is None:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="nota_final no puede ser null.",
+        )
+
+    nota_anterior = float(cal.nota_final)
+
+    if "nota_final" in updates:
+        cal.nota_final = data.nota_final
+    if "feedback_general" in updates:
+        cal.feedback_general = data.feedback_general
+    if "detalle_criterios" in updates:
+        cal.detalle_criterios = [
+            c.model_dump(mode="json") for c in (data.detalle_criterios or [])
+        ]
+
+    now = datetime.now(UTC)
+    cal.graded_by = user.id
+    cal.updated_at = now
+    # Normaliza el estado: una re-calificacion deja la entrega calificada.
+    # Cubre el caso NB-4 de una entrega re-enviada (returned -> submitted) que
+    # quedo en 'submitted' con la calificacion vieja adherida.
+    entrega.estado = "graded"
+
+    await db.flush()
+    await db.refresh(cal)
+
+    # Audit log (meta-evento, NO va al CTR chain — ADR-010)
+    log = structlog.get_logger()
+    log.info(
+        "tp_recalificada",
+        entrega_id=str(entrega_id),
+        calificacion_id=str(cal.id),
+        nota_anterior=nota_anterior,
+        nota_nueva=float(cal.nota_final),
         graded_by=str(user.id),
         tenant_id=str(user.tenant_id),
     )

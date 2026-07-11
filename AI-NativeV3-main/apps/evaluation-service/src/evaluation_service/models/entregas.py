@@ -120,6 +120,12 @@ class Calificacion(Base, TenantMixin, TimestampMixin):
         nullable=False,
         server_default=sa.text("CURRENT_TIMESTAMP"),
     )
+    # updated_at: timestamp de la ULTIMA re-calificacion (NB-4). NULL hasta que
+    # el docente corrige una nota ya puesta. `graded_at` preserva el momento de
+    # la primera calificacion; `updated_at` marca la correccion mas reciente.
+    updated_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
 
     entrega: Mapped[Entrega] = relationship(back_populates="calificacion")
 
