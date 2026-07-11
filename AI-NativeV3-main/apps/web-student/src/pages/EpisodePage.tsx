@@ -103,6 +103,9 @@ export function EpisodeView({ episodeId, onExit, ejercicioContext, getToken }: E
   const [error, setError] = useState<string | null>(null)
   const [hydrating, setHydrating] = useState<boolean>(true)
   const [closed, setClosed] = useState<boolean>(false)
+  // Guard de doble-submit (NB-11): cierre/pausa disparan requests async. Un
+  // doble-click deshabilita ambos botones y evita cerrar/abandonar 2 veces.
+  const [submitting, setSubmitting] = useState<boolean>(false)
   const [reflectionTargetId, setReflectionTargetId] = useState<string | null>(null)
   // Flag: true cuando el alumno cierra el modal de reflexion sin completarla
   // (boton "No quiero reflexionar ahora" o escape). Se persiste en
@@ -133,6 +136,12 @@ export function EpisodeView({ episodeId, onExit, ejercicioContext, getToken }: E
   // estado de sesion (ADR-025), pero esto evita spamear el endpoint cuando
   // beforeunload y visibilitychange→hidden disparan en sucesion (fix QA #9).
   const abandonEmittedRef = useRef(false)
+  // Guard de idempotencia del marcado de ejercicio completado (NB-12): el
+  // cierre del episodio puede llegar por dos caminos que corren en carrera —
+  // el ClassificationPanel (onReset) cuando la clasificacion resuelve, y el
+  // ReflectionModal (onClose) cuando el alumno lo cierra antes de que resuelva.
+  // Sin dedupe, ambos llaman markEjercicioCompleted para el mismo ejercicio.
+  const markedCompletedRef = useRef(false)
 
   const ejercicioOrden = ejercicioContext?.ejercicioOrden ?? null
 
@@ -342,6 +351,9 @@ export function EpisodeView({ episodeId, onExit, ejercicioContext, getToken }: E
   }
 
   async function handleClose() {
+    // Guard doble-submit (NB-11): si ya hay un cierre/pausa en vuelo, ignorar.
+    if (submitting) return
+    setSubmitting(true)
     setError(null)
     try {
       await closeEpisode(episodeId, "student_finished")
@@ -353,6 +365,7 @@ export function EpisodeView({ episodeId, onExit, ejercicioContext, getToken }: E
         return
       }
       setError(`Error cerrando: ${e}`)
+      setSubmitting(false)
       return
     }
     setClosed(true)
@@ -384,15 +397,45 @@ export function EpisodeView({ episodeId, onExit, ejercicioContext, getToken }: E
   // (bug 2026-06-16). El guard local evita re-emitir en el beforeunload del
   // unmount (idempotente igual en backend, fix QA #9).
   async function handlePauseExit() {
+    // Guard doble-submit (NB-11): si ya hay un cierre/pausa en vuelo, ignorar.
+    if (submitting) return
+    setSubmitting(true)
     setError(null)
     abandonEmittedRef.current = true
-    await emitEpisodioAbandonado(
-      episodeId,
-      { reason: "explicit", last_activity_seconds_ago: 0 },
-      getToken,
-    )
+    try {
+      await emitEpisodioAbandonado(
+        episodeId,
+        { reason: "explicit", last_activity_seconds_ago: 0 },
+        getToken,
+      )
+    } catch (e) {
+      // Best-effort: el backend es idempotente por estado de sesion (ADR-025).
+      // No bloqueamos la salida por un fallo de red del emit.
+      console.warn("emit episodio_abandonado (explicit) failed:", e)
+    }
     window.sessionStorage.removeItem(ACTIVE_EPISODE_KEY)
     onExit()
+  }
+
+  // Marca el ejercicio como completado UNA sola vez (NB-12). Serializa los dos
+  // caminos que pueden dispararlo en carrera (ClassificationPanel.onReset y
+  // ReflectionModal.onClose) via markedCompletedRef: el primero que entra gana,
+  // el segundo es no-op. Si el marcado falla, liberamos el guard para permitir
+  // que el otro camino lo reintente (best-effort — no bloquea la navegacion).
+  async function markEjercicioCompletedOnce() {
+    if (!ejercicioContext) return
+    if (markedCompletedRef.current) return
+    markedCompletedRef.current = true
+    try {
+      await markEjercicioCompleted(
+        ejercicioContext.entregaId,
+        ejercicioContext.ejercicioOrden,
+        episodeId,
+        ejercicioContext.ejercicioId,
+      )
+    } catch {
+      markedCompletedRef.current = false
+    }
   }
 
   const elapsedSeconds = useElapsedSeconds(closed ? null : episodeId)
@@ -431,18 +474,8 @@ export function EpisodeView({ episodeId, onExit, ejercicioContext, getToken }: E
         isMultiExercise={ejercicioContext != null}
         onReset={async () => {
           setClassification(null)
-          if (ejercicioContext) {
-            try {
-              await markEjercicioCompleted(
-                ejercicioContext.entregaId,
-                ejercicioContext.ejercicioOrden,
-                episodeId,
-                ejercicioContext.ejercicioId,
-              )
-            } catch {
-              // Best-effort: no bloquear la navegacion si falla.
-            }
-          }
+          // NB-12: dedupe compartido con el camino del ReflectionModal.
+          await markEjercicioCompletedOnce()
           onExit()
         }}
       />
@@ -762,9 +795,10 @@ export function EpisodeView({ episodeId, onExit, ejercicioContext, getToken }: E
             <button
               type="button"
               onClick={handlePauseExit}
+              disabled={submitting}
               data-testid="pause-episode-button"
               title="Salí ahora y retomá este episodio más tarde, justo donde lo dejaste. Tu progreso queda guardado."
-              className="press-shrink inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium border border-border rounded-md text-body hover:bg-surface-alt transition-colors"
+              className="press-shrink inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium border border-border rounded-md text-body hover:bg-surface-alt transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
             >
               <PauseCircle className="h-3 w-3" />
               Seguir después
@@ -773,8 +807,9 @@ export function EpisodeView({ episodeId, onExit, ejercicioContext, getToken }: E
           <button
             type="button"
             onClick={handleClose}
+            disabled={submitting}
             data-testid="close-episode-button"
-            className="press-shrink inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium border border-border rounded-md text-body hover:bg-danger-soft hover:border-danger/30 hover:text-danger transition-colors"
+            className="press-shrink inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium border border-border rounded-md text-body hover:bg-danger-soft hover:border-danger/30 hover:text-danger transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
           >
             <LogOut className="h-3 w-3" />
             Cerrar episodio
@@ -898,19 +933,10 @@ export function EpisodeView({ episodeId, onExit, ejercicioContext, getToken }: E
           //   multi-ejercicio marcamos el ejercicio completo + onExit; si es
           //   TP single, solo onExit (vuelve a /materia/$id).
           if (!classification) {
-            if (ejercicioContext) {
-              try {
-                await markEjercicioCompleted(
-                  ejercicioContext.entregaId,
-                  ejercicioContext.ejercicioOrden,
-                  episodeId,
-                  ejercicioContext.ejercicioId,
-                )
-              } catch {
-                // Best-effort: la TP queda con el ejercicio sin marcar pero
-                // el alumno puede volver a entrar y completar.
-              }
-            }
+            // NB-12: dedupe compartido con el camino del ClassificationPanel.
+            // Best-effort: si falla, la TP queda con el ejercicio sin marcar
+            // pero el alumno puede volver a entrar y completar.
+            await markEjercicioCompletedOnce()
             onExit()
           }
         }}
