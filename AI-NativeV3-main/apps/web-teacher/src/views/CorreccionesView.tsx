@@ -453,6 +453,39 @@ function EjercicioPanel({ ej, resolvedEpisodeId, titulo, getToken }: EjercicioPa
   )
 }
 
+// Re-calificacion in-place (NB-4 / BUG-3). El backend ya expone
+// `PATCH /api/v1/entregas/{id}/calificacion` para actualizar la nota ya puesta
+// (el `POST /calificar` responde 409 si ya existe y el UNIQUE(entrega_id) bloquea
+// insertar una segunda). `lib/api.ts` todavia NO tiene un metodo para este PATCH
+// y en este cambio no podemos tocar api.ts; por eso el fetch va inline aca,
+// replicando el minimo de authHeaders/throwIfNotOk del API layer.
+// FOLLOW-UP: mover esto a `entregasDocenteApi.recalificar` en `lib/api.ts`.
+async function recalificarEntrega(
+  entregaId: string,
+  body: CalificacionCreate,
+  getToken: () => Promise<string | null>,
+): Promise<void> {
+  const headers: Record<string, string> = { "Content-Type": "application/json" }
+  const token = await getToken()
+  if (token) headers.Authorization = `Bearer ${token}`
+  const r = await fetch(`/api/v1/entregas/${entregaId}/calificacion`, {
+    method: "PATCH",
+    headers,
+    body: JSON.stringify(body),
+  })
+  if (!r.ok) {
+    const raw = await r.text()
+    let detail = raw
+    try {
+      const parsed = JSON.parse(raw)
+      detail = parsed.detail ?? parsed.title ?? raw
+    } catch {
+      /* respuesta no-JSON: usamos el texto crudo */
+    }
+    throw new Error(`${r.status}: ${detail}`)
+  }
+}
+
 // ─── GradingFormView (tasks 10.3, 10.4, 10.5) ─────────────────────────
 
 interface GradingFormViewProps {
@@ -478,6 +511,9 @@ function GradingFormView({ entrega, tarea, getToken, onBack, onUpdated }: Gradin
   const [calificacionError, setCalificacionError] = useState<string | null>(null)
   const [episodeResolveError, setEpisodeResolveError] = useState<string | null>(null)
   const [devolviendo, setDevolviendo] = useState(false)
+  // Reapertura del form para re-calificar una entrega ya calificada (BUG-3).
+  // Mientras es `false`, los campos quedan `disabled` (solo lectura de la nota).
+  const [reediting, setReediting] = useState(false)
 
   const yaCalificada = entrega.estado === "graded" || entrega.estado === "returned"
 
@@ -646,6 +682,51 @@ function GradingFormView({ entrega, tarea, getToken, onBack, onUpdated }: Gradin
     }
   }
 
+  // Guardar una re-calificacion (PATCH in-place, NB-4). Mismo criterio de
+  // validacion que `handleCalificar` + guard anti doble-submit por `submitting`.
+  // El docente sigue gobernando la nota: solo se llega aca desde el web-teacher
+  // y el backend exige permiso calificacion:update.
+  async function handleRecalificar() {
+    if (submitting) return
+    const notaNum = Number.parseFloat(nota)
+    if (Number.isNaN(notaNum) || notaNum < 0 || notaNum > 10) {
+      setSubmitError("La nota debe ser un numero entre 0 y 10.")
+      return
+    }
+    if (!feedback.trim()) {
+      setSubmitError("El feedback general es obligatorio.")
+      return
+    }
+    setSubmitting(true)
+    setSubmitError(null)
+    try {
+      await recalificarEntrega(
+        entrega.id,
+        { nota_final: notaNum, feedback_general: feedback.trim() },
+        getToken,
+      )
+      // Refetch para reflejar la nota vigente y normalizar estado a 'graded'.
+      const updated = await entregasDocenteApi.get(entrega.id, getToken)
+      setReediting(false)
+      onUpdated(updated)
+    } catch (e) {
+      setSubmitError(String(e))
+    } finally {
+      setSubmitting(false)
+    }
+  }
+
+  // Cancelar la reapertura: restaura los campos a la calificacion cargada y
+  // vuelve a modo solo-lectura sin persistir nada.
+  function handleCancelReedit() {
+    setReediting(false)
+    setSubmitError(null)
+    if (calificacion) {
+      setNota(String(calificacion.nota_final))
+      setFeedback(calificacion.feedback_general)
+    }
+  }
+
   return (
     <div className="space-y-6 max-w-3xl" data-testid="grading-form-view">
       <button
@@ -708,7 +789,11 @@ function GradingFormView({ entrega, tarea, getToken, onBack, onUpdated }: Gradin
       {/* Formulario de calificacion */}
       <div className="rounded-xl border border-border bg-surface p-5 shadow-[0_1px_2px_0_rgba(0,0,0,0.04)]">
         <p className="text-xs font-mono uppercase tracking-wider text-muted mb-4">
-          {yaCalificada && !loadingCalificacion ? "Calificacion" : "Calificar entrega"}
+          {reediting
+            ? "Re-calificar entrega"
+            : yaCalificada && !loadingCalificacion
+              ? "Calificacion"
+              : "Calificar entrega"}
         </p>
 
         {loadingCalificacion && (
@@ -744,7 +829,7 @@ function GradingFormView({ entrega, tarea, getToken, onBack, onUpdated }: Gradin
                 step="0.5"
                 value={nota}
                 onChange={(e) => setNota(e.target.value)}
-                disabled={yaCalificada}
+                disabled={yaCalificada && !reediting}
                 data-testid="nota-final-input"
                 className="w-28 border border-border rounded px-3 py-2 text-sm text-ink bg-surface focus:outline-none focus:ring-1 focus:ring-ink disabled:bg-surface-alt disabled:text-muted"
                 placeholder="ej. 7.5"
@@ -761,7 +846,7 @@ function GradingFormView({ entrega, tarea, getToken, onBack, onUpdated }: Gradin
                 rows={5}
                 value={feedback}
                 onChange={(e) => setFeedback(e.target.value)}
-                disabled={yaCalificada}
+                disabled={yaCalificada && !reediting}
                 data-testid="feedback-input"
                 className="w-full border border-border rounded px-3 py-2 text-sm text-ink bg-surface focus:outline-none focus:ring-1 focus:ring-ink disabled:bg-surface-alt disabled:text-muted resize-none"
                 placeholder="Describe los puntos fuertes y de mejora de la entrega..."
@@ -810,8 +895,57 @@ function GradingFormView({ entrega, tarea, getToken, onBack, onUpdated }: Gradin
                 </button>
               )}
 
-              {/* Boton Devolver — solo si ya fue calificada (graded) */}
-              {entrega.estado === "graded" && (
+              {/* Boton Re-calificar — reabre el form de una entrega ya
+                  calificada con la nota/feedback actuales (BUG-3 / NB-4) */}
+              {yaCalificada && !reediting && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setReediting(true)
+                    setSubmitError(null)
+                  }}
+                  data-testid="reeditar-btn"
+                  className="press-shrink px-4 py-2 rounded-md text-sm font-medium border border-border bg-surface text-ink hover:bg-surface-alt transition-colors"
+                >
+                  Re-calificar
+                </button>
+              )}
+
+              {/* Modo re-calificacion: guardar (PATCH) + cancelar */}
+              {reediting && (
+                <>
+                  <button
+                    type="button"
+                    onClick={() => void handleRecalificar()}
+                    disabled={submitting}
+                    data-testid="guardar-recalificacion-btn"
+                    className="px-4 py-2 rounded text-sm font-medium text-white disabled:opacity-60"
+                    style={{ backgroundColor: "var(--color-accent-brand)" }}
+                    onMouseEnter={(e) => {
+                      if (!submitting)
+                        e.currentTarget.style.backgroundColor = "var(--color-accent-brand-deep)"
+                    }}
+                    onMouseLeave={(e) => {
+                      e.currentTarget.style.backgroundColor = "var(--color-accent-brand)"
+                    }}
+                  >
+                    {submitting ? "Guardando..." : "Guardar cambios"}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={handleCancelReedit}
+                    disabled={submitting}
+                    data-testid="cancelar-recalificacion-btn"
+                    className="press-shrink px-4 py-2 rounded-md text-sm font-medium border border-border bg-surface text-ink hover:bg-surface-alt disabled:opacity-60 transition-colors"
+                  >
+                    Cancelar
+                  </button>
+                </>
+              )}
+
+              {/* Boton Devolver — solo si ya fue calificada (graded) y no se
+                  esta re-calificando (evita acciones ambiguas mid-edit) */}
+              {entrega.estado === "graded" && !reediting && (
                 <button
                   type="button"
                   onClick={() => void handleDevolver()}
