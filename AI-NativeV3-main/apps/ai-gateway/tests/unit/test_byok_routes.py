@@ -5,6 +5,7 @@ Cubre `apps/ai-gateway/src/ai_gateway/routes/byok.py`:
 - POST /keys: validation errors (scope_type/scope_id, master key faltante).
 - POST /keys/{id}/rotate: 404 si no existe, 400 si plaintext invalido.
 - POST /keys/{id}/revoke: 404 si no existe.
+- POST /keys/{id}/test: 501 Not Implemented (NB-23, adapters diferidos).
 - GET /keys + GET /keys/{id}/usage: filtros y serializacion.
 - Headers UUID invalidos -> 400.
 
@@ -416,6 +417,30 @@ async def test_revoke_key_happy_path(client: AsyncClient, monkeypatch) -> None:
     )
     assert response.status_code == 200
     assert response.json()["revoked_at"] is not None
+
+
+# ── POST /keys/{id}/test (NB-23) ───────────────────────────────────────
+
+
+async def test_test_key_devuelve_501_para_admin(client: AsyncClient) -> None:
+    """NB-23: probar una key contra el provider no esta implementado (adapters
+    diferidos). El endpoint existe y responde 501 explicito — no 404 ambiguo,
+    no una validacion fingida — con un mensaje claro."""
+    response = await client.post(
+        f"/api/v1/byok/keys/{uuid4()}/test", headers=ADMIN_HEADERS
+    )
+    assert response.status_code == 501
+    detail = response.json()["detail"]
+    assert "no esta implementado" in detail
+    assert "adapters" in detail
+
+
+async def test_test_key_estudiante_devuelve_403(client: AsyncClient) -> None:
+    """El stub /test respeta el mismo gate de auth que el resto del router."""
+    response = await client.post(
+        f"/api/v1/byok/keys/{uuid4()}/test", headers=ESTUDIANTE_HEADERS
+    )
+    assert response.status_code == 403
 
 
 # ── GET /keys/{id}/usage ───────────────────────────────────────────────

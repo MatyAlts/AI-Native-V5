@@ -11,9 +11,13 @@ Endpoints:
   POST   /api/v1/byok/keys/{id}/rotate
   POST   /api/v1/byok/keys/{id}/revoke
   GET    /api/v1/byok/keys/{id}/usage
+  POST   /api/v1/byok/keys/{id}/test  -> 501 Not Implemented (NB-23, ver abajo)
 
-Diferidos a follow-up:
-  POST /api/v1/byok/keys/{id}/test (re-validacion contra el provider, requiere adapters)
+Diferidos a follow-up (NO implementados). El endpoint `/test` existe pero
+responde 501 explicito — la validacion real de una key contra su provider
+NO esta implementada y no debe documentarse como capacidad disponible hasta
+que los adapters existan:
+  Validacion de una key contra su provider (requiere adapters de proveedor)
   Cache Redis del resolver
   Adapters Gemini/Mistral
 """
@@ -242,3 +246,44 @@ async def get_key_usage(
     tenant_id, _ = actor
     usage = await get_byok_key_usage(tenant_id, key_id, yyyymm=yyyymm)
     return UsageOut(**usage)
+
+
+@router.post(
+    "/keys/{key_id}/test",
+    status_code=status.HTTP_501_NOT_IMPLEMENTED,
+    responses={
+        501: {
+            "description": "No implementado — requiere adapters de proveedor "
+            "(diferidos a follow-up)."
+        }
+    },
+)
+async def post_test_key(
+    key_id: UUID,
+    actor: tuple[UUID, UUID] = Depends(_get_actor),
+) -> None:
+    """Validar una BYOK key contra su proveedor — DIFERIDO / NO IMPLEMENTADO (NB-23).
+
+    Esta capacidad estuvo *documentada* como follow-up pero nunca se implemento:
+    validar una key contra el provider requiere los adapters de proveedor
+    (Gemini/Mistral/etc.) que estan diferidos. En vez de fingir la validacion o
+    de dejar un 404 ambiguo (que se lee como un bug de ruteo), el endpoint existe
+    y responde **501 Not Implemented** con un mensaje claro — la ausencia de la
+    feature queda explicita en la superficie de la API, no escondida en un docstring.
+
+    Hasta que existan los adapters, la unica validacion real de una key ocurre
+    cuando el primer request LLM que la resuelve la usa (y falla si es invalida);
+    el admin puede entonces revocar/rotar. Ver `post_create_key` (no valida al crear).
+
+    Cuando se implementen los adapters, reemplazar este stub por la validacion real
+    y actualizar el docstring del modulo (mover `/test` fuera de "Diferidos").
+    """
+    _ = key_id, actor  # gate de auth via _get_actor; el body es intencionalmente no-op
+    raise HTTPException(
+        status_code=status.HTTP_501_NOT_IMPLEMENTED,
+        detail=(
+            "Probar una BYOK key contra el proveedor no esta implementado: "
+            "requiere los adapters de proveedor, diferidos a follow-up. Para "
+            "validar una key, usala en un request LLM real y revisa si falla."
+        ),
+    )
