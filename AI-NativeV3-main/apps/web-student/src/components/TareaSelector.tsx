@@ -44,6 +44,12 @@ export interface TareaSelectorProps {
   unidadId?: string | null | undefined
   /** Callback opcional para volver al selector de unidades. */
   onBack?: (() => void) | undefined
+  /**
+   * NB-7: ver la calificacion de una TP directamente desde el selector. Se usa
+   * para TPs VENCIDAS con entrega ya calificada/devuelta — el alumno debe poder
+   * ver su nota aunque la TP este cerrada (sin poder re-entregar).
+   */
+  onViewGrade?: ((tarea: AvailableTarea, entrega: Entrega) => void) | undefined
 }
 
 interface Zones {
@@ -101,7 +107,13 @@ function byDeadlineDesc(a: AvailableTarea, b: AvailableTarea): number {
   return -byDeadlineAsc(a, b)
 }
 
-export function TareaSelector({ comisionId, onSelect, unidadId, onBack }: TareaSelectorProps) {
+export function TareaSelector({
+  comisionId,
+  onSelect,
+  unidadId,
+  onBack,
+  onViewGrade,
+}: TareaSelectorProps) {
   const [tareas, setTareas] = useState<AvailableTarea[]>([])
   const [nextCursor, setNextCursor] = useState<string | null>(null)
   const [loading, setLoading] = useState(true)
@@ -299,7 +311,12 @@ export function TareaSelector({ comisionId, onSelect, unidadId, onBack }: TareaS
         )}
 
         {zones.vencidas.length > 0 && (
-          <ZoneVencidas tareas={zones.vencidas} episodes={episodes} />
+          <ZoneVencidas
+            tareas={zones.vencidas}
+            episodes={episodes}
+            entregasByTareaId={entregasByTareaId}
+            onViewGrade={onViewGrade}
+          />
         )}
 
         {nextCursor !== null && (
@@ -612,9 +629,13 @@ function ZoneListo({
 function ZoneVencidas({
   tareas,
   episodes,
+  entregasByTareaId,
+  onViewGrade,
 }: {
   tareas: AvailableTarea[]
   episodes: StudentEpisode[]
+  entregasByTareaId: Record<string, Entrega>
+  onViewGrade?: ((tarea: AvailableTarea, entrega: Entrega) => void) | undefined
 }) {
   return (
     <section className="mb-6" data-testid="zone-vencidas">
@@ -633,12 +654,34 @@ function ZoneVencidas({
               const db = b.classified_at ? new Date(b.classified_at).getTime() : 0
               return db - da
             })[0]
+          // NB-7: una TP vencida con entrega ya calificada/devuelta debe seguir
+          // siendo consultable — el alumno tiene que poder ver su nota. No se
+          // habilita ninguna via de re-entrega (la TP esta vencida).
+          const entrega = entregasByTareaId[t.id]
+          const puedeVerNota =
+            (entrega?.estado === "graded" || entrega?.estado === "returned") &&
+            onViewGrade != null
           return (
             <li key={t.id} className="py-2.5 text-xs text-muted">
               <div className="flex items-center gap-2">
                 <span className="font-mono">{t.codigo}</span>
                 <span className="text-muted-soft">v{t.version}</span>
                 <span className="text-body truncate">{t.titulo}</span>
+                {entrega && (
+                  <span className="ml-1 shrink-0">
+                    <EntregaBadge estado={entrega.estado} />
+                  </span>
+                )}
+                {puedeVerNota && entrega && (
+                  <button
+                    type="button"
+                    data-testid={`vencida-ver-nota-${t.codigo}`}
+                    onClick={() => onViewGrade?.(t, entrega)}
+                    className="ml-auto shrink-0 px-2.5 py-1 rounded text-xs font-medium bg-success-soft text-success hover:bg-green-200"
+                  >
+                    Ver calificacion →
+                  </button>
+                )}
               </div>
               {lastResult && lastResult.appropriation && (
                 <p className="mt-1 text-muted flex items-center gap-1.5">

@@ -16,6 +16,7 @@
  * ExerciseListView de la TP correspondiente.
  */
 import { createFileRoute, useNavigate, useParams } from "@tanstack/react-router"
+import { createOrGetEntrega, getEpisodeState, submitEntrega } from "../lib/api"
 import { type EjercicioContext, EpisodeView } from "../pages/EpisodePage"
 import {
   ACTIVE_EXERCISE_CONTEXT_KEY,
@@ -37,18 +38,45 @@ function EpisodioPage() {
   const { getToken } = Route.useRouteContext()
 
   // Leer contexto de ejercicio del sessionStorage (si existe).
-  const ejercicioContext = readEjercicioContext()
+  // NB-6: el contexto solo aplica si fue guardado para ESTE episodio.
+  // sessionStorage usa una unica clave global — sin scope por episodio, un
+  // contexto viejo (de otro episodio) se leia como si fuera el actual y hacia
+  // que al cerrar el episodio se marcara como completo un ejercicio ajeno.
+  const ejercicioContext = readEjercicioContext(id)
 
-  function handleExit() {
+  async function handleExit() {
     if (ejercicioContext) {
       navigate({
         to: "/materia/$id",
         params: { id: ejercicioContext.materiaId },
         search: { returnToExercise: true },
       })
-    } else {
-      navigate({ to: "/" })
+      return
     }
+    // BUG-1: TP monolitica (sin ejercicioContext). Cerrar el episodio ES la
+    // entrega. Si el episodio quedo "closed" (el alumno finalizo, no pauso),
+    // creamos+enviamos la Entrega para que la card del selector refleje
+    // "Entregada" en vez de seguir en "Empezar". El refetch lo hace el
+    // TareaSelector al remontar cuando el alumno vuelve a la materia.
+    // Best-effort: si algo falla, no bloqueamos la salida.
+    try {
+      const state = await getEpisodeState(id, getToken)
+      if (state.estado === "closed") {
+        const entrega = await createOrGetEntrega(
+          {
+            tarea_practica_id: state.tarea_practica_id,
+            comision_id: state.comision_id,
+          },
+          getToken,
+        )
+        if (entrega.estado === "draft" || entrega.estado === "returned") {
+          await submitEntrega(entrega.id, getToken)
+        }
+      }
+    } catch {
+      // best-effort: no bloquear la navegacion si falla la creacion/envio.
+    }
+    navigate({ to: "/" })
   }
 
   return (
@@ -69,7 +97,7 @@ function EpisodioPage() {
   )
 }
 
-function readEjercicioContext(): {
+function readEjercicioContext(episodeId: string): {
   materiaId: string
   entregaId: string
   ejercicioId: string
@@ -80,6 +108,10 @@ function readEjercicioContext(): {
   if (!raw) return null
   try {
     const ctx = JSON.parse(raw) as ActiveExerciseContext
+    // NB-6: descartar el contexto si no fue guardado para este episodio.
+    // Contextos de episodios previos (o pre-migracion, sin `episode_id`) NO
+    // deben aplicarse al actual — sino se marca completo el ejercicio ajeno.
+    if (ctx.episode_id !== episodeId) return null
     return {
       materiaId: ctx.materia_id,
       entregaId: ctx.entrega_id,

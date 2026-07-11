@@ -21,7 +21,7 @@
 import { useQuery } from "@tanstack/react-query"
 import { Link, createFileRoute, useNavigate, useParams } from "@tanstack/react-router"
 import { z } from "zod"
-import { useEffect, useState } from "react"
+import { useEffect, useRef, useState } from "react"
 import { ExerciseListView } from "../components/ExerciseListView"
 import { GradeDetailView } from "../components/GradeDetailView"
 import { OpeningStage } from "../components/OpeningStage"
@@ -50,6 +50,10 @@ export interface ActiveExerciseContext {
   entrega_id: string
   ejercicio_id: string
   ejercicio_orden: number
+  /** Episodio al que pertenece este contexto (NB-6). Se usa para descartar el
+   * contexto cuando el episodio abierto NO es este, evitando marcar como
+   * completo un ejercicio de otro episodio (cross-contamination). */
+  episode_id: string
 }
 
 const searchSchema = z.object({
@@ -66,7 +70,16 @@ type MateriaPageView =
   | { kind: "unidades" }
   | { kind: "selector"; unidadId: string | null | undefined }
   | { kind: "exercise-list"; tarea: AvailableTarea }
-  | { kind: "grade-detail"; tarea: AvailableTarea; entrega: Entrega }
+  | {
+      kind: "grade-detail"
+      tarea: AvailableTarea
+      entrega: Entrega
+      /** Vista a la que vuelve "← Volver". La nota se alcanza desde el
+       * ExerciseListView (multi-ejercicio) y tambien directo desde el selector
+       * (NB-7: TP vencida ya calificada) — guardamos el origen para no perder
+       * el filtro de unidad al volver. */
+      back: MateriaPageView
+    }
   | {
       kind: "opening"
       tarea: AvailableTarea
@@ -80,6 +93,10 @@ function MateriaPage() {
   const { returnToExercise } = Route.useSearch()
   const navigate = useNavigate()
   const [view, setView] = useState<MateriaPageView>({ kind: "unidades" })
+  // NB-10: guard anti doble-submit. Un doble-click en "Empezar" disparaba dos
+  // POST /episodes → dos episodios. La ref es sincronica (a diferencia de un
+  // useState) asi que el segundo click ve el flag ya seteado y aborta.
+  const openingRef = useRef(false)
 
   const { data: materias, isLoading, error } = useQuery({
     queryKey: ["mis-materias"],
@@ -142,6 +159,9 @@ function MateriaPage() {
     ejercicio: { id: string; orden: number } | null,
     entregaId?: string,
   ) {
+    // NB-10: abortar si ya hay una apertura en curso (doble-click).
+    if (openingRef.current) return
+    openingRef.current = true
     setView({
       kind: "opening",
       tarea,
@@ -179,8 +199,13 @@ function MateriaPage() {
               entrega_id: entregaId,
               ejercicio_id: ejercicio.id,
               ejercicio_orden: ejercicio.orden,
+              episode_id: candidate.episode_id,
             }
             window.sessionStorage.setItem(ACTIVE_EXERCISE_CONTEXT_KEY, JSON.stringify(ctx))
+          } else {
+            // NB-6: TP monolitica → limpiar cualquier contexto de ejercicio
+            // previo para que episodio.$id no lo aplique a este episodio.
+            window.sessionStorage.removeItem(ACTIVE_EXERCISE_CONTEXT_KEY)
           }
           navigate({ to: "/episodio/$id", params: { id: candidate.episode_id } })
           return
@@ -215,8 +240,12 @@ function MateriaPage() {
           entrega_id: entregaId,
           ejercicio_id: ejercicio.id,
           ejercicio_orden: ejercicio.orden,
+          episode_id: res.episode_id,
         }
         window.sessionStorage.setItem(ACTIVE_EXERCISE_CONTEXT_KEY, JSON.stringify(ctx))
+      } else {
+        // NB-6: TP monolitica → limpiar cualquier contexto de ejercicio previo.
+        window.sessionStorage.removeItem(ACTIVE_EXERCISE_CONTEXT_KEY)
       }
       navigate({ to: "/episodio/$id", params: { id: res.episode_id } })
     } catch (e) {
@@ -227,6 +256,10 @@ function MateriaPage() {
         ejercicioOrden: ejercicio?.orden ?? null,
         error: `Error abriendo episodio: ${e}`,
       })
+    } finally {
+      // NB-10: liberar el guard. En el camino feliz ya navegamos (unmount),
+      // asi que esto solo importa cuando hubo error y el alumno reintenta.
+      openingRef.current = false
     }
   }
 
@@ -284,6 +317,9 @@ function MateriaPage() {
           onSelect={handleSelectTarea}
           unidadId={currentView.unidadId}
           onBack={() => setView({ kind: "unidades" })}
+          onViewGrade={(tarea, entrega) =>
+            setView({ kind: "grade-detail", tarea, entrega, back: currentView })
+          }
         />
       )}
 
@@ -295,7 +331,12 @@ function MateriaPage() {
             void openEpisodeAndNavigate(tarea, ejercicio, entregaId)
           }}
           onViewGrade={(entrega) =>
-            setView({ kind: "grade-detail", tarea: currentView.tarea, entrega })
+            setView({
+              kind: "grade-detail",
+              tarea: currentView.tarea,
+              entrega,
+              back: currentView,
+            })
           }
           onBack={() => setView({ kind: "unidades" })}
         />
@@ -304,7 +345,7 @@ function MateriaPage() {
       {currentView.kind === "grade-detail" && (
         <GradeDetailView
           entrega={currentView.entrega}
-          onBack={() => setView({ kind: "exercise-list", tarea: currentView.tarea })}
+          onBack={() => setView(currentView.back)}
         />
       )}
 
