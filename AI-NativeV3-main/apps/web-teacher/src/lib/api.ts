@@ -1774,36 +1774,6 @@ export async function getEntregas(
   return body.data
 }
 
-/**
- * PATCH /api/v1/entregas/{entrega_id}/ejercicio/{orden} — marca/des-marca la
- * completitud de un ejercicio dentro de la entrega. Con `completado=false`
- * vuelve a dejar el ejercicio pendiente para el alumno.
- *
- * Puede devolver 409 si la entrega está en estado 'submitted'/'graded' (solo
- * 'draft'/'returned' admiten cambios) — el caller decide cómo presentarlo.
- */
-export async function setEjercicioCompletado(
-  entregaId: string,
-  orden: number,
-  completado: boolean,
-  episodeId: string,
-  ejercicioId: string | null,
-  getToken?: TokenGetter,
-): Promise<EntregaDocente> {
-  const body: { completado: boolean; episode_id: string; ejercicio_id?: string } = {
-    completado,
-    episode_id: episodeId,
-  }
-  if (ejercicioId) body.ejercicio_id = ejercicioId
-  const r = await fetch(`/api/v1/entregas/${entregaId}/ejercicio/${orden}`, {
-    method: "PATCH",
-    headers: await authHeaders(getToken),
-    body: JSON.stringify(body),
-  })
-  await throwIfNotOk(r)
-  return r.json()
-}
-
 export async function calificarEntrega(
   entregaId: string,
   body: CalificacionCreate,
