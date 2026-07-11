@@ -29,6 +29,10 @@ class IngestionResult:
     material_id: UUID
     estado: str
     chunks_created: int
+    # Modo del embedder con el que se indexó — expuesto para que el caller no
+    # tenga que adivinar si el índice es real o falso (BUG-4).
+    embedding_model: str | None = None
+    is_semantic_embedding: bool | None = None
     error: str | None = None
 
 
@@ -78,6 +82,20 @@ class IngestionPipeline:
             await self.session.flush()
 
             embedder = get_embedder()
+            if not embedder.is_semantic:
+                # BUG-4: no indexar embeddings falsos en silencio. En producción
+                # get_embedder() ya habría abortado; acá (dev con mock) dejamos
+                # rastro claro por material. El marcador durable queda además en
+                # cada Chunk.embedding_model="mock-deterministic".
+                logger.warning(
+                    "Indexando material %s con embedder NO-semántico (%s): los %d "
+                    "chunks se persisten con vectores FALSOS (hash), el retrieval "
+                    "sobre este material NO sera real. Marca embedding_model=%r.",
+                    material.id,
+                    embedder.model_name,
+                    len(chunks),
+                    embedder.model_name,
+                )
             texts = [c.contenido for c in chunks]
             vectors = await embedder.embed_documents(texts)
 
@@ -110,6 +128,8 @@ class IngestionPipeline:
                 material_id=material.id,
                 estado="indexed",
                 chunks_created=len(chunks),
+                embedding_model=embedder.model_name,
+                is_semantic_embedding=embedder.is_semantic,
             )
 
         except Exception as e:

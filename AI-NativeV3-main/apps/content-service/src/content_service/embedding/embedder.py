@@ -13,6 +13,7 @@ para español, benchmarks superiores a ada-002).
 from __future__ import annotations
 
 import hashlib
+import logging
 import os
 import struct
 from abc import ABC, abstractmethod
@@ -23,13 +24,24 @@ if TYPE_CHECKING:
     pass
 
 
+logger = logging.getLogger(__name__)
+
 EMBEDDING_DIM = 1024
+
+# Entornos donde indexar/consultar con embeddings falsos (mock) es un error
+# fatal: nunca queremos retrieval basura sirviendo tráfico real. `environment`
+# del content-service (config.py) se alimenta de la env var ENVIRONMENT.
+_NON_DEV_ENVIRONMENTS = frozenset({"production", "prod", "staging"})
 
 
 class BaseEmbedder(ABC):
     """Interfaz común de embedders."""
 
     model_name: str
+    # ¿El embedder produce vectores semánticos reales (True) o falsos —
+    # deterministas por hash — (False)? El pipeline de ingesta usa esta bandera
+    # para NO indexar embeddings falsos como si fueran reales (BUG-4).
+    is_semantic: bool = True
 
     @abstractmethod
     async def embed_documents(self, texts: list[str]) -> list[list[float]]:
@@ -48,6 +60,7 @@ class MockEmbedder(BaseEmbedder):
     """
 
     model_name = "mock-deterministic"
+    is_semantic = False
 
     async def embed_documents(self, texts: list[str]) -> list[list[float]]:
         return [self._hash_to_vector(t) for t in texts]
@@ -155,25 +168,77 @@ class SentenceTransformerEmbedder(BaseEmbedder):
         return vec[0].tolist()
 
 
+def _resolve_environment() -> str:
+    """Entorno efectivo (minúsculas). Se lee dinámicamente de ENVIRONMENT
+    para que el guard sea testeable con monkeypatch y coherente con config.py."""
+    return os.environ.get("ENVIRONMENT", "development").strip().lower()
+
+
+def _guard_non_semantic(embedder: BaseEmbedder, *, which: str, fell_back: bool) -> None:
+    """BUG-4: hace ruidoso —o fatal— resolver a un embedder NO-semántico.
+
+    - En producción/staging: RuntimeError. Indexar o consultar con vectores
+      falsos (hash) corrompe el índice en silencio; preferimos fallar fuerte.
+    - En dev: WARNING claro. El mock sigue siendo válido a propósito, pero
+      queda marcado — nadie debería creer que el retrieval es real.
+    """
+    env = _resolve_environment()
+    reason = (
+        "EMBEDDER sin setear y sentence-transformers no instalado "
+        "(fallback silencioso a mock)"
+        if fell_back
+        else f"EMBEDDER={which!r}"
+    )
+    if env in _NON_DEV_ENVIRONMENTS:
+        msg = (
+            f"Embedder NO-semántico ({embedder.model_name}) en entorno '{env}': "
+            f"{reason}. El RAG indexaría/consultaría con embeddings FALSOS (hash). "
+            "Seteá EMBEDDER=gemini|local con las deps reales instaladas. "
+            "Abortando para no corromper el índice."
+        )
+        logger.error(msg)
+        raise RuntimeError(msg)
+    logger.warning(
+        "Embedder NO-semántico activo (%s) — %s. Válido en dev, pero el "
+        "retrieval NO es real: vectores deterministas por hash, sin semántica. "
+        "NUNCA usar así en producción.",
+        embedder.model_name,
+        reason,
+    )
+
+
 @lru_cache(maxsize=1)
 def get_embedder() -> BaseEmbedder:
     """Factory: elige el embedder según config de entorno.
 
     Override con EMBEDDER=mock|local para tests.
+
+    BUG-4: si se resuelve a un embedder NO-semántico (mock) —sea explícito por
+    `EMBEDDER=mock` o por fallback silencioso cuando faltan las deps reales—
+    `_guard_non_semantic` lo hace ruidoso en dev y fatal en producción, para
+    que sea imposible indexar embeddings falsos creyendo que son reales.
     """
     which = os.environ.get("EMBEDDER", "").lower()
+    fell_back = False
+
     if which == "mock":
-        return MockEmbedder()
-    if which == "gemini":
-        return GeminiEmbedder()
-    if which == "local":
-        return SentenceTransformerEmbedder()
+        embedder: BaseEmbedder = MockEmbedder()
+    elif which == "gemini":
+        embedder = GeminiEmbedder()
+    elif which == "local":
+        embedder = SentenceTransformerEmbedder()
+    else:
+        # Default: intentar local, fallback a mock si falta sentence-transformers
+        try:
+            import sentence_transformers  # noqa: F401
+            import torch  # noqa: F401
 
-    # Default: intentar local, fallback a mock si falta sentence-transformers
-    try:
-        import sentence_transformers  # noqa: F401
-        import torch  # noqa: F401
+            embedder = SentenceTransformerEmbedder()
+        except ImportError:
+            embedder = MockEmbedder()
+            fell_back = True
 
-        return SentenceTransformerEmbedder()
-    except ImportError:
-        return MockEmbedder()
+    if not embedder.is_semantic:
+        _guard_non_semantic(embedder, which=which, fell_back=fell_back)
+
+    return embedder
