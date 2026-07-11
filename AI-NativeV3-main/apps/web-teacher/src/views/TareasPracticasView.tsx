@@ -1195,6 +1195,7 @@ function ComposicionModal({
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [adding, setAdding] = useState(false)
+  const [reordering, setReordering] = useState(false)
   const [selectedEjercicioId, setSelectedEjercicioId] = useState<string>("")
   const [nuevoPeso, setNuevoPeso] = useState("1.0")
 
@@ -1256,11 +1257,16 @@ function ComposicionModal({
   }
 
   async function handleReorder(pair: TpEjercicio, direction: "up" | "down") {
+    // Serializamos el reorden: la operacion son 3 PATCH secuenciales (workaround
+    // del UNIQUE via orden temporal). Sin este guard, clicks rapidos/dobles lanzan
+    // handleReorder concurrentes cuyos PATCH se pisan y dejan `orden` inconsistente.
+    if (reordering) return
     const sorted = [...pairs].sort((a, b) => a.orden - b.orden)
     const idx = sorted.findIndex((p) => p.id === pair.id)
     const swapIdx = direction === "up" ? idx - 1 : idx + 1
     if (swapIdx < 0 || swapIdx >= sorted.length) return
     const other = sorted[swapIdx]!
+    setReordering(true)
     setError(null)
     try {
       // Swap atomico no es posible por UNIQUE — usamos un orden temporal alto.
@@ -1281,6 +1287,8 @@ function ComposicionModal({
       await fetchPairs()
     } catch (e) {
       setError(String(e))
+    } finally {
+      setReordering(false)
     }
   }
 
@@ -1340,8 +1348,8 @@ function ComposicionModal({
                                 <button
                                   type="button"
                                   onClick={() => handleReorder(p, "up")}
-                                  disabled={idx === 0}
-                                  className="p-1 hover:bg-surface-alt rounded disabled:opacity-30"
+                                  disabled={idx === 0 || reordering}
+                                  className="p-1 hover:bg-surface-alt rounded disabled:opacity-30 disabled:cursor-not-allowed"
                                   title="Subir"
                                 >
                                   <ArrowUp className="h-3 w-3" />
@@ -1349,8 +1357,8 @@ function ComposicionModal({
                                 <button
                                   type="button"
                                   onClick={() => handleReorder(p, "down")}
-                                  disabled={idx === arr.length - 1}
-                                  className="p-1 hover:bg-surface-alt rounded disabled:opacity-30"
+                                  disabled={idx === arr.length - 1 || reordering}
+                                  className="p-1 hover:bg-surface-alt rounded disabled:opacity-30 disabled:cursor-not-allowed"
                                   title="Bajar"
                                 >
                                   <ArrowDown className="h-3 w-3" />
@@ -1358,7 +1366,8 @@ function ComposicionModal({
                                 <button
                                   type="button"
                                   onClick={() => handleRemove(p.ejercicio_id)}
-                                  className="p-1 hover:bg-danger-soft hover:text-danger rounded"
+                                  disabled={reordering}
+                                  className="p-1 hover:bg-danger-soft hover:text-danger rounded disabled:opacity-30 disabled:cursor-not-allowed"
                                   title="Quitar"
                                 >
                                   <Trash2 className="h-3 w-3" />
