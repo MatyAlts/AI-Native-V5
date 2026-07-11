@@ -1,7 +1,8 @@
-import { HeroStatsPanel, type HeroStat } from "@platform/ui"
+import { type HeroStat, HeroStatsPanel } from "@platform/ui"
+import { useQuery } from "@tanstack/react-query"
 import { Activity, Building2, GraduationCap, Layers } from "lucide-react"
 import type { ReactNode } from "react"
-import { useEffect, useState } from "react"
+import { comisionesApi, universidadesApi } from "../lib/api"
 
 /**
  * HomePage admin — rediseño v2 (layout dashboard 2026 light).
@@ -15,71 +16,73 @@ const STATUS_LABEL: Record<string, { label: string; tone: "success" | "warning" 
   error: { label: "Caído", tone: "danger" },
 }
 
-interface KpiState {
-  value: number | null
-  loading: boolean
-  error: string | null
-}
-
-const initialKpi: KpiState = { value: null, loading: true, error: null }
-
-async function fetchCount(url: string): Promise<number> {
-  const r = await fetch(url)
-  if (!r.ok) throw new Error(`HTTP ${r.status}`)
-  const body = await r.json()
-  if (Array.isArray(body)) return body.length
-  if (body && typeof body === "object") {
-    const asData = body as { data?: unknown; items?: unknown }
-    if (Array.isArray(asData.data)) return asData.data.length
-    if (Array.isArray(asData.items)) return asData.items.length
-  }
-  throw new Error("Unexpected response shape")
-}
-
 export function HomePage(): ReactNode {
-  const [apiStatus, setApiStatus] = useState<string>("verificando...")
-  const [universidades, setUniversidades] = useState<KpiState>(initialKpi)
-  const [comisiones, setComisiones] = useState<KpiState>(initialKpi)
+  // KPIs institucionales via TanStack Query (patrón ComisionesPage) — reemplaza
+  // el useState+fetch a mano, que arrastraba estado stale y el gotcha de
+  // useCallback en deps de useEffect.
+  //
+  // NB-19: el conteo real sale de `meta.total` del backend. Hoy los endpoints
+  // de universidades/comisiones NO populan `total` (queda null) y paginan por
+  // cursor con `limit` (máx 200); antes se pegaba sin `limit` → default 50 →
+  // el KPI truncaba a 50. Pedimos `limit: 200` (máximo) y usamos
+  // `meta.total ?? data.length`: correcto de punta a punta para la escala del
+  // piloto y listo para cuando el backend empiece a devolver el total real.
+  const universidadesQuery = useQuery({
+    queryKey: ["universidades", { limit: 200 }],
+    queryFn: () => universidadesApi.list({ limit: 200 }),
+  })
 
-  useEffect(() => {
-    fetch("/api/v1/health")
-      .then((r) => r.json())
-      .then((d) => setApiStatus(d.status ?? "unknown"))
-      .catch(() => setApiStatus("no responde"))
-  }, [])
+  // NB-22: el KPI contaba con `?estado=activa`, un estado que NO existe en el
+  // modelo `Comision` (ni el endpoint acepta ese query param) → contaba 0. El
+  // criterio real es el total de comisiones (no borradas) del tenant; el label
+  // pasa de "activas" a "registradas".
+  const comisionesQuery = useQuery({
+    queryKey: ["comisiones", { limit: 200 }],
+    queryFn: () => comisionesApi.list({ limit: 200 }),
+  })
 
-  useEffect(() => {
-    fetchCount("/api/v1/universidades")
-      .then((n) => setUniversidades({ value: n, loading: false, error: null }))
-      .catch((e) => setUniversidades({ value: null, loading: false, error: String(e) }))
-  }, [])
+  const healthQuery = useQuery({
+    queryKey: ["health"],
+    queryFn: async (): Promise<{ status?: string }> => {
+      const r = await fetch("/api/v1/health")
+      if (!r.ok) throw new Error(`HTTP ${r.status}`)
+      return r.json()
+    },
+  })
 
-  useEffect(() => {
-    fetchCount("/api/v1/comisiones?estado=activa")
-      .then((n) => setComisiones({ value: n, loading: false, error: null }))
-      .catch((e) => setComisiones({ value: null, loading: false, error: String(e) }))
-  }, [])
+  const universidadesTotal = universidadesQuery.data
+    ? (universidadesQuery.data.meta.total ?? universidadesQuery.data.data.length)
+    : null
+  const comisionesTotal = comisionesQuery.data
+    ? (comisionesQuery.data.meta.total ?? comisionesQuery.data.data.length)
+    : null
+
+  const apiStatus: string = healthQuery.isError
+    ? "no responde"
+    : healthQuery.data
+      ? (healthQuery.data.status ?? "unknown")
+      : "verificando..."
 
   const known = STATUS_LABEL[apiStatus]
 
   const stats: HeroStat[] = [
     {
       label: "Universidades",
-      value: universidades.loading
+      value: universidadesQuery.isLoading
         ? "..."
-        : universidades.value !== null
-          ? universidades.value.toLocaleString()
+        : universidadesTotal !== null
+          ? universidadesTotal.toLocaleString()
           : "—",
-      unit: universidades.error ? "sin datos" : "registradas",
+      unit: universidadesQuery.isError ? "sin datos" : "registradas",
     },
     {
       label: "Comisiones",
-      value: comisiones.loading
+      value: comisionesQuery.isLoading
         ? "..."
-        : comisiones.value !== null
-          ? comisiones.value.toLocaleString()
+        : comisionesTotal !== null
+          ? comisionesTotal.toLocaleString()
           : "—",
-      unit: "activas",
+      unit: comisionesQuery.isError ? "sin datos" : "registradas",
     },
     {
       label: "API Gateway",
@@ -102,8 +105,8 @@ export function HomePage(): ReactNode {
             Bienvenido
           </h1>
           <p className="text-sm text-muted leading-relaxed mt-1.5 max-w-xl">
-            Resumen del piloto y CRUDs institucionales: universidades, facultades, carreras,
-            planes, materias y comisiones.
+            Resumen del piloto y CRUDs institucionales: universidades, facultades, carreras, planes,
+            materias y comisiones.
           </p>
         </div>
       </header>
