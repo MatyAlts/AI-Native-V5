@@ -197,6 +197,33 @@ async def test_post_key_value_error_no_master_es_400(
     assert response.status_code == 400
 
 
+async def test_post_key_conflict_activa_devuelve_409(
+    client: AsyncClient, monkeypatch
+) -> None:
+    """NB-3: si el service raisea BYOKConflictError (ya hay una key activa
+    para (scope, scope_id, provider)), el route lo mapea a 409 — NO a 500."""
+    from ai_gateway.services.byok import BYOKConflictError
+
+    async def _fake_create(**kwargs):
+        raise BYOKConflictError(
+            "Ya existe una key BYOK activa para "
+            "(scope_type=tenant, scope_id=None, provider=anthropic)."
+        )
+
+    monkeypatch.setattr("ai_gateway.routes.byok.create_byok_key", _fake_create)
+    body = {
+        "scope_type": "tenant",
+        "scope_id": None,
+        "provider": "anthropic",
+        "plaintext_value": "sk-ant-secret-key123",
+    }
+    response = await client.post(
+        "/api/v1/byok/keys", json=body, headers=ADMIN_HEADERS
+    )
+    assert response.status_code == 409
+    assert "activa" in response.json()["detail"]
+
+
 async def test_post_key_happy_path(client: AsyncClient, monkeypatch) -> None:
     fake_id = str(uuid4())
 

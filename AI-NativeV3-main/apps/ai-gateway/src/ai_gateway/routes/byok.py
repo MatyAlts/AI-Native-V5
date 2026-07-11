@@ -27,6 +27,7 @@ from fastapi import APIRouter, Depends, Header, HTTPException, status
 from pydantic import BaseModel, Field, field_validator
 
 from ai_gateway.services.byok import (
+    BYOKConflictError,
     create_byok_key,
     get_byok_key_usage,
     list_byok_keys,
@@ -135,6 +136,7 @@ async def post_create_key(
     Errores comunes:
       - 400 si scope_type/scope_id inconsistentes
       - 403 si caller no es admin
+      - 409 si ya existe una key activa para (scope, scope_id, provider)
       - 500 si BYOK_MASTER_KEY no esta seteada
     """
     tenant_id, user_id = actor
@@ -148,6 +150,10 @@ async def post_create_key(
             plaintext_value=req.plaintext_value,
             monthly_budget_usd=req.monthly_budget_usd,
         )
+    except BYOKConflictError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT, detail=str(exc)
+        ) from exc
     except ValueError as exc:
         msg = str(exc)
         if "BYOK_MASTER_KEY" in msg:
