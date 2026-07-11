@@ -19,7 +19,7 @@
  *  - PageContainer + helpContent (key "ejercicios")
  */
 import { Badge, Modal, PageContainer } from "@platform/ui"
-import { Pencil, Plus, Sparkles, Trash2, Upload } from "lucide-react"
+import { AlertTriangle, Pencil, Plus, Sparkles, Trash2, Upload } from "lucide-react"
 import { useCallback, useEffect, useState } from "react"
 import {
   type Dificultad,
@@ -46,6 +46,7 @@ interface Props {
 type ModalState =
   | { kind: "closed" }
   | { kind: "create"; initial?: EjercicioCreate }
+  | { kind: "confirm-edit"; ejercicio: Ejercicio }
   | { kind: "edit"; ejercicio: Ejercicio }
   | { kind: "view"; ejercicio: Ejercicio }
   | { kind: "ai-wizard" }
@@ -394,7 +395,7 @@ export function EjerciciosView({ comisionId, getToken }: Props) {
                     <div className="inline-flex items-center gap-1">
                       <button
                         type="button"
-                        onClick={() => setModal({ kind: "edit", ejercicio: ej })}
+                        onClick={() => setModal({ kind: "confirm-edit", ejercicio: ej })}
                         className="p-1 hover:bg-border rounded"
                         title="Editar"
                       >
@@ -451,6 +452,41 @@ export function EjerciciosView({ comisionId, getToken }: Props) {
           onClose={closeModal}
           onImported={fetchList}
         />
+      )}
+
+      {modal.kind === "confirm-edit" && (
+        <Modal isOpen={true} onClose={closeModal} title="Editar ejercicio en uso" size="sm">
+          <div className="flex gap-3">
+            <AlertTriangle className="w-5 h-5 text-warning shrink-0 mt-0.5" />
+            <div className="space-y-2 text-sm">
+              <p>
+                Vas a editar <strong>{modal.ejercicio.titulo}</strong>. Este ejercicio es
+                reusable: puede estar asignado a TPs y tener entregas de alumnos.
+              </p>
+              <p className="text-muted">
+                Los cambios se aplican sobre esta misma version (no se crea una copia), asi
+                que afectan a todas las TPs que lo referencian y al contexto de las entregas
+                ya trabajadas. Revisa el impacto antes de guardar.
+              </p>
+            </div>
+          </div>
+          <div className="flex justify-end gap-2 mt-4">
+            <button
+              type="button"
+              onClick={closeModal}
+              className="px-3 py-1.5 border border-border rounded text-sm hover:bg-canvas"
+            >
+              Cancelar
+            </button>
+            <button
+              type="button"
+              onClick={() => setModal({ kind: "edit", ejercicio: modal.ejercicio })}
+              className="px-3 py-1.5 bg-warning text-white rounded text-sm hover:opacity-90"
+            >
+              Editar de todos modos
+            </button>
+          </div>
+        </Modal>
       )}
 
       {modal.kind === "confirm-delete" && (
