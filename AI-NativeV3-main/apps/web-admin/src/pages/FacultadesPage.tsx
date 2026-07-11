@@ -1,5 +1,6 @@
 import { HelpButton, PageContainer, StateMessage } from "@platform/ui"
-import { type ReactNode, useEffect, useState } from "react"
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
+import { type ReactNode, useState } from "react"
 import {
   type Facultad,
   type FacultadCreate,
@@ -11,76 +12,56 @@ import {
 import { helpContent } from "../utils/helpContent"
 
 export function FacultadesPage(): ReactNode {
-  const [universidades, setUniversidades] = useState<Universidad[]>([])
-  const [universidadId, setUniversidadId] = useState<string>("")
-  const [items, setItems] = useState<Facultad[]>([])
-  const [loading, setLoading] = useState(false)
-  const [loadingUnis, setLoadingUnis] = useState(false)
-  const [error, setError] = useState<string | null>(null)
+  // `selectedUniversidadId = null` = todavía no hubo selección manual; el id
+  // efectivo cae a la primera universidad cargada (auto-select del patrón viejo,
+  // ahora derivado en memoria en vez de un useEffect + setState).
+  const [selectedUniversidadId, setSelectedUniversidadId] = useState<string | null>(null)
   const [showForm, setShowForm] = useState(false)
-  const [deletingId, setDeletingId] = useState<string | null>(null)
 
-  const loadUniversidades = async () => {
-    setLoadingUnis(true)
-    setError(null)
-    try {
-      const res = await universidadesApi.list({ limit: 200 })
-      setUniversidades(res.data)
-      if (res.data.length > 0 && !universidadId) {
-        setUniversidadId(res.data[0]?.id ?? "")
-      }
-    } catch (e) {
-      setError(e instanceof HttpError ? `${e.status}: ${e.detail || e.title}` : String(e))
-    } finally {
-      setLoadingUnis(false)
-    }
-  }
+  const queryClient = useQueryClient()
 
-  const loadFacultades = async (uid: string) => {
-    if (!uid) {
-      setItems([])
-      return
-    }
-    setLoading(true)
-    setError(null)
-    try {
-      const res = await facultadesApi.list({ universidad_id: uid, limit: 200 })
-      setItems(res.data)
-    } catch (e) {
-      setError(e instanceof HttpError ? `${e.status}: ${e.detail || e.title}` : String(e))
-    } finally {
-      setLoading(false)
-    }
-  }
+  const universidadesQuery = useQuery({
+    queryKey: ["universidades", { limit: 200 }],
+    queryFn: () => universidadesApi.list({ limit: 200 }),
+  })
 
-  // biome-ignore lint/correctness/useExhaustiveDependencies: loadUniversidades — fetch mount-only; el handler usa setState con identidad estable.
-  useEffect(() => {
-    void loadUniversidades()
-  }, [])
+  const universidades: Universidad[] = universidadesQuery.data?.data ?? []
+  const universidadId = selectedUniversidadId ?? universidades[0]?.id ?? ""
 
-  // biome-ignore lint/correctness/useExhaustiveDependencies: loadFacultades — depende solo de universidadId; el handler captura el arg en cada call.
-  useEffect(() => {
-    void loadFacultades(universidadId)
-  }, [universidadId])
+  // Server-side filter: facultadesApi.list soporta universidad_id.
+  const facultadesQuery = useQuery({
+    queryKey: ["facultades", { universidad_id: universidadId, limit: 200 }],
+    queryFn: () => facultadesApi.list({ universidad_id: universidadId, limit: 200 }),
+    enabled: !!universidadId,
+  })
+
+  const deleteMutation = useMutation({
+    mutationFn: (id: string) => facultadesApi.delete(id),
+    onSuccess: () => void queryClient.invalidateQueries({ queryKey: ["facultades"] }),
+  })
+
+  const items: Facultad[] = facultadesQuery.data?.data ?? []
+
+  const loadingUnis = universidadesQuery.isLoading
+  const loading = facultadesQuery.isFetching && !!universidadId
+
+  const queryError =
+    universidadesQuery.error || facultadesQuery.error || deleteMutation.error
+  const error = queryError
+    ? queryError instanceof HttpError
+      ? `${queryError.status}: ${queryError.detail || queryError.title}`
+      : String(queryError)
+    : null
 
   const uniMap = new Map(universidades.map((u) => [u.id, u]))
 
-  const handleDelete = async (f: Facultad) => {
+  const handleDelete = (f: Facultad) => {
     if (
       !window.confirm(`¿Eliminar la facultad ${f.nombre}? Esta acción es lógica (soft-delete).`)
     ) {
       return
     }
-    setDeletingId(f.id)
-    setError(null)
-    try {
-      await facultadesApi.delete(f.id)
-      await loadFacultades(universidadId)
-    } catch (e) {
-      setError(e instanceof HttpError ? `${e.status}: ${e.detail || e.title}` : String(e))
-    } finally {
-      setDeletingId(null)
-    }
+    deleteMutation.mutate(f.id)
   }
 
   return (
@@ -115,7 +96,7 @@ export function FacultadesPage(): ReactNode {
             ) : (
               <select
                 value={universidadId}
-                onChange={(e) => setUniversidadId(e.target.value)}
+                onChange={(e) => setSelectedUniversidadId(e.target.value)}
                 className={inputClass}
               >
                 {universidades.map((u) => (
@@ -131,9 +112,9 @@ export function FacultadesPage(): ReactNode {
         {showForm && universidadId && (
           <FacultadForm
             universidadId={universidadId}
-            onCreated={async () => {
+            onCreated={() => {
               setShowForm(false)
-              await loadFacultades(universidadId)
+              void queryClient.invalidateQueries({ queryKey: ["facultades"] })
             }}
           />
         )}
@@ -181,10 +162,12 @@ export function FacultadesPage(): ReactNode {
                       <button
                         type="button"
                         onClick={() => handleDelete(f)}
-                        disabled={deletingId === f.id}
+                        disabled={deleteMutation.isPending && deleteMutation.variables === f.id}
                         className="text-xs text-danger px-2 py-1 rounded hover:bg-danger-soft transition-colors disabled:opacity-50"
                       >
-                        {deletingId === f.id ? "Eliminando…" : "Eliminar"}
+                        {deleteMutation.isPending && deleteMutation.variables === f.id
+                          ? "Eliminando…"
+                          : "Eliminar"}
                       </button>
                     </td>
                   </tr>
@@ -210,21 +193,21 @@ function FacultadForm({
     nombre: "",
     codigo: "",
   })
-  const [submitting, setSubmitting] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
-  const submit = async (e: React.FormEvent) => {
+  const createMutation = useMutation({
+    mutationFn: (data: FacultadCreate) => facultadesApi.create(data),
+    onSuccess: () => onCreated(),
+    onError: (err) =>
+      setError(
+        err instanceof HttpError ? `${err.status}: ${err.detail || err.title}` : String(err),
+      ),
+  })
+
+  const submit = (e: React.FormEvent) => {
     e.preventDefault()
-    setSubmitting(true)
     setError(null)
-    try {
-      await facultadesApi.create({ ...form, universidad_id: universidadId })
-      onCreated()
-    } catch (e) {
-      setError(e instanceof HttpError ? `${e.status}: ${e.detail || e.title}` : String(e))
-    } finally {
-      setSubmitting(false)
-    }
+    createMutation.mutate({ ...form, universidad_id: universidadId })
   }
 
   return (
@@ -292,10 +275,10 @@ function FacultadForm({
       <div className="flex justify-end gap-2">
         <button
           type="submit"
-          disabled={submitting}
+          disabled={createMutation.isPending}
           className="rounded-md bg-accent-brand text-white px-4 py-2 text-sm font-medium hover:bg-accent-brand-deep disabled:opacity-50"
         >
-          {submitting ? "Creando..." : "Crear"}
+          {createMutation.isPending ? "Creando..." : "Crear"}
         </button>
       </div>
     </form>
