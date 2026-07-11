@@ -19,15 +19,18 @@ import { ArrowRight, ChevronLeft, FileCheck, Inbox } from "lucide-react"
 import { useEffect, useState } from "react"
 import {
   type CalificacionCreate,
+  type EjercicioEstado,
   type EntregaDocente,
   type EntregaEstado,
   type StudentEpisode,
   type TareaPractica,
+  type TpEjercicio,
   entregasDocenteApi,
   extractFinalCode,
   getEpisodeEvents,
   getStudentEpisodes,
   tareasPracticasApi,
+  tpEjerciciosApi,
 } from "../lib/api"
 import { useStudentProfiles } from "../hooks/useStudentProfiles"
 import { studentShortLabel } from "../utils/docenteLabels"
@@ -338,24 +341,33 @@ function EntregasListView({ comisionId, getToken, onSelectEntrega }: EntregasLis
   )
 }
 
+// Resuelve el titulo real de un ejercicio de la entrega contra la composicion
+// de la TP (tp_ejercicios, ADR-047). Empareja por `ejercicio_id` (identidad
+// estable): si el orden cambio, el feedback sigue apuntando al ejercicio
+// correcto. Fallback a `orden` solo para entregas legacy sin `ejercicio_id`.
+function resolveTituloEjercicio(ej: EjercicioEstado, tpEjercicios: TpEjercicio[]): string | null {
+  const match = ej.ejercicio_id
+    ? tpEjercicios.find((t) => t.ejercicio_id === ej.ejercicio_id)
+    : tpEjercicios.find((t) => t.orden === ej.orden)
+  return match?.ejercicio.titulo ?? null
+}
+
 // ─── EjercicioPanel (codigo del estudiante por episodio) ───────────────
 
 interface EjercicioPanelProps {
   ej: { orden: number; completado: boolean; completed_at: string | null }
   resolvedEpisodeId: string | null
-  tarea: TareaPractica | null
+  // Titulo real del ejercicio, ya resuelto por el padre (match por ejercicio_id).
+  // `null` = no se pudo resolver → cae al fallback "Ejercicio {orden}".
+  titulo: string | null
   getToken: () => Promise<string | null>
 }
 
-function EjercicioPanel({ ej, resolvedEpisodeId, tarea, getToken }: EjercicioPanelProps) {
+function EjercicioPanel({ ej, resolvedEpisodeId, titulo, getToken }: EjercicioPanelProps) {
   const [expanded, setExpanded] = useState(false)
   const [code, setCode] = useState<string | null>(null)
   const [loading, setLoading] = useState(false)
   const [fetchError, setFetchError] = useState<string | null>(null)
-
-  const ejercicioInfo = tarea?.ejercicios?.find(
-    (e: { orden: number }) => e.orden === ej.orden,
-  )
 
   function handleToggle() {
     const next = !expanded
@@ -390,9 +402,7 @@ function EjercicioPanel({ ej, resolvedEpisodeId, tarea, getToken }: EjercicioPan
         >
           {ej.completado ? "✓" : ej.orden}
         </span>
-        <span className="text-ink flex-1">
-          {ejercicioInfo ? ejercicioInfo.titulo : `Ejercicio ${ej.orden}`}
-        </span>
+        <span className="text-ink flex-1">{titulo ?? `Ejercicio ${ej.orden}`}</span>
         {resolvedEpisodeId && (
           <span className="text-xs font-mono text-muted">ep: {resolvedEpisodeId.slice(0, 8)}…</span>
         )}
@@ -468,6 +478,26 @@ function GradingFormView({ entrega, tarea, getToken, onBack, onUpdated }: Gradin
 
   // Resolver episode_ids: primero de ejercicio_estados, fallback a analytics (por orden temporal)
   const [resolvedEpisodeMap, setResolvedEpisodeMap] = useState<Record<number, string>>({})
+
+  // Composicion de la TP (tp_ejercicios, ADR-047): fuente del titulo real de
+  // cada ejercicio + su `ejercicio_id` estable. `getTareaPractica` no popula
+  // `tarea.ejercicios`, por eso se carga aca aparte (best-effort).
+  const [tpEjercicios, setTpEjercicios] = useState<TpEjercicio[]>([])
+
+  useEffect(() => {
+    let cancelled = false
+    tpEjerciciosApi
+      .list(entrega.tarea_practica_id, getToken)
+      .then((items) => {
+        if (!cancelled) setTpEjercicios(items)
+      })
+      .catch(() => {
+        if (!cancelled) setTpEjercicios([])
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [entrega.tarea_practica_id, getToken])
 
   useEffect(() => {
     const estados = entrega.ejercicio_estados ?? []
@@ -622,10 +652,10 @@ function GradingFormView({ entrega, tarea, getToken, onBack, onUpdated }: Gradin
               .sort((a, b) => a.orden - b.orden)
               .map((ej) => (
                 <EjercicioPanel
-                  key={ej.orden}
+                  key={ej.ejercicio_id ?? ej.orden}
                   ej={ej}
                   resolvedEpisodeId={resolvedEpisodeMap[ej.orden] ?? null}
-                  tarea={tarea}
+                  titulo={resolveTituloEjercicio(ej, tpEjercicios)}
                   getToken={getToken}
                 />
               ))}
