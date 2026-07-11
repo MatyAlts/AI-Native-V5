@@ -9,7 +9,8 @@
  * dev_trust_headers (X-User-Roles).
  */
 import { PageContainer } from "@platform/ui"
-import { type ReactNode, useCallback, useEffect, useMemo, useState } from "react"
+import { useInfiniteQuery } from "@tanstack/react-query"
+import { type ReactNode, useMemo, useState } from "react"
 import {
   type GovernanceEvent,
   type GovernanceEventsFilters,
@@ -59,50 +60,70 @@ function filtersToApiArgs(f: FilterState, cursor?: string): GovernanceEventsFilt
   return out
 }
 
-export function GovernanceEventsPage(): ReactNode {
-  const [filters, setFilters] = useState<FilterState>(EMPTY_FILTERS)
-  const [events, setEvents] = useState<GovernanceEvent[]>([])
-  const [cursorNext, setCursorNext] = useState<string | null>(null)
-  const [countsByCategory, setCountsByCategory] = useState<Record<string, number>>({})
-  const [countsBySeverity, setCountsBySeverity] = useState<Record<string, number>>({})
-  const [loading, setLoading] = useState(false)
-  const [error, setError] = useState<string | null>(null)
+// Suma conteos across paginas: cada respuesta trae conteos POR PAGINA
+// (no globales — el total agregado viaja en `n_total_estimate`), asi que al
+// paginar hay que acumularlos sumando clave a clave, no reemplazar.
+function sumCounts(maps: Array<Record<string, number>> | undefined): Record<string, number> {
+  const out: Record<string, number> = {}
+  for (const m of maps ?? []) {
+    for (const [k, v] of Object.entries(m)) {
+      out[k] = (out[k] ?? 0) + v
+    }
+  }
+  return out
+}
 
-  const load = useCallback(
-    async (currentFilters: FilterState, append: boolean, cursor?: string) => {
-      setLoading(true)
-      setError(null)
-      try {
-        const r = await governanceApi.listEvents(filtersToApiArgs(currentFilters, cursor))
-        setCursorNext(r.cursor_next)
-        setCountsByCategory(r.counts_by_category)
-        setCountsBySeverity(r.counts_by_severity)
-        setEvents((prev) => (append ? [...prev, ...r.events] : r.events))
-      } catch (e) {
-        setError(e instanceof HttpError ? `${e.status}: ${e.detail}` : (e as Error).message)
-      } finally {
-        setLoading(false)
-      }
-    },
-    [],
+export function GovernanceEventsPage(): ReactNode {
+  // `filters` = borrador del form; `appliedFilters` = lo que dispara la query.
+  // Separarlos evita refetch en cada tecla: solo "Aplicar filtros" promueve el
+  // borrador a la query key, y ese cambio de key resetea la acumulacion de
+  // paginas (la cache arranca de cero para el nuevo filtro).
+  const [filters, setFilters] = useState<FilterState>(EMPTY_FILTERS)
+  const [appliedFilters, setAppliedFilters] = useState<FilterState>(EMPTY_FILTERS)
+
+  const query = useInfiniteQuery({
+    queryKey: ["governance-events", appliedFilters],
+    queryFn: ({ pageParam }) =>
+      governanceApi.listEvents(filtersToApiArgs(appliedFilters, pageParam)),
+    initialPageParam: undefined as string | undefined,
+    getNextPageParam: (lastPage) => lastPage.cursor_next ?? undefined,
+  })
+
+  // Acumulacion: aplanar eventos y sumar conteos across TODAS las paginas
+  // cargadas. useInfiniteQuery mantiene el array de paginas; "Cargar mas" hace
+  // append de una pagina nueva sin pisar las previas.
+  const events = useMemo<GovernanceEvent[]>(
+    () => query.data?.pages.flatMap((p) => p.events) ?? [],
+    [query.data],
+  )
+  const countsByCategory = useMemo(
+    () => sumCounts(query.data?.pages.map((p) => p.counts_by_category)),
+    [query.data],
+  )
+  const countsBySeverity = useMemo(
+    () => sumCounts(query.data?.pages.map((p) => p.counts_by_severity)),
+    [query.data],
   )
 
-  // Carga inicial con filtros vacios
-  useEffect(() => {
-    void load(EMPTY_FILTERS, false)
-  }, [load])
+  const loading = query.isFetching
+  const cursorNext = query.hasNextPage
+  const error = query.error
+    ? query.error instanceof HttpError
+      ? `${query.error.status}: ${query.error.detail}`
+      : (query.error as Error).message
+    : null
 
   function handleApplyFilters() {
-    void load(filters, false)
+    setAppliedFilters(filters)
   }
 
   function handleReset() {
     setFilters(EMPTY_FILTERS)
-    void load(EMPTY_FILTERS, false)
+    setAppliedFilters(EMPTY_FILTERS)
   }
 
   function handleLoadMore() {
-    if (cursorNext) void load(filters, true, cursorNext)
+    if (query.hasNextPage && !query.isFetchingNextPage) void query.fetchNextPage()
   }
 
   function handleExportCsv() {
