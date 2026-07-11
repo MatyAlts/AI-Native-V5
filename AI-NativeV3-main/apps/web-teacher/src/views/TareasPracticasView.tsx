@@ -318,8 +318,9 @@ export function TareasPracticasView({ comisionId, getToken }: Props) {
               Todavía no hay TPs en esta comisión
             </h2>
             <p className="text-sm text-muted leading-relaxed max-w-sm mx-auto mb-5">
-              Empezá creando un TP a mano o pedile a la IA un punto de partida que después podés
-              editar a fondo.
+              Creá el TP y después componelo con ejercicios del banco desde el botón
+              &quot;Composición&quot; de la card. Los ejercicios viven en <code>/ejercicios</code> y
+              se reutilizan entre TPs.
             </p>
             <div className="flex items-center justify-center gap-2">
               <button
