@@ -10,6 +10,7 @@ En tests: identity re-ranker que devuelve scores 1.0 para todos.
 
 from __future__ import annotations
 
+import asyncio
 import os
 from abc import ABC, abstractmethod
 from functools import lru_cache
@@ -51,12 +52,17 @@ class CrossEncoderReranker(BaseReranker):
     async def rerank(self, query: str, documents: list[str]) -> list[float]:
         if not documents:
             return []
+        # CrossEncoder.predict() es CPU-bound (P-10/A2.9): corre en un thread
+        # para NO bloquear el event loop. El resultado (los scores) no cambia.
+        return await asyncio.to_thread(self._predict_sync, query, documents)
+
+    def _predict_sync(self, query: str, documents: list[str]) -> list[float]:
+        import math
+
         model = self._ensure_model()
         pairs = [(query, d) for d in documents]
         scores = model.predict(pairs, show_progress_bar=False).tolist()
         # BGE devuelve logits; convertir a 0-1 via sigmoid
-        import math
-
         return [1 / (1 + math.exp(-s)) for s in scores]
 
 

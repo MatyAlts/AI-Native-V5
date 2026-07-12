@@ -12,6 +12,7 @@ para español, benchmarks superiores a ada-002).
 
 from __future__ import annotations
 
+import asyncio
 import hashlib
 import logging
 import os
@@ -152,6 +153,12 @@ class SentenceTransformerEmbedder(BaseEmbedder):
     async def embed_documents(self, texts: list[str]) -> list[list[float]]:
         # e5 convention: prefijo "passage: " para docs
         prefixed = [f"passage: {t}" for t in texts]
+        # sentence-transformers.encode() es CPU-bound (P-10/A2.9): corre en un
+        # thread para NO bloquear el event loop del servicio async. El resultado
+        # (los embeddings) es idéntico — solo cambia dónde se computa.
+        return await asyncio.to_thread(self._encode_documents_sync, prefixed)
+
+    def _encode_documents_sync(self, prefixed: list[str]) -> list[list[float]]:
         model = self._ensure_model()
         vectors = model.encode(
             prefixed,
@@ -162,6 +169,10 @@ class SentenceTransformerEmbedder(BaseEmbedder):
         return vectors.tolist()
 
     async def embed_query(self, text: str) -> list[float]:
+        # Idem embed_documents: el cómputo CPU-bound va a un thread (P-10/A2.9).
+        return await asyncio.to_thread(self._encode_query_sync, text)
+
+    def _encode_query_sync(self, text: str) -> list[float]:
         # e5 convention: prefijo "query: " para queries
         model = self._ensure_model()
         vec = model.encode([f"query: {text}"], normalize_embeddings=True, convert_to_numpy=True)
