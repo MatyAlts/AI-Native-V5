@@ -8,7 +8,8 @@ import logging
 from uuid import UUID
 
 import httpx
-from fastapi import APIRouter, Depends, Query, status
+import redis.asyncio as aioredis
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from academic_service.auth import User, get_current_user, get_db, require_permission
@@ -31,6 +32,11 @@ from academic_service.schemas import (
 )
 from academic_service.services import ComisionService, PeriodoService
 from academic_service.services.comision_service import assert_comision_access
+from academic_service.services.rate_limit import (
+    InviteJoinRateLimiter,
+    RateLimitConfig,
+    actor_principal,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -42,6 +48,38 @@ _CLASSIFIER_HASH_FALLBACK = "d" * 64
 
 periodos_router = APIRouter(prefix="/api/v1/periodos", tags=["periodos"])
 comisiones_router = APIRouter(prefix="/api/v1/comisiones", tags=["comisiones"])
+
+
+# Cliente Redis + limiter perezosos (compartidos por proceso). `redis.from_url`
+# no conecta eagerly — la conexión se abre en el primer comando. Se cachean para
+# no reconstruirlos por request.
+_rate_limit_redis: aioredis.Redis | None = None
+_invite_rate_limiter: InviteJoinRateLimiter | None = None
+
+
+def get_invite_rate_limiter() -> InviteJoinRateLimiter:
+    """Dependency del limiter de canje de invite_code (A0.7).
+
+    Override en tests con `app.dependency_overrides` para inyectar un limiter
+    sobre fakeredis con topes bajos.
+    """
+    global _rate_limit_redis, _invite_rate_limiter
+    if _invite_rate_limiter is None:
+        _rate_limit_redis = aioredis.from_url(
+            settings.rate_limit_redis_url, decode_responses=True
+        )
+        _invite_rate_limiter = InviteJoinRateLimiter(
+            _rate_limit_redis,
+            actor_config=RateLimitConfig(
+                window_seconds=settings.invite_join_actor_window_seconds,
+                max_requests=settings.invite_join_actor_max_attempts,
+            ),
+            code_config=RateLimitConfig(
+                window_seconds=settings.invite_join_code_window_seconds,
+                max_requests=settings.invite_join_code_max_failures,
+            ),
+        )
+    return _invite_rate_limiter
 
 # Roles que pueden ver el `invite_code` (y el `tenant_id`) de una comisión.
 # El estudiante NO: con el código se auto-inscribe sin invitación del docente
@@ -139,8 +177,10 @@ async def create_comision(
 @comisiones_router.post("/join", response_model=ComisionOut)
 async def join_comision(
     data: ComisionJoinRequest,
+    request: Request,
     user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
+    limiter: InviteJoinRateLimiter = Depends(get_invite_rate_limiter),
 ) -> ComisionOut:
     """Auto-inscripción del estudiante con invite_code resuelto server-side.
 
@@ -151,9 +191,42 @@ async def join_comision(
     autenticado. El estudiante solo puede inscribirse a SÍ MISMO (el service
     fuerza `student_pseudonym = user.id`), por eso no exige el permiso Casbin
     `inscripcion:create` (que daría poder de inscribir a terceros).
+
+    Rate limiting dedicado (A0.7): el `invite_code` es brute-forceable (6 chars).
+    Se limita por actor (user_id, fallback IP) y por código (solo fallos) para
+    cortar la fuerza bruta sin frenar al alumno legítimo (entra a la primera).
     """
+    client_host = request.client.host if request.client else None
+    actor = actor_principal(str(user.id) if user.id else None, client_host)
+    code = data.invite_code.strip().upper()
+
+    # 1) Bucket por actor: registra + evalúa este intento.
+    actor_result = await limiter.check_actor(actor)
+    if not actor_result.allowed:
+        raise HTTPException(
+            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+            detail="Demasiados intentos de canje de código. Probá de nuevo en un momento.",
+            headers={"Retry-After": str(actor_result.retry_after_seconds or 60)},
+        )
+
+    # 2) Bucket por código: ¿ya acumuló demasiados fallos (fuerza bruta
+    #    distribuida)? Peek sin incrementar — corta antes de resolver.
+    code_result = await limiter.code_is_exhausted(code)
+    if not code_result.allowed:
+        raise HTTPException(
+            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+            detail="Demasiados intentos sobre este código. Probá de nuevo más tarde.",
+            headers={"Retry-After": str(code_result.retry_after_seconds or 60)},
+        )
+
     svc = ComisionService(db)
-    comision = await svc.join_by_invite_code(data.invite_code, user)
+    try:
+        comision = await svc.join_by_invite_code(data.invite_code, user)
+    except HTTPException as exc:
+        # Código inválido → cuenta como fallo del código (fuerza bruta).
+        if exc.status_code == status.HTTP_404_NOT_FOUND:
+            await limiter.register_code_failure(code)
+        raise
     out = ComisionOut.model_validate(comision)
     # El `tenant_id` NO debe salir al alumno (habilitaría forjar
     # X-Tenant-Id contra servicios internos — fix QA #2). El web-student

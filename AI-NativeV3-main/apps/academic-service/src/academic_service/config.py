@@ -49,6 +49,17 @@ class Settings(BaseSettings):
     )
     db_echo: bool = Field(default=False)
 
+    # Rate limiting del canje de invite_code (A0.7 — anti fuerza bruta).
+    # Redis compartido con el resto del stack (misma db index que el gateway).
+    rate_limit_redis_url: str = Field(default="redis://127.0.0.1:6379/4")
+    # Bucket por actor (user_id | IP): tope de intentos de canje por ventana.
+    invite_join_actor_max_attempts: int = Field(default=10, ge=1)
+    invite_join_actor_window_seconds: int = Field(default=60, ge=1)
+    # Bucket por código: tope de intentos FALLIDOS por ventana (fuerza bruta
+    # distribuida sobre un mismo código). Los aciertos no cuentan.
+    invite_join_code_max_failures: int = Field(default=20, ge=1)
+    invite_join_code_window_seconds: int = Field(default=300, ge=1)
+
     # External services (Sec 11 epic ai-native-completion: TP-gen IA)
     governance_service_url: str = Field(default="http://127.0.0.1:8010")
     ai_gateway_url: str = Field(default="http://127.0.0.1:8011")
