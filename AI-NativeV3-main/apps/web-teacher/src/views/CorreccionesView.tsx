@@ -14,9 +14,10 @@
  *     - Boton "Devolver" (visible si ya fue calificada) → POST .../return.
  */
 import { Badge, Input, PageContainer } from "@platform/ui"
+import { useInfiniteQuery } from "@tanstack/react-query"
 import { Link } from "@tanstack/react-router"
 import { ArrowRight, ChevronLeft, FileCheck, Inbox, Search, X } from "lucide-react"
-import { useEffect, useMemo, useState } from "react"
+import { useEffect, useMemo, useRef, useState } from "react"
 import { useStudentProfiles } from "../hooks/useStudentProfiles"
 import {
   type CalificacionCreate,
@@ -110,10 +111,7 @@ interface EntregasListViewProps {
 }
 
 function EntregasListView({ comisionId, getToken, onSelectEntrega }: EntregasListViewProps) {
-  const [entregas, setEntregas] = useState<EntregaDocente[]>([])
   const [tareasByID, setTareasByID] = useState<Record<string, TareaPractica>>({})
-  const [loading, setLoading] = useState(true)
-  const [error, setError] = useState<string | null>(null)
   const [estadoFilter, setEstadoFilter] = useState<EntregaEstado | "">("")
   // Búsqueda por alumno (FR-5): filtra la lista en vivo por el dato de alumno
   // que la fila ya muestra — el nombre real (si el alumno se logueó) o el
@@ -121,53 +119,74 @@ function EntregasListView({ comisionId, getToken, onSelectEntrega }: EntregasLis
   // completo por si el docente pega/escribe el UUID.
   const [studentQuery, setStudentQuery] = useState("")
   const profilesMap = useStudentProfiles(comisionId, getToken)
+  // TPs que ya intentamos cargar (ok o falladas) para no re-pedirlas en cada
+  // render / página nueva. Enriquecimiento best-effort; una TP que falla no se
+  // reintenta. Keyeado por `tarea_practica_id` (UUID único por instancia,
+  // ADR-016) → no colisiona entre comisiones, no necesita reset.
+  const attemptedTareaIds = useRef<Set<string>>(new Set())
 
-  useEffect(() => {
-    if (!comisionId) return
-    let cancelled = false
-    setLoading(true)
-    setError(null)
-    setEntregas([])
-
-    entregasDocenteApi
-      .list(
+  // Paginación real (FR-3): `entregasDocenteApi.list` pagina server-side por
+  // cursor. `useInfiniteQuery` sigue `meta.cursor_next` y acumula las páginas;
+  // el botón "Cargar más" hace append sin pisar lo previo. El filtro por estado
+  // es server-side (parte de la queryKey → resetea la cache al cambiar); la
+  // búsqueda por alumno (FR-5) es client-side sobre TODO el set acumulado.
+  const query = useInfiniteQuery({
+    queryKey: ["entregas-docente", comisionId, estadoFilter],
+    queryFn: ({ pageParam }) =>
+      entregasDocenteApi.list(
         {
           comision_id: comisionId,
           ...(estadoFilter ? { estado: estadoFilter as EntregaEstado } : {}),
+          ...(pageParam ? { cursor: pageParam } : {}),
         },
         getToken,
-      )
-      .then(async (resp) => {
-        if (cancelled) return
-        const data = resp.data
-        setEntregas(data)
+      ),
+    initialPageParam: undefined as string | undefined,
+    getNextPageParam: (lastPage) => lastPage.meta.cursor_next ?? undefined,
+    enabled: !!comisionId,
+  })
 
-        // Fetch TPs para enriquecer la tabla (best-effort, no bloqueamos)
-        const tareaIds = [...new Set(data.map((e) => e.tarea_practica_id))]
-        const results = await Promise.allSettled(
-          tareaIds.map((id) => tareasPracticasApi.get(id, getToken).then((t) => ({ id, t }))),
-        )
-        if (cancelled) return
-        const map: Record<string, TareaPractica> = {}
-        for (const r of results) {
-          if (r.status === "fulfilled") map[r.value.id] = r.value.t
-          // Enriquecimiento best-effort: si una TP falla, la fila cae al
-          // fallback "TP: {id}", pero dejamos rastro en consola (no lo tragamos).
-          else console.error("[CorreccionesView] no se pudo cargar una TP:", r.reason)
-        }
-        setTareasByID(map)
-      })
-      .catch((e) => {
-        if (!cancelled) setError(String(e))
-      })
-      .finally(() => {
-        if (!cancelled) setLoading(false)
-      })
+  // Entregas acumuladas across todas las páginas cargadas. El filtro de estado y
+  // la búsqueda operan sobre este set (que crece con cada "Cargar más").
+  const entregas = useMemo<EntregaDocente[]>(
+    () => query.data?.pages.flatMap((p) => p.data) ?? [],
+    [query.data],
+  )
 
+  // `loading` = primer fetch sin datos aún (muestra skeletons). Los fetch de
+  // páginas siguientes NO reemplazan la lista (van al botón "Cargar más").
+  const loading = query.isLoading && !!comisionId
+  const error = query.error ? String(query.error) : null
+
+  // Enriquecimiento de TPs (best-effort): por cada tarea_practica_id nuevo en el
+  // set acumulado que aún no intentamos, pedimos la TP para mostrar código +
+  // título en la fila. Marcamos el id como intentado antes de disparar para no
+  // duplicar pedidos entre páginas.
+  useEffect(() => {
+    if (entregas.length === 0) return
+    const missing = [...new Set(entregas.map((e) => e.tarea_practica_id))].filter(
+      (id) => !attemptedTareaIds.current.has(id),
+    )
+    if (missing.length === 0) return
+    for (const id of missing) attemptedTareaIds.current.add(id)
+    let cancelled = false
+    Promise.allSettled(
+      missing.map((id) => tareasPracticasApi.get(id, getToken).then((t) => ({ id, t }))),
+    ).then((results) => {
+      if (cancelled) return
+      const map: Record<string, TareaPractica> = {}
+      for (const r of results) {
+        if (r.status === "fulfilled") map[r.value.id] = r.value.t
+        // Si una TP falla, la fila cae al fallback "TP: {id}", pero dejamos
+        // rastro en consola (no lo tragamos).
+        else console.error("[CorreccionesView] no se pudo cargar una TP:", r.reason)
+      }
+      if (Object.keys(map).length > 0) setTareasByID((prev) => ({ ...prev, ...map }))
+    })
     return () => {
       cancelled = true
     }
-  }, [comisionId, estadoFilter, getToken])
+  }, [entregas, getToken])
 
   if (!comisionId) {
     return (
@@ -188,13 +207,13 @@ function EntregasListView({ comisionId, getToken, onSelectEntrega }: EntregasLis
     returned: entregas.filter((e) => e.estado === "returned").length,
   }
 
-  // Filtro client-side por alumno sobre lo YA cargado. LIMITACIÓN: el listado
-  // pagina server-side (cursor/limit en `entregasDocenteApi.list`) pero esta
-  // vista sólo trae la primera página, así que la búsqueda alcanza únicamente
-  // a las entregas cargadas. Emparejamos contra el label visible
-  // (`studentShortLabel`: nombre real o `Est. xxxxxx`) y también contra el
-  // pseudónimo crudo. FOLLOW-UP: pasar el término al backend para búsqueda
-  // paginada real cuando `list` acepte un filtro por alumno.
+  // Filtro client-side por alumno sobre TODO lo cargado (FR-5). La vista ahora
+  // acumula páginas vía "Cargar más" (FR-3), así que la búsqueda alcanza cada
+  // entrega ya traída; para cubrir el resto de la comisión, el docente carga
+  // más páginas. Emparejamos contra el label visible (`studentShortLabel`:
+  // nombre real o `Est. xxxxxx`) y también contra el pseudónimo crudo.
+  // FOLLOW-UP: pasar el término al backend para búsqueda paginada server-side
+  // cuando `list` acepte un filtro por alumno.
   const q = studentQuery.trim().toLowerCase()
   const filteredEntregas = q
     ? entregas.filter(
@@ -311,7 +330,9 @@ function EntregasListView({ comisionId, getToken, onSelectEntrega }: EntregasLis
           <p className="text-sm text-muted leading-relaxed max-w-md mx-auto">
             Ningún alumno coincide con “{studentQuery.trim()}”.
             <span className="block mt-1 text-xs text-muted-soft">
-              La búsqueda alcanza solo a las entregas ya cargadas en esta página.
+              {query.hasNextPage
+                ? "La búsqueda alcanza las entregas ya cargadas. Cargá más para ampliarla."
+                : "La búsqueda alcanza todas las entregas cargadas de esta comisión."}
             </span>
           </p>
         </div>
@@ -411,6 +432,39 @@ function EntregasListView({ comisionId, getToken, onSelectEntrega }: EntregasLis
             )
           })}
         </ul>
+      )}
+
+      {/* Cargar más (FR-3): sigue `meta.cursor_next`. Se oculta cuando el backend
+          no devuelve más cursor (no hay más páginas). Mientras hay una búsqueda
+          activa, cargar más amplía el set sobre el que corre el filtro (FR-5). */}
+      {!loading && !error && query.hasNextPage && (
+        <div className="flex justify-center pt-1">
+          <button
+            type="button"
+            onClick={() => {
+              if (!query.isFetchingNextPage) void query.fetchNextPage()
+            }}
+            disabled={query.isFetchingNextPage}
+            data-testid="entregas-load-more"
+            className="press-shrink inline-flex items-center gap-2 rounded-md border border-border bg-surface px-4 py-2 text-sm font-medium text-ink hover:bg-surface-alt disabled:cursor-not-allowed disabled:opacity-60 transition-colors"
+          >
+            {query.isFetchingNextPage ? (
+              <>
+                <span
+                  aria-hidden="true"
+                  className="inline-block w-4 h-4 border-2 border-t-transparent rounded-full motion-safe:animate-spin"
+                  style={{
+                    borderColor: "var(--color-accent-brand)",
+                    borderTopColor: "transparent",
+                  }}
+                />
+                Cargando…
+              </>
+            ) : (
+              "Cargar más"
+            )}
+          </button>
+        </div>
       )}
     </div>
   )
