@@ -6,13 +6,12 @@ vez de bufferear el body entero (`aread`). Para respuestas no-streaming se
 mantiene el forward buffered histórico.
 
 Se monta sólo el `proxy.router` en una app FastAPI pelada (sin el
-JWTMiddleware) para aislar la lógica de forwarding, y se parchea
-`httpx.AsyncClient` con un doble que expone si el body se buffereó.
+JWTMiddleware) para aislar la lógica de forwarding. El `httpx.AsyncClient`
+COMPARTIDO que el proxy espera en `app.state.http_client` (P-3) se sustituye
+por un doble que expone si el body se buffereó y si el client fue cerrado.
 """
 
 from __future__ import annotations
-
-from unittest.mock import patch
 
 import httpx
 import pytest
@@ -69,18 +68,20 @@ class _FakeClient:
         self.closed = True
 
 
-def _app() -> FastAPI:
+def _app(fake_client: _FakeClient) -> FastAPI:
     app = FastAPI()
     app.include_router(proxy.router)
+    # El proxy lee el client COMPARTIDO desde app.state.http_client (P-3): en
+    # prod lo crea el lifespan; acá lo inyectamos a mano.
+    app.state.http_client = fake_client
     return app
 
 
 async def _call(method: str, path: str, upstream: _FakeUpstream, **kwargs):
     fake_client = _FakeClient(upstream)
-    with patch.object(proxy.httpx, "AsyncClient", return_value=fake_client):
-        transport = ASGITransport(app=_app())
-        async with AsyncClient(transport=transport, base_url="http://test") as c:
-            resp = await c.request(method, path, **kwargs)
+    transport = ASGITransport(app=_app(fake_client))
+    async with AsyncClient(transport=transport, base_url="http://test") as c:
+        resp = await c.request(method, path, **kwargs)
     return resp, fake_client
 
 
@@ -104,9 +105,10 @@ async def test_streaming_response_no_se_bufferea() -> None:
     # buffereó el body entero con aread.
     assert upstream.aiter_raw_called is True
     assert upstream.aread_called is False
-    # Recursos liberados al terminar el stream.
+    # Recursos liberados al terminar el stream: se cierra el upstream, pero el
+    # client COMPARTIDO (P-3) sobrevive — NO se cierra por request.
     assert upstream.aclose_called is True
-    assert fake_client.closed is True
+    assert fake_client.closed is False
 
 
 @pytest.mark.asyncio
@@ -121,7 +123,8 @@ async def test_non_streaming_response_se_bufferea() -> None:
     assert upstream.aread_called is True
     assert upstream.aiter_raw_called is False
     assert upstream.aclose_called is True
-    assert fake_client.closed is True
+    # El client COMPARTIDO (P-3) NO se cierra por request.
+    assert fake_client.closed is False
 
 
 @pytest.mark.asyncio

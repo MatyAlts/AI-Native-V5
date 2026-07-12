@@ -3,6 +3,7 @@
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 
+import httpx
 import redis.asyncio as redis
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
@@ -25,7 +26,21 @@ from api_gateway.services.jwt_validator import ClerkJWTValidator
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     setup_observability(app)
-    yield
+    # HTTP client compartido de larga vida para el proxy (P-3). Se crea UNA vez
+    # al startup y se reusa en cada request (streaming y buffered) para no pagar
+    # una connection pool nueva por request. `limits` acota keepalive + techo
+    # concurrente hacia los servicios downstream. Se cierra en el shutdown.
+    app.state.http_client = httpx.AsyncClient(
+        timeout=settings.proxy_client_timeout_seconds,
+        limits=httpx.Limits(
+            max_keepalive_connections=settings.proxy_max_keepalive_connections,
+            max_connections=settings.proxy_max_connections,
+        ),
+    )
+    try:
+        yield
+    finally:
+        await app.state.http_client.aclose()
 
 
 app = FastAPI(

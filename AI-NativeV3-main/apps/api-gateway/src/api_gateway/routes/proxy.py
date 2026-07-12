@@ -161,43 +161,41 @@ async def proxy(full_path: str, request: Request) -> StreamingResponse:
 
     body = await request.body()
 
-    # El cliente httpx debe sobrevivir a esta función cuando la respuesta es
-    # streaming (se consume dentro del generador del StreamingResponse), por eso
-    # NO se usa `async with` — se cierra explícitamente en cada camino.
-    client = httpx.AsyncClient(timeout=120.0)
-    try:
-        upstream_request = client.build_request(
-            request.method,
-            url,
-            # `.multi_items()` preserva los parámetros REPETIDOS (ej.
-            # `?comision_id=a&comision_id=b` del corpus inter-jueces). Pasar el
-            # QueryParams directo a httpx los colapsa a uno solo (se queda con el
-            # último) — bug silencioso para cualquier endpoint con params repetidos.
-            params=request.query_params.multi_items(),
-            headers=headers,
-            content=body,
-        )
-        # `stream=True` devuelve los headers apenas llegan, sin leer el body:
-        # así se decide bufferear vs reenviar chunk-a-chunk mirando el
-        # content-type real, y las respuestas SSE fluyen incrementalmente.
-        upstream = await client.send(upstream_request, stream=True)
-    except Exception:
-        await client.aclose()
-        raise
+    # Client httpx COMPARTIDO de larga vida (P-3): creado una vez en el lifespan
+    # (`main.py`) y reusado en cada request para no abrir una connection pool
+    # nueva por request. NO se cierra acá — es del ciclo de vida de la app; el
+    # shutdown del lifespan lo cierra. Solo se cierra el `upstream` (la response).
+    client: httpx.AsyncClient = request.app.state.http_client
+
+    upstream_request = client.build_request(
+        request.method,
+        url,
+        # `.multi_items()` preserva los parámetros REPETIDOS (ej.
+        # `?comision_id=a&comision_id=b` del corpus inter-jueces). Pasar el
+        # QueryParams directo a httpx los colapsa a uno solo (se queda con el
+        # último) — bug silencioso para cualquier endpoint con params repetidos.
+        params=request.query_params.multi_items(),
+        headers=headers,
+        content=body,
+    )
+    # `stream=True` devuelve los headers apenas llegan, sin leer el body:
+    # así se decide bufferear vs reenviar chunk-a-chunk mirando el
+    # content-type real, y las respuestas SSE fluyen incrementalmente. Si `send`
+    # falla no hay `upstream` que cerrar (el client compartido NO se toca).
+    upstream = await client.send(upstream_request, stream=True)
 
     response_headers = _passthrough_response_headers(upstream.headers)
 
     if _is_streaming_response(upstream.headers.get("content-type")):
         # Camino streaming (SSE): reenviar los chunks a medida que llegan, sin
-        # bufferear. upstream + client se cierran cuando el generador termina
-        # (fin del stream o desconexión del cliente).
+        # bufferear. Solo el `upstream` se cierra cuando el generador termina
+        # (fin del stream o desconexión del cliente) — el client es compartido.
         async def forward_stream():
             try:
                 async for chunk in upstream.aiter_raw():
                     yield chunk
             finally:
                 await upstream.aclose()
-                await client.aclose()
 
         return StreamingResponse(
             forward_stream(),
@@ -206,12 +204,11 @@ async def proxy(full_path: str, request: Request) -> StreamingResponse:
         )
 
     # Camino no-streaming: bufferear la respuesta completa (comportamiento
-    # histórico intacto para todo endpoint no-SSE).
+    # histórico intacto para todo endpoint no-SSE). Solo se cierra el `upstream`.
     try:
         await upstream.aread()
     finally:
         await upstream.aclose()
-        await client.aclose()
 
     async def iter_content():
         yield upstream.content

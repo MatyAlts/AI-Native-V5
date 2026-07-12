@@ -65,6 +65,16 @@ class Settings(BaseSettings):
     governance_service_url: str = "http://127.0.0.1:8010"
     ai_gateway_url: str = "http://127.0.0.1:8011"
 
+    # HTTP client compartido del proxy (P-3). Un solo `httpx.AsyncClient` de
+    # larga vida (creado en el lifespan) reusa la connection pool entre TODAS
+    # las requests en vez de abrir una pool nueva por request (costoso: TCP +
+    # TLS handshake cada vez). Los `limits` acotan cuántas conexiones mantiene
+    # vivas (keepalive) y el techo total concurrente contra los servicios
+    # downstream — dimensionado para el gateway fronting ~10 servicios a escala.
+    proxy_client_timeout_seconds: float = 120.0
+    proxy_max_keepalive_connections: int = 100
+    proxy_max_connections: int = 200
+
     # Rate limiting (Redis-backed, por principal+path — middleware preexistente)
     rate_limit_redis_url: str = "redis://127.0.0.1:6379/4"
 
