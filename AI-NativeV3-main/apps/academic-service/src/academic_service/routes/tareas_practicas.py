@@ -32,6 +32,10 @@ from academic_service.services.comision_service import (
     OVERSIGHT_ROLES,
     assert_comision_access,
 )
+from academic_service.services.content_visibility import (
+    sanitize_ejercicio_for_student,
+    sanitize_tarea_practica_for_student,
+)
 from academic_service.services.tarea_practica_service import TareaPracticaService
 from academic_service.services.tp_ejercicio_service import TpEjercicioService
 
@@ -72,6 +76,7 @@ async def list_tareas_practicas(
       `published` — se fuerza server-side, sin importar el `estado` pedido,
       para no filtrar borradores/archivadas.
     """
+    is_staff = True  # oversight (comision_id=None) ve todo; se recalcula abajo
     if comision_id is not None:
         is_staff = await assert_comision_access(db, user, comision_id)
         if not is_staff:
@@ -87,6 +92,9 @@ async def list_tareas_practicas(
         cursor=cursor,
     )
     items = [TareaPracticaOut.model_validate(o) for o in objs]
+    if not is_staff:
+        # A0.3: el alumno no debe ver test cases ocultos (con respuesta esperada).
+        items = [sanitize_tarea_practica_for_student(it) for it in items]
     next_cursor = str(objs[-1].id) if len(objs) == limit else None
     return ListResponse(data=items, meta=ListMeta(cursor_next=next_cursor))
 
@@ -108,7 +116,11 @@ async def get_tarea_practica(
     is_staff = await assert_comision_access(db, user, obj.comision_id)
     if not is_staff and obj.estado != "published":
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="No encontrada")
-    return TareaPracticaOut.model_validate(obj)
+    out = TareaPracticaOut.model_validate(obj)
+    if not is_staff:
+        # A0.3: filtrar test cases ocultos (respuesta esperada) para el alumno.
+        out = sanitize_tarea_practica_for_student(out)
+    return out
 
 
 @router.patch("/{tarea_id}", response_model=TareaPracticaOut)
@@ -562,20 +574,39 @@ async def get_tarea_practica_ejercicios(
 
     ADR-047: lee de la tabla intermedia `tp_ejercicios` JOIN `ejercicios`
     (cada item incluye el Ejercicio embebido). Lista vacía = TP monolítica.
+
+    A0.3 (seguridad): antes este endpoint devolvía el Ejercicio COMPLETO
+    (test cases ocultos con respuesta esperada, `respuesta_pista`, banco
+    socrático, misconceptions) a cualquiera con `tarea_practica:read` —
+    incluidos los alumnos, que podían leer la solución. Ahora:
+      - valida acceso a la comisión de la TP (cierra el IDOR de paso);
+      - el alumno recibe la vista saneada (`sanitize_ejercicio_for_student`);
+      - docentes / oversight / tutor-service reciben el objeto completo.
     """
+    tp_svc = TareaPracticaService(db)
+    tp = await tp_svc.get(tarea_id)  # 404 si no existe
+    is_staff = await assert_comision_access(db, user, tp.comision_id)
+    if not is_staff and tp.estado != "published":
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="No encontrada")
+
     svc = TpEjercicioService(db)
     pairs = await svc.list_by_tp(tarea_id)
-    return [
-        TpEjercicioRead(
-            id=pair.id,
-            tarea_practica_id=pair.tarea_practica_id,
-            ejercicio_id=pair.ejercicio_id,
-            orden=pair.orden,
-            peso_en_tp=pair.peso_en_tp,
-            ejercicio=EjercicioRead.model_validate(ej),
+    result: list[TpEjercicioRead] = []
+    for pair, ej in pairs:
+        ejercicio = EjercicioRead.model_validate(ej)
+        if not is_staff:
+            ejercicio = sanitize_ejercicio_for_student(ejercicio)
+        result.append(
+            TpEjercicioRead(
+                id=pair.id,
+                tarea_practica_id=pair.tarea_practica_id,
+                ejercicio_id=pair.ejercicio_id,
+                orden=pair.orden,
+                peso_en_tp=pair.peso_en_tp,
+                ejercicio=ejercicio,
+            )
         )
-        for pair, ej in pairs
-    ]
+    return result
 
 
 @router.post(

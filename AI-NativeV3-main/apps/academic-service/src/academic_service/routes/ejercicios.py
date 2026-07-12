@@ -32,6 +32,10 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from academic_service.auth import User, get_db, require_permission
 from academic_service.schemas import ListMeta, ListResponse
+from academic_service.services.content_visibility import (
+    is_full_content_role,
+    sanitize_ejercicio_for_student,
+)
 from academic_service.services.ejercicio_service import EjercicioService
 
 logger = logging.getLogger(__name__)
@@ -83,6 +87,10 @@ async def list_ejercicios(
         cursor=cursor,
     )
     items = [EjercicioRead.model_validate(o) for o in objs]
+    if not is_full_content_role(user):
+        # A0.3: el alumno (tiene `ejercicio:read`) no ve tests ocultos ni
+        # material de solución del banco.
+        items = [sanitize_ejercicio_for_student(it) for it in items]
     next_cursor = str(objs[-1].id) if len(objs) == limit else None
     return ListResponse(data=items, meta=ListMeta(cursor_next=next_cursor))
 
@@ -95,7 +103,11 @@ async def get_ejercicio(
 ) -> EjercicioRead:
     svc = EjercicioService(db)
     obj = await svc.get(ejercicio_id)
-    return EjercicioRead.model_validate(obj)
+    out = EjercicioRead.model_validate(obj)
+    if not is_full_content_role(user):
+        # A0.3: el alumno no ve tests ocultos ni material de solución.
+        out = sanitize_ejercicio_for_student(out)
+    return out
 
 
 @router.patch("/{ejercicio_id}", response_model=EjercicioRead)
