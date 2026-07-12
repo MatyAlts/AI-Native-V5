@@ -22,11 +22,13 @@ import { Badge, Modal, PageContainer } from "@platform/ui"
 import { AlertTriangle, Pencil, Plus, Sparkles, Trash2, Upload } from "lucide-react"
 import { useCallback, useEffect, useState } from "react"
 import {
+  type CriterioRubrica,
   type Dificultad,
   type Ejercicio,
   type EjercicioCreate,
   type EjercicioGenerateRequest,
   type Materia,
+  type RubricaEjercicio,
   type UnidadTematica,
   comisionesApi,
   createEjercicio,
@@ -576,6 +578,18 @@ function EjercicioFormModal({ initial, title, unidades, onClose, onSubmit }: For
       setError("Titulo y enunciado son obligatorios")
       return
     }
+    const criterios = draft.rubrica?.criterios ?? []
+    for (const [i, c] of criterios.entries()) {
+      if (!c.nombre.trim() || !c.descripcion.trim()) {
+        setError(`Criterio ${i + 1} de la rubrica: nombre y descripcion no pueden estar vacios`)
+        return
+      }
+      const puntaje = Number(c.puntaje_max)
+      if (!Number.isFinite(puntaje) || puntaje <= 0) {
+        setError(`Criterio ${i + 1} de la rubrica: el puntaje maximo debe ser mayor a 0`)
+        return
+      }
+    }
     setSubmitting(true)
     try {
       await onSubmit(draft)
@@ -654,17 +668,18 @@ function EjercicioFormModal({ initial, title, unidades, onClose, onSubmit }: For
           </div>
         </FormSection>
 
-        <FormSection title="Tests, rubrica y prerequisitos (JSON)">
+        <FormSection title="Rubrica de correccion">
+          <RubricaCriteriosEditor
+            value={draft.rubrica ?? null}
+            onChange={(v) => set("rubrica", v)}
+          />
+        </FormSection>
+
+        <FormSection title="Tests y prerequisitos (JSON)">
           <JsonField
             label="test_cases (array)"
             value={draft.test_cases ?? []}
             onChange={(v) => set("test_cases", v)}
-          />
-          <JsonField
-            label="rubrica ({criterios: [...]})"
-            value={draft.rubrica ?? null}
-            onChange={(v) => set("rubrica", v)}
-            allowNull
           />
           <JsonField
             label="prerequisitos ({sintacticos: [], conceptuales: []})"
@@ -785,6 +800,117 @@ function JsonField({ label, value, onChange, allowNull = false }: JsonFieldProps
         rows={4}
       />
       {err && <div className="text-xs text-red-600 mt-1">{err}</div>}
+    </div>
+  )
+}
+
+// ── Editor estructurado de rubrica (criterios) ──────────────────────────
+//
+// Reemplaza el JSON crudo del campo `rubrica`. Serializa al shape que acepta
+// el backend: { criterios: [{ nombre, descripcion, puntaje_max }, ...] }.
+// `puntaje_max` viaja como string (Decimal serializado, ver CriterioRubrica).
+// Sin criterios -> rubrica = null (el ejercicio no usa rubrica).
+
+function RubricaCriteriosEditor({
+  value,
+  onChange,
+}: {
+  value: RubricaEjercicio | null
+  onChange: (v: RubricaEjercicio | null) => void
+}) {
+  const criterios = value?.criterios ?? []
+
+  function update(next: CriterioRubrica[]) {
+    onChange(next.length > 0 ? { criterios: next } : null)
+  }
+
+  function addCriterio() {
+    update([...criterios, { nombre: "", descripcion: "", puntaje_max: "" }])
+  }
+
+  function removeCriterio(idx: number) {
+    update(criterios.filter((_, i) => i !== idx))
+  }
+
+  function setField(idx: number, key: keyof CriterioRubrica, val: string) {
+    update(criterios.map((c, i) => (i === idx ? { ...c, [key]: val } : c)))
+  }
+
+  return (
+    <div>
+      <p className="text-xs text-muted mb-2">
+        Criterios contra los que se corrige el ejercicio. Cada uno con un puntaje maximo
+        mayor a 0. Sin criterios, el ejercicio no usa rubrica.
+      </p>
+
+      {criterios.length === 0 ? (
+        <div className="text-xs text-muted bg-canvas border border-border rounded p-3 text-center mb-2">
+          No hay criterios todavia.
+        </div>
+      ) : (
+        <div className="space-y-2 mb-2">
+          {criterios.map((c, i) => {
+            const puntaje = Number(c.puntaje_max)
+            const puntajeInvalid =
+              c.puntaje_max.trim() !== "" && (!Number.isFinite(puntaje) || puntaje <= 0)
+            return (
+              <div
+                // biome-ignore lint/suspicious/noArrayIndexKey: criterios controlados sin estado interno; el orden lo fija el docente
+                key={i}
+                className="border border-border rounded p-2 bg-canvas flex items-start gap-2"
+              >
+                <div className="flex-1 space-y-2">
+                  <input
+                    type="text"
+                    value={c.nombre}
+                    onChange={(e) => setField(i, "nombre", e.target.value)}
+                    placeholder="Nombre (ej: Correctitud)"
+                    className="w-full border border-border rounded px-2 py-1 text-sm bg-white"
+                  />
+                  <textarea
+                    value={c.descripcion}
+                    onChange={(e) => setField(i, "descripcion", e.target.value)}
+                    placeholder="Que evalua este criterio"
+                    className="w-full border border-border rounded px-2 py-1 text-sm bg-white"
+                    rows={2}
+                  />
+                </div>
+                <div className="w-24 shrink-0">
+                  <input
+                    type="number"
+                    min={0}
+                    step="0.5"
+                    value={c.puntaje_max}
+                    onChange={(e) => setField(i, "puntaje_max", e.target.value)}
+                    placeholder="0"
+                    className={`w-full border rounded px-2 py-1 text-sm bg-white ${
+                      puntajeInvalid ? "border-red-400" : "border-border"
+                    }`}
+                  />
+                  <div className="text-[10px] text-muted mt-1 text-center">puntaje max</div>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => removeCriterio(i)}
+                  className="p-1 text-muted hover:bg-red-50 hover:text-red-600 rounded shrink-0"
+                  title="Quitar criterio"
+                >
+                  <Trash2 className="w-4 h-4" />
+                </button>
+              </div>
+            )
+          })}
+        </div>
+      )}
+
+      <button
+        type="button"
+        onClick={addCriterio}
+        className="flex items-center gap-1.5 border border-border rounded px-2.5 py-1 text-xs hover:bg-canvas"
+      >
+        <Plus className="w-3.5 h-3.5" />
+        Agregar criterio
+      </button>
     </div>
   )
 }
