@@ -52,6 +52,38 @@ class Settings(BaseSettings):
     # bucket institucional MinIO.
     attestation_log_dir: Path = Path("./attestations")
 
+    # ── Auth cross-service (A0.1) ────────────────────────────────────────────
+    # integrity-attestation-service es infra institucional interna (NO está en
+    # el ROUTE_MAP del api-gateway), pero expone endpoints HTTP. Sin verificar
+    # la *procedencia* de los headers de identidad, cualquiera con acceso de red
+    # puede forjar `X-User-Roles`/`X-Tenant-Id` y — vía el POST — hacer que la
+    # clave Ed25519 institucional firme y appendee al journal attestations
+    # arbitrarias (episodios fabricados con firma legítima de la institución).
+    #
+    # require_gateway_signature=False (default) => comportamiento actual: no se
+    # exige nada. El flag es un no-op total: el runtime es idéntico al de hoy.
+    #
+    # Con el flag ON, el POST /api/v1/attestations debe probar procedencia por
+    # UNO de dos caminos:
+    #   (a) firma HMAC del gateway (X-Gateway-Signature + X-Gateway-Ts sobre los
+    #       headers X-User-*), verificada con gateway_shared_secret; o
+    #   (b) token de service-account (X-Internal-Service-Token) que coincide con
+    #       internal_service_token — para callers internos directos que no pasan
+    #       por el gateway. Ausencia de ambos => 401.
+    #
+    # Los GET (/pubkey, /{date}) quedan ABIERTOS incluso con el flag ON: son
+    # públicos por diseño (ADR-021) — la pubkey y los JSONL de hashes+firmas
+    # deben ser verificables por auditores externos SIN credenciales del
+    # gateway. Gatearlos rompería la verificación de terceros. El /health
+    # también queda abierto (probes).
+    #
+    # ORDEN DE ACTIVACIÓN (prod): primero setear el secreto/token compartido y
+    # configurar a los callers legítimos del POST (gateway firmando, o el caller
+    # interno mandando el token) y RECIÉN DESPUÉS prender este flag.
+    require_gateway_signature: bool = Field(default=False)
+    gateway_shared_secret: str = Field(default="")
+    internal_service_token: str = Field(default="")
+
 
 @lru_cache
 def get_settings() -> Settings:

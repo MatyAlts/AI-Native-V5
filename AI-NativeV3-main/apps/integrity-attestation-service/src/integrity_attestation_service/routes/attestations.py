@@ -4,10 +4,15 @@ POST /api/v1/attestations         — recibe del ctr-service (interno)
 GET  /api/v1/attestations/pubkey  — pubkey activa en formato PEM (publico)
 GET  /api/v1/attestations/{date}  — JSONL del dia YYYY-MM-DD (publico, para auditores)
 
-Auth: el POST NO usa JWT/Casbin — es servicio-a-servicio. En produccion del
-piloto se restringe por IP allowlist a nivel red. Los GETs son publicos por
-diseno: la informacion de las attestations (hashes + firmas) es lo que
-buscamos que sea verificable por terceros.
+Auth (A0.1): el POST NO usa JWT/Casbin — es servicio-a-servicio. Va detrás del
+dependency `require_gateway_auth`, gateado por `require_gateway_signature`
+(default OFF = no-op). Con el flag ON exige procedencia probada (firma HMAC del
+gateway o token de service-account) para que no se puedan forjar los headers
+X-* e inyectar attestations firmadas por la institucion. En produccion del
+piloto ademas se restringe por IP allowlist a nivel red. Los GETs son publicos
+por diseno (ADR-021): la informacion de las attestations (hashes + firmas) es
+lo que buscamos que sea verificable por terceros — quedan ABIERTOS incluso con
+el flag ON.
 """
 
 from __future__ import annotations
@@ -20,10 +25,11 @@ from cryptography.hazmat.primitives.asymmetric.ed25519 import (
     Ed25519PrivateKey,
     Ed25519PublicKey,
 )
-from fastapi import APIRouter, HTTPException, Request, status
+from fastapi import APIRouter, Depends, HTTPException, Request, status
 from fastapi.responses import PlainTextResponse, Response
 from pydantic import BaseModel, Field
 
+from integrity_attestation_service.auth import require_gateway_auth
 from integrity_attestation_service.config import settings
 from integrity_attestation_service.services.journal import (
     Attestation,
@@ -73,7 +79,12 @@ def _signing_state(request: Request) -> tuple[Ed25519PrivateKey, Ed25519PublicKe
 # ── POST: emitir attestation ──────────────────────────────────────────
 
 
-@router.post("", response_model=Attestation, status_code=status.HTTP_201_CREATED)
+@router.post(
+    "",
+    response_model=Attestation,
+    status_code=status.HTTP_201_CREATED,
+    dependencies=[Depends(require_gateway_auth)],
+)
 async def create_attestation(
     req: AttestationRequest,
     request: Request,
