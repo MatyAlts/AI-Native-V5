@@ -1,8 +1,9 @@
 import { type HeroStat, HeroStatsPanel } from "@platform/ui"
 import { useQuery } from "@tanstack/react-query"
-import { Activity, Building2, GraduationCap, Layers } from "lucide-react"
+import { Activity, Building2, GraduationCap, Layers, Sparkles, TriangleAlert } from "lucide-react"
 import type { ReactNode } from "react"
-import { comisionesApi, universidadesApi } from "../lib/api"
+import { byokApi, comisionesApi, universidadesApi } from "../lib/api"
+import type { Route } from "../router/Router"
 
 /**
  * HomePage admin — rediseño v2 (layout dashboard 2026 light).
@@ -16,7 +17,7 @@ const STATUS_LABEL: Record<string, { label: string; tone: "success" | "warning" 
   error: { label: "Caído", tone: "danger" },
 }
 
-export function HomePage(): ReactNode {
+export function HomePage({ onNavigate }: { onNavigate?: (to: Route) => void }): ReactNode {
   // KPIs institucionales via TanStack Query (patrón ComisionesPage) — reemplaza
   // el useState+fetch a mano, que arrastraba estado stale y el gotcha de
   // useCallback en deps de useEffect.
@@ -49,6 +50,18 @@ export function HomePage(): ReactNode {
       return r.json()
     },
   })
+
+  // BK-2: aviso si no hay ninguna clave BYOK activa. Sin una key de proveedor
+  // el ai-gateway no puede resolver completions → el tutor y toda función de IA
+  // quedan inertes. Una key está "activa" mientras no tenga `revoked_at`. Solo
+  // afirmamos "no hay key" cuando la query resolvió OK (isSuccess) para no
+  // disparar el banner por un error transitorio de red.
+  const byokKeysQuery = useQuery({
+    queryKey: ["byok-keys"],
+    queryFn: () => byokApi.list(),
+  })
+  const noActiveKey =
+    byokKeysQuery.isSuccess && !byokKeysQuery.data.some((k) => k.revoked_at === null)
 
   const universidadesTotal = universidadesQuery.data
     ? (universidadesQuery.data.meta.total ?? universidadesQuery.data.data.length)
@@ -110,6 +123,38 @@ export function HomePage(): ReactNode {
           </p>
         </div>
       </header>
+
+      {/* ═══ AVISO: SIN CLAVE DE IA ACTIVA (BK-2) ═══════════════════════ */}
+      {noActiveKey && (
+        <div
+          role="alert"
+          className="animate-fade-in-down flex flex-col gap-3 rounded-xl border border-warning/40 bg-warning-soft p-4 sm:flex-row sm:items-center sm:justify-between"
+        >
+          <div className="flex items-start gap-3 min-w-0">
+            <span className="mt-0.5 inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-md bg-warning/15 text-warning">
+              <TriangleAlert className="h-4 w-4" />
+            </span>
+            <div className="flex flex-col gap-0.5 min-w-0">
+              <span className="text-sm font-semibold text-ink">
+                No hay ninguna clave de IA activa
+              </span>
+              <span className="text-xs text-body leading-relaxed max-w-2xl">
+                El tutor socrático y todas las funciones de IA no van a funcionar hasta que cargues
+                una clave de proveedor (Anthropic, OpenAI, Gemini o Mistral). Configurala para
+                habilitar la plataforma.
+              </span>
+            </div>
+          </div>
+          <button
+            type="button"
+            onClick={() => onNavigate?.("byok")}
+            className="press-shrink inline-flex shrink-0 items-center gap-1.5 rounded-md bg-accent-brand px-4 py-2 text-sm font-medium text-white hover:bg-accent-brand-deep"
+          >
+            <Sparkles className="h-4 w-4" />
+            Configurar clave de IA
+          </button>
+        </div>
+      )}
 
       {/* ═══ HERO STATS PANEL ═══════════════════════════════════════════ */}
       <HeroStatsPanel

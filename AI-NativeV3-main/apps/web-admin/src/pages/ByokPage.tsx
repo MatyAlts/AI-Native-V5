@@ -1,6 +1,6 @@
 import { HelpButton, Modal, PageContainer } from "@platform/ui"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
-import { Key } from "lucide-react"
+import { Sparkles } from "lucide-react"
 import { type ReactNode, useState } from "react"
 import {
   type ByokKey,
@@ -71,9 +71,9 @@ export function ByokPage(): ReactNode {
 
   return (
     <PageContainer
-      title="BYOK Keys"
-      eyebrow="Inicio · BYOK Keys"
-      description="Gestion de claves de proveedor LLM por tenant o materia (Bring Your Own Key)."
+      title="Claves de proveedor de IA"
+      eyebrow="Inicio · IA · Claves de proveedor"
+      description="Gestion de claves de proveedor LLM por tenant, facultad o materia (BYOK — Bring Your Own Key). Sin una clave activa, el tutor y las funciones de IA no funcionan."
       helpContent={helpContent.byok}
     >
       <div className="space-y-6">
@@ -99,8 +99,8 @@ export function ByokPage(): ReactNode {
             onClick={() => setModal({ type: "create" })}
             className="flex items-center gap-1.5 rounded-md bg-accent-brand text-white px-4 py-2 text-sm font-medium hover:bg-accent-brand-deep"
           >
-            <Key size={14} />
-            Nueva key
+            <Sparkles size={14} />
+            Configurar clave de IA
           </button>
         </div>
 
@@ -116,17 +116,19 @@ export function ByokPage(): ReactNode {
           ) : keys.length === 0 ? (
             <div className="p-8 text-center text-muted text-sm">
               <div className="flex flex-col items-center gap-3">
-                <Key size={32} className="text-muted-soft" />
-                <p className="font-medium">No hay BYOK keys configuradas</p>
+                <Sparkles size={32} className="text-muted-soft" />
+                <p className="font-medium">No hay claves de IA configuradas</p>
                 <p className="text-xs text-muted-soft">
-                  Crea una key para que el ai-gateway use tu propia clave de proveedor LLM.
+                  Configura una clave para que el ai-gateway use tu propia clave de proveedor LLM.
+                  Sin ella, el tutor y las funciones de IA no funcionan.
                 </p>
                 <button
                   type="button"
                   onClick={() => setModal({ type: "create" })}
-                  className="mt-1 rounded-md bg-accent-brand text-white px-4 py-1.5 text-sm hover:bg-accent-brand-deep"
+                  className="mt-1 flex items-center gap-1.5 rounded-md bg-accent-brand text-white px-4 py-1.5 text-sm hover:bg-accent-brand-deep"
                 >
-                  Crear primera key
+                  <Sparkles size={14} />
+                  Configurar clave de IA
                 </button>
               </div>
             </div>
@@ -229,12 +231,7 @@ export function ByokPage(): ReactNode {
       )}
 
       {modal.type === "revoke" && (
-        <Modal
-          isOpen
-          onClose={() => setModal({ type: "none" })}
-          title="Revocar BYOK key"
-          size="sm"
-        >
+        <Modal isOpen onClose={() => setModal({ type: "none" })} title="Revocar BYOK key" size="sm">
           <div className="space-y-4">
             <p className="text-sm text-body">
               Esta accion es <strong>irreversible</strong>. La key con fingerprint{" "}
@@ -273,10 +270,7 @@ export function ByokPage(): ReactNode {
       )}
 
       {modal.type === "usage" && (
-        <UsagePanel
-          byokKey={modal.key}
-          onClose={() => setModal({ type: "none" })}
-        />
+        <UsagePanel byokKey={modal.key} onClose={() => setModal({ type: "none" })} />
       )}
     </PageContainer>
   )
@@ -311,9 +305,7 @@ function CreateKeyModal({
     mutationFn: (data: ByokKeyCreate) => byokApi.create(data),
     onSuccess: onCreated,
     onError: (err) => {
-      setError(
-        err instanceof HttpError ? `${err.status}: ${err.detail || err.title}` : String(err),
-      )
+      setError(err instanceof HttpError ? `${err.status}: ${err.detail || err.title}` : String(err))
     },
   })
 
@@ -367,7 +359,15 @@ function CreateKeyModal({
             </select>
           </Field>
 
-          <Field label={form.scope_type === "facultad" ? "Facultad" : form.scope_type === "materia" ? "Materia" : "Scope"}>
+          <Field
+            label={
+              form.scope_type === "facultad"
+                ? "Facultad"
+                : form.scope_type === "materia"
+                  ? "Materia"
+                  : "Scope"
+            }
+          >
             {form.scope_type === "tenant" ? (
               <select disabled className={inputClass}>
                 <option>— Aplica a todo el tenant —</option>
@@ -389,11 +389,15 @@ function CreateKeyModal({
                 <option value="">Seleccionar...</option>
                 {form.scope_type === "facultad" &&
                   (facultadesQuery.data?.data ?? []).map((f) => (
-                    <option key={f.id} value={f.id}>{f.nombre} ({f.codigo})</option>
+                    <option key={f.id} value={f.id}>
+                      {f.nombre} ({f.codigo})
+                    </option>
                   ))}
                 {form.scope_type === "materia" &&
                   (materiasQuery.data?.data ?? []).map((m) => (
-                    <option key={m.id} value={m.id}>{m.nombre} ({m.codigo})</option>
+                    <option key={m.id} value={m.id}>
+                      {m.nombre} ({m.codigo})
+                    </option>
                   ))}
               </select>
             )}
@@ -492,9 +496,7 @@ function RotateKeyModal({
     mutationFn: () => byokApi.rotate(byokKey.id, plaintext),
     onSuccess: onRotated,
     onError: (err) => {
-      setError(
-        err instanceof HttpError ? `${err.status}: ${err.detail || err.title}` : String(err),
-      )
+      setError(err instanceof HttpError ? `${err.status}: ${err.detail || err.title}` : String(err))
     },
   })
 
@@ -588,9 +590,10 @@ function UsagePanel({
           <div className="rounded-lg border border-border-soft bg-surface-alt/40 p-6 text-center">
             <p className="text-sm font-medium text-body mb-1">Sin uso registrado este mes</p>
             <p className="text-xs text-muted leading-relaxed max-w-sm mx-auto">
-              Esta key no fue resuelta por ningún call de IA en {usage?.yyyymm ?? "el período actual"}.
-              El contador se incrementa cuando docente o alumno disparan completions
-              con materia/facultad/tenant que matchean el scope de la key.
+              Esta key no fue resuelta por ningún call de IA en{" "}
+              {usage?.yyyymm ?? "el período actual"}. El contador se incrementa cuando docente o
+              alumno disparan completions con materia/facultad/tenant que matchean el scope de la
+              key.
             </p>
           </div>
         ) : (
@@ -633,8 +636,9 @@ function UsagePanel({
               </div>
             </div>
             <p className="text-xs text-muted leading-relaxed">
-              Agregado del mes actual. Para historial multi-mes (deuda v1.1) hay que
-              llamar al endpoint con <code className="font-mono text-[11px] bg-surface-alt px-1 rounded">?yyyymm=</code>.
+              Agregado del mes actual. Para historial multi-mes (deuda v1.1) hay que llamar al
+              endpoint con{" "}
+              <code className="font-mono text-[11px] bg-surface-alt px-1 rounded">?yyyymm=</code>.
             </p>
           </>
         )}

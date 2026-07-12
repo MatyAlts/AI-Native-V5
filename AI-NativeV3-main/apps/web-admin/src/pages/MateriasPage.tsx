@@ -1,5 +1,6 @@
 import { HelpButton, PageContainer, ReadonlyField } from "@platform/ui"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
+import { Sparkles } from "lucide-react"
 import { type ReactNode, useState } from "react"
 import { Breadcrumb, type BreadcrumbItem } from "../components/Breadcrumb"
 import {
@@ -14,6 +15,7 @@ import {
   planesApi,
   universidadesApi,
 } from "../lib/api"
+import type { Route } from "../router/Router"
 import { helpContent } from "../utils/helpContent"
 
 interface PlanContext {
@@ -22,7 +24,7 @@ interface PlanContext {
   plan: string
 }
 
-export function MateriasPage(): ReactNode {
+export function MateriasPage({ onNavigate }: { onNavigate?: (to: Route) => void }): ReactNode {
   // Cascading selectors: Universidad → Carrera → Plan → lista de Materias.
   // Resetear descendientes en cada cambio para evitar combinaciones inválidas.
   const [universidadId, setUniversidadId] = useState<string>("")
@@ -287,32 +289,50 @@ export function MateriasPage(): ReactNode {
                       a.codigo.localeCompare(b.codigo),
                   )
                   .map((m) => (
-                  <tr key={m.id} className="border-b border-border-soft">
-                    <td className="px-4 py-2 font-mono text-xs">{m.codigo}</td>
-                    <td className="px-4 py-2">{m.nombre}</td>
-                    <td className="px-4 py-2 text-muted text-xs">
-                      {planMap.get(m.plan_id)?.version ?? m.plan_id}
-                    </td>
-                    <td className="px-4 py-2">{m.horas_totales} h</td>
-                    <td className="px-4 py-2">
-                      <span className="inline-flex items-center rounded-full bg-surface-alt px-2 py-0.5 text-xs">
-                        {m.cuatrimestre_sugerido}
-                      </span>
-                    </td>
-                    <td className="px-4 py-2 text-right">
-                      <button
-                        type="button"
-                        onClick={() => handleDelete(m)}
-                        className="press-shrink rounded-md px-2.5 py-1 text-xs font-medium text-danger hover:bg-danger-soft"
-                      >
-                        Eliminar
-                      </button>
-                    </td>
-                  </tr>
-                ))}
+                    <tr key={m.id} className="border-b border-border-soft">
+                      <td className="px-4 py-2 font-mono text-xs">{m.codigo}</td>
+                      <td className="px-4 py-2">{m.nombre}</td>
+                      <td className="px-4 py-2 text-muted text-xs">
+                        {planMap.get(m.plan_id)?.version ?? m.plan_id}
+                      </td>
+                      <td className="px-4 py-2">{m.horas_totales} h</td>
+                      <td className="px-4 py-2">
+                        <span className="inline-flex items-center rounded-full bg-surface-alt px-2 py-0.5 text-xs">
+                          {m.cuatrimestre_sugerido}
+                        </span>
+                      </td>
+                      <td className="px-4 py-2 text-right">
+                        <button
+                          type="button"
+                          onClick={() => handleDelete(m)}
+                          className="press-shrink rounded-md px-2.5 py-1 text-xs font-medium text-danger hover:bg-danger-soft"
+                        >
+                          Eliminar
+                        </button>
+                      </td>
+                    </tr>
+                  ))}
               </tbody>
             </table>
           )}
+        </div>
+
+        {/* BK-4: pista de dónde configurar la clave de IA (BYOK puede scopearse
+            por materia, facultad o tenant). */}
+        <div className="flex items-start gap-2.5 rounded-lg border border-border-soft bg-surface-alt/50 p-3 text-xs text-muted">
+          <Sparkles className="mt-0.5 h-4 w-4 shrink-0 text-accent-brand-deep" />
+          <span className="leading-relaxed">
+            ¿La IA de una materia necesita su propia clave de proveedor? Las claves (por materia,
+            facultad o tenant) se configuran en{" "}
+            <button
+              type="button"
+              onClick={() => onNavigate?.("byok")}
+              className="font-medium text-accent-brand-deep underline underline-offset-2 hover:text-accent-brand"
+            >
+              IA · Claves de proveedor
+            </button>
+            .
+          </span>
         </div>
       </div>
     </PageContainer>
@@ -353,7 +373,10 @@ function MateriaForm({
   }
 
   return (
-    <form onSubmit={submit} className="rounded-lg border border-border-soft bg-surface p-6 space-y-4">
+    <form
+      onSubmit={submit}
+      className="rounded-lg border border-border-soft bg-surface p-6 space-y-4"
+    >
       <div className="flex items-center gap-2 mb-2">
         <HelpButton
           size="sm"

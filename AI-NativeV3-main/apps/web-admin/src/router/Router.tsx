@@ -20,12 +20,12 @@ import {
   FileBarChart,
   GraduationCap,
   Home,
-  Key,
   Landmark,
   Layers,
   Library,
   ShieldAlert,
   ShieldCheck,
+  Sparkles,
   TrendingUp,
   Upload,
   Users,
@@ -97,6 +97,10 @@ const NAV_GROUPS: NavGroup[] = [
     ],
   },
   {
+    label: "Inteligencia artificial",
+    items: [{ id: "byok", label: "IA · Claves de proveedor", icon: Sparkles }],
+  },
+  {
     label: "Auditoria",
     items: [
       { id: "auditoria", label: "Integridad CTR", icon: ShieldCheck },
@@ -108,7 +112,6 @@ const NAV_GROUPS: NavGroup[] = [
     items: [
       { id: "periodos", label: "Periodos", icon: CalendarDays },
       { id: "bulk-import", label: "Importación masiva", icon: Upload },
-      { id: "byok", label: "BYOK Keys", icon: Key },
     ],
   },
 ]
@@ -134,12 +137,12 @@ export function Router(): ReactNode {
           {HAS_CLERK && <UserButton afterSignOutUrl="/admin/" />}
         </div>
         <div className="container mx-auto p-6 max-w-6xl">
-          {current === "home" && <HomePage />}
+          {current === "home" && <HomePage onNavigate={navigate} />}
           {current === "universidades" && <UniversidadesPage />}
           {current === "facultades" && <FacultadesPage />}
           {current === "carreras" && <CarrerasPage />}
           {current === "planes" && <PlanesPage />}
-          {current === "materias" && <MateriasPage />}
+          {current === "materias" && <MateriasPage onNavigate={navigate} />}
           {current === "comisiones" && <ComisionesPage />}
           {current === "pedagogia" && <PedagogiaPage />}
           {current === "clasificaciones" && <ClasificacionesPage />}
