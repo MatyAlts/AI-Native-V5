@@ -131,10 +131,39 @@ class UniversidadService:
         await self.session.flush()
         return obj
 
-    async def get(self, id_: UUID) -> Universidad:
-        # Igual que soft_delete: superadmin puede mirar cualquier universidad.
-        # Para mantener simple el contrato, seteamos el tenant a la universidad
-        # target (convencion tenant_id == id).
+    async def get(self, id_: UUID, user: User) -> Universidad:
+        """Lee una universidad respetando el aislamiento multi-tenant.
+
+        - superadmin: puede leer CUALQUIER universidad (opera cross-tenant
+          desde el web-admin). Seteamos el tenant a la universidad target
+          (convencion tenant_id == id, enforzada en `create()`).
+        - Resto de roles: solo la PROPIA universidad. Como cada universidad
+          ES su tenant (id == tenant_id), pedir una de otro tenant no matchea
+          la RLS del caller. Devolvemos 404 (no 403) para NO confirmar la
+          existencia de universidades ajenas.
+
+        Antes este metodo seteaba `app.current_tenant` a `id_` incondicional-
+        mente: cualquiera con el UUID de otra universidad la leia (leak
+        cross-tenant, A0.2). Ahora el tenant del caller acota el acceso.
+        """
+        if "superadmin" not in user.roles:
+            # Fijamos el tenant del caller (defensa explicita + RLS). Si la
+            # universidad pedida no es la suya, 404: no filtramos existencia.
+            await self.session.execute(
+                text("SELECT set_config('app.current_tenant', :tid, true)"),
+                {"tid": str(user.tenant_id)},
+            )
+            if user.tenant_id != id_:
+                from fastapi import HTTPException, status
+
+                raise HTTPException(
+                    status_code=status.HTTP_404_NOT_FOUND,
+                    detail=f"Universidad {id_} no encontrada",
+                )
+            return await self.repo.get_or_404(id_)
+
+        # superadmin: acceso cross-tenant legitimo. Seteamos el tenant a la
+        # universidad target (convencion tenant_id == id).
         await self.session.execute(
             text("SELECT set_config('app.current_tenant', :tid, true)"),
             {"tid": str(id_)},

@@ -76,7 +76,7 @@ async def get_universidad(
     db: AsyncSession = Depends(get_db),
 ) -> UniversidadOut:
     svc = UniversidadService(db)
-    obj = await svc.get(universidad_id)
+    obj = await svc.get(universidad_id, user)
     return UniversidadOut.model_validate(obj)
 
 
