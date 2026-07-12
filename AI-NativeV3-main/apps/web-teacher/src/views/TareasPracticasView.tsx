@@ -30,6 +30,7 @@ import {
   History,
   Pencil,
   Plus,
+  Search,
   Send,
   Trash2,
 } from "lucide-react"
@@ -370,15 +371,19 @@ export function TareasPracticasView({ comisionId, getToken }: Props) {
           getToken={getToken}
           onClose={closeModal}
           onSubmit={async (values) => {
-            await tareasPracticasApi.create(
+            const created = await tareasPracticasApi.create(
               {
                 ...values,
                 comision_id: comisionId,
               },
               getToken,
             )
-            closeModal()
             await refreshList()
+            // FR-7: reducir la friccion "crear != componer". En vez de solo
+            // cerrar, llevamos al docente directo a la Composicion del TP recien
+            // creado (arranca en draft, sin ejercicios) para que asocie ejercicios
+            // del banco sin tener que descubrir el boton "Composicion" de la card.
+            setModal({ kind: "composicion", tarea: created })
           }}
         />
 
@@ -570,7 +575,11 @@ function TareaCard({
         <button
           type="button"
           onClick={onComposicion}
-          className="press-shrink grow basis-1/3 inline-flex items-center justify-center gap-1.5 px-3 py-2.5 text-xs font-medium text-muted hover:bg-surface-alt hover:text-ink transition-colors"
+          className={`press-shrink grow basis-1/3 inline-flex items-center justify-center gap-1.5 px-3 py-2.5 text-xs font-medium transition-colors ${
+            estado === "draft"
+              ? "text-accent-brand-deep hover:bg-accent-brand-soft"
+              : "text-muted hover:bg-surface-alt hover:text-ink"
+          }`}
           title="Gestionar ejercicios del TP"
         >
           <FileText className="h-3.5 w-3.5" />
@@ -1196,7 +1205,11 @@ function ComposicionModal({
   const [error, setError] = useState<string | null>(null)
   const [adding, setAdding] = useState(false)
   const [reordering, setReordering] = useState(false)
-  const [selectedEjercicioId, setSelectedEjercicioId] = useState<string>("")
+  // FR-1: multiselect + busqueda + filtro por materia sobre el banco cargado.
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set())
+  const [search, setSearch] = useState("")
+  const [soloMateria, setSoloMateria] = useState(true)
+  const [materiaId, setMateriaId] = useState<string | null>(null)
   const [nuevoPeso, setNuevoPeso] = useState("1.0")
 
   const editable = tarea.estado === "draft"
@@ -1222,21 +1235,69 @@ function ComposicionModal({
     fetchPairs()
   }, [fetchPairs])
 
+  // FR-1: la materia del TP no viaja en el modelo TareaPractica; la resolvemos
+  // desde la comision para poder filtrar el banco por materia (client-side).
+  useEffect(() => {
+    let cancelled = false
+    listMyComisiones(getToken)
+      .then((res) => res.items.find((c) => c.id === tarea.comision_id)?.materia_id ?? null)
+      .then((m) => {
+        if (!cancelled) setMateriaId(m)
+      })
+      .catch(() => {
+        if (!cancelled) setMateriaId(null)
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [tarea.comision_id, getToken])
+
   const usedIds = new Set(pairs.map((p) => p.ejercicio_id))
   const disponibles = biblioteca.filter((ej) => !usedIds.has(ej.id))
 
+  // Filtro + orden client-side sobre lo ya cargado (listEjercicios limit=200, sin
+  // paginacion server-side). Materia: incluye globales (materia_id === null) para
+  // no ocultar el banco compartido. Orden por titulo (legible), no por UUID.
+  const query = search.trim().toLowerCase()
+  const visibles = disponibles
+    .filter((ej) =>
+      soloMateria && materiaId ? ej.materia_id === materiaId || ej.materia_id === null : true,
+    )
+    .filter((ej) =>
+      query
+        ? ej.titulo.toLowerCase().includes(query) ||
+          ej.unidad_tematica.toLowerCase().includes(query)
+        : true,
+    )
+    .sort((a, b) => a.titulo.localeCompare(b.titulo, "es"))
+
+  const toggleSelected = (id: string) => {
+    setSelectedIds((prev) => {
+      const next = new Set(prev)
+      if (next.has(id)) next.delete(id)
+      else next.add(id)
+      return next
+    })
+  }
+
   async function handleAdd() {
-    if (!selectedEjercicioId) return
+    if (selectedIds.size === 0) return
     setAdding(true)
     setError(null)
     try {
-      const nextOrden = pairs.length > 0 ? Math.max(...pairs.map((p) => p.orden)) + 1 : 1
-      await tpEjerciciosApi.add(
-        tarea.id,
-        { ejercicio_id: selectedEjercicioId, orden: nextOrden, peso_en_tp: nuevoPeso },
-        getToken,
-      )
-      setSelectedEjercicioId("")
+      // Insertamos en el orden visible (por titulo) de los seleccionados. Los
+      // POST son secuenciales para asignar `orden` incremental sin colisiones.
+      const toAdd = visibles.filter((ej) => selectedIds.has(ej.id))
+      let nextOrden = pairs.length > 0 ? Math.max(...pairs.map((p) => p.orden)) + 1 : 1
+      for (const ej of toAdd) {
+        await tpEjerciciosApi.add(
+          tarea.id,
+          { ejercicio_id: ej.id, orden: nextOrden, peso_en_tp: nuevoPeso },
+          getToken,
+        )
+        nextOrden += 1
+      }
+      setSelectedIds(new Set())
       setNuevoPeso("1.0")
       await fetchPairs()
     } catch (e) {
@@ -1383,27 +1444,78 @@ function ComposicionModal({
             )}
 
             {editable && (
-              <div className="border-t border-border pt-3">
-                <p className="text-xs text-muted mb-2">Agregar desde la biblioteca</p>
-                <div className="flex items-end gap-2">
-                  <div className="flex-1">
-                    <label className="block text-xs text-muted mb-1">Ejercicio</label>
-                    <select
-                      value={selectedEjercicioId}
-                      onChange={(e) => setSelectedEjercicioId(e.target.value)}
-                      className="w-full border border-border rounded px-2 py-1 text-sm bg-white"
-                    >
-                      <option value="">Seleccionar...</option>
-                      {disponibles.map((ej) => (
-                        <option key={ej.id} value={ej.id}>
-                          {ej.titulo} ({ej.unidad_tematica})
-                        </option>
-                      ))}
-                    </select>
+              <div className="border-t border-border pt-3 space-y-2">
+                <div className="flex items-center justify-between gap-2">
+                  <p className="text-xs text-muted">Agregar desde la biblioteca</p>
+                  {materiaId && (
+                    <label className="inline-flex items-center gap-1.5 text-[11px] text-muted cursor-pointer">
+                      <input
+                        type="checkbox"
+                        checked={soloMateria}
+                        onChange={(e) => setSoloMateria(e.target.checked)}
+                      />
+                      Solo de esta materia
+                    </label>
+                  )}
+                </div>
+
+                {/* Buscador por texto (titulo / unidad) */}
+                <div className="relative">
+                  <Search className="pointer-events-none absolute left-2 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-soft" />
+                  <input
+                    type="text"
+                    value={search}
+                    onChange={(e) => setSearch(e.target.value)}
+                    placeholder="Buscar por titulo o unidad..."
+                    className="w-full border border-border rounded pl-7 pr-2 py-1 text-sm"
+                  />
+                </div>
+
+                {/* Lista con multiseleccion */}
+                {visibles.length > 0 ? (
+                  <div className="max-h-48 overflow-y-auto rounded border border-border-soft divide-y divide-border-soft">
+                    {visibles.map((ej) => {
+                      const checked = selectedIds.has(ej.id)
+                      return (
+                        <label
+                          key={ej.id}
+                          className={`flex items-center gap-2 px-2 py-1.5 text-sm cursor-pointer transition-colors ${
+                            checked ? "bg-accent-brand-soft" : "hover:bg-surface-alt"
+                          }`}
+                        >
+                          <input
+                            type="checkbox"
+                            checked={checked}
+                            onChange={() => toggleSelected(ej.id)}
+                          />
+                          <span className="min-w-0 flex-1 truncate text-ink" title={ej.titulo}>
+                            {ej.titulo}
+                          </span>
+                          <span className="shrink-0 text-[10px] uppercase tracking-wide text-muted-soft">
+                            {ej.unidad_tematica}
+                          </span>
+                        </label>
+                      )
+                    })}
                   </div>
+                ) : (
+                  <p className="text-xs text-muted py-2">
+                    {disponibles.length === 0
+                      ? biblioteca.length === 0
+                        ? "No hay ejercicios en la biblioteca. Crea uno desde /ejercicios."
+                        : "Todos los ejercicios de la biblioteca ya estan en esta TP."
+                      : "Ningun ejercicio coincide con el filtro."}
+                  </p>
+                )}
+
+                {/* Peso + accion */}
+                <div className="flex items-end justify-between gap-2">
                   <div className="w-24">
-                    <label className="block text-xs text-muted mb-1">Peso</label>
+                    <label htmlFor="tp-comp-peso" className="block text-xs text-muted mb-1">
+                      Peso
+                    </label>
                     <input
+                      id="tp-comp-peso"
                       type="text"
                       value={nuevoPeso}
                       onChange={(e) => setNuevoPeso(e.target.value)}
@@ -1413,22 +1525,20 @@ function ComposicionModal({
                   <button
                     type="button"
                     onClick={handleAdd}
-                    disabled={!selectedEjercicioId || adding}
+                    disabled={selectedIds.size === 0 || adding}
                     className="px-3 py-1.5 bg-accent-brand text-white rounded text-sm hover:bg-accent-brand-deep disabled:opacity-50"
                   >
-                    {adding ? "Agregando..." : "Agregar"}
+                    {adding
+                      ? "Agregando..."
+                      : selectedIds.size > 0
+                        ? `Agregar ${selectedIds.size}`
+                        : "Agregar"}
                   </button>
                 </div>
-                {disponibles.length === 0 && biblioteca.length > 0 && (
-                  <p className="text-xs text-muted mt-2">
-                    Todos los ejercicios de la biblioteca ya estan en esta TP.
-                  </p>
-                )}
-                {biblioteca.length === 0 && (
-                  <p className="text-xs text-muted mt-2">
-                    No hay ejercicios en la biblioteca. Crea uno desde /ejercicios.
-                  </p>
-                )}
+                <p className="text-[11px] text-muted-soft leading-snug">
+                  Se listan hasta 200 ejercicios del banco (filtro y orden client-side, sin
+                  paginacion server-side). El peso se aplica a todos los seleccionados.
+                </p>
               </div>
             )}
           </>
