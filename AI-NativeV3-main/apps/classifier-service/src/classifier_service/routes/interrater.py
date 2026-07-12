@@ -22,11 +22,17 @@ from pydantic import BaseModel, Field
 from sqlalchemy import func, select
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 
-from classifier_service.auth import User, require_role
+from classifier_service.auth import User, require_gateway_auth, require_role
 from classifier_service.db import tenant_session
 from classifier_service.models import Classification, InterraterRating
 
-router = APIRouter(prefix="/api/v1/interrater", tags=["interrater"])
+# Auth de procedencia a nivel router (A0.1): mismo gate gateado que classify_ep.
+# OFF por default (no-op); ON exige firma del gateway o token de service-account.
+router = APIRouter(
+    prefix="/api/v1/interrater",
+    tags=["interrater"],
+    dependencies=[Depends(require_gateway_auth)],
+)
 logger = logging.getLogger(__name__)
 
 CODER_ROLES = ("docente", "docente_admin", "superadmin")

@@ -20,6 +20,7 @@ from fastapi import APIRouter, Depends, Header, HTTPException, status
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 
+from ai_gateway.auth import require_gateway_auth
 from ai_gateway.config import settings
 from ai_gateway.metrics import (
     ai_gateway_budget_remaining_usd,
@@ -49,7 +50,17 @@ from ai_gateway.services.byok import (
 
 logger = logging.getLogger(__name__)
 
-router = APIRouter(prefix="/api/v1", tags=["ai-gateway"])
+# Auth de procedencia a nivel router (A0.1): con `require_gateway_signature` ON
+# el LLM proxy (`/complete`, `/stream`, `/budget`) exige firma del gateway o
+# token de service-account. Con el flag OFF (default) es no-op — el tutor-service
+# sigue llamando `POST /api/v1/stream` directo sin firma en cada mensaje del
+# alumno. Para PRENDER el flag en prod, el tutor (y cualquier caller directo)
+# debe mandar `X-Internal-Service-Token` = `internal_service_token`.
+router = APIRouter(
+    prefix="/api/v1",
+    tags=["ai-gateway"],
+    dependencies=[Depends(require_gateway_auth)],
+)
 
 
 # ── Resiliencia del streaming LLM ───────────────────────────────────

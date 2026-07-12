@@ -5,6 +5,11 @@ from uuid import UUID
 
 from fastapi import Depends, Header, HTTPException, status
 
+from classifier_service.auth.gateway_auth import (
+    INTERNAL_SERVICE_TOKEN_HEADER,
+    require_gateway_auth,
+)
+
 
 @dataclass(frozen=True)
 class User:
@@ -47,4 +52,12 @@ CLASSIFY_ROLES = ("docente", "docente_admin", "superadmin", "classifier_worker")
 READ_ROLES = ("docente", "docente_admin", "superadmin", "estudiante")
 
 
-__all__ = ["CLASSIFY_ROLES", "READ_ROLES", "User", "get_current_user", "require_role"]
+__all__ = [
+    "CLASSIFY_ROLES",
+    "INTERNAL_SERVICE_TOKEN_HEADER",
+    "READ_ROLES",
+    "User",
+    "get_current_user",
+    "require_gateway_auth",
+    "require_role",
+]

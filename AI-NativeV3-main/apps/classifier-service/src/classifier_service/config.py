@@ -81,6 +81,37 @@ class Settings(BaseSettings):
     # del pipeline) y emitir ADR-052 con el modelo de reglas vigente.
     guardrail_modifier_enabled: bool = False
 
+    # ── Auth cross-service (A0.1 / A0.4) ─────────────────────────────────────
+    # El classifier-service es interno: el api-gateway proxya sus endpoints de
+    # datos (/api/v1/classify_episode, /api/v1/classifications, /api/v1/interrater)
+    # e inyecta X-Tenant-Id / X-User-Id / X-User-Roles tras validar el JWT. Pero
+    # el servicio confia HOY en esos headers sin probar que vengan del gateway —
+    # si el puerto interno queda expuesto, un cliente los forja (bug A0.1).
+    #
+    # require_gateway_signature=False (default) => comportamiento actual: no se
+    # exige nada. Necesario porque hay callers directos service-to-service que
+    # NO pasan por el gateway y NO firman:
+    #   - reclassify_all.py corre DENTRO del contenedor y pega a localhost con
+    #     X-User-Roles=classifier_worker (backfill de re-clasificacion).
+    #   - academic-service pega DIRECTO a GET /api/v1/classifier/config-hash al
+    #     resolver GET /comisiones/{id}/nes (tiene fallback si falla).
+    # Encender enforcement por default romperia esos caminos.
+    #
+    # Con el flag ON, cada request a los routers protegidos debe probar
+    # procedencia por UNO de dos caminos (mismo contrato que governance A0.4):
+    #   (a) firma HMAC del gateway (X-Gateway-Signature + X-Gateway-Ts sobre los
+    #       headers X-User-*), verificada con gateway_shared_secret; o
+    #   (b) token de service-account (X-Internal-Service-Token) que coincide con
+    #       internal_service_token — el camino de los callers internos directos
+    #       (reclassify_all + academic-service). Ausencia de ambos => 401.
+    #
+    # ORDEN DE ACTIVACION (prod): primero setear el secreto/token compartido y
+    # configurar a los callers legitimos (gateway firmando + reclassify/academic
+    # mandando el token) y RECIEN DESPUES prender este flag.
+    require_gateway_signature: bool = Field(default=False)
+    gateway_shared_secret: str = Field(default="")
+    internal_service_token: str = Field(default="")
+
 
 @lru_cache
 def get_settings() -> Settings:

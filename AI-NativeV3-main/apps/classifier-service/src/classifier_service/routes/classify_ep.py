@@ -17,7 +17,13 @@ from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from classifier_service.auth import CLASSIFY_ROLES, READ_ROLES, User, require_role
+from classifier_service.auth import (
+    CLASSIFY_ROLES,
+    READ_ROLES,
+    User,
+    require_gateway_auth,
+    require_role,
+)
 from classifier_service.config import settings
 from classifier_service.db import tenant_session
 from classifier_service.models import Classification
@@ -35,7 +41,15 @@ from classifier_service.services.regimen_llm import (
     clasificar_regimen_llm,
 )
 
-router = APIRouter(prefix="/api/v1", tags=["classifier"])
+# Auth de procedencia a nivel router (A0.1): con `require_gateway_signature` ON
+# todos los endpoints de clasificación exigen firma del gateway o token de
+# service-account. Con el flag OFF (default) es no-op y no rompe callers directos
+# (reclassify_all). Corre ANTES de `require_role` de cada handler.
+router = APIRouter(
+    prefix="/api/v1",
+    tags=["classifier"],
+    dependencies=[Depends(require_gateway_auth)],
+)
 
 logger = logging.getLogger(__name__)
 

@@ -30,6 +30,7 @@ from uuid import UUID
 from fastapi import APIRouter, Depends, Header, HTTPException, status
 from pydantic import BaseModel, Field, field_validator
 
+from ai_gateway.auth import require_gateway_auth
 from ai_gateway.services.byok import (
     BYOKConflictError,
     create_byok_key,
@@ -39,7 +40,15 @@ from ai_gateway.services.byok import (
     rotate_byok_key,
 )
 
-router = APIRouter(prefix="/api/v1/byok", tags=["byok"])
+# Auth de procedencia a nivel router (A0.1): con `require_gateway_signature` ON
+# todos los endpoints BYOK exigen firma del gateway o token de service-account.
+# Con el flag OFF (default) es no-op y NO altera los checks de rol (_check_admin/
+# _check_read de F11) que siguen corriendo por debajo via las deps _get_actor*.
+router = APIRouter(
+    prefix="/api/v1/byok",
+    tags=["byok"],
+    dependencies=[Depends(require_gateway_auth)],
+)
 
 _ADMIN_ROLES = {"superadmin", "docente_admin"}
 # Lectura read-only (GET keys / usage): admite ademas al docente (F11 — uso/costo
