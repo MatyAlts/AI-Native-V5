@@ -1,12 +1,13 @@
-import { ClerkProvider, SignedIn, SignedOut, SignIn, useAuth, useUser } from "@clerk/clerk-react"
+import { ClerkProvider, SignIn, SignedIn, SignedOut, useAuth, useUser } from "@clerk/clerk-react"
+import { ErrorBoundary } from "@platform/ui"
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query"
 import { RouterProvider, createRouter } from "@tanstack/react-router"
 import { StrictMode, useEffect, useState } from "react"
 import { createRoot } from "react-dom/client"
 import "./index.css"
+import { SELECTED_TENANT_STORAGE_KEY } from "./constants"
 import { comisionesApi } from "./lib/api"
 import { routeTree } from "./routeTree.gen"
-import { SELECTED_TENANT_STORAGE_KEY } from "./constants"
 
 const CLERK_PUBLISHABLE_KEY = import.meta.env.VITE_CLERK_PUBLISHABLE_KEY as string
 // Dev sin Clerk: si no hay publishable key, la identidad (docente) la inyecta
@@ -170,7 +171,9 @@ createRoot(rootElement).render(
   <StrictMode>
     {DEV_NO_CLERK ? (
       <QueryClientProvider client={queryClient}>
-        <DevApp />
+        <ErrorBoundary>
+          <DevApp />
+        </ErrorBoundary>
       </QueryClientProvider>
     ) : (
       <ClerkProvider publishableKey={CLERK_PUBLISHABLE_KEY}>
@@ -185,7 +188,9 @@ createRoot(rootElement).render(
         </SignedOut>
         <SignedIn>
           <QueryClientProvider client={queryClient}>
-            <InnerApp />
+            <ErrorBoundary>
+              <InnerApp />
+            </ErrorBoundary>
           </QueryClientProvider>
         </SignedIn>
       </ClerkProvider>

@@ -1,16 +1,17 @@
 import { ClerkProvider, useAuth, useUser } from "@clerk/clerk-react"
+import { ErrorBoundary } from "@platform/ui"
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query"
 import { RouterProvider, createRouter } from "@tanstack/react-router"
 import { StrictMode, useEffect } from "react"
 import { createRoot } from "react-dom/client"
 import "./index.css"
-import { routeTree } from "./routeTree.gen"
 import {
   DEV_NO_CLERK,
   SELECTED_TENANT_STORAGE_KEY,
   getCurrentUserUuid,
   setDevStudentId,
 } from "./auth"
+import { routeTree } from "./routeTree.gen"
 
 const CLERK_PUBLISHABLE_KEY = import.meta.env.VITE_CLERK_PUBLISHABLE_KEY as string
 
@@ -150,12 +151,16 @@ createRoot(rootElement).render(
   <StrictMode>
     {DEV_NO_CLERK ? (
       <QueryClientProvider client={queryClient}>
-        <DevApp />
+        <ErrorBoundary>
+          <DevApp />
+        </ErrorBoundary>
       </QueryClientProvider>
     ) : (
       <ClerkProvider publishableKey={CLERK_PUBLISHABLE_KEY}>
         <QueryClientProvider client={queryClient}>
-          <InnerApp />
+          <ErrorBoundary>
+            <InnerApp />
+          </ErrorBoundary>
         </QueryClientProvider>
       </ClerkProvider>
     )}

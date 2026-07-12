@@ -9,6 +9,7 @@ export {
   CardFooter,
 } from "./components/Card"
 export { Badge } from "./components/Badge"
+export { ErrorBoundary } from "./components/ErrorBoundary"
 export { Input } from "./components/Input"
 export { Label } from "./components/Label"
 export { Sidebar } from "./components/Sidebar"

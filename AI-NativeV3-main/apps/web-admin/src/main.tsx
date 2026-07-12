@@ -1,4 +1,5 @@
-import { ClerkProvider, SignedIn, SignedOut, SignIn } from "@clerk/clerk-react"
+import { ClerkProvider, SignIn, SignedIn, SignedOut } from "@clerk/clerk-react"
+import { ErrorBoundary } from "@platform/ui"
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query"
 import { StrictMode } from "react"
 import { createRoot } from "react-dom/client"
@@ -75,7 +76,9 @@ if (!rootElement) throw new Error("Missing #root element")
 
 const appTree = (
   <QueryClientProvider client={queryClient}>
-    <App />
+    <ErrorBoundary>
+      <App />
+    </ErrorBoundary>
   </QueryClientProvider>
 )
 

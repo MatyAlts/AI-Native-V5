@@ -135,6 +135,9 @@ importers:
 
   apps/web-landing:
     dependencies:
+      '@platform/ui':
+        specifier: workspace:*
+        version: link:../../packages/ui
       clsx:
         specifier: ^2.1.0
         version: 2.1.1
