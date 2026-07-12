@@ -11,7 +11,7 @@
  */
 import { useQuery } from "@tanstack/react-query"
 import { Link, createFileRoute, useNavigate } from "@tanstack/react-router"
-import { BookOpenText, Plus, Sparkles } from "lucide-react"
+import { BookOpenText, LineChart, Plus, Sparkles } from "lucide-react"
 import { useEffect, useState } from "react"
 import { createPortal } from "react-dom"
 import { MateriaCard } from "../components/MateriaCard"
@@ -45,9 +45,7 @@ function HomePage() {
       isLoading={isLoading}
       error={error ? String(error) : null}
       materias={data ?? []}
-      onEnter={(materia) =>
-        navigate({ to: "/materia/$id", params: { id: materia.materia_id } })
-      }
+      onEnter={(materia) => navigate({ to: "/materia/$id", params: { id: materia.materia_id } })}
     />
   )
 }
@@ -85,9 +83,7 @@ export function HomeContent({ isLoading, error, materias, onEnter }: HomeContent
     return (
       <div className="page-enter flex-1 flex items-center justify-center p-8">
         <div className="max-w-md text-center rounded-xl border border-danger/30 bg-danger-soft p-6">
-          <p className="text-sm font-semibold text-danger mb-2">
-            No pudimos cargar tus materias.
-          </p>
+          <p className="text-sm font-semibold text-danger mb-2">No pudimos cargar tus materias.</p>
           <p className="text-xs font-mono text-danger/80 break-all">{error}</p>
         </div>
       </div>
@@ -121,6 +117,14 @@ export function HomeContent({ isLoading, error, materias, onEnter }: HomeContent
           </div>
           <div className="flex shrink-0 items-center gap-2">
             <JoinMateriaControl />
+            <Link
+              to="/progreso"
+              data-testid="home-link-progreso"
+              className="press-shrink shrink-0 inline-flex items-center gap-1.5 px-3 py-2 rounded-md border border-border bg-surface text-xs font-medium text-body hover:bg-accent-brand-soft hover:text-accent-brand-deep hover:border-accent-brand/40 transition-colors"
+            >
+              <LineChart className="h-3.5 w-3.5" aria-hidden="true" />
+              Mi progreso
+            </Link>
             <Link
               to="/reflexiones"
               data-testid="home-link-reflexiones"
@@ -208,57 +212,58 @@ function JoinMateriaControl({ label = "Unirse a otra materia" }: { label?: strin
         {label}
       </button>
 
-      {open && createPortal(
-        <div
-          role="dialog"
-          aria-modal="true"
-          aria-label="Unirse a otra materia"
-          className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4"
-          onClick={close}
-        >
+      {open &&
+        createPortal(
           <div
-            className="w-full max-w-sm rounded-xl border border-border bg-surface p-6 shadow-lg"
-            onClick={(e) => e.stopPropagation()}
+            role="dialog"
+            aria-modal="true"
+            aria-label="Unirse a otra materia"
+            className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4"
+            onClick={close}
           >
-            <h2 className="text-lg font-semibold text-ink">Unirte a otra materia</h2>
-            <p className="text-sm text-muted-soft mt-1 mb-4">
-              Ingresá el código que te dio tu docente para sumar otra materia.
-            </p>
-            <input
-              type="text"
-              value={code}
-              autoFocus
-              onChange={(e) => setCode(e.target.value.toUpperCase())}
-              onKeyDown={(e) => {
-                if (e.key === "Enter" && code.length >= 3 && !submitting) submit()
-              }}
-              placeholder="Ej: C1-7X3K"
-              maxLength={10}
-              className="w-full px-4 py-3 text-center text-lg font-mono tracking-widest border border-border-soft rounded-lg bg-surface focus:outline-none focus:ring-2 focus:ring-accent-brand"
-            />
-            {error && <p className="text-sm text-red-600 mt-2">{error}</p>}
-            <div className="flex items-center justify-end gap-2 mt-4">
-              <button
-                type="button"
-                onClick={close}
-                disabled={submitting}
-                className="press-shrink px-4 py-2 rounded-md border border-border bg-surface text-sm font-medium text-body hover:bg-surface-alt transition-colors disabled:opacity-50"
-              >
-                Cancelar
-              </button>
-              <button
-                type="button"
-                onClick={submit}
-                disabled={code.length < 3 || submitting}
-                className="press-shrink bg-accent-brand text-white px-5 py-2 rounded-md text-sm font-medium hover:opacity-90 disabled:opacity-50"
-              >
-                {submitting ? "Uniéndote…" : "Unirme"}
-              </button>
+            <div
+              className="w-full max-w-sm rounded-xl border border-border bg-surface p-6 shadow-lg"
+              onClick={(e) => e.stopPropagation()}
+            >
+              <h2 className="text-lg font-semibold text-ink">Unirte a otra materia</h2>
+              <p className="text-sm text-muted-soft mt-1 mb-4">
+                Ingresá el código que te dio tu docente para sumar otra materia.
+              </p>
+              <input
+                type="text"
+                value={code}
+                autoFocus
+                onChange={(e) => setCode(e.target.value.toUpperCase())}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter" && code.length >= 3 && !submitting) submit()
+                }}
+                placeholder="Ej: C1-7X3K"
+                maxLength={10}
+                className="w-full px-4 py-3 text-center text-lg font-mono tracking-widest border border-border-soft rounded-lg bg-surface focus:outline-none focus:ring-2 focus:ring-accent-brand"
+              />
+              {error && <p className="text-sm text-red-600 mt-2">{error}</p>}
+              <div className="flex items-center justify-end gap-2 mt-4">
+                <button
+                  type="button"
+                  onClick={close}
+                  disabled={submitting}
+                  className="press-shrink px-4 py-2 rounded-md border border-border bg-surface text-sm font-medium text-body hover:bg-surface-alt transition-colors disabled:opacity-50"
+                >
+                  Cancelar
+                </button>
+                <button
+                  type="button"
+                  onClick={submit}
+                  disabled={code.length < 3 || submitting}
+                  className="press-shrink bg-accent-brand text-white px-5 py-2 rounded-md text-sm font-medium hover:opacity-90 disabled:opacity-50"
+                >
+                  {submitting ? "Uniéndote…" : "Unirme"}
+                </button>
+              </div>
             </div>
-          </div>
-        </div>,
-        document.body
-      )}
+          </div>,
+          document.body,
+        )}
     </>
   )
 }
@@ -321,8 +326,8 @@ function EmptyState() {
             Tutor socrático con trazabilidad cognitiva
           </h1>
           <p className="text-base text-body leading-relaxed max-w-2xl">
-            No te da la respuesta — te acompaña a construirla. Cada interacción queda registrada
-            en una cadena criptográfica verificable.
+            No te da la respuesta — te acompaña a construirla. Cada interacción queda registrada en
+            una cadena criptográfica verificable.
           </p>
         </header>
 
@@ -365,12 +370,10 @@ function EmptyState() {
           data-testid="home-empty-gap-b2"
           className="rounded-xl border border-border bg-surface px-5 py-5 max-w-xl animate-fade-in-up animate-delay-300"
         >
-          <p className="text-sm font-semibold text-ink mb-1">
-            Para empezar, unite a tu comisión
-          </p>
+          <p className="text-sm font-semibold text-ink mb-1">Para empezar, unite a tu comisión</p>
           <p className="text-xs text-muted leading-relaxed mb-4">
-            Ingresá el código que te dio tu docente o tu Dirección de Informática para ver
-            las materias y las tareas prácticas de tu comisión.
+            Ingresá el código que te dio tu docente o tu Dirección de Informática para ver las
+            materias y las tareas prácticas de tu comisión.
           </p>
           <JoinMateriaControl label="Ingresar el código de mi comisión" />
         </div>
