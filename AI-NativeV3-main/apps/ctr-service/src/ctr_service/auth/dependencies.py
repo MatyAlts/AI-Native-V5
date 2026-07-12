@@ -118,3 +118,62 @@ PUBLISH_ROLES = ("tutor_service", "superadmin")
 # Leer episodios: docentes (solo los de sus comisiones; ABAC adicional),
 # docente_admin del tenant, superadmin
 READ_ROLES = ("docente", "docente_admin", "superadmin", "tutor_service", "classifier_worker")
+
+# Roles con visión total del CTR: oversight académico del tenant
+# (superadmin / docente_admin) + service-accounts internos que leen
+# service-to-service (tutor_service para idempotencia, classifier_worker para
+# clasificar). Un `docente` "pelado" NO está acá: debe ser miembro de la
+# comisión del episodio que quiere leer/verificar (gate A0.6).
+CTR_OVERSIGHT_ROLES = frozenset(
+    {"superadmin", "docente_admin", "tutor_service", "classifier_worker"}
+)
+
+
+async def _is_comision_member(tenant_id: UUID, user_id: UUID, comision_id: UUID) -> bool:
+    """`True` si `user_id` es docente asignado a `comision_id` en academic_main.
+
+    Query de solo-lectura contra `usuarios_comision` (academic_main) con RLS por
+    tenant. El CTR no hace joins cross-base — usa una conexión separada. Seam
+    aislado para poder testear el gate sin una DB académica real.
+    """
+    from platform_ops import set_tenant_rls
+    from sqlalchemy import text
+    from sqlalchemy.ext.asyncio import async_sessionmaker
+
+    from ctr_service.db import get_academic_engine
+
+    engine = get_academic_engine()
+    async with async_sessionmaker(engine, expire_on_commit=False)() as s:
+        await set_tenant_rls(s, tenant_id)
+        row = (
+            await s.execute(
+                text(
+                    "SELECT 1 FROM usuarios_comision "
+                    "WHERE comision_id = :c AND user_id = :u "
+                    "AND deleted_at IS NULL LIMIT 1"
+                ),
+                {"c": str(comision_id), "u": str(user_id)},
+            )
+        ).first()
+    return row is not None
+
+
+async def assert_comision_member(user: User, comision_id: UUID) -> None:
+    """Lanza 403 si `user` no puede leer el CTR de `comision_id` (gate A0.6).
+
+    Cierra el leak: en prod todos los docentes comparten un tenant fijo, así que
+    la RLS por tenant NO los separa — el aislamiento entre comisiones lo da la
+    asignación `usuarios_comision`. Roles oversight y service-accounts internos
+    (``CTR_OVERSIGHT_ROLES``) ven todo. Con el flag OFF o sin ``academic_db_url``
+    (dev/stub/tests) el guard es no-op para no romper la auditoría legítima ni el
+    dev loop. Mismo patrón que analytics-service.
+    """
+    if user.roles & CTR_OVERSIGHT_ROLES:
+        return
+    if not settings.enforce_comision_access or not settings.academic_db_url:
+        return
+    if not await _is_comision_member(user.tenant_id, user.id, comision_id):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="No tenes acceso al CTR de esta comision (no sos docente asignado).",
+        )

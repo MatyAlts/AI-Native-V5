@@ -18,6 +18,27 @@ from ctr_service.config import settings
 
 _engine: AsyncEngine | None = None
 _session_factory: async_sessionmaker[AsyncSession] | None = None
+_academic_engine: AsyncEngine | None = None
+
+
+def get_academic_engine() -> AsyncEngine:
+    """Engine de solo-lectura a academic_main para el gate de lectura (A0.6).
+
+    El CTR no hace joins cross-base; esta conexión aparte existe SOLO para
+    resolver la membresía docente↔comisión (`usuarios_comision`) antes de
+    servir un episodio, replicando el patrón de analytics-service. Pool mínimo
+    porque se toca a lo sumo una vez por auditoría de un docente.
+    """
+    global _academic_engine
+    if _academic_engine is None:
+        _academic_engine = create_async_engine(
+            settings.academic_db_url,
+            pool_size=1,
+            max_overflow=2,
+            pool_pre_ping=True,
+            echo=settings.db_echo,
+        )
+    return _academic_engine
 
 
 def get_engine() -> AsyncEngine:

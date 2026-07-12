@@ -40,6 +40,21 @@ class Settings(BaseSettings):
     )
     db_echo: bool = False
 
+    # ── Aislamiento por comisión de las LECTURAS del CTR (A0.6) ─────────────
+    # Un docente solo puede leer/verificar episodios de comisiones a las que
+    # está asignado (`usuarios_comision` en academic_main). superadmin /
+    # docente_admin (oversight) y los service-accounts internos
+    # (tutor_service / classifier_worker) siguen viendo todo. El CTR vive en su
+    # propia base (`ctr_store`) y NO hace joins cross-base — esta conexión de
+    # solo-lectura a academic_main existe únicamente para resolver la membresía
+    # docente↔comisión, replicando el patrón de analytics-service.
+    #
+    # `enforce_comision_access=True` (default prod) prende el gate; sin
+    # `academic_db_url` (dev/stub o tests con DB mockeada) el guard es no-op —
+    # así no rompe el dev loop ni la auditoría legítima service-to-service.
+    academic_db_url: str = Field(default="")
+    enforce_comision_access: bool = Field(default=True)
+
     redis_url: str = "redis://127.0.0.1:6379/0"
 
     num_partitions: int = 8
