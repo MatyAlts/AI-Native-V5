@@ -133,6 +133,70 @@ async def require_comision_access(
     await assert_comision_member(user_id, comision_id, tenant_id)
 
 
+# Roles de staff que ven el progreso de CUALQUIER alumno (mismo set que usa
+# evaluation-service/routes/entregas.py). Un caller SIN ninguno de estos roles
+# se trata como estudiante: solo puede leer SU propio progreso.
+_STAFF_ROLES: frozenset[str] = frozenset(
+    {"superadmin", "docente_admin", "docente", "jtp", "auxiliar"}
+)
+
+
+async def require_student_progress_access(
+    student_pseudonym: UUID,
+    comision_id: UUID,
+    x_user_id: str | None = Header(default=None),
+    x_user_roles: str | None = Header(default=None),
+    tenant_id: UUID = Depends(get_tenant_id),
+) -> None:
+    """Autorización de los endpoints "Mi progreso" longitudinal del alumno (F9).
+
+    FastAPI resuelve `student_pseudonym` del path y `comision_id` del query
+    del endpoint. Dos ramas de autorización:
+
+      - **Staff/oversight** (docente, jtp, auxiliar, docente_admin,
+        superadmin): comportamiento de hoy — aislamiento por comisión vía
+        `assert_comision_member`. Ven el progreso de cualquier alumno de su
+        comisión.
+      - **Estudiante** (sin rol de staff): SOLO puede pedir su PROPIO
+        `student_pseudonym`. El pseudónimo del alumno ES su `user_id`
+        (`X-User-Id` que inyecta el api-gateway — ver `/student/me/episodes`);
+        si el path pide otro UUID → 403.
+
+    Gateado por `settings.enforce_comision_access` igual que
+    `require_comision_access` (no-op en tests/dev; True en prod).
+    """
+    from analytics_service.config import settings
+
+    if not settings.enforce_comision_access:
+        return
+    if not x_user_id:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="X-User-Id header required",
+        )
+    try:
+        user_id = UUID(x_user_id)
+    except ValueError:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="X-User-Id must be a valid UUID",
+        )
+
+    roles = {r.strip() for r in (x_user_roles or "").split(",") if r.strip()}
+    if roles & _STAFF_ROLES:
+        # Docente/oversight: aislamiento por comisión (sin cambios).
+        await assert_comision_member(user_id, comision_id, tenant_id)
+        return
+
+    # Estudiante: solo su propio progreso. No pasa por el gate de comisión
+    # (los alumnos no están en `usuarios_comision`; su identidad ES el pseudónimo).
+    if student_pseudonym != user_id:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Solo podes ver tu propio progreso.",
+        )
+
+
 # ── Kappa endpoint ────────────────────────────────────────────────────
 
 
@@ -916,7 +980,7 @@ async def get_cii_evolution_longitudinal(
     comision_id: UUID,
     tenant_id: UUID = Depends(get_tenant_id),
     user_id: UUID = Depends(get_user_id),
-    _comision_access: None = Depends(require_comision_access),
+    _access: None = Depends(require_student_progress_access),
 ) -> CIIEvolutionLongitudinalOut:
     """CII evolution longitudinal del estudiante en una comisión (ADR-018).
 
@@ -1101,7 +1165,7 @@ async def get_student_episodes(
     comision_id: UUID,
     tenant_id: UUID = Depends(get_tenant_id),
     user_id: UUID = Depends(get_user_id),
-    _comision_access: None = Depends(require_comision_access),
+    _access: None = Depends(require_student_progress_access),
 ) -> StudentEpisodesOut:
     """Listado de episodios CERRADOS del estudiante con classification + template_id.
 
@@ -1283,7 +1347,7 @@ async def get_student_alerts(
     comision_id: UUID,
     tenant_id: UUID = Depends(get_tenant_id),
     user_id: UUID = Depends(get_user_id),
-    _comision_access: None = Depends(require_comision_access),
+    _access: None = Depends(require_student_progress_access),
 ) -> StudentAlertsOut:
     """Alertas longitudinales del estudiante vs. cohorte (ADR-022, audit G7).
 
