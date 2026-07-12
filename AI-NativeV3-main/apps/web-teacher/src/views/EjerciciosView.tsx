@@ -18,9 +18,9 @@
  *  - ModalState discriminated union (mismo patron que TareasPracticasView)
  *  - PageContainer + helpContent (key "ejercicios")
  */
-import { Badge, Modal, PageContainer } from "@platform/ui"
-import { AlertTriangle, Pencil, Plus, Sparkles, Trash2, Upload } from "lucide-react"
-import { useCallback, useEffect, useState } from "react"
+import { Badge, Input, Modal, PageContainer } from "@platform/ui"
+import { AlertTriangle, Pencil, Plus, Search, Sparkles, Trash2, Upload, X } from "lucide-react"
+import { useCallback, useEffect, useMemo, useState } from "react"
 import {
   type CriterioRubrica,
   type Dificultad,
@@ -167,6 +167,11 @@ export function EjerciciosView({ comisionId, getToken }: Props) {
   const [filterUnidad, setFilterUnidad] = useState<UnidadTematica | "">("")
   const [filterDificultad, setFilterDificultad] = useState<Dificultad | "">("")
   const [filterIA, setFilterIA] = useState<"" | "true" | "false">("")
+  // Busqueda por texto (FR-4). Client-side sobre lo ya cargado: el backend no
+  // expone un query param de texto (solo filtros de igualdad exacta), asi que
+  // matcheamos titulo/enunciado/unidad en vivo. Ojo: fetchList trae hasta 100
+  // ejercicios sin paginar, asi que el filtro solo ve esa primera pagina.
+  const [search, setSearch] = useState("")
   // El banco se filtra por la materia de la comisión activa (Prog 1, Prog 2…).
   // null = todavía resolviendo o la comisión no es del docente.
   const [materiaId, setMateriaId] = useState<string | null>(null)
@@ -227,6 +232,20 @@ export function EjerciciosView({ comisionId, getToken }: Props) {
     fetchList()
   }, [fetchList])
 
+  // Ejercicios visibles tras aplicar la busqueda por texto (sobre la lista ya
+  // filtrada/ordenada por el server). Matchea titulo, enunciado y el label de
+  // la unidad tematica. Sin termino -> lista completa.
+  const visibles = useMemo(() => {
+    const q = search.trim().toLowerCase()
+    if (!q) return ejercicios
+    return ejercicios.filter(
+      (ej) =>
+        ej.titulo.toLowerCase().includes(q) ||
+        ej.enunciado_md.toLowerCase().includes(q) ||
+        (UNIDAD_LABEL[ej.unidad_tematica] ?? ej.unidad_tematica).toLowerCase().includes(q),
+    )
+  }, [ejercicios, search])
+
   function closeModal() {
     setModal({ kind: "closed" })
   }
@@ -272,6 +291,28 @@ export function EjerciciosView({ comisionId, getToken }: Props) {
     >
       <div className="flex flex-wrap items-center justify-between gap-3 mb-4">
         <div className="flex flex-wrap items-center gap-2">
+          <div className="relative w-64">
+            <Search className="pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2 w-4 h-4 text-muted" />
+            <Input
+              type="text"
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              placeholder="Buscar por titulo o enunciado..."
+              aria-label="Buscar ejercicios"
+              className="h-8 pl-8 pr-8"
+            />
+            {search && (
+              <button
+                type="button"
+                onClick={() => setSearch("")}
+                title="Limpiar busqueda"
+                aria-label="Limpiar busqueda"
+                className="absolute right-2 top-1/2 -translate-y-1/2 text-muted hover:text-ink"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            )}
+          </div>
           <select
             value={filterUnidad}
             onChange={(e) => setFilterUnidad(e.target.value as UnidadTematica | "")}
@@ -345,7 +386,14 @@ export function EjerciciosView({ comisionId, getToken }: Props) {
         </div>
       )}
 
-      {!loading && ejercicios.length > 0 && (
+      {!loading && !error && ejercicios.length > 0 && visibles.length === 0 && (
+        <div className="text-sm text-muted bg-canvas border border-border rounded p-6 text-center">
+          Ningun ejercicio coincide con "{search.trim()}". Proba con otro termino o limpia la
+          busqueda.
+        </div>
+      )}
+
+      {!loading && visibles.length > 0 && (
         <div className="border border-border rounded overflow-hidden bg-white">
           <table className="w-full text-sm">
             <thead className="bg-canvas border-b border-border">
@@ -359,7 +407,7 @@ export function EjerciciosView({ comisionId, getToken }: Props) {
               </tr>
             </thead>
             <tbody>
-              {ejercicios.map((ej) => (
+              {visibles.map((ej) => (
                 <tr key={ej.id} className="border-b border-border last:border-0 hover:bg-canvas">
                   <td className="px-3 py-2">
                     <button
