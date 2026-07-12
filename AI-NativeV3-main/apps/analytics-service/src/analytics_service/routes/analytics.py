@@ -1305,11 +1305,14 @@ async def get_student_alerts(
         )
 
     from platform_ops import (
-        RealLongitudinalDataSource,
         compute_cii_evolution_longitudinal,
         set_tenant_rls,
     )
     from sqlalchemy.ext.asyncio import async_sessionmaker
+
+    from analytics_service.services.cohort_slopes import (
+        batch_classifications_with_templates_by_student,
+    )
 
     ctr_engine = get_ctr_engine()
     cls_engine = get_classifier_engine()
@@ -1324,35 +1327,27 @@ async def get_student_alerts(
         await set_tenant_rls(ctr_s, tenant_id)
         await set_tenant_rls(cls_s, tenant_id)
         await set_tenant_rls(acad_s, tenant_id)
-        ds = RealLongitudinalDataSource(ctr_s, cls_s, tenant_id)
 
-        # 1. Slope del estudiante target
-        student_classifications = await ds.list_classifications_with_templates_for_student(
-            student_pseudonym=student_pseudonym,
-            comision_id=comision_id,
+        # P-4: una sola pasada (3 queries) trae las clasificaciones-con-template
+        # de TODA la cohorte, en vez de 3 queries × N alumnos (N+1). El slope
+        # por alumno es idéntico al de la función per-alumno.
+        grouped = await batch_classifications_with_templates_by_student(
+            ctr_session=ctr_s,
+            classifier_session=cls_s,
             academic_session=acad_s,
+            comision_id=comision_id,
+            tenant_id=tenant_id,
         )
-        student_evolution = compute_cii_evolution_longitudinal(student_classifications)
+
+        # 1. Slope del estudiante target (lista vacía si no tiene clasificaciones).
+        student_evolution = compute_cii_evolution_longitudinal(
+            grouped.get(student_pseudonym, [])
+        )
         student_slope = student_evolution["mean_slope"]
 
-        # 2. Slopes de toda la cohorte (para cuartiles)
-        from ctr_service.models import Episode
-        from sqlalchemy import select
-
-        ep_stmt = (
-            select(Episode.student_pseudonym)
-            .where(Episode.comision_id == comision_id)
-            .where(Episode.tenant_id == tenant_id)
-            .distinct()
-        )
-        students_result = await ctr_s.execute(ep_stmt)
-        student_ids = [row.student_pseudonym for row in students_result.all()]
-        for sid in student_ids:
-            cls = await ds.list_classifications_with_templates_for_student(
-                student_pseudonym=sid,
-                comision_id=comision_id,
-                academic_session=acad_s,
-            )
+        # 2. Slopes de toda la cohorte (para cuartiles). Solo aportan los alumnos
+        # con slope definido — igual que el loop original, que descartaba None.
+        for _sid, cls in grouped.items():
             evo = compute_cii_evolution_longitudinal(cls)
             if evo["mean_slope"] is not None:
                 cohort_slopes.append(evo["mean_slope"])
@@ -1458,11 +1453,14 @@ async def get_cohort_alerts_summary(
         )
 
     from platform_ops import (
-        RealLongitudinalDataSource,
         compute_cii_evolution_longitudinal,
         set_tenant_rls,
     )
     from sqlalchemy.ext.asyncio import async_sessionmaker
+
+    from analytics_service.services.cohort_slopes import (
+        batch_classifications_with_templates_by_student,
+    )
 
     ctr_engine = get_ctr_engine()
     cls_engine = get_classifier_engine()
@@ -1480,26 +1478,17 @@ async def get_cohort_alerts_summary(
         await set_tenant_rls(ctr_s, tenant_id)
         await set_tenant_rls(cls_s, tenant_id)
         await set_tenant_rls(acad_s, tenant_id)
-        ds = RealLongitudinalDataSource(ctr_s, cls_s, tenant_id)
 
-        from ctr_service.models import Episode
-        from sqlalchemy import select
-
-        ep_stmt = (
-            select(Episode.student_pseudonym)
-            .where(Episode.comision_id == comision_id)
-            .where(Episode.tenant_id == tenant_id)
-            .distinct()
+        # P-4: batch de toda la cohorte en 3 queries (antes: 3 queries × N).
+        grouped = await batch_classifications_with_templates_by_student(
+            ctr_session=ctr_s,
+            classifier_session=cls_s,
+            academic_session=acad_s,
+            comision_id=comision_id,
+            tenant_id=tenant_id,
         )
-        students_result = await ctr_s.execute(ep_stmt)
-        student_ids = [row.student_pseudonym for row in students_result.all()]
 
-        for sid in student_ids:
-            cls = await ds.list_classifications_with_templates_for_student(
-                student_pseudonym=sid,
-                comision_id=comision_id,
-                academic_session=acad_s,
-            )
+        for sid, cls in grouped.items():
             evo = compute_cii_evolution_longitudinal(cls)
             if evo["mean_slope"] is not None:
                 student_slope_pairs.append((sid, evo["mean_slope"]))

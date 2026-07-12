@@ -88,8 +88,10 @@ def data_source_factory(tenant_id: UUID):
             self.tenant_id = tenant_id
 
         async def _with_sessions(self, fn):
-            ctr_engine = _get_ctr_engine()
-            cls_engine = _get_classifier_engine()
+            from analytics_service.db import get_classifier_engine, get_ctr_engine
+
+            ctr_engine = get_ctr_engine()
+            cls_engine = get_classifier_engine()
             ctr_maker = async_sessionmaker(ctr_engine, expire_on_commit=False)
             cls_maker = async_sessionmaker(cls_engine, expire_on_commit=False)
             async with ctr_maker() as ctr_s, cls_maker() as cls_s:
@@ -112,32 +114,10 @@ def data_source_factory(tenant_id: UUID):
     return _RealDataSourceAdapter(tenant_id)
 
 
-@lru_cache(maxsize=1)
-def _get_ctr_engine():
-    from sqlalchemy.ext.asyncio import create_async_engine
-
-    from analytics_service.config import settings
-
-    return create_async_engine(
-        settings.ctr_store_url,
-        pool_size=2,
-        max_overflow=3,
-        pool_pre_ping=True,
-    )
-
-
-@lru_cache(maxsize=1)
-def _get_classifier_engine():
-    from sqlalchemy.ext.asyncio import create_async_engine
-
-    from analytics_service.config import settings
-
-    return create_async_engine(
-        settings.classifier_db_url,
-        pool_size=2,
-        max_overflow=3,
-        pool_pre_ping=True,
-    )
+# NOTA (P-8): los engines ctr/classifier son ahora los singletons compartidos
+# de `analytics_service.db` (get_ctr_engine/get_classifier_engine). Antes este
+# módulo creaba 2 engines propios (lru_cache) duplicando el pool — analytics
+# terminaba con 7 engines para 3 DBs. Consolidado a 1 engine por DB.
 
 
 _worker: ExportWorker | None = None
