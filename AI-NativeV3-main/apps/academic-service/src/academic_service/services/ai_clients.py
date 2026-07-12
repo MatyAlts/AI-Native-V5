@@ -15,6 +15,7 @@ un borrador completo en una invocacion, no necesita SSE como el tutor.
 
 from __future__ import annotations
 
+import asyncio
 import logging
 from dataclasses import dataclass
 from uuid import UUID
@@ -22,6 +23,25 @@ from uuid import UUID
 import httpx
 
 logger = logging.getLogger(__name__)
+
+
+_generation_semaphore: asyncio.Semaphore | None = None
+
+
+def get_generation_semaphore() -> asyncio.Semaphore:
+    """Semáforo compartido que limita las generaciones IA concurrentes (P-9).
+
+    Ambos endpoints `/generate` (TP y ejercicio) lo adquieren alrededor de la
+    llamada al LLM. Se construye perezosamente (dentro del event loop) para no
+    fijar un loop al importar el módulo. El límite sale de
+    `settings.ai_generation_max_concurrency`.
+    """
+    global _generation_semaphore
+    if _generation_semaphore is None:
+        from academic_service.config import settings
+
+        _generation_semaphore = asyncio.Semaphore(settings.ai_generation_max_concurrency)
+    return _generation_semaphore
 
 
 @dataclass

@@ -1,0 +1,190 @@
+"""Tests del wizard IA de ejercicios (`POST /api/v1/ejercicios/generate`).
+
+ADR-047 + ADR-048. Foco: el manejo del pool de conexiones (P-9 / A2.4).
+
+Invoca `generate_ejercicio` directamente (unit-style). El handler ya NO recibe
+`db` por parámetro: abre una sesión DB CORTA para resolver la materia y la
+cierra ANTES de las llamadas al LLM (que pueden tardar hasta 3×90s). Sin eso,
+una conexión del pool (~8) queda retenida toda la generación y bajo concurrencia
+se agota el pool.
+
+Mock approach: patch `AIGatewayClient` + `GovernanceClient` a nivel de
+`ai_clients`, `_retrieve_rag_context` (para no pegar al content-service) y
+`tenant_session` (para ceder un mock de AsyncSession y trackear apertura).
+"""
+
+from __future__ import annotations
+
+from contextlib import asynccontextmanager
+from unittest.mock import AsyncMock, MagicMock, patch
+from uuid import uuid4
+
+import pytest
+from academic_service.auth.dependencies import User
+from academic_service.routes.ejercicios import (
+    EjercicioGenerateRequest,
+    generate_ejercicio,
+)
+from academic_service.services.ai_clients import CompleteResult, PromptConfig
+from fastapi import HTTPException
+
+
+def _user() -> User:
+    return User(
+        id=uuid4(),
+        tenant_id=uuid4(),
+        email="docente@utn.edu.ar",
+        roles=frozenset({"docente"}),
+        realm="utn",
+    )
+
+
+def _mock_db_returning(materia: object | None) -> MagicMock:
+    db = MagicMock()
+    result = MagicMock()
+    result.scalar_one_or_none.return_value = materia
+    db.execute = AsyncMock(return_value=result)
+    return db
+
+
+def _patch_tenant_session(db: object, tracker: dict | None = None):
+    @asynccontextmanager
+    async def fake_ts(tenant_id):
+        if tracker is not None:
+            tracker["open"] = True
+        try:
+            yield db
+        finally:
+            if tracker is not None:
+                tracker["open"] = False
+
+    return patch("academic_service.db.tenant_session", fake_ts)
+
+
+def _patch_rag():
+    """RAG deshabilitado: sin contexto, 0 chunks, hash None."""
+    return patch(
+        "academic_service.routes.tareas_practicas._retrieve_rag_context",
+        new=AsyncMock(return_value=("", 0, None)),
+    )
+
+
+def _good_request() -> EjercicioGenerateRequest:
+    return EjercicioGenerateRequest(
+        materia_id=uuid4(),
+        descripcion_nl="Ejercicio de listas en Python para principiantes.",
+        unidad_tematica="Estructuras de datos",
+        dificultad="basica",
+    )
+
+
+def _good_prompt() -> PromptConfig:
+    return PromptConfig(
+        name="ejercicio_generator",
+        version="v1.0.0",
+        content="Sos un asistente que genera ejercicios en JSON.",
+        hash="a" * 64,
+    )
+
+
+def _good_complete_result(content: str) -> CompleteResult:
+    return CompleteResult(
+        content=content,
+        model="google/gemini-2.0-flash",
+        provider="google",
+        feature="ejercicio_generator",
+        input_tokens=90,
+        output_tokens=300,
+        cost_usd=0.001,
+        cache_hit=False,
+    )
+
+
+_GOOD_BORRADOR = (
+    '{"titulo": "Sumar lista", "enunciado": "Sumar los numeros de una lista.",'
+    ' "dificultad": "intermedia", "unidad_tematica": "otra"}'
+)
+
+
+async def test_materia_inexistente_devuelve_400() -> None:
+    user = _user()
+    db = _mock_db_returning(None)
+    req = _good_request()
+
+    with _patch_tenant_session(db), pytest.raises(HTTPException) as exc_info:
+        await generate_ejercicio(req=req, user=user)
+
+    assert exc_info.value.status_code == 400
+
+
+async def test_happy_path_devuelve_borrador_con_overrides() -> None:
+    user = _user()
+    db = _mock_db_returning(MagicMock())
+    req = _good_request()
+
+    fake_governance = MagicMock()
+    fake_governance.get_prompt = AsyncMock(return_value=_good_prompt())
+    fake_ai = MagicMock()
+    fake_ai.complete = AsyncMock(return_value=_good_complete_result(_GOOD_BORRADOR))
+
+    with (
+        _patch_tenant_session(db),
+        _patch_rag(),
+        patch(
+            "academic_service.services.ai_clients.GovernanceClient",
+            return_value=fake_governance,
+        ),
+        patch(
+            "academic_service.services.ai_clients.AIGatewayClient",
+            return_value=fake_ai,
+        ),
+    ):
+        resp = await generate_ejercicio(req=req, user=user)
+
+    # El handler sobreescribe unidad_tematica/dificultad con las del request y
+    # marca created_via_ai (no confía esos campos al LLM).
+    assert resp.borrador["unidad_tematica"] == "Estructuras de datos"
+    assert resp.borrador["dificultad"] == "basica"
+    assert resp.borrador["created_via_ai"] is True
+    assert resp.provider_used == "google"
+    assert resp.tokens_input == 90
+
+    call = fake_ai.complete.await_args
+    assert call.kwargs["feature"] == "ejercicio_generator"
+    assert call.kwargs["materia_id"] == req.materia_id
+
+
+async def test_sesion_db_cerrada_durante_llamada_llm() -> None:
+    """P-9 / A2.4: la sesión DB debe estar CERRADA cuando se pega al LLM."""
+    user = _user()
+    db = _mock_db_returning(MagicMock())
+    req = _good_request()
+    tracker: dict = {"open": False}
+    seen_open_during_llm: list[bool] = []
+
+    async def _capture(**kwargs):
+        seen_open_during_llm.append(tracker["open"])
+        return _good_complete_result(_GOOD_BORRADOR)
+
+    fake_governance = MagicMock()
+    fake_governance.get_prompt = AsyncMock(return_value=_good_prompt())
+    fake_ai = MagicMock()
+    fake_ai.complete = AsyncMock(side_effect=_capture)
+
+    with (
+        _patch_tenant_session(db, tracker),
+        _patch_rag(),
+        patch(
+            "academic_service.services.ai_clients.GovernanceClient",
+            return_value=fake_governance,
+        ),
+        patch(
+            "academic_service.services.ai_clients.AIGatewayClient",
+            return_value=fake_ai,
+        ),
+    ):
+        await generate_ejercicio(req=req, user=user)
+
+    assert seen_open_during_llm == [False], (
+        "la sesión DB seguía abierta durante la llamada al LLM (regresión P-9)"
+    )
