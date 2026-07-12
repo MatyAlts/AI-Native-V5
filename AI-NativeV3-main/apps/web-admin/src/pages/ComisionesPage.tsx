@@ -1,4 +1,11 @@
-import { Badge, HeroStatsPanel, HelpButton, PageContainer, ReadonlyField } from "@platform/ui"
+import {
+  Badge,
+  HeroStatsPanel,
+  HelpButton,
+  PageContainer,
+  ReadonlyField,
+  useConfirm,
+} from "@platform/ui"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import { Calendar, ChevronDown, ChevronRight, Layers, Plus, Trash2, Users } from "lucide-react"
 import { type ReactNode, useState } from "react"
@@ -60,6 +67,7 @@ export function ComisionesPage(): ReactNode {
   const [materiaId, setMateriaId] = useState<string>("")
   const [periodoId, setPeriodoId] = useState<string>("")
   const [cursor, setCursor] = useState<string | undefined>(undefined)
+  const confirm = useConfirm()
   const [showForm, setShowForm] = useState(false)
   const [expandedComisionId, setExpandedComisionId] = useState<string | null>(null)
   // NB-16: aviso de fallo parcial (comisión creada pero docente no asignado).
@@ -534,12 +542,13 @@ export function ComisionesPage(): ReactNode {
                       </span>
                       <button
                         type="button"
-                        onClick={(e) => {
+                        onClick={async (e) => {
                           e.stopPropagation()
                           if (
-                            window.confirm(
-                              `¿Eliminar la comisión ${c.codigo}? Esta acción es lógica (soft-delete).`,
-                            )
+                            await confirm({
+                              message: `¿Eliminar la comisión ${c.codigo}? Esta acción es lógica (soft-delete).`,
+                              tone: "danger",
+                            })
                           ) {
                             deleteMutation.mutate(c.id)
                           }
@@ -942,6 +951,7 @@ function DocentesTab({
   isRemoving: boolean
   onAdded: () => void
 }): ReactNode {
+  const confirm = useConfirm()
   const [showForm, setShowForm] = useState(false)
   const [form, setForm] = useState<{
     email: string
@@ -998,8 +1008,13 @@ function DocentesTab({
                 <td className="py-1 text-right">
                   <button
                     type="button"
-                    onClick={() => {
-                      if (window.confirm(`¿Quitar docente ${d.email ?? d.id.slice(0, 8)}?`)) {
+                    onClick={async () => {
+                      if (
+                        await confirm({
+                          message: `¿Quitar docente ${d.email ?? d.id.slice(0, 8)}?`,
+                          tone: "danger",
+                        })
+                      ) {
                         onRemove(d.id)
                       }
                     }}
@@ -1101,6 +1116,7 @@ function AlumnosTab({
   isRemoving: boolean
   onAdded: () => void
 }): ReactNode {
+  const confirm = useConfirm()
   const [showForm, setShowForm] = useState(false)
   const [form, setForm] = useState<InscripcionCreate>({
     student_pseudonym: "",
@@ -1148,8 +1164,13 @@ function AlumnosTab({
                 <td className="py-1 text-right">
                   <button
                     type="button"
-                    onClick={() => {
-                      if (window.confirm(`¿Quitar alumno ${i.student_pseudonym.slice(0, 8)}…?`)) {
+                    onClick={async () => {
+                      if (
+                        await confirm({
+                          message: `¿Quitar alumno ${i.student_pseudonym.slice(0, 8)}…?`,
+                          tone: "danger",
+                        })
+                      ) {
                         onRemove(i.id)
                       }
                     }}

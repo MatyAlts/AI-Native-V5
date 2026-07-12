@@ -1,4 +1,4 @@
-import { HelpButton, Modal, PageContainer } from "@platform/ui"
+import { HelpButton, Modal, PageContainer, useConfirm } from "@platform/ui"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import { Pencil } from "lucide-react"
 import { type ReactNode, useState } from "react"
@@ -18,6 +18,7 @@ function formatError(e: unknown): string {
 export function PeriodosPage(): ReactNode {
   const [showForm, setShowForm] = useState(false)
   const [editing, setEditing] = useState<Periodo | null>(null)
+  const confirm = useConfirm()
 
   const queryClient = useQueryClient()
 
@@ -49,22 +50,26 @@ export function PeriodosPage(): ReactNode {
   const queryError = periodosQuery.error || closeMutation.error || deleteMutation.error
   const error = queryError ? formatError(queryError) : null
 
-  const closePeriodo = (p: Periodo) => {
+  const closePeriodo = async (p: Periodo) => {
     if (
-      !window.confirm(
-        `¿Cerrar el periodo "${p.codigo}"?\n\nEsta acción es IRREVERSIBLE — una vez cerrado, el periodo queda frozen y no se puede reabrir ni editar.`,
-      )
+      !(await confirm({
+        title: "Cerrar periodo",
+        message: `¿Cerrar el periodo "${p.codigo}"?\n\nEsta acción es IRREVERSIBLE — una vez cerrado, el periodo queda frozen y no se puede reabrir ni editar.`,
+        confirmLabel: "Cerrar periodo",
+        tone: "danger",
+      }))
     ) {
       return
     }
     closeMutation.mutate(p.id)
   }
 
-  const deletePeriodo = (p: Periodo) => {
+  const deletePeriodo = async (p: Periodo) => {
     if (
-      !window.confirm(
-        `¿Eliminar el periodo "${p.codigo}"?\n\nSi tiene comisiones asociadas, la operación va a fallar.`,
-      )
+      !(await confirm({
+        message: `¿Eliminar el periodo "${p.codigo}"?\n\nSi tiene comisiones asociadas, la operación va a fallar.`,
+        tone: "danger",
+      }))
     ) {
       return
     }

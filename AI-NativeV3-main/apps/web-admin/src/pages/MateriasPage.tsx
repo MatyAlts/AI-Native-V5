@@ -1,4 +1,4 @@
-import { HelpButton, PageContainer, ReadonlyField } from "@platform/ui"
+import { HelpButton, PageContainer, ReadonlyField, useConfirm } from "@platform/ui"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import { Sparkles } from "lucide-react"
 import { type ReactNode, useState } from "react"
@@ -31,6 +31,7 @@ export function MateriasPage({ onNavigate }: { onNavigate?: (to: Route) => void 
   const [carreraId, setCarreraId] = useState<string>("")
   const [planId, setPlanId] = useState<string>("")
   const [showForm, setShowForm] = useState(false)
+  const confirm = useConfirm()
 
   const queryClient = useQueryClient()
 
@@ -87,12 +88,12 @@ export function MateriasPage({ onNavigate }: { onNavigate?: (to: Route) => void 
       : String(queryError)
     : null
 
-  const handleDelete = (m: Materia) => {
+  const handleDelete = async (m: Materia) => {
     if (
-      !window.confirm(
-        `¿Eliminar la materia "${m.nombre}" (${m.codigo})? La quita del plan. ` +
-          "Si ya tiene comisiones/contenido asociado, puede fallar.",
-      )
+      !(await confirm({
+        message: `¿Eliminar la materia "${m.nombre}" (${m.codigo})? La quita del plan. Si ya tiene comisiones/contenido asociado, puede fallar.`,
+        tone: "danger",
+      }))
     ) {
       return
     }

@@ -1,4 +1,4 @@
-import { HelpButton, PageContainer, ReadonlyField } from "@platform/ui"
+import { HelpButton, PageContainer, ReadonlyField, useConfirm } from "@platform/ui"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import { type ReactNode, useState } from "react"
 import {
@@ -25,6 +25,7 @@ export function PlanesPage(): ReactNode {
   const [universidadId, setUniversidadId] = useState<string>("")
   const [carreraId, setCarreraId] = useState<string>("")
   const [showForm, setShowForm] = useState(false)
+  const confirm = useConfirm()
 
   const queryClient = useQueryClient()
 
@@ -88,11 +89,12 @@ export function PlanesPage(): ReactNode {
 
   const carreraMap = new Map(carreras.map((c) => [c.id, c]))
 
-  const handleDelete = (p: Plan) => {
+  const handleDelete = async (p: Plan) => {
     if (
-      !window.confirm(
-        `¿Eliminar el plan ${p.version} (${p.año_inicio})? Esta acción es lógica (soft-delete).`,
-      )
+      !(await confirm({
+        message: `¿Eliminar el plan ${p.version} (${p.año_inicio})? Esta acción es lógica (soft-delete).`,
+        tone: "danger",
+      }))
     ) {
       return
     }

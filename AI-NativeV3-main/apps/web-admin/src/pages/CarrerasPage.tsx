@@ -1,4 +1,4 @@
-import { HelpButton, PageContainer, StateMessage } from "@platform/ui"
+import { HelpButton, PageContainer, StateMessage, useConfirm } from "@platform/ui"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import { type ReactNode, useState } from "react"
 import {
@@ -13,6 +13,7 @@ import { helpContent } from "../utils/helpContent"
 
 export function CarrerasPage(): ReactNode {
   const [showForm, setShowForm] = useState(false)
+  const confirm = useConfirm()
 
   const queryClient = useQueryClient()
 
@@ -50,8 +51,8 @@ export function CarrerasPage(): ReactNode {
   const facMap = new Map(facultades.map((f) => [f.id, f]))
   const noFacultades = facultades.length === 0
 
-  const handleDelete = (c: Carrera) => {
-    if (!window.confirm(`¿Eliminar carrera ${c.nombre}?`)) return
+  const handleDelete = async (c: Carrera) => {
+    if (!(await confirm({ message: `¿Eliminar carrera ${c.nombre}?`, tone: "danger" }))) return
     deleteMutation.mutate(c.id)
   }
 

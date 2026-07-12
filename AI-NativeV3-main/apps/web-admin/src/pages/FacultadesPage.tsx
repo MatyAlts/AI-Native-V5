@@ -1,4 +1,4 @@
-import { HelpButton, PageContainer, StateMessage } from "@platform/ui"
+import { HelpButton, PageContainer, StateMessage, useConfirm } from "@platform/ui"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import { type ReactNode, useState } from "react"
 import {
@@ -17,6 +17,7 @@ export function FacultadesPage(): ReactNode {
   // ahora derivado en memoria en vez de un useEffect + setState).
   const [selectedUniversidadId, setSelectedUniversidadId] = useState<string | null>(null)
   const [showForm, setShowForm] = useState(false)
+  const confirm = useConfirm()
 
   const queryClient = useQueryClient()
 
@@ -55,9 +56,12 @@ export function FacultadesPage(): ReactNode {
 
   const uniMap = new Map(universidades.map((u) => [u.id, u]))
 
-  const handleDelete = (f: Facultad) => {
+  const handleDelete = async (f: Facultad) => {
     if (
-      !window.confirm(`¿Eliminar la facultad ${f.nombre}? Esta acción es lógica (soft-delete).`)
+      !(await confirm({
+        message: `¿Eliminar la facultad ${f.nombre}? Esta acción es lógica (soft-delete).`,
+        tone: "danger",
+      }))
     ) {
       return
     }

@@ -1,4 +1,4 @@
-import { HelpButton, PageContainer, StateMessage } from "@platform/ui"
+import { HelpButton, PageContainer, StateMessage, useConfirm } from "@platform/ui"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import { Plus, Trash2 } from "lucide-react"
 import { type ReactNode, useState } from "react"
@@ -11,6 +11,7 @@ function errMsg(e: unknown): string {
 
 export function UniversidadesPage(): ReactNode {
   const [showForm, setShowForm] = useState(false)
+  const confirm = useConfirm()
 
   const queryClient = useQueryClient()
 
@@ -35,8 +36,8 @@ export function UniversidadesPage(): ReactNode {
   const queryError = universidadesQuery.error || deleteMutation.error
   const error = queryError ? errMsg(queryError) : null
 
-  const handleDelete = (u: Universidad) => {
-    if (!window.confirm(`¿Eliminar universidad ${u.nombre}?`)) return
+  const handleDelete = async (u: Universidad) => {
+    if (!(await confirm({ message: `¿Eliminar universidad ${u.nombre}?`, tone: "danger" }))) return
     deleteMutation.mutate(u.id)
   }
 
