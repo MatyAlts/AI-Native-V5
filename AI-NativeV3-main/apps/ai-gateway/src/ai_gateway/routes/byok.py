@@ -42,6 +42,9 @@ from ai_gateway.services.byok import (
 router = APIRouter(prefix="/api/v1/byok", tags=["byok"])
 
 _ADMIN_ROLES = {"superadmin", "docente_admin"}
+# Lectura read-only (GET keys / usage): admite ademas al docente (F11 — uso/costo
+# de IA para el docente). Las mutaciones siguen exigiendo _ADMIN_ROLES.
+_READ_ROLES = _ADMIN_ROLES | {"docente"}
 
 
 def _check_admin(roles_header: str) -> set[str]:
@@ -54,21 +57,43 @@ def _check_admin(roles_header: str) -> set[str]:
     return roles
 
 
+def _check_read(roles_header: str) -> set[str]:
+    roles = {r.strip() for r in (roles_header or "").split(",") if r.strip()}
+    if not (_READ_ROLES & roles):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="byok_key:read requiere rol docente, docente_admin o superadmin",
+        )
+    return roles
+
+
+def _parse_actor(x_tenant_id: str, x_user_id: str) -> tuple[UUID, UUID]:
+    try:
+        return UUID(x_tenant_id), UUID(x_user_id)
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST, detail="Headers UUID invalidos"
+        ) from exc
+
+
 async def _get_actor(
     x_tenant_id: str = Header(),
     x_user_id: str = Header(),
     x_user_roles: str = Header(""),
 ) -> tuple[UUID, UUID]:
-    """Auth minima — el api-gateway inyecta los headers autoritativos."""
+    """Auth de mutacion — el api-gateway inyecta los headers autoritativos."""
     _check_admin(x_user_roles)
-    try:
-        tenant_id = UUID(x_tenant_id)
-        user_id = UUID(x_user_id)
-    except ValueError as exc:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST, detail="Headers UUID invalidos"
-        ) from exc
-    return tenant_id, user_id
+    return _parse_actor(x_tenant_id, x_user_id)
+
+
+async def _get_actor_read(
+    x_tenant_id: str = Header(),
+    x_user_id: str = Header(),
+    x_user_roles: str = Header(""),
+) -> tuple[UUID, UUID]:
+    """Auth de lectura (GET keys/usage) — admite docente read-only (F11)."""
+    _check_read(x_user_roles)
+    return _parse_actor(x_tenant_id, x_user_id)
 
 
 # ── Schemas ────────────────────────────────────────────────────────────
@@ -172,7 +197,7 @@ async def post_create_key(
 async def get_list_keys(
     scope_type: Literal["tenant", "facultad", "materia"] | None = None,
     scope_id: UUID | None = None,
-    actor: tuple[UUID, UUID] = Depends(_get_actor),
+    actor: tuple[UUID, UUID] = Depends(_get_actor_read),
 ) -> list[KeyOut]:
     """Lista keys del tenant. NO devuelve el plaintext — solo metadata
     + `fingerprint_last4`."""
@@ -237,7 +262,7 @@ async def post_revoke_key(
 async def get_key_usage(
     key_id: UUID,
     yyyymm: str | None = None,
-    actor: tuple[UUID, UUID] = Depends(_get_actor),
+    actor: tuple[UUID, UUID] = Depends(_get_actor_read),
 ) -> UsageOut:
     """Devuelve el agregado de uso del mes (por default el actual).
 

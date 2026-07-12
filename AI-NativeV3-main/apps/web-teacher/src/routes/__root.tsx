@@ -23,6 +23,7 @@ import {
   BookOpen,
   CheckSquare,
   ClipboardList,
+  Cpu,
   Download,
   FlaskConical,
   FolderOpen,
@@ -81,7 +82,10 @@ const NAV_GROUPS: NavGroup[] = [
   },
   {
     label: "Operacional",
-    items: [{ id: "/export", label: "Exportar", icon: Download }],
+    items: [
+      { id: "/export", label: "Exportar", icon: Download },
+      { id: "/uso-ia", label: "Uso de IA", icon: Cpu },
+    ],
   },
 ]
 

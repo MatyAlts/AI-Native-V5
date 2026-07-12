@@ -54,15 +54,39 @@ ESTUDIANTE_HEADERS = {
 async def test_estudiante_get_keys_devuelve_403(client: AsyncClient) -> None:
     response = await client.get("/api/v1/byok/keys", headers=ESTUDIANTE_HEADERS)
     assert response.status_code == 403
-    assert "byok_key:CRUD" in response.json()["detail"]
+    assert "byok_key:read" in response.json()["detail"]
 
 
-async def test_docente_normal_get_keys_devuelve_403(client: AsyncClient) -> None:
+async def test_docente_normal_get_keys_devuelve_200(
+    client: AsyncClient, monkeypatch
+) -> None:
+    # F11: el docente puede LEER keys (read-only); las mutaciones siguen admin.
+    async def _fake_list(*args, **kwargs):
+        return []
+
+    monkeypatch.setattr("ai_gateway.routes.byok.list_byok_keys", _fake_list)
     response = await client.get(
         "/api/v1/byok/keys",
         headers={**ESTUDIANTE_HEADERS, "X-User-Roles": "docente"},
     )
+    assert response.status_code == 200
+
+
+async def test_docente_normal_post_key_devuelve_403(client: AsyncClient) -> None:
+    # F11 es read-only: crear key sigue exigiendo rol admin.
+    body = {
+        "scope_type": "tenant",
+        "scope_id": None,
+        "provider": "anthropic",
+        "plaintext_value": "sk-ant-1234567890",
+    }
+    response = await client.post(
+        "/api/v1/byok/keys",
+        headers={**ESTUDIANTE_HEADERS, "X-User-Roles": "docente"},
+        json=body,
+    )
     assert response.status_code == 403
+    assert "byok_key:CRUD" in response.json()["detail"]
 
 
 async def test_post_key_estudiante_devuelve_403(client: AsyncClient) -> None:

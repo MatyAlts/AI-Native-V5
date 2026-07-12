@@ -9,6 +9,7 @@
 // Additionally, you should also exclude this file from your linter and/or formatter to prevent it from being checked or modified.
 
 import { Route as rootRouteImport } from './routes/__root'
+import { Route as UsoIaRouteImport } from './routes/uso-ia'
 import { Route as UnidadesRouteImport } from './routes/unidades'
 import { Route as TemplatesRouteImport } from './routes/templates'
 import { Route as TareasPracticasRouteImport } from './routes/tareas-practicas'
@@ -29,6 +30,11 @@ import { Route as CohortQuartilesRouteImport } from './routes/cohort-quartiles'
 import { Route as CohortAdversarialRouteImport } from './routes/cohort-adversarial'
 import { Route as IndexRouteImport } from './routes/index'
 
+const UsoIaRoute = UsoIaRouteImport.update({
+  id: '/uso-ia',
+  path: '/uso-ia',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const UnidadesRoute = UnidadesRouteImport.update({
   id: '/unidades',
   path: '/unidades',
@@ -146,6 +152,7 @@ export interface FileRoutesByFullPath {
   '/tareas-practicas': typeof TareasPracticasRoute
   '/templates': typeof TemplatesRoute
   '/unidades': typeof UnidadesRoute
+  '/uso-ia': typeof UsoIaRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
@@ -167,6 +174,7 @@ export interface FileRoutesByTo {
   '/tareas-practicas': typeof TareasPracticasRoute
   '/templates': typeof TemplatesRoute
   '/unidades': typeof UnidadesRoute
+  '/uso-ia': typeof UsoIaRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
@@ -189,6 +197,7 @@ export interface FileRoutesById {
   '/tareas-practicas': typeof TareasPracticasRoute
   '/templates': typeof TemplatesRoute
   '/unidades': typeof UnidadesRoute
+  '/uso-ia': typeof UsoIaRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
@@ -212,6 +221,7 @@ export interface FileRouteTypes {
     | '/tareas-practicas'
     | '/templates'
     | '/unidades'
+    | '/uso-ia'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
@@ -233,6 +243,7 @@ export interface FileRouteTypes {
     | '/tareas-practicas'
     | '/templates'
     | '/unidades'
+    | '/uso-ia'
   id:
     | '__root__'
     | '/'
@@ -254,6 +265,7 @@ export interface FileRouteTypes {
     | '/tareas-practicas'
     | '/templates'
     | '/unidades'
+    | '/uso-ia'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
@@ -276,10 +288,18 @@ export interface RootRouteChildren {
   TareasPracticasRoute: typeof TareasPracticasRoute
   TemplatesRoute: typeof TemplatesRoute
   UnidadesRoute: typeof UnidadesRoute
+  UsoIaRoute: typeof UsoIaRoute
 }
 
 declare module '@tanstack/react-router' {
   interface FileRoutesByPath {
+    '/uso-ia': {
+      id: '/uso-ia'
+      path: '/uso-ia'
+      fullPath: '/uso-ia'
+      preLoaderRoute: typeof UsoIaRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/unidades': {
       id: '/unidades'
       path: '/unidades'
@@ -436,6 +456,7 @@ const rootRouteChildren: RootRouteChildren = {
   TareasPracticasRoute: TareasPracticasRoute,
   TemplatesRoute: TemplatesRoute,
   UnidadesRoute: UnidadesRoute,
+  UsoIaRoute: UsoIaRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)
