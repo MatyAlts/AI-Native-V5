@@ -16,7 +16,7 @@
 import { Badge, Input, PageContainer } from "@platform/ui"
 import { Link } from "@tanstack/react-router"
 import { ArrowRight, ChevronLeft, FileCheck, Inbox, Search, X } from "lucide-react"
-import { useEffect, useState } from "react"
+import { useEffect, useMemo, useState } from "react"
 import { useStudentProfiles } from "../hooks/useStudentProfiles"
 import {
   type CalificacionCreate,
@@ -525,6 +525,137 @@ function EjercicioPanel({ ej, resolvedEpisodeId, titulo, getToken }: EjercicioPa
   )
 }
 
+// ─── Rubrica por criterio en la correccion (F4) ────────────────────────
+//
+// El backend acepta `detalle_criterios` tanto en el POST /calificar como en el
+// PATCH /calificacion. El shape que espera el schema `CriterioCalificacion`
+// (evaluation-service) es `{ criterio, puntaje, max_puntaje, comentario }` —
+// OJO: NO coincide con el tipo `CalificacionCriterio` de `lib/api.ts`
+// (`{ nombre, puntaje, peso, comentario }`), que esta desalineado con el
+// contrato real. Como no podemos tocar api.ts en este cambio, serializamos el
+// shape correcto con un tipo local y casteamos al pasar por el metodo tipado.
+// FOLLOW-UP: corregir `CalificacionCriterio` en lib/api.ts para que matchee
+// `criterio`/`max_puntaje` (hoy dice `nombre`/`peso`).
+interface DetalleCriterioPayload {
+  criterio: string
+  puntaje: number
+  max_puntaje: number
+  comentario: string | null
+}
+
+// Shape de vuelta desde el backend (CalificacionOut.detalle_criterios: list[dict]).
+// `puntaje`/`max_puntaje` vuelven como string (Pydantic serializa Decimal como
+// string en modo JSON), por eso los tipamos laxos y normalizamos al leer.
+interface SavedCriterio {
+  criterio: string
+  puntaje: number | string
+  max_puntaje: number | string
+  comentario: string | null
+}
+
+// Body de calificacion con el shape correcto de criterios (para el PATCH local).
+interface CalificacionBody {
+  nota_final: number
+  feedback_general: string
+  detalle_criterios?: DetalleCriterioPayload[]
+}
+
+// Una fila de rubrica a calificar: aplana los criterios de cada ejercicio de la
+// TP. `criterioLabel` es la identidad estable que se persiste como `criterio` y
+// se usa para re-emparejar la calificacion guardada al re-editar. Si hay mas de
+// un ejercicio con rubrica, se prefija con el titulo para desambiguar.
+interface RubricaRow {
+  key: string
+  ejercicioTitulo: string
+  nombre: string
+  descripcion: string
+  puntajeMax: number
+  criterioLabel: string
+}
+
+function buildRubricaRows(tpEjercicios: TpEjercicio[]): RubricaRow[] {
+  const conRubrica = tpEjercicios
+    .slice()
+    .sort((a, b) => a.orden - b.orden)
+    .filter((t) => (t.ejercicio.rubrica?.criterios?.length ?? 0) > 0)
+  const multi = conRubrica.length > 1
+  const rows: RubricaRow[] = []
+  for (const t of conRubrica) {
+    const criterios = t.ejercicio.rubrica?.criterios ?? []
+    criterios.forEach((c, i) => {
+      rows.push({
+        key: `${t.ejercicio_id}#${i}`,
+        ejercicioTitulo: t.ejercicio.titulo,
+        nombre: c.nombre,
+        descripcion: c.descripcion,
+        puntajeMax: Number.parseFloat(c.puntaje_max) || 0,
+        criterioLabel: multi ? `${t.ejercicio.titulo}: ${c.nombre}` : c.nombre,
+      })
+    })
+  }
+  return rows
+}
+
+// Empareja una calificacion guardada a las filas de rubrica actuales para
+// pre-llenar los inputs. Primero por `criterioLabel` (identidad estable), luego
+// por `nombre` como fallback si la rubrica cambio desde que se califico.
+function mapSavedToInputs(
+  rows: RubricaRow[],
+  saved: SavedCriterio[],
+): { scores: Record<string, string>; comments: Record<string, string> } {
+  const scores: Record<string, string> = {}
+  const comments: Record<string, string> = {}
+  for (const row of rows) {
+    const match =
+      saved.find((s) => s.criterio === row.criterioLabel) ??
+      saved.find((s) => s.criterio === row.nombre)
+    if (match) {
+      scores[row.key] = String(match.puntaje)
+      comments[row.key] = match.comentario ?? ""
+    }
+  }
+  return { scores, comments }
+}
+
+// Serializa las filas al shape que espera el backend. Puntaje vacio = 0.
+function serializeCriterios(
+  rows: RubricaRow[],
+  scores: Record<string, string>,
+  comments: Record<string, string>,
+): DetalleCriterioPayload[] {
+  return rows.map((row) => ({
+    criterio: row.criterioLabel,
+    puntaje: Number.parseFloat(scores[row.key] ?? "") || 0,
+    max_puntaje: row.puntajeMax,
+    comentario: (comments[row.key] ?? "").trim() || null,
+  }))
+}
+
+// Nota total sugerida desde los criterios: proporcion del puntaje asignado sobre
+// el maximo posible, escalada a 0-10 y redondeada a 0.5 (el step del input). El
+// docente sigue gobernando la nota — esto solo la sugiere.
+function suggestNota(rows: RubricaRow[], scores: Record<string, string>): number | null {
+  const sumMax = rows.reduce((acc, r) => acc + r.puntajeMax, 0)
+  if (sumMax <= 0) return null
+  const sumP = rows.reduce((acc, r) => acc + (Number.parseFloat(scores[r.key] ?? "") || 0), 0)
+  const clamped = Math.max(0, Math.min(10, (sumP / sumMax) * 10))
+  return Math.round(clamped * 2) / 2
+}
+
+// Valida los puntajes ingresados: cada valor no-vacio debe ser numerico y estar
+// entre 0 y el maximo del criterio. Devuelve el mensaje de error o null.
+function validateCriterios(rows: RubricaRow[], scores: Record<string, string>): string | null {
+  for (const row of rows) {
+    const raw = (scores[row.key] ?? "").trim()
+    if (raw === "") continue
+    const v = Number.parseFloat(raw)
+    if (Number.isNaN(v) || v < 0 || v > row.puntajeMax) {
+      return `El puntaje de "${row.nombre}" debe estar entre 0 y ${row.puntajeMax}.`
+    }
+  }
+  return null
+}
+
 // Re-calificacion in-place (NB-4 / BUG-3). El backend ya expone
 // `PATCH /api/v1/entregas/{id}/calificacion` para actualizar la nota ya puesta
 // (el `POST /calificar` responde 409 si ya existe y el UNIQUE(entrega_id) bloquea
@@ -534,7 +665,7 @@ function EjercicioPanel({ ej, resolvedEpisodeId, titulo, getToken }: EjercicioPa
 // FOLLOW-UP: mover esto a `entregasDocenteApi.recalificar` en `lib/api.ts`.
 async function recalificarEntrega(
   entregaId: string,
-  body: CalificacionCreate,
+  body: CalificacionBody,
   getToken: () => Promise<string | null>,
 ): Promise<void> {
   const headers: Record<string, string> = { "Content-Type": "application/json" }
@@ -586,6 +717,12 @@ function GradingFormView({ entrega, tarea, getToken, onBack, onUpdated }: Gradin
   // Reapertura del form para re-calificar una entrega ya calificada (BUG-3).
   // Mientras es `false`, los campos quedan `disabled` (solo lectura de la nota).
   const [reediting, setReediting] = useState(false)
+  // Rubrica por criterio (F4). `criterioScores`/`criterioComments` son los
+  // inputs editables por fila de rubrica; `savedCriterios` es lo que vino
+  // guardado en la calificacion (para pre-llenar y para restaurar al cancelar).
+  const [criterioScores, setCriterioScores] = useState<Record<string, string>>({})
+  const [criterioComments, setCriterioComments] = useState<Record<string, string>>({})
+  const [savedCriterios, setSavedCriterios] = useState<SavedCriterio[]>([])
 
   const yaCalificada = entrega.estado === "graded" || entrega.estado === "returned"
 
@@ -614,6 +751,22 @@ function GradingFormView({ entrega, tarea, getToken, onBack, onUpdated }: Gradin
       cancelled = true
     }
   }, [entrega.tarea_practica_id, getToken])
+
+  // Filas de rubrica a calificar (F4): se derivan de la composicion de la TP.
+  // `useMemo` mantiene identidad estable entre renders para que el effect de
+  // pre-llenado no se dispare en cada render.
+  const rubricaRows = useMemo(() => buildRubricaRows(tpEjercicios), [tpEjercicios])
+  const tieneRubrica = rubricaRows.length > 0
+  const notaSugerida = tieneRubrica ? suggestNota(rubricaRows, criterioScores) : null
+
+  // Pre-llena los inputs de criterios desde la calificacion guardada una vez que
+  // la rubrica y el detalle guardado estan disponibles. Para una entrega aun no
+  // calificada, `savedCriterios` es `[]` → inputs vacios.
+  useEffect(() => {
+    const { scores, comments } = mapSavedToInputs(rubricaRows, savedCriterios)
+    setCriterioScores(scores)
+    setCriterioComments(comments)
+  }, [rubricaRows, savedCriterios])
 
   useEffect(() => {
     const estados = entrega.ejercicio_estados ?? []
@@ -701,6 +854,9 @@ function GradingFormView({ entrega, tarea, getToken, onBack, onUpdated }: Gradin
         setCalificacion(c)
         setNota(String(c.nota_final))
         setFeedback(c.feedback_general)
+        // Detalle por criterio (F4): el tipo de `lib/api.ts` esta desalineado
+        // con el contrato real, por eso lo leemos via `SavedCriterio`.
+        setSavedCriterios((c.detalle_criterios ?? []) as unknown as SavedCriterio[])
       })
       .catch((e) => {
         if (!cancelled) setCalificacionError(String(e))
@@ -723,12 +879,31 @@ function GradingFormView({ entrega, tarea, getToken, onBack, onUpdated }: Gradin
       setSubmitError("El feedback general es obligatorio.")
       return
     }
+    if (tieneRubrica) {
+      const critError = validateCriterios(rubricaRows, criterioScores)
+      if (critError) {
+        setSubmitError(critError)
+        return
+      }
+    }
     setSubmitting(true)
     setSubmitError(null)
     try {
+      const detalle = tieneRubrica
+        ? serializeCriterios(rubricaRows, criterioScores, criterioComments)
+        : undefined
       const body: CalificacionCreate = {
         nota_final: notaNum,
         feedback_general: feedback.trim(),
+        // El shape correcto es el del backend (`criterio`/`max_puntaje`); el tipo
+        // `CalificacionCriterio` de api.ts esta desalineado, por eso el cast.
+        ...(detalle
+          ? {
+              detalle_criterios: detalle as unknown as NonNullable<
+                CalificacionCreate["detalle_criterios"]
+              >,
+            }
+          : {}),
       }
       await entregasDocenteApi.calificar(entrega.id, body, getToken)
       // Refetch entrega para tener estado=graded actualizado
@@ -769,12 +944,26 @@ function GradingFormView({ entrega, tarea, getToken, onBack, onUpdated }: Gradin
       setSubmitError("El feedback general es obligatorio.")
       return
     }
+    if (tieneRubrica) {
+      const critError = validateCriterios(rubricaRows, criterioScores)
+      if (critError) {
+        setSubmitError(critError)
+        return
+      }
+    }
     setSubmitting(true)
     setSubmitError(null)
     try {
+      const detalle = tieneRubrica
+        ? serializeCriterios(rubricaRows, criterioScores, criterioComments)
+        : undefined
       await recalificarEntrega(
         entrega.id,
-        { nota_final: notaNum, feedback_general: feedback.trim() },
+        {
+          nota_final: notaNum,
+          feedback_general: feedback.trim(),
+          ...(detalle ? { detalle_criterios: detalle } : {}),
+        },
         getToken,
       )
       // Refetch para reflejar la nota vigente y normalizar estado a 'graded'.
@@ -797,6 +986,10 @@ function GradingFormView({ entrega, tarea, getToken, onBack, onUpdated }: Gradin
       setNota(String(calificacion.nota_final))
       setFeedback(calificacion.feedback_general)
     }
+    // Restaura los criterios a lo guardado (F4).
+    const { scores, comments } = mapSavedToInputs(rubricaRows, savedCriterios)
+    setCriterioScores(scores)
+    setCriterioComments(comments)
   }
 
   return (
@@ -924,6 +1117,93 @@ function GradingFormView({ entrega, tarea, getToken, onBack, onUpdated }: Gradin
                 placeholder="Describe los puntos fuertes y de mejora de la entrega..."
               />
             </div>
+
+            {/* Rúbrica por criterio (F4): solo si la TP tiene ejercicios con
+                rúbrica. El docente asigna puntaje + comentario por criterio y
+                puede aplicar la nota sugerida (que igual puede ajustar). */}
+            {tieneRubrica && (
+              <div data-testid="rubrica-criterios" className="space-y-3">
+                <div className="flex items-center justify-between gap-2 flex-wrap">
+                  <p className="text-sm font-medium text-ink">Rúbrica por criterio</p>
+                  {notaSugerida !== null && !(yaCalificada && !reediting) && (
+                    <div className="flex items-center gap-2">
+                      <span className="text-xs text-muted">
+                        Nota sugerida:{" "}
+                        <span className="font-mono tabular-nums text-ink">
+                          {notaSugerida.toFixed(1)}
+                        </span>
+                      </span>
+                      <button
+                        type="button"
+                        onClick={() => setNota(String(notaSugerida))}
+                        data-testid="aplicar-nota-sugerida-btn"
+                        className="press-shrink px-2.5 py-1 rounded-md text-xs font-medium border border-border bg-surface text-ink hover:bg-surface-alt transition-colors"
+                      >
+                        Aplicar
+                      </button>
+                    </div>
+                  )}
+                </div>
+
+                <div className="space-y-2.5">
+                  {rubricaRows.map((row) => (
+                    <div
+                      key={row.key}
+                      data-testid={`criterio-row-${row.key}`}
+                      className="rounded-lg border border-border-soft bg-canvas p-3"
+                    >
+                      <div className="flex items-start justify-between gap-3 flex-wrap">
+                        <div className="min-w-0 flex-1">
+                          <p className="text-sm font-medium text-ink">{row.nombre}</p>
+                          {row.descripcion && (
+                            <p className="text-xs text-muted mt-0.5 leading-relaxed">
+                              {row.descripcion}
+                            </p>
+                          )}
+                          {row.ejercicioTitulo && rubricaRows.length > 1 && (
+                            <p className="text-[10px] uppercase tracking-wider text-muted-soft mt-1">
+                              {row.ejercicioTitulo}
+                            </p>
+                          )}
+                        </div>
+                        <div className="flex items-center gap-1.5 shrink-0">
+                          <input
+                            type="number"
+                            min="0"
+                            max={row.puntajeMax}
+                            step="0.5"
+                            value={criterioScores[row.key] ?? ""}
+                            onChange={(e) =>
+                              setCriterioScores((prev) => ({ ...prev, [row.key]: e.target.value }))
+                            }
+                            disabled={yaCalificada && !reediting}
+                            data-testid={`criterio-puntaje-${row.key}`}
+                            aria-label={`Puntaje de ${row.nombre}`}
+                            className="w-16 border border-border rounded px-2 py-1.5 text-sm text-ink bg-surface focus:outline-none focus:ring-1 focus:ring-ink disabled:bg-surface-alt disabled:text-muted tabular-nums"
+                            placeholder="0"
+                          />
+                          <span className="text-xs text-muted font-mono tabular-nums">
+                            / {row.puntajeMax}
+                          </span>
+                        </div>
+                      </div>
+                      <input
+                        type="text"
+                        value={criterioComments[row.key] ?? ""}
+                        onChange={(e) =>
+                          setCriterioComments((prev) => ({ ...prev, [row.key]: e.target.value }))
+                        }
+                        disabled={yaCalificada && !reediting}
+                        data-testid={`criterio-comentario-${row.key}`}
+                        aria-label={`Comentario de ${row.nombre}`}
+                        className="mt-2 w-full border border-border rounded px-2.5 py-1.5 text-xs text-ink bg-surface focus:outline-none focus:ring-1 focus:ring-ink disabled:bg-surface-alt disabled:text-muted"
+                        placeholder="Comentario del criterio (opcional)"
+                      />
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
 
             {calificacion && (
               <p className="text-xs text-muted font-mono">
