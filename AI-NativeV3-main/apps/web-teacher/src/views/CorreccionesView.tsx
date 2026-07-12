@@ -13,10 +13,11 @@
  *     - Boton "Calificar" → POST /api/v1/entregas/{id}/calificar.
  *     - Boton "Devolver" (visible si ya fue calificada) → POST .../return.
  */
-import { Badge, PageContainer } from "@platform/ui"
+import { Badge, Input, PageContainer } from "@platform/ui"
 import { Link } from "@tanstack/react-router"
-import { ArrowRight, ChevronLeft, FileCheck, Inbox } from "lucide-react"
+import { ArrowRight, ChevronLeft, FileCheck, Inbox, Search, X } from "lucide-react"
 import { useEffect, useState } from "react"
+import { useStudentProfiles } from "../hooks/useStudentProfiles"
 import {
   type CalificacionCreate,
   type EjercicioEstado,
@@ -32,7 +33,6 @@ import {
   tareasPracticasApi,
   tpEjerciciosApi,
 } from "../lib/api"
-import { useStudentProfiles } from "../hooks/useStudentProfiles"
 import { studentShortLabel } from "../utils/docenteLabels"
 import { helpContent } from "../utils/helpContent"
 
@@ -115,6 +115,11 @@ function EntregasListView({ comisionId, getToken, onSelectEntrega }: EntregasLis
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [estadoFilter, setEstadoFilter] = useState<EntregaEstado | "">("")
+  // Búsqueda por alumno (FR-5): filtra la lista en vivo por el dato de alumno
+  // que la fila ya muestra — el nombre real (si el alumno se logueó) o el
+  // pseudónimo corto (`Est. xxxxxx`). Se busca también contra el pseudónimo
+  // completo por si el docente pega/escribe el UUID.
+  const [studentQuery, setStudentQuery] = useState("")
   const profilesMap = useStudentProfiles(comisionId, getToken)
 
   useEffect(() => {
@@ -183,38 +188,87 @@ function EntregasListView({ comisionId, getToken, onSelectEntrega }: EntregasLis
     returned: entregas.filter((e) => e.estado === "returned").length,
   }
 
+  // Filtro client-side por alumno sobre lo YA cargado. LIMITACIÓN: el listado
+  // pagina server-side (cursor/limit en `entregasDocenteApi.list`) pero esta
+  // vista sólo trae la primera página, así que la búsqueda alcanza únicamente
+  // a las entregas cargadas. Emparejamos contra el label visible
+  // (`studentShortLabel`: nombre real o `Est. xxxxxx`) y también contra el
+  // pseudónimo crudo. FOLLOW-UP: pasar el término al backend para búsqueda
+  // paginada real cuando `list` acepte un filtro por alumno.
+  const q = studentQuery.trim().toLowerCase()
+  const filteredEntregas = q
+    ? entregas.filter(
+        (e) =>
+          studentShortLabel(e.student_pseudonym, profilesMap).toLowerCase().includes(q) ||
+          e.student_pseudonym.toLowerCase().includes(q),
+      )
+    : entregas
+
   return (
     <div className="space-y-5" data-testid="entregas-list-view">
-      {/* Filter chips */}
-      <div
-        role="tablist"
-        aria-label="Filtro por estado"
-        className="flex items-center gap-1 bg-surface border border-border rounded-lg p-1 w-fit shadow-[0_1px_2px_0_rgba(0,0,0,0.04)] animate-fade-in-up"
-      >
-        {(["", "draft", "submitted", "graded", "returned"] as const).map((f) => {
-          const label = f === "" ? "Todos" : ESTADO_LABEL[f as EntregaEstado]
-          const key = f === "" ? "all" : (f as EntregaEstado)
-          const active = estadoFilter === f
-          return (
-            <button
-              key={f || "all"}
-              type="button"
-              role="tab"
-              aria-selected={active}
-              onClick={() => setEstadoFilter(f)}
-              className={`press-shrink px-3 py-1.5 text-xs font-medium rounded-md transition-colors ${
-                active ? "bg-ink text-white" : "text-muted hover:text-ink hover:bg-surface-alt"
-              }`}
-            >
-              {label}
-              <span
-                className={`ml-1.5 font-mono tabular-nums text-[10px] ${active ? "text-white/70" : "text-muted-soft"}`}
+      {/* Toolbar: filtro por estado + búsqueda por alumno */}
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        {/* Filter chips */}
+        <div
+          role="tablist"
+          aria-label="Filtro por estado"
+          className="flex items-center gap-1 bg-surface border border-border rounded-lg p-1 w-fit shadow-[0_1px_2px_0_rgba(0,0,0,0.04)] animate-fade-in-up"
+        >
+          {(["", "draft", "submitted", "graded", "returned"] as const).map((f) => {
+            const label = f === "" ? "Todos" : ESTADO_LABEL[f as EntregaEstado]
+            const key = f === "" ? "all" : (f as EntregaEstado)
+            const active = estadoFilter === f
+            return (
+              <button
+                key={f || "all"}
+                type="button"
+                role="tab"
+                aria-selected={active}
+                onClick={() => setEstadoFilter(f)}
+                className={`press-shrink px-3 py-1.5 text-xs font-medium rounded-md transition-colors ${
+                  active ? "bg-ink text-white" : "text-muted hover:text-ink hover:bg-surface-alt"
+                }`}
               >
-                {counts[key]}
-              </span>
-            </button>
-          )
-        })}
+                {label}
+                <span
+                  className={`ml-1.5 font-mono tabular-nums text-[10px] ${active ? "text-white/70" : "text-muted-soft"}`}
+                >
+                  {counts[key]}
+                </span>
+              </button>
+            )
+          })}
+        </div>
+
+        {/* Búsqueda por alumno (FR-5) */}
+        {entregas.length > 0 && (
+          <div className="relative w-full sm:w-64 animate-fade-in-up">
+            <Search
+              aria-hidden="true"
+              className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-soft"
+            />
+            <Input
+              type="text"
+              value={studentQuery}
+              onChange={(e) => setStudentQuery(e.target.value)}
+              placeholder="Buscar por alumno..."
+              aria-label="Buscar entregas por alumno"
+              data-testid="entregas-student-search"
+              className="pl-9 pr-9"
+            />
+            {studentQuery && (
+              <button
+                type="button"
+                onClick={() => setStudentQuery("")}
+                aria-label="Limpiar busqueda"
+                data-testid="entregas-student-search-clear"
+                className="press-shrink absolute right-2 top-1/2 -translate-y-1/2 rounded p-1 text-muted-soft hover:text-ink hover:bg-surface-alt transition-colors"
+              >
+                <X className="h-3.5 w-3.5" />
+              </button>
+            )}
+          </div>
+        )}
       </div>
 
       {loading && (
@@ -245,12 +299,30 @@ function EntregasListView({ comisionId, getToken, onSelectEntrega }: EntregasLis
         </div>
       )}
 
-      {!loading && !error && entregas.length > 0 && (
+      {/* Búsqueda sin resultados: hay entregas cargadas pero ninguna coincide. */}
+      {!loading && !error && entregas.length > 0 && filteredEntregas.length === 0 && (
+        <div
+          className="rounded-2xl border border-dashed border-border bg-surface p-10 text-center animate-fade-in-up"
+          data-testid="entregas-search-empty"
+        >
+          <div className="inline-flex items-center justify-center rounded-full bg-surface-alt p-4 mb-4">
+            <Search className="h-7 w-7 text-muted" />
+          </div>
+          <p className="text-sm text-muted leading-relaxed max-w-md mx-auto">
+            Ningún alumno coincide con “{studentQuery.trim()}”.
+            <span className="block mt-1 text-xs text-muted-soft">
+              La búsqueda alcanza solo a las entregas ya cargadas en esta página.
+            </span>
+          </p>
+        </div>
+      )}
+
+      {!loading && !error && filteredEntregas.length > 0 && (
         <ul
           className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4"
           data-testid="entregas-table"
         >
-          {entregas.map((entrega, idx) => {
+          {filteredEntregas.map((entrega, idx) => {
             const tarea = tareasByID[entrega.tarea_practica_id]
             const isSubmitted = entrega.estado === "submitted"
             return (
