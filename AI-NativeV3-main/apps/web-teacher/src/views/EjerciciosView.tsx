@@ -18,8 +18,21 @@
  *  - ModalState discriminated union (mismo patron que TareasPracticasView)
  *  - PageContainer + helpContent (key "ejercicios")
  */
-import { Badge, Input, Modal, PageContainer } from "@platform/ui"
-import { AlertTriangle, Pencil, Plus, Search, Sparkles, Trash2, Upload, X } from "lucide-react"
+import { Badge, EmptyHero, Input, Modal, PageContainer } from "@platform/ui"
+import {
+  AlertTriangle,
+  BookOpen,
+  CheckCircle2,
+  Eye,
+  EyeOff,
+  Pencil,
+  Plus,
+  Search,
+  Sparkles,
+  Trash2,
+  Upload,
+  X,
+} from "lucide-react"
 import { useCallback, useEffect, useMemo, useState } from "react"
 import {
   type CriterioRubrica,
@@ -29,6 +42,7 @@ import {
   type EjercicioGenerateRequest,
   type Materia,
   type RubricaEjercicio,
+  type TestCaseEjercicio,
   type UnidadTematica,
   comisionesApi,
   createEjercicio,
@@ -163,6 +177,11 @@ export function EjerciciosView({ comisionId, getToken }: Props) {
   const [ejercicios, setEjercicios] = useState<Ejercicio[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
+  // Feedback de exito de las acciones (crear/editar/borrar/importar). El repo
+  // no tiene infra de toast en @platform/ui, asi que usamos un banner inline
+  // consistente con el banner de error de la vista (FR-8). Se limpia solo con
+  // la proxima accion o al cerrarlo a mano.
+  const [notice, setNotice] = useState<string | null>(null)
   const [modal, setModal] = useState<ModalState>({ kind: "closed" })
   const [filterUnidad, setFilterUnidad] = useState<UnidadTematica | "">("")
   const [filterDificultad, setFilterDificultad] = useState<Dificultad | "">("")
@@ -250,35 +269,35 @@ export function EjerciciosView({ comisionId, getToken }: Props) {
     setModal({ kind: "closed" })
   }
 
+  // Crear/editar propagan el error al FormModal (que ya lo muestra inline);
+  // en exito cierran el modal y dejan un banner de exito (FR-8).
   async function handleCreate(body: EjercicioCreate): Promise<void> {
-    try {
-      // Taggea el ejercicio con la materia de la comisión activa para que
-      // quede en el banco de esa materia (Prog 1, Prog 2…).
-      await createEjercicio({ ...body, materia_id: materiaId }, getToken)
-      closeModal()
-      fetchList()
-    } catch (e) {
-      alert(`Error al crear ejercicio: ${String(e)}`)
-    }
+    // Taggea el ejercicio con la materia de la comisión activa para que
+    // quede en el banco de esa materia (Prog 1, Prog 2…).
+    await createEjercicio({ ...body, materia_id: materiaId }, getToken)
+    closeModal()
+    setNotice(`Ejercicio "${body.titulo}" creado en el banco.`)
+    fetchList()
   }
 
   async function handleUpdate(id: string, body: EjercicioCreate): Promise<void> {
-    try {
-      await updateEjercicio(id, body, getToken)
-      closeModal()
-      fetchList()
-    } catch (e) {
-      alert(`Error al actualizar ejercicio: ${String(e)}`)
-    }
+    await updateEjercicio(id, body, getToken)
+    closeModal()
+    setNotice(`Ejercicio "${body.titulo}" actualizado.`)
+    fetchList()
   }
 
   async function handleDelete(ejercicio: Ejercicio): Promise<void> {
+    // El modal de borrado no tiene banner propio: el error va al banner de
+    // error de la vista y el exito al banner de exito.
     try {
       await deleteEjercicio(ejercicio.id, getToken)
       closeModal()
+      setNotice(`Ejercicio "${ejercicio.titulo}" eliminado.`)
       fetchList()
     } catch (e) {
-      alert(`Error al borrar: ${String(e)}`)
+      closeModal()
+      setError(`No se pudo eliminar el ejercicio: ${String(e)}`)
     }
   }
 
@@ -373,6 +392,22 @@ export function EjerciciosView({ comisionId, getToken }: Props) {
         </div>
       </div>
 
+      {notice && (
+        <div className="flex items-start gap-2 text-sm text-emerald-700 bg-emerald-50 border border-emerald-200 rounded p-3 mb-3">
+          <CheckCircle2 className="w-4 h-4 shrink-0 mt-0.5" />
+          <span className="flex-1">{notice}</span>
+          <button
+            type="button"
+            onClick={() => setNotice(null)}
+            title="Cerrar"
+            aria-label="Cerrar aviso"
+            className="text-emerald-600 hover:text-emerald-800"
+          >
+            <X className="w-4 h-4" />
+          </button>
+        </div>
+      )}
+
       {loading && <div className="text-sm text-muted">Cargando ejercicios...</div>}
       {error && (
         <div className="text-sm text-red-600 bg-red-50 border border-red-200 rounded p-3 mb-3">
@@ -381,9 +416,24 @@ export function EjerciciosView({ comisionId, getToken }: Props) {
       )}
 
       {!loading && ejercicios.length === 0 && !error && (
-        <div className="text-sm text-muted bg-canvas border border-border rounded p-6 text-center">
-          No hay ejercicios todavia. Crea uno manualmente o usa el wizard de IA.
-        </div>
+        <EmptyHero
+          icon={<BookOpen className="h-12 w-12" />}
+          title="El banco de ejercicios esta vacio"
+          description={
+            materiaId
+              ? "Todavia no hay ejercicios para esta materia. Crea el primero y quedara disponible para armar TPs."
+              : "Selecciona una comision para ver y cargar su banco de ejercicios."
+          }
+          {...(materiaId
+            ? {
+                primaryAction: {
+                  label: "Crear primer ejercicio",
+                  onClick: () => setModal({ kind: "create" }),
+                },
+              }
+            : {})}
+          hint="Tambien podes generarlo con IA o importar un JSON exportado por otra IA."
+        />
       )}
 
       {!loading && !error && ejercicios.length > 0 && visibles.length === 0 && (
@@ -729,6 +779,7 @@ function EjercicioFormModal({ initial, title, unidades, onClose, onSubmit }: For
             value={draft.test_cases ?? []}
             onChange={(v) => set("test_cases", v)}
           />
+          <StudentTestCasePreview testCases={draft.test_cases ?? []} />
           <JsonField
             label="prerequisitos ({sintacticos: [], conceptuales: []})"
             value={draft.prerequisitos ?? { sintacticos: [], conceptuales: [] }}
@@ -848,6 +899,96 @@ function JsonField({ label, value, onChange, allowNull = false }: JsonFieldProps
         rows={4}
       />
       {err && <div className="text-xs text-red-600 mt-1">{err}</div>}
+    </div>
+  )
+}
+
+// ── Preview "Vista del alumno" de los test cases (F12) ──────────────────
+//
+// Replica el saneo de A0.3 (`sanitize_ejercicio_for_student`): el alumno solo
+// recibe los test cases con `is_public === true` (con su `code`/`expected`,
+// que necesita para "probar codigo" honesto — F1); los `is_public=false`
+// nunca viajan al cliente. Este panel le muestra al docente exactamente que
+// test cases veria el estudiante, para que entienda que expone y que queda
+// oculto. Read-only: no edita el draft.
+
+function StudentTestCasePreview({ testCases }: { testCases: TestCaseEjercicio[] }) {
+  const [open, setOpen] = useState(false)
+  const publicos = testCases.filter((tc) => tc.is_public === true)
+  const ocultos = testCases.length - publicos.length
+
+  return (
+    <div className="mt-1">
+      <button
+        type="button"
+        onClick={() => setOpen((v) => !v)}
+        className="flex items-center gap-1.5 border border-border rounded px-2.5 py-1 text-xs hover:bg-canvas"
+        aria-expanded={open}
+      >
+        {open ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
+        {open ? "Ocultar vista del alumno" : "Vista del alumno"}
+      </button>
+
+      {open && (
+        <div className="mt-2 border border-border rounded bg-canvas p-3 space-y-2">
+          <p className="text-xs text-muted">
+            Asi ve el alumno los test cases al "probar codigo". Solo los publicos (
+            <code>is_public: true</code>) viajan al cliente; los ocultos nunca se exponen (mismo
+            saneo que aplica el backend, A0.3).
+          </p>
+
+          {publicos.length === 0 ? (
+            <div className="text-xs text-muted bg-white border border-border rounded p-3 text-center">
+              El alumno no veria ningun test case. Marca alguno con <code>is_public: true</code>{" "}
+              para que pueda probar su codigo.
+            </div>
+          ) : (
+            <ul className="space-y-2">
+              {publicos.map((tc, i) => (
+                <li
+                  key={tc.id || `tc-${i}`}
+                  className="border border-border rounded bg-white p-2 text-xs space-y-1"
+                >
+                  <div className="flex items-center gap-2">
+                    <span className="font-medium">{tc.name || `Test ${i + 1}`}</span>
+                    <Badge>
+                      {tc.type === "stdin_stdout" ? "stdin/stdout" : "pytest"}
+                    </Badge>
+                    <span className="text-muted-soft ml-auto">peso {tc.weight}</span>
+                  </div>
+                  {tc.code && (
+                    <div>
+                      <div className="text-[10px] text-muted uppercase tracking-wide">
+                        {tc.type === "stdin_stdout" ? "entrada" : "assert"}
+                      </div>
+                      <pre className="bg-canvas border border-border rounded p-1.5 font-mono whitespace-pre-wrap">
+                        {tc.code}
+                      </pre>
+                    </div>
+                  )}
+                  {tc.expected !== null && tc.expected !== "" && (
+                    <div>
+                      <div className="text-[10px] text-muted uppercase tracking-wide">
+                        salida esperada
+                      </div>
+                      <pre className="bg-canvas border border-border rounded p-1.5 font-mono whitespace-pre-wrap">
+                        {tc.expected}
+                      </pre>
+                    </div>
+                  )}
+                </li>
+              ))}
+            </ul>
+          )}
+
+          {ocultos > 0 && (
+            <p className="text-[11px] text-muted">
+              {ocultos} test{ocultos !== 1 ? "s" : ""} oculto{ocultos !== 1 ? "s" : ""} de
+              control ({ocultos !== 1 ? "no viajan" : "no viaja"} al alumno).
+            </p>
+          )}
+        </div>
+      )}
     </div>
   )
 }
