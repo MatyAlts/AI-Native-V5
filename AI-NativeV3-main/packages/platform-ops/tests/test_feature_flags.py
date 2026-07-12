@@ -138,3 +138,59 @@ def test_cambio_en_archivo_se_recarga(flags_file: Path) -> None:
     )
     # Con reload_interval_seconds=0, la próxima consulta recarga
     assert flags.get_value(UTN_UUID, "max_episodes_per_day") == 500
+
+
+# ── Default seguro (rollout sin YAML / sin try-except) ─────────────────
+
+
+def test_default_se_usa_cuando_la_feature_no_esta_declarada(flags: FeatureFlags) -> None:
+    other = uuid4()
+    # No declarada en ningún lado → cae al default del caller (no levanta).
+    assert flags.is_enabled(other, "feature_nueva", default=False) is False
+    assert flags.is_enabled(UTN_UUID, "feature_nueva", default=True) is True
+    assert flags.get_value(other, "cupo_desconocido", default=10) == 10
+
+
+def test_default_none_es_valido_y_no_levanta(flags: FeatureFlags) -> None:
+    """default=None debe distinguirse de 'no se pasó default'."""
+    assert flags.get_value(uuid4(), "no_declarada", default=None) is None
+
+
+def test_default_no_pisa_valor_declarado(flags: FeatureFlags) -> None:
+    """Si la feature SÍ está declarada, gana el valor declarado, no el default."""
+    assert flags.is_enabled(UTN_UUID, "enable_code_execution", default=False) is True
+    assert flags.get_value(uuid4(), "max_episodes_per_day", default=999) == 50
+
+
+def test_archivo_ausente_con_default_no_levanta(tmp_path: Path) -> None:
+    flags = FeatureFlags(tmp_path / "no-existe.yaml", reload_interval_seconds=0)
+    assert flags.is_enabled(UTN_UUID, "enable_code_execution", default=False) is False
+
+
+# ── Override por env var (kill-switch / force global de ops) ───────────
+
+
+def test_env_var_override_tiene_maxima_precedencia(
+    flags: FeatureFlags, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # El tenant UTN tiene enable_code_execution=true en el YAML.
+    assert flags.is_enabled(UTN_UUID, "enable_code_execution") is True
+    # El env var lo fuerza a false para TODOS los tenants.
+    monkeypatch.setenv("PLATFORM_FF_ENABLE_CODE_EXECUTION", "false")
+    assert flags.is_enabled(UTN_UUID, "enable_code_execution") is False
+    assert flags.is_enabled(uuid4(), "enable_code_execution") is False
+
+
+def test_env_var_override_parsea_tipos(
+    flags: FeatureFlags, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("PLATFORM_FF_MAX_EPISODES_PER_DAY", "999")
+    assert flags.get_value(UTN_UUID, "max_episodes_per_day") == 999
+
+
+def test_env_var_activa_feature_no_declarada(
+    flags: FeatureFlags, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Un flag inexistente en el YAML se puede prender solo por env (rollout ops)."""
+    monkeypatch.setenv("PLATFORM_FF_FEATURE_FANTASMA", "true")
+    assert flags.is_enabled(uuid4(), "feature_fantasma") is True
