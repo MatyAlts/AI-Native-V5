@@ -536,11 +536,6 @@ def get_provider(name: str = "") -> BaseProvider:
         3. `Settings.llm_provider` (default `mock`, ver CLAUDE.md) — mismo
            comportamiento que (2): unknown → warning + mock.
     """
-    # Dev sin keys: si LLM_PROVIDER=mock esta seteado EXPLICITAMENTE en el env,
-    # forzar mock aunque el route pida un provider concreto (openai/anthropic del
-    # modelo). Prod NO setea LLM_PROVIDER=mock, asi que el ruteo real no se afecta.
-    if os.environ.get("LLM_PROVIDER", "").lower() == "mock":
-        return MockProvider()
     if name:
         which = name.lower()
         from_runtime_config = False

@@ -10,7 +10,6 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
-import os
 import time
 from dataclasses import dataclass, replace
 from datetime import UTC, datetime
@@ -302,11 +301,6 @@ async def _resolve_provider_and_model(
     Devuelve el modelo EFECTIVO que debe ir al provider (strippeado cuando se cae a
     nativo) y el `ResolvedKey` (o None) para el audit trail de BYOK/env_fallback.
     """
-    # Dev sin keys: LLM_PROVIDER=mock (env explicito) fuerza mock, ignorando el
-    # resolver de keys (evita usar la key placeholder sk-REPLACE_ME del .env que
-    # el resolver toma como key nativa valida). Prod NO setea LLM_PROVIDER=mock.
-    if os.environ.get("LLM_PROVIDER", "").lower() == "mock":
-        return get_provider(), _strip_namespace(model), None
     provider_name = _infer_provider_name(model)
 
     if provider_name == "openrouter":
