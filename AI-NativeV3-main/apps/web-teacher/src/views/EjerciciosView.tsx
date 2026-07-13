@@ -25,13 +25,16 @@ import {
   CheckCircle2,
   Eye,
   EyeOff,
+  FlaskConical,
   Pencil,
+  Play,
   Plus,
   Search,
   Sparkles,
   Trash2,
   Upload,
   X,
+  XCircle,
 } from "lucide-react"
 import { useCallback, useEffect, useMemo, useState } from "react"
 import {
@@ -52,6 +55,7 @@ import {
   listMaterias,
   updateEjercicio,
 } from "../lib/api"
+import { isPyodideRuntimeReady, runTestCases, type TestCaseRunResult } from "../lib/pyodideRunner"
 import { helpContent } from "../utils/helpContent"
 
 interface Props {
@@ -65,6 +69,7 @@ type ModalState =
   | { kind: "confirm-edit"; ejercicio: Ejercicio }
   | { kind: "edit"; ejercicio: Ejercicio }
   | { kind: "view"; ejercicio: Ejercicio }
+  | { kind: "test-run"; ejercicio: Ejercicio }
   | { kind: "ai-wizard" }
   | { kind: "import" }
   | { kind: "confirm-delete"; ejercicio: Ejercicio }
@@ -495,6 +500,14 @@ export function EjerciciosView({ comisionId, getToken }: Props) {
                     <div className="inline-flex items-center gap-1">
                       <button
                         type="button"
+                        onClick={() => setModal({ kind: "test-run", ejercicio: ej })}
+                        className="p-1 hover:bg-emerald-50 hover:text-emerald-700 rounded"
+                        title="Probar ejercicio (correr contra sus test cases)"
+                      >
+                        <Play className="w-4 h-4" />
+                      </button>
+                      <button
+                        type="button"
                         onClick={() => setModal({ kind: "confirm-edit", ejercicio: ej })}
                         className="p-1 hover:bg-border rounded"
                         title="Editar"
@@ -534,6 +547,30 @@ export function EjerciciosView({ comisionId, getToken }: Props) {
 
       {modal.kind === "view" && (
         <EjercicioViewModal ejercicio={modal.ejercicio} onClose={closeModal} />
+      )}
+
+      {modal.kind === "test-run" && (
+        <Modal
+          isOpen={true}
+          onClose={closeModal}
+          title={`Probar ejercicio: ${modal.ejercicio.titulo}`}
+          size="lg"
+        >
+          <ProbarEjercicioPanel
+            testCases={modal.ejercicio.test_cases}
+            initialCode={modal.ejercicio.inicial_codigo}
+            collapsible={false}
+          />
+          <div className="flex justify-end mt-4 pt-3 border-t border-border">
+            <button
+              type="button"
+              onClick={closeModal}
+              className="px-3 py-1.5 border border-border rounded text-sm hover:bg-canvas"
+            >
+              Cerrar
+            </button>
+          </div>
+        </Modal>
       )}
 
       {modal.kind === "ai-wizard" && (
@@ -780,6 +817,10 @@ function EjercicioFormModal({ initial, title, unidades, onClose, onSubmit }: For
             onChange={(v) => set("test_cases", v)}
           />
           <StudentTestCasePreview testCases={draft.test_cases ?? []} />
+          <ProbarEjercicioPanel
+            testCases={draft.test_cases ?? []}
+            initialCode={draft.inicial_codigo ?? null}
+          />
           <JsonField
             label="prerequisitos ({sintacticos: [], conceptuales: []})"
             value={draft.prerequisitos ?? { sintacticos: [], conceptuales: [] }}
@@ -989,6 +1030,246 @@ function StudentTestCasePreview({ testCases }: { testCases: TestCaseEjercicio[] 
           )}
         </div>
       )}
+    </div>
+  )
+}
+
+// ── "Probar ejercicio" (F1, lado docente) ───────────────────────────────
+//
+// Corre el codigo solucion (o un codigo de prueba) del docente contra TODOS los
+// test_cases del ejercicio con Pyodide, en el navegador. A diferencia de F12
+// (que muestra QUE ve el alumno), F1 CORRE el ejercicio para verificar que
+// funciona antes de asignarlo. El docente es staff: ve todos los casos
+// (publicos y ocultos) con su expected. NO emite eventos CTR (es un preview de
+// autoria; el CTR solo lo escribe el alumno dentro de un episodio).
+//
+// El harness Pyodide vive en lib/pyodideRunner.ts (replica minima del patron
+// del web-student/CodeEditor.tsx, sin importar de web-student).
+
+function statusLabel(status: TestCaseRunResult["status"]): string {
+  if (status === "pass") return "Pasa"
+  if (status === "fail") return "Falla"
+  return "Error"
+}
+
+function ResultRow({ r }: { r: TestCaseRunResult }) {
+  const Icon = r.status === "pass" ? CheckCircle2 : r.status === "fail" ? XCircle : AlertTriangle
+  const tone =
+    r.status === "pass"
+      ? "text-emerald-700 bg-emerald-50 border-emerald-200"
+      : r.status === "fail"
+        ? "text-red-700 bg-red-50 border-red-200"
+        : "text-amber-800 bg-amber-50 border-amber-200"
+
+  return (
+    <li className={`border rounded p-2 text-xs space-y-1.5 ${tone}`}>
+      <div className="flex items-center gap-2">
+        <Icon className="w-4 h-4 shrink-0" />
+        <span className="font-medium">{r.name || r.id}</span>
+        <Badge>{r.type === "stdin_stdout" ? "stdin/stdout" : "pytest"}</Badge>
+        <span className="ml-auto font-semibold">{statusLabel(r.status)}</span>
+        <span className="text-muted-soft">peso {r.weight}</span>
+      </div>
+
+      {r.input.trim() !== "" && (
+        <div>
+          <div className="text-[10px] uppercase tracking-wide opacity-70">
+            {r.type === "stdin_stdout" ? "entrada (stdin)" : "assert"}
+          </div>
+          <pre className="bg-white/70 border border-current/10 rounded p-1.5 font-mono whitespace-pre-wrap">
+            {r.input}
+          </pre>
+        </div>
+      )}
+
+      {/* Solo stdin_stdout tiene esperado vs obtenido; en pytest_assert el
+          resultado es pasa/falla del assert. */}
+      {r.type === "stdin_stdout" && (
+        <div className="grid grid-cols-2 gap-2">
+          <div>
+            <div className="text-[10px] uppercase tracking-wide opacity-70">esperado</div>
+            <pre className="bg-white/70 border border-current/10 rounded p-1.5 font-mono whitespace-pre-wrap">
+              {r.expected ?? ""}
+            </pre>
+          </div>
+          <div>
+            <div className="text-[10px] uppercase tracking-wide opacity-70">obtenido</div>
+            <pre className="bg-white/70 border border-current/10 rounded p-1.5 font-mono whitespace-pre-wrap">
+              {r.got}
+            </pre>
+          </div>
+        </div>
+      )}
+
+      {r.status === "error" && r.error && (
+        <div>
+          <div className="text-[10px] uppercase tracking-wide opacity-70">error</div>
+          <pre className="bg-white/70 border border-current/10 rounded p-1.5 font-mono whitespace-pre-wrap">
+            {r.error}
+          </pre>
+        </div>
+      )}
+
+      {/* En pytest_assert sin error, mostrar el stdout del programa si lo hubo. */}
+      {r.type === "pytest_assert" && r.status === "pass" && r.got.trim() !== "" && (
+        <div>
+          <div className="text-[10px] uppercase tracking-wide opacity-70">salida del programa</div>
+          <pre className="bg-white/70 border border-current/10 rounded p-1.5 font-mono whitespace-pre-wrap">
+            {r.got}
+          </pre>
+        </div>
+      )}
+    </li>
+  )
+}
+
+function ProbarEjercicioPanel({
+  testCases,
+  initialCode,
+  collapsible = true,
+}: {
+  testCases: TestCaseEjercicio[]
+  initialCode: string | null
+  collapsible?: boolean
+}) {
+  const [open, setOpen] = useState(!collapsible)
+  const [code, setCode] = useState(initialCode ?? "")
+  const [loading, setLoading] = useState(false)
+  const [running, setRunning] = useState(false)
+  const [runError, setRunError] = useState<string | null>(null)
+  const [results, setResults] = useState<TestCaseRunResult[] | null>(null)
+
+  async function handleRun() {
+    setRunError(null)
+    setResults(null)
+    setRunning(true)
+    // La primera corrida baja Pyodide del CDN (~6 MB): avisamos con "cargando".
+    if (!isPyodideRuntimeReady()) setLoading(true)
+    try {
+      const res = await runTestCases(code, testCases)
+      setResults(res)
+    } catch (e) {
+      setRunError(String(e))
+    } finally {
+      setLoading(false)
+      setRunning(false)
+    }
+  }
+
+  const passed = results?.filter((r) => r.status === "pass").length ?? 0
+  const totalWeight = results?.reduce((a, r) => a + (r.weight || 0), 0) ?? 0
+  const passedWeight =
+    results?.filter((r) => r.status === "pass").reduce((a, r) => a + (r.weight || 0), 0) ?? 0
+  const allPass = results !== null && results.length > 0 && passed === results.length
+
+  const body = (
+    <div
+      className={
+        collapsible ? "mt-2 border border-border rounded bg-canvas p-3 space-y-2" : "space-y-2"
+      }
+    >
+      <p className="text-xs text-muted">
+        Corre el codigo solucion contra los {testCases.length} test case
+        {testCases.length !== 1 ? "s" : ""} del ejercicio (publicos y ocultos) para verificar que
+        funciona antes de asignarlo. Se ejecuta en tu navegador con Pyodide; no queda registrado en
+        la trazabilidad del alumno.
+      </p>
+
+      {testCases.length === 0 ? (
+        <div className="text-xs text-muted bg-white border border-border rounded p-3 text-center">
+          Este ejercicio no tiene test cases. Agregá alguno en <code>test_cases</code> para poder
+          probarlo.
+        </div>
+      ) : (
+        <>
+          <div>
+            <label htmlFor="probar-solucion" className="block text-xs text-muted mb-1">
+              Codigo solucion (o de prueba)
+            </label>
+            <textarea
+              id="probar-solucion"
+              value={code}
+              onChange={(e) => setCode(e.target.value)}
+              className="w-full border border-border rounded px-2 py-1 text-xs font-mono bg-white"
+              rows={8}
+              spellCheck={false}
+              placeholder="# Pega aca la solucion del ejercicio (o un codigo de prueba) para correrlo contra los test cases"
+            />
+            <p className="text-[11px] text-muted mt-1">
+              Recorda: los asserts de tipo <code>pytest</code> referencian las clases/funciones de
+              este codigo directamente (mismo archivo, sin imports del alumno).
+            </p>
+          </div>
+
+          <button
+            type="button"
+            onClick={handleRun}
+            disabled={running}
+            className="inline-flex items-center gap-1.5 bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 text-white rounded px-3 py-1.5 text-sm font-medium"
+          >
+            <Play className="w-4 h-4" />
+            {loading
+              ? "Cargando Python..."
+              : running
+                ? "Ejecutando..."
+                : `Probar contra ${testCases.length} test case${testCases.length !== 1 ? "s" : ""}`}
+          </button>
+
+          {runError && (
+            <div className="text-xs text-red-600 bg-red-50 border border-red-200 rounded p-2 whitespace-pre-wrap">
+              {runError}
+            </div>
+          )}
+
+          {results && (
+            <div className="space-y-2">
+              <div
+                className={`flex items-center gap-2 text-sm rounded p-2 border ${
+                  allPass
+                    ? "text-emerald-700 bg-emerald-50 border-emerald-200"
+                    : "text-amber-800 bg-amber-50 border-amber-200"
+                }`}
+              >
+                {allPass ? (
+                  <CheckCircle2 className="w-4 h-4 shrink-0" />
+                ) : (
+                  <AlertTriangle className="w-4 h-4 shrink-0" />
+                )}
+                <span className="font-medium">
+                  {passed}/{results.length} test cases pasan
+                </span>
+                {totalWeight > 0 && (
+                  <span className="ml-auto text-xs">
+                    peso {passedWeight}/{totalWeight}
+                  </span>
+                )}
+              </div>
+              <ul className="space-y-2">
+                {results.map((r) => (
+                  <ResultRow key={r.id} r={r} />
+                ))}
+              </ul>
+            </div>
+          )}
+        </>
+      )}
+    </div>
+  )
+
+  if (!collapsible) return body
+
+  return (
+    <div className="mt-1">
+      <button
+        type="button"
+        onClick={() => setOpen((v) => !v)}
+        className="flex items-center gap-1.5 border border-border rounded px-2.5 py-1 text-xs hover:bg-canvas"
+        aria-expanded={open}
+      >
+        <FlaskConical className="w-3.5 h-3.5" />
+        {open ? "Ocultar probar ejercicio" : "Probar ejercicio"}
+      </button>
+      {open && body}
     </div>
   )
 }
