@@ -14,8 +14,11 @@
 # particion 0..7 (stream Redis ctr.pN) debe ser drenada a Postgres por EXACTA-
 # mente UN proceso worker en todo el cluster. Dos procesos sobre la misma
 # particion (mismo consumer_group `ctr_workers` + mismo consumer_name
-# `worker-N`) compiten por el PEL y appendean concurrentemente a `events` ->
-# races de chain_hash -> integrity_compromised. Por eso `http` existe: en prod
+# `worker-N`) compiten por el PEL y procesan el mismo evento dos veces. El
+# chain_hash NO se bifurca (SELECT FOR UPDATE sobre el episodio + validacion de
+# seq + INSERT ON CONFLICT lo protegen); el dano real es entrega/procesamiento
+# DESORDENADO -> seq != expected_seq -> ValueError -> dead-letter ->
+# integrity_compromised PERMANENTE. Por eso `http` existe: en prod
 # el ctr-service NO debe spawnear los workers que ya corren en ctr-worker-0..7.
 #
 # Importante: usa /app/.venv/bin/python con path absoluto explicito porque
