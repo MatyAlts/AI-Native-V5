@@ -24,22 +24,22 @@
  * 3. NO reordenar / NO mutar payloads. La cola es un array FIFO; el payload se
  *    serializa una sola vez al encolar y no se toca en los reintentos.
  *
- * LIMITE DE IDEMPOTENCIA (documentado a proposito)
- * ------------------------------------------------
- * Los endpoints por-evento del tutor-service NO deduplican por `event_uuid`
- * (ver docstrings de `apps/tutor-service/.../routes/episodes.py`: "el cliente
- * NO debe reintentar en error de red — generara una segunda fila con seq
- * distinto"). Este cliente MINIMIZA el riesgo de duplicado:
+ * IDEMPOTENCIA (P-17, cerrada 2026-07-13)
+ * ---------------------------------------
+ * Cada item lleva un `event_uuid` estable a traves de los reintentos, que se
+ * envia al backend en el header `Idempotency-Key`. El tutor-service deduplica
+ * por (episode_id, event_uuid): si un reintento del MISMO evento llega (caso
+ * "el servidor persistio pero el ACK se perdio"), el backend devuelve el mismo
+ * `seq` SIN volver a avanzar el contador de sesion ni re-publicar al CTR. Esto
+ * cierra la ventana que antes envenenaba el episodio (`integrity_compromised`)
+ * cuando el reintento dejaba un hueco en la secuencia.
+ *
+ * Este cliente ademas MINIMIZA la cantidad de reintentos innecesarios:
  *   - Reintenta SOLO ante fallas donde el servidor tipicamente NO persistio:
  *     error de red (fetch rechaza), 5xx, 408, 429.
  *   - NO reintenta 4xx de negocio (409 episodio cerrado, 422 invalido): esos
  *     eventos no son apendables y se descartan a dead-letter (con callback,
  *     nunca en silencio).
- * La unica ventana residual de duplicado es "el servidor persistio pero el ACK
- * se perdio / el tab murio antes de borrar de localStorage". Cerrarla por
- * completo exige un `Idempotency-Key` server-side (fuera del alcance de este
- * paquete; anotado como deuda). Cada item lleva `event_uuid` justamente para
- * habilitar esa dedup del lado del backend en el futuro.
  */
 
 /** Tipos de evento CTR que el frontend puede emitir al tutor-service.
@@ -324,7 +324,15 @@ export class CTRClient {
 
   private async send(event: QueuedEvent): Promise<SendResult> {
     const url = `${this.apiBase}/api/v1/episodes/${this.episodeId}/events/${event.event_type}`
-    const headers: Record<string, string> = { "Content-Type": "application/json" }
+    // P-17: mandamos el `event_uuid` como Idempotency-Key para que el backend
+    // deduplique reintentos del MISMO evento (ACK-perdido). Sin esto, un
+    // reintento vuelve a asignar seq y avanza el contador de sesion, dejando un
+    // hueco que envenena el episodio (integrity_compromised). El backend
+    // devuelve el mismo seq y NO re-publica al CTR ante un event_uuid repetido.
+    const headers: Record<string, string> = {
+      "Content-Type": "application/json",
+      "Idempotency-Key": event.event_uuid,
+    }
     if (this.getAuthToken) {
       try {
         const token = await this.getAuthToken()

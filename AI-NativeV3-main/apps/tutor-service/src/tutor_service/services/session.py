@@ -31,6 +31,17 @@ SESSION_KEY_PREFIX = "tutor:session:"
 DISTRACTION_KEY_PREFIX = "tutor:distraction:"
 DISTRACTION_TTL = 30 * 60  # 30 min sanity cap
 
+# Idempotency-Key server-side (fix P-17). La cola offline del ctr-client
+# reintenta el MISMO evento (mismo `event_uuid` de cliente) cuando pierde el
+# ACK de una request que el servidor SÍ persistió. Sin dedup, cada reintento
+# vuelve a llamar a `next_seq()` y avanza el contador de sesión, dejando un
+# hueco en la secuencia que el partition_worker no puede cerrar → el episodio
+# termina `integrity_compromised` de forma permanente. Guardamos por episodio
+# un hash `client_event_uuid -> seq_asignado` con TTL acotado; el reintento
+# devuelve el mismo seq SIN avanzar el contador ni re-publicar al CTR.
+SEEN_KEY_PREFIX = "tutor:seen:"
+SEEN_TTL = SESSION_TTL  # mismo horizonte que la sesión (6h)
+
 
 @dataclass
 class SessionState:
@@ -153,6 +164,43 @@ class SessionManager:
         state.seq += 1
         await self.set(state)
         return current
+
+    # ── Idempotencia por Idempotency-Key (fix P-17) ─────────────────────
+
+    def _seen_key(self, episode_id: UUID) -> str:
+        return f"{SEEN_KEY_PREFIX}{episode_id}"
+
+    async def get_seen_seq(self, episode_id: UUID, idempotency_key: str) -> int | None:
+        """Devuelve el seq que se asignó la PRIMERA vez que se vio este
+        `idempotency_key` para el episodio, o None si es la primera vez.
+
+        Usado por la ruta de eventos para deduplicar reintentos del ctr-client
+        (mismo `event_uuid` de cliente) sin volver a avanzar el contador de
+        sesión. Ver docstring de SEEN_KEY_PREFIX.
+        """
+        raw = await self.redis.hget(self._seen_key(episode_id), idempotency_key)
+        if raw is None:
+            return None
+        try:
+            return int(raw)
+        except (TypeError, ValueError):
+            # Valor corrupto: tratamos como no-visto (fail-safe hacia emitir).
+            return None
+
+    async def mark_seen(self, episode_id: UUID, idempotency_key: str, seq: int) -> None:
+        """Registra `idempotency_key -> seq` para el episodio con TTL acotado.
+
+        Se llama DESPUÉS de asignar el seq y publicar el evento, para que un
+        reintento posterior del mismo `event_uuid` de cliente recupere el seq
+        ya asignado en vez de avanzar el contador de sesión.
+        """
+        key = self._seen_key(episode_id)
+        await self.redis.hset(key, idempotency_key, str(seq))
+        await self.redis.expire(key, SEEN_TTL)
+
+    async def clear_seen(self, episode_id: UUID) -> None:
+        """Borra el registro de idempotencia del episodio (cierre/expiración)."""
+        await self.redis.delete(self._seen_key(episode_id))
 
     async def iter_active_sessions(self) -> AsyncIterator[SessionState]:
         """Itera todas las sesiones activas en Redis (ADR-025).

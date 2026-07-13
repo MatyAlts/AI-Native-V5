@@ -217,3 +217,59 @@ describe("CTRClient — dead-letter (no bloquea la cola)", () => {
     expect(client.pendingCount()).toBe(0)
   })
 })
+
+describe("CTRClient — Idempotency-Key (P-17)", () => {
+  /** Fetch mock que captura los headers y el status por llamada. */
+  function mockFetchWithHeaders(statuses: number[]) {
+    let i = 0
+    const headers: Array<Record<string, string>> = []
+    const impl = vi.fn(async (_input: unknown, init?: { headers?: Record<string, string> }) => {
+      headers.push({ ...(init?.headers ?? {}) })
+      const status = statuses[Math.min(i, statuses.length - 1)] ?? 202
+      i += 1
+      return { ok: status >= 200 && status < 300, status } as Response
+    })
+    return { impl: impl as unknown as CTRFetch, headers }
+  }
+
+  function opts(storage: StorageLike, fetchImpl: CTRFetch) {
+    return {
+      episodeId: "ep-idem",
+      storage,
+      fetchImpl,
+      installLifecycleHooks: false,
+      scheduler: (() => 0 as unknown as ReturnType<typeof setTimeout>) as (
+        fn: () => void,
+        ms: number,
+      ) => ReturnType<typeof setTimeout>,
+      baseBackoffMs: 0,
+      maxBackoffMs: 0,
+    }
+  }
+
+  it("manda el event_uuid como header Idempotency-Key", async () => {
+    const storage = memStorage()
+    const { impl, headers } = mockFetchWithHeaders([202])
+    const client = new CTRClient(opts(storage, impl))
+    client.emit({ event_type: "pestana_perdida", payload: { trigger: "blur" } })
+    await client.flush()
+    expect(headers).toHaveLength(1)
+    expect(headers[0]?.["Idempotency-Key"]).toMatch(
+      /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i,
+    )
+  })
+
+  it("reintenta con el MISMO Idempotency-Key (dedup server-side lo aprovecha)", async () => {
+    const storage = memStorage()
+    // 1er intento 500 (reintentable), 2do 202 (ok). Mismo item => mismo uuid.
+    const { impl, headers } = mockFetchWithHeaders([500, 202])
+    const client = new CTRClient(opts(storage, impl))
+    client.emit({ event_type: "pestana_perdida", payload: { trigger: "blur" } })
+    await client.flush() // intento 1 (500) => frena y agenda retry
+    await client.flush() // intento 2 (202) => ok
+    expect(headers).toHaveLength(2)
+    // El mismo evento reintentado lleva EXACTAMENTE el mismo Idempotency-Key.
+    expect(headers[0]?.["Idempotency-Key"]).toBe(headers[1]?.["Idempotency-Key"])
+    expect(client.pendingCount()).toBe(0)
+  })
+})

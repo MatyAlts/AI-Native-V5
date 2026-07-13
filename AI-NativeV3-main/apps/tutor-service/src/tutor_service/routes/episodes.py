@@ -13,12 +13,13 @@ POST /api/v1/episodes/{id}/run-tests     ADR-033/034: emite TestsEjecutados (con
 from __future__ import annotations
 
 import json
+from collections.abc import Awaitable, Callable
 from datetime import datetime
 from typing import Any, Literal
 from uuid import UUID
 
 import redis.asyncio as redis
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, Header, HTTPException, status
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 
@@ -100,6 +101,41 @@ def _get_ctr_client() -> CTRClient:
 # UUID fijo del service-account del tutor (mismo que `tutor_core.py`).
 # Se usa como caller_id al pegarle al ctr-service en lecturas.
 TUTOR_SERVICE_USER_ID = UUID("00000000-0000-0000-0000-000000000010")
+
+
+async def _idempotent_seq(
+    episode_id: UUID,
+    idempotency_key: str | None,
+    emit: Callable[[], Awaitable[int]],
+) -> int:
+    """Envuelve la emisión de un evento CTR con dedup por Idempotency-Key (P-17).
+
+    La cola offline del ctr-client (`packages/ctr-client`) reintenta un POST
+    cuando pierde el ACK de una request que el servidor SÍ persistió, reenviando
+    el MISMO `event_uuid` de cliente (que llega en el header `Idempotency-Key`).
+    Sin dedup, cada reintento llama a `next_seq()` y avanza el contador de
+    sesión, dejando un hueco en la secuencia que el partition_worker no puede
+    cerrar → el episodio queda `integrity_compromised` de forma permanente.
+
+    Con dedup:
+      - Si el `idempotency_key` YA se vio para este episodio → devolvemos el
+        mismo seq asignado la primera vez, SIN llamar a `emit()` (no se avanza
+        el contador ni se re-publica al CTR). Respuesta idempotente.
+      - Si es nuevo (o no vino header) → `emit()` normal y se registra el
+        `idempotency_key -> seq` para futuros reintentos.
+
+    Sin header (`idempotency_key=None`) el comportamiento es idéntico al previo:
+    los callers legacy que no mandan el header no cambian.
+    """
+    sessions = _get_tutor().sessions
+    if idempotency_key:
+        cached = await sessions.get_seen_seq(episode_id, idempotency_key)
+        if cached is not None:
+            return cached
+    seq = await emit()
+    if idempotency_key:
+        await sessions.mark_seen(episode_id, idempotency_key, seq)
+    return seq
 
 
 # ── Schemas ─────────────────────────────────────────────────────────
@@ -510,6 +546,7 @@ class CodigoEjecutadoRequest(BaseModel):
 async def emit_codigo_ejecutado(
     episode_id: UUID,
     req: CodigoEjecutadoRequest,
+    idempotency_key: str | None = Header(default=None, alias="Idempotency-Key"),
     user: User = Depends(require_role("estudiante", "docente", "docente_admin", "superadmin")),
 ) -> dict[str, str]:
     """Emite evento codigo_ejecutado al CTR con seq correcto del episodio.
@@ -520,22 +557,26 @@ async def emit_codigo_ejecutado(
     session manager) y publica al ctr-stream, que luego el worker
     persiste en la cadena.
 
-    Idempotencia: el cliente NO debe reintentar este POST en error de
-    red — generará una segunda fila con seq distinto. En caso de duda,
-    consultar el episodio para ver si el evento quedó registrado.
+    Idempotencia (P-17): si el ctr-client reintenta este POST mandando el
+    mismo `event_uuid` de cliente en el header `Idempotency-Key`, devolvemos
+    el mismo seq sin avanzar el contador ni re-publicar al CTR.
     """
     tutor = _get_tutor()
     try:
-        seq = await tutor.emit_codigo_ejecutado(
-            episode_id=episode_id,
-            user_id=user.id,
-            payload={
-                "code": req.code,
-                "stdout": req.stdout,
-                "stderr": req.stderr,
-                "duration_ms": req.duration_ms,
-                "runtime": "pyodide-0.26",
-            },
+        seq = await _idempotent_seq(
+            episode_id,
+            idempotency_key,
+            lambda: tutor.emit_codigo_ejecutado(
+                episode_id=episode_id,
+                user_id=user.id,
+                payload={
+                    "code": req.code,
+                    "stdout": req.stdout,
+                    "stderr": req.stderr,
+                    "duration_ms": req.duration_ms,
+                    "runtime": "pyodide-0.26",
+                },
+            ),
         )
     except ValueError as e:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(e))
@@ -581,6 +622,7 @@ class EdicionCodigoRequest(BaseModel):
 async def emit_edicion_codigo(
     episode_id: UUID,
     req: EdicionCodigoRequest,
+    idempotency_key: str | None = Header(default=None, alias="Idempotency-Key"),
     user: User = Depends(require_role("estudiante", "docente", "docente_admin", "superadmin")),
 ) -> dict[str, str]:
     """Emite evento edicion_codigo al CTR con el seq correcto del episodio.
@@ -595,19 +637,24 @@ async def emit_edicion_codigo(
       - 409: episodio cerrado, expirado o inexistente (no se aceptan más eventos).
       - 422: validación de payload falló (snapshot >50KB, diff_chars negativo).
 
-    Idempotencia: el cliente NO debe reintentar este POST en error de
-    red — generará una segunda fila con seq distinto. El frontend debe
-    debounce-ar los eventos para no saturar el CTR.
+    Idempotencia (P-17): si el ctr-client reintenta este POST mandando el
+    mismo `event_uuid` de cliente en el header `Idempotency-Key`, devolvemos
+    el mismo seq sin avanzar el contador ni re-publicar al CTR. El frontend
+    igual debe debounce-ar los eventos para no saturar el CTR.
     """
     tutor = _get_tutor()
     try:
-        seq = await tutor.record_edicion_codigo(
-            episode_id=episode_id,
-            snapshot=req.snapshot,
-            diff_chars=req.diff_chars,
-            language=req.language,
-            user_id=user.id,
-            origin=req.origin,
+        seq = await _idempotent_seq(
+            episode_id,
+            idempotency_key,
+            lambda: tutor.record_edicion_codigo(
+                episode_id=episode_id,
+                snapshot=req.snapshot,
+                diff_chars=req.diff_chars,
+                language=req.language,
+                user_id=user.id,
+                origin=req.origin,
+            ),
         )
     except ValueError as e:
         # Sesión inexistente o eliminada (cierre/expiración) → episodio
@@ -641,6 +688,7 @@ class LecturaEnunciadoRequest(BaseModel):
 async def emit_lectura_enunciado(
     episode_id: UUID,
     req: LecturaEnunciadoRequest,
+    idempotency_key: str | None = Header(default=None, alias="Idempotency-Key"),
     user: User = Depends(require_role("estudiante", "docente", "docente_admin", "superadmin")),
 ) -> dict[str, str]:
     """Emite evento lectura_enunciado (LecturaEnunciado) al CTR.
@@ -653,16 +701,21 @@ async def emit_lectura_enunciado(
     El `user_id` autoritativo es el del estudiante (header X-User-Id) —
     la lectura es del estudiante, su acción directa.
 
-    Idempotencia: el cliente NO debe reintentar este POST en error de red
-    — generaría doble contabilización. Si el cliente pierde respuesta,
-    asume que el delta NO se acumuló y vuelve a contar desde 0.
+    Idempotencia (P-17): si el ctr-client reintenta este POST mandando el
+    mismo `event_uuid` de cliente en el header `Idempotency-Key`, devolvemos
+    el mismo seq sin avanzar el contador ni re-publicar al CTR (evita doble
+    contabilización del delta).
     """
     tutor = _get_tutor()
     try:
-        seq = await tutor.record_lectura_enunciado(
-            episode_id=episode_id,
-            duration_seconds=req.duration_seconds,
-            user_id=user.id,
+        seq = await _idempotent_seq(
+            episode_id,
+            idempotency_key,
+            lambda: tutor.record_lectura_enunciado(
+                episode_id=episode_id,
+                duration_seconds=req.duration_seconds,
+                user_id=user.id,
+            ),
         )
     except ValueError as e:
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(e))
@@ -693,6 +746,7 @@ class AnotacionCreadaRequest(BaseModel):
 async def emit_anotacion_creada(
     episode_id: UUID,
     req: AnotacionCreadaRequest,
+    idempotency_key: str | None = Header(default=None, alias="Idempotency-Key"),
     user: User = Depends(require_role("estudiante", "docente", "docente_admin", "superadmin")),
 ) -> dict[str, str]:
     """Emite evento anotacion_creada (AnotacionCreada) al CTR.
@@ -705,8 +759,9 @@ async def emit_anotacion_creada(
     El `user_id` autoritativo es el del estudiante (header `X-User-Id`
     inyectado por el api-gateway) — la nota es del estudiante, su autoría.
 
-    Idempotencia: el cliente NO debe reintentar este POST en error de red
-    — cada POST exitoso registra una nueva nota con seq distinto.
+    Idempotencia (P-17): si el ctr-client reintenta este POST mandando el
+    mismo `event_uuid` de cliente en el header `Idempotency-Key`, devolvemos
+    el mismo seq sin avanzar el contador ni re-publicar al CTR.
     """
     tutor = _get_tutor()
     # Defensa adicional: contenido sólo whitespace no aporta señal y
@@ -717,10 +772,14 @@ async def emit_anotacion_creada(
             detail="contenido no puede ser vacío o sólo whitespace",
         )
     try:
-        seq = await tutor.record_anotacion_creada(
-            episode_id=episode_id,
-            contenido=req.contenido,
-            user_id=user.id,
+        seq = await _idempotent_seq(
+            episode_id,
+            idempotency_key,
+            lambda: tutor.record_anotacion_creada(
+                episode_id=episode_id,
+                contenido=req.contenido,
+                user_id=user.id,
+            ),
         )
     except ValueError as e:
         # Sesión inexistente o eliminada (cierre/expiración) → episodio
@@ -748,6 +807,7 @@ class PestanaPerdidaRequest(BaseModel):
 async def emit_pestana_perdida(
     episode_id: UUID,
     req: PestanaPerdidaRequest,
+    idempotency_key: str | None = Header(default=None, alias="Idempotency-Key"),
     user: User = Depends(require_role("estudiante", "docente", "docente_admin", "superadmin")),
 ) -> dict[str, str]:
     """Emite evento pestana_perdida al CTR.
@@ -755,13 +815,23 @@ async def emit_pestana_perdida(
     El frontend lo dispara con `document.visibilitychange` o `window.blur`.
     NO se puede bloquear desde browser — esto es solo registro side-channel.
     El worker de abandono cierra el episodio si supera el umbral configurado.
+
+    Idempotencia (P-17): si el ctr-client reintenta este POST mandando el
+    mismo `event_uuid` de cliente en el header `Idempotency-Key`, devolvemos
+    el mismo seq sin avanzar el contador ni re-publicar al CTR. Estos eventos
+    disparan en cada cambio de pestaña — el reintento del ACK-perdido es el
+    caso que envenenaba el episodio antes del fix.
     """
     tutor = _get_tutor()
     try:
-        seq = await tutor.record_pestana_perdida(
-            episode_id=episode_id,
-            user_id=user.id,
-            trigger=req.trigger,
+        seq = await _idempotent_seq(
+            episode_id,
+            idempotency_key,
+            lambda: tutor.record_pestana_perdida(
+                episode_id=episode_id,
+                user_id=user.id,
+                trigger=req.trigger,
+            ),
         )
     except ValueError as e:
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(e))
@@ -779,15 +849,24 @@ class PestanaRecuperadaRequest(BaseModel):
 async def emit_pestana_recuperada(
     episode_id: UUID,
     req: PestanaRecuperadaRequest,
+    idempotency_key: str | None = Header(default=None, alias="Idempotency-Key"),
     user: User = Depends(require_role("estudiante", "docente", "docente_admin", "superadmin")),
 ) -> dict[str, str]:
-    """Emite evento pestana_recuperada al CTR."""
+    """Emite evento pestana_recuperada al CTR.
+
+    Idempotencia (P-17): dedup por header `Idempotency-Key` (event_uuid de
+    cliente) — el reintento devuelve el mismo seq sin avanzar el contador.
+    """
     tutor = _get_tutor()
     try:
-        seq = await tutor.record_pestana_recuperada(
-            episode_id=episode_id,
-            user_id=user.id,
-            tiempo_fuera_segundos=req.tiempo_fuera_segundos,
+        seq = await _idempotent_seq(
+            episode_id,
+            idempotency_key,
+            lambda: tutor.record_pestana_recuperada(
+                episode_id=episode_id,
+                user_id=user.id,
+                tiempo_fuera_segundos=req.tiempo_fuera_segundos,
+            ),
         )
     except ValueError as e:
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(e))
@@ -806,16 +885,25 @@ class CopiaIntentadaRequest(BaseModel):
 async def emit_copia_intentada(
     episode_id: UUID,
     req: CopiaIntentadaRequest,
+    idempotency_key: str | None = Header(default=None, alias="Idempotency-Key"),
     user: User = Depends(require_role("estudiante", "docente", "docente_admin", "superadmin")),
 ) -> dict[str, str]:
-    """Emite evento copia_intentada al CTR (la UI bloquea la accion)."""
+    """Emite evento copia_intentada al CTR (la UI bloquea la accion).
+
+    Idempotencia (P-17): dedup por header `Idempotency-Key` (event_uuid de
+    cliente) — el reintento devuelve el mismo seq sin avanzar el contador.
+    """
     tutor = _get_tutor()
     try:
-        seq = await tutor.record_copia_intentada(
-            episode_id=episode_id,
-            user_id=user.id,
-            seleccion_chars=req.seleccion_chars,
-            metodo=req.metodo,
+        seq = await _idempotent_seq(
+            episode_id,
+            idempotency_key,
+            lambda: tutor.record_copia_intentada(
+                episode_id=episode_id,
+                user_id=user.id,
+                seleccion_chars=req.seleccion_chars,
+                metodo=req.metodo,
+            ),
         )
     except ValueError as e:
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(e))
@@ -835,17 +923,26 @@ class PegaIntentadaRequest(BaseModel):
 async def emit_pega_intentada(
     episode_id: UUID,
     req: PegaIntentadaRequest,
+    idempotency_key: str | None = Header(default=None, alias="Idempotency-Key"),
     user: User = Depends(require_role("estudiante", "docente", "docente_admin", "superadmin")),
 ) -> dict[str, str]:
-    """Emite evento pega_intentada al CTR (la UI bloquea la accion)."""
+    """Emite evento pega_intentada al CTR (la UI bloquea la accion).
+
+    Idempotencia (P-17): dedup por header `Idempotency-Key` (event_uuid de
+    cliente) — el reintento devuelve el mismo seq sin avanzar el contador.
+    """
     tutor = _get_tutor()
     try:
-        seq = await tutor.record_pega_intentada(
-            episode_id=episode_id,
-            user_id=user.id,
-            contenido_longitud=req.contenido_longitud,
-            contenido_preview=req.contenido_preview,
-            metodo=req.metodo,
+        seq = await _idempotent_seq(
+            episode_id,
+            idempotency_key,
+            lambda: tutor.record_pega_intentada(
+                episode_id=episode_id,
+                user_id=user.id,
+                contenido_longitud=req.contenido_longitud,
+                contenido_preview=req.contenido_preview,
+                metodo=req.metodo,
+            ),
         )
     except ValueError as e:
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(e))
