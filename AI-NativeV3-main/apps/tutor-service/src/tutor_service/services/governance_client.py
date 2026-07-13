@@ -27,21 +27,40 @@ class ActivePrompt:
 class GovernanceClient:
     """Cliente async del governance-service."""
 
-    def __init__(self, base_url: str, timeout: float = 10.0) -> None:
+    def __init__(
+        self, base_url: str, timeout: float = 10.0, internal_service_token: str = ""
+    ) -> None:
         self.base_url = base_url.rstrip("/")
         self.timeout = timeout
+        self.internal_service_token = internal_service_token
         self._client = httpx.AsyncClient(timeout=timeout)
+
+    def _service_headers(self) -> dict[str, str]:
+        """Header de procedencia service-to-service (A0.1/A0.4).
+
+        Solo se manda si hay token configurado. Token vacio => dict vacio =>
+        request identico al comportamiento previo (backward-compat flag-OFF).
+        """
+        if self.internal_service_token:
+            return {"X-Internal-Service-Token": self.internal_service_token}
+        return {}
 
     async def active_configs(self) -> dict[str, Any]:
         client = self._client
-        resp = await client.get(f"{self.base_url}/api/v1/active_configs")
+        resp = await client.get(
+            f"{self.base_url}/api/v1/active_configs",
+            headers=self._service_headers(),
+        )
         resp.raise_for_status()
         return resp.json()
 
     async def load_prompt(self, name: str, version: str) -> ActivePrompt:
         """Carga un prompt verificado."""
         client = self._client
-        resp = await client.get(f"{self.base_url}/api/v1/prompts/{name}/{version}")
+        resp = await client.get(
+            f"{self.base_url}/api/v1/prompts/{name}/{version}",
+            headers=self._service_headers(),
+        )
         resp.raise_for_status()
         data = resp.json()
         return ActivePrompt(

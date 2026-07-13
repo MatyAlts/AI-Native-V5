@@ -32,6 +32,17 @@ class Settings(BaseSettings):
     require_gateway_signature: bool = False
     gateway_shared_secret: str = ""
 
+    # Token de service-account compartido de plataforma (A0.1/A0.4). El
+    # tutor-service llama DIRECTO (service-to-service, sin pasar por el
+    # api-gateway) a governance-service y ai-gateway. Cuando esos servicios
+    # prenden `require_gateway_signature`, aceptan procedencia via firma del
+    # gateway (que el tutor NO tiene) o via este header X-Internal-Service-Token
+    # matcheando su propio `internal_service_token`. Debe ser el MISMO valor
+    # secreto configurado en governance y ai-gateway.
+    # Default vacio => NO se manda el header => comportamiento identico al
+    # actual (backward-compat con el estado flag-OFF).
+    internal_service_token: str = ""
+
     redis_url: str = "redis://127.0.0.1:6379/2"
 
     # Rate limit del POST /episodes/{id}/message por usuario. Protege el budget

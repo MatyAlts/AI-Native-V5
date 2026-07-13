@@ -60,9 +60,15 @@ def _get_tutor() -> TutorCore:
     global _tutor
     if _tutor is None:
         _tutor = TutorCore(
-            governance=GovernanceClient(settings.governance_service_url),
+            governance=GovernanceClient(
+                settings.governance_service_url,
+                internal_service_token=settings.internal_service_token,
+            ),
             content=ContentClient(settings.content_service_url),
-            ai_gateway=AIGatewayClient(settings.ai_gateway_url),
+            ai_gateway=AIGatewayClient(
+                settings.ai_gateway_url,
+                internal_service_token=settings.internal_service_token,
+            ),
             ctr=CTRClient(settings.ctr_service_url),
             sessions=SessionManager(_get_redis()),
             academic=AcademicClient(settings.academic_service_url),

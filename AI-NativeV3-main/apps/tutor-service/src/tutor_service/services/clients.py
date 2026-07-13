@@ -44,14 +44,30 @@ class RetrievalResult:
 
 
 class GovernanceClient:
-    def __init__(self, base_url: str, timeout: float = 10.0) -> None:
+    def __init__(
+        self, base_url: str, timeout: float = 10.0, internal_service_token: str = ""
+    ) -> None:
         self.base_url = base_url.rstrip("/")
         self.timeout = timeout
+        self.internal_service_token = internal_service_token
         self._client = httpx.AsyncClient(timeout=timeout)
+
+    def _service_headers(self) -> dict[str, str]:
+        """Header de procedencia service-to-service (A0.1/A0.4).
+
+        Solo se manda si hay token configurado. Token vacio => dict vacio =>
+        request identico al comportamiento previo (backward-compat flag-OFF).
+        """
+        if self.internal_service_token:
+            return {"X-Internal-Service-Token": self.internal_service_token}
+        return {}
 
     async def get_prompt(self, name: str, version: str) -> PromptConfig:
         client = self._client
-        r = await client.get(f"{self.base_url}/api/v1/prompts/{name}/{version}")
+        r = await client.get(
+            f"{self.base_url}/api/v1/prompts/{name}/{version}",
+            headers=self._service_headers(),
+        )
         r.raise_for_status()
         data = r.json()
         return PromptConfig(
@@ -63,7 +79,10 @@ class GovernanceClient:
 
     async def get_active_configs(self) -> dict:
         client = self._client
-        r = await client.get(f"{self.base_url}/api/v1/active_configs")
+        r = await client.get(
+            f"{self.base_url}/api/v1/active_configs",
+            headers=self._service_headers(),
+        )
         r.raise_for_status()
         return r.json()
 
@@ -150,9 +169,12 @@ class ContentClient:
 
 
 class AIGatewayClient:
-    def __init__(self, base_url: str, timeout: float = 60.0) -> None:
+    def __init__(
+        self, base_url: str, timeout: float = 60.0, internal_service_token: str = ""
+    ) -> None:
         self.base_url = base_url.rstrip("/")
         self.timeout = timeout
+        self.internal_service_token = internal_service_token
         self._client = httpx.AsyncClient(timeout=timeout)
 
     async def stream(
@@ -188,6 +210,11 @@ class AIGatewayClient:
             "Content-Type": "application/json",
             "Accept": "text/event-stream",
         }
+        # Header de procedencia service-to-service (A0.1/A0.4). Solo se agrega
+        # si hay token configurado; vacio => no se manda => request identico al
+        # comportamiento previo. No altera payload ni el streaming SSE.
+        if self.internal_service_token:
+            headers["X-Internal-Service-Token"] = self.internal_service_token
         payload: dict[str, object] = {
             "messages": messages,
             "model": model,
