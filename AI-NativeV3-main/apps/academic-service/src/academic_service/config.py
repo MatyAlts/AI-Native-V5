@@ -43,6 +43,15 @@ class Settings(BaseSettings):
     require_gateway_signature: bool = Field(default=False)
     gateway_shared_secret: str = Field(default="")
 
+    # Token compartido de plataforma para llamadas internas server-to-server
+    # que NO pasan por el api-gateway (academic → classifier / ai-gateway
+    # directo). Cuando esos servicios prenden `require_gateway_signature`,
+    # aceptan procedencia via firma del gateway O via este token en el header
+    # `X-Internal-Service-Token`. Default vacío => NO se manda el header
+    # (backward-compat: comportamiento idéntico al actual). Setear el mismo
+    # secreto en todos los servicios de la plataforma para activarlo.
+    internal_service_token: str = Field(default="")
+
     # Database
     academic_db_url: str = Field(
         default="postgresql+asyncpg://academic_user:academic_pass@127.0.0.1:5432/academic_main"

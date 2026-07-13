@@ -175,6 +175,13 @@ class AIGatewayClient:
             "X-Caller": "academic-service",
             "Content-Type": "application/json",
         }
+        # Procedencia server-to-server (academic → ai-gateway directo, sin
+        # pasar por el api-gateway). Solo si el token está seteado; vacío =>
+        # no se manda (backward-compat).
+        from academic_service.config import settings
+
+        if settings.internal_service_token:
+            headers["X-Internal-Service-Token"] = settings.internal_service_token
         body: dict = {
             "messages": messages,
             "model": model,

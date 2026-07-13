@@ -337,10 +337,17 @@ async def get_config_hashes(
 
     # classifier_config_hash — pedir al servicio dueño de la fórmula.
     classifier_hash = _CLASSIFIER_HASH_FALLBACK
+    # Procedencia server-to-server (academic → classifier directo, sin pasar
+    # por el api-gateway). Solo se manda si el token está seteado; vacío =>
+    # no se agrega el header (backward-compat).
+    classifier_headers: dict[str, str] = {}
+    if settings.internal_service_token:
+        classifier_headers["X-Internal-Service-Token"] = settings.internal_service_token
     try:
         async with httpx.AsyncClient(timeout=5.0) as client:
             r = await client.get(
-                f"{settings.classifier_service_url}/api/v1/classifier/config-hash"
+                f"{settings.classifier_service_url}/api/v1/classifier/config-hash",
+                headers=classifier_headers,
             )
             r.raise_for_status()
             data = r.json()
