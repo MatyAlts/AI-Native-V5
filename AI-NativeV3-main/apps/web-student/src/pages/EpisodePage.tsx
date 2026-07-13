@@ -15,10 +15,11 @@
  */
 import { CTRClient } from "@platform/ctr-client"
 import { HelpButton, MarkdownRenderer } from "@platform/ui"
-import { Bot, BookOpen, Code2, LogOut, MessageSquare, PauseCircle, Send, ShieldAlert, Sparkles, User } from "lucide-react"
+import { Bot, BookOpen, Clock, Code2, LogOut, MessageSquare, PauseCircle, RotateCcw, Send, ShieldAlert, Sparkles, User } from "lucide-react"
 import { useCallback, useEffect, useRef, useState } from "react"
 import { Group as PanelGroup, Panel, Separator as PanelResizeHandle } from "react-resizable-panels"
 import { CodeEditor } from "../components/CodeEditor"
+import { NotesPanel } from "../components/NotesPanel"
 import { ReflectionModal } from "../components/ReflectionModal"
 import { useMediaQuery } from "../hooks/useMediaQuery"
 import {
@@ -91,15 +92,25 @@ export function EpisodeView({ episodeId, onExit, ejercicioContext, getToken }: E
   const [code, setCode] = useState<string>("# Escribí tu código Python acá\n")
   const [messages, setMessages] = useState<Message[]>([])
   // Indicador de ACTIVIDAD en curso (no es la clasificacion final del classifier,
-  // que se deriva post-cierre — ADR-020). Refleja el nivel de la accion que el
-  // alumno esta haciendo ahora, segun el mapeo del labeler: lectura=N1,
-  // edicion=N2, ejecucion=N3. Arranca en 1 y solo sube (NEW-003 QA).
-  const [maxActividad, setMaxActividad] = useState<1 | 2 | 3>(1)
+  // que se deriva post-cierre — ADR-020). Refleja el CANAL de actividad que el
+  // alumno esta usando ahora: lectura=N1, edicion=N2, ejecucion=N3, dialogo con
+  // el tutor=N4 (mismo canal que pinta el panel N4). Arranca en 1 y solo sube
+  // (NEW-003 QA). Presentacion NO-reificante (ADR-053): describe la actividad
+  // del momento, NO un puntaje ni un atributo del alumno (ver tooltip del chip).
+  const [maxActividad, setMaxActividad] = useState<1 | 2 | 3 | 4>(1)
   const [input, setInput] = useState<string>("")
   const [streaming, setStreaming] = useState(false)
   const [classification, setClassification] = useState<Classification | null>(null)
   const [classificationFailed, setClassificationFailed] = useState<boolean>(false)
   const [error, setError] = useState<string | null>(null)
+  // Notas del alumno (N2 "Anotacion", UI-1). Se hidratan del CTR y NotesPanel
+  // appendea localmente al guardar. Cada guardado emite anotacion_creada.
+  const [notes, setNotes] = useState<{ contenido: string; ts: number }[]>([])
+  // UI-8: error transitorio del stream del tutor (LLM saturado / red). NO cierra
+  // el episodio ni ofrece salir — mantiene al alumno DENTRO y permite reintentar
+  // el mismo mensaje. Separado de `error` (que si es fatal: hidratacion/cierre).
+  const [sendError, setSendError] = useState<string | null>(null)
+  const [lastFailedMessage, setLastFailedMessage] = useState<string | null>(null)
   const [hydrating, setHydrating] = useState<boolean>(true)
   const [closed, setClosed] = useState<boolean>(false)
   // Guard de doble-submit (NB-11): cierre/pausa disparan requests async. Un
@@ -304,6 +315,13 @@ export function EpisodeView({ episodeId, onExit, ejercicioContext, getToken }: E
             ts: Date.parse(m.ts) || Date.now(),
           })),
         )
+        // UI-1: hidratar las anotaciones previas (N2) desde el CTR.
+        setNotes(
+          (state.notes ?? []).map((n) => ({
+            contenido: n.contenido,
+            ts: Date.parse(n.ts) || Date.now(),
+          })),
+        )
       } catch (e) {
         if (cancelled) return
         if (e instanceof EpisodeStateError && (e.status === 404 || e.status === 403)) {
@@ -322,11 +340,23 @@ export function EpisodeView({ episodeId, onExit, ejercicioContext, getToken }: E
     }
   }, [episodeId, onExit, ejercicioOrden])
 
-  async function handleSend() {
-    if (!input.trim() || streaming) return
-    const userMessage = input.trim()
-    setInput("")
-    setMessages((m) => [...m, { role: "user", content: userMessage, ts: Date.now() }])
+  // UI-8: enviar un mensaje al tutor. Si el stream falla (LLM saturado, red,
+  // sesion pausada), NO cerramos el episodio ni ofrecemos salir — un error
+  // transitorio no debe romper el episodio ni la cadena CTR. Mostramos un aviso
+  // "reintentá" y dejamos al alumno DENTRO. `retryMessage` reenvia el mismo
+  // texto sin duplicar la burbuja del usuario.
+  async function handleSend(retryMessage?: string) {
+    const userMessage = (retryMessage ?? input).trim()
+    if (!userMessage || streaming) return
+    if (retryMessage == null) {
+      setInput("")
+      setMessages((m) => [...m, { role: "user", content: userMessage, ts: Date.now() }])
+    }
+    // N4: dialogar con el tutor socratico es el canal N4 de la UI (mismo que
+    // pinta el panel N4). Indicador de actividad del momento, no clasificacion.
+    setMaxActividad((a) => (a < 4 ? 4 : a))
+    setSendError(null)
+    setLastFailedMessage(null)
     setStreaming(true)
 
     const tutorMessage: Message = { role: "tutor", content: "", ts: Date.now() }
@@ -339,35 +369,46 @@ export function EpisodeView({ episodeId, onExit, ejercicioContext, getToken }: E
           setMessages((m) => [...m.slice(0, -1), { ...tutorMessage }])
           scrollToBottom()
         } else if (event.type === "error") {
-          const msg = event.message ?? ""
-          if (/no existe|expir|cerrad/i.test(msg)) {
-            setError(
-              'Tu episodio se pausó por inactividad. Hacé clic en "Salir" y volvé a entrar al ejercicio: vas a retomarlo donde lo dejaste.',
-            )
-            setClosed(true)
-            window.sessionStorage.removeItem(ACTIVE_EPISODE_KEY)
-          } else {
-            setError(`Tutor error: ${msg}`)
-          }
-          break
+          // Fallo del tutor/LLM reportado dentro del stream. Lo tratamos como
+          // transitorio (UI-8): reintentable, sin cerrar el episodio.
+          throw new Error(event.message ?? "tutor_error")
         } else if (event.type === "done") {
           console.debug("chunks_used_hash:", event.chunks_used_hash)
         }
       }
     } catch (e) {
-      const msg = String(e)
-      if (msg.includes("404") || msg.includes("409")) {
-        setError(
-          'Tu episodio se pausó por inactividad. Hacé clic en "Salir" y volvé a entrar al ejercicio: vas a retomarlo donde lo dejaste.',
-        )
-        setClosed(true)
-        window.sessionStorage.removeItem(ACTIVE_EPISODE_KEY)
-      } else {
-        setError(`Error en streaming: ${e}`)
-      }
+      // UI-8: mantener al alumno DENTRO. Sacamos solo la burbuja vacia del tutor
+      // de este intento (si no llego ningun chunk) y habilitamos el reintento.
+      // NO tocamos `closed` ni sessionStorage: el episodio sigue abierto.
+      setMessages((m) =>
+        m.length > 0 && m[m.length - 1]?.role === "tutor" && m[m.length - 1]?.content === ""
+          ? m.slice(0, -1)
+          : m,
+      )
+      console.warn("tutor stream failed (retryable):", e)
+      setLastFailedMessage(userMessage)
+      setSendError(
+        "El tutor está saturado en este momento. Tu episodio sigue abierto — esperá unos segundos y reintentá.",
+      )
     } finally {
       setStreaming(false)
     }
+  }
+
+  // UI-8: reintenta el ultimo mensaje que fallo. resumeEpisode es idempotente
+  // (ADR-055): si la sesion sigue viva es no-op; si el episodio se pauso por
+  // inactividad, la reconstruye desde el CTR. Asi un mismo boton recupera tanto
+  // el caso "tutor saturado" como "sesion pausada" sin sacar al alumno.
+  async function handleRetry() {
+    if (!lastFailedMessage || streaming) return
+    const msg = lastFailedMessage
+    setSendError(null)
+    try {
+      await resumeEpisode(episodeId)
+    } catch (e) {
+      console.warn("resume on retry failed (best-effort):", e)
+    }
+    await handleSend(msg)
   }
 
   async function handleClose() {
@@ -548,6 +589,14 @@ export function EpisodeView({ episodeId, onExit, ejercicioContext, getToken }: E
         episodeId={closed ? null : episodeId}
         ejercicioOrden={ejercicioContext?.ejercicioOrden ?? null}
       />
+      {/* UI-1: N2 "Anotacion". El alumno anota su plan/dudas; cada guardado
+          emite anotacion_creada al CTR. Oculto una vez cerrado el episodio
+          (el CTR es append-only y rechaza eventos post-close con 409). */}
+      {!closed && (
+        <div className="shrink-0 border-t border-border-soft bg-surface-alt/30 p-3">
+          <NotesPanel episodeId={episodeId} initialNotes={notes} defaultOpen={false} />
+        </div>
+      )}
     </section>
   )
 
@@ -692,22 +741,26 @@ export function EpisodeView({ episodeId, onExit, ejercicioContext, getToken }: E
                 </span>
                 <div
                   data-testid={isLastTutor ? "tutor-message-last" : undefined}
-                  className={`rounded-2xl px-3.5 py-2.5 text-sm whitespace-pre-wrap leading-relaxed ${
+                  className={`rounded-2xl px-3.5 py-2.5 text-sm leading-relaxed ${
                     isUser
-                      ? "bg-accent-brand text-white rounded-tr-sm"
+                      ? "bg-accent-brand text-white rounded-tr-sm whitespace-pre-wrap"
                       : "bg-surface-alt text-body border border-border-soft rounded-tl-sm"
                   }`}
                 >
-                  {m.content ||
-                    (m.role === "tutor" && streaming ? (
-                      <span className="inline-flex gap-1 items-center text-muted">
-                        <span className="inline-block w-1.5 h-1.5 rounded-full bg-muted animate-pulse-soft" />
-                        <span className="inline-block w-1.5 h-1.5 rounded-full bg-muted animate-pulse-soft animate-delay-150" />
-                        <span className="inline-block w-1.5 h-1.5 rounded-full bg-muted animate-pulse-soft animate-delay-300" />
-                      </span>
-                    ) : (
-                      ""
-                    ))}
+                  {/* UI-3: el tutor responde en markdown → lo renderizamos (antes
+                      se veian los asteriscos crudos). El mensaje del alumno queda
+                      como texto plano (whitespace-pre-wrap). */}
+                  {isUser ? (
+                    m.content
+                  ) : m.content ? (
+                    <MarkdownRenderer content={m.content} />
+                  ) : streaming ? (
+                    <span className="inline-flex gap-1 items-center text-muted">
+                      <span className="inline-block w-1.5 h-1.5 rounded-full bg-muted animate-pulse-soft" />
+                      <span className="inline-block w-1.5 h-1.5 rounded-full bg-muted animate-pulse-soft animate-delay-150" />
+                      <span className="inline-block w-1.5 h-1.5 rounded-full bg-muted animate-pulse-soft animate-delay-300" />
+                    </span>
+                  ) : null}
                 </div>
               </div>
             </div>
@@ -715,6 +768,27 @@ export function EpisodeView({ episodeId, onExit, ejercicioContext, getToken }: E
         })}
         <div ref={messagesEndRef} />
       </div>
+
+      {/* UI-8: aviso de tutor saturado + reintento. NO cierra el episodio ni
+          ofrece salir — el alumno sigue DENTRO y reenvia el mismo mensaje. */}
+      {sendError && (
+        <div
+          data-testid="tutor-send-error"
+          className="animate-fade-in-up mx-3 mb-2 flex items-center justify-between gap-3 rounded-lg border border-warning/40 bg-warning-soft px-3 py-2.5 text-xs text-warning"
+        >
+          <span className="leading-relaxed">{sendError}</span>
+          <button
+            type="button"
+            onClick={() => handleRetry()}
+            disabled={streaming}
+            data-testid="tutor-retry-button"
+            className="press-shrink shrink-0 inline-flex items-center gap-1.5 rounded-md bg-warning px-2.5 py-1 font-medium text-white transition-colors hover:bg-warning/90 disabled:opacity-50 disabled:cursor-not-allowed"
+          >
+            <RotateCcw className="h-3 w-3" />
+            Reintentar
+          </button>
+        </div>
+      )}
 
       <div className="border-t border-border-soft p-3 bg-surface-alt/40">
         <div className="flex gap-2 items-end">
@@ -735,7 +809,7 @@ export function EpisodeView({ episodeId, onExit, ejercicioContext, getToken }: E
           />
           <button
             type="button"
-            onClick={handleSend}
+            onClick={() => handleSend()}
             disabled={streaming || !input.trim()}
             aria-label="Enviar mensaje"
             className="press-shrink shrink-0 inline-flex items-center justify-center h-[42px] w-[42px] rounded-lg bg-accent-brand text-white hover:bg-accent-brand-deep disabled:bg-border-strong disabled:cursor-not-allowed transition-colors"
@@ -792,6 +866,7 @@ export function EpisodeView({ episodeId, onExit, ejercicioContext, getToken }: E
             1: { txt: "N1 · lectura activa", cls: "bg-level-n1/10 border-level-n1/30 text-level-n1", dot: "var(--color-level-n1)" },
             2: { txt: "N2 · edición activa", cls: "bg-level-n2/10 border-level-n2/30 text-level-n2", dot: "var(--color-level-n2)" },
             3: { txt: "N3 · ejecución activa", cls: "bg-level-n3/10 border-level-n3/30 text-level-n3", dot: "var(--color-level-n3)" },
+            4: { txt: "N4 · diálogo con el tutor", cls: "bg-level-n4/10 border-level-n4/30 text-level-n4", dot: "var(--color-level-n4)" },
           }[maxActividad]
           return (
             <span
@@ -807,6 +882,13 @@ export function EpisodeView({ episodeId, onExit, ejercicioContext, getToken }: E
             </span>
           )
         })()}
+        {/* UI-7: countdown discreto del plazo de la TP (solo si tiene fecha_fin). */}
+        {tarea?.fecha_fin && (
+          <>
+            <span className="text-muted-soft">·</span>
+            <DeadlineChip fechaFin={tarea.fecha_fin} />
+          </>
+        )}
         <div className="ml-auto flex items-center gap-1">
           <HelpButton title="Tutor Socratico" content={helpContent.episode} />
           {/* El docente decide por TP si se puede pausar/retomar (permite_pausa).
@@ -1101,6 +1183,49 @@ function formatElapsed(seconds: number): string {
   const m = Math.floor(seconds / 60)
   const s = seconds % 60
   return `${m}m ${s}s`
+}
+
+function formatRemaining(ms: number): string {
+  const totalMin = Math.floor(ms / 60000)
+  const days = Math.floor(totalMin / 1440)
+  const hours = Math.floor((totalMin % 1440) / 60)
+  const mins = totalMin % 60
+  if (days > 0) return `${days}d ${hours}h`
+  if (hours > 0) return `${hours}h ${mins}m`
+  return `${mins}m`
+}
+
+/**
+ * UI-7: chip discreto con el tiempo restante hasta el cierre de la TP.
+ * Refresca cada 30s. Muted por default, warning si queda <24h, danger si vencio.
+ * Solo se monta cuando la TP tiene fecha_fin (el caller lo gatea).
+ */
+function DeadlineChip({ fechaFin }: { fechaFin: string }) {
+  const [now, setNow] = useState(() => Date.now())
+  useEffect(() => {
+    const t = window.setInterval(() => setNow(Date.now()), 30_000)
+    return () => window.clearInterval(t)
+  }, [])
+  const end = Date.parse(fechaFin)
+  if (Number.isNaN(end)) return null
+  const remainingMs = end - now
+  const vencido = remainingMs <= 0
+  const urgent = !vencido && remainingMs < 24 * 3600 * 1000
+  const label = vencido ? "Plazo vencido" : `Vence en ${formatRemaining(remainingMs)}`
+  const cls = vencido
+    ? "bg-danger-soft border-danger/30 text-danger"
+    : urgent
+      ? "bg-warning-soft border-warning/30 text-warning"
+      : "bg-surface-alt border-border-soft text-muted"
+  return (
+    <span
+      title="Fecha limite de entrega de este trabajo practico."
+      className={`inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full border font-medium ${cls}`}
+    >
+      <Clock aria-hidden="true" className="h-3 w-3" />
+      {label}
+    </span>
+  )
 }
 
 /** Hook que mide tiempo de visibilidad + tab focus y emite el delta al

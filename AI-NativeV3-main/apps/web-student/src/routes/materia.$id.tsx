@@ -68,7 +68,14 @@ export const Route = createFileRoute("/materia/$id")({
 /** Estado de la navegacion dentro de la pagina de materia. */
 type MateriaPageView =
   | { kind: "unidades" }
-  | { kind: "selector"; unidadId: string | null | undefined }
+  | {
+      kind: "selector"
+      unidadId: string | null | undefined
+      /** UI-5: true si llegamos por auto-skip (0-1 unidad). En ese caso el
+       * paso "Unidades" no aporta eleccion, asi que NO ofrecemos "← Volver a
+       * unidades" (loopearia): el header ya tiene "← Mis materias". */
+      autoSkipped?: boolean
+    }
   | { kind: "exercise-list"; tarea: AvailableTarea }
   | {
       kind: "grade-detail"
@@ -306,6 +313,9 @@ function MateriaPage() {
               onSelect={(unidadId) =>
                 setView({ kind: "selector", unidadId: unidadId ?? null })
               }
+              onAutoSkip={(unidadId) =>
+                setView({ kind: "selector", unidadId, autoSkipped: true })
+              }
             />
           </div>
         </div>
@@ -316,7 +326,7 @@ function MateriaPage() {
           comisionId={materia.comision_id}
           onSelect={handleSelectTarea}
           unidadId={currentView.unidadId}
-          onBack={() => setView({ kind: "unidades" })}
+          onBack={currentView.autoSkipped ? undefined : () => setView({ kind: "unidades" })}
           onViewGrade={(tarea, entrega) =>
             setView({ kind: "grade-detail", tarea, entrega, back: currentView })
           }
