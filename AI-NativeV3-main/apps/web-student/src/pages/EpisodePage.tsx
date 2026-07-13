@@ -13,6 +13,7 @@
  * mensajes y codigo. Si el episodio cerro / no existe / es cross-tenant,
  * limpiamos sessionStorage y llamamos onExit().
  */
+import { CTRClient } from "@platform/ctr-client"
 import { HelpButton, MarkdownRenderer } from "@platform/ui"
 import { Bot, BookOpen, Code2, LogOut, MessageSquare, PauseCircle, Send, ShieldAlert, Sparkles, User } from "lucide-react"
 import { useCallback, useEffect, useRef, useState } from "react"
@@ -32,8 +33,6 @@ import {
   emitEpisodioAbandonado,
   emitLecturaEnunciado,
   emitPegaIntentada,
-  emitPestanaPerdida,
-  emitPestanaRecuperada,
   getEpisodeState,
   getTareaById,
   listEjerciciosTp,
@@ -143,6 +142,26 @@ export function EpisodeView({ episodeId, onExit, ejercicioContext, getToken }: E
   // Sin dedupe, ambos llaman markEjercicioCompleted para el mismo ejercicio.
   const markedCompletedRef = useRef(false)
 
+  // P-17: cliente CTR con cola persistente (localStorage) + reintentos con
+  // backoff + preservacion de orden por episodio. Hoy solo cablea los eventos
+  // `pestana_*` (side-channel de bajo riesgo, ver nota abajo). Ante una falla
+  // de red el evento queda en la cola y se reintenta — no se pierde en silencio.
+  // El resto de los eventos CTR sigue en `emit*` (fetch directo) a proposito:
+  // codigo_ejecutado / edicion_codigo / lectura_enunciado van entrelazados con
+  // el ciclo del episodio (Pyodide, debounce del editor, cierre) y su re-cableo
+  // es riesgoso para el orden/semantica del CTR; se difiere. El cliente usa el
+  // fetch global parcheado (interceptor P-18) => hereda el Bearer sin getToken.
+  const ctrClientRef = useRef<CTRClient | null>(null)
+  useEffect(() => {
+    const client = new CTRClient({ episodeId })
+    ctrClientRef.current = client
+    return () => {
+      void client.flush()
+      client.dispose()
+      ctrClientRef.current = null
+    }
+  }, [episodeId])
+
   const ejercicioOrden = ejercicioContext?.ejercicioOrden ?? null
 
   const scrollToBottom = useCallback(() => {
@@ -200,9 +219,9 @@ export function EpisodeView({ episodeId, onExit, ejercicioContext, getToken }: E
     function onVisibility() {
       if (document.visibilityState === "hidden") {
         hiddenAtRef.current = Date.now()
-        void emitPestanaPerdida(episodeId, { trigger: "visibilitychange" }).catch((e) =>
-          console.warn("emit pestana_perdida failed:", e),
-        )
+        // P-17: via cola persistente con reintentos (antes: fetch directo que
+        // perdia el evento en silencio si la red fallaba).
+        ctrClientRef.current?.pestanaPerdida({ trigger: "visibilitychange" })
         // NO emitimos episodio_abandonado acá: salir de la pestaña NO debe
         // pausar el episodio (decisión de producto, ver fix/remove-tab-away-
         // autoclose). El abandono real se persiste por `beforeunload` (cierre/
@@ -215,16 +234,17 @@ export function EpisodeView({ episodeId, onExit, ejercicioContext, getToken }: E
       if (hiddenAt == null) return
       hiddenAtRef.current = null
       const secondsAway = Math.max(0, Math.round((Date.now() - hiddenAt) / 1000))
-      void emitPestanaRecuperada(episodeId, {
-        tiempo_fuera_segundos: secondsAway,
-      }).catch((e) => console.warn("emit pestana_recuperada failed:", e))
+      // P-17: via cola persistente con reintentos (idem pestana_perdida).
+      ctrClientRef.current?.pestanaRecuperada({ tiempo_fuera_segundos: secondsAway })
       tabExitCountRef.current += 1
       setTabExit({ count: tabExitCountRef.current, secondsAway })
     }
 
     document.addEventListener("visibilitychange", onVisibility)
     return () => document.removeEventListener("visibilitychange", onVisibility)
-  }, [episodeId, closed])
+    // `episodeId` ya no es dep: el handler lee `ctrClientRef.current` (el cliente
+    // CTR del episodio vigente) al momento de disparar, no lo captura en closure.
+  }, [closed])
 
   // Hydration on-mount. El episodeId viene del path param, no del state.
   useEffect(() => {
