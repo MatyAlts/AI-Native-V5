@@ -88,6 +88,11 @@ x-ctr-worker-defaults: &ctr-worker-defaults
     context: ..
     dockerfile: apps/ctr-service/Dockerfile
   restart: unless-stopped
+  # INVARIANTE single-writer (ADR-010): CADA ctr-worker-N debe correr en UNA sola
+  # instancia. Escalar cualquiera (p.ej. `docker compose up --scale ctr-worker-3=2`)
+  # pondria 2 procesos sobre la particion 3 => rompe single-writer. NO escalar.
+  deploy:
+    replicas: 1
   logging:
     driver: json-file
     options:
@@ -346,9 +351,22 @@ services:
       OTEL_SERVICE_NAME_PREFIX: platform
       CTR_STORE_URL: postgresql+asyncpg://ctr_user:${CTR_DB_PASSWORD}@postgres:5432/ctr_store
       REDIS_URL: redis://:${REDIS_PASSWORD}@redis:6379/0
-      # Default del docker-entrypoint = server. Lo declaramos explicito por
-      # claridad (los workers usan CTR_MODE=worker).
-      CTR_MODE: server
+      # CTR_MODE=http => HTTP-only, SIN workers in-process. Los 8 partition_worker
+      # corren en containers dedicados ctr-worker-0..7 (uno por particion). Esto
+      # preserva el INVARIANTE single-writer por particion (ADR-010): exactamente
+      # UN proceso drena cada stream ctr.pN a Postgres.
+      #
+      # ANTES estaba en `server`, que ademas de HTTP spawnea los 8 workers
+      # in-process. Como los ctr-worker-N tambien existen abajo, eso daba DOS
+      # writers por particion (16 workers para 8 particiones) => races de
+      # chain_hash / integrity_compromised. NO volver a `server` mientras existan
+      # los containers ctr-worker-N. Driver = env var (robusto contra overrides
+      # de EasyPanel que pisarian un `command:`).
+      CTR_MODE: http
+    # Single-writer depende de que HTTP y workers no se solapen; el ctr-service
+    # puede escalar HTTP libremente porque en modo http no toca ninguna particion.
+    deploy:
+      replicas: 1
     depends_on:
       postgres:
         condition: service_healthy
@@ -434,6 +452,15 @@ services:
   # Mismo build que ctr-service. El ENTRYPOINT del Dockerfile es un script
   # dispatcher que arranca worker o server segun CTR_MODE. Asi NO usamos
   # `command:` (robusto contra overrides de EasyPanel que lo pisarian).
+  #
+  # BIYECCION particion<->worker: hay EXACTAMENTE 8 servicios (ctr-worker-0..7),
+  # cada uno con un CTR_WORKER_PARTITION hardcodeado y unico en {0..7}. Cubren
+  # las 8 particiones sin huecos ni duplicados. El ctr-service corre en
+  # CTR_MODE=http (sin workers), asi que estos 8 son los UNICOS writers.
+  # Reglas para NO romper el invariante single-writer:
+  #   - NO agregar/quitar un ctr-worker-N sin ajustar NUM_PARTITIONS en el codigo.
+  #   - NO escalar ninguno a >1 replica (ver deploy.replicas en los defaults).
+  #   - NO poner el ctr-service en CTR_MODE=server mientras existan estos.
 
   ctr-worker-0:
     <<: *ctr-worker-defaults
