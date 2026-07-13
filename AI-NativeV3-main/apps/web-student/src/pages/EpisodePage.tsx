@@ -15,9 +15,27 @@
  */
 import { CTRClient } from "@platform/ctr-client"
 import { HelpButton, MarkdownRenderer } from "@platform/ui"
-import { Bot, BookOpen, Clock, Code2, LogOut, MessageSquare, PauseCircle, RotateCcw, Send, ShieldAlert, Sparkles, User } from "lucide-react"
-import { useCallback, useEffect, useRef, useState } from "react"
-import { Group as PanelGroup, Panel, Separator as PanelResizeHandle } from "react-resizable-panels"
+import {
+  BookOpen,
+  Bot,
+  Clock,
+  Code2,
+  LogOut,
+  MessageSquare,
+  PauseCircle,
+  RotateCcw,
+  Send,
+  ShieldAlert,
+  Sparkles,
+  User,
+} from "lucide-react"
+import { useCallback, useEffect, useMemo, useRef, useState } from "react"
+import {
+  Panel,
+  Group as PanelGroup,
+  type PanelImperativeHandle,
+  Separator as PanelResizeHandle,
+} from "react-resizable-panels"
 import { CodeEditor } from "../components/CodeEditor"
 import { NotesPanel } from "../components/NotesPanel"
 import { ReflectionModal } from "../components/ReflectionModal"
@@ -26,6 +44,7 @@ import {
   type AvailableTarea,
   type Classification,
   EpisodeStateError,
+  type TestCasePublic,
   classifyEpisode,
   closeEpisode,
   emitCodigoEjecutado,
@@ -34,6 +53,7 @@ import {
   emitEpisodioAbandonado,
   emitLecturaEnunciado,
   emitPegaIntentada,
+  emitTestsEjecutados,
   getEpisodeState,
   getTareaById,
   listEjerciciosTp,
@@ -44,6 +64,8 @@ import {
 import { helpContent } from "../utils/helpContent"
 
 const ACTIVE_EPISODE_KEY = "active-episode-id"
+// ED-2: clave de persistencia del layout de los 3 paneles del episodio.
+const PANELS_STORAGE_KEY = "web-student.episode.panels.v1"
 
 interface Message {
   role: "user" | "tutor"
@@ -90,6 +112,10 @@ export function EpisodeView({ episodeId, onExit, ejercicioContext, getToken }: E
   // resolveCodigoInicial); este fallback NO debe sugerir una consigna concreta
   // (antes mostraba `def factorial` para TODOS los ejercicios — NEW-002 QA).
   const [code, setCode] = useState<string>("# Escribí tu código Python acá\n")
+  // F1: test cases PUBLICOS resueltos en la hidratacion (del ejercicio del
+  // banco si es multi-ejercicio, o de la TP monolitica). Solo publicos — el
+  // backend sanea por rol (A0.3). Se pasan al CodeEditor para "Probar".
+  const [testCases, setTestCases] = useState<TestCasePublic[]>([])
   const [messages, setMessages] = useState<Message[]>([])
   // Indicador de ACTIVIDAD en curso (no es la clasificacion final del classifier,
   // que se deriva post-cierre — ADR-020). Refleja el CANAL de actividad que el
@@ -139,6 +165,53 @@ export function EpisodeView({ episodeId, onExit, ejercicioContext, getToken }: E
   // visibilidad con CSS, no con render condicional.
   const isMobile = useMediaQuery("(max-width: 1023px)")
   const [activeTab, setActiveTab] = useState<"consigna" | "editor" | "tutor">("editor")
+  // ED-1: maximizar el editor. Colapsa los paneles Consigna + Tutor via su API
+  // imperativa (siguen MONTADOS a 0 — Monaco conserva su buffer, el observer de
+  // lectura sigue en el DOM). No unmontamos nada (mismo criterio que el layout
+  // mobile). Solo aplica en desktop (el PanelGroup no existe en mobile).
+  const [editorMaximized, setEditorMaximized] = useState(false)
+  const consignaPanelRef = useRef<PanelImperativeHandle | null>(null)
+  const tutorPanelRef = useRef<PanelImperativeHandle | null>(null)
+  // ED-2: persistir el tamano de los paneles (react-resizable-panels v4 no
+  // tiene autoSaveId — se persiste manualmente el layout en localStorage y se
+  // restaura via `defaultLayout`). Gateado por `maximizedRef` para NO guardar
+  // el layout transitorio de "maximizado" (sino el alumno abriria siempre
+  // maximizado).
+  const maximizedRef = useRef(false)
+  const savedPanelLayout = useMemo<Record<string, number> | undefined>(() => {
+    if (typeof window === "undefined") return undefined
+    try {
+      const raw = window.localStorage.getItem(PANELS_STORAGE_KEY)
+      return raw ? (JSON.parse(raw) as Record<string, number>) : undefined
+    } catch {
+      return undefined
+    }
+  }, [])
+  const handlePanelLayoutChanged = useCallback((layout: Record<string, number>) => {
+    if (maximizedRef.current) return // no persistir el layout maximizado
+    if (typeof window === "undefined") return
+    try {
+      window.localStorage.setItem(PANELS_STORAGE_KEY, JSON.stringify(layout))
+    } catch {
+      // best-effort: si localStorage falla (modo privado, cuota), seguimos.
+    }
+  }, [])
+  const toggleEditorMaximized = useCallback(() => {
+    const next = !editorMaximized
+    // Marcar ANTES de colapsar para que el onLayoutChanged del colapso no
+    // persista el layout maximizado. Al restaurar, re-habilitamos el guardado y
+    // expandimos a la ultima medida. Efectos FUERA del updater de estado (React
+    // puede invocar el updater mas de una vez).
+    maximizedRef.current = next
+    if (next) {
+      consignaPanelRef.current?.collapse()
+      tutorPanelRef.current?.collapse()
+    } else {
+      consignaPanelRef.current?.expand()
+      tutorPanelRef.current?.expand()
+    }
+    setEditorMaximized(next)
+  }, [editorMaximized])
   const tabExitCountRef = useRef(0)
   const hiddenAtRef = useRef<number | null>(null)
   const messagesEndRef = useRef<HTMLDivElement>(null)
@@ -290,22 +363,39 @@ export function EpisodeView({ episodeId, onExit, ejercicioContext, getToken }: E
           return
         }
         setTarea(t)
+
+        // F1 + codigo inicial (ADR-047). Para TPs multi-ejercicio el ejercicio
+        // y sus test cases PUBLICOS viven en el banco; los traemos una sola vez
+        // y de ahi salen tanto los tests como el codigo inicial. Para TPs
+        // monoliticas ambos vienen en la propia TP (ya saneada por rol, A0.3).
+        let resolvedTests: TestCasePublic[] = []
+        if (ejercicioContext) {
+          try {
+            const tpEjs = await listEjerciciosTp(state.tarea_practica_id)
+            if (cancelled) return
+            const match = tpEjs.find((te) => te.orden === ejercicioContext.ejercicioOrden)
+            resolvedTests = (match?.ejercicio?.test_cases ?? []).filter(
+              (tc) => tc.is_public !== false,
+            )
+            // Codigo inicial del ejercicio del banco (solo si no hay snapshot ni
+            // codigo inicial a nivel TP — mismo fallback que antes).
+            if (!state.last_code_snapshot && !resolveCodigoInicial(t)) {
+              const ejInicial = match?.ejercicio?.inicial_codigo ?? null
+              if (ejInicial) setCode(ejInicial)
+            }
+          } catch {
+            // best-effort: sin tests / sin codigo inicial del banco → default.
+          }
+        } else {
+          resolvedTests = (t.test_cases ?? []).filter((tc) => tc.is_public !== false)
+        }
+        setTestCases(resolvedTests)
+
         if (state.last_code_snapshot) {
           setCode(state.last_code_snapshot)
-        } else {
-          // ADR-047: el codigo inicial del ejercicio vive en el banco, no en la
-          // TP. Si venimos de un ejercicio, lo traemos via /tareas-practicas/{id}/
-          // ejercicios y lo matcheamos por orden. Fallback al de la TP (monoliticas).
-          let initialCode = resolveCodigoInicial(t)
-          if (!initialCode && ejercicioContext) {
-            try {
-              const tpEjs = await listEjerciciosTp(state.tarea_practica_id)
-              const match = tpEjs.find((te) => te.orden === ejercicioContext.ejercicioOrden)
-              initialCode = match?.ejercicio?.inicial_codigo ?? null
-            } catch {
-              // best-effort: si falla, el editor cae a su default
-            }
-          }
+        } else if (!ejercicioContext) {
+          // TP monolitica: codigo inicial de la propia TP.
+          const initialCode = resolveCodigoInicial(t)
           if (initialCode) setCode(initialCode)
         }
         setMessages(
@@ -614,6 +704,27 @@ export function EpisodeView({ episodeId, onExit, ejercicioContext, getToken }: E
       />
       <CodeEditor
         initialCode={code}
+        testCases={testCases}
+        isMaximized={editorMaximized}
+        // ED-1: el boton maximizar solo tiene sentido en desktop (el PanelGroup
+        // no existe en mobile — ahi el alumno enfoca el editor con las tabs).
+        onToggleMaximize={isMobile ? undefined : toggleEditorMaximized}
+        onTestsRun={(result) => {
+          // F1: correr tests es actividad de EJECUCION (N3), igual que "Ejecutar".
+          setMaxActividad((a) => (a < 3 ? 3 : a))
+          // Emitir tests_ejecutados al CTR (conteos agregados; el labeler v1.2.0
+          // deriva N3/N4 de esto). Best-effort: un fallo de red / 409 (sesion
+          // cerrada) NO rompe la UI ni el flujo — mismo criterio que codigo_ejecutado.
+          void emitTestsEjecutados(episodeId, {
+            test_count_total: result.total,
+            test_count_passed: result.passed,
+            test_count_failed: result.failed,
+            tests_publicos: result.total,
+            ejecucion_ms: Math.round(result.durationMs),
+          }).catch((e) => {
+            console.warn("emit tests_ejecutados failed:", e)
+          })
+        }}
         onCodeExecuted={(result) => {
           setCode(result.code)
           setMaxActividad((a) => (a < 3 ? 3 : a))
@@ -687,10 +798,7 @@ export function EpisodeView({ episodeId, onExit, ejercicioContext, getToken }: E
                 style={{ background: "var(--color-level-n4)" }}
               />
               <div className="flex items-center gap-2 mb-3">
-                <Sparkles
-                  className="h-4 w-4"
-                  style={{ color: "var(--color-level-n4)" }}
-                />
+                <Sparkles className="h-4 w-4" style={{ color: "var(--color-level-n4)" }} />
                 <span className="text-[10px] uppercase tracking-[0.12em] font-semibold text-muted">
                   Contrato pedagógico
                 </span>
@@ -728,11 +836,7 @@ export function EpisodeView({ episodeId, onExit, ejercicioContext, getToken }: E
                 }`}
                 style={!isUser ? { color: "var(--color-level-n4)" } : undefined}
               >
-                {isUser ? (
-                  <User className="h-3.5 w-3.5" />
-                ) : (
-                  <Bot className="h-3.5 w-3.5" />
-                )}
+                {isUser ? <User className="h-3.5 w-3.5" /> : <Bot className="h-3.5 w-3.5" />}
               </div>
               {/* Burbuja */}
               <div className={`flex flex-col gap-1 max-w-[80%] ${isUser ? "items-end" : ""}`}>
@@ -832,9 +936,24 @@ export function EpisodeView({ episodeId, onExit, ejercicioContext, getToken }: E
     icon: React.ReactNode
     colorVar: string
   }[] = [
-    { key: "consigna", label: "Consigna", icon: <BookOpen className="h-4 w-4" />, colorVar: "var(--color-level-n1)" },
-    { key: "editor", label: "Editor", icon: <Code2 className="h-4 w-4" />, colorVar: "var(--color-level-n3)" },
-    { key: "tutor", label: "Tutor", icon: <MessageSquare className="h-4 w-4" />, colorVar: "var(--color-level-n4)" },
+    {
+      key: "consigna",
+      label: "Consigna",
+      icon: <BookOpen className="h-4 w-4" />,
+      colorVar: "var(--color-level-n1)",
+    },
+    {
+      key: "editor",
+      label: "Editor",
+      icon: <Code2 className="h-4 w-4" />,
+      colorVar: "var(--color-level-n3)",
+    },
+    {
+      key: "tutor",
+      label: "Tutor",
+      icon: <MessageSquare className="h-4 w-4" />,
+      colorVar: "var(--color-level-n4)",
+    },
   ]
 
   return (
@@ -857,16 +976,30 @@ export function EpisodeView({ episodeId, onExit, ejercicioContext, getToken }: E
           {episodeId.slice(0, 6)}…{episodeId.slice(-4)}
         </span>
         <span className="text-muted-soft">·</span>
-        <span className="text-muted font-mono tabular-nums">
-          {formatElapsed(elapsedSeconds)}
-        </span>
+        <span className="text-muted font-mono tabular-nums">{formatElapsed(elapsedSeconds)}</span>
         <span className="text-muted-soft">·</span>
         {(() => {
           const act = {
-            1: { txt: "N1 · lectura activa", cls: "bg-level-n1/10 border-level-n1/30 text-level-n1", dot: "var(--color-level-n1)" },
-            2: { txt: "N2 · edición activa", cls: "bg-level-n2/10 border-level-n2/30 text-level-n2", dot: "var(--color-level-n2)" },
-            3: { txt: "N3 · ejecución activa", cls: "bg-level-n3/10 border-level-n3/30 text-level-n3", dot: "var(--color-level-n3)" },
-            4: { txt: "N4 · diálogo con el tutor", cls: "bg-level-n4/10 border-level-n4/30 text-level-n4", dot: "var(--color-level-n4)" },
+            1: {
+              txt: "N1 · lectura activa",
+              cls: "bg-level-n1/10 border-level-n1/30 text-level-n1",
+              dot: "var(--color-level-n1)",
+            },
+            2: {
+              txt: "N2 · edición activa",
+              cls: "bg-level-n2/10 border-level-n2/30 text-level-n2",
+              dot: "var(--color-level-n2)",
+            },
+            3: {
+              txt: "N3 · ejecución activa",
+              cls: "bg-level-n3/10 border-level-n3/30 text-level-n3",
+              dot: "var(--color-level-n3)",
+            },
+            4: {
+              txt: "N4 · diálogo con el tutor",
+              cls: "bg-level-n4/10 border-level-n4/30 text-level-n4",
+              dot: "var(--color-level-n4)",
+            },
           }[maxActividad]
           return (
             <span
@@ -985,8 +1118,24 @@ export function EpisodeView({ episodeId, onExit, ejercicioContext, getToken }: E
           </div>
         </div>
       ) : (
-        <PanelGroup orientation="horizontal" className="flex-1 p-4 min-h-0">
-          <Panel defaultSize={33} minSize={15} className="flex">
+        <PanelGroup
+          orientation="horizontal"
+          className="flex-1 p-4 min-h-0"
+          // ED-2: restaurar + persistir el layout de paneles.
+          defaultLayout={savedPanelLayout}
+          onLayoutChanged={handlePanelLayoutChanged}
+        >
+          {/* ED-1: mas espacio default para el editor (33/40/27). Consigna y
+              Tutor son colapsables para el modo "maximizar editor". */}
+          <Panel
+            id="ep-consigna"
+            panelRef={consignaPanelRef}
+            defaultSize={33}
+            minSize={15}
+            collapsible
+            collapsedSize={0}
+            className="flex"
+          >
             {consignaPanel}
           </Panel>
 
@@ -994,7 +1143,7 @@ export function EpisodeView({ episodeId, onExit, ejercicioContext, getToken }: E
             <span className="block h-12 w-0.5 rounded-full bg-border-soft group-hover:bg-accent-brand group-data-[resize-handle-active]:bg-accent-brand transition-colors" />
           </PanelResizeHandle>
 
-          <Panel defaultSize={34} minSize={15} className="flex">
+          <Panel id="ep-editor" defaultSize={40} minSize={15} className="flex">
             {editorPanel}
           </Panel>
 
@@ -1002,7 +1151,15 @@ export function EpisodeView({ episodeId, onExit, ejercicioContext, getToken }: E
             <span className="block h-12 w-0.5 rounded-full bg-border-soft group-hover:bg-accent-brand group-data-[resize-handle-active]:bg-accent-brand transition-colors" />
           </PanelResizeHandle>
 
-          <Panel defaultSize={33} minSize={15} className="flex">
+          <Panel
+            id="ep-tutor"
+            panelRef={tutorPanelRef}
+            defaultSize={27}
+            minSize={15}
+            collapsible
+            collapsedSize={0}
+            className="flex"
+          >
             {tutorPanel}
           </Panel>
         </PanelGroup>
@@ -1019,10 +1176,7 @@ export function EpisodeView({ episodeId, onExit, ejercicioContext, getToken }: E
             // del ClassificationPanel) lo lee de aca.
             setSkippedReflection(true)
             if (typeof window !== "undefined") {
-              window.localStorage.setItem(
-                `episode_${episodeId}_reflection_skipped`,
-                "1",
-              )
+              window.localStorage.setItem(`episode_${episodeId}_reflection_skipped`, "1")
             }
           }
           // Cierre/skip del modal de reflexión:
@@ -1062,16 +1216,12 @@ export function EpisodeView({ episodeId, onExit, ejercicioContext, getToken }: E
                 <ShieldAlert className="h-6 w-6" />
               </span>
               <div className="min-w-0">
-                <h2
-                  id="tab-exit-title"
-                  className="text-lg font-semibold leading-snug text-ink"
-                >
+                <h2 id="tab-exit-title" className="text-lg font-semibold leading-snug text-ink">
                   Saliste de la evaluación
                 </h2>
                 <p className="mt-1.5 text-sm leading-relaxed text-muted">
-                  Mientras resolvés un episodio no podés cambiar de pestaña ni de
-                  ventana. Esta salida quedó registrada en la trazabilidad del
-                  episodio y tu docente puede verla.
+                  Mientras resolvés un episodio no podés cambiar de pestaña ni de ventana. Esta
+                  salida quedó registrada en la trazabilidad del episodio y tu docente puede verla.
                 </p>
               </div>
             </div>
@@ -1141,9 +1291,7 @@ function PanelHeader({
         >
           {level}
         </span>
-        <h2 className="text-sm font-semibold text-ink leading-tight tracking-tight">
-          {label}
-        </h2>
+        <h2 className="text-sm font-semibold text-ink leading-tight tracking-tight">{label}</h2>
       </div>
       {badge && (
         <span
@@ -1151,16 +1299,13 @@ function PanelHeader({
             badgePulse ? "animate-pulse-soft" : ""
           }`}
         >
-          {badgePulse && (
-            <span className="inline-block w-1.5 h-1.5 rounded-full bg-success" />
-          )}
+          {badgePulse && <span className="inline-block w-1.5 h-1.5 rounded-full bg-success" />}
           {badge}
         </span>
       )}
     </div>
   )
 }
-
 
 function useElapsedSeconds(episodeId: string | null): number {
   const [seconds, setSeconds] = useState(0)
@@ -1545,9 +1690,7 @@ function buildPedagogicalFeedback(c: Classification): {
         sugerencias:
           sugerencias.length > 0
             ? sugerencias
-            : [
-                "Cuando termines un ejercicio, repasá qué aprendiste y contátelo al tutor.",
-              ],
+            : ["Cuando termines un ejercicio, repasá qué aprendiste y contátelo al tutor."],
       }
     case "delegacion_pasiva":
       return {
@@ -1608,18 +1751,12 @@ function ClassificationPanel({
   return (
     <div className="flex-1 p-6 overflow-y-auto max-w-3xl mx-auto w-full">
       {/* Header empático, sin etiqueta diagnóstica técnica. */}
-      <div
-        className={`rounded-2xl border p-7 mb-8 ${tonoStyles[feedback.tono]}`}
-      >
+      <div className={`rounded-2xl border p-7 mb-8 ${tonoStyles[feedback.tono]}`}>
         <p className="text-xs font-mono uppercase tracking-[0.15em] opacity-70 mb-2">
           {skippedReflection ? "Cierre del ejercicio · sin reflexion" : "Cierre del ejercicio"}
         </p>
-        <h2 className="font-serif text-3xl font-medium leading-tight">
-          {feedback.titulo}
-        </h2>
-        <p className="mt-4 text-base leading-relaxed opacity-90">
-          {feedback.mensaje}
-        </p>
+        <h2 className="font-serif text-3xl font-medium leading-tight">{feedback.titulo}</h2>
+        <p className="mt-4 text-base leading-relaxed opacity-90">{feedback.mensaje}</p>
       </div>
 
       {/* Sugerencias concretas y accionables — vacias si fue skip de reflexion. */}
@@ -1673,9 +1810,8 @@ function ClassificationFallbackPanel({ onReset }: { onReset: () => void }) {
           Cerramos tu episodio
         </h2>
         <p className="mt-4 text-base leading-relaxed text-body">
-          Tu trabajo quedó registrado criptográficamente. La clasificación
-          pedagógica no se pudo calcular en este momento — el sistema la
-          va a procesar más tarde y vas a poder verla en{" "}
+          Tu trabajo quedó registrado criptográficamente. La clasificación pedagógica no se pudo
+          calcular en este momento — el sistema la va a procesar más tarde y vas a poder verla en{" "}
           <strong>Mis reflexiones</strong>.
         </p>
       </div>

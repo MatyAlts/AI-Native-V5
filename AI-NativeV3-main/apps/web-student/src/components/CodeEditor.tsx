@@ -1,3 +1,4 @@
+import { Modal } from "@platform/ui"
 /**
  * Editor de código con Monaco + ejecución Python en Pyodide.
  *
@@ -17,9 +18,13 @@
  *    TimeoutError. Solo cubre loops a nivel Python — una única llamada C
  *    larga (ej. 10**10**8) no dispara trace events y no es interrumpible.
  */
+import { FlaskConical, Maximize2, Minimize2, Minus, Plus, RotateCcw } from "lucide-react"
+import type * as Monaco from "monaco-editor"
 import type { editor as MonacoEditor } from "monaco-editor"
 import { type ReactNode, useEffect, useRef, useState } from "react"
-import { extractPyodideErrorLine } from "../lib/pyodideError"
+import { Group, Panel, Separator } from "react-resizable-panels"
+import type { TestCasePublic } from "../lib/api"
+import { extractPyodideErrorLine, extractPyodideErrorLineNumber } from "../lib/pyodideError"
 
 type PyodideAPI = {
   runPythonAsync(code: string): Promise<unknown>
@@ -85,10 +90,71 @@ export interface CodeEditorProps {
     seleccionChars: number
     metodo: "shortcut" | "menu_contextual"
   }) => void
+  /** F1: test cases PUBLICOS del ejercicio/TP. Si trae al menos uno, se
+   * muestra el boton "Probar" que corre el codigo contra ellos en Pyodide.
+   * El alumno NUNCA recibe los ocultos (el backend sanea por rol, A0.3). */
+  testCases?: TestCasePublic[]
+  /** F1: notifica el resultado agregado de una corrida de tests (conteos) para
+   * que el caller emita el evento CTR `tests_ejecutados`. No incluye la lista
+   * detallada ni el codigo — solo conteos (privacidad + cardinalidad CTR). */
+  onTestsRun?: (result: {
+    total: number
+    passed: number
+    failed: number
+    failedNames: string[]
+    durationMs: number
+  }) => void
+  /** ED-1: cuando se define, muestra el boton de maximizar/restaurar el
+   * editor. El caller (EpisodePage) controla el layout de paneles; este
+   * componente solo dispara el toggle. Sin este prop (o undefined en mobile)
+   * el boton no aparece. */
+  onToggleMaximize?: (() => void) | undefined
+  /** ED-1: estado actual de maximizacion (para el icono del boton). */
+  isMaximized?: boolean
   language?: "python" // en F6+ extendible a más lenguajes
 }
 
 const EDIT_DEBOUNCE_MS = 1000
+
+// ED-3: control de tamano de fuente del editor. Persistido en localStorage
+// para que el alumno no lo re-ajuste en cada episodio.
+const FONT_SIZE_KEY = "web-student.editor.fontSize"
+const FONT_SIZE_MIN = 11
+const FONT_SIZE_MAX = 24
+const FONT_SIZE_DEFAULT = 14
+
+function readStoredFontSize(): number {
+  if (typeof window === "undefined") return FONT_SIZE_DEFAULT
+  const raw = Number.parseInt(window.localStorage.getItem(FONT_SIZE_KEY) ?? "", 10)
+  if (!Number.isFinite(raw)) return FONT_SIZE_DEFAULT
+  return Math.min(FONT_SIZE_MAX, Math.max(FONT_SIZE_MIN, raw))
+}
+
+// ED-7: historial de corridas. Guardamos las ultimas N (no solo la ultima)
+// con su salida/error para que el alumno pueda repasar corridas previas.
+const MAX_RUN_HISTORY = 8
+
+interface RunHistoryEntry {
+  id: number
+  ok: boolean
+  durationMs: number
+  output: string
+  error: string | null
+  at: number
+}
+
+/** Resultado por caso de una corrida de tests (F1). Espejo del dict que arma
+ * el runner Python `__tutor_run_tests`. */
+interface TestCaseResult {
+  id: string | null
+  name: string | null
+  type: "stdin_stdout" | "pytest_assert"
+  passed: boolean
+  expected: string | null
+  actual: string
+  stdin: string
+  error: string | null
+}
 
 export function CodeEditor({
   initialCode = "# Escribí tu código Python acá\n",
@@ -96,10 +162,17 @@ export function CodeEditor({
   onEditDebounced,
   onPasteAttempt,
   onCopyAttempt,
+  testCases,
+  onTestsRun,
+  onToggleMaximize,
+  isMaximized = false,
   language = "python",
 }: CodeEditorProps): ReactNode {
   const editorContainerRef = useRef<HTMLDivElement>(null)
   const editorRef = useRef<MonacoEditor.IStandaloneCodeEditor | null>(null)
+  // ED-4: guardamos el modulo monaco para poder pintar markers de error en la
+  // linea exacta (setModelMarkers) sin re-importarlo.
+  const monacoRef = useRef<typeof Monaco | null>(null)
   const pyodideRef = useRef<PyodideAPI | null>(null)
   // Espejo síncrono de `output`: window.prompt() bloquea el event loop, así que
   // React no alcanza a repintar el panel con los print() previos antes de que
@@ -112,6 +185,29 @@ export function CodeEditor({
   const [error, setError] = useState<string | null>(null)
   const [loading, setLoading] = useState(true)
   const [running, setRunning] = useState(false)
+  // ED-8: segundos transcurridos cargando Pyodide (para mostrar progreso vivo
+  // en vez de una pantalla muerta durante los ~6 MB del primer load).
+  const [loadSeconds, setLoadSeconds] = useState(0)
+  // ED-3: tamano de fuente del editor (persistido).
+  const [fontSize, setFontSize] = useState<number>(readStoredFontSize)
+  // F1: estado de la corrida de tests y sus resultados por caso.
+  const [testing, setTesting] = useState(false)
+  const [testResults, setTestResults] = useState<TestCaseResult[] | null>(null)
+  // Panel de salida (ED-6): pestana activa consola vs pruebas.
+  const [outputTab, setOutputTab] = useState<"consola" | "pruebas">("consola")
+  // ED-7: historial de corridas + cual se esta viendo (null = la corrida viva).
+  const [runHistory, setRunHistory] = useState<RunHistoryEntry[]>([])
+  const [viewingRunId, setViewingRunId] = useState<number | null>(null)
+  const runCounterRef = useRef(0)
+  // ED-5: confirmacion antes de restaurar la plantilla inicial (destructivo).
+  const [showResetConfirm, setShowResetConfirm] = useState(false)
+  // Refs estables para callbacks que cambian por render (evita re-mount).
+  const onTestsRunRef = useRef<typeof onTestsRun>(onTestsRun)
+  useEffect(() => {
+    onTestsRunRef.current = onTestsRun
+  }, [onTestsRun])
+  const publicTestCases = (testCases ?? []).filter((tc) => tc.is_public !== false)
+  const hasTests = publicTestCases.length > 0
   // Toast naranja cuando el alumno intenta copiar/pegar; auto-oculta en 4s.
   const [clipboardWarning, setClipboardWarning] = useState<string | null>(null)
   // Refs estables para los callbacks de clipboard (evita re-mount del editor).
@@ -161,12 +257,13 @@ export function CodeEditor({
     ;(async () => {
       const monaco = await import(/* @vite-ignore */ "monaco-editor")
       if (disposed || !editorContainerRef.current) return
+      monacoRef.current = monaco
 
       const editor = monaco.editor.create(editorContainerRef.current, {
         value: code,
         language,
         theme: "vs-dark",
-        fontSize: 14,
+        fontSize: readStoredFontSize(),
         minimap: { enabled: false },
         automaticLayout: true,
         scrollBeyondLastLine: false,
@@ -197,7 +294,9 @@ export function CodeEditor({
           contenidoPreview: "",
           metodo: "shortcut",
         })
-        flashClipboardWarning("Pegar está bloqueado. Escribí el código vos mismo. Quedó registrado.")
+        flashClipboardWarning(
+          "Pegar está bloqueado. Escribí el código vos mismo. Quedó registrado.",
+        )
       })
       // Ctrl+C → copy bloqueado
       editor.addCommand(ctrl | monaco.KeyCode.KeyC, () => {
@@ -313,13 +412,28 @@ export function CodeEditor({
         editTimeoutRef.current = null
       }
       // Cleanup de los listeners DOM de clipboard (instalados en el effect).
-      const cleanup = (
-        editorRef.current as unknown as { __clipboardListeners?: () => void } | null
-      )?.__clipboardListeners
+      const cleanup = (editorRef.current as unknown as { __clipboardListeners?: () => void } | null)
+        ?.__clipboardListeners
       cleanup?.()
       editorRef.current?.dispose?.()
     }
   }, [language])
+
+  // ED-3: aplicar el tamano de fuente al editor + persistir. updateOptions no
+  // re-crea el editor (preserva cursor/undo/buffer).
+  useEffect(() => {
+    editorRef.current?.updateOptions({ fontSize })
+    if (typeof window !== "undefined") {
+      window.localStorage.setItem(FONT_SIZE_KEY, String(fontSize))
+    }
+  }, [fontSize])
+
+  // ED-8: mientras Pyodide carga, contamos segundos para el progreso visible.
+  useEffect(() => {
+    if (!loading) return
+    const t = window.setInterval(() => setLoadSeconds((s) => s + 1), 1000)
+    return () => window.clearInterval(t)
+  }, [loading])
 
   // 2. Cargar Pyodide en background (solo Python)
   useEffect(() => {
@@ -495,6 +609,82 @@ for _m in [k for k in list(_tutor_sys.modules) if k.split(".")[0] in _TUTOR_BLOC
     del _tutor_sys.modules[_m]
 `)
 
+      // F1: runner de test cases publicos. Corre el codigo del alumno contra
+      // cada caso en un NAMESPACE FRESCO (aislado entre casos) capturando su
+      // propia stdout (no toca la terminal interactiva) y alimentando input()
+      // desde el `code` del caso (NO window.prompt). Reusa el mismo watchdog de
+      // computo (_tutor_trace) que la corrida interactiva. Dos tipos:
+      //   - stdin_stdout: compara stdout (trim) contra `expected`.
+      //   - pytest_assert: corre el snippet de asercion tras el codigo; pasa si
+      //     no levanta excepcion.
+      // Devuelve JSON (lista de dicts) para que el lado JS lo parsee.
+      await py.runPythonAsync(`
+import io as _tutor_io
+import json as _tutor_json
+import contextlib as _tutor_contextlib
+
+
+def __tutor_run_tests(student_code, cases_json):
+    cases = _tutor_json.loads(cases_json)
+    results = []
+    for case in cases:
+        ctype = case.get("type") or "stdin_stdout"
+        stdin_text = (case.get("code") or "") if ctype == "stdin_stdout" else ""
+        assert_code = (case.get("code") or "") if ctype == "pytest_assert" else ""
+        expected = case.get("expected")
+        _lines = iter(stdin_text.split("\\n"))
+
+        def _feed(prompt="", _it=_lines):
+            try:
+                return next(_it)
+            except StopIteration:
+                raise EOFError(
+                    "El programa pidio mas datos (input) de los que este test provee."
+                )
+
+        buf = _tutor_io.StringIO()
+        ns = {"__name__": "__main__", "input": _feed}
+        error = None
+        passed = False
+        actual = ""
+        _tutor_watchdog["deadline"] = _tutor_time.monotonic() + _TUTOR_TIMEOUT_SECONDS
+        _tutor_wd_sys.settrace(_tutor_trace)
+        try:
+            with _tutor_contextlib.redirect_stdout(buf):
+                exec(compile(student_code, "<editor>", "exec"), ns)
+                if ctype == "pytest_assert":
+                    exec(compile(assert_code, "<test>", "exec"), ns)
+            actual = buf.getvalue()
+            if ctype == "stdin_stdout":
+                passed = actual.strip() == ((expected or "")).strip()
+            else:
+                passed = True
+        except _TutorTimeout:
+            actual = buf.getvalue()
+            error = "La ejecucion supero el limite de tiempo (posible bucle infinito)."
+        except AssertionError as _e:
+            actual = buf.getvalue()
+            _msg = str(_e)
+            error = "La comprobacion no se cumplio" + (": " + _msg if _msg else "")
+        except BaseException as _e:
+            actual = buf.getvalue()
+            error = type(_e).__name__ + ": " + str(_e)
+        finally:
+            _tutor_wd_sys.settrace(None)
+            _tutor_watchdog["deadline"] = None
+        results.append({
+            "id": case.get("id"),
+            "name": case.get("name"),
+            "type": ctype,
+            "passed": passed,
+            "expected": expected,
+            "actual": actual,
+            "stdin": stdin_text,
+            "error": error,
+        })
+    return _tutor_json.dumps(results)
+`)
+
       pyodideRef.current = py
       setLoading(false)
     })().catch((e: unknown) => {
@@ -509,12 +699,57 @@ for _m in [k for k in list(_tutor_sys.modules) if k.split(".")[0] in _TUTOR_BLOC
     }
   }, [language])
 
+  // ED-4: pintar / limpiar markers de error en la linea exacta del editor.
+  function clearErrorMarkers() {
+    const model = editorRef.current?.getModel()
+    if (model && monacoRef.current) {
+      monacoRef.current.editor.setModelMarkers(model, "pyodide-run", [])
+    }
+  }
+  function setErrorMarker(rawError: string, message: string) {
+    const model = editorRef.current?.getModel()
+    const monaco = monacoRef.current
+    if (!model || !monaco) return
+    const line = extractPyodideErrorLineNumber(rawError)
+    if (line == null || line > model.getLineCount()) {
+      monaco.editor.setModelMarkers(model, "pyodide-run", [])
+      return
+    }
+    monaco.editor.setModelMarkers(model, "pyodide-run", [
+      {
+        startLineNumber: line,
+        endLineNumber: line,
+        startColumn: 1,
+        endColumn: model.getLineMaxColumn(line),
+        message,
+        severity: monaco.MarkerSeverity.Error,
+      },
+    ])
+  }
+
+  // ED-7: registra la corrida en el historial (cap MAX_RUN_HISTORY).
+  function pushRunHistory(ok: boolean, durationMs: number, out: string, err: string | null) {
+    runCounterRef.current += 1
+    const entry: RunHistoryEntry = {
+      id: runCounterRef.current,
+      ok,
+      durationMs,
+      output: out,
+      error: err,
+      at: Date.now(),
+    }
+    setRunHistory((prev) => [entry, ...prev].slice(0, MAX_RUN_HISTORY))
+  }
+
   const runCode = async () => {
-    if (!pyodideRef.current || running) return
+    if (!pyodideRef.current || running || testing) return
     setRunning(true)
     setOutput("")
     outputBufferRef.current = ""
     setError(null)
+    setViewingRunId(null) // volver a la corrida viva
+    setOutputTab("consola")
+    clearErrorMarkers() // ED-4: limpiar markers de la corrida anterior
     const started = performance.now()
 
     try {
@@ -526,6 +761,7 @@ for _m in [k for k in list(_tutor_sys.modules) if k.split(".")[0] in _TUTOR_BLOC
       const elapsed = performance.now() - started
       // outputBufferRef (no el state `output`, que es stale por el closure)
       // tiene la salida real acumulada que viaja en el evento CTR codigo_ejecutado.
+      pushRunHistory(true, elapsed, outputBufferRef.current, null)
       onCodeExecuted?.({ code, output: outputBufferRef.current, error: null, durationMs: elapsed })
     } catch (e) {
       // Mostramos SOLO la última línea de excepción del traceback (ver
@@ -533,11 +769,92 @@ for _m in [k for k in list(_tutor_sys.modules) if k.split(".")[0] in _TUTOR_BLOC
       // registra lo mismo que ve el alumno (errMsg viaja al evento de abajo).
       const errMsg = extractPyodideErrorLine(String(e))
       setError(errMsg)
+      setErrorMarker(String(e), errMsg) // ED-4: marca la linea del traceback
       const elapsed = performance.now() - started
-      onCodeExecuted?.({ code, output: outputBufferRef.current, error: errMsg, durationMs: elapsed })
+      pushRunHistory(false, elapsed, outputBufferRef.current, errMsg)
+      onCodeExecuted?.({
+        code,
+        output: outputBufferRef.current,
+        error: errMsg,
+        durationMs: elapsed,
+      })
     } finally {
       setRunning(false)
     }
+  }
+
+  // F1: corre el codigo del alumno contra los test cases PUBLICOS. NO emite
+  // codigo_ejecutado (eso es "Ejecutar"); notifica conteos via onTestsRun para
+  // que el caller emita `tests_ejecutados`. Aislado de la terminal interactiva:
+  // el runner Python captura su propia stdout.
+  const runTests = async () => {
+    if (!pyodideRef.current || running || testing || !hasTests) return
+    setTesting(true)
+    setOutputTab("pruebas")
+    clearErrorMarkers()
+    const started = performance.now()
+    try {
+      pyodideRef.current.globals.set("__tutor_test_code", code)
+      pyodideRef.current.globals.set(
+        "__tutor_test_cases_json",
+        JSON.stringify(
+          publicTestCases.map((tc) => ({
+            id: tc.id ?? null,
+            name: tc.name ?? null,
+            type: tc.type ?? "stdin_stdout",
+            code: tc.code ?? "",
+            expected: tc.expected ?? null,
+          })),
+        ),
+      )
+      const raw = await pyodideRef.current.runPythonAsync(
+        "__tutor_run_tests(__tutor_test_code, __tutor_test_cases_json)",
+      )
+      const parsed = JSON.parse(String(raw)) as TestCaseResult[]
+      setTestResults(parsed)
+      const durationMs = performance.now() - started
+      const passed = parsed.filter((r) => r.passed).length
+      onTestsRunRef.current?.({
+        total: parsed.length,
+        passed,
+        failed: parsed.length - passed,
+        failedNames: parsed.filter((r) => !r.passed).map((r) => r.name ?? r.id ?? "test"),
+        durationMs,
+      })
+    } catch (e) {
+      // Fallo del runner mismo (no de un test) — lo mostramos como un unico
+      // "caso" en error para no dejar al alumno sin feedback.
+      setTestResults([
+        {
+          id: "runner",
+          name: "No se pudieron correr las pruebas",
+          type: "stdin_stdout",
+          passed: false,
+          expected: null,
+          actual: "",
+          stdin: "",
+          error: extractPyodideErrorLine(String(e)),
+        },
+      ])
+    } finally {
+      setTesting(false)
+    }
+  }
+
+  // ED-5: restaurar la plantilla inicial (destructivo — pisa el buffer actual).
+  function restoreTemplate() {
+    const editor = editorRef.current
+    if (editor) {
+      editor.setValue(initialCode)
+      editor.focus()
+    }
+    setCode(initialCode)
+    clearErrorMarkers()
+    setShowResetConfirm(false)
+  }
+
+  function changeFontSize(delta: number) {
+    setFontSize((s) => Math.min(FONT_SIZE_MAX, Math.max(FONT_SIZE_MIN, s + delta)))
   }
 
   // Mantenemos el ref de runCode sincronizado para el shortcut Ctrl+Enter
@@ -550,62 +867,161 @@ for _m in [k for k in list(_tutor_sys.modules) if k.split(".")[0] in _TUTOR_BLOC
   const isMac = typeof navigator !== "undefined" && /mac/i.test(navigator.platform)
   const shortcutLabel = isMac ? "⌘↵" : "Ctrl+↵"
 
+  // ED-7: si el alumno esta viendo una corrida vieja, mostramos SU salida; sino
+  // la corrida viva (output/error del state).
+  const viewingRun =
+    viewingRunId != null ? (runHistory.find((r) => r.id === viewingRunId) ?? null) : null
+  const consoleOutput = viewingRun ? viewingRun.output : output
+  const consoleError = viewingRun ? viewingRun.error : error
+  const testsPassed = testResults ? testResults.filter((r) => r.passed).length : 0
+  const testsTotal = testResults ? testResults.length : 0
+  const iconBtn =
+    "inline-flex h-7 w-7 items-center justify-center rounded-md border border-border-soft text-muted hover:text-ink hover:bg-surface-alt disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+
   return (
     <div className="flex flex-col h-full relative">
-      <div className="flex items-center justify-between border-b border-border-soft px-4 py-2.5">
-        <h2 className="text-sm font-medium">Código ({language})</h2>
-        <button
-          type="button"
-          onClick={runCode}
-          disabled={loading || running}
-          aria-keyshortcuts="Control+Enter Meta+Enter"
-          aria-label={running ? "Ejecutando codigo" : "Ejecutar codigo Python"}
-          className="inline-flex items-center gap-2 px-4 py-2 text-sm font-semibold rounded-md bg-emerald-600 hover:bg-emerald-700 disabled:bg-border-strong disabled:cursor-not-allowed text-white shadow-sm transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500 focus-visible:ring-offset-1"
-        >
-          {/* Icono Play SVG inline (evita dep extra de lucide para este botón). */}
-          {loading || running ? (
-            <svg
-              aria-hidden="true"
-              className="h-4 w-4 animate-spin"
-              viewBox="0 0 24 24"
-              fill="none"
-              xmlns="http://www.w3.org/2000/svg"
+      {/* ── Toolbar ─────────────────────────────────────────────────────── */}
+      <div className="flex items-center justify-between gap-2 border-b border-border-soft px-3 py-2">
+        <h2 className="text-sm font-medium text-ink shrink-0">Código</h2>
+        <div className="flex items-center gap-1.5">
+          {/* ED-3: tamano de fuente */}
+          <div className="hidden sm:inline-flex items-center rounded-md border border-border-soft bg-surface-alt overflow-hidden">
+            <button
+              type="button"
+              onClick={() => changeFontSize(-1)}
+              disabled={fontSize <= FONT_SIZE_MIN}
+              aria-label="Reducir tamano de fuente"
+              title="Reducir tamano de fuente"
+              className="inline-flex h-7 w-7 items-center justify-center text-muted hover:text-ink hover:bg-surface disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
             >
-              <circle
-                cx="12"
-                cy="12"
-                r="10"
-                stroke="currentColor"
-                strokeWidth="3"
-                strokeOpacity="0.25"
-              />
-              <path
-                d="M22 12a10 10 0 0 0-10-10"
-                stroke="currentColor"
-                strokeWidth="3"
-                strokeLinecap="round"
-              />
-            </svg>
-          ) : (
-            <svg
-              aria-hidden="true"
-              className="h-4 w-4"
-              viewBox="0 0 24 24"
-              fill="currentColor"
-              xmlns="http://www.w3.org/2000/svg"
+              <Minus className="h-3.5 w-3.5" />
+            </button>
+            <span className="px-1 text-[11px] font-mono tabular-nums text-muted select-none">
+              {fontSize}
+            </span>
+            <button
+              type="button"
+              onClick={() => changeFontSize(1)}
+              disabled={fontSize >= FONT_SIZE_MAX}
+              aria-label="Aumentar tamano de fuente"
+              title="Aumentar tamano de fuente"
+              className="inline-flex h-7 w-7 items-center justify-center text-muted hover:text-ink hover:bg-surface disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
             >
-              <path d="M8 5v14l11-7L8 5z" />
-            </svg>
+              <Plus className="h-3.5 w-3.5" />
+            </button>
+          </div>
+
+          {/* ED-5: restaurar plantilla inicial (con confirmacion) */}
+          <button
+            type="button"
+            onClick={() => setShowResetConfirm(true)}
+            disabled={loading}
+            aria-label="Restaurar plantilla inicial"
+            title="Restaurar plantilla inicial"
+            data-testid="restore-template-button"
+            className={iconBtn}
+          >
+            <RotateCcw className="h-3.5 w-3.5" />
+          </button>
+
+          {/* ED-1: maximizar / restaurar el editor (solo si el caller lo cablea) */}
+          {onToggleMaximize && (
+            <button
+              type="button"
+              onClick={onToggleMaximize}
+              aria-pressed={isMaximized}
+              aria-label={isMaximized ? "Restaurar tamano del editor" : "Maximizar editor"}
+              title={isMaximized ? "Restaurar tamano del editor" : "Maximizar editor"}
+              data-testid="maximize-editor-button"
+              className={iconBtn}
+            >
+              {isMaximized ? (
+                <Minimize2 className="h-3.5 w-3.5" />
+              ) : (
+                <Maximize2 className="h-3.5 w-3.5" />
+              )}
+            </button>
           )}
-          <span>
-            {loading ? "Cargando Python..." : running ? "Ejecutando..." : "Ejecutar"}
-          </span>
-          {!loading && !running && (
-            <kbd className="hidden sm:inline-flex items-center rounded border border-white/30 bg-white/10 px-1.5 py-0.5 text-[11px] font-mono font-medium leading-none">
-              {shortcutLabel}
-            </kbd>
+
+          <span className="mx-0.5 hidden h-5 w-px bg-border-soft sm:block" aria-hidden="true" />
+
+          {/* F1: Probar mi codigo contra los test cases publicos */}
+          {hasTests && (
+            <button
+              type="button"
+              onClick={runTests}
+              disabled={loading || running || testing}
+              data-testid="run-tests-button"
+              aria-label="Probar mi codigo contra los tests del ejercicio"
+              className="inline-flex items-center gap-1.5 rounded-md border border-accent-brand/40 bg-accent-brand/5 px-3 py-1.5 text-sm font-medium text-accent-brand transition-colors hover:bg-accent-brand/10 disabled:opacity-50 disabled:cursor-not-allowed focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent-brand/40"
+            >
+              {testing ? (
+                <span className="inline-block h-4 w-4 rounded-full border-2 border-accent-brand/30 border-t-accent-brand motion-safe:animate-spin" />
+              ) : (
+                <FlaskConical className="h-4 w-4" />
+              )}
+              <span>{testing ? "Probando..." : "Probar"}</span>
+            </button>
           )}
-        </button>
+
+          {/* Ejecutar (corrida interactiva — emite codigo_ejecutado) */}
+          <button
+            type="button"
+            onClick={runCode}
+            disabled={loading || running || testing}
+            aria-keyshortcuts="Control+Enter Meta+Enter"
+            aria-label={running ? "Ejecutando codigo" : "Ejecutar codigo Python"}
+            className="inline-flex items-center gap-2 px-4 py-2 text-sm font-semibold rounded-md bg-emerald-600 hover:bg-emerald-700 disabled:bg-border-strong disabled:cursor-not-allowed text-white shadow-sm transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500 focus-visible:ring-offset-1"
+          >
+            {/* Icono Play SVG inline (evita dep extra para este botón). */}
+            {loading || running ? (
+              <svg
+                aria-hidden="true"
+                className="h-4 w-4 animate-spin"
+                viewBox="0 0 24 24"
+                fill="none"
+                xmlns="http://www.w3.org/2000/svg"
+              >
+                <circle
+                  cx="12"
+                  cy="12"
+                  r="10"
+                  stroke="currentColor"
+                  strokeWidth="3"
+                  strokeOpacity="0.25"
+                />
+                <path
+                  d="M22 12a10 10 0 0 0-10-10"
+                  stroke="currentColor"
+                  strokeWidth="3"
+                  strokeLinecap="round"
+                />
+              </svg>
+            ) : (
+              <svg
+                aria-hidden="true"
+                className="h-4 w-4"
+                viewBox="0 0 24 24"
+                fill="currentColor"
+                xmlns="http://www.w3.org/2000/svg"
+              >
+                <path d="M8 5v14l11-7L8 5z" />
+              </svg>
+            )}
+            <span>
+              {loading
+                ? `Cargando Python... (${loadSeconds}s)`
+                : running
+                  ? "Ejecutando..."
+                  : "Ejecutar"}
+            </span>
+            {!loading && !running && (
+              <kbd className="hidden sm:inline-flex items-center rounded border border-white/30 bg-white/10 px-1.5 py-0.5 text-[11px] font-mono font-medium leading-none">
+                {shortcutLabel}
+              </kbd>
+            )}
+          </button>
+        </div>
       </div>
 
       {/* Toast naranja cuando se intenta usar el clipboard (auto-oculta en 4s). */}
@@ -619,28 +1035,281 @@ for _m in [k for k in list(_tutor_sys.modules) if k.split(".")[0] in _TUTOR_BLOC
         </div>
       )}
 
-      <div ref={editorContainerRef} className="flex-1 min-h-[200px]" />
+      {/* ED-6: editor + salida como panel vertical redimensionable real. */}
+      <Group orientation="vertical" className="flex-1 min-h-0">
+        <Panel id="editor-code" defaultSize={62} minSize={25} className="flex flex-col min-h-0">
+          <div ref={editorContainerRef} className="flex-1 min-h-[140px]" />
+        </Panel>
 
-      <div className="border-t border-border-soft flex flex-col">
-        <div className="flex items-center gap-2 px-4 py-1.5 bg-ink border-b border-white/5">
-          <span className="text-[11px] font-semibold uppercase tracking-wider text-muted">
-            Salida
-          </span>
+        <Separator className="group relative my-0.5 flex h-2 items-center justify-center cursor-row-resize">
+          <span className="block h-0.5 w-12 rounded-full bg-border-soft transition-colors group-hover:bg-accent-brand group-data-[resize-handle-active]:bg-accent-brand" />
+        </Separator>
+
+        <Panel
+          id="editor-output"
+          defaultSize={38}
+          minSize={14}
+          className="flex flex-col min-h-0 bg-ink"
+        >
+          {/* Header del panel de salida: pestanas + historial de corridas */}
+          <div className="flex items-center gap-2 px-3 py-1.5 border-b border-white/5">
+            <div
+              role="tablist"
+              aria-label="Vista de salida"
+              className="inline-flex items-center gap-0.5 rounded-md bg-white/5 p-0.5"
+            >
+              <button
+                type="button"
+                role="tab"
+                aria-selected={outputTab === "consola"}
+                onClick={() => setOutputTab("consola")}
+                className={`rounded px-2.5 py-1 text-[11px] font-semibold uppercase tracking-wider transition-colors ${
+                  outputTab === "consola"
+                    ? "bg-white/10 text-surface"
+                    : "text-muted hover:text-surface"
+                }`}
+              >
+                Salida
+              </button>
+              {hasTests && (
+                <button
+                  type="button"
+                  role="tab"
+                  aria-selected={outputTab === "pruebas"}
+                  onClick={() => setOutputTab("pruebas")}
+                  data-testid="tests-tab"
+                  className={`inline-flex items-center gap-1.5 rounded px-2.5 py-1 text-[11px] font-semibold uppercase tracking-wider transition-colors ${
+                    outputTab === "pruebas"
+                      ? "bg-white/10 text-surface"
+                      : "text-muted hover:text-surface"
+                  }`}
+                >
+                  Pruebas
+                  {testResults && (
+                    <span
+                      className={`inline-flex items-center rounded-full px-1.5 py-px text-[10px] font-bold tabular-nums ${
+                        testsPassed === testsTotal
+                          ? "bg-emerald-500/20 text-emerald-300"
+                          : "bg-danger/20 text-danger"
+                      }`}
+                    >
+                      {testsPassed}/{testsTotal}
+                    </span>
+                  )}
+                </button>
+              )}
+            </div>
+
+            {/* ED-7: historial de corridas (solo en la pestana Salida) */}
+            {outputTab === "consola" && runHistory.length > 0 && (
+              <div className="ml-auto flex items-center gap-1 overflow-x-auto">
+                <span className="shrink-0 text-[10px] uppercase tracking-wider text-muted-soft">
+                  Historial
+                </span>
+                {runHistory.map((h) => {
+                  const active = viewingRunId === h.id
+                  return (
+                    <button
+                      key={h.id}
+                      type="button"
+                      onClick={() => setViewingRunId((cur) => (cur === h.id ? null : h.id))}
+                      title={`Corrida ${h.id} · ${h.ok ? "sin error" : "con error"} · ${Math.round(h.durationMs)} ms`}
+                      className={`shrink-0 inline-flex items-center gap-1 rounded px-1.5 py-0.5 font-mono text-[10px] tabular-nums transition-colors ${
+                        active
+                          ? "bg-accent-brand text-white"
+                          : h.ok
+                            ? "bg-emerald-500/15 text-emerald-300 hover:bg-emerald-500/25"
+                            : "bg-danger/15 text-danger hover:bg-danger/25"
+                      }`}
+                    >
+                      {h.ok ? "✓" : "✗"}
+                      {h.id}
+                    </button>
+                  )
+                })}
+              </div>
+            )}
+          </div>
+
+          {/* Cuerpo del panel */}
+          <div className="flex-1 min-h-0 overflow-auto">
+            {outputTab === "consola" ? (
+              <div className="p-4 font-mono text-sm leading-relaxed text-surface">
+                {viewingRun && (
+                  <div className="mb-2 flex items-center gap-2 text-[11px] text-muted">
+                    <span>Viendo la corrida {viewingRun.id} (historial).</span>
+                    <button
+                      type="button"
+                      onClick={() => setViewingRunId(null)}
+                      className="rounded bg-white/10 px-1.5 py-0.5 font-sans font-medium text-surface hover:bg-white/20"
+                    >
+                      Ver corrida actual
+                    </button>
+                  </div>
+                )}
+                {consoleOutput && <pre className="whitespace-pre-wrap">{consoleOutput}</pre>}
+                {consoleError && (
+                  <pre className="whitespace-pre-wrap text-danger">{consoleError}</pre>
+                )}
+                {!consoleOutput && !consoleError && !running && (
+                  <span className="text-muted">
+                    {loading
+                      ? `Cargando runtime Python en el navegador (primera vez ~6 MB)... (${loadSeconds}s)`
+                      : `Ejecutá tu código (${shortcutLabel}) para ver el output acá.`}
+                  </span>
+                )}
+              </div>
+            ) : (
+              <TestResultsView results={testResults} testing={testing} />
+            )}
+          </div>
+        </Panel>
+      </Group>
+
+      {/* ED-5: confirmacion de restauracion de plantilla (destructivo) */}
+      <Modal
+        isOpen={showResetConfirm}
+        onClose={() => setShowResetConfirm(false)}
+        title="Restaurar plantilla inicial"
+        size="sm"
+        variant="light"
+      >
+        <p className="text-sm text-body leading-relaxed">
+          Esto reemplaza tu código actual por la plantilla inicial del ejercicio. Vas a perder lo
+          que escribiste en el editor. ¿Seguro?
+        </p>
+        <div className="mt-5 flex justify-end gap-2">
+          <button
+            type="button"
+            onClick={() => setShowResetConfirm(false)}
+            className="rounded-md border border-border px-3 py-2 text-sm font-medium text-body transition-colors hover:bg-surface-alt"
+          >
+            Cancelar
+          </button>
+          <button
+            type="button"
+            onClick={restoreTemplate}
+            data-testid="confirm-restore-template"
+            className="rounded-md bg-danger px-3 py-2 text-sm font-semibold text-white transition-colors hover:bg-danger/90"
+          >
+            Restaurar
+          </button>
         </div>
-        {/* Terminal redimensionable (arrastrar el borde inferior): el alumno
-            necesita seguir la ejecución sin que la salida quede apretada. */}
-        <div className="bg-ink text-surface font-mono text-sm leading-relaxed p-4 h-[240px] min-h-[120px] max-h-[60vh] resize-y overflow-auto">
-          {output && <pre className="whitespace-pre-wrap">{output}</pre>}
-          {error && <pre className="whitespace-pre-wrap text-danger">{error}</pre>}
-          {!output && !error && !running && (
-            <span className="text-muted">
-              {loading
-                ? "Cargando runtime Python en el navegador (primera vez ~6 MB)..."
-                : `Ejecutá tu código (${shortcutLabel}) para ver el output acá.`}
-            </span>
-          )}
-        </div>
+      </Modal>
+    </div>
+  )
+}
+
+/**
+ * F1: render de los resultados por caso de la corrida de tests. Muestra, por
+ * cada caso publico: pasa/falla, entrada (stdin), esperado vs obtenido
+ * (stdin_stdout) o el error de la comprobacion (pytest_assert).
+ */
+function TestResultsView({
+  results,
+  testing,
+}: {
+  results: TestCaseResult[] | null
+  testing: boolean
+}): ReactNode {
+  if (testing && !results) {
+    return <div className="p-4 text-sm text-muted">Corriendo las pruebas de tu código...</div>
+  }
+  if (!results) {
+    return (
+      <div className="p-4 text-sm text-muted">
+        Tocá <span className="font-medium text-surface">Probar</span> para correr tu código contra
+        los casos de prueba del ejercicio.
       </div>
+    )
+  }
+  const passed = results.filter((r) => r.passed).length
+  const total = results.length
+  const allPassed = passed === total
+  return (
+    <div className="p-3">
+      <div
+        className={`mb-3 rounded-lg border px-3 py-2 text-sm font-medium ${
+          allPassed
+            ? "border-emerald-500/30 bg-emerald-500/10 text-emerald-300"
+            : "border-danger/30 bg-danger/10 text-danger"
+        }`}
+      >
+        {allPassed
+          ? `Pasan las ${total} pruebas públicas. Buen trabajo.`
+          : `Pasan ${passed} de ${total} pruebas públicas.`}
+      </div>
+      <ul className="space-y-2">
+        {results.map((r, i) => (
+          <TestResultCard key={r.id ?? `test-${i}`} result={r} index={i} />
+        ))}
+      </ul>
+    </div>
+  )
+}
+
+function TestResultCard({ result, index }: { result: TestCaseResult; index: number }): ReactNode {
+  const r = result
+  return (
+    <li
+      data-testid="test-result-card"
+      data-passed={r.passed}
+      className={`rounded-lg border p-3 ${
+        r.passed ? "border-emerald-500/20 bg-emerald-500/5" : "border-danger/25 bg-danger/5"
+      }`}
+    >
+      <div className="flex items-center gap-2">
+        <span
+          aria-hidden="true"
+          className={`inline-flex h-5 w-5 items-center justify-center rounded-full text-xs font-bold ${
+            r.passed ? "bg-emerald-500/25 text-emerald-300" : "bg-danger/25 text-danger"
+          }`}
+        >
+          {r.passed ? "✓" : "✗"}
+        </span>
+        <span className="text-sm font-medium text-surface">{r.name ?? `Caso ${index + 1}`}</span>
+        <span
+          className={`ml-auto rounded-full px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider ${
+            r.passed ? "bg-emerald-500/20 text-emerald-300" : "bg-danger/20 text-danger"
+          }`}
+        >
+          {r.passed ? "Pasa" : "Falla"}
+        </span>
+      </div>
+
+      {/* Detalle: solo lo mostramos si falla o si es stdin_stdout (util ver el
+          esperado). Los datos son PUBLICOS (el backend nunca manda ocultos). */}
+      {!r.passed && r.error && (
+        <p className="mt-2 font-mono text-xs leading-relaxed text-danger">{r.error}</p>
+      )}
+      {r.type === "stdin_stdout" && (!r.passed || r.stdin) && (
+        <dl className="mt-2 space-y-1.5 text-xs">
+          {r.stdin.trim() !== "" && <TestKV label="Entrada" value={r.stdin} />}
+          <TestKV label="Esperado" value={r.expected ?? ""} tone="expected" />
+          {!r.passed && <TestKV label="Obtenido" value={r.actual} tone="actual" />}
+        </dl>
+      )}
+    </li>
+  )
+}
+
+function TestKV({
+  label,
+  value,
+  tone,
+}: {
+  label: string
+  value: string
+  tone?: "expected" | "actual"
+}): ReactNode {
+  const valueClass =
+    tone === "expected" ? "text-emerald-300" : tone === "actual" ? "text-amber-300" : "text-surface"
+  return (
+    <div className="grid grid-cols-[72px_1fr] gap-2">
+      <dt className="text-[10px] uppercase tracking-wider text-muted-soft pt-0.5">{label}</dt>
+      <dd className={`min-w-0 whitespace-pre-wrap break-words font-mono ${valueClass}`}>
+        {value === "" ? <span className="text-muted-soft italic">(vacío)</span> : value}
+      </dd>
     </div>
   )
 }
