@@ -99,24 +99,36 @@ class IngestionPipeline:
             texts = [c.contenido for c in chunks]
             vectors = await embedder.embed_documents(texts)
 
-            # 5. Persistencia: borrar chunks anteriores del material + insertar nuevos
-            await self.session.execute(delete(Chunk).where(Chunk.material_id == material.id))
-
-            for final_chunk, vector in zip(chunks, vectors, strict=True):
-                chunk_row = Chunk(
-                    tenant_id=material.tenant_id,
-                    material_id=material.id,
-                    materia_id=material.materia_id,
-                    comision_id=material.comision_id,
-                    contenido=final_chunk.contenido,
-                    contenido_hash=final_chunk.contenido_hash,
-                    embedding=vector,
-                    embedding_model=embedder.model_name,
-                    position=final_chunk.position,
-                    chunk_type=final_chunk.chunk_type,
-                    meta=final_chunk.meta,
+            # 5. Persistencia atómica (L-1): borrar chunks anteriores + insertar
+            #    nuevos dentro de un SAVEPOINT. Si la reinserción falla, el
+            #    rollback del savepoint RESTAURA los chunks viejos — sin esto un
+            #    reingest destructivo que fallara a mitad (INSERT roto) dejaba el
+            #    material sin chunks (contenido perdido, material vacío). El
+            #    estado="failed" se marca fuera del savepoint (except de abajo),
+            #    así el marcador de fallo persiste pero el borrado NO.
+            async with self.session.begin_nested():
+                await self.session.execute(
+                    delete(Chunk).where(Chunk.material_id == material.id)
                 )
-                self.session.add(chunk_row)
+                for final_chunk, vector in zip(chunks, vectors, strict=True):
+                    chunk_row = Chunk(
+                        tenant_id=material.tenant_id,
+                        material_id=material.id,
+                        materia_id=material.materia_id,
+                        comision_id=material.comision_id,
+                        contenido=final_chunk.contenido,
+                        contenido_hash=final_chunk.contenido_hash,
+                        embedding=vector,
+                        embedding_model=embedder.model_name,
+                        position=final_chunk.position,
+                        chunk_type=final_chunk.chunk_type,
+                        meta=final_chunk.meta,
+                    )
+                    self.session.add(chunk_row)
+                # Forzar los INSERT dentro del savepoint: un fallo de constraint
+                # (ej. unique tenant+material+position) dispara el rollback del
+                # savepoint, no del outer tx, dejando los chunks viejos intactos.
+                await self.session.flush()
 
             material.estado = "indexed"
             material.indexed_at = utc_now().replace(tzinfo=None)

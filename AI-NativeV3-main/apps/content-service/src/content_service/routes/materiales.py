@@ -20,6 +20,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from content_service.auth import (
     MATERIAL_UPLOAD_ROLES,
     User,
+    assert_materia_upload_access,
+    assert_material_owner,
     get_db,
     require_role,
 )
@@ -181,7 +183,12 @@ async def probar_retrieval(
     Devuelve los top-k chunks con su `score_vector` y `score_rerank`, más el
     modo del pipeline (`embedder_model` / `is_semantic_embedding` /
     `reranker_model`) — si `is_semantic_embedding=False` los scores son sobre
-    vectores mock (hash) y NO reflejan relevancia real (BUG-4 / F3(d))."""
+    vectores mock (hash) y NO reflejan relevancia real (BUG-4 / F3(d)).
+
+    FIX C: el `materia_id` es del caller — se exige que haya subido material a
+    esa materia (o sea oversight), fail-closed, para que un docente no corra
+    retrieval sobre el corpus de otra materia del tenant."""
+    await assert_materia_upload_access(db, user, request.materia_id)
     svc = RetrievalService(db)
     result = await svc.retrieve(
         RetrievalRequest(
@@ -244,6 +251,8 @@ async def list_material_chunks(
             status_code=status.HTTP_404_NOT_FOUND,
             detail=f"Material {material_id} no encontrado",
         )
+    # FIX C: fail-closed por propiedad — no leer el `contenido` de chunks ajenos.
+    assert_material_owner(user, material)
 
     result = await db.execute(
         select(Chunk)
@@ -304,6 +313,9 @@ async def reingest_material(
             status_code=status.HTTP_404_NOT_FOUND,
             detail=f"Material {material_id} no encontrado",
         )
+    # FIX C (prioritario): reingest es DESTRUCTIVO (borra y re-crea chunks).
+    # Fail-closed por propiedad para que un docente no reprocese material ajeno.
+    assert_material_owner(user, material)
 
     storage = get_storage()
     key = storage_key_from_path(material.storage_path)

@@ -44,11 +44,15 @@ def _mock_embedder_env(monkeypatch: pytest.MonkeyPatch) -> Any:
 
 TENANT_ID = UUID("aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa")
 MATERIA_ID = UUID("ffffffff-ffff-ffff-ffff-ffffffffffff")
+# Dueño canónico de los materiales del setup (uploaded_by). El docente que loguea
+# el fixture es el DUEÑO por default; los tests de "ajeno" usan otro id.
+DOCENTE_ID = UUID("11111111-1111-1111-1111-111111111111")
+OTRO_DOCENTE_ID = UUID("22222222-2222-2222-2222-222222222222")
 
 
-def _docente() -> User:
+def _docente(user_id: UUID = DOCENTE_ID) -> User:
     return User(
-        id=uuid4(),
+        id=user_id,
         tenant_id=TENANT_ID,
         email="docente@demo.edu",
         roles=frozenset({"docente"}),
@@ -56,7 +60,23 @@ def _docente() -> User:
     )
 
 
-def _material(material_id: UUID, *, estado: str = "indexed", chunks_count: int = 2) -> Material:
+def _superadmin() -> User:
+    return User(
+        id=uuid4(),
+        tenant_id=TENANT_ID,
+        email="admin@demo.edu",
+        roles=frozenset({"superadmin"}),
+        realm=str(TENANT_ID),
+    )
+
+
+def _material(
+    material_id: UUID,
+    *,
+    estado: str = "indexed",
+    chunks_count: int = 2,
+    uploaded_by: UUID = DOCENTE_ID,
+) -> Material:
     return Material(
         id=material_id,
         tenant_id=TENANT_ID,
@@ -67,7 +87,7 @@ def _material(material_id: UUID, *, estado: str = "indexed", chunks_count: int =
         tamano_bytes=10,
         storage_path="mock://materials/t/m/x/original.md",
         estado=estado,
-        uploaded_by=uuid4(),
+        uploaded_by=uploaded_by,
         chunks_count=chunks_count,
         meta={},
         created_at=datetime(2026, 7, 16, tzinfo=UTC),
@@ -99,11 +119,20 @@ def client_with(monkeypatch: pytest.MonkeyPatch):
       - ctx["material"]: objeto devuelto por db.get(Material, id)
       - ctx["chunks"]: lista devuelta por scalars().all()
       - ctx["retrieve"]: RetrievalResponse a devolver por RetrievalService
+      - ctx["user"]: User que loguea (default docente dueño DOCENTE_ID)
+      - ctx["owns_materia"]: fila devuelta por result.first() en el gate de
+        propiedad por materia (probar-retrieval). Truthy = tiene material propio.
     """
-    ctx: dict[str, Any] = {"material": None, "chunks": [], "retrieve": None}
+    ctx: dict[str, Any] = {
+        "material": None,
+        "chunks": [],
+        "retrieve": None,
+        "user": _docente(),
+        "owns_materia": (DOCENTE_ID,),
+    }
 
     async def _override_user() -> User:
-        return _docente()
+        return ctx["user"]
 
     async def _override_db():
         session = MagicMock()
@@ -115,6 +144,8 @@ def client_with(monkeypatch: pytest.MonkeyPatch):
         scalars.all = MagicMock(return_value=ctx["chunks"])
         result = MagicMock()
         result.scalars = MagicMock(return_value=scalars)
+        # first() alimenta el gate assert_materia_upload_access (probar-retrieval)
+        result.first = MagicMock(side_effect=lambda: ctx["owns_materia"])
 
         session.get = AsyncMock(side_effect=_get)
         session.execute = AsyncMock(return_value=result)
@@ -310,6 +341,143 @@ def test_reingest_missing_original_is_conflict(
 
     r = client.post(f"/api/v1/materiales/{mid}/reingest")
     assert r.status_code == 409
+
+
+# ── FIX C: propiedad/acceso por material ─────────────────────────────
+
+
+def test_list_chunks_ajeno_es_not_found(client_with) -> None:
+    """Docente que NO subió el material no ve sus chunks (fail-closed, 404)."""
+    client, ctx = client_with
+    mid = uuid4()
+    ctx["material"] = _material(mid, uploaded_by=OTRO_DOCENTE_ID)
+    r = client.get(f"/api/v1/materiales/{mid}/chunks")
+    assert r.status_code == 404
+
+
+def test_list_chunks_owner_ok(client_with) -> None:
+    """El dueño del material SÍ ve sus chunks."""
+    client, ctx = client_with
+    mid = uuid4()
+    ctx["material"] = _material(mid, uploaded_by=DOCENTE_ID)
+    ctx["chunks"] = [_chunk(mid, 0, model="mock-deterministic", with_vec=True)]
+    r = client.get(f"/api/v1/materiales/{mid}/chunks")
+    assert r.status_code == 200
+
+
+def test_list_chunks_superadmin_ve_ajeno(client_with) -> None:
+    """Superadmin (oversight) ve chunks de cualquier material del tenant."""
+    client, ctx = client_with
+    ctx["user"] = _superadmin()
+    mid = uuid4()
+    ctx["material"] = _material(mid, uploaded_by=OTRO_DOCENTE_ID)
+    ctx["chunks"] = [_chunk(mid, 0, model="mock-deterministic", with_vec=True)]
+    r = client.get(f"/api/v1/materiales/{mid}/chunks")
+    assert r.status_code == 200
+
+
+def test_reingest_ajeno_es_not_found(client_with, monkeypatch: pytest.MonkeyPatch) -> None:
+    """El reingest DESTRUCTIVO sobre material ajeno se corta fail-closed (404)
+    antes de tocar storage o el pipeline."""
+    client, ctx = client_with
+    mid = uuid4()
+    ctx["material"] = _material(mid, uploaded_by=OTRO_DOCENTE_ID)
+
+    stored = MagicMock()
+    stored.get = AsyncMock(return_value=b"# x")
+    monkeypatch.setattr("content_service.routes.materiales.get_storage", lambda: stored)
+
+    ingest_called = {"v": False}
+
+    async def _fake_ingest(self, material, content, filename):
+        ingest_called["v"] = True
+        return MagicMock()
+
+    monkeypatch.setattr(
+        "content_service.routes.materiales.IngestionPipeline.ingest", _fake_ingest
+    )
+
+    r = client.post(f"/api/v1/materiales/{mid}/reingest")
+    assert r.status_code == 404
+    # No se descargó el original ni se reprocesó nada.
+    stored.get.assert_not_awaited()
+    assert ingest_called["v"] is False
+
+
+def test_reingest_superadmin_ve_ajeno(client_with, monkeypatch: pytest.MonkeyPatch) -> None:
+    """Superadmin puede reingestar cualquier material del tenant."""
+    client, ctx = client_with
+    ctx["user"] = _superadmin()
+    mid = uuid4()
+    ctx["material"] = _material(mid, uploaded_by=OTRO_DOCENTE_ID)
+
+    stored = MagicMock()
+    stored.get = AsyncMock(return_value=b"# Recursion\n\nUn concepto.\n")
+    monkeypatch.setattr("content_service.routes.materiales.get_storage", lambda: stored)
+
+    async def _fake_ingest(self, material, content, filename):
+        material.estado = "indexed"
+        return MagicMock()
+
+    monkeypatch.setattr(
+        "content_service.routes.materiales.IngestionPipeline.ingest", _fake_ingest
+    )
+
+    r = client.post(f"/api/v1/materiales/{mid}/reingest")
+    assert r.status_code == 200
+    stored.get.assert_awaited_once()
+
+
+def test_probar_retrieval_sin_material_propio_es_forbidden(
+    client_with, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Docente sin material propio en la materia no puede correr retrieval (403)."""
+    client, ctx = client_with
+    ctx["owns_materia"] = None  # first() → sin fila → no subió material
+
+    called = {"v": False}
+
+    async def _fake_retrieve(self, request):
+        called["v"] = True
+        return MagicMock()
+
+    monkeypatch.setattr(
+        "content_service.routes.materiales.RetrievalService.retrieve", _fake_retrieve
+    )
+
+    r = client.post(
+        "/api/v1/materiales/probar-retrieval",
+        json={"query": "que es la recursion", "materia_id": str(MATERIA_ID)},
+    )
+    assert r.status_code == 403
+    # Fail-closed: ni siquiera se corrió el retrieval.
+    assert called["v"] is False
+
+
+def test_probar_retrieval_superadmin_no_requiere_material_propio(
+    client_with, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Superadmin corre retrieval sobre cualquier materia sin ser dueño."""
+    client, ctx = client_with
+    ctx["user"] = _superadmin()
+    ctx["owns_materia"] = None  # no importa: oversight saltea el gate
+
+    fake = RetrievalResponse(
+        chunks=[], chunks_used_hash="x", latency_ms=1.0, rerank_applied=False
+    )
+
+    async def _fake_retrieve(self, request):
+        return fake
+
+    monkeypatch.setattr(
+        "content_service.routes.materiales.RetrievalService.retrieve", _fake_retrieve
+    )
+
+    r = client.post(
+        "/api/v1/materiales/probar-retrieval",
+        json={"query": "que es la recursion", "materia_id": str(MATERIA_ID)},
+    )
+    assert r.status_code == 200
 
 
 def test_storage_key_from_path_roundtrip() -> None:

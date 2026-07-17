@@ -89,6 +89,16 @@ def test_get_embedder_fallback_silencioso_falla_fuerte_en_prod(
         get_embedder()
 
 
+class _FakeSavepoint:
+    """SAVEPOINT no-op para el `async with session.begin_nested()` del pipeline."""
+
+    async def __aenter__(self) -> _FakeSavepoint:
+        return self
+
+    async def __aexit__(self, *exc: Any) -> bool:
+        return False
+
+
 class _FakeSession:
     """AsyncSession mínima para ejercitar el pipeline sin DB real."""
 
@@ -103,6 +113,9 @@ class _FakeSession:
 
     def add(self, obj: Any) -> None:
         self.added.append(obj)
+
+    def begin_nested(self) -> _FakeSavepoint:
+        return _FakeSavepoint()
 
 
 async def test_ingesta_con_mock_warnea_y_marca_los_chunks(
