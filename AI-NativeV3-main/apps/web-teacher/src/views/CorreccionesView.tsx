@@ -19,6 +19,7 @@ import { Link } from "@tanstack/react-router"
 import {
   ArrowRight,
   CheckCircle2,
+  ChevronDown,
   ChevronLeft,
   FileCheck,
   Inbox,
@@ -569,99 +570,85 @@ function resolveTituloEjercicio(ej: EjercicioEstado, tpEjercicios: TpEjercicio[]
   return match?.ejercicio.titulo ?? null
 }
 
-// ─── EjercicioPanel (codigo del estudiante por episodio) ───────────────
-
-interface EjercicioPanelProps {
-  ej: { orden: number; completado: boolean; completed_at: string | null }
+// ─── EjercicioCodigo (bloque de codigo del estudiante por episodio) ────
+//
+// El codigo del alumno de UN ejercicio, mostrado DENTRO de la tarjeta del
+// ejercicio (F17): no es una card propia — es un bloque de codigo. La carga
+// es lazy por `active` (la tarjeta abierta): asi con TPs de 14 ejercicios no
+// pedimos los 14 episodios de una. Una vez cargado queda cacheado en `code`,
+// asi cerrar/reabrir la tarjeta no re-pide.
+interface EjercicioCodigoProps {
   resolvedEpisodeId: string | null
-  // Titulo real del ejercicio, ya resuelto por el padre (match por ejercicio_id).
-  // `null` = no se pudo resolver → cae al fallback "Ejercicio {orden}".
-  titulo: string | null
+  orden: number
+  // La tarjeta contenedora esta abierta → dispara la carga del codigo.
+  active: boolean
   getToken: () => Promise<string | null>
 }
 
-function EjercicioPanel({ ej, resolvedEpisodeId, titulo, getToken }: EjercicioPanelProps) {
-  const [expanded, setExpanded] = useState(false)
+function EjercicioCodigo({ resolvedEpisodeId, orden, active, getToken }: EjercicioCodigoProps) {
   const [code, setCode] = useState<string | null>(null)
   const [loading, setLoading] = useState(false)
   const [fetchError, setFetchError] = useState<string | null>(null)
 
-  function handleToggle() {
-    const next = !expanded
-    setExpanded(next)
-    if (next && code === null && !loading && resolvedEpisodeId) {
-      setLoading(true)
-      setFetchError(null)
-      getEpisodeEvents(resolvedEpisodeId, getToken)
-        .then((ep) => {
-          const finalCode = extractFinalCode(ep.events)
-          setCode(finalCode ?? "// Sin codigo registrado")
-        })
-        .catch((e) => setFetchError(String(e)))
-        .finally(() => setLoading(false))
+  useEffect(() => {
+    if (!active || code !== null || loading || !resolvedEpisodeId) return
+    let cancelled = false
+    setLoading(true)
+    setFetchError(null)
+    getEpisodeEvents(resolvedEpisodeId, getToken)
+      .then((ep) => {
+        // `ep.events ?? []`: defensivo ante respuestas sin `events` (evita que
+        // `extractFinalCode` tire sobre un undefined).
+        if (!cancelled) setCode(extractFinalCode(ep.events ?? []) ?? "// Sin codigo registrado")
+      })
+      .catch((e) => {
+        if (!cancelled) setFetchError(String(e))
+      })
+      .finally(() => {
+        if (!cancelled) setLoading(false)
+      })
+    return () => {
+      cancelled = true
     }
-  }
+  }, [active, resolvedEpisodeId, code, loading, getToken])
 
   return (
-    <div
-      className="border border-border rounded-lg overflow-hidden"
-      data-testid={`ej-estado-${ej.orden}`}
-    >
-      <button
-        type="button"
-        onClick={handleToggle}
-        className="w-full flex items-center gap-3 px-4 py-3 text-sm hover:bg-canvas transition-colors text-left"
-      >
-        <span
-          className={`flex-shrink-0 w-6 h-6 rounded-full flex items-center justify-center text-xs font-mono ${
-            ej.completado ? "bg-success text-white" : "bg-surface-alt text-muted"
-          }`}
-        >
-          {ej.completado ? "✓" : ej.orden}
+    <div className="space-y-2">
+      <div className="flex items-center justify-between gap-2">
+        <span className="text-[10px] font-mono uppercase tracking-wider text-muted-soft">
+          Codigo del alumno
         </span>
-        <span className="text-ink flex-1">{titulo ?? `Ejercicio ${ej.orden}`}</span>
         {resolvedEpisodeId && (
-          <span className="text-xs font-mono text-muted">ep: {resolvedEpisodeId.slice(0, 8)}…</span>
+          <Link
+            to="/episode-n-level"
+            search={{ episodeId: resolvedEpisodeId }}
+            className="text-[11px] font-mono text-muted hover:text-ink hover:underline"
+            data-testid={`ep-link-${orden}`}
+          >
+            Ver niveles N1-N4 →
+          </Link>
         )}
-        <span className="text-muted text-xs">{expanded ? "▲" : "▼"}</span>
-      </button>
+      </div>
 
-      {expanded && (
-        <div className="border-t border-border bg-canvas">
-          {!resolvedEpisodeId && (
-            <p className="px-4 py-3 text-xs text-muted">Sin episodio asociado a este ejercicio.</p>
-          )}
+      {!resolvedEpisodeId && (
+        <p className="text-xs text-muted">Sin episodio asociado a este ejercicio.</p>
+      )}
 
-          {resolvedEpisodeId && loading && (
-            <div className="flex items-center justify-center py-6">
-              <div
-                className="inline-block w-4 h-4 border-2 border-t-transparent rounded-full motion-safe:animate-spin"
-                style={{ borderColor: "var(--color-accent-brand)", borderTopColor: "transparent" }}
-              />
-            </div>
-          )}
-
-          {fetchError && <p className="px-4 py-3 text-xs text-danger">{fetchError}</p>}
-
-          {code !== null && !loading && (
-            <pre className="px-4 py-3 text-xs font-mono text-ink overflow-x-auto whitespace-pre max-h-[400px] overflow-y-auto">
-              {code}
-            </pre>
-          )}
-
-          {resolvedEpisodeId && (
-            <div className="px-4 py-2 border-t border-border flex items-center gap-3">
-              <Link
-                to="/episode-n-level"
-                search={{ episodeId: resolvedEpisodeId }}
-                className="text-xs font-mono text-muted hover:text-ink hover:underline"
-                data-testid={`ep-link-${ej.orden}`}
-              >
-                Ver niveles N1-N4 →
-              </Link>
-            </div>
-          )}
+      {resolvedEpisodeId && loading && (
+        <div className="flex items-center justify-center py-6">
+          <div
+            className="inline-block w-4 h-4 border-2 border-t-transparent rounded-full motion-safe:animate-spin"
+            style={{ borderColor: "var(--color-accent-brand)", borderTopColor: "transparent" }}
+          />
         </div>
+      )}
+
+      {fetchError && <p className="text-xs text-danger">{fetchError}</p>}
+
+      {code !== null && !loading && (
+        <pre className="rounded-md bg-surface-alt px-3 py-2.5 text-xs font-mono text-ink overflow-x-auto whitespace-pre max-h-80 overflow-y-auto">
+          {code}
+        </pre>
       )}
     </div>
   )
@@ -708,6 +695,11 @@ interface CalificacionBody {
 // un ejercicio con rubrica, se prefija con el titulo para desambiguar.
 interface RubricaRow {
   key: string
+  // Identidad del ejercicio dueño del criterio (F17): agrupa las filas por
+  // ejercicio. `ejercicioId` es la identidad estable (ADR-047); `orden` el
+  // fallback para emparejar contra `ejercicio_estados` legacy sin id.
+  ejercicioId: string | null
+  orden: number
   ejercicioTitulo: string
   nombre: string
   descripcion: string
@@ -727,6 +719,8 @@ function buildRubricaRows(tpEjercicios: TpEjercicio[]): RubricaRow[] {
     criterios.forEach((c, i) => {
       rows.push({
         key: `${t.ejercicio_id}#${i}`,
+        ejercicioId: t.ejercicio_id ?? null,
+        orden: t.orden,
         ejercicioTitulo: t.ejercicio.titulo,
         nombre: c.nombre,
         descripcion: c.descripcion,
@@ -736,6 +730,61 @@ function buildRubricaRows(tpEjercicios: TpEjercicio[]): RubricaRow[] {
     })
   }
   return rows
+}
+
+// Una tarjeta de correccion por ejercicio (F17): unifica en un mismo bloque el
+// codigo del alumno de ESE ejercicio (via `resolvedEpisodeId`) y sus criterios
+// de rubrica (`rows`). El docente corrige un ejercicio de punta a punta sin
+// scrollear entre codigo y rubrica desconectados.
+interface EjercicioGrupo {
+  // Clave estable para el estado de colapso local.
+  id: string
+  orden: number
+  titulo: string
+  // El alumno completo el ejercicio (dato de `ejercicio_estados`).
+  completado: boolean
+  resolvedEpisodeId: string | null
+  rows: RubricaRow[]
+}
+
+// Clave de agrupamiento de un ejercicio: su identidad estable si la tiene
+// (ADR-047), o su `orden` como fallback (misma logica que resolveTituloEjercicio).
+function grupoKey(ejercicioId: string | null, orden: number): string {
+  return ejercicioId ?? `orden:${orden}`
+}
+
+interface Subtotal {
+  sumP: number
+  sumMax: number
+  filled: number
+  corregido: boolean
+}
+
+// Subtotal de un ejercicio: suma de puntos asignados sobre suma de maximos.
+// `filled` = cuantos criterios tienen un valor cargado (para mostrar "—" cuando
+// no se empezo). `corregido` = todos los criterios tienen un puntaje valido
+// (0..max) → alimenta el contador de progreso.
+function subtotalDe(rows: RubricaRow[], scores: Record<string, string>): Subtotal {
+  let sumP = 0
+  let sumMax = 0
+  let filled = 0
+  let allValid = rows.length > 0
+  for (const r of rows) {
+    sumMax += r.puntajeMax
+    const raw = (scores[r.key] ?? "").trim()
+    if (raw === "") {
+      allValid = false
+      continue
+    }
+    const v = Number.parseFloat(raw)
+    if (Number.isNaN(v) || v < 0 || v > r.puntajeMax) {
+      allValid = false
+      continue
+    }
+    sumP += v
+    filled += 1
+  }
+  return { sumP, sumMax, filled, corregido: rows.length > 0 && allValid }
 }
 
 // Empareja una calificacion guardada a las filas de rubrica actuales para
@@ -1023,6 +1072,9 @@ function GradingFormView({
   const [criterioScores, setCriterioScores] = useState<Record<string, string>>({})
   const [criterioComments, setCriterioComments] = useState<Record<string, string>>({})
   const [savedCriterios, setSavedCriterios] = useState<SavedCriterio[]>([])
+  // Colapso por ejercicio (F17), estado local. `undefined` = default: la primera
+  // tarjeta abierta, el resto colapsado (ver `isGrupoOpen`).
+  const [openGrupos, setOpenGrupos] = useState<Record<string, boolean>>({})
 
   const yaCalificada = entrega.estado === "graded" || entrega.estado === "returned"
 
@@ -1058,6 +1110,82 @@ function GradingFormView({
   const rubricaRows = useMemo(() => buildRubricaRows(tpEjercicios), [tpEjercicios])
   const tieneRubrica = rubricaRows.length > 0
   const notaSugerida = tieneRubrica ? suggestNota(rubricaRows, criterioScores) : null
+
+  // Tarjetas por ejercicio (F17): unifican el codigo del alumno + la rubrica de
+  // cada ejercicio en un mismo bloque. La columna vertebral son los
+  // `ejercicio_estados` de la entrega (siempre presentes en una entrega enviada);
+  // a cada uno le colgamos sus filas de rubrica emparejando por identidad estable
+  // (ejercicio_id, fallback orden) — la misma logica que resolveTituloEjercicio.
+  // Los ejercicios de la TP con rubrica que no figuran en la entrega se agregan
+  // como tarjetas solo-rubrica para no perder criterios calificables.
+  const ejercicioGrupos = useMemo<EjercicioGrupo[]>(() => {
+    const estados = (entrega.ejercicio_estados ?? []).slice().sort((a, b) => a.orden - b.orden)
+    const rowsByKey = new Map<string, RubricaRow[]>()
+    for (const row of rubricaRows) {
+      const k = grupoKey(row.ejercicioId, row.orden)
+      const arr = rowsByKey.get(k) ?? []
+      arr.push(row)
+      rowsByKey.set(k, arr)
+    }
+
+    const grupos: EjercicioGrupo[] = []
+    const usedKeys = new Set<string>()
+    for (const ej of estados) {
+      // Empareja el estado con su ejercicio de la TP (mismo criterio de match que
+      // el titulo): asi las filas de rubrica caen en la tarjeta correcta aun para
+      // entregas legacy sin ejercicio_id.
+      const tp = ej.ejercicio_id
+        ? tpEjercicios.find((t) => t.ejercicio_id === ej.ejercicio_id)
+        : tpEjercicios.find((t) => t.orden === ej.orden)
+      const k = tp
+        ? grupoKey(tp.ejercicio_id ?? null, tp.orden)
+        : grupoKey(ej.ejercicio_id, ej.orden)
+      usedKeys.add(k)
+      grupos.push({
+        id: String(ej.orden),
+        orden: ej.orden,
+        titulo: resolveTituloEjercicio(ej, tpEjercicios) ?? `Ejercicio ${ej.orden}`,
+        completado: ej.completado,
+        resolvedEpisodeId: resolvedEpisodeMap[ej.orden] ?? null,
+        rows: rowsByKey.get(k) ?? [],
+      })
+    }
+
+    for (const t of tpEjercicios.slice().sort((a, b) => a.orden - b.orden)) {
+      const k = grupoKey(t.ejercicio_id ?? null, t.orden)
+      if (usedKeys.has(k)) continue
+      const rows = rowsByKey.get(k)
+      if (!rows || rows.length === 0) continue
+      usedKeys.add(k)
+      grupos.push({
+        id: `tp:${k}`,
+        orden: t.orden,
+        titulo: t.ejercicio.titulo || `Ejercicio ${t.orden}`,
+        completado: false,
+        resolvedEpisodeId: null,
+        rows,
+      })
+    }
+
+    return grupos.sort((a, b) => a.orden - b.orden)
+  }, [entrega.ejercicio_estados, rubricaRows, tpEjercicios, resolvedEpisodeMap])
+
+  // Progreso: ejercicios calificables (con rubrica) con TODOS sus criterios
+  // puntuados sobre el total de calificables.
+  const gruposCalificables = ejercicioGrupos.filter((g) => g.rows.length > 0)
+  const totalCalificables = gruposCalificables.length
+  const gruposCorregidos = gruposCalificables.filter(
+    (g) => subtotalDe(g.rows, criterioScores).corregido,
+  ).length
+  const pctCorregido =
+    totalCalificables > 0 ? Math.round((gruposCorregidos / totalCalificables) * 100) : 0
+
+  // Colapso: por default la primera tarjeta abierta, el resto colapsado; el
+  // click del docente sobreescribe.
+  const isGrupoOpen = (id: string, idx: number) => openGrupos[id] ?? idx === 0
+  const toggleGrupo = (id: string, idx: number) =>
+    setOpenGrupos((prev) => ({ ...prev, [id]: !(prev[id] ?? idx === 0) }))
+  const editable = !(yaCalificada && !reediting)
 
   // Pre-llena los inputs de criterios desde la calificacion guardada una vez que
   // la rubrica y el detalle guardado estan disponibles. Para una entrega aun no
@@ -1325,31 +1453,205 @@ function GradingFormView({
         </div>
       </div>
 
-      {/* Ejercicios con codigo */}
-      {entrega.ejercicio_estados && entrega.ejercicio_estados.length > 0 && (
-        <div className="rounded-xl border border-border bg-surface p-5 shadow-[0_1px_2px_0_rgba(0,0,0,0.04)]">
-          <p className="text-xs font-mono uppercase tracking-wider text-muted mb-4">Ejercicios</p>
+      {/* Progreso de correccion + nota sugerida global (F17). Arriba de todo:
+          el docente ve cuanto avanzo y aplica la nota sugerida sin scrollear.
+          Solo cuando hay rubrica (si no, no hay criterios que puntuar). */}
+      {tieneRubrica && (
+        <div className="rounded-xl border border-border bg-surface p-4 shadow-[0_1px_2px_0_rgba(0,0,0,0.04)] animate-fade-in-up">
+          <div className="flex items-center justify-between gap-3 flex-wrap mb-2.5">
+            <div className="flex items-center gap-2">
+              <FileCheck className="h-4 w-4 text-accent-brand" aria-hidden="true" />
+              <span className="text-sm font-semibold text-ink">Progreso de correccion</span>
+            </div>
+            <span className="text-xs text-muted tabular-nums" data-testid="correccion-progreso">
+              <span className="font-mono text-ink">{gruposCorregidos}</span> de{" "}
+              <span className="font-mono text-ink">{totalCalificables}</span> ejercicios corregidos
+            </span>
+          </div>
+          {/* El progreso lo anuncia el contador textual de arriba, por eso la
+              barra va aria-hidden. */}
+          <div
+            aria-hidden="true"
+            className="h-1.5 w-full overflow-hidden rounded-full bg-surface-alt"
+          >
+            <div
+              className="h-full rounded-full transition-[width] duration-300"
+              style={{ width: `${pctCorregido}%`, backgroundColor: "var(--color-accent-brand)" }}
+            />
+          </div>
+          {notaSugerida !== null && editable && (
+            <div className="flex items-center justify-end gap-2 mt-3">
+              <span className="text-xs text-muted">
+                Nota sugerida:{" "}
+                <span className="font-mono tabular-nums text-ink">{notaSugerida.toFixed(1)}</span>
+              </span>
+              <button
+                type="button"
+                onClick={() => setNota(String(notaSugerida))}
+                data-testid="aplicar-nota-sugerida-btn"
+                className="press-shrink px-2.5 py-1 rounded-md text-xs font-medium border border-border bg-surface text-ink hover:bg-surface-alt transition-colors"
+              >
+                Aplicar
+              </button>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Ejercicios (F17): una tarjeta colapsable por ejercicio, con el codigo
+          del alumno + la rubrica de ESE ejercicio + su subtotal, juntos. */}
+      {ejercicioGrupos.length > 0 && (
+        <div className="space-y-3">
+          <p className="text-xs font-mono uppercase tracking-wider text-muted">Ejercicios</p>
           {episodeResolveError && (
             <div
-              className="mb-4 rounded-lg border border-warning/30 bg-warning-soft p-3 text-xs text-warning"
+              className="rounded-lg border border-warning/30 bg-warning-soft p-3 text-xs text-warning"
               data-testid="episode-resolve-error"
             >
               {episodeResolveError}
             </div>
           )}
           <div className="space-y-3" data-testid="ejercicios-estados-list">
-            {entrega.ejercicio_estados
-              .slice()
-              .sort((a, b) => a.orden - b.orden)
-              .map((ej) => (
-                <EjercicioPanel
-                  key={ej.ejercicio_id ?? ej.orden}
-                  ej={ej}
-                  resolvedEpisodeId={resolvedEpisodeMap[ej.orden] ?? null}
-                  titulo={resolveTituloEjercicio(ej, tpEjercicios)}
-                  getToken={getToken}
-                />
-              ))}
+            {ejercicioGrupos.map((grupo, idx) => {
+              const open = isGrupoOpen(grupo.id, idx)
+              const st = subtotalDe(grupo.rows, criterioScores)
+              const tieneRub = grupo.rows.length > 0
+              const panelId = `ej-panel-${grupo.orden}`
+              return (
+                <div
+                  key={grupo.id}
+                  data-testid={`ej-estado-${grupo.orden}`}
+                  className="rounded-xl border border-border bg-surface shadow-[0_1px_2px_0_rgba(0,0,0,0.04)] overflow-hidden"
+                >
+                  <button
+                    type="button"
+                    onClick={() => toggleGrupo(grupo.id, idx)}
+                    aria-expanded={open}
+                    aria-controls={panelId}
+                    className="w-full flex items-center gap-3 px-4 py-3 text-left hover:bg-surface-alt transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-accent-brand"
+                  >
+                    <span
+                      className={`flex-shrink-0 w-6 h-6 rounded-full flex items-center justify-center text-xs font-mono ${
+                        st.corregido
+                          ? "bg-success text-white"
+                          : "bg-surface-alt text-muted border border-border-soft"
+                      }`}
+                    >
+                      {st.corregido ? "✓" : grupo.orden}
+                    </span>
+                    <span className="flex-1 min-w-0 text-sm font-medium text-ink truncate">
+                      {grupo.titulo}
+                    </span>
+                    {grupo.resolvedEpisodeId && (
+                      <span className="hidden sm:inline text-[11px] font-mono text-muted-soft shrink-0">
+                        ep: {grupo.resolvedEpisodeId.slice(0, 8)}…
+                      </span>
+                    )}
+                    {tieneRub && (
+                      <span className="text-sm font-mono tabular-nums text-ink shrink-0">
+                        {st.filled > 0 ? st.sumP : "—"}
+                        <span className="text-muted-soft">/{st.sumMax}</span>
+                      </span>
+                    )}
+                    <ChevronDown
+                      aria-hidden="true"
+                      className={`h-4 w-4 text-muted shrink-0 transition-transform ${
+                        open ? "rotate-180" : ""
+                      }`}
+                    />
+                  </button>
+
+                  {open && (
+                    <div id={panelId} className="border-t border-border-soft px-4 py-4 space-y-4">
+                      <EjercicioCodigo
+                        resolvedEpisodeId={grupo.resolvedEpisodeId}
+                        orden={grupo.orden}
+                        active={open}
+                        getToken={getToken}
+                      />
+
+                      {tieneRub && (
+                        <div>
+                          <p className="text-[10px] font-mono uppercase tracking-wider text-muted-soft mb-1">
+                            Rubrica
+                          </p>
+                          <div className="divide-y divide-border-soft">
+                            {grupo.rows.map((row) => {
+                              const inputId = `crit-${row.key.replace(/[^a-zA-Z0-9_-]/g, "-")}`
+                              return (
+                                <div
+                                  key={row.key}
+                                  data-testid={`criterio-row-${row.key}`}
+                                  className="py-2.5 first:pt-0"
+                                >
+                                  <div className="flex items-start justify-between gap-3">
+                                    <div className="min-w-0 flex-1">
+                                      <label htmlFor={inputId} className="block text-sm text-ink">
+                                        {row.nombre}
+                                      </label>
+                                      {row.descripcion && (
+                                        <p className="text-xs text-muted mt-0.5 leading-relaxed">
+                                          {row.descripcion}
+                                        </p>
+                                      )}
+                                    </div>
+                                    <div className="flex items-center gap-1.5 shrink-0">
+                                      <input
+                                        id={inputId}
+                                        type="number"
+                                        min="0"
+                                        max={row.puntajeMax}
+                                        step="0.5"
+                                        value={criterioScores[row.key] ?? ""}
+                                        onChange={(e) =>
+                                          setCriterioScores((prev) => ({
+                                            ...prev,
+                                            [row.key]: e.target.value,
+                                          }))
+                                        }
+                                        disabled={!editable}
+                                        data-testid={`criterio-puntaje-${row.key}`}
+                                        className="w-16 border border-border rounded px-2 py-1.5 text-sm text-ink bg-surface focus:outline-none focus:ring-1 focus:ring-ink disabled:bg-surface-alt disabled:text-muted tabular-nums"
+                                        placeholder="0"
+                                      />
+                                      <span className="text-xs text-muted font-mono tabular-nums">
+                                        / {row.puntajeMax}
+                                      </span>
+                                    </div>
+                                  </div>
+                                  <input
+                                    type="text"
+                                    value={criterioComments[row.key] ?? ""}
+                                    onChange={(e) =>
+                                      setCriterioComments((prev) => ({
+                                        ...prev,
+                                        [row.key]: e.target.value,
+                                      }))
+                                    }
+                                    disabled={!editable}
+                                    data-testid={`criterio-comentario-${row.key}`}
+                                    aria-label={`Comentario de ${row.nombre}`}
+                                    className="mt-2 w-full border border-border rounded px-2.5 py-1.5 text-xs text-ink bg-surface focus:outline-none focus:ring-1 focus:ring-ink disabled:bg-surface-alt disabled:text-muted"
+                                    placeholder="Comentario del criterio (opcional)"
+                                  />
+                                </div>
+                              )
+                            })}
+                          </div>
+                          <div className="flex items-center justify-end gap-2 pt-2.5 text-sm">
+                            <span className="text-muted">Subtotal</span>
+                            <span className="font-mono tabular-nums text-ink">
+                              {st.filled > 0 ? st.sumP : "—"}
+                              <span className="text-muted-soft"> / {st.sumMax}</span>
+                            </span>
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </div>
+              )
+            })}
           </div>
         </div>
       )}
@@ -1421,92 +1723,10 @@ function GradingFormView({
               />
             </div>
 
-            {/* Rúbrica por criterio (F4): solo si la TP tiene ejercicios con
-                rúbrica. El docente asigna puntaje + comentario por criterio y
-                puede aplicar la nota sugerida (que igual puede ajustar). */}
-            {tieneRubrica && (
-              <div data-testid="rubrica-criterios" className="space-y-3">
-                <div className="flex items-center justify-between gap-2 flex-wrap">
-                  <p className="text-sm font-medium text-ink">Rúbrica por criterio</p>
-                  {notaSugerida !== null && !(yaCalificada && !reediting) && (
-                    <div className="flex items-center gap-2">
-                      <span className="text-xs text-muted">
-                        Nota sugerida:{" "}
-                        <span className="font-mono tabular-nums text-ink">
-                          {notaSugerida.toFixed(1)}
-                        </span>
-                      </span>
-                      <button
-                        type="button"
-                        onClick={() => setNota(String(notaSugerida))}
-                        data-testid="aplicar-nota-sugerida-btn"
-                        className="press-shrink px-2.5 py-1 rounded-md text-xs font-medium border border-border bg-surface text-ink hover:bg-surface-alt transition-colors"
-                      >
-                        Aplicar
-                      </button>
-                    </div>
-                  )}
-                </div>
-
-                <div className="space-y-2.5">
-                  {rubricaRows.map((row) => (
-                    <div
-                      key={row.key}
-                      data-testid={`criterio-row-${row.key}`}
-                      className="rounded-lg border border-border-soft bg-canvas p-3"
-                    >
-                      <div className="flex items-start justify-between gap-3 flex-wrap">
-                        <div className="min-w-0 flex-1">
-                          <p className="text-sm font-medium text-ink">{row.nombre}</p>
-                          {row.descripcion && (
-                            <p className="text-xs text-muted mt-0.5 leading-relaxed">
-                              {row.descripcion}
-                            </p>
-                          )}
-                          {row.ejercicioTitulo && rubricaRows.length > 1 && (
-                            <p className="text-[10px] uppercase tracking-wider text-muted-soft mt-1">
-                              {row.ejercicioTitulo}
-                            </p>
-                          )}
-                        </div>
-                        <div className="flex items-center gap-1.5 shrink-0">
-                          <input
-                            type="number"
-                            min="0"
-                            max={row.puntajeMax}
-                            step="0.5"
-                            value={criterioScores[row.key] ?? ""}
-                            onChange={(e) =>
-                              setCriterioScores((prev) => ({ ...prev, [row.key]: e.target.value }))
-                            }
-                            disabled={yaCalificada && !reediting}
-                            data-testid={`criterio-puntaje-${row.key}`}
-                            aria-label={`Puntaje de ${row.nombre}`}
-                            className="w-16 border border-border rounded px-2 py-1.5 text-sm text-ink bg-surface focus:outline-none focus:ring-1 focus:ring-ink disabled:bg-surface-alt disabled:text-muted tabular-nums"
-                            placeholder="0"
-                          />
-                          <span className="text-xs text-muted font-mono tabular-nums">
-                            / {row.puntajeMax}
-                          </span>
-                        </div>
-                      </div>
-                      <input
-                        type="text"
-                        value={criterioComments[row.key] ?? ""}
-                        onChange={(e) =>
-                          setCriterioComments((prev) => ({ ...prev, [row.key]: e.target.value }))
-                        }
-                        disabled={yaCalificada && !reediting}
-                        data-testid={`criterio-comentario-${row.key}`}
-                        aria-label={`Comentario de ${row.nombre}`}
-                        className="mt-2 w-full border border-border rounded px-2.5 py-1.5 text-xs text-ink bg-surface focus:outline-none focus:ring-1 focus:ring-ink disabled:bg-surface-alt disabled:text-muted"
-                        placeholder="Comentario del criterio (opcional)"
-                      />
-                    </div>
-                  ))}
-                </div>
-              </div>
-            )}
+            {/* La rubrica por criterio (F4) vive ahora agrupada por ejercicio en
+                las tarjetas de arriba (F17): codigo + criterios + subtotal juntos.
+                El payload al backend (`detalle_criterios`) no cambia — sigue
+                serializandose desde `rubricaRows` + `criterioScores/Comments`. */}
 
             {calificacion && (
               <p className="text-xs text-muted font-mono">
