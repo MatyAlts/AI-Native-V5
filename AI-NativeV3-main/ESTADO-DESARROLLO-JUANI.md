@@ -13,7 +13,7 @@
 | **Bugs** (BUG-1..4, NB-1..23 + NB-2b) | **27/27 ✅** |
 | **Seguridad** (A0.1..A0.7) | **7/7 ✅** (gateada OFF — activar en prod, ver §6) |
 | **Performance** (P-1..P-18) | 14/17 ✅ (faltan P-6, P-7, P-16 — todos en la pantalla del episodio) |
-| **Features** (F1..F15) | 8/14 ✅ (F15 = active-ia, fuera de scope) |
+| **Features** (F1..F15) | **14/14 ✅** (F15 = active-ia, fuera de scope) |
 | **Interfaz alumno** (UI-1..8) · **Editor** (ED-1..8) · **BYOK** (BK-1..4) · **Fricciones** (FR-1..10) | **✅ completos** |
 
 ---
@@ -34,8 +34,9 @@
 ### Performance (14/17)
 P-1 streaming tutor incremental · P-2 doble-writer CTR (`CTR_MODE=http`) · P-3 httpx pool · P-4/P-8 N+1 + engines analytics · P-5 HomeView 1+3×N · P-9 sesión DB /generate · P-10 embedder to_thread · P-11 Error Boundaries · P-12/13/18 fetch layer (interceptor + timeout + sin espera Clerk) · P-14 dedup RLS policy · P-17 ctr-client (cola offline + idempotencia).
 
-### Features (8/14)
-F1 probar código · F4 rúbrica corrección · F9 mi-progreso alumno · F10 feature flags · F11 uso/costo BYOK docente · F12 preview "como alumno" · F13 export Caliper/xAPI · F14 rúbrica por ejercicio.
+### Features (14/14)
+F1 probar código · **F2 tutor recibe todos los atributos** (tutor_rules + test_cases + TP monolítica, sin tocar el prompt) · **F3 RAG real observable** (ver chunks, probar retrieval, reingest; embedder real activable en prod) · F4 rúbrica corrección · **F5 corrección en lote** (cola con auto-avance) · **F6 diff entre intentos** (timeline) · **F7 alertas accionables** (home docente) · **F8 citas del RAG al alumno** (SSE aditivo) · F9 mi-progreso alumno · F10 feature flags · F11 uso/costo BYOK docente · F12 preview "como alumno" · F13 export Caliper/xAPI · F14 rúbrica por ejercicio.
+F15 (corrección asistida IA) = ⛔ active-ia, fuera de scope.
 
 ### Interfaz alumno, editor, BYOK, fricciones
 - **UI-1..8**: anotaciones N2, indicador N4, markdown chat, **UI-8 (error tutor NO cierra el episodio + reintentar)**, countdown, auto-skip unidades, borró WelcomeStage.
@@ -48,13 +49,11 @@ F1 probar código · F4 rúbrica corrección · F9 mi-progreso alumno · F10 fea
 
 ## 2. PENDIENTE 🔜
 
-### Features grandes (para hacer con el equipo)
-- **F3 — RAG real** (embeddings reales, ver chunks, probar retrieval).
-- **F2** — el tutor recibe todos los atributos (flags/test_cases).
-- **F5** corrección en lote · **F6** diff entre intentos · **F7** alertas accionables · **F8** citas del RAG.
-- **F15** corrección asistida por IA = **⛔ toca active-ia, fuera de scope.**
+### Features
+- **Todas hechas** (F1..F14). Solo queda **F15** (corrección asistida por IA) = **⛔ toca active-ia, fuera de scope.**
+- Nota F3: el pipeline es real y observable; para embeddings semánticos reales en prod hay que setear `EMBEDDER=gemini` + `GEMINI_API_KEY` (o `EMBEDDER=local`) en content-service y reprocesar materiales (endpoint reingest). Ver `apps/content-service/README.md`.
 
-### Performance del episodio (con lo anterior)
+### Performance del episodio (pendiente)
 - **P-6** re-render O(n²) del chat en streaming · **P-7** clasificación async al cierre · **P-16** Pyodide en Web Worker + self-host.
 
 ### Ops / no-código
