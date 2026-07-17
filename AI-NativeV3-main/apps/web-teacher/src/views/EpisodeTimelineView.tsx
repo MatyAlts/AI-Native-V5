@@ -335,7 +335,7 @@ export function EpisodeTimelineView({ getToken, initialEpisodeId }: Props) {
                           ))}
                         </select>
                       </label>
-                      {diff && (
+                      {diff && !diff.truncated && (
                         <div className="ml-auto flex gap-2 pb-1 font-mono">
                           <span className="px-2 py-0.5 rounded border border-green-300 bg-green-100 text-green-800">
                             +{diff.stats.added}
@@ -349,7 +349,12 @@ export function EpisodeTimelineView({ getToken, initialEpisodeId }: Props) {
 
                     {/* Render del diff línea-a-línea */}
                     {diff &&
-                      (diff.stats.added === 0 && diff.stats.removed === 0 ? (
+                      (diff.truncated ? (
+                        <p className="text-xs text-warning" data-testid="timeline-diff-truncated">
+                          Diff no disponible: alguno de los intentos es demasiado grande para
+                          compararlo línea a línea.
+                        </p>
+                      ) : diff.stats.added === 0 && diff.stats.removed === 0 ? (
                         <p className="text-xs text-muted">
                           Sin cambios de código entre estos dos intentos.
                         </p>

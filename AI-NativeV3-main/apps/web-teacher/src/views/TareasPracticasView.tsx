@@ -1347,7 +1347,17 @@ function ComposicionModal({
       )
       await fetchPairs()
     } catch (e) {
-      setError(String(e))
+      // L-3: el swap son 3 PATCH secuenciales con orden temporal (max+100). Si
+      // falla el 2do/3er PATCH, un ejercicio queda en `orden=temp` y la DB queda
+      // inconsistente; sin este refetch la UI mostraria el orden viejo (stale)
+      // contra ese estado real. Re-sincronizamos con la DB antes de reportar.
+      // `fetchPairs` hace `setError(null)` al arrancar, por eso el mensaje va
+      // DESPUES del await (si no, lo pisaria). Si el propio refetch falla, gana
+      // su error, que tambien es informacion util.
+      await fetchPairs()
+      setError(
+        `No se pudo completar el reordenamiento (${String(e)}). Se re-sincronizo la lista con el estado actual de la tarea.`,
+      )
     } finally {
       setReordering(false)
     }

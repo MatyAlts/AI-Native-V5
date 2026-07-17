@@ -22,7 +22,28 @@ export interface DiffStats {
 export interface DiffResult {
   lines: DiffLine[]
   stats: DiffStats
+  /**
+   * true si el LCS se salteo por tamano (ver clamp en `diffLines`). Cuando es
+   * true, `lines` viene vacio y `stats` en 0 — la UI debe mostrar "diff no
+   * disponible" en vez de intentar renderizar el diff.
+   */
+  truncated: boolean
 }
+
+// Clamp de tamano (L-2): el LCS es O(n*m) en tiempo y en memoria (asigna un
+// Int32Array de (n+1)*(m+1) celdas = 4 bytes c/u). Para snapshots normales de
+// ejercicios (decenas-cientos de lineas) es trivial, pero un intento
+// patologicamente grande dispararia una asignacion cuadratica que puede congelar
+// u OOM-ear la pestana. Cortamos por el PRODUCTO n*m (lo que realmente acota
+// memoria/tiempo) y ademas por lineas-por-lado como short-circuit barato.
+//
+// - MAX_DIFF_LINES = 5000 por lado: ~2 ordenes de magnitud sobre cualquier
+//   snapshot de codigo real; un archivo de 5000 lineas ya es una anomalia.
+// - MAX_LCS_CELLS = 4_000_000: techo del Int32Array en ~16 MB (4M * 4 bytes) y
+//   ~4M iteraciones del doble loop — instantaneo en la practica. Por encima de
+//   esto la asignacion/tiempo dejan de ser seguros para el hilo de UI.
+const MAX_DIFF_LINES = 5000
+const MAX_LCS_CELLS = 4_000_000
 
 /**
  * Diff por lineas via LCS. Devuelve la secuencia alineada de lineas
@@ -35,6 +56,14 @@ export function diffLines(a: string, b: string): DiffResult {
   const bLines = b.length === 0 ? [] : b.split("\n")
   const n = aLines.length
   const m = bLines.length
+
+  // L-2: clamp de tamano antes de asignar la tabla LCS. Devolvemos un resultado
+  // degradado seguro (sin lineas, sin stats) con `truncated: true` para que la
+  // UI muestre "diff no disponible" en vez de correr un LCS cuadratico gigante.
+  if (n > MAX_DIFF_LINES || m > MAX_DIFF_LINES || n * m > MAX_LCS_CELLS) {
+    return { lines: [], stats: { added: 0, removed: 0 }, truncated: true }
+  }
+
   const width = m + 1
 
   // lcs[i*width + j] = longitud de la subsecuencia comun mas larga de
@@ -84,5 +113,5 @@ export function diffLines(a: string, b: string): DiffResult {
     j++
   }
 
-  return { lines, stats: { added, removed } }
+  return { lines, stats: { added, removed }, truncated: false }
 }
