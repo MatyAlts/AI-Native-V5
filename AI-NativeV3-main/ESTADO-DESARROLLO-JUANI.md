@@ -64,8 +64,10 @@ F15 (corrección asistida IA) = ⛔ active-ia, fuera de scope.
 
 ---
 
-## 3. Auditoría QA (2026-07-13)
-- **🔴 P-17 (bloqueante, era real)** → **ARREGLADO** (`165d83e`): la cola offline reintentaba un evento; `next_seq()` avanzaba el contador sin dedup → seq mismatch → dead-letter → `integrity_compromised` **permanente** (fatal para la tesis, salta en cada cambio de pestaña). Fix: Idempotency-Key por `event_uuid`.
+## 3. Auditoría QA (2026-07-13 externa + 2026-07-16 interna 3 agentes)
+- **🔴 Carrera `integrity_compromised`** → **CERRADA de raíz** (`1fbb18c`): `next_seq()` era read-modify-write sobre el JSON de sesión → dos eventos concurrentes del mismo episodio (POST de fondo del ctr-client vs SSE `/generate`, o dos pestañas que comparten la cola en localStorage) tomaban el mismo seq → hueco → dead-letter → `integrity_compromised` **permanente**. El fix previo de P-17 (`165d83e`, Idempotency-Key por `event_uuid`) solo cubría el reintento del **mismo** evento, NO dos distintos concurrentes. Fix definitivo: contador atómico con Redis `INCR` por episodio + `reserve_or_get_seq` (HSETNX claim antes de reservar). +8 tests, incl. test de concurrencia que reproduce el hueco.
+- **🔴 Retry de UI-8 duplicaba `prompt_enviado`** (bug de esta sesión) → **ARREGLADO** (`1fbb18c`): `/message` acepta Idempotency-Key, el retry reusa el messageUuid → no más prompts huérfanos que inflaban CCD_orphan_ratio.
+- **🟠 Endpoints RAG sin dueño por materia** → **ARREGLADO** (`5f0bd78`): owner-scoping fail-closed + rollback del reingest (savepoint). Follow-up ABAC por comisión anotado.
 - **🔴 P-2 puede no aplicar a prod**: el fix vive en `docker-compose.prod.yml`, pero EasyPanel puede setear env vars en su UI. **Verificar** `CTR_MODE` real + que estén los 8 `ctr-worker`.
 - **🔴 CI nunca corrió**: los workflows están en `AI-NativeV3-main/.github/` pero GitHub solo lee `.github/workflows/` de la **raíz**. Por eso los bugs llegaron a prod sin portón.
 - Menores: comentario P-2 corregido (`d398379`); migración dedup fechada sept-2026; `restore.sh` roto.
