@@ -16,7 +16,7 @@
 import { HelpButton } from "@platform/ui"
 import { useQueries, useQuery } from "@tanstack/react-query"
 import { Link } from "@tanstack/react-router"
-import { Download, FileText, Users } from "lucide-react"
+import { ArrowRight, Download, FileText, TrendingDown, Users } from "lucide-react"
 import { ComisionDelDocenteCard, type ComisionKpis } from "../components/ComisionDelDocenteCard"
 import { comisionLabel } from "../components/ComisionSelector"
 import {
@@ -243,6 +243,9 @@ export function HomeView({ getToken }: Props) {
         </section>
       )}
 
+      {/* ═══ SEÑALES DE ACOMPAÑAMIENTO ═══════════════════════════════ */}
+      {items && items.length > 0 && <PedagogicalSignalsSection items={items} />}
+
       {/* ═══ TOOLS TRANSVERSALES ═════════════════════════════════════ */}
       {items && items.length > 0 && (
         <section
@@ -335,6 +338,165 @@ function ToolCard({
           <span className="text-sm font-medium text-ink leading-tight">{title}</span>
           <span className="text-xs text-muted leading-relaxed">{description}</span>
         </div>
+      </Link>
+    </li>
+  )
+}
+
+/* ═══ Señales de acompañamiento (F7 · ADR-022 · ADR-053) ═════════════════
+ *
+ * Hace ACCIONABLES las alertas pedagógicas que el analytics ya calcula y que
+ * hasta ahora sólo vivían en el KPI "alertas" del card + tooltip. Reusa el
+ * `alertsBreakdown` que HomeView ya trae por comisión (getCohortAlertsSummary,
+ * useQueries) — CERO fetch nuevo, no toca el 1+3×N resuelto en P-5.
+ *
+ * El resumen agregado NO trae pseudónimos (sólo conteos por tipo de señal),
+ * así que el drill-down accionable es la progresión de la cohorte
+ * (`/progression`), cuya tabla ya lleva a `StudentLongitudinalView` por alumno.
+ * Traer el detalle por alumno acá exigiría 1 fetch extra por cohorte
+ * (getStudentAlerts × N) — se evita a propósito (ver follow-up del reporte).
+ *
+ * Framing NO-reificante (ADR-053 §7.3 principios 4 y 5): son señales de
+ * acompañamiento sobre la trayectoria RECIENTE en la cohorte (z-score, no ML,
+ * no clínico). NO son un ranking ni una etiqueta del alumno. k-anonymity
+ * (RN-131): `insufficient_data` → mensaje amable, nunca error.
+ */
+const SIGNAL_DEFS: {
+  key: "regresion_vs_cohorte" | "bottom_quartile" | "slope_negativo_significativo"
+  label: string
+}[] = [
+  { key: "regresion_vs_cohorte", label: "perdieron ritmo frente a la cohorte" },
+  { key: "bottom_quartile", label: "en el cuartil que más cuesta sostener" },
+  { key: "slope_negativo_significativo", label: "con una tendencia a la baja sostenida" },
+]
+
+function PedagogicalSignalsSection({ items }: { items: ComisionWithKpis[] }) {
+  // Best-effort: si NINGUNA comisión resolvió su resumen de alertas (métrica
+  // caída), no renderizamos la sección — el card ya degrada a "—". Evita un
+  // "sin señales" engañoso cuando en realidad no hubo dato.
+  const anyLoaded = items.some((e) => e.kpis.alertsBreakdown)
+  if (!anyLoaded) return null
+
+  const withSignals = items.filter((e) => {
+    const s = e.kpis.alertsBreakdown?.alerts_summary
+    return !!s && s.students_with_any_alert > 0
+  })
+  const insufficientCount = items.filter((e) => e.kpis.alertsBreakdown?.insufficient_data).length
+
+  return (
+    <section
+      className="animate-fade-in-up animate-delay-200"
+      aria-label="Señales de acompañamiento por comisión"
+    >
+      <div className="flex items-baseline justify-between mb-1.5">
+        <h2 className="text-[11px] uppercase tracking-[0.12em] font-semibold text-muted">
+          Señales de acompañamiento
+        </h2>
+        {withSignals.length > 0 && (
+          <span className="text-[11px] text-muted">
+            {withSignals.length} {withSignals.length === 1 ? "cohorte" : "cohortes"} a mirar
+          </span>
+        )}
+      </div>
+      <p className="text-xs text-muted leading-relaxed max-w-2xl mb-4">
+        Trayectorias recientes que conviene acompañar. Son señales estadísticas frente a la propia
+        cohorte (z-score, no un modelo predictivo):{" "}
+        <strong className="font-medium text-ink/80">
+          no son un ranking ni una etiqueta del alumno
+        </strong>
+        . Miralas junto a tu criterio docente.
+      </p>
+
+      {withSignals.length === 0 ? (
+        <div className="rounded-xl border border-border bg-surface p-5 flex items-start gap-3">
+          <span className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-md bg-success-soft text-success">
+            <Users className="h-4 w-4" />
+          </span>
+          <div className="min-w-0">
+            <p className="text-sm font-medium text-ink">
+              Sin señales de acompañamiento esta semana
+            </p>
+            <p className="text-xs text-muted leading-relaxed mt-0.5">
+              Ninguna de tus cohortes con datos suficientes muestra regresión, cuartil inferior ni
+              tendencia a la baja.
+              {insufficientCount > 0 && (
+                <>
+                  {" "}
+                  {insufficientCount}{" "}
+                  {insufficientCount === 1
+                    ? "cohorte todavía no tiene"
+                    : "cohortes todavía no tienen"}{" "}
+                  suficientes datos longitudinales para calcular señales (privacidad, k-anonymity).
+                </>
+              )}
+            </p>
+          </div>
+        </div>
+      ) : (
+        <>
+          <ul className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+            {withSignals.map((entry) => (
+              <SignalCohortCard key={entry.comision.id} entry={entry} />
+            ))}
+          </ul>
+          {insufficientCount > 0 && (
+            <p className="text-[11px] text-muted mt-3">
+              {insufficientCount}{" "}
+              {insufficientCount === 1 ? "cohorte más no tiene" : "cohortes más no tienen"}{" "}
+              suficientes datos longitudinales para señales todavía (privacidad, k-anonymity).
+            </p>
+          )}
+        </>
+      )}
+    </section>
+  )
+}
+
+function SignalCohortCard({ entry }: { entry: ComisionWithKpis }) {
+  const summary = entry.kpis.alertsBreakdown?.alerts_summary
+  if (!summary) return null
+  const active = SIGNAL_DEFS.filter((d) => summary[d.key] > 0)
+
+  return (
+    <li className="rounded-xl border border-border bg-surface overflow-hidden flex flex-col">
+      <div className="p-4 flex-1">
+        <div className="flex items-start justify-between gap-3 mb-3">
+          <div className="min-w-0">
+            <span className="font-mono text-[11px] uppercase tracking-wider text-muted px-2 py-0.5 rounded bg-surface-alt border border-border-soft">
+              {entry.comision.codigo}
+            </span>
+            <h3 className="text-[15px] font-semibold text-ink leading-tight tracking-tight mt-2">
+              {entry.displayName}
+            </h3>
+          </div>
+          <span
+            className="inline-flex items-center gap-1.5 text-warning shrink-0"
+            title={`${summary.students_with_any_alert} alumnos con alguna señal en esta ventana`}
+          >
+            <TrendingDown className="h-4 w-4" aria-hidden="true" />
+            <span className="font-mono text-lg font-semibold leading-none">
+              {summary.students_with_any_alert}
+            </span>
+          </span>
+        </div>
+        <ul className="flex flex-col gap-2">
+          {active.map((d) => (
+            <li key={d.key} className="flex items-baseline gap-2.5 text-sm">
+              <span className="font-mono text-xs font-semibold text-warning bg-warning-soft rounded px-1.5 py-0.5 min-w-[1.75rem] text-center shrink-0">
+                {summary[d.key]}
+              </span>
+              <span className="text-ink/80 leading-snug">{d.label}</span>
+            </li>
+          ))}
+        </ul>
+      </div>
+      <Link
+        to="/progression"
+        search={{ comisionId: entry.comision.id }}
+        className="press-shrink inline-flex items-center justify-center gap-2 px-4 py-3 text-sm font-medium text-ink border-t border-border-soft hover:bg-accent-brand-soft hover:text-accent-brand-deep transition-colors"
+      >
+        Ver progresión y acompañar
+        <ArrowRight className="h-3.5 w-3.5" />
       </Link>
     </li>
   )
