@@ -253,6 +253,76 @@ async def test_interact_emite_prompt_y_respuesta_con_chunks_hash(
     assert done_event is not None
     assert done_event["seqs"] == {"prompt": 1, "response": 2}
 
+    # F8: las citas del RAG viajan por el SSE en el evento `done` (aditivo).
+    assert done_event["citations"] == [{"material": "Apunte 3 - Recursión.pdf"}]
+
+
+async def test_interact_citations_dedup_y_sin_retrieval(
+    tutor: TutorCore, fake_content: FakeContentClient
+) -> None:
+    """F8: las citas deduplican por material y quedan vacias sin retrieval."""
+    from tutor_service.services.clients import RetrievalResult, RetrievedChunk
+
+    tenant_id = uuid4()
+    episode_id = await tutor.open_episode(
+        tenant_id=tenant_id,
+        comision_id=uuid4(),
+        student_pseudonym=uuid4(),
+        problema_id=uuid4(),
+        curso_config_hash="c" * 64,
+        classifier_config_hash="b" * 64,
+    )
+
+    # Dos chunks del mismo material + uno de otro → 2 citas, orden preservado.
+    async def _retrieve_dup(**_kw) -> RetrievalResult:
+        return RetrievalResult(
+            chunks=[
+                RetrievedChunk(
+                    id=uuid4(),
+                    contenido="chunk A1",
+                    material_nombre="Apunte 3 - Recursión.pdf",
+                    score_rerank=0.9,
+                ),
+                RetrievedChunk(
+                    id=uuid4(),
+                    contenido="chunk A2",
+                    material_nombre="Apunte 3 - Recursión.pdf",
+                    score_rerank=0.8,
+                ),
+                RetrievedChunk(
+                    id=uuid4(),
+                    contenido="chunk B1",
+                    material_nombre="Teórico 5 - Pilas.pdf",
+                    score_rerank=0.7,
+                ),
+            ],
+            chunks_used_hash="d" * 64,
+            latency_ms=1.0,
+        )
+
+    fake_content.retrieve = _retrieve_dup  # type: ignore[method-assign]
+    done_event = None
+    async for e in tutor.interact(episode_id, "pregunta con material"):
+        if e["type"] == "done":
+            done_event = e
+    assert done_event is not None
+    assert done_event["citations"] == [
+        {"material": "Apunte 3 - Recursión.pdf"},
+        {"material": "Teórico 5 - Pilas.pdf"},
+    ]
+
+    # Sin retrieval (chunks vacios) → citations = [] (el front no muestra nada).
+    async def _retrieve_empty(**_kw) -> RetrievalResult:
+        return RetrievalResult(chunks=[], chunks_used_hash="e" * 64, latency_ms=0.0)
+
+    fake_content.retrieve = _retrieve_empty  # type: ignore[method-assign]
+    done_empty = None
+    async for e in tutor.interact(episode_id, "otra pregunta"):
+        if e["type"] == "done":
+            done_empty = e
+    assert done_empty is not None
+    assert done_empty["citations"] == []
+
 
 async def test_multiple_interactions_preservan_orden_de_seq(
     tutor: TutorCore, fake_ctr: FakeCTRClient

@@ -67,10 +67,17 @@ const ACTIVE_EPISODE_KEY = "active-episode-id"
 // ED-2: clave de persistencia del layout de los 3 paneles del episodio.
 const PANELS_STORAGE_KEY = "web-student.episode.panels.v1"
 
+/** F8: cita del RAG — material que fundamenta la respuesta del tutor. */
+interface Citation {
+  material: string
+}
+
 interface Message {
   role: "user" | "tutor"
   content: string
   ts: number
+  /** F8: materiales del RAG citados en esta respuesta del tutor (si hubo). */
+  citations?: Citation[]
 }
 
 /** Contexto de ejercicio activo para TPs multi-ejercicio (ADR-047). */
@@ -464,6 +471,13 @@ export function EpisodeView({ episodeId, onExit, ejercicioContext, getToken }: E
           throw new Error(event.message ?? "tutor_error")
         } else if (event.type === "done") {
           console.debug("chunks_used_hash:", event.chunks_used_hash)
+          // F8: el `done` trae las citas del RAG (campo aditivo — lib/api.ts no
+          // lo tipa aun, por eso el cast). Solo las adjuntamos si hubo material.
+          const citations = (event as { citations?: Citation[] }).citations
+          if (citations && citations.length > 0) {
+            tutorMessage.citations = citations
+            setMessages((m) => [...m.slice(0, -1), { ...tutorMessage }])
+          }
         }
       }
     } catch (e) {
@@ -866,6 +880,27 @@ export function EpisodeView({ episodeId, onExit, ejercicioContext, getToken }: E
                     </span>
                   ) : null}
                 </div>
+                {/* F8: citas del RAG. Sobrio, bajo el mensaje del tutor; solo si
+                    esta respuesta se fundamento en algun material. */}
+                {!isUser && m.citations && m.citations.length > 0 && (
+                  <div
+                    data-testid="tutor-citations"
+                    className="mt-0.5 flex flex-wrap items-center gap-1.5 text-[11px] text-muted"
+                  >
+                    <span className="inline-flex items-center gap-1 font-medium">
+                      <BookOpen className="h-3 w-3" aria-hidden="true" />
+                      Basado en:
+                    </span>
+                    {m.citations.map((c, ci) => (
+                      <span
+                        key={`${c.material}-${ci}`}
+                        className="rounded-md border border-border-soft bg-surface-alt px-1.5 py-0.5"
+                      >
+                        {c.material}
+                      </span>
+                    ))}
+                  </div>
+                )}
               </div>
             </div>
           )

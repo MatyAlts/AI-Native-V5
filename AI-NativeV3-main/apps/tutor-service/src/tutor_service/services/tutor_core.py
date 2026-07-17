@@ -684,6 +684,10 @@ class TutorCore:
             "type": "done",
             "chunks_used_hash": retrieval.chunks_used_hash,
             "seqs": {"prompt": prompt_seq, "response": response_seq},
+            # F8: citas del RAG al alumno. Campo aditivo — clientes viejos que
+            # no lo miran no se rompen. Lista vacia si no hubo retrieval (el
+            # frontend no muestra nada en ese caso).
+            "citations": self._build_citations(retrieval.chunks),
         }
 
     # ── Cerrar episodio ─────────────────────────────────────────────────
@@ -1738,6 +1742,24 @@ class TutorCore:
         for i, c in enumerate(chunks, 1):
             blocks.append(f"[Fuente {i}: {c.material_nombre}]\n{c.contenido}")
         return "\n\n".join(blocks)
+
+    def _build_citations(self, chunks) -> list[dict[str, str]]:
+        """Deriva las citas (materiales del RAG) de los chunks recuperados (F8).
+
+        Dedup por nombre de material preservando el orden de aparicion — un
+        mismo material puede aportar varios chunks pero el alumno ve el
+        material una sola vez. Devuelve `[]` si no hubo retrieval; en ese caso
+        el frontend no renderiza nada.
+        """
+        citations: list[dict[str, str]] = []
+        seen: set[str] = set()
+        for c in chunks:
+            nombre = getattr(c, "material_nombre", None)
+            if not nombre or nombre in seen:
+                continue
+            seen.add(nombre)
+            citations.append({"material": nombre})
+        return citations
 
     def _format_rubric_context(
         self,
