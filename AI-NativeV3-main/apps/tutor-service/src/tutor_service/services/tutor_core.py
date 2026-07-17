@@ -290,21 +290,52 @@ class TutorCore:
                     exc_info=True,
                 )
 
-        # 3. ADR-048: construir el contexto pedagógico del ejercicio para
-        # inyectar al system message del LLM. El bloque agrega: enunciado +
-        # código inicial + reglas del tutor + rúbrica + banco socrático N1-N4
-        # + misconceptions + respuesta-pista + heurística de cierre + anti-
-        # patrones. Si no hay ejercicio_data, system_messages queda con solo
-        # el prompt base del governance-service.
+        # 3. ADR-048 + F2: construir el contexto pedagógico para inyectar al
+        # system message del LLM. El bloque agrega: enunciado + código inicial
+        # + reglas del tutor + rúbrica + test_cases + banco socrático N1-N4 +
+        # misconceptions + respuesta-pista + heurística de cierre + anti-patrones.
+        #
+        # Dos fuentes según el tipo de episodio:
+        #   - Ejercicio del banco (ADR-047): `ejercicio_data` ya resuelto arriba.
+        #   - TP monolítica (sin ejercicio_id): los atributos pedagógicos
+        #     (enunciado, rúbrica, test_cases) viven en la propia TP. Los
+        #     traemos con `get_tarea_practica_full` para que también le lleguen
+        #     al tutor. Best-effort: si falla, el episodio se abre con solo el
+        #     prompt base del governance-service.
+        contexto_data: dict | None = ejercicio_data
+        contexto_kind = "Ejercicio"
+        contexto_orden = ejercicio_orden
+        if contexto_data is None and ejercicio_id is None and self.academic is not None:
+            try:
+                tp_full = await self.academic.get_tarea_practica_full(
+                    tarea_id=problema_id,
+                    tenant_id=tenant_id,
+                    caller_id=TUTOR_SERVICE_USER_ID,
+                )
+            except Exception:
+                logger.warning(
+                    "get_tarea_practica_full failed for tarea=%s; continuing without "
+                    "TP pedagogical context",
+                    problema_id,
+                    exc_info=True,
+                )
+                tp_full = None
+            if isinstance(tp_full, dict):
+                contexto_data = tp_full
+                contexto_kind = "Trabajo Práctico"
+                contexto_orden = None
+
         system_messages: list[dict[str, str]] = [{"role": "system", "content": prompt.content}]
         rubrica_context: str | None = None
-        if ejercicio_data is not None:
-            ej_context = self._build_ejercicio_context(ejercicio_data, ejercicio_orden)
+        if contexto_data is not None:
+            ej_context = self._build_ejercicio_context(
+                contexto_data, contexto_orden, kind=contexto_kind
+            )
             system_messages = [{"role": "system", "content": prompt.content + ej_context}]
             # Cachear la rúbrica formateada para que el reflection-flow o el
             # interact() puedan usarla si necesitan.
-            rubrica_raw = ejercicio_data.get("rubrica")
-            ejercicio_titulo = ejercicio_data.get("titulo")
+            rubrica_raw = contexto_data.get("rubrica")
+            ejercicio_titulo = contexto_data.get("titulo")
             formatted = self._format_rubric_context(rubrica_raw, ejercicio_titulo)
             rubrica_context = formatted if formatted else None
 
@@ -862,7 +893,10 @@ class TutorCore:
                 self.default_prompt_name, self.default_prompt_version
             )
 
-        # Contexto pedagógico del ejercicio (ADR-048) — best-effort, igual que open.
+        # Contexto pedagógico (ADR-048 + F2) — best-effort, igual que open.
+        # Ejercicio del banco tiene prioridad; si es TP monolítica (sin
+        # ejercicio_id) los atributos (enunciado, rúbrica, test_cases) vienen
+        # de la propia TP para que también le lleguen al tutor al reanudar.
         system_content = prompt.content
         rubrica_context: str | None = None
         if ejercicio_id is not None and self.academic is not None:
@@ -885,6 +919,29 @@ class TutorCore:
                     ejercicio_id,
                     exc_info=True,
                 )
+        elif ejercicio_id is None and self.academic is not None:
+            try:
+                tp_full = await self.academic.get_tarea_practica_full(
+                    tarea_id=problema_id,
+                    tenant_id=tenant_id,
+                    caller_id=TUTOR_SERVICE_USER_ID,
+                )
+            except Exception:
+                logger.warning(
+                    "resume: get_tarea_practica_full failed para tarea=%s; "
+                    "se reanuda sin contexto pedagógico de la TP",
+                    problema_id,
+                    exc_info=True,
+                )
+                tp_full = None
+            if isinstance(tp_full, dict):
+                system_content += self._build_ejercicio_context(
+                    tp_full, None, kind="Trabajo Práctico"
+                )
+                formatted = self._format_rubric_context(
+                    tp_full.get("rubrica"), tp_full.get("titulo")
+                )
+                rubrica_context = formatted if formatted else None
 
         # materia_id para BYOK (ADR-040) — best-effort, igual que open.
         materia_id: UUID | None = None
@@ -1744,22 +1801,34 @@ class TutorCore:
         self,
         ejercicio: dict,
         orden: int | None = None,
+        kind: str = "Ejercicio",
     ) -> str:
         """Compone el bloque pedagógico del Ejercicio para el system message.
 
-        ADR-048: inyecta en orden:
-          1. Datos del ejercicio (título, enunciado, código inicial).
-          2. `tutor_rules.instrucciones_adicionales` (si existe).
+        ADR-048 + F2: inyecta en orden:
+          1. Datos (título, enunciado, código inicial).
+          2. `tutor_rules`: flags operativas (prohibido dar solución, forzar
+             pregunta antes de pista, nivel socrático mínimo) + instrucciones.
           3. Mapa privado de navegación: rúbrica + heurística de cierre +
              prerrequisitos.
-          4. Banco socrático N1-N4 (preguntas + señales ✓/✗).
-          5. Misconceptions anticipadas + pregunta diagnóstica.
-          6. Respuesta-pista por nivel (anti-soluciones).
-          7. Anti-patrones específicos del ejercicio.
+          4. Casos de prueba que se evalúan (privados — el tutor es servicio
+             interno y los usa para orientar sin revelarlos).
+          5. Banco socrático N1-N4 (preguntas + señales ✓/✗).
+          6. Misconceptions anticipadas + pregunta diagnóstica.
+          7. Respuesta-pista por nivel (anti-soluciones).
+          8. Anti-patrones específicos del ejercicio.
 
         El LLM recibe estos bloques como REFERENCIAS de navegación. El
         prompt base ya le indica el comportamiento socrático general; los
         bloques de acá son las particularidades de este ejercicio.
+
+        Args:
+            ejercicio: dict del Ejercicio del banco (ADR-047) o de la TP
+              monolítica. Ambos comparten los campos `test_cases`/`rubrica`;
+              el Ejercicio usa `enunciado_md`, la TP usa `enunciado`.
+            orden: posición del ejercicio dentro de la TP (None en monolítica).
+            kind: etiqueta del bloque ("Ejercicio" del banco vs "Trabajo
+              Práctico" monolítico).
 
         Returns:
             String para concatenar al `prompt.content` base del tutor.
@@ -1768,20 +1837,44 @@ class TutorCore:
         """
         parts: list[str] = []
 
-        # Bloque 1 — datos del ejercicio
+        # Bloque 1 — datos del ejercicio / TP monolítica. El Ejercicio del
+        # banco expone el enunciado como `enunciado_md`; la TP monolítica como
+        # `enunciado`. Aceptamos ambos para reusar este builder en los dos casos.
         orden_label = f" {orden}" if orden is not None else ""
         titulo = ejercicio.get("titulo") or "(sin título)"
-        enunciado = ejercicio.get("enunciado_md") or ""
-        parts.append(f"\n\n[Ejercicio{orden_label}]\n**{titulo}**\n\n{enunciado}")
+        enunciado = ejercicio.get("enunciado_md") or ejercicio.get("enunciado") or ""
+        parts.append(f"\n\n[{kind}{orden_label}]\n**{titulo}**\n\n{enunciado}")
         if ejercicio.get("inicial_codigo"):
             parts.append(f"\n\nCódigo inicial:\n```python\n{ejercicio['inicial_codigo']}\n```")
 
-        # Bloque 2 — reglas operativas del tutor para este ejercicio
+        # Bloque 2 — reglas operativas del tutor para este ejercicio (F2). Antes
+        # solo se inyectaba `instrucciones_adicionales`; ahora también las flags
+        # pedagógicas del schema `TutorRulesSchema` (ADR-048) que definen el
+        # andamiaje socrático que el docente configuró para este ejercicio.
         tutor_rules = ejercicio.get("tutor_rules") or {}
-        if isinstance(tutor_rules, dict):
+        if isinstance(tutor_rules, dict) and tutor_rules:
+            regla_lines: list[str] = []
+            if tutor_rules.get("prohibido_dar_solucion"):
+                regla_lines.append(
+                    "- Está PROHIBIDO entregar la solución o el código completo: "
+                    "guiá con preguntas, nunca dictes la respuesta."
+                )
+            if tutor_rules.get("forzar_pregunta_antes_de_hint"):
+                regla_lines.append(
+                    "- Antes de dar cualquier pista, hacé al menos una pregunta "
+                    "socrática y esperá la respuesta del estudiante."
+                )
+            nivel_min = tutor_rules.get("nivel_socratico_minimo")
+            if isinstance(nivel_min, int) and nivel_min > 1:
+                regla_lines.append(
+                    f"- Nivel socrático mínimo para este ejercicio: N{nivel_min}. "
+                    "No bajes de ese nivel de andamiaje."
+                )
             instrucciones = tutor_rules.get("instrucciones_adicionales")
             if instrucciones:
-                parts.append(f"\n\n## Reglas específicas del tutor\n{instrucciones}")
+                regla_lines.append(f"- {instrucciones}")
+            if regla_lines:
+                parts.append("\n\n## Reglas específicas del tutor\n" + "\n".join(regla_lines))
 
         # Bloque 3 — mapa privado de navegación
         nav: list[str] = []
@@ -1805,6 +1898,40 @@ class TutorCore:
             parts.append(
                 "\n\n## Mapa privado de navegación (NO revelar al estudiante)\n" + "\n".join(nav)
             )
+
+        # Bloque 3.bis — casos de prueba que se evalúan (F2). El tutor es un
+        # servicio interno: PUEDE ver los tests ocultos (`is_public=false`) y su
+        # `expected` para saber qué comportamiento se verifica. El system
+        # message le prohíbe explícitamente filtrarlos al estudiante — mismo
+        # criterio que el mapa privado de navegación. Esto NO toca el filtrado
+        # `is_public` del academic-service hacia el alumno (A0.3), que sigue
+        # intacto: acá el destinatario es el LLM, no el cliente.
+        test_cases = ejercicio.get("test_cases") or []
+        if isinstance(test_cases, list) and test_cases:
+            tc_lines: list[str] = []
+            for tc in test_cases:
+                if not isinstance(tc, dict):
+                    continue
+                nombre = tc.get("name") or tc.get("id") or "(test)"
+                visibilidad = "público" if tc.get("is_public") is True else "oculto"
+                linea = f"- [{visibilidad}] {nombre}"
+                tipo = tc.get("type")
+                if tipo:
+                    linea += f" ({tipo})"
+                entrada = tc.get("code")
+                if entrada:
+                    linea += f"\n  - Entrada/código:\n    ```\n    {entrada}\n    ```"
+                esperado = tc.get("expected")
+                if esperado is not None:
+                    linea += f"\n  - Salida esperada: {esperado}"
+                tc_lines.append(linea)
+            if tc_lines:
+                parts.append(
+                    "\n\n## Casos de prueba que se evalúan (NO revelar al estudiante)\n"
+                    "Usalos para entender qué comportamiento se verifica y orientar tus "
+                    "preguntas; nunca los dictes ni entregues la salida esperada.\n"
+                    + "\n".join(tc_lines)
+                )
 
         # Bloque 4 — banco socrático N1-N4
         banco = ejercicio.get("banco_preguntas") or {}
