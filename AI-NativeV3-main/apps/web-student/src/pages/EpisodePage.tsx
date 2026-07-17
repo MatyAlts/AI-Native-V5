@@ -237,6 +237,14 @@ export function EpisodeView({ episodeId, onExit, ejercicioContext, getToken }: E
   // ReflectionModal (onClose) cuando el alumno lo cierra antes de que resuelva.
   // Sin dedupe, ambos llaman markEjercicioCompleted para el mismo ejercicio.
   const markedCompletedRef = useRef(false)
+  // Guard SINCRONICO de doble-submit para cerrar/pausar (NB-11). El state
+  // `submitting` (abajo) NO se actualiza sincronicamente entre dos eventos
+  // rapidos, asi que un doble-click alcanzaba a disparar el segundo handler
+  // antes del re-render — el mismo motivo por el que NB-10 (materia.$id.tsx)
+  // usa `openingRef`. Esta ref se setea en el acto y frena el segundo click;
+  // `submitting` queda solo para el estado visual (`disabled`). Compartida por
+  // cerrar Y pausar: son mutuamente excluyentes (no cerrar y abandonar a la vez).
+  const actionInFlightRef = useRef(false)
 
   // P-17: cliente CTR con cola persistente (localStorage) + reintentos con
   // backoff + preservacion de orden por episodio. Hoy solo cablea los eventos
@@ -249,7 +257,20 @@ export function EpisodeView({ episodeId, onExit, ejercicioContext, getToken }: E
   // fetch global parcheado (interceptor P-18) => hereda el Bearer sin getToken.
   const ctrClientRef = useRef<CTRClient | null>(null)
   useEffect(() => {
-    const client = new CTRClient({ episodeId })
+    const client = new CTRClient({
+      episodeId,
+      // F-3: dead-letter NUNCA en silencio (el modulo lo documenta asi). Sin este
+      // callback el default es no-op y un evento `pestana_*` que reciba 409
+      // (episodio cerrado) o agote reintentos se perdia sin rastro. Lo logueamos
+      // con el tipo de evento y la razon (`rejected` | `exhausted`) para que un
+      // drop del CTR quede visible en consola/telemetria.
+      onDrop: (event, reason) => {
+        console.error(
+          `[CTR] evento descartado (dead-letter): ${event.event_type} — razon=${reason}`,
+          { episodeId, eventUuid: event.event_uuid, attempts: event.attempts, reason },
+        )
+      },
+    })
     ctrClientRef.current = client
     return () => {
       void client.flush()
@@ -528,8 +549,10 @@ export function EpisodeView({ episodeId, onExit, ejercicioContext, getToken }: E
   }
 
   async function handleClose() {
-    // Guard doble-submit (NB-11): si ya hay un cierre/pausa en vuelo, ignorar.
-    if (submitting) return
+    // Guard doble-submit (NB-11): ref SINCRONICA (no el state async) — un segundo
+    // click en el mismo tick ve el flag ya seteado y aborta. Consistente con NB-10.
+    if (actionInFlightRef.current) return
+    actionInFlightRef.current = true
     setSubmitting(true)
     setError(null)
     try {
@@ -542,6 +565,9 @@ export function EpisodeView({ episodeId, onExit, ejercicioContext, getToken }: E
         return
       }
       setError(`Error cerrando: ${e}`)
+      // Reintentable: liberamos ambos guards (visual + sincronico) para que el
+      // alumno pueda volver a intentar cerrar.
+      actionInFlightRef.current = false
       setSubmitting(false)
       return
     }
@@ -574,8 +600,10 @@ export function EpisodeView({ episodeId, onExit, ejercicioContext, getToken }: E
   // (bug 2026-06-16). El guard local evita re-emitir en el beforeunload del
   // unmount (idempotente igual en backend, fix QA #9).
   async function handlePauseExit() {
-    // Guard doble-submit (NB-11): si ya hay un cierre/pausa en vuelo, ignorar.
-    if (submitting) return
+    // Guard doble-submit (NB-11): ref SINCRONICA (no el state async), igual que
+    // handleClose y NB-10. Frena el segundo click antes del re-render.
+    if (actionInFlightRef.current) return
+    actionInFlightRef.current = true
     setSubmitting(true)
     setError(null)
     abandonEmittedRef.current = true
