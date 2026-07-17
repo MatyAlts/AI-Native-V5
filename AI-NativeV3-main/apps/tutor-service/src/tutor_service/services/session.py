@@ -11,9 +11,10 @@ histórica es el CTR en Postgres.
 
 from __future__ import annotations
 
+import asyncio
 import json
 import time
-from collections.abc import AsyncIterator
+from collections.abc import AsyncIterator, Awaitable, Callable
 from dataclasses import dataclass, field
 from uuid import UUID
 
@@ -41,6 +42,57 @@ DISTRACTION_TTL = 30 * 60  # 30 min sanity cap
 # devuelve el mismo seq SIN avanzar el contador ni re-publicar al CTR.
 SEEN_KEY_PREFIX = "tutor:seen:"
 SEEN_TTL = SESSION_TTL  # mismo horizonte que la sesión (6h)
+
+# FIX A (keystone) — contador de seq ATÓMICO por episodio.
+#
+# El seq de la cadena CTR DEBE ser contiguo y sin huecos (el partition_worker
+# valida `expected_seq == events_count`). Antes de este fix el seq salía de un
+# read-modify-write sobre el JSON de sesión (`current = state.seq; state.seq +=
+# 1; set()`), que NO es atómico: dos coroutines concurrentes sobre el mismo
+# episodio (p. ej. el POST de fondo del ctr-client en paralelo con el SSE de
+# `/message`, o dos pestañas compartiendo la cola offline) leían el MISMO
+# `state.seq` y reservaban el MISMO seq → dos eventos con igual seq → hueco →
+# dead-letter → `integrity_compromised` PERMANENTE.
+#
+# Ahora el contador autoritativo es esta key Redis manipulada con INCR (atómico
+# aun ante concurrencia y aun entre réplicas del tutor-service). Convención: la
+# key vale la CANTIDAD de seqs ya reservados (= el próximo seq a asignar). Como
+# `INCR` devuelve el valor DESPUÉS de incrementar, el seq reservado es
+# `INCR - 1`. Se inicializa en `open_episode`/`resume_episode` (fresh=0,
+# resume=events_count) para arrancar del max seq ya persistido — NUNCA se
+# resetea a 0 sobre un episodio con historia.
+SEQ_KEY_PREFIX = "tutor:seq:"
+
+# Idempotencia atómica (FIX A parte 2). El claim en `tutor:seen:{episode_id}`
+# se hace con HSETNX (atómico) ANTES de reservar el seq: el que gana el claim
+# reserva (INCR) y guarda uuid→seq; el que pierde LEE el seq ya asignado. Así
+# dos event_uuid DISTINTOS obtienen seqs contiguos distintos y el MISMO
+# event_uuid concurrente NO gasta un seq de más (sin hueco, sin duplicado).
+# Mientras el ganador está reservando, el registro vale este sentinel; el
+# perdedor espera con backoff hasta que el ganador lo resuelve al seq real.
+_SEEN_PENDING = "PENDING"
+_SEEN_RESOLVE_MAX_RETRIES = 50
+_SEEN_RESOLVE_BACKOFF_SECONDS = 0.02  # hasta ~1s de espera total del perdedor
+
+
+class SeqReservationPendingError(Exception):
+    """El ganador del claim de idempotencia no resolvió el seq a tiempo.
+
+    Caso degenerado y raro (típicamente el ganador vive en OTRA réplica del
+    tutor-service y está lento o murió mid-reserva). Fail-safe: NO emitimos un
+    duplicado ni inventamos un seq (ambos romperían la integridad de la
+    cadena). Señalamos al caller para que reintente más tarde — el ctr-client
+    reintenta el POST y, para entonces, el claim está resuelto (mismo seq) o
+    liberado (se puede re-ganar). El route lo mapea a 503.
+    """
+
+    def __init__(self, episode_id: UUID, idempotency_key: str) -> None:
+        super().__init__(
+            f"reserva de seq pendiente para episode={episode_id} "
+            f"idempotency_key={idempotency_key}; reintentar"
+        )
+        self.episode_id = episode_id
+        self.idempotency_key = idempotency_key
 
 
 @dataclass
@@ -155,28 +207,127 @@ class SessionManager:
         await self.redis.setex(self._key(state.episode_id), SESSION_TTL, json.dumps(data))
 
     async def delete(self, episode_id: UUID) -> None:
-        await self.redis.delete(self._key(episode_id))
+        # Borra la sesión y su contador de seq atómico. El registro de
+        # idempotencia (`tutor:seen:`) se deja vencer por TTL — un reintento
+        # tardío del ctr-client sobre un episodio ya cerrado igual encuentra
+        # `session=None` y el route responde 409/404 sin tocar el contador.
+        await self.redis.delete(self._key(episode_id), self._seq_key(episode_id))
+
+    # ── Contador de seq atómico por episodio (FIX A) ────────────────────
+
+    def _seq_key(self, episode_id: UUID) -> str:
+        return f"{SEQ_KEY_PREFIX}{episode_id}"
+
+    async def init_seq_counter(self, episode_id: UUID, next_seq: int) -> None:
+        """Inicializa el contador atómico de seq del episodio.
+
+        `next_seq` = cantidad de seqs ya reservados = próximo seq a asignar.
+        `open_episode` lo llama con 0 (episodio nuevo); `resume_episode` con el
+        `events_count` persistido (arranca del max seq ya en la cadena, NUNCA
+        resetea a 0). SET incondicional: el caller garantiza que este es el
+        punto de inicialización (apertura, o reanudación con la sesión ausente).
+        """
+        await self.redis.set(self._seq_key(episode_id), next_seq, ex=SESSION_TTL)
 
     async def next_seq(self, state: SessionState) -> int:
-        """Obtiene y actualiza el seq atómicamente. Devuelve el seq a usar
-        para el próximo evento (el siguiente será seq+1)."""
-        current = state.seq
-        state.seq += 1
+        """Reserva ATÓMICAMENTE el próximo seq del episodio vía Redis INCR.
+
+        Devuelve el seq a usar para el próximo evento. El contador autoritativo
+        es la key `tutor:seq:{episode_id}` (ver SEQ_KEY_PREFIX): `INCR` es
+        atómico aun ante coroutines/réplicas concurrentes, así que dos llamadas
+        concurrentes sobre el mismo episodio obtienen seqs distintos y
+        contiguos — nunca el mismo seq (que era el bug read-modify-write).
+
+        Como la key vale la cantidad de seqs ya reservados y `INCR` devuelve el
+        valor DESPUÉS de incrementar, el seq reservado es `INCR - 1`. Sobre una
+        key ausente `INCR` arranca en 0→1 (reserva seq 0), consistente con un
+        episodio recién inicializado con `init_seq_counter(..., 0)`.
+
+        Sigue refrescando `last_activity_at` (vía `set()`) — contrato del worker
+        de abandono (ADR-025), que detecta inactividad por ese timestamp. El
+        `state.seq` en el JSON queda como espejo NO autoritativo; el contador
+        Redis es la única fuente de verdad para la asignación.
+        """
+        key = self._seq_key(state.episode_id)
+        new_val = await self.redis.incr(key)
+        await self.redis.expire(key, SESSION_TTL)
+        state.seq = new_val  # espejo no-autoritativo (el contador Redis manda)
         await self.set(state)
-        return current
+        return new_val - 1
+
+    async def reserve_or_get_seq(
+        self,
+        episode_id: UUID,
+        idempotency_key: str | None,
+        emit: Callable[[], Awaitable[int]],
+    ) -> int:
+        """Idempotencia ATÓMICA para la emisión de un evento CTR (FIX A).
+
+        Garantiza que, ante N coroutines concurrentes con el MISMO
+        `idempotency_key` sobre el mismo episodio, EXACTAMENTE UNA reserva un
+        seq (vía `emit`, que hace `next_seq` + publish) y las demás devuelven
+        ESE MISMO seq sin reservar uno nuevo — no se desperdicia ningún seq
+        (sin hueco) ni se re-publica el evento (sin duplicado).
+
+        Mecanismo:
+          1. `HSETNX seen:{episode_id} {key} PENDING` — claim atómico. Reemplaza
+             el viejo check-then-act (`get_seen_seq`→`emit`→`mark_seen`), que NO
+             era atómico: dos coroutines con el mismo uuid veían `seen=None` y
+             ambas emitían.
+          2. Ganador (HSETNX=1): `emit()` (reserva seq + publica) →
+             `HSET ... {key} <seq>` resuelve el claim → devuelve seq. Si `emit()`
+             falla, `HDEL` libera el claim (un reintento genuino podrá re-ganarlo)
+             y se re-propaga la excepción.
+          3. Perdedor (HSETNX=0): `HGET`; si es número lo devuelve; si sigue
+             PENDING espera con backoff hasta que el ganador lo resuelva.
+
+        Sin `idempotency_key` (None) el comportamiento es el legacy: `emit()`
+        directo, sin dedup (callers que no mandan la clave no cambian).
+        """
+        if not idempotency_key:
+            return await emit()
+
+        seen_key = self._seen_key(episode_id)
+        won = await self.redis.hsetnx(seen_key, idempotency_key, _SEEN_PENDING)
+        if won:
+            await self.redis.expire(seen_key, SEEN_TTL)
+            try:
+                seq = await emit()
+            except Exception:
+                # Liberar el claim para que un reintento genuino pueda re-ganarlo.
+                await self.redis.hdel(seen_key, idempotency_key)
+                raise
+            await self.redis.hset(seen_key, idempotency_key, str(seq))
+            await self.redis.expire(seen_key, SEEN_TTL)
+            return seq
+
+        # Perdimos el claim: otra coroutine con el mismo uuid ya reservó (o está
+        # reservando) el seq. Leerlo, esperando si todavía está PENDING.
+        for _ in range(_SEEN_RESOLVE_MAX_RETRIES):
+            raw = await self.redis.hget(seen_key, idempotency_key)
+            if raw is not None and raw != _SEEN_PENDING:
+                try:
+                    return int(raw)
+                except (TypeError, ValueError):
+                    break  # valor corrupto → fail-safe hacia SeqReservationPendingError
+            await asyncio.sleep(_SEEN_RESOLVE_BACKOFF_SECONDS)
+        raise SeqReservationPendingError(episode_id, idempotency_key)
 
     # ── Idempotencia por Idempotency-Key (fix P-17) ─────────────────────
+    #
+    # NOTA: la vía viva de dedup es `reserve_or_get_seq` (claim atómico HSETNX,
+    # FIX A). `get_seen_seq`/`mark_seen` quedan como primitivas de storage de
+    # bajo nivel (lectura/escritura del registro seq) — ya NO son el flujo de
+    # dedup del route (ese era el check-then-act con race que FIX A reemplazó).
 
     def _seen_key(self, episode_id: UUID) -> str:
         return f"{SEEN_KEY_PREFIX}{episode_id}"
 
     async def get_seen_seq(self, episode_id: UUID, idempotency_key: str) -> int | None:
-        """Devuelve el seq que se asignó la PRIMERA vez que se vio este
-        `idempotency_key` para el episodio, o None si es la primera vez.
+        """Devuelve el seq registrado para este `idempotency_key`, o None.
 
-        Usado por la ruta de eventos para deduplicar reintentos del ctr-client
-        (mismo `event_uuid` de cliente) sin volver a avanzar el contador de
-        sesión. Ver docstring de SEEN_KEY_PREFIX.
+        Primitiva de lectura de bajo nivel. El flujo de dedup vivo es
+        `reserve_or_get_seq` (atómico); esta se conserva para inspección/tests.
         """
         raw = await self.redis.hget(self._seen_key(episode_id), idempotency_key)
         if raw is None:

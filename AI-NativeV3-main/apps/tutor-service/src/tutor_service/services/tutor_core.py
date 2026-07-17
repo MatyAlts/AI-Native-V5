@@ -358,6 +358,10 @@ class TutorCore:
             rubrica_context=rubrica_context,
         )
         await self.sessions.set(state)
+        # FIX A: inicializar el contador atómico de seq del episodio en 0
+        # (episodio nuevo → 0 seqs reservados). El `episodio_abierto` reservará
+        # el seq 0 vía INCR abajo. Debe hacerse ANTES del primer next_seq.
+        await self.sessions.init_seq_counter(episode_id, 0)
 
         # Re-check to minimize race window between TP validation and Episode persistence
         if self.academic is not None:
@@ -387,12 +391,15 @@ class TutorCore:
             episodio_abierto_payload["ejercicio_id"] = str(ejercicio_id)
             episodio_abierto_payload["ejercicio_orden"] = ejercicio_orden
 
+        # Reservar el seq (0) ATÓMICAMENTE antes de construir el evento, para
+        # que el seq del evento sea el efectivamente reservado por el contador.
+        abierto_seq = await self.sessions.next_seq(state)
         event = self._build_event(
             state=state,
+            seq=abierto_seq,
             event_type="episodio_abierto",
             payload=episodio_abierto_payload,
         )
-        await self.sessions.next_seq(state)
         await self.ctr.publish_event(event, tenant_id, TUTOR_SERVICE_USER_ID)
 
         # Métrica: nueva sesión activa.
@@ -402,12 +409,26 @@ class TutorCore:
 
     # ── Interacción (streaming) ────────────────────────────────────────
 
-    async def interact(self, episode_id: UUID, user_message: str) -> AsyncIterator[dict]:  # noqa: PLR0912, PLR0915 — streaming loop con branches inherentes (RAG, fallback, postprocess, CTR emit) — refactor diferido
+    async def interact(  # noqa: PLR0912, PLR0915 — streaming loop con branches inherentes (RAG, fallback, postprocess, CTR emit) — refactor diferido
+        self,
+        episode_id: UUID,
+        user_message: str,
+        prompt_idempotency_key: str | None = None,
+    ) -> AsyncIterator[dict]:
         """Procesa una interacción en streaming.
 
         Yieldea eventos del formato:
           {"type": "chunk", "content": "..."}
           {"type": "done", "chunks_used_hash": "...", "tokens_delta": {"seq_prompt": N, "seq_response": N+1}}
+
+        FIX B (retry de UI-8): `prompt_idempotency_key` es una clave estable por
+        turno del alumno (un `messageUuid` que EpisodePage reusa en el
+        "Reintentar"). Se usa por la vía idempotente atómica (FIX A) SOLO para el
+        `prompt_enviado`: si el LLM falla a mitad y el alumno reintenta, el
+        `interact()` corre de cero pero el `prompt_enviado` NO se re-emite
+        (devuelve el mismo seq, sin re-publicar) → no infla CCD_orphan_ratio ni
+        el conteo de prompts de la tesis. El `tutor_respondio` SÍ se emite fresco
+        (es una respuesta nueva del LLM). Sin la clave, comportamiento legacy.
         """
         # Métrica: latencia end-to-end del turno SSE. Se mide desde acá hasta
         # el yield del "done" final. SLO p95 < 3s, p99 < 8s (paneles del
@@ -435,31 +456,55 @@ class TutorCore:
         # → 3 valores del contracts via _PROMPT_KIND_MAPPING). Determinístico.
         inferred_kind = infer_prompt_kind(user_message)
         prompt_kind_ctr = _PROMPT_KIND_MAPPING[inferred_kind]
-        prompt_seq = await self.sessions.next_seq(state)
-        prompt_event = self._build_event(
-            state=state,
-            seq=prompt_seq,
-            event_type="prompt_enviado",
-            payload={
-                "content": user_message,
-                "prompt_kind": prompt_kind_ctr,
-                "chunks_used_hash": retrieval.chunks_used_hash,
-            },
+
+        # FIX B: emitir el `prompt_enviado` por la vía idempotente atómica. En un
+        # reintento (mismo messageUuid) el `emit` NO corre — devolvemos el seq ya
+        # asignado sin re-publicar. `published_prompt_uuid` queda None en ese
+        # caso: lo usamos abajo para NO re-correr los side-channels (adverso /
+        # overuse) que ya se registraron en el intento original.
+        published_prompt_uuid: str | None = None
+
+        async def _emit_prompt() -> int:
+            nonlocal published_prompt_uuid
+            seq = await self.sessions.next_seq(state)
+            event = self._build_event(
+                state=state,
+                seq=seq,
+                event_type="prompt_enviado",
+                payload={
+                    "content": user_message,
+                    "prompt_kind": prompt_kind_ctr,
+                    "chunks_used_hash": retrieval.chunks_used_hash,
+                },
+            )
+            await self.ctr.publish_event(event, state.tenant_id, TUTOR_SERVICE_USER_ID)
+            published_prompt_uuid = event["event_uuid"]
+            return seq
+
+        prompt_seq = await self.sessions.reserve_or_get_seq(
+            state.episode_id,
+            (f"prompt:{prompt_idempotency_key}" if prompt_idempotency_key else None),
+            _emit_prompt,
         )
-        await self.ctr.publish_event(prompt_event, state.tenant_id, TUTOR_SERVICE_USER_ID)
 
         # 3.bis (ADR-019, G3 Fase A): deteccion preprocesamiento de intentos
         # adversos. Por cada match del corpus regex, emitir evento CTR
         # `intento_adverso_detectado`. NO bloquea — el prompt sigue al LLM.
         # Falla soft: si la deteccion falla, log y continua (no romper el
         # flujo del estudiante por un bug en regex).
+        #
+        # FIX B: el `detect_adversarial` corre siempre (necesitamos
+        # `adversarial_matches` para el refuerzo socratico del prompt aguas
+        # abajo), pero los EVENTOS CTR adversos solo se emiten si publicamos un
+        # `prompt_enviado` nuevo — en un reintento idempotente ya se emitieron en
+        # el intento original y re-emitirlos duplicaria evidencia.
         try:
             adversarial_matches = self.detect_adversarial(user_message)
         except Exception:
             logger.exception("guardrails.detect failed; skipping adversarial events")
             adversarial_matches = []
 
-        for match in adversarial_matches:
+        for match in adversarial_matches if published_prompt_uuid is not None else []:
             adv_seq = await self.sessions.next_seq(state)
             adv_event = self._build_event(
                 state=state,
@@ -488,13 +533,16 @@ class TutorCore:
         # temporal cross-prompt. A diferencia del detector regex (Fase A pura),
         # este requiere estado por episodio en Redis. Mismo patron side-channel:
         # NO bloquea el flow; fail-soft si Redis cae.
-        if self.overuse_detector is not None:
+        # FIX B: en un reintento idempotente (published_prompt_uuid is None) el
+        # prompt ya se contabilizo en el ledger de overuse del intento original;
+        # no lo re-registramos para no inflar el detector.
+        if self.overuse_detector is not None and published_prompt_uuid is not None:
             now_ts = time.time()
             try:
                 # Registrar el prompt actual en el ledger del episodio
                 await self.overuse_detector.record_prompt(
                     state.episode_id,
-                    UUID(prompt_event["event_uuid"]),
+                    UUID(published_prompt_uuid),
                     now_ts,
                 )
                 overuse_match = await self.overuse_detector.check(state.episode_id, now_ts)
@@ -1004,6 +1052,11 @@ class TutorCore:
             current_code=current_code,
         )
         await self.sessions.set(state)
+        # FIX A: reponer el contador atómico de seq desde el max seq ya
+        # persistido (events_count). El worker exige `expected_seq ==
+        # events_count`, así que el próximo INCR debe reservar exactamente
+        # events_count — NUNCA resetear a 0 sobre un episodio con historia.
+        await self.sessions.init_seq_counter(episode_id, int(ep["events_count"]))
 
         # Métrica: la sesión reaparece como activa.
         tutor_active_sessions_count.add(1)
@@ -1716,9 +1769,12 @@ class TutorCore:
     ) -> dict:
         """Construye el dict de evento en el formato que espera ctr-service.
 
-        El `seq` se pasa explícitamente cuando ya lo reservamos con
-        `sessions.next_seq()` (para que el orden de publicación refleje
-        la reserva del seq).
+        El `seq` SIEMPRE debe pasarse explícito: es el valor reservado
+        ATÓMICAMENTE por `sessions.next_seq()` (contador Redis INCR, FIX A).
+        `state.seq` es solo un espejo NO autoritativo del JSON de sesión y puede
+        estar desactualizado ante concurrencia — usarlo para asignar seq
+        reintroduciría el bug de huecos. El fallback `seq is None` queda solo por
+        compatibilidad defensiva; ningún caller vigente lo usa.
         """
         if seq is None:
             seq = state.seq

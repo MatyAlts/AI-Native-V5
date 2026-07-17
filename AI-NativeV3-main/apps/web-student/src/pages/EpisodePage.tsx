@@ -144,6 +144,11 @@ export function EpisodeView({ episodeId, onExit, ejercicioContext, getToken }: E
   // el mismo mensaje. Separado de `error` (que si es fatal: hidratacion/cierre).
   const [sendError, setSendError] = useState<string | null>(null)
   const [lastFailedMessage, setLastFailedMessage] = useState<string | null>(null)
+  // FIX B: clave estable por turno del alumno. Se genera una nueva por cada
+  // envio fresco y se REUSA en handleRetry, asi el server deduplica el
+  // prompt_enviado (mismo seq, sin re-publicar) y no crea prompts huerfanos que
+  // inflarian CCD_orphan_ratio y el conteo de prompts de la tesis.
+  const messageUuidRef = useRef<string | null>(null)
   const [hydrating, setHydrating] = useState<boolean>(true)
   const [closed, setClosed] = useState<boolean>(false)
   // Guard de doble-submit (NB-11): cierre/pausa disparan requests async. Un
@@ -445,7 +450,13 @@ export function EpisodeView({ episodeId, onExit, ejercicioContext, getToken }: E
   async function handleSend(retryMessage?: string) {
     const userMessage = (retryMessage ?? input).trim()
     if (!userMessage || streaming) return
-    if (retryMessage == null) {
+    const isRetry = retryMessage != null
+    // FIX B: envio fresco → nueva clave; reintento → reusar la misma para que el
+    // server deduplique el prompt_enviado en vez de duplicarlo.
+    const messageUuid =
+      isRetry && messageUuidRef.current ? messageUuidRef.current : crypto.randomUUID()
+    messageUuidRef.current = messageUuid
+    if (!isRetry) {
       setInput("")
       setMessages((m) => [...m, { role: "user", content: userMessage, ts: Date.now() }])
     }
@@ -460,7 +471,7 @@ export function EpisodeView({ episodeId, onExit, ejercicioContext, getToken }: E
     setMessages((m) => [...m, tutorMessage])
 
     try {
-      for await (const event of sendMessage(episodeId, userMessage)) {
+      for await (const event of sendMessage(episodeId, userMessage, messageUuid)) {
         if (event.type === "chunk") {
           tutorMessage.content += event.content
           setMessages((m) => [...m.slice(0, -1), { ...tutorMessage }])
@@ -481,13 +492,14 @@ export function EpisodeView({ episodeId, onExit, ejercicioContext, getToken }: E
         }
       }
     } catch (e) {
-      // UI-8: mantener al alumno DENTRO. Sacamos solo la burbuja vacia del tutor
-      // de este intento (si no llego ningun chunk) y habilitamos el reintento.
-      // NO tocamos `closed` ni sessionStorage: el episodio sigue abierto.
+      // UI-8: mantener al alumno DENTRO. Sacamos la burbuja del tutor de ESTE
+      // intento —este o no llego ningun chunk— porque el "Reintentar" vuelve a
+      // streamear una respuesta fresca; dejar la parcial huerfana confundiria al
+      // alumno y quedaria colgada sin evento tutor_respondio en el CTR (el LLM
+      // fallo a mitad). NO tocamos `closed` ni sessionStorage: el episodio sigue
+      // abierto.
       setMessages((m) =>
-        m.length > 0 && m[m.length - 1]?.role === "tutor" && m[m.length - 1]?.content === ""
-          ? m.slice(0, -1)
-          : m,
+        m.length > 0 && m[m.length - 1]?.role === "tutor" ? m.slice(0, -1) : m,
       )
       console.warn("tutor stream failed (retryable):", e)
       setLastFailedMessage(userMessage)

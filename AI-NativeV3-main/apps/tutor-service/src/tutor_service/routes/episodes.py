@@ -33,7 +33,7 @@ from tutor_service.services.clients import (
     GovernanceClient,
 )
 from tutor_service.services.guardrails import OveruseDetector
-from tutor_service.services.session import SessionManager
+from tutor_service.services.session import SeqReservationPendingError, SessionManager
 from tutor_service.services.tutor_core import TutorCore
 
 router = APIRouter(prefix="/api/v1/episodes", tags=["tutor"])
@@ -117,25 +117,24 @@ async def _idempotent_seq(
     sesión, dejando un hueco en la secuencia que el partition_worker no puede
     cerrar → el episodio queda `integrity_compromised` de forma permanente.
 
-    Con dedup:
-      - Si el `idempotency_key` YA se vio para este episodio → devolvemos el
-        mismo seq asignado la primera vez, SIN llamar a `emit()` (no se avanza
-        el contador ni se re-publica al CTR). Respuesta idempotente.
-      - Si es nuevo (o no vino header) → `emit()` normal y se registra el
-        `idempotency_key -> seq` para futuros reintentos.
+    Delega en `SessionManager.reserve_or_get_seq` (FIX A), que hace el claim de
+    idempotencia de forma ATÓMICA (HSETNX ANTES de reservar el seq). Esto cierra
+    el race del check-then-act previo (`get_seen_seq`→`emit`→`mark_seen`), donde
+    dos coroutines con el mismo `event_uuid` veían `seen=None` y ambas emitían.
 
     Sin header (`idempotency_key=None`) el comportamiento es idéntico al previo:
     los callers legacy que no mandan el header no cambian.
     """
     sessions = _get_tutor().sessions
-    if idempotency_key:
-        cached = await sessions.get_seen_seq(episode_id, idempotency_key)
-        if cached is not None:
-            return cached
-    seq = await emit()
-    if idempotency_key:
-        await sessions.mark_seen(episode_id, idempotency_key, seq)
-    return seq
+    try:
+        return await sessions.reserve_or_get_seq(episode_id, idempotency_key, emit)
+    except SeqReservationPendingError as e:
+        # Caso degenerado y raro (ganador del claim en otra réplica, lento o
+        # caído). Fail-safe: NO duplicamos ni inventamos seq — pedimos reintento.
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Reserva de secuencia en curso, reintentá en un momento.",
+        ) from e
 
 
 # ── Schemas ─────────────────────────────────────────────────────────
@@ -386,15 +385,25 @@ async def _enforce_message_rate_limit(user_id: UUID) -> None:
 async def send_message(
     episode_id: UUID,
     req: MessageRequest,
+    idempotency_key: str | None = Header(default=None, alias="Idempotency-Key"),
     user: User = Depends(require_role("estudiante", "docente", "docente_admin", "superadmin")),
 ):
-    """SSE streaming de la respuesta del tutor."""
+    """SSE streaming de la respuesta del tutor.
+
+    FIX B: el frontend manda un `Idempotency-Key` estable por turno (messageUuid)
+    que reusa en el "Reintentar" de UI-8. Se propaga a `interact()` para
+    deduplicar el `prompt_enviado`: si el LLM falla a mitad y el alumno
+    reintenta, el prompt NO se re-emite (mismo seq, sin re-publicar), evitando
+    prompts huérfanos que inflarían CCD_orphan_ratio y el conteo de la tesis.
+    """
     await _enforce_message_rate_limit(user.id)
     tutor = _get_tutor()
 
     async def event_stream():
         try:
-            async for event in tutor.interact(episode_id, req.content):
+            async for event in tutor.interact(
+                episode_id, req.content, prompt_idempotency_key=idempotency_key
+            ):
                 yield f"data: {json.dumps(event, ensure_ascii=False)}\n\n"
         except ValueError as e:
             yield f"data: {json.dumps({'type': 'error', 'message': str(e)})}\n\n"

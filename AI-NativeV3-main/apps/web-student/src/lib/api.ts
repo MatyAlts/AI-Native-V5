@@ -260,6 +260,7 @@ export async function getEpisodeState(
 export async function* sendMessage(
   episodeId: string,
   content: string,
+  idempotencyKey?: string,
   getToken?: TokenGetter,
 ): AsyncGenerator<
   | { type: "chunk"; content: string }
@@ -269,6 +270,10 @@ export async function* sendMessage(
   unknown
 > {
   const headers = await authHeaders(getToken)
+  // FIX B: clave estable por turno del alumno. En el "Reintentar" de UI-8
+  // EpisodePage reusa el MISMO valor, asi el server deduplica el prompt_enviado
+  // (mismo seq, sin re-publicar) y no genera prompts huerfanos.
+  if (idempotencyKey) headers["Idempotency-Key"] = idempotencyKey
   const response = await fetch(`/api/v1/episodes/${episodeId}/message`, {
     method: "POST",
     headers: { ...headers, Accept: "text/event-stream" },
