@@ -41,7 +41,10 @@ class MaterialListOut(BaseModel):
 
 
 class ChunkOut(BaseModel):
-    """Versión expuesta de un chunk, sin el embedding (irrelevante para UI)."""
+    """Versión expuesta de un chunk, sin el embedding crudo (1024 floats,
+    irrelevante para UI). Sí expone `embedding_model` + `has_embedding` para que
+    el docente vea con qué se indexó y si el vector realmente existe (F3 —
+    observabilidad del RAG, relacionado con BUG-4)."""
 
     model_config = ConfigDict(from_attributes=True)
 
@@ -54,6 +57,22 @@ class ChunkOut(BaseModel):
     chunk_type: str
     position: int
     meta: dict[str, Any]
+    embedding_model: str | None = None
+    has_embedding: bool = False
+
+
+class MaterialChunksOut(BaseModel):
+    """Chunks de un material + metadata del modo de embedding con el que se
+    indexó. `is_semantic_embedding` es False cuando el corpus se indexó con el
+    embedder mock (vectores por hash, retrieval NO real — BUG-4)."""
+
+    material_id: UUID
+    estado: str
+    chunks_count: int
+    embedding_model: str | None = None
+    is_semantic_embedding: bool | None = None
+    data: list[ChunkOut]
+    meta: dict[str, Any] = Field(default_factory=dict)
 
 
 # ── Retrieval ─────────────────────────────────────────────────────────
@@ -118,3 +137,32 @@ class IngestionStatus(BaseModel):
     progress_pct: int = Field(ge=0, le=100)
     chunks_created: int = 0
     error_message: str | None = None
+
+
+# ── Retrieval test (F3: "probá una consulta" desde la UI del docente) ──
+
+
+class RetrievalTestRequest(BaseModel):
+    """Input del probador de retrieval del docente. Scope siempre por materia
+    (la UI del docente resuelve el materia_id de la comisión activa)."""
+
+    query: str = Field(min_length=1, max_length=2000)
+    materia_id: UUID
+    top_k: int = Field(default=5, ge=1, le=20)
+    score_threshold: float = Field(default=0.3, ge=0.0, le=1.0)
+
+
+class RetrievalTestResponse(BaseModel):
+    """Resultado del retrieval real (embed query + búsqueda vectorial + rerank)
+    más el modo del pipeline, para que el docente sepa si los scores son reales.
+
+    `is_semantic_embedding=False` ⇒ el índice usa vectores mock (hash): los
+    scores NO reflejan relevancia semántica real (BUG-4 / F3(d))."""
+
+    chunks: list[RetrievedChunk]
+    chunks_used_hash: str
+    latency_ms: float
+    rerank_applied: bool
+    embedder_model: str
+    is_semantic_embedding: bool
+    reranker_model: str

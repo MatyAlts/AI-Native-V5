@@ -59,6 +59,56 @@ async def test_governance_get_active_configs() -> None:
     assert "active" in out
 
 
+@pytest.mark.asyncio
+@respx.mock
+async def test_governance_sends_internal_service_token_when_set() -> None:
+    """A0.1/A0.4: con token seteado, las llamadas a governance incluyen el
+    header X-Internal-Service-Token en TODOS los endpoints."""
+    captured: dict = {}
+
+    def cap(req: httpx.Request) -> httpx.Response:
+        captured.setdefault("headers", []).append(dict(req.headers))
+        return httpx.Response(
+            200,
+            json={"name": "tutor", "version": "v1.0.0", "content": "p", "hash": "h"},
+        )
+
+    respx.get(f"{GOV}/api/v1/prompts/tutor/v1.0.0").mock(side_effect=cap)
+    respx.get(f"{GOV}/api/v1/active_configs").mock(
+        side_effect=lambda req: (
+            captured.setdefault("headers", []).append(dict(req.headers))
+            or httpx.Response(200, json={"active": {"default": {}}})
+        )
+    )
+    client = GovernanceClient(GOV, internal_service_token="s3cr3t-shared")
+    await client.get_prompt("tutor", "v1.0.0")
+    await client.get_active_configs()
+
+    assert captured["headers"]  # se capturaron requests
+    for h in captured["headers"]:
+        assert h["x-internal-service-token"] == "s3cr3t-shared"
+
+
+@pytest.mark.asyncio
+@respx.mock
+async def test_governance_omits_internal_service_token_when_empty() -> None:
+    """Backward-compat: sin token, NO se manda el header (estado flag-OFF)."""
+    captured: dict = {}
+
+    def cap(req: httpx.Request) -> httpx.Response:
+        captured["headers"] = dict(req.headers)
+        return httpx.Response(
+            200,
+            json={"name": "tutor", "version": "v1.0.0", "content": "p", "hash": "h"},
+        )
+
+    respx.get(f"{GOV}/api/v1/prompts/tutor/v1.0.0").mock(side_effect=cap)
+    client = GovernanceClient(GOV)  # token vacio por default
+    await client.get_prompt("tutor", "v1.0.0")
+
+    assert "x-internal-service-token" not in captured["headers"]
+
+
 # ---------- ContentClient ----------
 
 
@@ -198,6 +248,62 @@ async def test_ai_gateway_stream_yields_usage_event() -> None:
             "cost_usd": 0.0007,
         },
     ]
+
+
+@pytest.mark.asyncio
+@respx.mock
+async def test_ai_gateway_sends_internal_service_token_when_set() -> None:
+    """A0.1/A0.4: con token seteado, la llamada al ai-gateway incluye el
+    header X-Internal-Service-Token sin alterar payload ni streaming."""
+    captured: dict = {}
+
+    def cap(req: httpx.Request) -> httpx.Response:
+        captured["headers"] = dict(req.headers)
+        return httpx.Response(
+            200,
+            content=b'data: {"type":"token","content":"ok"}\n\n',
+            headers={"Content-Type": "text/event-stream"},
+        )
+
+    respx.post(f"{AI_GW}/api/v1/stream").mock(side_effect=cap)
+    client = AIGatewayClient(AI_GW, internal_service_token="s3cr3t-shared")
+    out: list[dict] = []
+    async for c in client.stream(
+        messages=[{"role": "user", "content": "x"}],
+        model="m",
+        tenant_id=uuid4(),
+    ):
+        out.append(c)
+
+    assert captured["headers"]["x-internal-service-token"] == "s3cr3t-shared"
+    # payload/streaming intactos
+    assert out == [{"type": "chunk", "content": "ok"}]
+
+
+@pytest.mark.asyncio
+@respx.mock
+async def test_ai_gateway_omits_internal_service_token_when_empty() -> None:
+    """Backward-compat: sin token, NO se manda el header (estado flag-OFF)."""
+    captured: dict = {}
+
+    def cap(req: httpx.Request) -> httpx.Response:
+        captured["headers"] = dict(req.headers)
+        return httpx.Response(
+            200,
+            content=b'data: {"type":"token","content":"ok"}\n\n',
+            headers={"Content-Type": "text/event-stream"},
+        )
+
+    respx.post(f"{AI_GW}/api/v1/stream").mock(side_effect=cap)
+    client = AIGatewayClient(AI_GW)  # token vacio por default
+    async for _ in client.stream(
+        messages=[{"role": "user", "content": "x"}],
+        model="m",
+        tenant_id=uuid4(),
+    ):
+        pass
+
+    assert "x-internal-service-token" not in captured["headers"]
 
 
 @pytest.mark.asyncio

@@ -3,8 +3,23 @@
 # o como worker de partition.
 #
 # Variables:
-#   CTR_MODE=server (default): arranca uvicorn en :8007
-#   CTR_MODE=worker + CTR_WORKER_PARTITION=N: arranca partition_worker
+#   CTR_MODE=http: SOLO uvicorn en :8007 (sin workers in-process). Usar en prod
+#     cuando los partition_worker corren en containers dedicados (ctr-worker-N).
+#   CTR_MODE=server (default): uvicorn en :8007 + los 8 partition_worker
+#     in-process (monolitico single-node; dev/local). NO combinar con containers
+#     ctr-worker-N dedicados => duplicaria writers por particion (ver abajo).
+#   CTR_MODE=worker + CTR_WORKER_PARTITION=N: arranca UN partition_worker.
+#
+# INVARIANTE single-writer por particion (ADR-010, NUM_PARTITIONS=8): cada
+# particion 0..7 (stream Redis ctr.pN) debe ser drenada a Postgres por EXACTA-
+# mente UN proceso worker en todo el cluster. Dos procesos sobre la misma
+# particion (mismo consumer_group `ctr_workers` + mismo consumer_name
+# `worker-N`) compiten por el PEL y procesan el mismo evento dos veces. El
+# chain_hash NO se bifurca (SELECT FOR UPDATE sobre el episodio + validacion de
+# seq + INSERT ON CONFLICT lo protegen); el dano real es entrega/procesamiento
+# DESORDENADO -> seq != expected_seq -> ValueError -> dead-letter ->
+# integrity_compromised PERMANENTE. Por eso `http` existe: en prod
+# el ctr-service NO debe spawnear los workers que ya corren en ctr-worker-0..7.
 #
 # Importante: usa /app/.venv/bin/python con path absoluto explicito porque
 # EasyPanel u otros orquestadores pueden generar un docker-compose.override
@@ -68,8 +83,23 @@ case "${CTR_MODE:-server}" in
     echo "[ctr-entrypoint] arrancando worker partition=${CTR_WORKER_PARTITION}"
     exec "$VENV_PY" -m ctr_service.workers.partition_worker --partition "${CTR_WORKER_PARTITION}"
     ;;
+  http)
+    # HTTP-only: SOLO el server FastAPI. `ctr_service.main:app` NO spawnea
+    # workers (su lifespan solo hace observabilidad), asi que este modo garantiza
+    # que el ctr-service NO escribe ninguna particion. Los 8 partition_worker
+    # corren en containers dedicados ctr-worker-0..7 (uno por particion) =>
+    # single-writer por particion preservado (ADR-010).
+    echo "[ctr-entrypoint] arrancando HTTP server :8007 (modo http, sin workers in-process)"
+    exec "$VENV_PY" -m uvicorn ctr_service.main:app --host 0.0.0.0 --port 8007
+    ;;
   server|*)
-    echo "[ctr-entrypoint] arrancando workers partition 0-7 en background"
+    # Monolitico single-node (dev/local): HTTP + los 8 workers in-process.
+    # ADVERTENCIA: NO usar en un despliegue que TAMBIEN corre containers
+    # ctr-worker-N dedicados. Ahi habria 2 writers por particion (el worker
+    # in-process y el container) => rompe single-writer (ADR-010). En prod usar
+    # CTR_MODE=http para el ctr-service y dejar los ctr-worker-N como unicos
+    # writers.
+    echo "[ctr-entrypoint] arrancando workers partition 0-7 en background (modo server monolitico)"
     for p in 0 1 2 3 4 5 6 7; do
       "$VENV_PY" -m ctr_service.workers.partition_worker --partition "$p" &
     done

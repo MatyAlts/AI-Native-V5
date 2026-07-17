@@ -43,11 +43,31 @@ class Settings(BaseSettings):
     require_gateway_signature: bool = Field(default=False)
     gateway_shared_secret: str = Field(default="")
 
+    # Token compartido de plataforma para llamadas internas server-to-server
+    # que NO pasan por el api-gateway (academic → classifier / ai-gateway
+    # directo). Cuando esos servicios prenden `require_gateway_signature`,
+    # aceptan procedencia via firma del gateway O via este token en el header
+    # `X-Internal-Service-Token`. Default vacío => NO se manda el header
+    # (backward-compat: comportamiento idéntico al actual). Setear el mismo
+    # secreto en todos los servicios de la plataforma para activarlo.
+    internal_service_token: str = Field(default="")
+
     # Database
     academic_db_url: str = Field(
         default="postgresql+asyncpg://academic_user:academic_pass@127.0.0.1:5432/academic_main"
     )
     db_echo: bool = Field(default=False)
+
+    # Rate limiting del canje de invite_code (A0.7 — anti fuerza bruta).
+    # Redis compartido con el resto del stack (misma db index que el gateway).
+    rate_limit_redis_url: str = Field(default="redis://127.0.0.1:6379/4")
+    # Bucket por actor (user_id | IP): tope de intentos de canje por ventana.
+    invite_join_actor_max_attempts: int = Field(default=10, ge=1)
+    invite_join_actor_window_seconds: int = Field(default=60, ge=1)
+    # Bucket por código: tope de intentos FALLIDOS por ventana (fuerza bruta
+    # distribuida sobre un mismo código). Los aciertos no cuentan.
+    invite_join_code_max_failures: int = Field(default=20, ge=1)
+    invite_join_code_window_seconds: int = Field(default=300, ge=1)
 
     # External services (Sec 11 epic ai-native-completion: TP-gen IA)
     governance_service_url: str = Field(default="http://127.0.0.1:8010")
@@ -70,6 +90,12 @@ class Settings(BaseSettings):
     # Default Gemini (namespaced → OpenRouter con fallback keyless a Gemini nativo).
     # Override por env EJERCICIO_GENERATOR_DEFAULT_MODEL.
     ejercicio_generator_default_model: str = Field(default="google/gemini-2.0-flash")
+    # P-9 / A2.4: límite de generaciones IA (TP/ejercicio) concurrentes. Cada
+    # generación pega al LLM hasta 3×90s; sin tope, N docentes disparando el
+    # wizard a la vez saturan al ai-gateway y (por el patrón viejo) agotaban el
+    # pool de Postgres. Semáforo compartido por ambos endpoints /generate.
+    # Override por env AI_GENERATION_MAX_CONCURRENCY.
+    ai_generation_max_concurrency: int = Field(default=4, ge=1)
 
 
 @lru_cache

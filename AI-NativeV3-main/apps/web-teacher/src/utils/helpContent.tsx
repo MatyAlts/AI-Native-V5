@@ -718,4 +718,40 @@ export const helpContent: HelpContentMap = {
       </ul>
     </div>
   ),
+
+  usoIa: (
+    <div className="space-y-4 text-sidebar-text-muted">
+      <p className="text-lg font-medium text-[var(--text-inverse)]">Uso de IA</p>
+      <p>
+        Panel de solo lectura del consumo de las claves de IA (BYOK) visibles para vos. Para cada
+        clave muestra el uso agregado del periodo elegido: tokens de entrada y salida, costo
+        estimado en USD y cantidad de requests al proveedor.
+      </p>
+      <ul className="list-disc list-inside space-y-2 ml-4">
+        <li>
+          <strong>Periodo:</strong> selector de mes (YYYYMM). Por default el mes en curso. Al
+          cambiarlo se recalcula el uso de cada clave para ese mes.
+        </li>
+        <li>
+          <strong>Tokens entrada/salida:</strong> agregados del mes por clave (y sumados arriba en
+          la franja de totales).
+        </li>
+        <li>
+          <strong>Costo estimado:</strong> costo en USD acumulado del mes. Si la clave tiene
+          presupuesto mensual configurado, se muestra como referencia.
+        </li>
+        <li>
+          <strong>Fingerprint:</strong> ultimos 4 caracteres de la clave — nunca se expone el valor
+          real.
+        </li>
+      </ul>
+      <div className="bg-sidebar-bg-edge p-4 rounded-lg mt-4">
+        <p className="text-accent-brand font-medium">Solo lectura</p>
+        <p className="text-sm mt-1">
+          Crear, rotar o revocar claves es tarea del admin desde web-admin. Aca solo consultas el
+          consumo. Si no ves ninguna clave, pedile al admin de tu facultad que configure una.
+        </p>
+      </div>
+    </div>
+  ),
 }

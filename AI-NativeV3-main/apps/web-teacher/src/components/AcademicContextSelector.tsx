@@ -7,10 +7,13 @@
  * plantillas viven a nivel (materia, periodo) y se fan-out-ean a todas
  * las comisiones de esa materia+periodo (ADR-016).
  *
- * Estrategia de fetch: cada nivel dispara su propio fetch cuando el
- * nivel anterior cambia. Usamos `useState` + promesas (mismo patron que
- * `ComisionSelector` / `TareasPracticasView` — el repo no
- * estandarizo TanStack Query en estos componentes todavia).
+ * Estrategia de fetch: cada nivel es un `useQuery` de TanStack Query con
+ * query key estable por ID del nivel anterior (`["catalogo", <nivel>, <id>]`)
+ * y `enabled: !!id`. El array del queryKey reemplaza la memoizacion manual
+ * de fetchFn — no hay closures inline dependientes de IDs que dispararan el
+ * loop de refetch (effect -> setState -> re-render -> nuevo closure -> effect)
+ * que saturaba el rate-limiter con ~36 req/s -> 429. Cambiar de nivel cambia
+ * la key: TanStack cachea/deduplica y refetchea solo cuando la key cambia.
  *
  * Degradacion: si un endpoint devuelve 403/404/500, el select muestra un
  * error inline y los siguientes quedan deshabilitados. No usamos
@@ -18,7 +21,8 @@
  * existe (academic-service `universidades.py`, `facultades.py`,
  * `carreras.py`, `planes.py`, `materias.py`, `comisiones.py`).
  */
-import { useCallback, useEffect, useState } from "react"
+import { type UseQueryResult, useQuery } from "@tanstack/react-query"
+import { useEffect, useState } from "react"
 import {
   type Carrera,
   type Facultad,
@@ -50,37 +54,16 @@ interface LevelState<T> {
   error: string | null
 }
 
-const INITIAL_LEVEL: LevelState<never> = {
-  data: null,
-  loading: false,
-  error: null,
-}
-
-function useCascadeLevel<T>(fetchFn: (() => Promise<T[]>) | null): LevelState<T> {
-  const [state, setState] = useState<LevelState<T>>(INITIAL_LEVEL)
-
-  useEffect(() => {
-    if (!fetchFn) {
-      setState(INITIAL_LEVEL)
-      return
-    }
-    let cancelled = false
-    setState({ data: null, loading: true, error: null })
-    fetchFn()
-      .then((data) => {
-        if (cancelled) return
-        setState({ data, loading: false, error: null })
-      })
-      .catch((e) => {
-        if (cancelled) return
-        setState({ data: null, loading: false, error: String(e) })
-      })
-    return () => {
-      cancelled = true
-    }
-  }, [fetchFn])
-
-  return state
+// Adapta un resultado de useQuery al shape que consume `CascadeSelect`
+// (data/loading/error). Con `enabled: false` TanStack deja el query en idle
+// (isLoading=false, data=undefined) -> el nivel se renderiza deshabilitado
+// sin fetch, igual que el placeholder original.
+function levelFrom<T>(query: UseQueryResult<T[]>): LevelState<T> {
+  return {
+    data: query.data ?? null,
+    loading: query.isLoading,
+    error: query.error ? String(query.error) : null,
+  }
 }
 
 export function AcademicContextSelector({ value, onChange, getToken }: Props) {
@@ -91,40 +74,57 @@ export function AcademicContextSelector({ value, onChange, getToken }: Props) {
   const [materiaId, setMateriaId] = useState<string>(value?.materiaId ?? "")
   const [periodoId, setPeriodoId] = useState<string>(value?.periodoId ?? "")
 
-  // CRITICAL: los fetchFn DEBEN ser memoizados con useCallback. Sin esto,
-  // cada render crea un closure nuevo, useEffect en useCascadeLevel ve una
-  // nueva referencia y dispara refetch → setState → re-render → loop infinito
-  // (rate-limiter lo corta en 429). Las deps son solo los primitivos que
-  // realmente invalidan el fetch (IDs + getToken).
-  const fetchUniversidades = useCallback(() => catalogoApi.universidades(getToken), [getToken])
-  const universidades = useCascadeLevel<Universidad>(fetchUniversidades)
-
-  const fetchFacultades = useCallback(
-    () => catalogoApi.facultades(universidadId, getToken),
-    [universidadId, getToken],
+  // Cada nivel es un useQuery con key estable por el ID del nivel padre.
+  // El array del queryKey ES la memoizacion: TanStack solo refetchea cuando
+  // la key cambia (no en cada render), lo que elimina de raiz el loop 429 que
+  // tenia el patron useState+useEffect(fetchFn) con closures inline. getToken
+  // NO va en la key (no es serializable-estable) — el queryFn captura el
+  // ultimo valor via closure sin invalidar el cache.
+  const universidades = levelFrom<Universidad>(
+    useQuery({
+      queryKey: ["catalogo", "universidades"],
+      queryFn: () => catalogoApi.universidades(getToken),
+    }),
   )
-  const facultades = useCascadeLevel<Facultad>(universidadId ? fetchFacultades : null)
 
-  const fetchCarreras = useCallback(
-    () => catalogoApi.carreras(facultadId, getToken),
-    [facultadId, getToken],
+  const facultades = levelFrom<Facultad>(
+    useQuery({
+      queryKey: ["catalogo", "facultades", universidadId],
+      queryFn: () => catalogoApi.facultades(universidadId, getToken),
+      enabled: !!universidadId,
+    }),
   )
-  const carreras = useCascadeLevel<Carrera>(facultadId ? fetchCarreras : null)
 
-  const fetchPlanes = useCallback(
-    () => catalogoApi.planes(carreraId, getToken),
-    [carreraId, getToken],
+  const carreras = levelFrom<Carrera>(
+    useQuery({
+      queryKey: ["catalogo", "carreras", facultadId],
+      queryFn: () => catalogoApi.carreras(facultadId, getToken),
+      enabled: !!facultadId,
+    }),
   )
-  const planes = useCascadeLevel<Plan>(carreraId ? fetchPlanes : null)
 
-  const fetchMaterias = useCallback(
-    () => catalogoApi.materias(planId, getToken),
-    [planId, getToken],
+  const planes = levelFrom<Plan>(
+    useQuery({
+      queryKey: ["catalogo", "planes", carreraId],
+      queryFn: () => catalogoApi.planes(carreraId, getToken),
+      enabled: !!carreraId,
+    }),
   )
-  const materias = useCascadeLevel<Materia>(planId ? fetchMaterias : null)
 
-  const fetchPeriodos = useCallback(() => catalogoApi.periodos(getToken), [getToken])
-  const periodos = useCascadeLevel<Periodo>(fetchPeriodos)
+  const materias = levelFrom<Materia>(
+    useQuery({
+      queryKey: ["catalogo", "materias", planId],
+      queryFn: () => catalogoApi.materias(planId, getToken),
+      enabled: !!planId,
+    }),
+  )
+
+  const periodos = levelFrom<Periodo>(
+    useQuery({
+      queryKey: ["catalogo", "periodos"],
+      queryFn: () => catalogoApi.periodos(getToken),
+    }),
+  )
 
   // Cuando cambia un nivel, invalidamos los siguientes (no se puede
   // tener materia seleccionada si cambiaste de plan).

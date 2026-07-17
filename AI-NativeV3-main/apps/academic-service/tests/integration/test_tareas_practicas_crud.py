@@ -33,6 +33,15 @@ def mock_session():
     session.flush = AsyncMock()
     session.refresh = AsyncMock()
     session.add = MagicMock()
+    # Default para queries del service (ej. el SELECT de tp_ejercicios en
+    # new_version): result vacío. Los tests que necesitan filas concretas
+    # (list_versions) sobreescriben `session.execute` con su propio side_effect.
+    _empty_result = MagicMock()
+    _empty_scalars = MagicMock()
+    _empty_scalars.all = MagicMock(return_value=[])
+    _empty_result.scalars = MagicMock(return_value=_empty_scalars)
+    _empty_result.scalar_one_or_none = MagicMock(return_value=None)
+    session.execute = AsyncMock(return_value=_empty_result)
     return session
 
 

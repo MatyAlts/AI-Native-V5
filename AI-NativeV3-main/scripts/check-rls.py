@@ -1,12 +1,20 @@
 #!/usr/bin/env python3
-"""Verifica que cada tabla con tenant_id tenga política RLS activa.
+"""Verifica que cada tabla con tenant_id tenga RLS realmente activo y forzado.
+
+Por cada tabla con columna tenant_id valida las TRES condiciones (ADR-001):
+    1. Existe policy RLS               (pg_policies)
+    2. RLS habilitado                  (pg_class.relrowsecurity = true)
+    3. RLS forzado para el owner       (pg_class.relforcerowsecurity = true)
+
+Verificar solo (1) da falsa confianza: una tabla puede tener policy con RLS
+deshabilitado y la policy NUNCA se aplica.
 
 Usar:
     python scripts/check-rls.py
 
 Exit code:
-    0 = todas las tablas con tenant_id tienen policy
-    1 = al menos una tabla con tenant_id NO tiene policy (y lo lista)
+    0 = todas las tablas con tenant_id cumplen las 3 condiciones
+    1 = al menos una tabla no cumple alguna condicion (y lo lista por tabla)
     2 = no se pudo conectar a la base
 
 Este script corre en CI como última verificación después de las migraciones.
@@ -22,7 +30,19 @@ from sqlalchemy.ext.asyncio import create_async_engine
 
 
 async def check_database(name: str, dsn: str) -> list[str]:
-    """Devuelve la lista de tablas con tenant_id sin policy RLS."""
+    """Devuelve issues por cada tabla con tenant_id que no cumpla las 3 condiciones.
+
+    Para cada tabla con columna ``tenant_id`` en el schema ``public`` verifica:
+      1. Que exista al menos una policy RLS (``pg_policies``).
+      2. Que RLS este HABILITADO (``pg_class.relrowsecurity = true``).
+      3. Que RLS este FORZADO (``pg_class.relforcerowsecurity = true``),
+         para que el owner de la tabla NO pueda bypassear la policy.
+
+    Una policy sin ``relrowsecurity`` NO se aplica: la tabla queda abierta
+    aunque el check viejo (que solo miraba ``pg_policies``) diera verde. Por
+    eso las 3 condiciones se evaluan juntas en una sola query autoritativa
+    sobre ``pg_class``.
+    """
     engine = create_async_engine(dsn)
     try:
         async with engine.connect() as conn:
@@ -32,37 +52,41 @@ async def check_database(name: str, dsn: str) -> list[str]:
                     FROM information_schema.columns
                     WHERE column_name = 'tenant_id' AND table_schema = 'public'
                 ),
-                rls_tables AS (
-                    SELECT DISTINCT tablename AS table_name
+                policy_counts AS (
+                    SELECT tablename AS table_name, count(*) AS n_policies
                     FROM pg_policies
                     WHERE schemaname = 'public'
+                    GROUP BY tablename
                 )
-                SELECT t.table_name FROM tenant_tables t
-                LEFT JOIN rls_tables r ON t.table_name = r.table_name
-                WHERE r.table_name IS NULL
+                SELECT
+                    t.table_name,
+                    COALESCE(c.relrowsecurity, false)      AS rls_enabled,
+                    COALESCE(c.relforcerowsecurity, false) AS rls_forced,
+                    COALESCE(p.n_policies, 0)              AS n_policies
+                FROM tenant_tables t
+                LEFT JOIN pg_class c
+                    ON c.relname = t.table_name
+                    AND c.relkind = 'r'
+                    AND c.relnamespace = 'public'::regnamespace
+                LEFT JOIN policy_counts p
+                    ON p.table_name = t.table_name
                 ORDER BY t.table_name
             """)
-            tables_without_rls = [row[0] for row in result]
-
-            # Verificar también FORCE RLS
-            result = await conn.exec_driver_sql("""
-                SELECT relname FROM pg_class c
-                JOIN information_schema.columns col
-                    ON col.table_name = c.relname AND col.column_name = 'tenant_id'
-                WHERE col.table_schema = 'public'
-                  AND c.relkind = 'r'
-                  AND c.relrowsecurity = true
-                  AND c.relforcerowsecurity = false
-            """)
-            tables_without_force = [row[0] for row in result]
+            rows = list(result)
     finally:
         await engine.dispose()
 
     issues = []
-    for t in tables_without_rls:
-        issues.append(f"  {name}.{t} -- sin politica RLS (usar apply_tenant_rls)")
-    for t in tables_without_force:
-        issues.append(f"  {name}.{t} -- sin FORCE ROW LEVEL SECURITY")
+    for table_name, rls_enabled, rls_forced, n_policies in rows:
+        missing = []
+        if n_policies == 0:
+            missing.append("sin policy RLS (usar apply_tenant_rls)")
+        if not rls_enabled:
+            missing.append("RLS deshabilitado (falta ENABLE ROW LEVEL SECURITY)")
+        if not rls_forced:
+            missing.append("RLS sin forzar (falta FORCE ROW LEVEL SECURITY)")
+        if missing:
+            issues.append(f"  {name}.{table_name} -- " + "; ".join(missing))
     return issues
 
 
@@ -98,12 +122,12 @@ async def main() -> int:
             return 2
 
     if all_issues:
-        print("[FAIL] Tablas con tenant_id sin policy RLS:")
+        print("[FAIL] Tablas con tenant_id sin RLS activo+forzado:")
         for issue in all_issues:
             print(issue)
         return 1
 
-    print("[OK] Todas las tablas con tenant_id tienen policy RLS + FORCE")
+    print("[OK] Todas las tablas con tenant_id tienen policy + RLS habilitado + FORCE")
     return 0
 
 

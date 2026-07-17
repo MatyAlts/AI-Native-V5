@@ -1,5 +1,6 @@
-import { HelpButton, PageContainer, StateMessage } from "@platform/ui"
-import { type ReactNode, useEffect, useState } from "react"
+import { HelpButton, PageContainer, StateMessage, useConfirm } from "@platform/ui"
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
+import { type ReactNode, useState } from "react"
 import {
   type Carrera,
   type CarreraCreate,
@@ -11,49 +12,48 @@ import {
 import { helpContent } from "../utils/helpContent"
 
 export function CarrerasPage(): ReactNode {
-  const [items, setItems] = useState<Carrera[]>([])
-  const [facultades, setFacultades] = useState<Facultad[]>([])
-  const [loading, setLoading] = useState(false)
-  const [error, setError] = useState<string | null>(null)
   const [showForm, setShowForm] = useState(false)
-  const [deletingId, setDeletingId] = useState<string | null>(null)
+  const confirm = useConfirm()
 
-  const load = async () => {
-    setLoading(true)
-    setError(null)
-    try {
-      const [carrs, facs] = await Promise.all([carrerasApi.list(), facultadesApi.list()])
-      setItems(carrs.data)
-      setFacultades(facs.data)
-    } catch (e) {
-      setError(e instanceof HttpError ? `${e.status}: ${e.detail || e.title}` : String(e))
-    } finally {
-      setLoading(false)
-    }
-  }
+  const queryClient = useQueryClient()
 
-  // biome-ignore lint/correctness/useExhaustiveDependencies: load — fetch mount-only; el handler usa setState con identidad estable.
-  useEffect(() => {
-    void load()
-  }, [])
+  const carrerasQuery = useQuery({
+    queryKey: ["carreras"],
+    queryFn: () => carrerasApi.list(),
+  })
+
+  const facultadesQuery = useQuery({
+    queryKey: ["facultades"],
+    queryFn: () => facultadesApi.list(),
+  })
+
+  const deleteMutation = useMutation({
+    mutationFn: (id: string) => carrerasApi.delete(id),
+    onSuccess: () => void queryClient.invalidateQueries({ queryKey: ["carreras"] }),
+    onError: (err) => {
+      const msg =
+        err instanceof HttpError ? `${err.status}: ${err.detail || err.title}` : String(err)
+      window.alert(`No se pudo eliminar: ${msg}`)
+    },
+  })
+
+  const items: Carrera[] = carrerasQuery.data?.data ?? []
+  const facultades: Facultad[] = facultadesQuery.data?.data ?? []
+  const loading = carrerasQuery.isLoading || facultadesQuery.isLoading
+
+  const queryError = carrerasQuery.error || facultadesQuery.error || deleteMutation.error
+  const error = queryError
+    ? queryError instanceof HttpError
+      ? `${queryError.status}: ${queryError.detail || queryError.title}`
+      : String(queryError)
+    : null
 
   const facMap = new Map(facultades.map((f) => [f.id, f]))
   const noFacultades = facultades.length === 0
 
   const handleDelete = async (c: Carrera) => {
-    if (!window.confirm(`¿Eliminar carrera ${c.nombre}?`)) return
-    setDeletingId(c.id)
-    setError(null)
-    try {
-      await carrerasApi.delete(c.id)
-      await load()
-    } catch (e) {
-      const msg = e instanceof HttpError ? `${e.status}: ${e.detail || e.title}` : String(e)
-      window.alert(`No se pudo eliminar: ${msg}`)
-      setError(msg)
-    } finally {
-      setDeletingId(null)
-    }
+    if (!(await confirm({ message: `¿Eliminar carrera ${c.nombre}?`, tone: "danger" }))) return
+    deleteMutation.mutate(c.id)
   }
 
   return (
@@ -79,9 +79,9 @@ export function CarrerasPage(): ReactNode {
         {showForm && !noFacultades && (
           <CarreraForm
             facultades={facultades}
-            onCreated={async () => {
+            onCreated={() => {
               setShowForm(false)
-              await load()
+              void queryClient.invalidateQueries({ queryKey: ["carreras"] })
             }}
           />
         )}
@@ -134,11 +134,13 @@ export function CarrerasPage(): ReactNode {
                     <td className="px-4 py-2 text-right">
                       <button
                         type="button"
-                        onClick={() => void handleDelete(c)}
-                        disabled={deletingId === c.id}
+                        onClick={() => handleDelete(c)}
+                        disabled={deleteMutation.isPending && deleteMutation.variables === c.id}
                         className="text-xs text-danger hover:text-danger disabled:opacity-50"
                       >
-                        {deletingId === c.id ? "Eliminando…" : "Eliminar"}
+                        {deleteMutation.isPending && deleteMutation.variables === c.id
+                          ? "Eliminando…"
+                          : "Eliminar"}
                       </button>
                     </td>
                   </tr>
@@ -167,25 +169,28 @@ function CarreraForm({
     duracion_semestres: 8,
     modalidad: "presencial",
   })
-  const [submitting, setSubmitting] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
-  const submit = async (e: React.FormEvent) => {
+  const createMutation = useMutation({
+    mutationFn: (data: CarreraCreate) => carrerasApi.create(data),
+    onSuccess: () => onCreated(),
+    onError: (err) =>
+      setError(
+        err instanceof HttpError ? `${err.status}: ${err.detail || err.title}` : String(err),
+      ),
+  })
+
+  const submit = (e: React.FormEvent) => {
     e.preventDefault()
-    setSubmitting(true)
     setError(null)
-    try {
-      await carrerasApi.create(form)
-      onCreated()
-    } catch (e) {
-      setError(e instanceof HttpError ? `${e.status}: ${e.detail || e.title}` : String(e))
-    } finally {
-      setSubmitting(false)
-    }
+    createMutation.mutate(form)
   }
 
   return (
-    <form onSubmit={submit} className="rounded-lg border border-border-soft bg-surface p-6 space-y-4">
+    <form
+      onSubmit={submit}
+      className="rounded-lg border border-border-soft bg-surface p-6 space-y-4"
+    >
       <div className="flex items-center gap-2 mb-2">
         <HelpButton
           size="sm"
@@ -300,10 +305,10 @@ function CarreraForm({
       <div className="flex justify-end gap-2">
         <button
           type="submit"
-          disabled={submitting}
+          disabled={createMutation.isPending}
           className="rounded-md bg-accent-brand text-white px-4 py-2 text-sm font-medium hover:bg-accent-brand-deep disabled:opacity-50"
         >
-          {submitting ? "Creando..." : "Crear"}
+          {createMutation.isPending ? "Creando..." : "Crear"}
         </button>
       </div>
     </form>

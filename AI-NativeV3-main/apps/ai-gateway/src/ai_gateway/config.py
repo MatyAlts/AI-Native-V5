@@ -76,6 +76,33 @@ class Settings(BaseSettings):
         "postgresql+asyncpg://academic_user:academic_pass@127.0.0.1:5432/academic_main"
     )
 
+    # ── Auth cross-service (A0.1) ────────────────────────────────────────────
+    # El ai-gateway es interno: expone SOLO `/api/v1/byok/*` via el api-gateway
+    # (ADR-038/039); el LLM proxy (`/api/v1/complete`, `/stream`, `/budget`)
+    # es service-to-service. Sin verificacion de procedencia, cualquiera con
+    # acceso de red puede forjar los headers `X-User-Roles`/`X-Tenant-Id` y
+    # (a) gestionar BYOK keys de cualquier tenant o (b) quemar budget de LLM.
+    #
+    # require_gateway_signature=False (default) => comportamiento actual: no se
+    # exige nada. Necesario porque el tutor-service llama al LLM proxy DIRECTO
+    # (`POST /api/v1/stream`, sin pasar por el gateway y sin firmar) en CADA
+    # mensaje del alumno — encender enforcement por default rompe el chat.
+    #
+    # Con el flag ON, cada request a los endpoints protegidos debe probar
+    # procedencia por UNO de dos caminos:
+    #   (a) firma HMAC del gateway (X-Gateway-Signature + X-Gateway-Ts sobre los
+    #       headers X-User-*), verificada con gateway_shared_secret; o
+    #   (b) token de service-account (X-Internal-Service-Token) que coincide con
+    #       internal_service_token — el camino del tutor-service y demas callers
+    #       internos directos. Ausencia de ambos => 401.
+    #
+    # ORDEN DE ACTIVACIÓN (prod): primero setear el secreto/token compartido y
+    # configurar a los callers legitimos (gateway firmando + tutor mandando el
+    # token) y RECIÉN DESPUÉS prender este flag, o se cae el chat del tutor.
+    require_gateway_signature: bool = Field(default=False)
+    gateway_shared_secret: str = Field(default="")
+    internal_service_token: str = Field(default="")
+
 
 @lru_cache
 def get_settings() -> Settings:

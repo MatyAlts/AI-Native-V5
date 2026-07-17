@@ -1,5 +1,5 @@
 import { PageContainer } from "@platform/ui"
-import { type ReactNode, useState } from "react"
+import { type ReactNode, useRef, useState } from "react"
 import { type BulkImportCommitResult, type BulkImportReport, HttpError, bulkApi } from "../lib/api"
 import { helpContent } from "../utils/helpContent"
 
@@ -80,7 +80,19 @@ export function BulkImportPage(): ReactNode {
   const [dryRun, setDryRun] = useState<DryRunState>({ status: "idle" })
   const [commit, setCommit] = useState<CommitState>({ status: "idle" })
 
+  // NB-13: token monotónico para descartar respuestas superadas. Cada request
+  // (dry-run/commit) captura el valor actual al arrancar; cualquier edición o
+  // request nuevo lo incrementa. Al resolver, si el token cambió, la respuesta
+  // es stale y NO debe pisar el estado más nuevo.
+  const requestSeq = useRef(0)
+
+  // Con un commit/dry-run en vuelo el form queda bloqueado (inputs + botones),
+  // así una respuesta vieja nunca puede quedar desincronizada de la entidad/archivo
+  // visibles. El token de arriba es la segunda línea de defensa.
+  const inFlight = dryRun.status === "loading" || commit.status === "loading"
+
   const reset = () => {
+    requestSeq.current++
     setEntity("facultades")
     setFile(null)
     setDryRun({ status: "idle" })
@@ -89,6 +101,7 @@ export function BulkImportPage(): ReactNode {
 
   const onFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const f = e.target.files?.[0] ?? null
+    requestSeq.current++
     setFile(f)
     // Si cambia el archivo, invalidar dry-run y commit anteriores.
     setDryRun({ status: "idle" })
@@ -96,6 +109,7 @@ export function BulkImportPage(): ReactNode {
   }
 
   const onEntityChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
+    requestSeq.current++
     setEntity(e.target.value as Entity)
     setDryRun({ status: "idle" })
     setCommit({ status: "idle" })
@@ -103,12 +117,15 @@ export function BulkImportPage(): ReactNode {
 
   const handleDryRun = async () => {
     if (!file) return
+    const seq = ++requestSeq.current
     setDryRun({ status: "loading" })
     setCommit({ status: "idle" })
     try {
       const report = await bulkApi.dryRun(entity, file)
+      if (seq !== requestSeq.current) return // respuesta superada
       setDryRun({ status: "ok", report })
     } catch (e) {
+      if (seq !== requestSeq.current) return // respuesta superada
       setDryRun({
         status: "error",
         message: e instanceof HttpError ? `${e.status}: ${e.detail || e.title}` : String(e),
@@ -118,11 +135,14 @@ export function BulkImportPage(): ReactNode {
 
   const handleCommit = async () => {
     if (!file) return
+    const seq = ++requestSeq.current
     setCommit({ status: "loading" })
     try {
       const result = await bulkApi.commit(entity, file)
+      if (seq !== requestSeq.current) return // respuesta superada
       setCommit({ status: "ok", result })
     } catch (e) {
+      if (seq !== requestSeq.current) return // respuesta superada
       // Si vino un 422 con report estructurado, intentar parsear.
       let parsedReport: BulkImportReport | undefined
       const message = e instanceof HttpError ? `${e.status}: ${e.detail || e.title}` : String(e)
@@ -145,12 +165,14 @@ export function BulkImportPage(): ReactNode {
   }
 
   const cols = ENTITY_COLUMNS[entity]
-  const canValidate = file !== null && dryRun.status !== "loading"
+  // Bloqueo del form durante cualquier request en vuelo (NB-13) + lock tras commit ok.
+  const formLocked = inFlight || commit.status === "ok"
+  const canValidate = file !== null && !inFlight
   const canCommit =
     dryRun.status === "ok" &&
     dryRun.report.invalid_rows === 0 &&
     dryRun.report.total_rows > 0 &&
-    commit.status !== "loading" &&
+    !inFlight &&
     commit.status !== "ok"
 
   return (
@@ -165,7 +187,8 @@ export function BulkImportPage(): ReactNode {
           <button
             type="button"
             onClick={reset}
-            className="rounded-md border border-border bg-surface px-4 py-2 text-sm font-medium text-body hover:bg-surface-alt"
+            disabled={inFlight}
+            className="rounded-md border border-border bg-surface px-4 py-2 text-sm font-medium text-body hover:bg-surface-alt disabled:opacity-50"
           >
             Reiniciar
           </button>
@@ -179,7 +202,7 @@ export function BulkImportPage(): ReactNode {
               value={entity}
               onChange={onEntityChange}
               className={inputClass}
-              disabled={commit.status === "ok"}
+              disabled={formLocked}
             >
               {ENTITY_OPTIONS.map((opt) => (
                 <option key={opt.value} value={opt.value}>
@@ -217,8 +240,8 @@ export function BulkImportPage(): ReactNode {
             type="file"
             accept=".csv,text/csv"
             onChange={onFileChange}
-            disabled={commit.status === "ok"}
-            className="block w-full text-sm text-body file:mr-4 file:rounded-md file:border-0 file:bg-accent-brand-soft file:px-4 file:py-2 file:text-sm file:font-medium file:text-accent-brand-deep hover:file:bg-accent-brand-soft"
+            disabled={formLocked}
+            className="block w-full text-sm text-body file:mr-4 file:rounded-md file:border-0 file:bg-accent-brand-soft file:px-4 file:py-2 file:text-sm file:font-medium file:text-accent-brand-deep hover:file:bg-accent-brand-soft disabled:opacity-50"
           />
           {file && (
             <p className="text-xs text-muted">

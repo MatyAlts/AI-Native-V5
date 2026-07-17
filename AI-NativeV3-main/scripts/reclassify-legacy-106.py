@@ -85,6 +85,12 @@ SERVICE_ACCOUNT_USER_ID = "00000000-0000-0000-0000-000000000099"  # placeholder
 SERVICE_ACCOUNT_EMAIL = "classifier-worker@service.internal"
 SERVICE_ACCOUNT_ROLES = "classifier_worker"
 
+# Token compartido de plataforma para procedencia server-to-server cuando el
+# classifier-service exige `require_gateway_signature`. Este script pega
+# directo (no pasa por el api-gateway), asi que manda el token via
+# `X-Internal-Service-Token`. Vacio => no se manda el header (backward-compat).
+INTERNAL_SERVICE_TOKEN = os.environ.get("INTERNAL_SERVICE_TOKEN", "")
+
 
 @dataclass(frozen=True)
 class LegacyClassification:
@@ -141,6 +147,8 @@ async def reclassify_one(
         "X-User-Roles": SERVICE_ACCOUNT_ROLES,
         "Content-Type": "application/json",
     }
+    if INTERNAL_SERVICE_TOKEN:
+        headers["X-Internal-Service-Token"] = INTERNAL_SERVICE_TOKEN
     url = f"{service_url}/api/v1/classify_episode/{item.episode_id}"
     try:
         r = await client.post(url, headers=headers, timeout=60.0)

@@ -11,9 +11,13 @@ Endpoints:
   POST   /api/v1/byok/keys/{id}/rotate
   POST   /api/v1/byok/keys/{id}/revoke
   GET    /api/v1/byok/keys/{id}/usage
+  POST   /api/v1/byok/keys/{id}/test  -> 501 Not Implemented (NB-23, ver abajo)
 
-Diferidos a follow-up:
-  POST /api/v1/byok/keys/{id}/test (re-validacion contra el provider, requiere adapters)
+Diferidos a follow-up (NO implementados). El endpoint `/test` existe pero
+responde 501 explicito — la validacion real de una key contra su provider
+NO esta implementada y no debe documentarse como capacidad disponible hasta
+que los adapters existan:
+  Validacion de una key contra su provider (requiere adapters de proveedor)
   Cache Redis del resolver
   Adapters Gemini/Mistral
 """
@@ -26,7 +30,9 @@ from uuid import UUID
 from fastapi import APIRouter, Depends, Header, HTTPException, status
 from pydantic import BaseModel, Field, field_validator
 
+from ai_gateway.auth import require_gateway_auth
 from ai_gateway.services.byok import (
+    BYOKConflictError,
     create_byok_key,
     get_byok_key_usage,
     list_byok_keys,
@@ -34,9 +40,20 @@ from ai_gateway.services.byok import (
     rotate_byok_key,
 )
 
-router = APIRouter(prefix="/api/v1/byok", tags=["byok"])
+# Auth de procedencia a nivel router (A0.1): con `require_gateway_signature` ON
+# todos los endpoints BYOK exigen firma del gateway o token de service-account.
+# Con el flag OFF (default) es no-op y NO altera los checks de rol (_check_admin/
+# _check_read de F11) que siguen corriendo por debajo via las deps _get_actor*.
+router = APIRouter(
+    prefix="/api/v1/byok",
+    tags=["byok"],
+    dependencies=[Depends(require_gateway_auth)],
+)
 
 _ADMIN_ROLES = {"superadmin", "docente_admin"}
+# Lectura read-only (GET keys / usage): admite ademas al docente (F11 — uso/costo
+# de IA para el docente). Las mutaciones siguen exigiendo _ADMIN_ROLES.
+_READ_ROLES = _ADMIN_ROLES | {"docente"}
 
 
 def _check_admin(roles_header: str) -> set[str]:
@@ -49,21 +66,43 @@ def _check_admin(roles_header: str) -> set[str]:
     return roles
 
 
+def _check_read(roles_header: str) -> set[str]:
+    roles = {r.strip() for r in (roles_header or "").split(",") if r.strip()}
+    if not (_READ_ROLES & roles):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="byok_key:read requiere rol docente, docente_admin o superadmin",
+        )
+    return roles
+
+
+def _parse_actor(x_tenant_id: str, x_user_id: str) -> tuple[UUID, UUID]:
+    try:
+        return UUID(x_tenant_id), UUID(x_user_id)
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST, detail="Headers UUID invalidos"
+        ) from exc
+
+
 async def _get_actor(
     x_tenant_id: str = Header(),
     x_user_id: str = Header(),
     x_user_roles: str = Header(""),
 ) -> tuple[UUID, UUID]:
-    """Auth minima — el api-gateway inyecta los headers autoritativos."""
+    """Auth de mutacion — el api-gateway inyecta los headers autoritativos."""
     _check_admin(x_user_roles)
-    try:
-        tenant_id = UUID(x_tenant_id)
-        user_id = UUID(x_user_id)
-    except ValueError as exc:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST, detail="Headers UUID invalidos"
-        ) from exc
-    return tenant_id, user_id
+    return _parse_actor(x_tenant_id, x_user_id)
+
+
+async def _get_actor_read(
+    x_tenant_id: str = Header(),
+    x_user_id: str = Header(),
+    x_user_roles: str = Header(""),
+) -> tuple[UUID, UUID]:
+    """Auth de lectura (GET keys/usage) — admite docente read-only (F11)."""
+    _check_read(x_user_roles)
+    return _parse_actor(x_tenant_id, x_user_id)
 
 
 # ── Schemas ────────────────────────────────────────────────────────────
@@ -135,6 +174,7 @@ async def post_create_key(
     Errores comunes:
       - 400 si scope_type/scope_id inconsistentes
       - 403 si caller no es admin
+      - 409 si ya existe una key activa para (scope, scope_id, provider)
       - 500 si BYOK_MASTER_KEY no esta seteada
     """
     tenant_id, user_id = actor
@@ -148,6 +188,10 @@ async def post_create_key(
             plaintext_value=req.plaintext_value,
             monthly_budget_usd=req.monthly_budget_usd,
         )
+    except BYOKConflictError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT, detail=str(exc)
+        ) from exc
     except ValueError as exc:
         msg = str(exc)
         if "BYOK_MASTER_KEY" in msg:
@@ -162,7 +206,7 @@ async def post_create_key(
 async def get_list_keys(
     scope_type: Literal["tenant", "facultad", "materia"] | None = None,
     scope_id: UUID | None = None,
-    actor: tuple[UUID, UUID] = Depends(_get_actor),
+    actor: tuple[UUID, UUID] = Depends(_get_actor_read),
 ) -> list[KeyOut]:
     """Lista keys del tenant. NO devuelve el plaintext — solo metadata
     + `fingerprint_last4`."""
@@ -227,7 +271,7 @@ async def post_revoke_key(
 async def get_key_usage(
     key_id: UUID,
     yyyymm: str | None = None,
-    actor: tuple[UUID, UUID] = Depends(_get_actor),
+    actor: tuple[UUID, UUID] = Depends(_get_actor_read),
 ) -> UsageOut:
     """Devuelve el agregado de uso del mes (por default el actual).
 
@@ -236,3 +280,44 @@ async def get_key_usage(
     tenant_id, _ = actor
     usage = await get_byok_key_usage(tenant_id, key_id, yyyymm=yyyymm)
     return UsageOut(**usage)
+
+
+@router.post(
+    "/keys/{key_id}/test",
+    status_code=status.HTTP_501_NOT_IMPLEMENTED,
+    responses={
+        501: {
+            "description": "No implementado — requiere adapters de proveedor "
+            "(diferidos a follow-up)."
+        }
+    },
+)
+async def post_test_key(
+    key_id: UUID,
+    actor: tuple[UUID, UUID] = Depends(_get_actor),
+) -> None:
+    """Validar una BYOK key contra su proveedor — DIFERIDO / NO IMPLEMENTADO (NB-23).
+
+    Esta capacidad estuvo *documentada* como follow-up pero nunca se implemento:
+    validar una key contra el provider requiere los adapters de proveedor
+    (Gemini/Mistral/etc.) que estan diferidos. En vez de fingir la validacion o
+    de dejar un 404 ambiguo (que se lee como un bug de ruteo), el endpoint existe
+    y responde **501 Not Implemented** con un mensaje claro — la ausencia de la
+    feature queda explicita en la superficie de la API, no escondida en un docstring.
+
+    Hasta que existan los adapters, la unica validacion real de una key ocurre
+    cuando el primer request LLM que la resuelve la usa (y falla si es invalida);
+    el admin puede entonces revocar/rotar. Ver `post_create_key` (no valida al crear).
+
+    Cuando se implementen los adapters, reemplazar este stub por la validacion real
+    y actualizar el docstring del modulo (mover `/test` fuera de "Diferidos").
+    """
+    _ = key_id, actor  # gate de auth via _get_actor; el body es intencionalmente no-op
+    raise HTTPException(
+        status_code=status.HTTP_501_NOT_IMPLEMENTED,
+        detail=(
+            "Probar una BYOK key contra el proveedor no esta implementado: "
+            "requiere los adapters de proveedor, diferidos a follow-up. Para "
+            "validar una key, usala en un request LLM real y revisa si falla."
+        ),
+    )

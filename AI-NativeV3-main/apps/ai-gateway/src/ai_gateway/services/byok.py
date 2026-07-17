@@ -39,6 +39,7 @@ from sqlalchemy import (
     String,
     select,
 )
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import (
     AsyncSession,
     async_sessionmaker,
@@ -54,6 +55,23 @@ from ai_gateway.metrics import (
 )
 
 logger = logging.getLogger(__name__)
+
+# Nombre del UNIQUE parcial de "una sola key activa por (tenant, scope_type,
+# scope_id, provider)" definido en la migration `20260504_0002_add_byok_keys`
+# (`WHERE revoked_at IS NULL`). Lo usamos para distinguir la violacion de esa
+# constraint del resto de IntegrityError posibles.
+_ACTIVE_KEY_UNIQUE_CONSTRAINT = "uq_byok_keys_active"
+
+
+class BYOKConflictError(Exception):
+    """Error de dominio: ya existe una key ACTIVA para el mismo
+    (tenant, scope_type, scope_id, provider).
+
+    Lo levanta `create_byok_key` cuando el INSERT viola el UNIQUE parcial
+    `uq_byok_keys_active`. El route lo mapea a 409 Conflict (no 500). El admin
+    debe rotar la key existente (`POST /keys/{id}/rotate`, preserva el key_id)
+    o revocarla (`POST /keys/{id}/revoke`) antes de crear una nueva.
+    """
 
 
 class _BYOKBase(DeclarativeBase):
@@ -187,13 +205,16 @@ async def resolve_byok_key(
     tenant_id: UUID,
     provider: str,
     materia_id: UUID | None = None,
+    facultad_id: UUID | None = None,
 ) -> ResolvedKey | None:
     """Resolver jerarquico (ADR-039):
     1. scope=materia + scope_id=materia_id (si dado).
-    2. scope=tenant + scope_id=NULL.
-       (scope=facultad omitido en piloto-1 — requiere lookup cross-DB
-       materia.facultad_id que va con cache Redis en piloto-2.)
-    3. Env fallback (ANTHROPIC_API_KEY, etc.).
+    2. scope=facultad + scope_id=facultad_id (si dado).
+       El facultad_id se deriva de materia_id via lookup cross-DB + cache
+       Redis (deferido a piloto-2); mientras tanto los callers no lo pasan
+       y esta rama se saltea.
+    3. scope=tenant + scope_id=NULL.
+    4. Env fallback (ANTHROPIC_API_KEY, etc.).
 
     Si BYOK_ENABLED=False, salta directo al env fallback.
 
@@ -290,35 +311,43 @@ async def resolve_byok_key(
                         "materia",
                     )
 
-        # 2. scope=facultad (any key with scope_type='facultad' for this tenant+provider)
-        stmt = (
-            select(BYOKKey)
-            .where(BYOKKey.tenant_id == tenant_id)
-            .where(BYOKKey.scope_type == "facultad")
-            .where(BYOKKey.provider == provider)
-            .where(BYOKKey.revoked_at.is_(None))
-        )
-        row = (await session.execute(stmt)).scalar_one_or_none()
-        if row is not None:
-            try:
-                plaintext = decrypt(row.encrypted_value, master_key).decode("utf-8")
-            except CryptoError as exc:
-                logger.error("byok_decrypt_failed key_id=%s: %s", row.id, exc)
-            else:
-                return _emit(
-                    ResolvedKey(
-                        plaintext=plaintext,
-                        provider=provider,
-                        scope_resolved="facultad",
-                        key_id=row.id,
-                        monthly_budget_usd=(
-                            float(row.monthly_budget_usd)
-                            if row.monthly_budget_usd is not None
-                            else None
+        # 2. scope=facultad + scope_id=facultad_id (si dado).
+        #    NB-2: filtramos por scope_id — consistente con la rama materia.
+        #    Sin el filtro, resolver "cualquier key facultad" del tenant
+        #    devolveria la key de OTRA facultad y, con >1 key facultad activa,
+        #    `scalar_one_or_none()` tiraria 500 MultipleResultsFound. Como el
+        #    facultad_id no puede inferirse aca (deferido a piloto-2), sin el
+        #    la rama se saltea (mismo criterio que materia con materia_id=None).
+        if facultad_id is not None:
+            stmt = (
+                select(BYOKKey)
+                .where(BYOKKey.tenant_id == tenant_id)
+                .where(BYOKKey.scope_type == "facultad")
+                .where(BYOKKey.scope_id == facultad_id)
+                .where(BYOKKey.provider == provider)
+                .where(BYOKKey.revoked_at.is_(None))
+            )
+            row = (await session.execute(stmt)).scalar_one_or_none()
+            if row is not None:
+                try:
+                    plaintext = decrypt(row.encrypted_value, master_key).decode("utf-8")
+                except CryptoError as exc:
+                    logger.error("byok_decrypt_failed key_id=%s: %s", row.id, exc)
+                else:
+                    return _emit(
+                        ResolvedKey(
+                            plaintext=plaintext,
+                            provider=provider,
+                            scope_resolved="facultad",
+                            key_id=row.id,
+                            monthly_budget_usd=(
+                                float(row.monthly_budget_usd)
+                                if row.monthly_budget_usd is not None
+                                else None
+                            ),
                         ),
-                    ),
-                    "facultad",
-                )
+                        "facultad",
+                    )
 
         # 3. scope=tenant
         stmt = (
@@ -420,7 +449,26 @@ async def create_byok_key(
             created_by=user_id,
         )
         session.add(key)
-        await session.commit()
+        try:
+            await session.commit()
+        except IntegrityError as exc:
+            # NB-3: el UNIQUE parcial `uq_byok_keys_active` garantiza una sola
+            # key activa por (tenant, scope_type, scope_id, provider). Si ya
+            # hay una activa, el INSERT la viola. Devolvemos un error de
+            # dominio limpio (el route lo mapea a 409) en vez de un 500
+            # IntegrityError sin manejar. El diseno tiene rutas explicitas
+            # para reemplazar/desactivar una key (rotate / revoke) — crear
+            # una segunda activa es un error del caller, no un upsert.
+            await session.rollback()
+            if _ACTIVE_KEY_UNIQUE_CONSTRAINT in str(exc.orig):
+                raise BYOKConflictError(
+                    f"Ya existe una key BYOK activa para "
+                    f"(scope_type={scope_type}, scope_id={scope_id}, "
+                    f"provider={provider}). Rota la existente "
+                    f"(POST /keys/{{id}}/rotate) o revocala "
+                    f"(POST /keys/{{id}}/revoke) antes de crear una nueva."
+                ) from exc
+            raise
         # `set_config(..., is_local=true)` se resetea con commit; reaplicamos
         # antes de cualquier SELECT (refresh) para que RLS no bloquee la
         # lectura del row recien creado.

@@ -12,10 +12,12 @@ from uuid import UUID
 
 from fastapi import Depends, Header, HTTPException, status
 from platform_observability import verify_gateway_signature
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from content_service.config import settings
 from content_service.db import tenant_session
+from content_service.models import Material
 
 
 def _enforce_gateway_signature(
@@ -116,3 +118,74 @@ MATERIAL_UPLOAD_ROLES = ("docente", "docente_admin", "superadmin")
 # Roles que pueden llamar retrieval (F2 = docentes para testear; F3 = tutor-service
 # con service-account + estudiantes con comisión_id validada)
 RETRIEVAL_ROLES = ("docente", "docente_admin", "superadmin", "tutor_service")
+
+
+# ── Propiedad/acceso por material (FIX C) ─────────────────────────────
+#
+# En prod el tenant = universidad, así que la RLS por tenant NO aísla docentes
+# entre sí: sin este scope adicional cualquier docente del tenant podría leer el
+# `contenido` de los chunks de OTRA materia, correr retrieval sobre cualquier
+# `materia_id`, y —lo grave— `reingest` (destructivo) sobre CUALQUIER material.
+#
+# content-service NO tiene las tablas de pertenencia académica
+# (`usuarios_comision` / `inscripciones` viven en academic_main, ADR-003; no se
+# hacen joins cross-base). El scope mínimo defendible y fail-closed es la
+# PROPIEDAD del material (`Material.uploaded_by`). Oversight académico del tenant
+# (superadmin / docente_admin) ve todo — no rompe superadmin ni la coordinación.
+#
+# FOLLOW-UP (ABAC completo por comisión): resolver materia→comisión→membresía
+# cruzando a academic-service (conexión `academic_db_url` dedicada + gate
+# `enforce_comision_access`, mismo patrón que ctr-service/analytics-service)
+# para habilitar co-docencia (docente B de la misma materia que no subió el
+# material). Hoy queda fuera de scope: el owner-scoping ya cierra el leak y el
+# reingest destructivo.
+CONTENT_OVERSIGHT_ROLES = frozenset({"superadmin", "docente_admin"})
+
+
+def assert_material_owner(user: User, material: Material) -> None:
+    """Fail-closed: el caller sólo accede a un material que subió él.
+
+    Scope de propiedad por `Material.uploaded_by` (la RLS por tenant no aísla
+    docentes en prod). Oversight (superadmin / docente_admin) ve todo. Devuelve
+    404 (no 403) para no filtrar la existencia de materiales ajenos del tenant.
+    """
+    if user.roles & CONTENT_OVERSIGHT_ROLES:
+        return
+    if material.uploaded_by != user.id:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Material {material.id} no encontrado",
+        )
+
+
+async def assert_materia_upload_access(
+    session: AsyncSession, user: User, materia_id: UUID
+) -> None:
+    """Fail-closed: el caller sólo corre retrieval sobre materias donde subió material.
+
+    Sin `usuarios_comision`/`inscripciones` locales (ADR-003), el scope mínimo
+    defendible es la propiedad de material dentro de la materia: si el caller no
+    subió ningún material vivo a `materia_id`, no puede correr retrieval sobre
+    ella (403). Oversight (superadmin / docente_admin) no se restringe.
+    """
+    if user.roles & CONTENT_OVERSIGHT_ROLES:
+        return
+    row = (
+        await session.execute(
+            select(Material.id)
+            .where(
+                Material.materia_id == materia_id,
+                Material.uploaded_by == user.id,
+                Material.deleted_at.is_(None),
+            )
+            .limit(1)
+        )
+    ).first()
+    if row is None:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail=(
+                "No tenes material propio en esta materia; "
+                "no podes correr retrieval sobre ella."
+            ),
+        )

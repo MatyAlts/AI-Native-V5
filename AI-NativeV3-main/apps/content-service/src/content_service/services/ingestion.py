@@ -29,6 +29,10 @@ class IngestionResult:
     material_id: UUID
     estado: str
     chunks_created: int
+    # Modo del embedder con el que se indexó — expuesto para que el caller no
+    # tenga que adivinar si el índice es real o falso (BUG-4).
+    embedding_model: str | None = None
+    is_semantic_embedding: bool | None = None
     error: str | None = None
 
 
@@ -78,27 +82,53 @@ class IngestionPipeline:
             await self.session.flush()
 
             embedder = get_embedder()
+            if not embedder.is_semantic:
+                # BUG-4: no indexar embeddings falsos en silencio. En producción
+                # get_embedder() ya habría abortado; acá (dev con mock) dejamos
+                # rastro claro por material. El marcador durable queda además en
+                # cada Chunk.embedding_model="mock-deterministic".
+                logger.warning(
+                    "Indexando material %s con embedder NO-semántico (%s): los %d "
+                    "chunks se persisten con vectores FALSOS (hash), el retrieval "
+                    "sobre este material NO sera real. Marca embedding_model=%r.",
+                    material.id,
+                    embedder.model_name,
+                    len(chunks),
+                    embedder.model_name,
+                )
             texts = [c.contenido for c in chunks]
             vectors = await embedder.embed_documents(texts)
 
-            # 5. Persistencia: borrar chunks anteriores del material + insertar nuevos
-            await self.session.execute(delete(Chunk).where(Chunk.material_id == material.id))
-
-            for final_chunk, vector in zip(chunks, vectors, strict=True):
-                chunk_row = Chunk(
-                    tenant_id=material.tenant_id,
-                    material_id=material.id,
-                    materia_id=material.materia_id,
-                    comision_id=material.comision_id,
-                    contenido=final_chunk.contenido,
-                    contenido_hash=final_chunk.contenido_hash,
-                    embedding=vector,
-                    embedding_model=embedder.model_name,
-                    position=final_chunk.position,
-                    chunk_type=final_chunk.chunk_type,
-                    meta=final_chunk.meta,
+            # 5. Persistencia atómica (L-1): borrar chunks anteriores + insertar
+            #    nuevos dentro de un SAVEPOINT. Si la reinserción falla, el
+            #    rollback del savepoint RESTAURA los chunks viejos — sin esto un
+            #    reingest destructivo que fallara a mitad (INSERT roto) dejaba el
+            #    material sin chunks (contenido perdido, material vacío). El
+            #    estado="failed" se marca fuera del savepoint (except de abajo),
+            #    así el marcador de fallo persiste pero el borrado NO.
+            async with self.session.begin_nested():
+                await self.session.execute(
+                    delete(Chunk).where(Chunk.material_id == material.id)
                 )
-                self.session.add(chunk_row)
+                for final_chunk, vector in zip(chunks, vectors, strict=True):
+                    chunk_row = Chunk(
+                        tenant_id=material.tenant_id,
+                        material_id=material.id,
+                        materia_id=material.materia_id,
+                        comision_id=material.comision_id,
+                        contenido=final_chunk.contenido,
+                        contenido_hash=final_chunk.contenido_hash,
+                        embedding=vector,
+                        embedding_model=embedder.model_name,
+                        position=final_chunk.position,
+                        chunk_type=final_chunk.chunk_type,
+                        meta=final_chunk.meta,
+                    )
+                    self.session.add(chunk_row)
+                # Forzar los INSERT dentro del savepoint: un fallo de constraint
+                # (ej. unique tenant+material+position) dispara el rollback del
+                # savepoint, no del outer tx, dejando los chunks viejos intactos.
+                await self.session.flush()
 
             material.estado = "indexed"
             material.indexed_at = utc_now().replace(tzinfo=None)
@@ -110,6 +140,8 @@ class IngestionPipeline:
                 material_id=material.id,
                 estado="indexed",
                 chunks_created=len(chunks),
+                embedding_model=embedder.model_name,
+                is_semantic_embedding=embedder.is_semantic,
             )
 
         except Exception as e:

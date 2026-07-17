@@ -50,6 +50,35 @@ class Settings(BaseSettings):
     # conftest) para no simular gateway ni sembrar membresía en la DB.
     enforce_comision_access: bool = Field(default=True)
 
+    # ── Auth cross-service (A0.1) ────────────────────────────────────────────
+    # analytics-service YA exige presencia de X-Tenant-Id / X-User-Id (sin ellos
+    # 401/403), pero NO valida la FIRMA del gateway: los headers son forjables
+    # por cualquiera que pegue directo al servicio interno expuesto. Este flag
+    # agrega verificación de procedencia (defensa en profundidad), en línea con
+    # el mismo enfoque conservador del governance-service (A0.4).
+    #
+    # require_gateway_signature=False (default) => NO-OP total: el runtime es
+    # idéntico al actual y la validación de headers existente sigue corriendo
+    # sin cambios. Necesario porque los comandos make (kappa/progression/
+    # export-academic) pegan por curl directo con TOKEN=dev-token SIN firma —
+    # con el flag apagado siguen andando.
+    #
+    # Con el flag ON, cada request a los routers analíticos debe probar
+    # procedencia por UNO de dos caminos (ADEMÁS de la validación de headers):
+    #   (a) firma HMAC del gateway (X-Gateway-Signature + X-Gateway-Ts sobre los
+    #       headers X-User-*), verificada con gateway_shared_secret; o
+    #   (b) token de service-account (X-Internal-Service-Token) que coincide con
+    #       internal_service_token — allowlist para callers internos directos
+    #       (ej. los comandos make en prod). Ausencia de ambos => 401.
+    #
+    # ORDEN DE ACTIVACIÓN (prod): primero setear el secreto/token compartido y
+    # configurar a los callers legítimos (gateway firmando + curls con el token)
+    # y RECIÉN DESPUÉS prender este flag, o los comandos make y dashboards se
+    # caen con 401.
+    require_gateway_signature: bool = Field(default=False)
+    gateway_shared_secret: str = Field(default="")
+    internal_service_token: str = Field(default="")
+
 
 @lru_cache
 def get_settings() -> Settings:

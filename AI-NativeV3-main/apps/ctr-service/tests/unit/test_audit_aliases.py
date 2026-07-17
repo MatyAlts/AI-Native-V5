@@ -22,17 +22,34 @@ from ctr_service.routes.events import (
 
 
 def _routes_by_path(app_routes) -> dict[tuple[str, frozenset[str]], object]:
-    """Indexa las rutas registradas por (path, frozenset(methods)) -> endpoint."""
+    """Indexa las rutas registradas por (path, frozenset(methods)) -> endpoint.
+
+    Desciende recursivamente en los wrappers de `include_router`: segun la
+    version de FastAPI/Starlette del entorno, `include_router` puede no aplanar
+    los `APIRoute` dentro de `app.routes` sino envolverlos en un objeto (p. ej.
+    `_IncludedRouter`) que expone el router real via `original_router.routes`.
+    Sin esta recursion el indice no ve los endpoints del CTR y el test da un
+    falso negativo (los aliases ADR-031 igual resuelven en runtime).
+    """
     out: dict[tuple[str, frozenset[str]], object] = {}
-    for r in app_routes:
-        endpoint = getattr(r, "endpoint", None)
-        if endpoint is None:
-            continue
-        methods = frozenset(getattr(r, "methods", set()) or set())
-        path = getattr(r, "path", None)
-        if path is None:
-            continue
-        out[(path, methods)] = endpoint
+
+    def _walk(routes) -> None:
+        for r in routes:
+            nested = getattr(r, "routes", None)
+            original = getattr(r, "original_router", None)
+            if original is not None and getattr(original, "routes", None) is not None:
+                _walk(original.routes)
+                continue
+            endpoint = getattr(r, "endpoint", None)
+            path = getattr(r, "path", None)
+            if endpoint is None or path is None:
+                if nested:
+                    _walk(nested)
+                continue
+            methods = frozenset(getattr(r, "methods", set()) or set())
+            out[(path, methods)] = endpoint
+
+    _walk(app_routes)
     return out
 
 

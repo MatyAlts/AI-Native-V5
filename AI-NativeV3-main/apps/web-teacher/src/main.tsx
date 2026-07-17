@@ -1,79 +1,34 @@
-import { ClerkProvider, SignedIn, SignedOut, SignIn, useAuth, useUser } from "@clerk/clerk-react"
+import { ClerkProvider, SignIn, SignedIn, SignedOut, useAuth, useUser } from "@clerk/clerk-react"
+import { installApiFetchInterceptor } from "@platform/auth-client/fetch"
+import { ErrorBoundary } from "@platform/ui"
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query"
 import { RouterProvider, createRouter } from "@tanstack/react-router"
 import { StrictMode, useEffect, useState } from "react"
 import { createRoot } from "react-dom/client"
 import "./index.css"
+import { SELECTED_TENANT_STORAGE_KEY } from "./constants"
 import { comisionesApi } from "./lib/api"
 import { routeTree } from "./routeTree.gen"
-import { SELECTED_TENANT_STORAGE_KEY } from "./constants"
 
 const CLERK_PUBLISHABLE_KEY = import.meta.env.VITE_CLERK_PUBLISHABLE_KEY as string
 // Dev sin Clerk: si no hay publishable key, la identidad (docente) la inyecta
 // el proxy de Vite y el backend corre con dev_trust_headers.
 const DEV_NO_CLERK = !CLERK_PUBLISHABLE_KEY
 
-const originalFetch = window.fetch.bind(window)
-const apiBase = (import.meta.env.VITE_API_URL ?? "").replace(/\/$/, "")
-
-// Espera robusta del token de Clerk para requests /api/. El interceptor
-// best-effort anterior dejaba salir el request SIN Bearer cuando la sesion de
-// Clerk todavia no estaba lista (window.Clerk inexistente, o session null en el
-// primer render). Esos requests caian a dev_trust en el gateway y usaban el
-// user_id por defecto del nginx -> el front terminaba pidiendo datos de una
-// comision ajena -> 403 de identidad cruzada (assert_comision_access). Ahora,
-// con un usuario logueado, esperamos hasta tener token (con timeout duro) antes
-// de mandar; solo salimos sin Bearer si Clerk confirma que no hay sesion.
-type ClerkLike = {
-  loaded?: boolean
-  load?: () => Promise<unknown>
-  user?: unknown
-  session?: { getToken: () => Promise<string | null> } | null
-}
-async function getClerkToken(): Promise<string | null> {
-  if (DEV_NO_CLERK) return null
-  const deadlineMs = Date.now() + 5000
-  const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms))
-  const readClerk = () => (window as unknown as { Clerk?: ClerkLike }).Clerk
-  let clerk = readClerk()
-  while (!clerk && Date.now() < deadlineMs) {
-    await sleep(50)
-    clerk = readClerk()
-  }
-  if (!clerk) return null
-  if (clerk.loaded === false && clerk.load) await clerk.load()
-  while (Date.now() < deadlineMs) {
-    const token = await clerk.session?.getToken().catch(() => null)
-    if (token) return token
-    // Clerk cargado sin sesion ni usuario => deslogueado: no tiene sentido esperar.
-    if (clerk.loaded && !clerk.session && !clerk.user) return null
-    await sleep(50)
-  }
-  return null
-}
-
-window.fetch = async (input, init) => {
-  const rawUrl = typeof input === "string" ? input : input instanceof URL ? input.href : input.url
-  const isRelativeApi = rawUrl.startsWith("/api/")
-  const targetUrl = isRelativeApi && apiBase ? `${apiBase}${rawUrl}` : rawUrl
-
-  if (!isRelativeApi) return originalFetch(targetUrl, init)
-  const headers = new Headers(init?.headers ?? {})
-  const tenantId = window.localStorage.getItem(SELECTED_TENANT_STORAGE_KEY)
-  if (tenantId) headers.set("x-selected-tenant", tenantId)
-  // Adjuntar el token de Clerk a TODO request /api/ (cubre el push de perfil y
-  // cualquier fetch suelto que no pase por authHeaders). Si ya viene Authorization
-  // (de lib/api authHeaders), lo respetamos. En dev sin Clerk, window.Clerk no
-  // existe y el try/catch deja que el gateway use los headers X-* del proxy.
-  if (!headers.has("Authorization")) {
-    // Espera el token de Clerk antes de mandar (con un usuario logueado nunca
-    // sale sin Bearer). En dev sin Clerk devuelve null y el gateway cae a los
-    // headers X-* del proxy de Vite.
-    const token = await getClerkToken()
-    if (token) headers.set("Authorization", `Bearer ${token}`)
-  }
-  return originalFetch(targetUrl, { ...init, headers })
-}
+// Interceptor de fetch compartido (P-18/P-13/P-12). Antes, el patch
+// best-effort dejaba salir el request SIN Bearer cuando la sesion de Clerk aun
+// no estaba lista -> caia a dev_trust y usaba el user_id por defecto del nginx
+// -> 403 de identidad cruzada (assert_comision_access). El helper espera el
+// token (con timeout corto) y solo sale sin Bearer si Clerk confirma que no hay
+// sesion o es dev sin Clerk. La unica pieza especifica del teacher es el header
+// x-selected-tenant.
+installApiFetchInterceptor({
+  apiBase: (import.meta.env.VITE_API_URL ?? "") as string,
+  devNoClerk: DEV_NO_CLERK,
+  dynamicHeaders: () => ({
+    "x-selected-tenant": window.localStorage.getItem(SELECTED_TENANT_STORAGE_KEY),
+  }),
+})
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -170,7 +125,9 @@ createRoot(rootElement).render(
   <StrictMode>
     {DEV_NO_CLERK ? (
       <QueryClientProvider client={queryClient}>
-        <DevApp />
+        <ErrorBoundary>
+          <DevApp />
+        </ErrorBoundary>
       </QueryClientProvider>
     ) : (
       <ClerkProvider publishableKey={CLERK_PUBLISHABLE_KEY}>
@@ -185,7 +142,9 @@ createRoot(rootElement).render(
         </SignedOut>
         <SignedIn>
           <QueryClientProvider client={queryClient}>
-            <InnerApp />
+            <ErrorBoundary>
+              <InnerApp />
+            </ErrorBoundary>
           </QueryClientProvider>
         </SignedIn>
       </ClerkProvider>

@@ -7,15 +7,16 @@
 Critical: `classifier_db`, `redis` (consumer del CTR stream).
 
 Adicionalmente, esta lookup expone también `GET /api/v1/classifier/config-hash`
-(metadata pública sin auth) para que el bootstrap del web-student pueda
-resolver el `classifier_config_hash` vigente al abrir un episodio.
+(metadata del pipeline) para que el bootstrap del web-student pueda resolver el
+`classifier_config_hash` vigente al abrir un episodio. Con `require_gateway_signature`
+ON (A0.1) exige procedencia probada; OFF por default (no-op).
 """
 
 from __future__ import annotations
 
 import asyncio
 
-from fastapi import APIRouter, Response, status
+from fastapi import APIRouter, Depends, Response, status
 from platform_observability.health import (
     HealthResponse,
     assemble_readiness,
@@ -24,6 +25,7 @@ from platform_observability.health import (
 )
 from pydantic import BaseModel
 
+from classifier_service.auth import require_gateway_auth
 from classifier_service.config import settings
 from classifier_service.db import get_engine
 from classifier_service.services import (
@@ -31,11 +33,20 @@ from classifier_service.services import (
     compute_classifier_config_hash,
 )
 
+# El router de health (live/ready) queda ABIERTO: son probes de k8s, no llevan
+# auth (mismo criterio que governance-service).
 router = APIRouter(prefix="/health", tags=["health"])
 
 # Router separado para exponer el hash vigente del classifier bajo
 # /api/v1/classifier/* (mismo namespace que clasificación pero metadata).
-config_router = APIRouter(prefix="/api/v1/classifier", tags=["classifier"])
+# Auth de procedencia gateada (A0.1): OFF por default (no-op) — academic-service
+# lo llama directo (con fallback si falla). Con el flag ON exige firma del
+# gateway o token de service-account, igual que los routers de datos.
+config_router = APIRouter(
+    prefix="/api/v1/classifier",
+    tags=["classifier"],
+    dependencies=[Depends(require_gateway_auth)],
+)
 
 VERSION = "0.1.0"
 # Tree version vigente — sincronizar con el árbol de decisión activo.
@@ -91,9 +102,11 @@ class ConfigHashOut(BaseModel):
 async def get_classifier_config_hash() -> ConfigHashOut:
     """Devuelve el `classifier_config_hash` que el classifier usa hoy.
 
-    Sin auth: es metadata pública del pipeline. La fórmula exacta vive
-    en `compute_classifier_config_hash` (`pipeline.py`) y NO se duplica
-    acá — esto es solo un getter sobre los valores vigentes.
+    Metadata del pipeline (solo hash + tree_version, no lee identidad). La
+    fórmula exacta vive en `compute_classifier_config_hash` (`pipeline.py`) y NO
+    se duplica acá — esto es solo un getter sobre los valores vigentes. Auth de
+    procedencia gateada a nivel `config_router` (A0.1): con el flag ON el caller
+    directo (academic-service) debe mandar el token de service-account.
     """
     config_hash = compute_classifier_config_hash(
         DEFAULT_REFERENCE_PROFILE,

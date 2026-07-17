@@ -24,10 +24,13 @@ export interface NotesPanelProps {
   episodeId: string
   /** Notas iniciales (opcional) — vienen de la recuperación de estado. */
   initialNotes?: SavedNote[]
+  /** Estado inicial del colapsable. Default true (backwards-compat). El
+   * episodio lo monta colapsado (false) para no comer alto del panel. */
+  defaultOpen?: boolean
 }
 
-export function NotesPanel({ episodeId, initialNotes }: NotesPanelProps) {
-  const [open, setOpen] = useState(true)
+export function NotesPanel({ episodeId, initialNotes, defaultOpen = true }: NotesPanelProps) {
+  const [open, setOpen] = useState(defaultOpen)
   const [draft, setDraft] = useState("")
   const [notes, setNotes] = useState<SavedNote[]>(initialNotes ?? [])
   const [saving, setSaving] = useState(false)

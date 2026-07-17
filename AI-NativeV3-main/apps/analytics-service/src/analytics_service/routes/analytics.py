@@ -133,6 +133,70 @@ async def require_comision_access(
     await assert_comision_member(user_id, comision_id, tenant_id)
 
 
+# Roles de staff que ven el progreso de CUALQUIER alumno (mismo set que usa
+# evaluation-service/routes/entregas.py). Un caller SIN ninguno de estos roles
+# se trata como estudiante: solo puede leer SU propio progreso.
+_STAFF_ROLES: frozenset[str] = frozenset(
+    {"superadmin", "docente_admin", "docente", "jtp", "auxiliar"}
+)
+
+
+async def require_student_progress_access(
+    student_pseudonym: UUID,
+    comision_id: UUID,
+    x_user_id: str | None = Header(default=None),
+    x_user_roles: str | None = Header(default=None),
+    tenant_id: UUID = Depends(get_tenant_id),
+) -> None:
+    """Autorización de los endpoints "Mi progreso" longitudinal del alumno (F9).
+
+    FastAPI resuelve `student_pseudonym` del path y `comision_id` del query
+    del endpoint. Dos ramas de autorización:
+
+      - **Staff/oversight** (docente, jtp, auxiliar, docente_admin,
+        superadmin): comportamiento de hoy — aislamiento por comisión vía
+        `assert_comision_member`. Ven el progreso de cualquier alumno de su
+        comisión.
+      - **Estudiante** (sin rol de staff): SOLO puede pedir su PROPIO
+        `student_pseudonym`. El pseudónimo del alumno ES su `user_id`
+        (`X-User-Id` que inyecta el api-gateway — ver `/student/me/episodes`);
+        si el path pide otro UUID → 403.
+
+    Gateado por `settings.enforce_comision_access` igual que
+    `require_comision_access` (no-op en tests/dev; True en prod).
+    """
+    from analytics_service.config import settings
+
+    if not settings.enforce_comision_access:
+        return
+    if not x_user_id:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="X-User-Id header required",
+        )
+    try:
+        user_id = UUID(x_user_id)
+    except ValueError:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="X-User-Id must be a valid UUID",
+        )
+
+    roles = {r.strip() for r in (x_user_roles or "").split(",") if r.strip()}
+    if roles & _STAFF_ROLES:
+        # Docente/oversight: aislamiento por comisión (sin cambios).
+        await assert_comision_member(user_id, comision_id, tenant_id)
+        return
+
+    # Estudiante: solo su propio progreso. No pasa por el gate de comisión
+    # (los alumnos no están en `usuarios_comision`; su identidad ES el pseudónimo).
+    if student_pseudonym != user_id:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Solo podes ver tu propio progreso.",
+        )
+
+
 # ── Kappa endpoint ────────────────────────────────────────────────────
 
 
@@ -916,7 +980,7 @@ async def get_cii_evolution_longitudinal(
     comision_id: UUID,
     tenant_id: UUID = Depends(get_tenant_id),
     user_id: UUID = Depends(get_user_id),
-    _comision_access: None = Depends(require_comision_access),
+    _access: None = Depends(require_student_progress_access),
 ) -> CIIEvolutionLongitudinalOut:
     """CII evolution longitudinal del estudiante en una comisión (ADR-018).
 
@@ -1101,7 +1165,7 @@ async def get_student_episodes(
     comision_id: UUID,
     tenant_id: UUID = Depends(get_tenant_id),
     user_id: UUID = Depends(get_user_id),
-    _comision_access: None = Depends(require_comision_access),
+    _access: None = Depends(require_student_progress_access),
 ) -> StudentEpisodesOut:
     """Listado de episodios CERRADOS del estudiante con classification + template_id.
 
@@ -1283,7 +1347,7 @@ async def get_student_alerts(
     comision_id: UUID,
     tenant_id: UUID = Depends(get_tenant_id),
     user_id: UUID = Depends(get_user_id),
-    _comision_access: None = Depends(require_comision_access),
+    _access: None = Depends(require_student_progress_access),
 ) -> StudentAlertsOut:
     """Alertas longitudinales del estudiante vs. cohorte (ADR-022, audit G7).
 
@@ -1305,11 +1369,14 @@ async def get_student_alerts(
         )
 
     from platform_ops import (
-        RealLongitudinalDataSource,
         compute_cii_evolution_longitudinal,
         set_tenant_rls,
     )
     from sqlalchemy.ext.asyncio import async_sessionmaker
+
+    from analytics_service.services.cohort_slopes import (
+        batch_classifications_with_templates_by_student,
+    )
 
     ctr_engine = get_ctr_engine()
     cls_engine = get_classifier_engine()
@@ -1324,35 +1391,27 @@ async def get_student_alerts(
         await set_tenant_rls(ctr_s, tenant_id)
         await set_tenant_rls(cls_s, tenant_id)
         await set_tenant_rls(acad_s, tenant_id)
-        ds = RealLongitudinalDataSource(ctr_s, cls_s, tenant_id)
 
-        # 1. Slope del estudiante target
-        student_classifications = await ds.list_classifications_with_templates_for_student(
-            student_pseudonym=student_pseudonym,
-            comision_id=comision_id,
+        # P-4: una sola pasada (3 queries) trae las clasificaciones-con-template
+        # de TODA la cohorte, en vez de 3 queries × N alumnos (N+1). El slope
+        # por alumno es idéntico al de la función per-alumno.
+        grouped = await batch_classifications_with_templates_by_student(
+            ctr_session=ctr_s,
+            classifier_session=cls_s,
             academic_session=acad_s,
+            comision_id=comision_id,
+            tenant_id=tenant_id,
         )
-        student_evolution = compute_cii_evolution_longitudinal(student_classifications)
+
+        # 1. Slope del estudiante target (lista vacía si no tiene clasificaciones).
+        student_evolution = compute_cii_evolution_longitudinal(
+            grouped.get(student_pseudonym, [])
+        )
         student_slope = student_evolution["mean_slope"]
 
-        # 2. Slopes de toda la cohorte (para cuartiles)
-        from ctr_service.models import Episode
-        from sqlalchemy import select
-
-        ep_stmt = (
-            select(Episode.student_pseudonym)
-            .where(Episode.comision_id == comision_id)
-            .where(Episode.tenant_id == tenant_id)
-            .distinct()
-        )
-        students_result = await ctr_s.execute(ep_stmt)
-        student_ids = [row.student_pseudonym for row in students_result.all()]
-        for sid in student_ids:
-            cls = await ds.list_classifications_with_templates_for_student(
-                student_pseudonym=sid,
-                comision_id=comision_id,
-                academic_session=acad_s,
-            )
+        # 2. Slopes de toda la cohorte (para cuartiles). Solo aportan los alumnos
+        # con slope definido — igual que el loop original, que descartaba None.
+        for _sid, cls in grouped.items():
             evo = compute_cii_evolution_longitudinal(cls)
             if evo["mean_slope"] is not None:
                 cohort_slopes.append(evo["mean_slope"])
@@ -1458,11 +1517,14 @@ async def get_cohort_alerts_summary(
         )
 
     from platform_ops import (
-        RealLongitudinalDataSource,
         compute_cii_evolution_longitudinal,
         set_tenant_rls,
     )
     from sqlalchemy.ext.asyncio import async_sessionmaker
+
+    from analytics_service.services.cohort_slopes import (
+        batch_classifications_with_templates_by_student,
+    )
 
     ctr_engine = get_ctr_engine()
     cls_engine = get_classifier_engine()
@@ -1480,26 +1542,17 @@ async def get_cohort_alerts_summary(
         await set_tenant_rls(ctr_s, tenant_id)
         await set_tenant_rls(cls_s, tenant_id)
         await set_tenant_rls(acad_s, tenant_id)
-        ds = RealLongitudinalDataSource(ctr_s, cls_s, tenant_id)
 
-        from ctr_service.models import Episode
-        from sqlalchemy import select
-
-        ep_stmt = (
-            select(Episode.student_pseudonym)
-            .where(Episode.comision_id == comision_id)
-            .where(Episode.tenant_id == tenant_id)
-            .distinct()
+        # P-4: batch de toda la cohorte en 3 queries (antes: 3 queries × N).
+        grouped = await batch_classifications_with_templates_by_student(
+            ctr_session=ctr_s,
+            classifier_session=cls_s,
+            academic_session=acad_s,
+            comision_id=comision_id,
+            tenant_id=tenant_id,
         )
-        students_result = await ctr_s.execute(ep_stmt)
-        student_ids = [row.student_pseudonym for row in students_result.all()]
 
-        for sid in student_ids:
-            cls = await ds.list_classifications_with_templates_for_student(
-                student_pseudonym=sid,
-                comision_id=comision_id,
-                academic_session=acad_s,
-            )
+        for sid, cls in grouped.items():
             evo = compute_cii_evolution_longitudinal(cls)
             if evo["mean_slope"] is not None:
                 student_slope_pairs.append((sid, evo["mean_slope"]))

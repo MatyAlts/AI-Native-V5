@@ -26,6 +26,7 @@ from ctr_service.auth import (
     PUBLISH_ROLES,
     READ_ROLES,
     User,
+    assert_comision_member,
     get_db,
     require_role,
 )
@@ -168,6 +169,11 @@ async def get_episode(
             detail=f"Episode {episode_id} no encontrado",
         )
 
+    # Gate A0.6: un docente solo lee episodios de sus comisiones. Oversight y
+    # service-accounts pasan derecho. No toca el append-only ni el hashing —
+    # solo autoriza antes de servir la lectura.
+    await assert_comision_member(user, ep.comision_id)
+
     events_result = await db.execute(
         select(Event).where(Event.episode_id == episode_id).order_by(Event.seq)
     )
@@ -210,6 +216,11 @@ async def verify_episode_chain(
             status_code=status.HTTP_404_NOT_FOUND,
             detail=f"Episode {episode_id} no encontrado",
         )
+
+    # Gate A0.6: un docente solo verifica episodios de sus comisiones. Oversight
+    # y service-accounts pasan derecho. NO altera la lógica de verificación de la
+    # cadena — solo autoriza antes de recomputar/servir el resultado.
+    await assert_comision_member(user, ep.comision_id)
 
     events_result = await db.execute(
         select(Event).where(Event.episode_id == episode_id).order_by(Event.seq)

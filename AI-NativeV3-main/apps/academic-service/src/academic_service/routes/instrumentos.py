@@ -44,6 +44,7 @@ from academic_service.schemas.instrumentos import (
     TestTransferenciaCreate,
     TestTransferenciaOut,
 )
+from academic_service.services.comision_service import assert_comision_access
 from academic_service.services.instrumentos_content import (
     CUESTIONARIO_IA_ITEMS,
     PRETEST_AUTOEFICACIA_ITEMS,
@@ -54,7 +55,6 @@ from academic_service.services.instrumentos_content import (
     validate_cuestionario_ia_responses,
     validate_pretest_autoeficacia_responses,
 )
-
 
 # ============================================================================
 # CUESTIONARIO IA (P2-2)
@@ -101,7 +101,12 @@ async def create_cuestionario_ia(
 
     Idempotente por (tenant, comision, student, version): si ya existe una
     respuesta para esta combinacion, devuelve 409 Conflict en lugar de duplicar.
+
+    IDOR de escritura (A0.6): valida que el usuario pertenezca a la comisión
+    (alumno inscripto o staff) antes de escribir. Impide taggear una respuesta
+    a una comisión ajena y contaminar su cohorte. Comisión ajena → 403.
     """
+    await assert_comision_access(db, user, data.comision_id)
     # Validar contenido de respuestas contra catalogo
     errors = validate_cuestionario_ia_responses(data.responses)
     if errors:
@@ -195,7 +200,12 @@ async def create_pretest_autoeficacia(
     user: User = Depends(require_permission("instrumento_pretest_autoeficacia", "create")),
     db: AsyncSession = Depends(get_db),
 ) -> PretestAutoeficaciaOut:
-    """Estudiante registra respuesta al pretest. Calcula scores server-side."""
+    """Estudiante registra respuesta al pretest. Calcula scores server-side.
+
+    IDOR de escritura (A0.6): valida pertenencia a la comisión antes de
+    escribir (alumno inscripto o staff). Comisión ajena → 403.
+    """
+    await assert_comision_access(db, user, data.comision_id)
     errors = validate_pretest_autoeficacia_responses(data.responses)
     if errors:
         raise HTTPException(
@@ -299,7 +309,11 @@ async def create_test_transferencia(
 
     Idempotente por (tenant, comision, student, test_id, version): cada
     problema se responde una sola vez por estudiante por version del test.
+
+    IDOR de escritura (A0.6): valida pertenencia a la comisión antes de
+    escribir (alumno inscripto o staff). Comisión ajena → 403.
     """
+    await assert_comision_access(db, user, data.comision_id)
     # Validar que el test_id existe en el catalogo
     test_def = get_test_by_id(data.test_id)
     if not test_def:

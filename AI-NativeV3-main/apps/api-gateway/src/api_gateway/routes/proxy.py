@@ -104,6 +104,36 @@ def resolve_target(path: str) -> str | None:
     return None
 
 
+# Content-types que se reenvían chunk-a-chunk (SSE / streaming) en vez de
+# bufferearse punta a punta. El tutor socrático (POST
+# /api/v1/episodes/{id}/message) responde `text/event-stream`; sin forwarding
+# incremental el alumno mira la nada hasta que el stream cierra (bug P-1).
+_STREAMING_CONTENT_TYPES: frozenset[str] = frozenset({"text/event-stream"})
+
+# Headers hop-by-hop que NO se propagan al cliente — los fija el server HTTP del
+# gateway según el transfer real (chunked vs content-length).
+_EXCLUDED_RESPONSE_HEADERS: frozenset[str] = frozenset(
+    {"content-length", "transfer-encoding", "connection"}
+)
+
+
+def _is_streaming_response(content_type: str | None) -> bool:
+    """True si el upstream declara un content-type de streaming (SSE)."""
+    if not content_type:
+        return False
+    # `text/event-stream; charset=utf-8` → comparar sólo el media type.
+    return content_type.split(";", 1)[0].strip().lower() in _STREAMING_CONTENT_TYPES
+
+
+def _passthrough_response_headers(upstream_headers: httpx.Headers) -> dict[str, str]:
+    """Headers del upstream a reenviar, sin los hop-by-hop."""
+    return {
+        k: v
+        for k, v in upstream_headers.items()
+        if k.lower() not in _EXCLUDED_RESPONSE_HEADERS
+    }
+
+
 @router.api_route(
     "/api/{full_path:path}",
     methods=["GET", "POST", "PATCH", "PUT", "DELETE"],
@@ -123,35 +153,68 @@ async def proxy(full_path: str, request: Request) -> StreamingResponse:
 
     url = f"{target.rstrip('/')}{path}"
 
-    # Preservar headers relevantes (auth, content-type, etc.)
+    # Preservar headers relevantes: auth + los X-* que el JWTMiddleware inyectó
+    # autoritativamente en request.scope["headers"] (X-User-Id/X-Tenant-Id/
+    # X-User-Roles + firma X-Gateway-Signature), content-type, etc.
     headers = dict(request.headers)
     headers.pop("host", None)  # httpx setea el correcto
 
     body = await request.body()
 
-    async with httpx.AsyncClient(timeout=120.0) as client:
-        upstream = await client.request(
-            request.method,
-            url,
-            # `.multi_items()` preserva los parámetros REPETIDOS (ej.
-            # `?comision_id=a&comision_id=b` del corpus inter-jueces). Pasar el
-            # QueryParams directo a httpx los colapsa a uno solo (se queda con el
-            # último) — bug silencioso para cualquier endpoint con params repetidos.
-            params=request.query_params.multi_items(),
-            headers=headers,
-            content=body,
+    # Client httpx COMPARTIDO de larga vida (P-3): creado una vez en el lifespan
+    # (`main.py`) y reusado en cada request para no abrir una connection pool
+    # nueva por request. NO se cierra acá — es del ciclo de vida de la app; el
+    # shutdown del lifespan lo cierra. Solo se cierra el `upstream` (la response).
+    client: httpx.AsyncClient = request.app.state.http_client
+
+    upstream_request = client.build_request(
+        request.method,
+        url,
+        # `.multi_items()` preserva los parámetros REPETIDOS (ej.
+        # `?comision_id=a&comision_id=b` del corpus inter-jueces). Pasar el
+        # QueryParams directo a httpx los colapsa a uno solo (se queda con el
+        # último) — bug silencioso para cualquier endpoint con params repetidos.
+        params=request.query_params.multi_items(),
+        headers=headers,
+        content=body,
+    )
+    # `stream=True` devuelve los headers apenas llegan, sin leer el body:
+    # así se decide bufferear vs reenviar chunk-a-chunk mirando el
+    # content-type real, y las respuestas SSE fluyen incrementalmente. Si `send`
+    # falla no hay `upstream` que cerrar (el client compartido NO se toca).
+    upstream = await client.send(upstream_request, stream=True)
+
+    response_headers = _passthrough_response_headers(upstream.headers)
+
+    if _is_streaming_response(upstream.headers.get("content-type")):
+        # Camino streaming (SSE): reenviar los chunks a medida que llegan, sin
+        # bufferear. Solo el `upstream` se cierra cuando el generador termina
+        # (fin del stream o desconexión del cliente) — el client es compartido.
+        async def forward_stream():
+            try:
+                async for chunk in upstream.aiter_raw():
+                    yield chunk
+            finally:
+                await upstream.aclose()
+
+        return StreamingResponse(
+            forward_stream(),
+            status_code=upstream.status_code,
+            headers=response_headers,
         )
 
-    # Stream response al cliente
+    # Camino no-streaming: bufferear la respuesta completa (comportamiento
+    # histórico intacto para todo endpoint no-SSE). Solo se cierra el `upstream`.
+    try:
+        await upstream.aread()
+    finally:
+        await upstream.aclose()
+
     async def iter_content():
         yield upstream.content
 
     return StreamingResponse(
         iter_content(),
         status_code=upstream.status_code,
-        headers={
-            k: v
-            for k, v in upstream.headers.items()
-            if k.lower() not in {"content-length", "transfer-encoding", "connection"}
-        },
+        headers=response_headers,
     )

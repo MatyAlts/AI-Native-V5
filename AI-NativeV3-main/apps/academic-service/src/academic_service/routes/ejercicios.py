@@ -32,6 +32,10 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from academic_service.auth import User, get_db, require_permission
 from academic_service.schemas import ListMeta, ListResponse
+from academic_service.services.content_visibility import (
+    is_full_content_role,
+    sanitize_ejercicio_for_student,
+)
 from academic_service.services.ejercicio_service import EjercicioService
 
 logger = logging.getLogger(__name__)
@@ -83,6 +87,10 @@ async def list_ejercicios(
         cursor=cursor,
     )
     items = [EjercicioRead.model_validate(o) for o in objs]
+    if not is_full_content_role(user):
+        # A0.3: el alumno (tiene `ejercicio:read`) no ve tests ocultos ni
+        # material de solución del banco.
+        items = [sanitize_ejercicio_for_student(it) for it in items]
     next_cursor = str(objs[-1].id) if len(objs) == limit else None
     return ListResponse(data=items, meta=ListMeta(cursor_next=next_cursor))
 
@@ -95,7 +103,11 @@ async def get_ejercicio(
 ) -> EjercicioRead:
     svc = EjercicioService(db)
     obj = await svc.get(ejercicio_id)
-    return EjercicioRead.model_validate(obj)
+    out = EjercicioRead.model_validate(obj)
+    if not is_full_content_role(user):
+        # A0.3: el alumno no ve tests ocultos ni material de solución.
+        out = sanitize_ejercicio_for_student(out)
+    return out
 
 
 @router.patch("/{ejercicio_id}", response_model=EjercicioRead)
@@ -162,7 +174,6 @@ class EjercicioGenerateResponse(BaseModel):
 async def generate_ejercicio(
     req: EjercicioGenerateRequest,
     user: User = Depends(require_permission("ejercicio", "create")),
-    db: AsyncSession = Depends(get_db),
 ) -> EjercicioGenerateResponse:
     """Genera un borrador de Ejercicio via IA (ADR-047 + ADR-048).
 
@@ -178,38 +189,52 @@ async def generate_ejercicio(
       - 400 si materia_id no existe o no pertenece al tenant.
       - 502 si el ai-gateway falla o el LLM devuelve JSON invalido.
       - 403 (Casbin) si el caller es estudiante.
+
+    Manejo del pool (P-9 / A2.4): NO tomamos la sesión DB por `Depends(get_db)`
+    (que la retendría durante los hasta 3×90s del LLM, agotando el pool bajo
+    concurrencia). Leemos lo mínimo (la materia) en una sesión CORTA y la
+    soltamos ANTES de pegar al LLM. Este endpoint no persiste, así que no
+    reabrimos sesión.
     """
     from sqlalchemy import select
 
     from academic_service.config import settings
+    from academic_service.db import tenant_session
     from academic_service.models.institucional import Materia
     from academic_service.routes.tareas_practicas import _retrieve_rag_context
-    from academic_service.services.ai_clients import AIGatewayClient, GovernanceClient
+    from academic_service.services.ai_clients import (
+        AIGatewayClient,
+        GovernanceClient,
+        get_generation_semaphore,
+    )
 
-    # 1. Resolver materia. Si el frontend no envia materia_id (no hay selector
-    # encadenado todavia en el wizard), resolvemos la primera materia del
-    # tenant via RLS. Si tampoco hay materias, error claro.
-    if req.materia_id is not None:
-        stmt = select(Materia).where(Materia.id == req.materia_id)
-        materia = (await db.execute(stmt)).scalar_one_or_none()
-        if materia is None:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail=f"Materia {req.materia_id} no encontrada en este tenant",
-            )
-        materia_id_resolved = req.materia_id
-    else:
-        stmt = select(Materia).limit(1)
-        materia = (await db.execute(stmt)).scalar_one_or_none()
-        if materia is None:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail=(
-                    "No hay materias en este tenant. Crea al menos una materia "
-                    "antes de usar el wizard IA, o paseme un materia_id explicito."
-                ),
-            )
-        materia_id_resolved = materia.id
+    # 1. Resolver materia en una sesión DB CORTA (se cierra al salir del `async
+    # with`, devolviendo la conexión al pool antes de las llamadas al LLM). Si el
+    # frontend no envia materia_id (no hay selector encadenado todavia en el
+    # wizard), resolvemos la primera materia del tenant via RLS. Si tampoco hay
+    # materias, error claro.
+    async with tenant_session(user.tenant_id) as db:
+        if req.materia_id is not None:
+            stmt = select(Materia).where(Materia.id == req.materia_id)
+            materia = (await db.execute(stmt)).scalar_one_or_none()
+            if materia is None:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail=f"Materia {req.materia_id} no encontrada en este tenant",
+                )
+            materia_id_resolved = req.materia_id
+        else:
+            stmt = select(Materia).limit(1)
+            materia = (await db.execute(stmt)).scalar_one_or_none()
+            if materia is None:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail=(
+                        "No hay materias en este tenant. Crea al menos una materia "
+                        "antes de usar el wizard IA, o paseme un materia_id explicito."
+                    ),
+                )
+            materia_id_resolved = materia.id
 
     # 2. Resolver prompt activo
     governance = GovernanceClient(settings.governance_service_url)
@@ -266,67 +291,70 @@ async def generate_ejercicio(
     result = None
     t0 = time.perf_counter()
 
-    for attempt in range(max_attempts):
-        try:
-            result = await ai.complete(
-                messages=messages,
-                model=settings.ejercicio_generator_default_model,
-                feature="ejercicio_generator",
-                tenant_id=user.tenant_id,
-                materia_id=materia_id_resolved,
-                temperature=0.7,
-                max_tokens=8192,
-                response_format={"type": "json_object"},
-            )
-        except httpx.HTTPError as exc:
-            logger.error(
-                "ai_gateway_call_failed attempt=%d exc_type=%s detail=%s",
-                attempt,
-                type(exc).__name__,
-                str(exc)[:200],
-            )
-            if attempt < max_attempts - 1:
-                await asyncio.sleep(0.5 * (2 ** attempt))  # 0.5s, 1.0s
+    # Sin sesión DB abierta acá (P-9): la conexión ya volvió al pool. El semáforo
+    # limita cuántas generaciones IA corren a la vez (no cuántas conexiones DB).
+    async with get_generation_semaphore():
+        for attempt in range(max_attempts):
+            try:
+                result = await ai.complete(
+                    messages=messages,
+                    model=settings.ejercicio_generator_default_model,
+                    feature="ejercicio_generator",
+                    tenant_id=user.tenant_id,
+                    materia_id=materia_id_resolved,
+                    temperature=0.7,
+                    max_tokens=8192,
+                    response_format={"type": "json_object"},
+                )
+            except httpx.HTTPError as exc:
+                logger.error(
+                    "ai_gateway_call_failed attempt=%d exc_type=%s detail=%s",
+                    attempt,
+                    type(exc).__name__,
+                    str(exc)[:200],
+                )
+                if attempt < max_attempts - 1:
+                    await asyncio.sleep(0.5 * (2 ** attempt))  # 0.5s, 1.0s
+                    continue
+                raise HTTPException(
+                    status_code=status.HTTP_502_BAD_GATEWAY,
+                    detail="ai-gateway no respondió correctamente tras 3 intentos",
+                ) from exc
+
+            # Parsear JSON
+            raw_content = result.content.strip()
+            if not raw_content.startswith("{"):
+                brace_start = raw_content.find("{")
+                brace_end = raw_content.rfind("}")
+                if brace_start != -1 and brace_end > brace_start:
+                    raw_content = raw_content[brace_start : brace_end + 1]
+            try:
+                parsed = json.loads(raw_content)
+            except json.JSONDecodeError as exc:
+                logger.error(
+                    "ejercicio_generator_invalid_json provider=%s model=%s error=%s "
+                    "raw_start=%r",
+                    result.provider,
+                    result.model,
+                    str(exc),
+                    raw_content[:300],
+                )
+                if attempt < max_attempts - 1:
+                    continue
+                raise HTTPException(
+                    status_code=status.HTTP_502_BAD_GATEWAY,
+                    detail="LLM devolvió JSON inválido (revisar prompt o modelo)",
+                ) from exc
+
+            if "error" in parsed and attempt < max_attempts - 1:
+                logger.warning(
+                    "ejercicio_generator_llm_returned_error attempt=%d: %s",
+                    attempt,
+                    parsed["error"],
+                )
                 continue
-            raise HTTPException(
-                status_code=status.HTTP_502_BAD_GATEWAY,
-                detail="ai-gateway no respondió correctamente tras 3 intentos",
-            ) from exc
 
-        # Parsear JSON
-        raw_content = result.content.strip()
-        if not raw_content.startswith("{"):
-            brace_start = raw_content.find("{")
-            brace_end = raw_content.rfind("}")
-            if brace_start != -1 and brace_end > brace_start:
-                raw_content = raw_content[brace_start : brace_end + 1]
-        try:
-            parsed = json.loads(raw_content)
-        except json.JSONDecodeError as exc:
-            logger.error(
-                "ejercicio_generator_invalid_json provider=%s model=%s error=%s "
-                "raw_start=%r",
-                result.provider,
-                result.model,
-                str(exc),
-                raw_content[:300],
-            )
-            if attempt < max_attempts - 1:
-                continue
-            raise HTTPException(
-                status_code=status.HTTP_502_BAD_GATEWAY,
-                detail="LLM devolvió JSON inválido (revisar prompt o modelo)",
-            ) from exc
-
-        if "error" in parsed and attempt < max_attempts - 1:
-            logger.warning(
-                "ejercicio_generator_llm_returned_error attempt=%d: %s",
-                attempt,
-                parsed["error"],
-            )
-            continue
-
-        break
+            break
 
     if result is None:
         raise HTTPException(

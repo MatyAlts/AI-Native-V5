@@ -320,9 +320,26 @@ class TareaPracticaService:
         # sí NO se clona (sigue siendo el mismo). El patch del versionado NO
         # permite re-componer ejercicios — eso se hace con los endpoints de
         # composición sobre el nuevo TP en estado draft.
+        #
+        # MissingGreenlet fix: `parent` viene de `repo.get_or_404` sin
+        # eager-load, así que iterar `parent.tp_ejercicios` (relación lazy)
+        # dispararía IO implícito fuera del contexto greenlet en el driver
+        # async → `MissingGreenlet`. Traemos las filas con un SELECT explícito
+        # (mismo `order_by` que la relación) en vez de por lazy-load.
         from academic_service.models import TpEjercicio
 
-        for tp_ej in parent.tp_ejercicios:
+        parent_ejercicios = (
+            (
+                await self.session.execute(
+                    select(TpEjercicio)
+                    .where(TpEjercicio.tarea_practica_id == parent.id)
+                    .order_by(TpEjercicio.orden)
+                )
+            )
+            .scalars()
+            .all()
+        )
+        for tp_ej in parent_ejercicios:
             clone = TpEjercicio(
                 id=uuid4(),
                 tenant_id=parent.tenant_id,

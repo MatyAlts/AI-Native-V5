@@ -10,13 +10,22 @@ from __future__ import annotations
 from functools import lru_cache
 from pathlib import Path
 
-from fastapi import APIRouter, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel
 
+from governance_service.auth import require_gateway_auth
 from governance_service.config import settings
 from governance_service.services.prompt_loader import PromptLoader
 
-router = APIRouter(prefix="/api/v1", tags=["governance"])
+# Auth a nivel router (A0.4): todos los endpoints de prompts/configs exigen
+# procedencia probada cuando `require_gateway_signature` está ON. Con el flag
+# OFF (default) el dependency es no-op y no rompe al tutor-service. `/health`
+# vive en otro router y queda abierto (probes de k8s).
+router = APIRouter(
+    prefix="/api/v1",
+    tags=["governance"],
+    dependencies=[Depends(require_gateway_auth)],
+)
 
 
 @lru_cache(maxsize=1)

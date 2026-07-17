@@ -169,9 +169,10 @@ export function TemplatesView({ getToken }: Props) {
           <>
             <div className="flex items-center justify-between gap-3 flex-wrap animate-fade-in-up">
               <p className="text-xs text-muted leading-relaxed max-w-2xl">
-                Templates canónicos para esta materia y período. Crear uno auto-instancia un TP en
-                cada comisión existente. Las nuevas versiones se propagan a las instancias sin
-                drift.
+                Briefs pedagógicos canónicos para esta materia y período. Crear uno NO genera TPs en
+                las comisiones: sirve como prompt para que el docente o el wizard de IA armen el TP
+                en cada comisión. Las instancias son los TPs que el docente crea referenciando esta
+                plantilla.
               </p>
               <div className="flex items-center gap-2">
                 <button

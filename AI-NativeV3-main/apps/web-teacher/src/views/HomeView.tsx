@@ -14,15 +14,13 @@
  *   (insufficient_data por k-anonymity, RN-131); UI muestra "—".
  */
 import { HelpButton } from "@platform/ui"
+import { useQueries, useQuery } from "@tanstack/react-query"
 import { Link } from "@tanstack/react-router"
-import { Download, FileText, Users } from "lucide-react"
-import { useCallback, useEffect, useState } from "react"
+import { ArrowRight, Download, FileText, TrendingDown, Users } from "lucide-react"
 import { ComisionDelDocenteCard, type ComisionKpis } from "../components/ComisionDelDocenteCard"
 import { comisionLabel } from "../components/ComisionSelector"
 import {
-  type CohortAdversarialEvents,
   type CohortAlertsSummary,
-  type CohortProgression,
   type Comision,
   comisionesApi,
   getCohortAdversarialEvents,
@@ -52,63 +50,82 @@ interface ComisionWithKpis {
 }
 
 export function HomeView({ getToken }: Props) {
-  const [items, setItems] = useState<ComisionWithKpis[] | null>(null)
-  const [error, setError] = useState<string | null>(null)
-  const [loading, setLoading] = useState(true)
+  // Lista de comisiones del docente. Query key estable → se cachea y comparte
+  // con cualquier otra vista que liste "mis comisiones".
+  const comisionesQuery = useQuery({
+    queryKey: ["comisiones-mias"],
+    queryFn: () => comisionesApi.listMine(getToken),
+  })
+  const comisiones = comisionesQuery.data?.items ?? []
 
-  const load = useCallback(async () => {
-    setLoading(true)
-    setError(null)
-    try {
-      const { items: comisiones } = await comisionesApi.listMine(getToken)
-      const enriched = await Promise.all(
-        comisiones.map(async (c) => {
-          const [prog, adv, alertsSummary] = await Promise.allSettled([
-            getCohortProgression(c.id, getToken) as Promise<CohortProgression>,
-            getCohortAdversarialEvents(c.id, getToken) as Promise<CohortAdversarialEvents>,
-            getCohortAlertsSummary(c.id, undefined, getToken) as Promise<CohortAlertsSummary>,
-          ])
-          const alumnos = prog.status === "fulfilled" ? prog.value.n_students : null
-          const episodiosSemana =
-            prog.status === "fulfilled"
-              ? prog.value.trajectories.reduce((a, t) => a + t.n_episodes, 0)
-              : null
-          const adversosSemana =
-            adv.status === "fulfilled" ? countLastWeek(adv.value.recent_events) : null
-          // ADR-022: KPI alertas = n estudiantes con al menos una alerta.
-          // Si insufficient_data (N<5 k-anonymity) → null → UI muestra "—".
-          const alertas: number | null =
-            alertsSummary.status === "fulfilled" &&
-            !alertsSummary.value.insufficient_data &&
-            alertsSummary.value.alerts_summary
-              ? alertsSummary.value.alerts_summary.students_with_any_alert
-              : null
-          const alertsBreakdown: CohortAlertsSummary | null =
-            alertsSummary.status === "fulfilled" ? alertsSummary.value : null
-          return {
-            comision: c,
-            displayName: comisionLabel(c),
-            kpis: {
-              alumnos,
-              episodiosSemana,
-              alertas,
-              adversosSemana,
-              ...(alertsBreakdown ? { alertsBreakdown } : {}),
-            },
-          }
-        }),
-      )
-      setItems(enriched)
-    } catch (e) {
-      setError(String(e))
-    } finally {
-      setLoading(false)
+  // Las 3 métricas por cohorte, cada una como query independiente con key
+  // estable `["cohort-<métrica>", comisionId]`. Es la convención para el resto
+  // de las vistas de cohorte (progression/adversarial/alerts): mismo dato →
+  // misma key → mismo cache. useQueries dispara UN fetch por (comisión, métrica)
+  // y lo dedupe/cachea dentro del staleTime del QueryClient, reemplazando el
+  // patrón useState+useEffect que hacía 1+3×N requests EN CADA render (y
+  // arriesgaba el loop 429). Ya no hay refetch por render — sólo al invalidar
+  // la key o vencer el staleTime.
+  const progressionQueries = useQueries({
+    queries: comisiones.map((c) => ({
+      queryKey: ["cohort-progression", c.id],
+      queryFn: () => getCohortProgression(c.id, getToken),
+    })),
+  })
+  const adversarialQueries = useQueries({
+    queries: comisiones.map((c) => ({
+      queryKey: ["cohort-adversarial", c.id],
+      queryFn: () => getCohortAdversarialEvents(c.id, getToken),
+    })),
+  })
+  const alertsQueries = useQueries({
+    queries: comisiones.map((c) => ({
+      queryKey: ["cohort-alerts", c.id],
+      queryFn: () => getCohortAlertsSummary(c.id, undefined, getToken),
+    })),
+  })
+
+  // UX idéntica al patrón previo: skeleton único hasta que la lista y TODAS las
+  // métricas de primera carga resuelven. Una métrica que falla degrada a null
+  // por card (equivalente al Promise.allSettled anterior) sin bloquear el
+  // render ni contar como "loading".
+  const metricsPending =
+    progressionQueries.some((q) => q.isLoading) ||
+    adversarialQueries.some((q) => q.isLoading) ||
+    alertsQueries.some((q) => q.isLoading)
+  const loading = comisionesQuery.isLoading || (comisiones.length > 0 && metricsPending)
+  const error = comisionesQuery.error ? String(comisionesQuery.error) : null
+
+  const enriched: ComisionWithKpis[] = comisiones.map((c, i) => {
+    const prog = progressionQueries[i]?.data
+    const adv = adversarialQueries[i]?.data
+    const alertsSummary = alertsQueries[i]?.data
+    const alumnos = prog ? prog.n_students : null
+    const episodiosSemana = prog ? prog.trajectories.reduce((a, t) => a + t.n_episodes, 0) : null
+    const adversosSemana = adv ? countLastWeek(adv.recent_events) : null
+    // ADR-022: KPI alertas = n estudiantes con al menos una alerta.
+    // Si insufficient_data (N<5 k-anonymity) → null → UI muestra "—".
+    const alertas: number | null =
+      alertsSummary && !alertsSummary.insufficient_data && alertsSummary.alerts_summary
+        ? alertsSummary.alerts_summary.students_with_any_alert
+        : null
+    const alertsBreakdown: CohortAlertsSummary | null = alertsSummary ?? null
+    return {
+      comision: c,
+      displayName: comisionLabel(c),
+      kpis: {
+        alumnos,
+        episodiosSemana,
+        alertas,
+        adversosSemana,
+        ...(alertsBreakdown ? { alertsBreakdown } : {}),
+      },
     }
-  }, [getToken])
+  })
 
-  useEffect(() => {
-    void load()
-  }, [load])
+  // `items` conserva la semántica del original: null mientras carga, array
+  // cuando terminó — así todo el JSX de abajo queda intacto.
+  const items = loading ? null : enriched
 
   const totalAlumnos = items?.reduce((s, e) => s + (e.kpis.alumnos ?? 0), 0) ?? null
   const totalEpisodios = items?.reduce((s, e) => s + (e.kpis.episodiosSemana ?? 0), 0) ?? null
@@ -226,6 +243,9 @@ export function HomeView({ getToken }: Props) {
         </section>
       )}
 
+      {/* ═══ SEÑALES DE ACOMPAÑAMIENTO ═══════════════════════════════ */}
+      {items && items.length > 0 && <PedagogicalSignalsSection items={items} />}
+
       {/* ═══ TOOLS TRANSVERSALES ═════════════════════════════════════ */}
       {items && items.length > 0 && (
         <section
@@ -318,6 +338,165 @@ function ToolCard({
           <span className="text-sm font-medium text-ink leading-tight">{title}</span>
           <span className="text-xs text-muted leading-relaxed">{description}</span>
         </div>
+      </Link>
+    </li>
+  )
+}
+
+/* ═══ Señales de acompañamiento (F7 · ADR-022 · ADR-053) ═════════════════
+ *
+ * Hace ACCIONABLES las alertas pedagógicas que el analytics ya calcula y que
+ * hasta ahora sólo vivían en el KPI "alertas" del card + tooltip. Reusa el
+ * `alertsBreakdown` que HomeView ya trae por comisión (getCohortAlertsSummary,
+ * useQueries) — CERO fetch nuevo, no toca el 1+3×N resuelto en P-5.
+ *
+ * El resumen agregado NO trae pseudónimos (sólo conteos por tipo de señal),
+ * así que el drill-down accionable es la progresión de la cohorte
+ * (`/progression`), cuya tabla ya lleva a `StudentLongitudinalView` por alumno.
+ * Traer el detalle por alumno acá exigiría 1 fetch extra por cohorte
+ * (getStudentAlerts × N) — se evita a propósito (ver follow-up del reporte).
+ *
+ * Framing NO-reificante (ADR-053 §7.3 principios 4 y 5): son señales de
+ * acompañamiento sobre la trayectoria RECIENTE en la cohorte (z-score, no ML,
+ * no clínico). NO son un ranking ni una etiqueta del alumno. k-anonymity
+ * (RN-131): `insufficient_data` → mensaje amable, nunca error.
+ */
+const SIGNAL_DEFS: {
+  key: "regresion_vs_cohorte" | "bottom_quartile" | "slope_negativo_significativo"
+  label: string
+}[] = [
+  { key: "regresion_vs_cohorte", label: "perdieron ritmo frente a la cohorte" },
+  { key: "bottom_quartile", label: "en el cuartil que más cuesta sostener" },
+  { key: "slope_negativo_significativo", label: "con una tendencia a la baja sostenida" },
+]
+
+function PedagogicalSignalsSection({ items }: { items: ComisionWithKpis[] }) {
+  // Best-effort: si NINGUNA comisión resolvió su resumen de alertas (métrica
+  // caída), no renderizamos la sección — el card ya degrada a "—". Evita un
+  // "sin señales" engañoso cuando en realidad no hubo dato.
+  const anyLoaded = items.some((e) => e.kpis.alertsBreakdown)
+  if (!anyLoaded) return null
+
+  const withSignals = items.filter((e) => {
+    const s = e.kpis.alertsBreakdown?.alerts_summary
+    return !!s && s.students_with_any_alert > 0
+  })
+  const insufficientCount = items.filter((e) => e.kpis.alertsBreakdown?.insufficient_data).length
+
+  return (
+    <section
+      className="animate-fade-in-up animate-delay-200"
+      aria-label="Señales de acompañamiento por comisión"
+    >
+      <div className="flex items-baseline justify-between mb-1.5">
+        <h2 className="text-[11px] uppercase tracking-[0.12em] font-semibold text-muted">
+          Señales de acompañamiento
+        </h2>
+        {withSignals.length > 0 && (
+          <span className="text-[11px] text-muted">
+            {withSignals.length} {withSignals.length === 1 ? "cohorte" : "cohortes"} a mirar
+          </span>
+        )}
+      </div>
+      <p className="text-xs text-muted leading-relaxed max-w-2xl mb-4">
+        Trayectorias recientes que conviene acompañar. Son señales estadísticas frente a la propia
+        cohorte (z-score, no un modelo predictivo):{" "}
+        <strong className="font-medium text-ink/80">
+          no son un ranking ni una etiqueta del alumno
+        </strong>
+        . Miralas junto a tu criterio docente.
+      </p>
+
+      {withSignals.length === 0 ? (
+        <div className="rounded-xl border border-border bg-surface p-5 flex items-start gap-3">
+          <span className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-md bg-success-soft text-success">
+            <Users className="h-4 w-4" />
+          </span>
+          <div className="min-w-0">
+            <p className="text-sm font-medium text-ink">
+              Sin señales de acompañamiento esta semana
+            </p>
+            <p className="text-xs text-muted leading-relaxed mt-0.5">
+              Ninguna de tus cohortes con datos suficientes muestra regresión, cuartil inferior ni
+              tendencia a la baja.
+              {insufficientCount > 0 && (
+                <>
+                  {" "}
+                  {insufficientCount}{" "}
+                  {insufficientCount === 1
+                    ? "cohorte todavía no tiene"
+                    : "cohortes todavía no tienen"}{" "}
+                  suficientes datos longitudinales para calcular señales (privacidad, k-anonymity).
+                </>
+              )}
+            </p>
+          </div>
+        </div>
+      ) : (
+        <>
+          <ul className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+            {withSignals.map((entry) => (
+              <SignalCohortCard key={entry.comision.id} entry={entry} />
+            ))}
+          </ul>
+          {insufficientCount > 0 && (
+            <p className="text-[11px] text-muted mt-3">
+              {insufficientCount}{" "}
+              {insufficientCount === 1 ? "cohorte más no tiene" : "cohortes más no tienen"}{" "}
+              suficientes datos longitudinales para señales todavía (privacidad, k-anonymity).
+            </p>
+          )}
+        </>
+      )}
+    </section>
+  )
+}
+
+function SignalCohortCard({ entry }: { entry: ComisionWithKpis }) {
+  const summary = entry.kpis.alertsBreakdown?.alerts_summary
+  if (!summary) return null
+  const active = SIGNAL_DEFS.filter((d) => summary[d.key] > 0)
+
+  return (
+    <li className="rounded-xl border border-border bg-surface overflow-hidden flex flex-col">
+      <div className="p-4 flex-1">
+        <div className="flex items-start justify-between gap-3 mb-3">
+          <div className="min-w-0">
+            <span className="font-mono text-[11px] uppercase tracking-wider text-muted px-2 py-0.5 rounded bg-surface-alt border border-border-soft">
+              {entry.comision.codigo}
+            </span>
+            <h3 className="text-[15px] font-semibold text-ink leading-tight tracking-tight mt-2">
+              {entry.displayName}
+            </h3>
+          </div>
+          <span
+            className="inline-flex items-center gap-1.5 text-warning shrink-0"
+            title={`${summary.students_with_any_alert} alumnos con alguna señal en esta ventana`}
+          >
+            <TrendingDown className="h-4 w-4" aria-hidden="true" />
+            <span className="font-mono text-lg font-semibold leading-none">
+              {summary.students_with_any_alert}
+            </span>
+          </span>
+        </div>
+        <ul className="flex flex-col gap-2">
+          {active.map((d) => (
+            <li key={d.key} className="flex items-baseline gap-2.5 text-sm">
+              <span className="font-mono text-xs font-semibold text-warning bg-warning-soft rounded px-1.5 py-0.5 min-w-[1.75rem] text-center shrink-0">
+                {summary[d.key]}
+              </span>
+              <span className="text-ink/80 leading-snug">{d.label}</span>
+            </li>
+          ))}
+        </ul>
+      </div>
+      <Link
+        to="/progression"
+        search={{ comisionId: entry.comision.id }}
+        className="press-shrink inline-flex items-center justify-center gap-2 px-4 py-3 text-sm font-medium text-ink border-t border-border-soft hover:bg-accent-brand-soft hover:text-accent-brand-deep transition-colors"
+      >
+        Ver progresión y acompañar
+        <ArrowRight className="h-3.5 w-3.5" />
       </Link>
     </li>
   )

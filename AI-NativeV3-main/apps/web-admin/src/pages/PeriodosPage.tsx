@@ -1,6 +1,7 @@
-import { HelpButton, Modal, PageContainer } from "@platform/ui"
+import { HelpButton, Modal, PageContainer, useConfirm } from "@platform/ui"
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import { Pencil } from "lucide-react"
-import { type ReactNode, useEffect, useState } from "react"
+import { type ReactNode, useState } from "react"
 import {
   HttpError,
   type Periodo,
@@ -15,71 +16,65 @@ function formatError(e: unknown): string {
 }
 
 export function PeriodosPage(): ReactNode {
-  const [items, setItems] = useState<Periodo[]>([])
-  const [loading, setLoading] = useState(false)
-  const [error, setError] = useState<string | null>(null)
   const [showForm, setShowForm] = useState(false)
-
-  const [busyId, setBusyId] = useState<string | null>(null)
   const [editing, setEditing] = useState<Periodo | null>(null)
+  const confirm = useConfirm()
 
-  const load = async () => {
-    setLoading(true)
-    setError(null)
-    try {
-      const resp = await periodosApi.list({ limit: 200 })
-      setItems(resp.data)
-    } catch (e) {
-      setError(formatError(e))
-    } finally {
-      setLoading(false)
-    }
-  }
+  const queryClient = useQueryClient()
+
+  const periodosQuery = useQuery({
+    queryKey: ["periodos", { limit: 200 }],
+    queryFn: () => periodosApi.list({ limit: 200 }),
+  })
+
+  const closeMutation = useMutation({
+    mutationFn: (id: string) => periodosApi.update(id, { estado: "cerrado" }),
+    onSuccess: () => void queryClient.invalidateQueries({ queryKey: ["periodos"] }),
+  })
+
+  const deleteMutation = useMutation({
+    mutationFn: (id: string) => periodosApi.delete(id),
+    onSuccess: () => void queryClient.invalidateQueries({ queryKey: ["periodos"] }),
+  })
+
+  const items: Periodo[] = periodosQuery.data?.data ?? []
+  const loading = periodosQuery.isLoading
+
+  // Fila ocupada = la que tiene una mutación (cerrar/eliminar) en vuelo. `variables`
+  // es el id pasado a `mutate` mientras `isPending`, o `undefined` en reposo.
+  const busyId =
+    (closeMutation.isPending ? closeMutation.variables : null) ??
+    (deleteMutation.isPending ? deleteMutation.variables : null) ??
+    null
+
+  const queryError = periodosQuery.error || closeMutation.error || deleteMutation.error
+  const error = queryError ? formatError(queryError) : null
 
   const closePeriodo = async (p: Periodo) => {
     if (
-      !window.confirm(
-        `¿Cerrar el periodo "${p.codigo}"?\n\nEsta acción es IRREVERSIBLE — una vez cerrado, el periodo queda frozen y no se puede reabrir ni editar.`,
-      )
+      !(await confirm({
+        title: "Cerrar periodo",
+        message: `¿Cerrar el periodo "${p.codigo}"?\n\nEsta acción es IRREVERSIBLE — una vez cerrado, el periodo queda frozen y no se puede reabrir ni editar.`,
+        confirmLabel: "Cerrar periodo",
+        tone: "danger",
+      }))
     ) {
       return
     }
-    setBusyId(p.id)
-    setError(null)
-    try {
-      await periodosApi.update(p.id, { estado: "cerrado" })
-      await load()
-    } catch (e) {
-      setError(formatError(e))
-    } finally {
-      setBusyId(null)
-    }
+    closeMutation.mutate(p.id)
   }
 
   const deletePeriodo = async (p: Periodo) => {
     if (
-      !window.confirm(
-        `¿Eliminar el periodo "${p.codigo}"?\n\nSi tiene comisiones asociadas, la operación va a fallar.`,
-      )
+      !(await confirm({
+        message: `¿Eliminar el periodo "${p.codigo}"?\n\nSi tiene comisiones asociadas, la operación va a fallar.`,
+        tone: "danger",
+      }))
     ) {
       return
     }
-    setBusyId(p.id)
-    setError(null)
-    try {
-      await periodosApi.delete(p.id)
-      await load()
-    } catch (e) {
-      setError(formatError(e))
-    } finally {
-      setBusyId(null)
-    }
+    deleteMutation.mutate(p.id)
   }
-
-  // biome-ignore lint/correctness/useExhaustiveDependencies: load — fetch mount-only; el handler usa setState con identidad estable.
-  useEffect(() => {
-    void load()
-  }, [])
 
   return (
     <PageContainer
@@ -101,9 +96,9 @@ export function PeriodosPage(): ReactNode {
 
         {showForm && (
           <PeriodoForm
-            onCreated={async () => {
+            onCreated={() => {
               setShowForm(false)
-              await load()
+              void queryClient.invalidateQueries({ queryKey: ["periodos"] })
             }}
           />
         )}
@@ -182,7 +177,7 @@ export function PeriodosPage(): ReactNode {
                           {isAbierto && (
                             <button
                               type="button"
-                              onClick={() => void closePeriodo(p)}
+                              onClick={() => closePeriodo(p)}
                               disabled={isBusy}
                               className="rounded-md border border-warning/40 bg-warning-soft px-2.5 py-1 text-xs font-medium text-warning hover:bg-warning-soft disabled:opacity-50"
                               title="Cerrar periodo (one-way — no se puede reabrir)"
@@ -192,7 +187,7 @@ export function PeriodosPage(): ReactNode {
                           )}
                           <button
                             type="button"
-                            onClick={() => void deletePeriodo(p)}
+                            onClick={() => deletePeriodo(p)}
                             disabled={isBusy}
                             className="rounded-md border border-danger/40 bg-danger-soft px-2.5 py-1 text-xs font-medium text-danger hover:bg-danger-soft disabled:opacity-50"
                             title="Eliminar periodo (falla si tiene comisiones asociadas)"
@@ -213,9 +208,9 @@ export function PeriodosPage(): ReactNode {
           <EditPeriodoModal
             periodo={editing}
             onClose={() => setEditing(null)}
-            onSaved={async () => {
+            onSaved={() => {
               setEditing(null)
-              await load()
+              void queryClient.invalidateQueries({ queryKey: ["periodos"] })
             }}
           />
         )}
@@ -232,25 +227,25 @@ function PeriodoForm({ onCreated }: { onCreated: () => void }): ReactNode {
     fecha_fin: "",
     estado: "abierto",
   })
-  const [submitting, setSubmitting] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
-  const submit = async (e: React.FormEvent) => {
+  const createMutation = useMutation({
+    mutationFn: (data: PeriodoCreate) => periodosApi.create(data),
+    onSuccess: () => onCreated(),
+    onError: (err) =>
+      setError(
+        err instanceof HttpError ? `${err.status}: ${err.detail || err.title}` : String(err),
+      ),
+  })
+
+  const submit = (e: React.FormEvent) => {
     e.preventDefault()
     if (form.fecha_fin < form.fecha_inicio) {
       setError("La fecha de fin no puede ser anterior a la fecha de inicio.")
       return
     }
-    setSubmitting(true)
     setError(null)
-    try {
-      await periodosApi.create(form)
-      onCreated()
-    } catch (e) {
-      setError(e instanceof HttpError ? `${e.status}: ${e.detail || e.title}` : String(e))
-    } finally {
-      setSubmitting(false)
-    }
+    createMutation.mutate(form)
   }
 
   return (
@@ -362,10 +357,10 @@ function PeriodoForm({ onCreated }: { onCreated: () => void }): ReactNode {
       <div className="flex justify-end gap-2">
         <button
           type="submit"
-          disabled={submitting}
+          disabled={createMutation.isPending}
           className="rounded-md bg-accent-brand text-white px-4 py-2 text-sm font-medium hover:bg-accent-brand-deep disabled:opacity-50"
         >
-          {submitting ? "Creando..." : "Crear"}
+          {createMutation.isPending ? "Creando..." : "Crear"}
         </button>
       </div>
     </form>
@@ -408,10 +403,23 @@ function EditPeriodoModal({
   const [nombre, setNombre] = useState(periodo.nombre)
   const [fechaInicio, setFechaInicio] = useState(periodo.fecha_inicio)
   const [fechaFin, setFechaFin] = useState(periodo.fecha_fin)
-  const [submitting, setSubmitting] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
-  const submit = async (e: React.FormEvent) => {
+  const updateMutation = useMutation({
+    mutationFn: (patch: PeriodoUpdate) => periodosApi.update(periodo.id, patch),
+    onSuccess: () => onSaved(),
+    onError: (err) => {
+      if (err instanceof HttpError && err.status === 409) {
+        setError("Este periodo está cerrado, no se puede editar.")
+      } else if (err instanceof HttpError && err.status === 400) {
+        setError(err.detail || err.title || "Datos inválidos.")
+      } else {
+        setError(formatError(err))
+      }
+    },
+  })
+
+  const submit = (e: React.FormEvent) => {
     e.preventDefault()
     if (fechaFin < fechaInicio) {
       setError("La fecha de fin no puede ser anterior a la fecha de inicio.")
@@ -427,22 +435,8 @@ function EditPeriodoModal({
       return
     }
 
-    setSubmitting(true)
     setError(null)
-    try {
-      await periodosApi.update(periodo.id, patch)
-      onSaved()
-    } catch (err) {
-      if (err instanceof HttpError && err.status === 409) {
-        setError("Este periodo está cerrado, no se puede editar.")
-      } else if (err instanceof HttpError && err.status === 400) {
-        setError(err.detail || err.title || "Datos inválidos.")
-      } else {
-        setError(formatError(err))
-      }
-    } finally {
-      setSubmitting(false)
-    }
+    updateMutation.mutate(patch)
   }
 
   return (
@@ -533,17 +527,17 @@ function EditPeriodoModal({
           <button
             type="button"
             onClick={onClose}
-            disabled={submitting}
+            disabled={updateMutation.isPending}
             className="rounded-md border border-border bg-surface px-4 py-2 text-sm font-medium text-body hover:bg-surface-alt disabled:opacity-50"
           >
             Cancelar
           </button>
           <button
             type="submit"
-            disabled={submitting}
+            disabled={updateMutation.isPending}
             className="rounded-md bg-accent-brand px-4 py-2 text-sm font-medium text-white hover:bg-accent-brand-deep disabled:opacity-50"
           >
-            {submitting ? "Guardando..." : "Guardar"}
+            {updateMutation.isPending ? "Guardando..." : "Guardar"}
           </button>
         </div>
       </form>

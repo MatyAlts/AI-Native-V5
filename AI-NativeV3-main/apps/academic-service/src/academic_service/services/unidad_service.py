@@ -37,6 +37,7 @@ from academic_service.schemas.unidad import (
     UnidadReorderItem,
     UnidadUpdate,
 )
+from academic_service.services.comision_service import assert_comision_member
 
 
 class UnidadService:
@@ -49,7 +50,15 @@ class UnidadService:
 
         Valida que la comisión existe en este tenant y que no existe
         una Unidad con el mismo nombre en esa comisión (409 en duplicados).
+
+        IDOR de escritura (A0.6): valida que el docente pertenezca a la
+        comisión ANTES de tocar nada. Un docente ajeno recibe 403 sin poder
+        siquiera confirmar la existencia de la comisión. Oversight
+        (superadmin/docente_admin) pasa. RLS aísla por tenant pero en prod
+        el tenant es compartido → la RLS no alcanza, `usuarios_comision` sí.
         """
+        # Aislamiento por comisión (403 si el docente no es miembro).
+        await assert_comision_member(self.session, user, data.comision_id)
         # Valida que la comisión existe (RLS filtra por tenant)
         await self.comisiones.get_or_404(data.comision_id)
 
@@ -135,8 +144,13 @@ class UnidadService:
         return obj
 
     async def update(self, unidad_id: UUID, data: UnidadUpdate, user: User) -> Unidad:
-        """Actualiza parcialmente una Unidad (PATCH)."""
+        """Actualiza parcialmente una Unidad (PATCH).
+
+        IDOR de escritura (A0.6): tras localizar la Unidad, valida que el
+        docente pertenezca a su comisión. Comisión ajena → 403.
+        """
         obj = await self.get_by_id(unidad_id)
+        await assert_comision_member(self.session, user, obj.comision_id)
 
         changes = data.model_dump(exclude_unset=True)
 
@@ -176,8 +190,12 @@ class UnidadService:
         soft-deleted. El ON DELETE SET NULL del FK solo actúa cuando
         se hace un DROP o DELETE real de la fila (hard-delete). En
         lecturas, filtrar por `deleted_at IS NULL` excluye la Unidad.
+
+        IDOR de escritura (A0.6): valida pertenencia del docente a la
+        comisión de la Unidad antes de borrar. Comisión ajena → 403.
         """
         obj = await self.get_by_id(unidad_id)
+        await assert_comision_member(self.session, user, obj.comision_id)
         obj.deleted_at = utc_now()
         obj.updated_at = utc_now()
 
@@ -221,6 +239,12 @@ class UnidadService:
                 status_code=status.HTTP_404_NOT_FOUND,
                 detail=f"Unidades no encontradas: {', '.join(missing)}",
             )
+
+        # IDOR de escritura (A0.6): validar pertenencia del docente a la(s)
+        # comisión(es) del batch. Un reorder que toque una Unidad de comisión
+        # ajena → 403. Se valida por comisión distinta para no repetir queries.
+        for comision_id in {u.comision_id for u in unidades.values()}:
+            await assert_comision_member(self.session, user, comision_id)
 
         # Aplicar nuevos ordenes
         for item in items:

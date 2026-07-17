@@ -24,7 +24,27 @@ export function extractPyodideErrorLine(raw: string): string {
     }
   }
   const lastLine = excLine ?? lines[lines.length - 1] ?? raw
-  return lastLine.startsWith("TimeoutError:")
-    ? lastLine.replace("TimeoutError: ", "⏱ ")
-    : lastLine
+  return lastLine.startsWith("TimeoutError:") ? lastLine.replace("TimeoutError: ", "⏱ ") : lastLine
+}
+
+/**
+ * Extrae el numero de linea (1-based) del CODIGO DEL ALUMNO donde reventó la
+ * excepcion, leyendo los frames del traceback de Pyodide. El codigo del alumno
+ * se compila con nombres de archivo `<editor>` / `<test>` / `<assert>` (ver
+ * CodeEditor); nos quedamos con el ULTIMO frame de esos (el mas cercano al
+ * fallo real, no el wrapper). Sirve para pintar un marker Monaco en la linea
+ * exacta (ED-4). Devuelve null si no hay frame del alumno (ej. error interno
+ * de Pyodide, o traceback sin `File "<...>"`).
+ */
+export function extractPyodideErrorLineNumber(raw: string): number | null {
+  const re = /File "<(?:editor|test|assert)>", line (\d+)/g
+  let match: RegExpExecArray | null
+  let lineNumber: number | null = null
+  match = re.exec(raw)
+  while (match !== null) {
+    const n = Number.parseInt(match[1] ?? "", 10)
+    if (Number.isFinite(n) && n > 0) lineNumber = n
+    match = re.exec(raw)
+  }
+  return lineNumber
 }

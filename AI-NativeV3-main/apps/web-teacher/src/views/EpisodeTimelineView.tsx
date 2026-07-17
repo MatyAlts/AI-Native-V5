@@ -9,10 +9,42 @@ import {
   relativeTs,
 } from "../utils/eventDisplay"
 import { helpContent } from "../utils/helpContent"
+import { type DiffLineType, diffLines } from "../utils/lineDiff"
 
 interface Props {
   getToken: () => Promise<string | null>
   initialEpisodeId?: string
+}
+
+// Un "intento de código" es cualquier evento que lleva el código completo del
+// alumno en su payload: `edicion_codigo.snapshot` o `codigo_ejecutado.code`.
+interface CodeAttempt {
+  seq: number
+  relTs: string
+  eventType: string
+  label: string
+  icon: string
+  code: string
+}
+
+/** Extrae el código completo de un evento de código; null si no lo lleva. */
+function codeOf(payload: Record<string, unknown>, eventType: string): string | null {
+  if (eventType === "edicion_codigo" && typeof payload.snapshot === "string")
+    return payload.snapshot
+  if (eventType === "codigo_ejecutado" && typeof payload.code === "string") return payload.code
+  return null
+}
+
+const DIFF_ROW_CLASS: Record<DiffLineType, string> = {
+  add: "bg-green-500/15 text-green-300",
+  remove: "bg-red-500/15 text-red-300",
+  equal: "text-slate-300",
+}
+
+const DIFF_SIGN: Record<DiffLineType, string> = {
+  add: "+",
+  remove: "-",
+  equal: " ",
 }
 
 const LEVEL_COLOR: Record<string, string> = {
@@ -46,6 +78,10 @@ export function EpisodeTimelineView({ getToken, initialEpisodeId }: Props) {
     new Set(ALL_CATEGORIES),
   )
   const [selected, setSelected] = useState<EnrichedEvent | null>(null)
+  // F6 — diff entre intentos de código.
+  const [showDiff, setShowDiff] = useState(false)
+  const [diffASeq, setDiffASeq] = useState<number | null>(null)
+  const [diffBSeq, setDiffBSeq] = useState<number | null>(null)
 
   async function load(id: string) {
     if (!id) return
@@ -108,6 +144,51 @@ export function EpisodeTimelineView({ getToken, initialEpisodeId }: Props) {
       else next.add(c)
       return next
     })
+  }
+
+  // Intentos de código en orden temporal (los que llevan el código en el payload).
+  const codeAttempts: CodeAttempt[] = useMemo(() => {
+    const out: CodeAttempt[] = []
+    for (const e of enriched) {
+      const code = codeOf(e.payload, e.event_type)
+      if (code == null) continue
+      out.push({
+        seq: e.seq,
+        relTs: e.relTs,
+        eventType: e.event_type,
+        label: e.meta.label,
+        icon: e.meta.icon,
+        code,
+      })
+    }
+    return out
+  }, [enriched])
+
+  // Default: comparar los dos últimos intentos consecutivos al cargar un episodio.
+  useEffect(() => {
+    if (codeAttempts.length >= 2) {
+      setDiffASeq(codeAttempts[codeAttempts.length - 2]?.seq ?? null)
+      setDiffBSeq(codeAttempts[codeAttempts.length - 1]?.seq ?? null)
+    } else {
+      setDiffASeq(null)
+      setDiffBSeq(null)
+    }
+  }, [codeAttempts])
+
+  const diff = useMemo(() => {
+    const a = codeAttempts.find((c) => c.seq === diffASeq)
+    const b = codeAttempts.find((c) => c.seq === diffBSeq)
+    if (!a || !b) return null
+    return { a, b, ...diffLines(a.code, b.code) }
+  }, [codeAttempts, diffASeq, diffBSeq])
+
+  // Abre el diff de un intento contra el intento inmediatamente anterior.
+  function openDiffForAttempt(seq: number) {
+    const idx = codeAttempts.findIndex((c) => c.seq === seq)
+    if (idx <= 0) return
+    setDiffASeq(codeAttempts[idx - 1]?.seq ?? null)
+    setDiffBSeq(seq)
+    setShowDiff(true)
   }
 
   return (
@@ -197,6 +278,117 @@ export function EpisodeTimelineView({ getToken, initialEpisodeId }: Props) {
               })}
             </div>
 
+            {/* F6 — Diff entre intentos de código */}
+            {codeAttempts.length >= 2 && (
+              <div
+                className="rounded border border-border-soft bg-surface"
+                data-testid="timeline-diff"
+              >
+                <button
+                  type="button"
+                  onClick={() => setShowDiff((v) => !v)}
+                  className="w-full flex items-center justify-between px-3 py-2 text-sm font-medium hover:bg-surface-alt transition-colors"
+                  data-testid="timeline-diff-toggle"
+                >
+                  <span>⌗ Diff entre intentos de código ({codeAttempts.length} intentos)</span>
+                  <span className="text-muted text-xs">
+                    {showDiff ? "Ocultar ▲" : "Ver diff ▼"}
+                  </span>
+                </button>
+
+                {showDiff && (
+                  <div className="border-t border-border-soft p-3 space-y-3">
+                    {/* Selector intento A vs intento B */}
+                    <div className="flex flex-wrap items-end gap-3 text-xs">
+                      <label className="flex flex-col gap-1">
+                        <span className="text-muted uppercase tracking-wider">
+                          Intento base (A)
+                        </span>
+                        <select
+                          value={diffASeq ?? ""}
+                          onChange={(e) => setDiffASeq(Number(e.target.value))}
+                          className="text-xs rounded-md border border-border-soft bg-surface px-2 py-1 hover:border-ink transition-colors"
+                          data-testid="timeline-diff-a"
+                        >
+                          {codeAttempts.map((c) => (
+                            <option key={c.seq} value={c.seq}>
+                              {c.icon} seq={c.seq} · {c.relTs} · {c.label}
+                            </option>
+                          ))}
+                        </select>
+                      </label>
+                      <span className="pb-1.5 text-muted">→</span>
+                      <label className="flex flex-col gap-1">
+                        <span className="text-muted uppercase tracking-wider">
+                          Intento nuevo (B)
+                        </span>
+                        <select
+                          value={diffBSeq ?? ""}
+                          onChange={(e) => setDiffBSeq(Number(e.target.value))}
+                          className="text-xs rounded-md border border-border-soft bg-surface px-2 py-1 hover:border-ink transition-colors"
+                          data-testid="timeline-diff-b"
+                        >
+                          {codeAttempts.map((c) => (
+                            <option key={c.seq} value={c.seq}>
+                              {c.icon} seq={c.seq} · {c.relTs} · {c.label}
+                            </option>
+                          ))}
+                        </select>
+                      </label>
+                      {diff && !diff.truncated && (
+                        <div className="ml-auto flex gap-2 pb-1 font-mono">
+                          <span className="px-2 py-0.5 rounded border border-green-300 bg-green-100 text-green-800">
+                            +{diff.stats.added}
+                          </span>
+                          <span className="px-2 py-0.5 rounded border border-red-300 bg-red-100 text-red-800">
+                            -{diff.stats.removed}
+                          </span>
+                        </div>
+                      )}
+                    </div>
+
+                    {/* Render del diff línea-a-línea */}
+                    {diff &&
+                      (diff.truncated ? (
+                        <p className="text-xs text-warning" data-testid="timeline-diff-truncated">
+                          Diff no disponible: alguno de los intentos es demasiado grande para
+                          compararlo línea a línea.
+                        </p>
+                      ) : diff.stats.added === 0 && diff.stats.removed === 0 ? (
+                        <p className="text-xs text-muted">
+                          Sin cambios de código entre estos dos intentos.
+                        </p>
+                      ) : (
+                        <div
+                          className="rounded bg-slate-950 text-xs font-mono overflow-auto max-h-96"
+                          data-testid="timeline-diff-view"
+                        >
+                          {diff.lines.map((ln, idx) => (
+                            <div
+                              key={`${ln.type}-${ln.aLine}-${ln.bLine}-${idx}`}
+                              className={`flex ${DIFF_ROW_CLASS[ln.type]}`}
+                            >
+                              <span className="select-none px-2 text-slate-500 text-right w-10 shrink-0">
+                                {ln.aLine ?? ""}
+                              </span>
+                              <span className="select-none pr-2 text-slate-500 text-right w-10 shrink-0">
+                                {ln.bLine ?? ""}
+                              </span>
+                              <span className="select-none pr-2 shrink-0">
+                                {DIFF_SIGN[ln.type]}
+                              </span>
+                              <span className="whitespace-pre">
+                                {ln.text.length === 0 ? " " : ln.text}
+                              </span>
+                            </div>
+                          ))}
+                        </div>
+                      ))}
+                  </div>
+                )}
+              </div>
+            )}
+
             {/* Layout 2 columnas: tabla + panel lateral */}
             <div className="grid grid-cols-1 lg:grid-cols-[1fr_400px] gap-4">
               {/* Tabla */}
@@ -280,6 +472,19 @@ export function EpisodeTimelineView({ getToken, initialEpisodeId }: Props) {
                         <span className="font-mono">{selected.event_type}</span>
                       </p>
                     </div>
+
+                    {/* F6 — atajo al diff contra el intento de código anterior */}
+                    {codeOf(selected.payload, selected.event_type) != null &&
+                      codeAttempts.findIndex((c) => c.seq === selected.seq) > 0 && (
+                        <button
+                          type="button"
+                          onClick={() => openDiffForAttempt(selected.seq)}
+                          className="text-xs font-medium text-accent-brand hover:underline"
+                          data-testid="timeline-detail-diff"
+                        >
+                          ⌗ Ver diff vs intento anterior
+                        </button>
+                      )}
 
                     {/* Si es edicion_codigo, render del snapshot con monospace */}
                     {selected.event_type === "edicion_codigo" &&

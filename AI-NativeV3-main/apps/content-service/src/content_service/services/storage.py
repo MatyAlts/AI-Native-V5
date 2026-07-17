@@ -122,6 +122,22 @@ def make_storage_key(tenant_id: UUID, comision_id: UUID, material_id: UUID, file
     return f"materials/{tenant_id}/{comision_id}/{material_id}/original.{ext}"
 
 
+def storage_key_from_path(storage_path: str) -> str:
+    """Recupera la key de storage desde el `storage_path` persistido.
+
+    `put()` devuelve `mock://{key}` (MockStorage) o `s3://{bucket}/{key}`
+    (S3Storage). Para re-descargar el original (reingesta F3) necesitamos la
+    key desnuda, sin el esquema ni el bucket.
+    """
+    if storage_path.startswith("mock://"):
+        return storage_path[len("mock://") :]
+    if storage_path.startswith("s3://"):
+        # s3://{bucket}/{key} → descartar esquema + bucket, quedarse con la key
+        parts = storage_path[len("s3://") :].split("/", 1)
+        return parts[1] if len(parts) == 2 else parts[0]
+    return storage_path
+
+
 @lru_cache(maxsize=1)
 def get_storage() -> BaseStorage:
     """Factory: elige storage según env. STORAGE=mock|s3."""

@@ -13,17 +13,38 @@
  * mensajes y codigo. Si el episodio cerro / no existe / es cross-tenant,
  * limpiamos sessionStorage y llamamos onExit().
  */
+import { CTRClient } from "@platform/ctr-client"
 import { HelpButton, MarkdownRenderer } from "@platform/ui"
-import { Bot, BookOpen, Code2, LogOut, MessageSquare, PauseCircle, Send, ShieldAlert, Sparkles, User } from "lucide-react"
-import { useCallback, useEffect, useRef, useState } from "react"
-import { Group as PanelGroup, Panel, Separator as PanelResizeHandle } from "react-resizable-panels"
+import {
+  BookOpen,
+  Bot,
+  Clock,
+  Code2,
+  LogOut,
+  MessageSquare,
+  PauseCircle,
+  RotateCcw,
+  Send,
+  ShieldAlert,
+  Sparkles,
+  User,
+} from "lucide-react"
+import { useCallback, useEffect, useMemo, useRef, useState } from "react"
+import {
+  Panel,
+  Group as PanelGroup,
+  type PanelImperativeHandle,
+  Separator as PanelResizeHandle,
+} from "react-resizable-panels"
 import { CodeEditor } from "../components/CodeEditor"
+import { NotesPanel } from "../components/NotesPanel"
 import { ReflectionModal } from "../components/ReflectionModal"
 import { useMediaQuery } from "../hooks/useMediaQuery"
 import {
   type AvailableTarea,
   type Classification,
   EpisodeStateError,
+  type TestCasePublic,
   classifyEpisode,
   closeEpisode,
   emitCodigoEjecutado,
@@ -32,8 +53,7 @@ import {
   emitEpisodioAbandonado,
   emitLecturaEnunciado,
   emitPegaIntentada,
-  emitPestanaPerdida,
-  emitPestanaRecuperada,
+  emitTestsEjecutados,
   getEpisodeState,
   getTareaById,
   listEjerciciosTp,
@@ -44,11 +64,20 @@ import {
 import { helpContent } from "../utils/helpContent"
 
 const ACTIVE_EPISODE_KEY = "active-episode-id"
+// ED-2: clave de persistencia del layout de los 3 paneles del episodio.
+const PANELS_STORAGE_KEY = "web-student.episode.panels.v1"
+
+/** F8: cita del RAG — material que fundamenta la respuesta del tutor. */
+interface Citation {
+  material: string
+}
 
 interface Message {
   role: "user" | "tutor"
   content: string
   ts: number
+  /** F8: materiales del RAG citados en esta respuesta del tutor (si hubo). */
+  citations?: Citation[]
 }
 
 /** Contexto de ejercicio activo para TPs multi-ejercicio (ADR-047). */
@@ -90,19 +119,41 @@ export function EpisodeView({ episodeId, onExit, ejercicioContext, getToken }: E
   // resolveCodigoInicial); este fallback NO debe sugerir una consigna concreta
   // (antes mostraba `def factorial` para TODOS los ejercicios — NEW-002 QA).
   const [code, setCode] = useState<string>("# Escribí tu código Python acá\n")
+  // F1: test cases PUBLICOS resueltos en la hidratacion (del ejercicio del
+  // banco si es multi-ejercicio, o de la TP monolitica). Solo publicos — el
+  // backend sanea por rol (A0.3). Se pasan al CodeEditor para "Probar".
+  const [testCases, setTestCases] = useState<TestCasePublic[]>([])
   const [messages, setMessages] = useState<Message[]>([])
   // Indicador de ACTIVIDAD en curso (no es la clasificacion final del classifier,
-  // que se deriva post-cierre — ADR-020). Refleja el nivel de la accion que el
-  // alumno esta haciendo ahora, segun el mapeo del labeler: lectura=N1,
-  // edicion=N2, ejecucion=N3. Arranca en 1 y solo sube (NEW-003 QA).
-  const [maxActividad, setMaxActividad] = useState<1 | 2 | 3>(1)
+  // que se deriva post-cierre — ADR-020). Refleja el CANAL de actividad que el
+  // alumno esta usando ahora: lectura=N1, edicion=N2, ejecucion=N3, dialogo con
+  // el tutor=N4 (mismo canal que pinta el panel N4). Arranca en 1 y solo sube
+  // (NEW-003 QA). Presentacion NO-reificante (ADR-053): describe la actividad
+  // del momento, NO un puntaje ni un atributo del alumno (ver tooltip del chip).
+  const [maxActividad, setMaxActividad] = useState<1 | 2 | 3 | 4>(1)
   const [input, setInput] = useState<string>("")
   const [streaming, setStreaming] = useState(false)
   const [classification, setClassification] = useState<Classification | null>(null)
   const [classificationFailed, setClassificationFailed] = useState<boolean>(false)
   const [error, setError] = useState<string | null>(null)
+  // Notas del alumno (N2 "Anotacion", UI-1). Se hidratan del CTR y NotesPanel
+  // appendea localmente al guardar. Cada guardado emite anotacion_creada.
+  const [notes, setNotes] = useState<{ contenido: string; ts: number }[]>([])
+  // UI-8: error transitorio del stream del tutor (LLM saturado / red). NO cierra
+  // el episodio ni ofrece salir — mantiene al alumno DENTRO y permite reintentar
+  // el mismo mensaje. Separado de `error` (que si es fatal: hidratacion/cierre).
+  const [sendError, setSendError] = useState<string | null>(null)
+  const [lastFailedMessage, setLastFailedMessage] = useState<string | null>(null)
+  // FIX B: clave estable por turno del alumno. Se genera una nueva por cada
+  // envio fresco y se REUSA en handleRetry, asi el server deduplica el
+  // prompt_enviado (mismo seq, sin re-publicar) y no crea prompts huerfanos que
+  // inflarian CCD_orphan_ratio y el conteo de prompts de la tesis.
+  const messageUuidRef = useRef<string | null>(null)
   const [hydrating, setHydrating] = useState<boolean>(true)
   const [closed, setClosed] = useState<boolean>(false)
+  // Guard de doble-submit (NB-11): cierre/pausa disparan requests async. Un
+  // doble-click deshabilita ambos botones y evita cerrar/abandonar 2 veces.
+  const [submitting, setSubmitting] = useState<boolean>(false)
   const [reflectionTargetId, setReflectionTargetId] = useState<string | null>(null)
   // Flag: true cuando el alumno cierra el modal de reflexion sin completarla
   // (boton "No quiero reflexionar ahora" o escape). Se persiste en
@@ -126,6 +177,53 @@ export function EpisodeView({ episodeId, onExit, ejercicioContext, getToken }: E
   // visibilidad con CSS, no con render condicional.
   const isMobile = useMediaQuery("(max-width: 1023px)")
   const [activeTab, setActiveTab] = useState<"consigna" | "editor" | "tutor">("editor")
+  // ED-1: maximizar el editor. Colapsa los paneles Consigna + Tutor via su API
+  // imperativa (siguen MONTADOS a 0 — Monaco conserva su buffer, el observer de
+  // lectura sigue en el DOM). No unmontamos nada (mismo criterio que el layout
+  // mobile). Solo aplica en desktop (el PanelGroup no existe en mobile).
+  const [editorMaximized, setEditorMaximized] = useState(false)
+  const consignaPanelRef = useRef<PanelImperativeHandle | null>(null)
+  const tutorPanelRef = useRef<PanelImperativeHandle | null>(null)
+  // ED-2: persistir el tamano de los paneles (react-resizable-panels v4 no
+  // tiene autoSaveId — se persiste manualmente el layout en localStorage y se
+  // restaura via `defaultLayout`). Gateado por `maximizedRef` para NO guardar
+  // el layout transitorio de "maximizado" (sino el alumno abriria siempre
+  // maximizado).
+  const maximizedRef = useRef(false)
+  const savedPanelLayout = useMemo<Record<string, number> | undefined>(() => {
+    if (typeof window === "undefined") return undefined
+    try {
+      const raw = window.localStorage.getItem(PANELS_STORAGE_KEY)
+      return raw ? (JSON.parse(raw) as Record<string, number>) : undefined
+    } catch {
+      return undefined
+    }
+  }, [])
+  const handlePanelLayoutChanged = useCallback((layout: Record<string, number>) => {
+    if (maximizedRef.current) return // no persistir el layout maximizado
+    if (typeof window === "undefined") return
+    try {
+      window.localStorage.setItem(PANELS_STORAGE_KEY, JSON.stringify(layout))
+    } catch {
+      // best-effort: si localStorage falla (modo privado, cuota), seguimos.
+    }
+  }, [])
+  const toggleEditorMaximized = useCallback(() => {
+    const next = !editorMaximized
+    // Marcar ANTES de colapsar para que el onLayoutChanged del colapso no
+    // persista el layout maximizado. Al restaurar, re-habilitamos el guardado y
+    // expandimos a la ultima medida. Efectos FUERA del updater de estado (React
+    // puede invocar el updater mas de una vez).
+    maximizedRef.current = next
+    if (next) {
+      consignaPanelRef.current?.collapse()
+      tutorPanelRef.current?.collapse()
+    } else {
+      consignaPanelRef.current?.expand()
+      tutorPanelRef.current?.expand()
+    }
+    setEditorMaximized(next)
+  }, [editorMaximized])
   const tabExitCountRef = useRef(0)
   const hiddenAtRef = useRef<number | null>(null)
   const messagesEndRef = useRef<HTMLDivElement>(null)
@@ -133,6 +231,53 @@ export function EpisodeView({ episodeId, onExit, ejercicioContext, getToken }: E
   // estado de sesion (ADR-025), pero esto evita spamear el endpoint cuando
   // beforeunload y visibilitychange→hidden disparan en sucesion (fix QA #9).
   const abandonEmittedRef = useRef(false)
+  // Guard de idempotencia del marcado de ejercicio completado (NB-12): el
+  // cierre del episodio puede llegar por dos caminos que corren en carrera —
+  // el ClassificationPanel (onReset) cuando la clasificacion resuelve, y el
+  // ReflectionModal (onClose) cuando el alumno lo cierra antes de que resuelva.
+  // Sin dedupe, ambos llaman markEjercicioCompleted para el mismo ejercicio.
+  const markedCompletedRef = useRef(false)
+  // Guard SINCRONICO de doble-submit para cerrar/pausar (NB-11). El state
+  // `submitting` (abajo) NO se actualiza sincronicamente entre dos eventos
+  // rapidos, asi que un doble-click alcanzaba a disparar el segundo handler
+  // antes del re-render — el mismo motivo por el que NB-10 (materia.$id.tsx)
+  // usa `openingRef`. Esta ref se setea en el acto y frena el segundo click;
+  // `submitting` queda solo para el estado visual (`disabled`). Compartida por
+  // cerrar Y pausar: son mutuamente excluyentes (no cerrar y abandonar a la vez).
+  const actionInFlightRef = useRef(false)
+
+  // P-17: cliente CTR con cola persistente (localStorage) + reintentos con
+  // backoff + preservacion de orden por episodio. Hoy solo cablea los eventos
+  // `pestana_*` (side-channel de bajo riesgo, ver nota abajo). Ante una falla
+  // de red el evento queda en la cola y se reintenta — no se pierde en silencio.
+  // El resto de los eventos CTR sigue en `emit*` (fetch directo) a proposito:
+  // codigo_ejecutado / edicion_codigo / lectura_enunciado van entrelazados con
+  // el ciclo del episodio (Pyodide, debounce del editor, cierre) y su re-cableo
+  // es riesgoso para el orden/semantica del CTR; se difiere. El cliente usa el
+  // fetch global parcheado (interceptor P-18) => hereda el Bearer sin getToken.
+  const ctrClientRef = useRef<CTRClient | null>(null)
+  useEffect(() => {
+    const client = new CTRClient({
+      episodeId,
+      // F-3: dead-letter NUNCA en silencio (el modulo lo documenta asi). Sin este
+      // callback el default es no-op y un evento `pestana_*` que reciba 409
+      // (episodio cerrado) o agote reintentos se perdia sin rastro. Lo logueamos
+      // con el tipo de evento y la razon (`rejected` | `exhausted`) para que un
+      // drop del CTR quede visible en consola/telemetria.
+      onDrop: (event, reason) => {
+        console.error(
+          `[CTR] evento descartado (dead-letter): ${event.event_type} — razon=${reason}`,
+          { episodeId, eventUuid: event.event_uuid, attempts: event.attempts, reason },
+        )
+      },
+    })
+    ctrClientRef.current = client
+    return () => {
+      void client.flush()
+      client.dispose()
+      ctrClientRef.current = null
+    }
+  }, [episodeId])
 
   const ejercicioOrden = ejercicioContext?.ejercicioOrden ?? null
 
@@ -191,9 +336,9 @@ export function EpisodeView({ episodeId, onExit, ejercicioContext, getToken }: E
     function onVisibility() {
       if (document.visibilityState === "hidden") {
         hiddenAtRef.current = Date.now()
-        void emitPestanaPerdida(episodeId, { trigger: "visibilitychange" }).catch((e) =>
-          console.warn("emit pestana_perdida failed:", e),
-        )
+        // P-17: via cola persistente con reintentos (antes: fetch directo que
+        // perdia el evento en silencio si la red fallaba).
+        ctrClientRef.current?.pestanaPerdida({ trigger: "visibilitychange" })
         // NO emitimos episodio_abandonado acá: salir de la pestaña NO debe
         // pausar el episodio (decisión de producto, ver fix/remove-tab-away-
         // autoclose). El abandono real se persiste por `beforeunload` (cierre/
@@ -206,16 +351,17 @@ export function EpisodeView({ episodeId, onExit, ejercicioContext, getToken }: E
       if (hiddenAt == null) return
       hiddenAtRef.current = null
       const secondsAway = Math.max(0, Math.round((Date.now() - hiddenAt) / 1000))
-      void emitPestanaRecuperada(episodeId, {
-        tiempo_fuera_segundos: secondsAway,
-      }).catch((e) => console.warn("emit pestana_recuperada failed:", e))
+      // P-17: via cola persistente con reintentos (idem pestana_perdida).
+      ctrClientRef.current?.pestanaRecuperada({ tiempo_fuera_segundos: secondsAway })
       tabExitCountRef.current += 1
       setTabExit({ count: tabExitCountRef.current, secondsAway })
     }
 
     document.addEventListener("visibilitychange", onVisibility)
     return () => document.removeEventListener("visibilitychange", onVisibility)
-  }, [episodeId, closed])
+    // `episodeId` ya no es dep: el handler lee `ctrClientRef.current` (el cliente
+    // CTR del episodio vigente) al momento de disparar, no lo captura en closure.
+  }, [closed])
 
   // Hydration on-mount. El episodeId viene del path param, no del state.
   useEffect(() => {
@@ -250,22 +396,39 @@ export function EpisodeView({ episodeId, onExit, ejercicioContext, getToken }: E
           return
         }
         setTarea(t)
+
+        // F1 + codigo inicial (ADR-047). Para TPs multi-ejercicio el ejercicio
+        // y sus test cases PUBLICOS viven en el banco; los traemos una sola vez
+        // y de ahi salen tanto los tests como el codigo inicial. Para TPs
+        // monoliticas ambos vienen en la propia TP (ya saneada por rol, A0.3).
+        let resolvedTests: TestCasePublic[] = []
+        if (ejercicioContext) {
+          try {
+            const tpEjs = await listEjerciciosTp(state.tarea_practica_id)
+            if (cancelled) return
+            const match = tpEjs.find((te) => te.orden === ejercicioContext.ejercicioOrden)
+            resolvedTests = (match?.ejercicio?.test_cases ?? []).filter(
+              (tc) => tc.is_public !== false,
+            )
+            // Codigo inicial del ejercicio del banco (solo si no hay snapshot ni
+            // codigo inicial a nivel TP — mismo fallback que antes).
+            if (!state.last_code_snapshot && !resolveCodigoInicial(t)) {
+              const ejInicial = match?.ejercicio?.inicial_codigo ?? null
+              if (ejInicial) setCode(ejInicial)
+            }
+          } catch {
+            // best-effort: sin tests / sin codigo inicial del banco → default.
+          }
+        } else {
+          resolvedTests = (t.test_cases ?? []).filter((tc) => tc.is_public !== false)
+        }
+        setTestCases(resolvedTests)
+
         if (state.last_code_snapshot) {
           setCode(state.last_code_snapshot)
-        } else {
-          // ADR-047: el codigo inicial del ejercicio vive en el banco, no en la
-          // TP. Si venimos de un ejercicio, lo traemos via /tareas-practicas/{id}/
-          // ejercicios y lo matcheamos por orden. Fallback al de la TP (monoliticas).
-          let initialCode = resolveCodigoInicial(t)
-          if (!initialCode && ejercicioContext) {
-            try {
-              const tpEjs = await listEjerciciosTp(state.tarea_practica_id)
-              const match = tpEjs.find((te) => te.orden === ejercicioContext.ejercicioOrden)
-              initialCode = match?.ejercicio?.inicial_codigo ?? null
-            } catch {
-              // best-effort: si falla, el editor cae a su default
-            }
-          }
+        } else if (!ejercicioContext) {
+          // TP monolitica: codigo inicial de la propia TP.
+          const initialCode = resolveCodigoInicial(t)
           if (initialCode) setCode(initialCode)
         }
         setMessages(
@@ -273,6 +436,13 @@ export function EpisodeView({ episodeId, onExit, ejercicioContext, getToken }: E
             role: m.role === "assistant" ? "tutor" : "user",
             content: m.content,
             ts: Date.parse(m.ts) || Date.now(),
+          })),
+        )
+        // UI-1: hidratar las anotaciones previas (N2) desde el CTR.
+        setNotes(
+          (state.notes ?? []).map((n) => ({
+            contenido: n.contenido,
+            ts: Date.parse(n.ts) || Date.now(),
           })),
         )
       } catch (e) {
@@ -293,55 +463,97 @@ export function EpisodeView({ episodeId, onExit, ejercicioContext, getToken }: E
     }
   }, [episodeId, onExit, ejercicioOrden])
 
-  async function handleSend() {
-    if (!input.trim() || streaming) return
-    const userMessage = input.trim()
-    setInput("")
-    setMessages((m) => [...m, { role: "user", content: userMessage, ts: Date.now() }])
+  // UI-8: enviar un mensaje al tutor. Si el stream falla (LLM saturado, red,
+  // sesion pausada), NO cerramos el episodio ni ofrecemos salir — un error
+  // transitorio no debe romper el episodio ni la cadena CTR. Mostramos un aviso
+  // "reintentá" y dejamos al alumno DENTRO. `retryMessage` reenvia el mismo
+  // texto sin duplicar la burbuja del usuario.
+  async function handleSend(retryMessage?: string) {
+    const userMessage = (retryMessage ?? input).trim()
+    if (!userMessage || streaming) return
+    const isRetry = retryMessage != null
+    // FIX B: envio fresco → nueva clave; reintento → reusar la misma para que el
+    // server deduplique el prompt_enviado en vez de duplicarlo.
+    const messageUuid =
+      isRetry && messageUuidRef.current ? messageUuidRef.current : crypto.randomUUID()
+    messageUuidRef.current = messageUuid
+    if (!isRetry) {
+      setInput("")
+      setMessages((m) => [...m, { role: "user", content: userMessage, ts: Date.now() }])
+    }
+    // N4: dialogar con el tutor socratico es el canal N4 de la UI (mismo que
+    // pinta el panel N4). Indicador de actividad del momento, no clasificacion.
+    setMaxActividad((a) => (a < 4 ? 4 : a))
+    setSendError(null)
+    setLastFailedMessage(null)
     setStreaming(true)
 
     const tutorMessage: Message = { role: "tutor", content: "", ts: Date.now() }
     setMessages((m) => [...m, tutorMessage])
 
     try {
-      for await (const event of sendMessage(episodeId, userMessage)) {
+      for await (const event of sendMessage(episodeId, userMessage, messageUuid)) {
         if (event.type === "chunk") {
           tutorMessage.content += event.content
           setMessages((m) => [...m.slice(0, -1), { ...tutorMessage }])
           scrollToBottom()
         } else if (event.type === "error") {
-          const msg = event.message ?? ""
-          if (/no existe|expir|cerrad/i.test(msg)) {
-            setError(
-              'Tu episodio se pausó por inactividad. Hacé clic en "Salir" y volvé a entrar al ejercicio: vas a retomarlo donde lo dejaste.',
-            )
-            setClosed(true)
-            window.sessionStorage.removeItem(ACTIVE_EPISODE_KEY)
-          } else {
-            setError(`Tutor error: ${msg}`)
-          }
-          break
+          // Fallo del tutor/LLM reportado dentro del stream. Lo tratamos como
+          // transitorio (UI-8): reintentable, sin cerrar el episodio.
+          throw new Error(event.message ?? "tutor_error")
         } else if (event.type === "done") {
           console.debug("chunks_used_hash:", event.chunks_used_hash)
+          // F8: el `done` trae las citas del RAG (campo aditivo — lib/api.ts no
+          // lo tipa aun, por eso el cast). Solo las adjuntamos si hubo material.
+          const citations = (event as { citations?: Citation[] }).citations
+          if (citations && citations.length > 0) {
+            tutorMessage.citations = citations
+            setMessages((m) => [...m.slice(0, -1), { ...tutorMessage }])
+          }
         }
       }
     } catch (e) {
-      const msg = String(e)
-      if (msg.includes("404") || msg.includes("409")) {
-        setError(
-          'Tu episodio se pausó por inactividad. Hacé clic en "Salir" y volvé a entrar al ejercicio: vas a retomarlo donde lo dejaste.',
-        )
-        setClosed(true)
-        window.sessionStorage.removeItem(ACTIVE_EPISODE_KEY)
-      } else {
-        setError(`Error en streaming: ${e}`)
-      }
+      // UI-8: mantener al alumno DENTRO. Sacamos la burbuja del tutor de ESTE
+      // intento —este o no llego ningun chunk— porque el "Reintentar" vuelve a
+      // streamear una respuesta fresca; dejar la parcial huerfana confundiria al
+      // alumno y quedaria colgada sin evento tutor_respondio en el CTR (el LLM
+      // fallo a mitad). NO tocamos `closed` ni sessionStorage: el episodio sigue
+      // abierto.
+      setMessages((m) =>
+        m.length > 0 && m[m.length - 1]?.role === "tutor" ? m.slice(0, -1) : m,
+      )
+      console.warn("tutor stream failed (retryable):", e)
+      setLastFailedMessage(userMessage)
+      setSendError(
+        "El tutor está saturado en este momento. Tu episodio sigue abierto — esperá unos segundos y reintentá.",
+      )
     } finally {
       setStreaming(false)
     }
   }
 
+  // UI-8: reintenta el ultimo mensaje que fallo. resumeEpisode es idempotente
+  // (ADR-055): si la sesion sigue viva es no-op; si el episodio se pauso por
+  // inactividad, la reconstruye desde el CTR. Asi un mismo boton recupera tanto
+  // el caso "tutor saturado" como "sesion pausada" sin sacar al alumno.
+  async function handleRetry() {
+    if (!lastFailedMessage || streaming) return
+    const msg = lastFailedMessage
+    setSendError(null)
+    try {
+      await resumeEpisode(episodeId)
+    } catch (e) {
+      console.warn("resume on retry failed (best-effort):", e)
+    }
+    await handleSend(msg)
+  }
+
   async function handleClose() {
+    // Guard doble-submit (NB-11): ref SINCRONICA (no el state async) — un segundo
+    // click en el mismo tick ve el flag ya seteado y aborta. Consistente con NB-10.
+    if (actionInFlightRef.current) return
+    actionInFlightRef.current = true
+    setSubmitting(true)
     setError(null)
     try {
       await closeEpisode(episodeId, "student_finished")
@@ -353,6 +565,10 @@ export function EpisodeView({ episodeId, onExit, ejercicioContext, getToken }: E
         return
       }
       setError(`Error cerrando: ${e}`)
+      // Reintentable: liberamos ambos guards (visual + sincronico) para que el
+      // alumno pueda volver a intentar cerrar.
+      actionInFlightRef.current = false
+      setSubmitting(false)
       return
     }
     setClosed(true)
@@ -384,15 +600,47 @@ export function EpisodeView({ episodeId, onExit, ejercicioContext, getToken }: E
   // (bug 2026-06-16). El guard local evita re-emitir en el beforeunload del
   // unmount (idempotente igual en backend, fix QA #9).
   async function handlePauseExit() {
+    // Guard doble-submit (NB-11): ref SINCRONICA (no el state async), igual que
+    // handleClose y NB-10. Frena el segundo click antes del re-render.
+    if (actionInFlightRef.current) return
+    actionInFlightRef.current = true
+    setSubmitting(true)
     setError(null)
     abandonEmittedRef.current = true
-    await emitEpisodioAbandonado(
-      episodeId,
-      { reason: "explicit", last_activity_seconds_ago: 0 },
-      getToken,
-    )
+    try {
+      await emitEpisodioAbandonado(
+        episodeId,
+        { reason: "explicit", last_activity_seconds_ago: 0 },
+        getToken,
+      )
+    } catch (e) {
+      // Best-effort: el backend es idempotente por estado de sesion (ADR-025).
+      // No bloqueamos la salida por un fallo de red del emit.
+      console.warn("emit episodio_abandonado (explicit) failed:", e)
+    }
     window.sessionStorage.removeItem(ACTIVE_EPISODE_KEY)
     onExit()
+  }
+
+  // Marca el ejercicio como completado UNA sola vez (NB-12). Serializa los dos
+  // caminos que pueden dispararlo en carrera (ClassificationPanel.onReset y
+  // ReflectionModal.onClose) via markedCompletedRef: el primero que entra gana,
+  // el segundo es no-op. Si el marcado falla, liberamos el guard para permitir
+  // que el otro camino lo reintente (best-effort — no bloquea la navegacion).
+  async function markEjercicioCompletedOnce() {
+    if (!ejercicioContext) return
+    if (markedCompletedRef.current) return
+    markedCompletedRef.current = true
+    try {
+      await markEjercicioCompleted(
+        ejercicioContext.entregaId,
+        ejercicioContext.ejercicioOrden,
+        episodeId,
+        ejercicioContext.ejercicioId,
+      )
+    } catch {
+      markedCompletedRef.current = false
+    }
   }
 
   const elapsedSeconds = useElapsedSeconds(closed ? null : episodeId)
@@ -431,18 +679,8 @@ export function EpisodeView({ episodeId, onExit, ejercicioContext, getToken }: E
         isMultiExercise={ejercicioContext != null}
         onReset={async () => {
           setClassification(null)
-          if (ejercicioContext) {
-            try {
-              await markEjercicioCompleted(
-                ejercicioContext.entregaId,
-                ejercicioContext.ejercicioOrden,
-                episodeId,
-                ejercicioContext.ejercicioId,
-              )
-            } catch {
-              // Best-effort: no bloquear la navegacion si falla.
-            }
-          }
+          // NB-12: dedupe compartido con el camino del ReflectionModal.
+          await markEjercicioCompletedOnce()
           onExit()
         }}
       />
@@ -495,6 +733,14 @@ export function EpisodeView({ episodeId, onExit, ejercicioContext, getToken }: E
         episodeId={closed ? null : episodeId}
         ejercicioOrden={ejercicioContext?.ejercicioOrden ?? null}
       />
+      {/* UI-1: N2 "Anotacion". El alumno anota su plan/dudas; cada guardado
+          emite anotacion_creada al CTR. Oculto una vez cerrado el episodio
+          (el CTR es append-only y rechaza eventos post-close con 409). */}
+      {!closed && (
+        <div className="shrink-0 border-t border-border-soft bg-surface-alt/30 p-3">
+          <NotesPanel episodeId={episodeId} initialNotes={notes} defaultOpen={false} />
+        </div>
+      )}
     </section>
   )
 
@@ -512,6 +758,27 @@ export function EpisodeView({ episodeId, onExit, ejercicioContext, getToken }: E
       />
       <CodeEditor
         initialCode={code}
+        testCases={testCases}
+        isMaximized={editorMaximized}
+        // ED-1: el boton maximizar solo tiene sentido en desktop (el PanelGroup
+        // no existe en mobile — ahi el alumno enfoca el editor con las tabs).
+        onToggleMaximize={isMobile ? undefined : toggleEditorMaximized}
+        onTestsRun={(result) => {
+          // F1: correr tests es actividad de EJECUCION (N3), igual que "Ejecutar".
+          setMaxActividad((a) => (a < 3 ? 3 : a))
+          // Emitir tests_ejecutados al CTR (conteos agregados; el labeler v1.2.0
+          // deriva N3/N4 de esto). Best-effort: un fallo de red / 409 (sesion
+          // cerrada) NO rompe la UI ni el flujo — mismo criterio que codigo_ejecutado.
+          void emitTestsEjecutados(episodeId, {
+            test_count_total: result.total,
+            test_count_passed: result.passed,
+            test_count_failed: result.failed,
+            tests_publicos: result.total,
+            ejecucion_ms: Math.round(result.durationMs),
+          }).catch((e) => {
+            console.warn("emit tests_ejecutados failed:", e)
+          })
+        }}
         onCodeExecuted={(result) => {
           setCode(result.code)
           setMaxActividad((a) => (a < 3 ? 3 : a))
@@ -585,10 +852,7 @@ export function EpisodeView({ episodeId, onExit, ejercicioContext, getToken }: E
                 style={{ background: "var(--color-level-n4)" }}
               />
               <div className="flex items-center gap-2 mb-3">
-                <Sparkles
-                  className="h-4 w-4"
-                  style={{ color: "var(--color-level-n4)" }}
-                />
+                <Sparkles className="h-4 w-4" style={{ color: "var(--color-level-n4)" }} />
                 <span className="text-[10px] uppercase tracking-[0.12em] font-semibold text-muted">
                   Contrato pedagógico
                 </span>
@@ -626,11 +890,7 @@ export function EpisodeView({ episodeId, onExit, ejercicioContext, getToken }: E
                 }`}
                 style={!isUser ? { color: "var(--color-level-n4)" } : undefined}
               >
-                {isUser ? (
-                  <User className="h-3.5 w-3.5" />
-                ) : (
-                  <Bot className="h-3.5 w-3.5" />
-                )}
+                {isUser ? <User className="h-3.5 w-3.5" /> : <Bot className="h-3.5 w-3.5" />}
               </div>
               {/* Burbuja */}
               <div className={`flex flex-col gap-1 max-w-[80%] ${isUser ? "items-end" : ""}`}>
@@ -639,29 +899,75 @@ export function EpisodeView({ episodeId, onExit, ejercicioContext, getToken }: E
                 </span>
                 <div
                   data-testid={isLastTutor ? "tutor-message-last" : undefined}
-                  className={`rounded-2xl px-3.5 py-2.5 text-sm whitespace-pre-wrap leading-relaxed ${
+                  className={`rounded-2xl px-3.5 py-2.5 text-sm leading-relaxed ${
                     isUser
-                      ? "bg-accent-brand text-white rounded-tr-sm"
+                      ? "bg-accent-brand text-white rounded-tr-sm whitespace-pre-wrap"
                       : "bg-surface-alt text-body border border-border-soft rounded-tl-sm"
                   }`}
                 >
-                  {m.content ||
-                    (m.role === "tutor" && streaming ? (
-                      <span className="inline-flex gap-1 items-center text-muted">
-                        <span className="inline-block w-1.5 h-1.5 rounded-full bg-muted animate-pulse-soft" />
-                        <span className="inline-block w-1.5 h-1.5 rounded-full bg-muted animate-pulse-soft animate-delay-150" />
-                        <span className="inline-block w-1.5 h-1.5 rounded-full bg-muted animate-pulse-soft animate-delay-300" />
-                      </span>
-                    ) : (
-                      ""
-                    ))}
+                  {/* UI-3: el tutor responde en markdown → lo renderizamos (antes
+                      se veian los asteriscos crudos). El mensaje del alumno queda
+                      como texto plano (whitespace-pre-wrap). */}
+                  {isUser ? (
+                    m.content
+                  ) : m.content ? (
+                    <MarkdownRenderer content={m.content} />
+                  ) : streaming ? (
+                    <span className="inline-flex gap-1 items-center text-muted">
+                      <span className="inline-block w-1.5 h-1.5 rounded-full bg-muted animate-pulse-soft" />
+                      <span className="inline-block w-1.5 h-1.5 rounded-full bg-muted animate-pulse-soft animate-delay-150" />
+                      <span className="inline-block w-1.5 h-1.5 rounded-full bg-muted animate-pulse-soft animate-delay-300" />
+                    </span>
+                  ) : null}
                 </div>
+                {/* F8: citas del RAG. Sobrio, bajo el mensaje del tutor; solo si
+                    esta respuesta se fundamento en algun material. */}
+                {!isUser && m.citations && m.citations.length > 0 && (
+                  <div
+                    data-testid="tutor-citations"
+                    className="mt-0.5 flex flex-wrap items-center gap-1.5 text-[11px] text-muted"
+                  >
+                    <span className="inline-flex items-center gap-1 font-medium">
+                      <BookOpen className="h-3 w-3" aria-hidden="true" />
+                      Basado en:
+                    </span>
+                    {m.citations.map((c, ci) => (
+                      <span
+                        key={`${c.material}-${ci}`}
+                        className="rounded-md border border-border-soft bg-surface-alt px-1.5 py-0.5"
+                      >
+                        {c.material}
+                      </span>
+                    ))}
+                  </div>
+                )}
               </div>
             </div>
           )
         })}
         <div ref={messagesEndRef} />
       </div>
+
+      {/* UI-8: aviso de tutor saturado + reintento. NO cierra el episodio ni
+          ofrece salir — el alumno sigue DENTRO y reenvia el mismo mensaje. */}
+      {sendError && (
+        <div
+          data-testid="tutor-send-error"
+          className="animate-fade-in-up mx-3 mb-2 flex items-center justify-between gap-3 rounded-lg border border-warning/40 bg-warning-soft px-3 py-2.5 text-xs text-warning"
+        >
+          <span className="leading-relaxed">{sendError}</span>
+          <button
+            type="button"
+            onClick={() => handleRetry()}
+            disabled={streaming}
+            data-testid="tutor-retry-button"
+            className="press-shrink shrink-0 inline-flex items-center gap-1.5 rounded-md bg-warning px-2.5 py-1 font-medium text-white transition-colors hover:bg-warning/90 disabled:opacity-50 disabled:cursor-not-allowed"
+          >
+            <RotateCcw className="h-3 w-3" />
+            Reintentar
+          </button>
+        </div>
+      )}
 
       <div className="border-t border-border-soft p-3 bg-surface-alt/40">
         <div className="flex gap-2 items-end">
@@ -682,7 +988,7 @@ export function EpisodeView({ episodeId, onExit, ejercicioContext, getToken }: E
           />
           <button
             type="button"
-            onClick={handleSend}
+            onClick={() => handleSend()}
             disabled={streaming || !input.trim()}
             aria-label="Enviar mensaje"
             className="press-shrink shrink-0 inline-flex items-center justify-center h-[42px] w-[42px] rounded-lg bg-accent-brand text-white hover:bg-accent-brand-deep disabled:bg-border-strong disabled:cursor-not-allowed transition-colors"
@@ -705,9 +1011,24 @@ export function EpisodeView({ episodeId, onExit, ejercicioContext, getToken }: E
     icon: React.ReactNode
     colorVar: string
   }[] = [
-    { key: "consigna", label: "Consigna", icon: <BookOpen className="h-4 w-4" />, colorVar: "var(--color-level-n1)" },
-    { key: "editor", label: "Editor", icon: <Code2 className="h-4 w-4" />, colorVar: "var(--color-level-n3)" },
-    { key: "tutor", label: "Tutor", icon: <MessageSquare className="h-4 w-4" />, colorVar: "var(--color-level-n4)" },
+    {
+      key: "consigna",
+      label: "Consigna",
+      icon: <BookOpen className="h-4 w-4" />,
+      colorVar: "var(--color-level-n1)",
+    },
+    {
+      key: "editor",
+      label: "Editor",
+      icon: <Code2 className="h-4 w-4" />,
+      colorVar: "var(--color-level-n3)",
+    },
+    {
+      key: "tutor",
+      label: "Tutor",
+      icon: <MessageSquare className="h-4 w-4" />,
+      colorVar: "var(--color-level-n4)",
+    },
   ]
 
   return (
@@ -730,15 +1051,30 @@ export function EpisodeView({ episodeId, onExit, ejercicioContext, getToken }: E
           {episodeId.slice(0, 6)}…{episodeId.slice(-4)}
         </span>
         <span className="text-muted-soft">·</span>
-        <span className="text-muted font-mono tabular-nums">
-          {formatElapsed(elapsedSeconds)}
-        </span>
+        <span className="text-muted font-mono tabular-nums">{formatElapsed(elapsedSeconds)}</span>
         <span className="text-muted-soft">·</span>
         {(() => {
           const act = {
-            1: { txt: "N1 · lectura activa", cls: "bg-level-n1/10 border-level-n1/30 text-level-n1", dot: "var(--color-level-n1)" },
-            2: { txt: "N2 · edición activa", cls: "bg-level-n2/10 border-level-n2/30 text-level-n2", dot: "var(--color-level-n2)" },
-            3: { txt: "N3 · ejecución activa", cls: "bg-level-n3/10 border-level-n3/30 text-level-n3", dot: "var(--color-level-n3)" },
+            1: {
+              txt: "N1 · lectura activa",
+              cls: "bg-level-n1/10 border-level-n1/30 text-level-n1",
+              dot: "var(--color-level-n1)",
+            },
+            2: {
+              txt: "N2 · edición activa",
+              cls: "bg-level-n2/10 border-level-n2/30 text-level-n2",
+              dot: "var(--color-level-n2)",
+            },
+            3: {
+              txt: "N3 · ejecución activa",
+              cls: "bg-level-n3/10 border-level-n3/30 text-level-n3",
+              dot: "var(--color-level-n3)",
+            },
+            4: {
+              txt: "N4 · diálogo con el tutor",
+              cls: "bg-level-n4/10 border-level-n4/30 text-level-n4",
+              dot: "var(--color-level-n4)",
+            },
           }[maxActividad]
           return (
             <span
@@ -754,6 +1090,13 @@ export function EpisodeView({ episodeId, onExit, ejercicioContext, getToken }: E
             </span>
           )
         })()}
+        {/* UI-7: countdown discreto del plazo de la TP (solo si tiene fecha_fin). */}
+        {tarea?.fecha_fin && (
+          <>
+            <span className="text-muted-soft">·</span>
+            <DeadlineChip fechaFin={tarea.fecha_fin} />
+          </>
+        )}
         <div className="ml-auto flex items-center gap-1">
           <HelpButton title="Tutor Socratico" content={helpContent.episode} />
           {/* El docente decide por TP si se puede pausar/retomar (permite_pausa).
@@ -762,9 +1105,10 @@ export function EpisodeView({ episodeId, onExit, ejercicioContext, getToken }: E
             <button
               type="button"
               onClick={handlePauseExit}
+              disabled={submitting}
               data-testid="pause-episode-button"
               title="Salí ahora y retomá este episodio más tarde, justo donde lo dejaste. Tu progreso queda guardado."
-              className="press-shrink inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium border border-border rounded-md text-body hover:bg-surface-alt transition-colors"
+              className="press-shrink inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium border border-border rounded-md text-body hover:bg-surface-alt transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
             >
               <PauseCircle className="h-3 w-3" />
               Seguir después
@@ -773,8 +1117,9 @@ export function EpisodeView({ episodeId, onExit, ejercicioContext, getToken }: E
           <button
             type="button"
             onClick={handleClose}
+            disabled={submitting}
             data-testid="close-episode-button"
-            className="press-shrink inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium border border-border rounded-md text-body hover:bg-danger-soft hover:border-danger/30 hover:text-danger transition-colors"
+            className="press-shrink inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium border border-border rounded-md text-body hover:bg-danger-soft hover:border-danger/30 hover:text-danger transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
           >
             <LogOut className="h-3 w-3" />
             Cerrar episodio
@@ -848,8 +1193,24 @@ export function EpisodeView({ episodeId, onExit, ejercicioContext, getToken }: E
           </div>
         </div>
       ) : (
-        <PanelGroup orientation="horizontal" className="flex-1 p-4 min-h-0">
-          <Panel defaultSize={33} minSize={15} className="flex">
+        <PanelGroup
+          orientation="horizontal"
+          className="flex-1 p-4 min-h-0"
+          // ED-2: restaurar + persistir el layout de paneles.
+          defaultLayout={savedPanelLayout}
+          onLayoutChanged={handlePanelLayoutChanged}
+        >
+          {/* ED-1: mas espacio default para el editor (33/40/27). Consigna y
+              Tutor son colapsables para el modo "maximizar editor". */}
+          <Panel
+            id="ep-consigna"
+            panelRef={consignaPanelRef}
+            defaultSize={33}
+            minSize={15}
+            collapsible
+            collapsedSize={0}
+            className="flex"
+          >
             {consignaPanel}
           </Panel>
 
@@ -857,7 +1218,7 @@ export function EpisodeView({ episodeId, onExit, ejercicioContext, getToken }: E
             <span className="block h-12 w-0.5 rounded-full bg-border-soft group-hover:bg-accent-brand group-data-[resize-handle-active]:bg-accent-brand transition-colors" />
           </PanelResizeHandle>
 
-          <Panel defaultSize={34} minSize={15} className="flex">
+          <Panel id="ep-editor" defaultSize={40} minSize={15} className="flex">
             {editorPanel}
           </Panel>
 
@@ -865,7 +1226,15 @@ export function EpisodeView({ episodeId, onExit, ejercicioContext, getToken }: E
             <span className="block h-12 w-0.5 rounded-full bg-border-soft group-hover:bg-accent-brand group-data-[resize-handle-active]:bg-accent-brand transition-colors" />
           </PanelResizeHandle>
 
-          <Panel defaultSize={33} minSize={15} className="flex">
+          <Panel
+            id="ep-tutor"
+            panelRef={tutorPanelRef}
+            defaultSize={27}
+            minSize={15}
+            collapsible
+            collapsedSize={0}
+            className="flex"
+          >
             {tutorPanel}
           </Panel>
         </PanelGroup>
@@ -882,10 +1251,7 @@ export function EpisodeView({ episodeId, onExit, ejercicioContext, getToken }: E
             // del ClassificationPanel) lo lee de aca.
             setSkippedReflection(true)
             if (typeof window !== "undefined") {
-              window.localStorage.setItem(
-                `episode_${episodeId}_reflection_skipped`,
-                "1",
-              )
+              window.localStorage.setItem(`episode_${episodeId}_reflection_skipped`, "1")
             }
           }
           // Cierre/skip del modal de reflexión:
@@ -898,19 +1264,10 @@ export function EpisodeView({ episodeId, onExit, ejercicioContext, getToken }: E
           //   multi-ejercicio marcamos el ejercicio completo + onExit; si es
           //   TP single, solo onExit (vuelve a /materia/$id).
           if (!classification) {
-            if (ejercicioContext) {
-              try {
-                await markEjercicioCompleted(
-                  ejercicioContext.entregaId,
-                  ejercicioContext.ejercicioOrden,
-                  episodeId,
-                  ejercicioContext.ejercicioId,
-                )
-              } catch {
-                // Best-effort: la TP queda con el ejercicio sin marcar pero
-                // el alumno puede volver a entrar y completar.
-              }
-            }
+            // NB-12: dedupe compartido con el camino del ClassificationPanel.
+            // Best-effort: si falla, la TP queda con el ejercicio sin marcar
+            // pero el alumno puede volver a entrar y completar.
+            await markEjercicioCompletedOnce()
             onExit()
           }
         }}
@@ -934,16 +1291,12 @@ export function EpisodeView({ episodeId, onExit, ejercicioContext, getToken }: E
                 <ShieldAlert className="h-6 w-6" />
               </span>
               <div className="min-w-0">
-                <h2
-                  id="tab-exit-title"
-                  className="text-lg font-semibold leading-snug text-ink"
-                >
+                <h2 id="tab-exit-title" className="text-lg font-semibold leading-snug text-ink">
                   Saliste de la evaluación
                 </h2>
                 <p className="mt-1.5 text-sm leading-relaxed text-muted">
-                  Mientras resolvés un episodio no podés cambiar de pestaña ni de
-                  ventana. Esta salida quedó registrada en la trazabilidad del
-                  episodio y tu docente puede verla.
+                  Mientras resolvés un episodio no podés cambiar de pestaña ni de ventana. Esta
+                  salida quedó registrada en la trazabilidad del episodio y tu docente puede verla.
                 </p>
               </div>
             </div>
@@ -1013,9 +1366,7 @@ function PanelHeader({
         >
           {level}
         </span>
-        <h2 className="text-sm font-semibold text-ink leading-tight tracking-tight">
-          {label}
-        </h2>
+        <h2 className="text-sm font-semibold text-ink leading-tight tracking-tight">{label}</h2>
       </div>
       {badge && (
         <span
@@ -1023,16 +1374,13 @@ function PanelHeader({
             badgePulse ? "animate-pulse-soft" : ""
           }`}
         >
-          {badgePulse && (
-            <span className="inline-block w-1.5 h-1.5 rounded-full bg-success" />
-          )}
+          {badgePulse && <span className="inline-block w-1.5 h-1.5 rounded-full bg-success" />}
           {badge}
         </span>
       )}
     </div>
   )
 }
-
 
 function useElapsedSeconds(episodeId: string | null): number {
   const [seconds, setSeconds] = useState(0)
@@ -1055,6 +1403,49 @@ function formatElapsed(seconds: number): string {
   const m = Math.floor(seconds / 60)
   const s = seconds % 60
   return `${m}m ${s}s`
+}
+
+function formatRemaining(ms: number): string {
+  const totalMin = Math.floor(ms / 60000)
+  const days = Math.floor(totalMin / 1440)
+  const hours = Math.floor((totalMin % 1440) / 60)
+  const mins = totalMin % 60
+  if (days > 0) return `${days}d ${hours}h`
+  if (hours > 0) return `${hours}h ${mins}m`
+  return `${mins}m`
+}
+
+/**
+ * UI-7: chip discreto con el tiempo restante hasta el cierre de la TP.
+ * Refresca cada 30s. Muted por default, warning si queda <24h, danger si vencio.
+ * Solo se monta cuando la TP tiene fecha_fin (el caller lo gatea).
+ */
+function DeadlineChip({ fechaFin }: { fechaFin: string }) {
+  const [now, setNow] = useState(() => Date.now())
+  useEffect(() => {
+    const t = window.setInterval(() => setNow(Date.now()), 30_000)
+    return () => window.clearInterval(t)
+  }, [])
+  const end = Date.parse(fechaFin)
+  if (Number.isNaN(end)) return null
+  const remainingMs = end - now
+  const vencido = remainingMs <= 0
+  const urgent = !vencido && remainingMs < 24 * 3600 * 1000
+  const label = vencido ? "Plazo vencido" : `Vence en ${formatRemaining(remainingMs)}`
+  const cls = vencido
+    ? "bg-danger-soft border-danger/30 text-danger"
+    : urgent
+      ? "bg-warning-soft border-warning/30 text-warning"
+      : "bg-surface-alt border-border-soft text-muted"
+  return (
+    <span
+      title="Fecha limite de entrega de este trabajo practico."
+      className={`inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full border font-medium ${cls}`}
+    >
+      <Clock aria-hidden="true" className="h-3 w-3" />
+      {label}
+    </span>
+  )
 }
 
 /** Hook que mide tiempo de visibilidad + tab focus y emite el delta al
@@ -1374,9 +1765,7 @@ function buildPedagogicalFeedback(c: Classification): {
         sugerencias:
           sugerencias.length > 0
             ? sugerencias
-            : [
-                "Cuando termines un ejercicio, repasá qué aprendiste y contátelo al tutor.",
-              ],
+            : ["Cuando termines un ejercicio, repasá qué aprendiste y contátelo al tutor."],
       }
     case "delegacion_pasiva":
       return {
@@ -1437,18 +1826,12 @@ function ClassificationPanel({
   return (
     <div className="flex-1 p-6 overflow-y-auto max-w-3xl mx-auto w-full">
       {/* Header empático, sin etiqueta diagnóstica técnica. */}
-      <div
-        className={`rounded-2xl border p-7 mb-8 ${tonoStyles[feedback.tono]}`}
-      >
+      <div className={`rounded-2xl border p-7 mb-8 ${tonoStyles[feedback.tono]}`}>
         <p className="text-xs font-mono uppercase tracking-[0.15em] opacity-70 mb-2">
           {skippedReflection ? "Cierre del ejercicio · sin reflexion" : "Cierre del ejercicio"}
         </p>
-        <h2 className="font-serif text-3xl font-medium leading-tight">
-          {feedback.titulo}
-        </h2>
-        <p className="mt-4 text-base leading-relaxed opacity-90">
-          {feedback.mensaje}
-        </p>
+        <h2 className="font-serif text-3xl font-medium leading-tight">{feedback.titulo}</h2>
+        <p className="mt-4 text-base leading-relaxed opacity-90">{feedback.mensaje}</p>
       </div>
 
       {/* Sugerencias concretas y accionables — vacias si fue skip de reflexion. */}
@@ -1502,9 +1885,8 @@ function ClassificationFallbackPanel({ onReset }: { onReset: () => void }) {
           Cerramos tu episodio
         </h2>
         <p className="mt-4 text-base leading-relaxed text-body">
-          Tu trabajo quedó registrado criptográficamente. La clasificación
-          pedagógica no se pudo calcular en este momento — el sistema la
-          va a procesar más tarde y vas a poder verla en{" "}
+          Tu trabajo quedó registrado criptográficamente. La clasificación pedagógica no se pudo
+          calcular en este momento — el sistema la va a procesar más tarde y vas a poder verla en{" "}
           <strong>Mis reflexiones</strong>.
         </p>
       </div>

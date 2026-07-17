@@ -19,6 +19,13 @@ import { FileArchive, FileText, FileType, Film, Library, Trash2, Upload } from "
 import { useCallback, useEffect, useRef, useState } from "react"
 import { useComisionLabel } from "../components/ComisionSelector"
 import {
+  MaterialChunksModal,
+  ReingestIcon,
+  RetrievalTester,
+  ViewChunksIcon,
+  reingestMaterial,
+} from "../components/RagObservability"
+import {
   type Material,
   type MaterialEstado,
   type MaterialTipo,
@@ -136,8 +143,7 @@ function formatRelative(iso: string): string {
 export function MaterialesView({ comisionId, getToken }: Props) {
   const comisionLabelText = useComisionLabel(comisionId)
   const materiaIdState = useMateriaId(comisionId)
-  const materiaId =
-    materiaIdState.status === "ready" ? materiaIdState.materiaId : null
+  const materiaId = materiaIdState.status === "ready" ? materiaIdState.materiaId : null
   const [materiales, setMateriales] = useState<Material[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
@@ -145,6 +151,11 @@ export function MaterialesView({ comisionId, getToken }: Props) {
   const [file, setFile] = useState<File | null>(null)
   const [uploading, setUploading] = useState(false)
   const [uploadError, setUploadError] = useState<string | null>(null)
+
+  // Modal de chunks (F3: ver chunks generados de un material)
+  const [chunksFor, setChunksFor] = useState<Material | null>(null)
+  // Materiales en reproceso (F3: reintentar ingesta)
+  const [reingesting, setReingesting] = useState<Set<string>>(new Set())
 
   // Map de id → timeout pendiente de polling. Se limpia en cleanup.
   const pollTimers = useRef<Map<string, number>>(new Map())
@@ -266,6 +277,24 @@ export function MaterialesView({ comisionId, getToken }: Props) {
     }
   }
 
+  const handleReingest = async (m: Material) => {
+    setReingesting((prev) => new Set(prev).add(m.id))
+    try {
+      await reingestMaterial(m.id, getToken)
+      // El reproceso deja el material en un estado intermedio → el polling
+      // existente lo sigue hasta indexed/failed. Refrescamos para arrancarlo.
+      await refreshList()
+    } catch (e) {
+      setError(String(e))
+    } finally {
+      setReingesting((prev) => {
+        const next = new Set(prev)
+        next.delete(m.id)
+        return next
+      })
+    }
+  }
+
   return (
     <PageContainer
       title="Materiales del curso"
@@ -343,6 +372,9 @@ export function MaterialesView({ comisionId, getToken }: Props) {
           )}
         </section>
 
+        {/* ═══ Probar retrieval (F3) ══════════════════════════════════════ */}
+        {materiaId && <RetrievalTester materiaId={materiaId} getToken={getToken} />}
+
         {/* ═══ Materials list ═════════════════════════════════════════════ */}
         <section className="space-y-4">
           <div className="flex items-baseline justify-between">
@@ -390,13 +422,27 @@ export function MaterialesView({ comisionId, getToken }: Props) {
                   className="animate-fade-in-up"
                   style={{ animationDelay: `${Math.min(idx, 6) * 50}ms` }}
                 >
-                  <MaterialCard material={m} onDelete={() => handleDelete(m)} />
+                  <MaterialCard
+                    material={m}
+                    onDelete={() => handleDelete(m)}
+                    onViewChunks={() => setChunksFor(m)}
+                    onReingest={() => handleReingest(m)}
+                    reingesting={reingesting.has(m.id)}
+                  />
                 </li>
               ))}
             </ul>
           )}
         </section>
       </div>
+
+      <MaterialChunksModal
+        materialId={chunksFor?.id ?? null}
+        materialName={chunksFor?.nombre ?? ""}
+        getToken={getToken}
+        isOpen={chunksFor !== null}
+        onClose={() => setChunksFor(null)}
+      />
     </PageContainer>
   )
 }
@@ -404,14 +450,26 @@ export function MaterialesView({ comisionId, getToken }: Props) {
 function MaterialCard({
   material,
   onDelete,
+  onViewChunks,
+  onReingest,
+  reingesting,
 }: {
   material: Material
   onDelete: () => void
+  onViewChunks: () => void
+  onReingest: () => void
+  reingesting: boolean
 }) {
   const tipo = material.tipo
   const estado = material.estado
-  const isProcessing = !TERMINAL_STATES.includes(estado)
+  const isProcessing = !TERMINAL_STATES.includes(estado) || reingesting
   const Icon = TIPO_ICON[tipo]
+  // Reprocesable: terminó (indexed|failed) pero falló o no produjo chunks.
+  const canReingest =
+    !reingesting &&
+    TERMINAL_STATES.includes(estado) &&
+    (estado === "failed" || (material.chunks_count ?? 0) === 0)
+  const hasChunks = (material.chunks_count ?? 0) > 0
 
   return (
     <article className="hover-lift group relative overflow-hidden rounded-xl border border-border bg-surface flex flex-col h-full shadow-[0_1px_2px_0_rgba(0,0,0,0.04)]">
@@ -450,10 +508,34 @@ function MaterialCard({
             </span>
           </div>
           <div className="flex items-center gap-1.5">
-            <span className="font-mono tabular-nums text-xs text-muted" title="Chunks indexados">
+            <button
+              type="button"
+              onClick={onViewChunks}
+              disabled={!hasChunks}
+              className="press-shrink inline-flex items-center gap-1 px-2 py-1 text-[11px] text-muted hover:text-ink hover:bg-surface-alt rounded transition-colors disabled:opacity-40 disabled:cursor-not-allowed font-mono tabular-nums"
+              title={hasChunks ? "Ver chunks generados" : "Sin chunks para mostrar"}
+            >
+              <ViewChunksIcon className="h-3 w-3" />
               {material.chunks_count ?? "…"}
               <span className="text-muted-soft ml-0.5">chunks</span>
-            </span>
+            </button>
+            {canReingest && (
+              <button
+                type="button"
+                onClick={onReingest}
+                className="press-shrink inline-flex items-center gap-1 px-2 py-1 text-[11px] text-accent-brand hover:bg-accent-brand/10 rounded transition-colors"
+                title="Reprocesar material (re-ingesta)"
+              >
+                <ReingestIcon className="h-3 w-3" />
+                Reintentar
+              </button>
+            )}
+            {reingesting && (
+              <span className="inline-flex items-center gap-1 px-2 py-1 text-[11px] text-muted">
+                <ReingestIcon className="h-3 w-3 animate-spin" />
+                Reprocesando
+              </span>
+            )}
             <button
               type="button"
               onClick={onDelete}

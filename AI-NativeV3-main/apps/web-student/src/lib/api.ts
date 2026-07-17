@@ -260,6 +260,7 @@ export async function getEpisodeState(
 export async function* sendMessage(
   episodeId: string,
   content: string,
+  idempotencyKey?: string,
   getToken?: TokenGetter,
 ): AsyncGenerator<
   | { type: "chunk"; content: string }
@@ -269,6 +270,10 @@ export async function* sendMessage(
   unknown
 > {
   const headers = await authHeaders(getToken)
+  // FIX B: clave estable por turno del alumno. En el "Reintentar" de UI-8
+  // EpisodePage reusa el MISMO valor, asi el server deduplica el prompt_enviado
+  // (mismo seq, sin re-publicar) y no genera prompts huerfanos.
+  if (idempotencyKey) headers["Idempotency-Key"] = idempotencyKey
   const response = await fetch(`/api/v1/episodes/${episodeId}/message`, {
     method: "POST",
     headers: { ...headers, Accept: "text/event-stream" },
@@ -342,6 +347,36 @@ export async function emitCodigoEjecutado(
   })
   if (!r.ok) throw new Error(`emit codigo_ejecutado failed: ${r.status}`)
   return (await r.json()) as EventEmitResponse
+}
+
+/** Emite tests_ejecutados al CTR (F1 "probar mi codigo"), via tutor-service.
+ *
+ * El cliente Pyodide corre los test cases PUBLICOS sobre el codigo del alumno
+ * y manda SOLO conteos agregados — nunca la lista detallada por test ni el
+ * codigo (defensa de privacidad + cardinalidad del CTR). `tests_hidden`
+ * viaja siempre 0 (los ocultos NO se ejecutan client-side en piloto-1). El
+ * backend valida `passed + failed == total` (422 si no) y que la sesion siga
+ * viva (409 si el episodio esta cerrado/expirado). Endpoint distinto de los
+ * otros emit*: `POST /episodes/{id}/run-tests` (202 Accepted).
+ */
+export async function emitTestsEjecutados(
+  episodeId: string,
+  payload: {
+    test_count_total: number
+    test_count_passed: number
+    test_count_failed: number
+    tests_publicos: number
+    ejecucion_ms: number
+  },
+  getToken?: TokenGetter,
+): Promise<{ status: string; seq: string }> {
+  const r = await fetch(`/api/v1/episodes/${episodeId}/run-tests`, {
+    method: "POST",
+    headers: await authHeaders(getToken),
+    body: JSON.stringify({ ...payload, tests_hidden: 0 }),
+  })
+  if (!r.ok) throw new Error(`emit tests_ejecutados failed: ${r.status}`)
+  return (await r.json()) as { status: string; seq: string }
 }
 
 export type EdicionCodigoOrigin = "student_typed" | "copied_from_tutor" | "pasted_external"
@@ -518,6 +553,29 @@ export async function submitReflection(
 // ── Tareas Prácticas (TPs) disponibles para el estudiante ─────────────
 
 /**
+ * Test case PUBLICO de un ejercicio / TP (A0.3, F1 "probar mi codigo").
+ *
+ * El backend sanea por rol (`content_visibility.py`): al ALUMNO solo le
+ * llegan los `is_public=true`. Los ocultos (con su `expected`) nunca viajan
+ * al cliente. Shape alineado con `TestCaseSchema` del contrato; los campos
+ * van opcionales porque en TPs monoliticas el JSONB puede venir incompleto.
+ *
+ *  - `stdin_stdout`: `code` es el stdin que se le pasa al programa y
+ *    `expected` la salida esperada (se compara stdout, trim a ambos lados).
+ *  - `pytest_assert`: `code` es un snippet de asercion que corre contra los
+ *    nombres definidos por el alumno; pasa si no levanta excepcion.
+ */
+export interface TestCasePublic {
+  id?: string
+  name?: string
+  type?: "stdin_stdout" | "pytest_assert"
+  code?: string
+  expected?: string | null
+  is_public?: boolean
+  weight?: number
+}
+
+/**
  * Vista read-only de una TP publicada.
  *
  * El estudiante sólo ve TPs en estado=published dentro de la ventana
@@ -543,6 +601,11 @@ export interface AvailableTarea {
   /** El docente decide si el alumno puede pausar/retomar episodios de esta TP.
    * Opcional para backwards-compat: undefined se trata como permitido (true). */
   permite_pausa?: boolean
+  /** Test cases PUBLICOS de la TP monolitica (A0.3, F1). El backend ya filtra
+   * los ocultos via `sanitize_tarea_practica_for_student`. Opcional: solo lo
+   * populan los endpoints que devuelven la TP saneada (get/list). Para TPs
+   * multi-ejercicio los tests viven en cada ejercicio del banco. */
+  test_cases?: TestCasePublic[]
   /** Ejercicios asociados (banco reusable, ADR-047). Opcional — solo presente
    * cuando el endpoint los popula via `?include=ejercicios`. */
   ejercicios?: Array<{
@@ -860,7 +923,8 @@ export interface Ejercicio {
   inicial_codigo: string | null
   unidad_tematica: string
   dificultad: "basica" | "intermedia" | "avanzada" | null
-  test_cases: unknown[]
+  /** Solo los PUBLICOS al alumno (backend `sanitize_ejercicio_for_student`). */
+  test_cases: TestCasePublic[]
 }
 
 /**

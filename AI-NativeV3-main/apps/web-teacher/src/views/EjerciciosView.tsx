@@ -18,15 +18,34 @@
  *  - ModalState discriminated union (mismo patron que TareasPracticasView)
  *  - PageContainer + helpContent (key "ejercicios")
  */
-import { Badge, Modal, PageContainer } from "@platform/ui"
-import { Pencil, Plus, Sparkles, Trash2, Upload } from "lucide-react"
-import { useCallback, useEffect, useState } from "react"
+import { Badge, EmptyHero, Input, Modal, PageContainer } from "@platform/ui"
 import {
+  AlertTriangle,
+  BookOpen,
+  CheckCircle2,
+  Eye,
+  EyeOff,
+  FlaskConical,
+  Pencil,
+  Play,
+  Plus,
+  Search,
+  Sparkles,
+  Trash2,
+  Upload,
+  X,
+  XCircle,
+} from "lucide-react"
+import { useCallback, useEffect, useMemo, useState } from "react"
+import {
+  type CriterioRubrica,
   type Dificultad,
   type Ejercicio,
   type EjercicioCreate,
   type EjercicioGenerateRequest,
   type Materia,
+  type RubricaEjercicio,
+  type TestCaseEjercicio,
   type UnidadTematica,
   comisionesApi,
   createEjercicio,
@@ -36,6 +55,7 @@ import {
   listMaterias,
   updateEjercicio,
 } from "../lib/api"
+import { isPyodideRuntimeReady, runTestCases, type TestCaseRunResult } from "../lib/pyodideRunner"
 import { helpContent } from "../utils/helpContent"
 
 interface Props {
@@ -46,8 +66,10 @@ interface Props {
 type ModalState =
   | { kind: "closed" }
   | { kind: "create"; initial?: EjercicioCreate }
+  | { kind: "confirm-edit"; ejercicio: Ejercicio }
   | { kind: "edit"; ejercicio: Ejercicio }
   | { kind: "view"; ejercicio: Ejercicio }
+  | { kind: "test-run"; ejercicio: Ejercicio }
   | { kind: "ai-wizard" }
   | { kind: "import" }
   | { kind: "confirm-delete"; ejercicio: Ejercicio }
@@ -160,10 +182,20 @@ export function EjerciciosView({ comisionId, getToken }: Props) {
   const [ejercicios, setEjercicios] = useState<Ejercicio[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
+  // Feedback de exito de las acciones (crear/editar/borrar/importar). El repo
+  // no tiene infra de toast en @platform/ui, asi que usamos un banner inline
+  // consistente con el banner de error de la vista (FR-8). Se limpia solo con
+  // la proxima accion o al cerrarlo a mano.
+  const [notice, setNotice] = useState<string | null>(null)
   const [modal, setModal] = useState<ModalState>({ kind: "closed" })
   const [filterUnidad, setFilterUnidad] = useState<UnidadTematica | "">("")
   const [filterDificultad, setFilterDificultad] = useState<Dificultad | "">("")
   const [filterIA, setFilterIA] = useState<"" | "true" | "false">("")
+  // Busqueda por texto (FR-4). Client-side sobre lo ya cargado: el backend no
+  // expone un query param de texto (solo filtros de igualdad exacta), asi que
+  // matcheamos titulo/enunciado/unidad en vivo. Ojo: fetchList trae hasta 100
+  // ejercicios sin paginar, asi que el filtro solo ve esa primera pagina.
+  const [search, setSearch] = useState("")
   // El banco se filtra por la materia de la comisión activa (Prog 1, Prog 2…).
   // null = todavía resolviendo o la comisión no es del docente.
   const [materiaId, setMateriaId] = useState<string | null>(null)
@@ -224,39 +256,53 @@ export function EjerciciosView({ comisionId, getToken }: Props) {
     fetchList()
   }, [fetchList])
 
+  // Ejercicios visibles tras aplicar la busqueda por texto (sobre la lista ya
+  // filtrada/ordenada por el server). Matchea titulo, enunciado y el label de
+  // la unidad tematica. Sin termino -> lista completa.
+  const visibles = useMemo(() => {
+    const q = search.trim().toLowerCase()
+    if (!q) return ejercicios
+    return ejercicios.filter(
+      (ej) =>
+        ej.titulo.toLowerCase().includes(q) ||
+        ej.enunciado_md.toLowerCase().includes(q) ||
+        (UNIDAD_LABEL[ej.unidad_tematica] ?? ej.unidad_tematica).toLowerCase().includes(q),
+    )
+  }, [ejercicios, search])
+
   function closeModal() {
     setModal({ kind: "closed" })
   }
 
+  // Crear/editar propagan el error al FormModal (que ya lo muestra inline);
+  // en exito cierran el modal y dejan un banner de exito (FR-8).
   async function handleCreate(body: EjercicioCreate): Promise<void> {
-    try {
-      // Taggea el ejercicio con la materia de la comisión activa para que
-      // quede en el banco de esa materia (Prog 1, Prog 2…).
-      await createEjercicio({ ...body, materia_id: materiaId }, getToken)
-      closeModal()
-      fetchList()
-    } catch (e) {
-      alert(`Error al crear ejercicio: ${String(e)}`)
-    }
+    // Taggea el ejercicio con la materia de la comisión activa para que
+    // quede en el banco de esa materia (Prog 1, Prog 2…).
+    await createEjercicio({ ...body, materia_id: materiaId }, getToken)
+    closeModal()
+    setNotice(`Ejercicio "${body.titulo}" creado en el banco.`)
+    fetchList()
   }
 
   async function handleUpdate(id: string, body: EjercicioCreate): Promise<void> {
-    try {
-      await updateEjercicio(id, body, getToken)
-      closeModal()
-      fetchList()
-    } catch (e) {
-      alert(`Error al actualizar ejercicio: ${String(e)}`)
-    }
+    await updateEjercicio(id, body, getToken)
+    closeModal()
+    setNotice(`Ejercicio "${body.titulo}" actualizado.`)
+    fetchList()
   }
 
   async function handleDelete(ejercicio: Ejercicio): Promise<void> {
+    // El modal de borrado no tiene banner propio: el error va al banner de
+    // error de la vista y el exito al banner de exito.
     try {
       await deleteEjercicio(ejercicio.id, getToken)
       closeModal()
+      setNotice(`Ejercicio "${ejercicio.titulo}" eliminado.`)
       fetchList()
     } catch (e) {
-      alert(`Error al borrar: ${String(e)}`)
+      closeModal()
+      setError(`No se pudo eliminar el ejercicio: ${String(e)}`)
     }
   }
 
@@ -269,6 +315,28 @@ export function EjerciciosView({ comisionId, getToken }: Props) {
     >
       <div className="flex flex-wrap items-center justify-between gap-3 mb-4">
         <div className="flex flex-wrap items-center gap-2">
+          <div className="relative w-64">
+            <Search className="pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2 w-4 h-4 text-muted" />
+            <Input
+              type="text"
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              placeholder="Buscar por titulo o enunciado..."
+              aria-label="Buscar ejercicios"
+              className="h-8 pl-8 pr-8"
+            />
+            {search && (
+              <button
+                type="button"
+                onClick={() => setSearch("")}
+                title="Limpiar busqueda"
+                aria-label="Limpiar busqueda"
+                className="absolute right-2 top-1/2 -translate-y-1/2 text-muted hover:text-ink"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            )}
+          </div>
           <select
             value={filterUnidad}
             onChange={(e) => setFilterUnidad(e.target.value as UnidadTematica | "")}
@@ -329,6 +397,22 @@ export function EjerciciosView({ comisionId, getToken }: Props) {
         </div>
       </div>
 
+      {notice && (
+        <div className="flex items-start gap-2 text-sm text-emerald-700 bg-emerald-50 border border-emerald-200 rounded p-3 mb-3">
+          <CheckCircle2 className="w-4 h-4 shrink-0 mt-0.5" />
+          <span className="flex-1">{notice}</span>
+          <button
+            type="button"
+            onClick={() => setNotice(null)}
+            title="Cerrar"
+            aria-label="Cerrar aviso"
+            className="text-emerald-600 hover:text-emerald-800"
+          >
+            <X className="w-4 h-4" />
+          </button>
+        </div>
+      )}
+
       {loading && <div className="text-sm text-muted">Cargando ejercicios...</div>}
       {error && (
         <div className="text-sm text-red-600 bg-red-50 border border-red-200 rounded p-3 mb-3">
@@ -337,12 +421,34 @@ export function EjerciciosView({ comisionId, getToken }: Props) {
       )}
 
       {!loading && ejercicios.length === 0 && !error && (
+        <EmptyHero
+          icon={<BookOpen className="h-12 w-12" />}
+          title="El banco de ejercicios esta vacio"
+          description={
+            materiaId
+              ? "Todavia no hay ejercicios para esta materia. Crea el primero y quedara disponible para armar TPs."
+              : "Selecciona una comision para ver y cargar su banco de ejercicios."
+          }
+          {...(materiaId
+            ? {
+                primaryAction: {
+                  label: "Crear primer ejercicio",
+                  onClick: () => setModal({ kind: "create" }),
+                },
+              }
+            : {})}
+          hint="Tambien podes generarlo con IA o importar un JSON exportado por otra IA."
+        />
+      )}
+
+      {!loading && !error && ejercicios.length > 0 && visibles.length === 0 && (
         <div className="text-sm text-muted bg-canvas border border-border rounded p-6 text-center">
-          No hay ejercicios todavia. Crea uno manualmente o usa el wizard de IA.
+          Ningun ejercicio coincide con "{search.trim()}". Proba con otro termino o limpia la
+          busqueda.
         </div>
       )}
 
-      {!loading && ejercicios.length > 0 && (
+      {!loading && visibles.length > 0 && (
         <div className="border border-border rounded overflow-hidden bg-white">
           <table className="w-full text-sm">
             <thead className="bg-canvas border-b border-border">
@@ -356,7 +462,7 @@ export function EjerciciosView({ comisionId, getToken }: Props) {
               </tr>
             </thead>
             <tbody>
-              {ejercicios.map((ej) => (
+              {visibles.map((ej) => (
                 <tr key={ej.id} className="border-b border-border last:border-0 hover:bg-canvas">
                   <td className="px-3 py-2">
                     <button
@@ -394,7 +500,15 @@ export function EjerciciosView({ comisionId, getToken }: Props) {
                     <div className="inline-flex items-center gap-1">
                       <button
                         type="button"
-                        onClick={() => setModal({ kind: "edit", ejercicio: ej })}
+                        onClick={() => setModal({ kind: "test-run", ejercicio: ej })}
+                        className="p-1 hover:bg-emerald-50 hover:text-emerald-700 rounded"
+                        title="Probar ejercicio (correr contra sus test cases)"
+                      >
+                        <Play className="w-4 h-4" />
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setModal({ kind: "confirm-edit", ejercicio: ej })}
                         className="p-1 hover:bg-border rounded"
                         title="Editar"
                       >
@@ -435,6 +549,30 @@ export function EjerciciosView({ comisionId, getToken }: Props) {
         <EjercicioViewModal ejercicio={modal.ejercicio} onClose={closeModal} />
       )}
 
+      {modal.kind === "test-run" && (
+        <Modal
+          isOpen={true}
+          onClose={closeModal}
+          title={`Probar ejercicio: ${modal.ejercicio.titulo}`}
+          size="lg"
+        >
+          <ProbarEjercicioPanel
+            testCases={modal.ejercicio.test_cases}
+            initialCode={modal.ejercicio.inicial_codigo}
+            collapsible={false}
+          />
+          <div className="flex justify-end mt-4 pt-3 border-t border-border">
+            <button
+              type="button"
+              onClick={closeModal}
+              className="px-3 py-1.5 border border-border rounded text-sm hover:bg-canvas"
+            >
+              Cerrar
+            </button>
+          </div>
+        </Modal>
+      )}
+
       {modal.kind === "ai-wizard" && (
         <EjercicioAIWizard
           getToken={getToken}
@@ -451,6 +589,41 @@ export function EjerciciosView({ comisionId, getToken }: Props) {
           onClose={closeModal}
           onImported={fetchList}
         />
+      )}
+
+      {modal.kind === "confirm-edit" && (
+        <Modal isOpen={true} onClose={closeModal} title="Editar ejercicio en uso" size="sm">
+          <div className="flex gap-3">
+            <AlertTriangle className="w-5 h-5 text-warning shrink-0 mt-0.5" />
+            <div className="space-y-2 text-sm">
+              <p>
+                Vas a editar <strong>{modal.ejercicio.titulo}</strong>. Este ejercicio es
+                reusable: puede estar asignado a TPs y tener entregas de alumnos.
+              </p>
+              <p className="text-muted">
+                Los cambios se aplican sobre esta misma version (no se crea una copia), asi
+                que afectan a todas las TPs que lo referencian y al contexto de las entregas
+                ya trabajadas. Revisa el impacto antes de guardar.
+              </p>
+            </div>
+          </div>
+          <div className="flex justify-end gap-2 mt-4">
+            <button
+              type="button"
+              onClick={closeModal}
+              className="px-3 py-1.5 border border-border rounded text-sm hover:bg-canvas"
+            >
+              Cancelar
+            </button>
+            <button
+              type="button"
+              onClick={() => setModal({ kind: "edit", ejercicio: modal.ejercicio })}
+              className="px-3 py-1.5 bg-warning text-white rounded text-sm hover:opacity-90"
+            >
+              Editar de todos modos
+            </button>
+          </div>
+        </Modal>
       )}
 
       {modal.kind === "confirm-delete" && (
@@ -540,6 +713,18 @@ function EjercicioFormModal({ initial, title, unidades, onClose, onSubmit }: For
       setError("Titulo y enunciado son obligatorios")
       return
     }
+    const criterios = draft.rubrica?.criterios ?? []
+    for (const [i, c] of criterios.entries()) {
+      if (!c.nombre.trim() || !c.descripcion.trim()) {
+        setError(`Criterio ${i + 1} de la rubrica: nombre y descripcion no pueden estar vacios`)
+        return
+      }
+      const puntaje = Number(c.puntaje_max)
+      if (!Number.isFinite(puntaje) || puntaje <= 0) {
+        setError(`Criterio ${i + 1} de la rubrica: el puntaje maximo debe ser mayor a 0`)
+        return
+      }
+    }
     setSubmitting(true)
     try {
       await onSubmit(draft)
@@ -618,17 +803,23 @@ function EjercicioFormModal({ initial, title, unidades, onClose, onSubmit }: For
           </div>
         </FormSection>
 
-        <FormSection title="Tests, rubrica y prerequisitos (JSON)">
+        <FormSection title="Rubrica de correccion">
+          <RubricaCriteriosEditor
+            value={draft.rubrica ?? null}
+            onChange={(v) => set("rubrica", v)}
+          />
+        </FormSection>
+
+        <FormSection title="Tests y prerequisitos (JSON)">
           <JsonField
             label="test_cases (array)"
             value={draft.test_cases ?? []}
             onChange={(v) => set("test_cases", v)}
           />
-          <JsonField
-            label="rubrica ({criterios: [...]})"
-            value={draft.rubrica ?? null}
-            onChange={(v) => set("rubrica", v)}
-            allowNull
+          <StudentTestCasePreview testCases={draft.test_cases ?? []} />
+          <ProbarEjercicioPanel
+            testCases={draft.test_cases ?? []}
+            initialCode={draft.inicial_codigo ?? null}
           />
           <JsonField
             label="prerequisitos ({sintacticos: [], conceptuales: []})"
@@ -749,6 +940,447 @@ function JsonField({ label, value, onChange, allowNull = false }: JsonFieldProps
         rows={4}
       />
       {err && <div className="text-xs text-red-600 mt-1">{err}</div>}
+    </div>
+  )
+}
+
+// ── Preview "Vista del alumno" de los test cases (F12) ──────────────────
+//
+// Replica el saneo de A0.3 (`sanitize_ejercicio_for_student`): el alumno solo
+// recibe los test cases con `is_public === true` (con su `code`/`expected`,
+// que necesita para "probar codigo" honesto — F1); los `is_public=false`
+// nunca viajan al cliente. Este panel le muestra al docente exactamente que
+// test cases veria el estudiante, para que entienda que expone y que queda
+// oculto. Read-only: no edita el draft.
+
+function StudentTestCasePreview({ testCases }: { testCases: TestCaseEjercicio[] }) {
+  const [open, setOpen] = useState(false)
+  const publicos = testCases.filter((tc) => tc.is_public === true)
+  const ocultos = testCases.length - publicos.length
+
+  return (
+    <div className="mt-1">
+      <button
+        type="button"
+        onClick={() => setOpen((v) => !v)}
+        className="flex items-center gap-1.5 border border-border rounded px-2.5 py-1 text-xs hover:bg-canvas"
+        aria-expanded={open}
+      >
+        {open ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
+        {open ? "Ocultar vista del alumno" : "Vista del alumno"}
+      </button>
+
+      {open && (
+        <div className="mt-2 border border-border rounded bg-canvas p-3 space-y-2">
+          <p className="text-xs text-muted">
+            Asi ve el alumno los test cases al "probar codigo". Solo los publicos (
+            <code>is_public: true</code>) viajan al cliente; los ocultos nunca se exponen (mismo
+            saneo que aplica el backend, A0.3).
+          </p>
+
+          {publicos.length === 0 ? (
+            <div className="text-xs text-muted bg-white border border-border rounded p-3 text-center">
+              El alumno no veria ningun test case. Marca alguno con <code>is_public: true</code>{" "}
+              para que pueda probar su codigo.
+            </div>
+          ) : (
+            <ul className="space-y-2">
+              {publicos.map((tc, i) => (
+                <li
+                  key={tc.id || `tc-${i}`}
+                  className="border border-border rounded bg-white p-2 text-xs space-y-1"
+                >
+                  <div className="flex items-center gap-2">
+                    <span className="font-medium">{tc.name || `Test ${i + 1}`}</span>
+                    <Badge>
+                      {tc.type === "stdin_stdout" ? "stdin/stdout" : "pytest"}
+                    </Badge>
+                    <span className="text-muted-soft ml-auto">peso {tc.weight}</span>
+                  </div>
+                  {tc.code && (
+                    <div>
+                      <div className="text-[10px] text-muted uppercase tracking-wide">
+                        {tc.type === "stdin_stdout" ? "entrada" : "assert"}
+                      </div>
+                      <pre className="bg-canvas border border-border rounded p-1.5 font-mono whitespace-pre-wrap">
+                        {tc.code}
+                      </pre>
+                    </div>
+                  )}
+                  {tc.expected !== null && tc.expected !== "" && (
+                    <div>
+                      <div className="text-[10px] text-muted uppercase tracking-wide">
+                        salida esperada
+                      </div>
+                      <pre className="bg-canvas border border-border rounded p-1.5 font-mono whitespace-pre-wrap">
+                        {tc.expected}
+                      </pre>
+                    </div>
+                  )}
+                </li>
+              ))}
+            </ul>
+          )}
+
+          {ocultos > 0 && (
+            <p className="text-[11px] text-muted">
+              {ocultos} test{ocultos !== 1 ? "s" : ""} oculto{ocultos !== 1 ? "s" : ""} de
+              control ({ocultos !== 1 ? "no viajan" : "no viaja"} al alumno).
+            </p>
+          )}
+        </div>
+      )}
+    </div>
+  )
+}
+
+// ── "Probar ejercicio" (F1, lado docente) ───────────────────────────────
+//
+// Corre el codigo solucion (o un codigo de prueba) del docente contra TODOS los
+// test_cases del ejercicio con Pyodide, en el navegador. A diferencia de F12
+// (que muestra QUE ve el alumno), F1 CORRE el ejercicio para verificar que
+// funciona antes de asignarlo. El docente es staff: ve todos los casos
+// (publicos y ocultos) con su expected. NO emite eventos CTR (es un preview de
+// autoria; el CTR solo lo escribe el alumno dentro de un episodio).
+//
+// El harness Pyodide vive en lib/pyodideRunner.ts (replica minima del patron
+// del web-student/CodeEditor.tsx, sin importar de web-student).
+
+function statusLabel(status: TestCaseRunResult["status"]): string {
+  if (status === "pass") return "Pasa"
+  if (status === "fail") return "Falla"
+  return "Error"
+}
+
+function ResultRow({ r }: { r: TestCaseRunResult }) {
+  const Icon = r.status === "pass" ? CheckCircle2 : r.status === "fail" ? XCircle : AlertTriangle
+  const tone =
+    r.status === "pass"
+      ? "text-emerald-700 bg-emerald-50 border-emerald-200"
+      : r.status === "fail"
+        ? "text-red-700 bg-red-50 border-red-200"
+        : "text-amber-800 bg-amber-50 border-amber-200"
+
+  return (
+    <li className={`border rounded p-2 text-xs space-y-1.5 ${tone}`}>
+      <div className="flex items-center gap-2">
+        <Icon className="w-4 h-4 shrink-0" />
+        <span className="font-medium">{r.name || r.id}</span>
+        <Badge>{r.type === "stdin_stdout" ? "stdin/stdout" : "pytest"}</Badge>
+        <span className="ml-auto font-semibold">{statusLabel(r.status)}</span>
+        <span className="text-muted-soft">peso {r.weight}</span>
+      </div>
+
+      {r.input.trim() !== "" && (
+        <div>
+          <div className="text-[10px] uppercase tracking-wide opacity-70">
+            {r.type === "stdin_stdout" ? "entrada (stdin)" : "assert"}
+          </div>
+          <pre className="bg-white/70 border border-current/10 rounded p-1.5 font-mono whitespace-pre-wrap">
+            {r.input}
+          </pre>
+        </div>
+      )}
+
+      {/* Solo stdin_stdout tiene esperado vs obtenido; en pytest_assert el
+          resultado es pasa/falla del assert. */}
+      {r.type === "stdin_stdout" && (
+        <div className="grid grid-cols-2 gap-2">
+          <div>
+            <div className="text-[10px] uppercase tracking-wide opacity-70">esperado</div>
+            <pre className="bg-white/70 border border-current/10 rounded p-1.5 font-mono whitespace-pre-wrap">
+              {r.expected ?? ""}
+            </pre>
+          </div>
+          <div>
+            <div className="text-[10px] uppercase tracking-wide opacity-70">obtenido</div>
+            <pre className="bg-white/70 border border-current/10 rounded p-1.5 font-mono whitespace-pre-wrap">
+              {r.got}
+            </pre>
+          </div>
+        </div>
+      )}
+
+      {r.status === "error" && r.error && (
+        <div>
+          <div className="text-[10px] uppercase tracking-wide opacity-70">error</div>
+          <pre className="bg-white/70 border border-current/10 rounded p-1.5 font-mono whitespace-pre-wrap">
+            {r.error}
+          </pre>
+        </div>
+      )}
+
+      {/* En pytest_assert sin error, mostrar el stdout del programa si lo hubo. */}
+      {r.type === "pytest_assert" && r.status === "pass" && r.got.trim() !== "" && (
+        <div>
+          <div className="text-[10px] uppercase tracking-wide opacity-70">salida del programa</div>
+          <pre className="bg-white/70 border border-current/10 rounded p-1.5 font-mono whitespace-pre-wrap">
+            {r.got}
+          </pre>
+        </div>
+      )}
+    </li>
+  )
+}
+
+function ProbarEjercicioPanel({
+  testCases,
+  initialCode,
+  collapsible = true,
+}: {
+  testCases: TestCaseEjercicio[]
+  initialCode: string | null
+  collapsible?: boolean
+}) {
+  const [open, setOpen] = useState(!collapsible)
+  const [code, setCode] = useState(initialCode ?? "")
+  const [loading, setLoading] = useState(false)
+  const [running, setRunning] = useState(false)
+  const [runError, setRunError] = useState<string | null>(null)
+  const [results, setResults] = useState<TestCaseRunResult[] | null>(null)
+
+  async function handleRun() {
+    setRunError(null)
+    setResults(null)
+    setRunning(true)
+    // La primera corrida baja Pyodide del CDN (~6 MB): avisamos con "cargando".
+    if (!isPyodideRuntimeReady()) setLoading(true)
+    try {
+      const res = await runTestCases(code, testCases)
+      setResults(res)
+    } catch (e) {
+      setRunError(String(e))
+    } finally {
+      setLoading(false)
+      setRunning(false)
+    }
+  }
+
+  const passed = results?.filter((r) => r.status === "pass").length ?? 0
+  const totalWeight = results?.reduce((a, r) => a + (r.weight || 0), 0) ?? 0
+  const passedWeight =
+    results?.filter((r) => r.status === "pass").reduce((a, r) => a + (r.weight || 0), 0) ?? 0
+  const allPass = results !== null && results.length > 0 && passed === results.length
+
+  const body = (
+    <div
+      className={
+        collapsible ? "mt-2 border border-border rounded bg-canvas p-3 space-y-2" : "space-y-2"
+      }
+    >
+      <p className="text-xs text-muted">
+        Corre el codigo solucion contra los {testCases.length} test case
+        {testCases.length !== 1 ? "s" : ""} del ejercicio (publicos y ocultos) para verificar que
+        funciona antes de asignarlo. Se ejecuta en tu navegador con Pyodide; no queda registrado en
+        la trazabilidad del alumno.
+      </p>
+
+      {testCases.length === 0 ? (
+        <div className="text-xs text-muted bg-white border border-border rounded p-3 text-center">
+          Este ejercicio no tiene test cases. Agregá alguno en <code>test_cases</code> para poder
+          probarlo.
+        </div>
+      ) : (
+        <>
+          <div>
+            <label htmlFor="probar-solucion" className="block text-xs text-muted mb-1">
+              Codigo solucion (o de prueba)
+            </label>
+            <textarea
+              id="probar-solucion"
+              value={code}
+              onChange={(e) => setCode(e.target.value)}
+              className="w-full border border-border rounded px-2 py-1 text-xs font-mono bg-white"
+              rows={8}
+              spellCheck={false}
+              placeholder="# Pega aca la solucion del ejercicio (o un codigo de prueba) para correrlo contra los test cases"
+            />
+            <p className="text-[11px] text-muted mt-1">
+              Recorda: los asserts de tipo <code>pytest</code> referencian las clases/funciones de
+              este codigo directamente (mismo archivo, sin imports del alumno).
+            </p>
+          </div>
+
+          <button
+            type="button"
+            onClick={handleRun}
+            disabled={running}
+            className="inline-flex items-center gap-1.5 bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 text-white rounded px-3 py-1.5 text-sm font-medium"
+          >
+            <Play className="w-4 h-4" />
+            {loading
+              ? "Cargando Python..."
+              : running
+                ? "Ejecutando..."
+                : `Probar contra ${testCases.length} test case${testCases.length !== 1 ? "s" : ""}`}
+          </button>
+
+          {runError && (
+            <div className="text-xs text-red-600 bg-red-50 border border-red-200 rounded p-2 whitespace-pre-wrap">
+              {runError}
+            </div>
+          )}
+
+          {results && (
+            <div className="space-y-2">
+              <div
+                className={`flex items-center gap-2 text-sm rounded p-2 border ${
+                  allPass
+                    ? "text-emerald-700 bg-emerald-50 border-emerald-200"
+                    : "text-amber-800 bg-amber-50 border-amber-200"
+                }`}
+              >
+                {allPass ? (
+                  <CheckCircle2 className="w-4 h-4 shrink-0" />
+                ) : (
+                  <AlertTriangle className="w-4 h-4 shrink-0" />
+                )}
+                <span className="font-medium">
+                  {passed}/{results.length} test cases pasan
+                </span>
+                {totalWeight > 0 && (
+                  <span className="ml-auto text-xs">
+                    peso {passedWeight}/{totalWeight}
+                  </span>
+                )}
+              </div>
+              <ul className="space-y-2">
+                {results.map((r) => (
+                  <ResultRow key={r.id} r={r} />
+                ))}
+              </ul>
+            </div>
+          )}
+        </>
+      )}
+    </div>
+  )
+
+  if (!collapsible) return body
+
+  return (
+    <div className="mt-1">
+      <button
+        type="button"
+        onClick={() => setOpen((v) => !v)}
+        className="flex items-center gap-1.5 border border-border rounded px-2.5 py-1 text-xs hover:bg-canvas"
+        aria-expanded={open}
+      >
+        <FlaskConical className="w-3.5 h-3.5" />
+        {open ? "Ocultar probar ejercicio" : "Probar ejercicio"}
+      </button>
+      {open && body}
+    </div>
+  )
+}
+
+// ── Editor estructurado de rubrica (criterios) ──────────────────────────
+//
+// Reemplaza el JSON crudo del campo `rubrica`. Serializa al shape que acepta
+// el backend: { criterios: [{ nombre, descripcion, puntaje_max }, ...] }.
+// `puntaje_max` viaja como string (Decimal serializado, ver CriterioRubrica).
+// Sin criterios -> rubrica = null (el ejercicio no usa rubrica).
+
+function RubricaCriteriosEditor({
+  value,
+  onChange,
+}: {
+  value: RubricaEjercicio | null
+  onChange: (v: RubricaEjercicio | null) => void
+}) {
+  const criterios = value?.criterios ?? []
+
+  function update(next: CriterioRubrica[]) {
+    onChange(next.length > 0 ? { criterios: next } : null)
+  }
+
+  function addCriterio() {
+    update([...criterios, { nombre: "", descripcion: "", puntaje_max: "" }])
+  }
+
+  function removeCriterio(idx: number) {
+    update(criterios.filter((_, i) => i !== idx))
+  }
+
+  function setField(idx: number, key: keyof CriterioRubrica, val: string) {
+    update(criterios.map((c, i) => (i === idx ? { ...c, [key]: val } : c)))
+  }
+
+  return (
+    <div>
+      <p className="text-xs text-muted mb-2">
+        Criterios contra los que se corrige el ejercicio. Cada uno con un puntaje maximo
+        mayor a 0. Sin criterios, el ejercicio no usa rubrica.
+      </p>
+
+      {criterios.length === 0 ? (
+        <div className="text-xs text-muted bg-canvas border border-border rounded p-3 text-center mb-2">
+          No hay criterios todavia.
+        </div>
+      ) : (
+        <div className="space-y-2 mb-2">
+          {criterios.map((c, i) => {
+            const puntaje = Number(c.puntaje_max)
+            const puntajeInvalid =
+              c.puntaje_max.trim() !== "" && (!Number.isFinite(puntaje) || puntaje <= 0)
+            return (
+              <div
+                // biome-ignore lint/suspicious/noArrayIndexKey: criterios controlados sin estado interno; el orden lo fija el docente
+                key={i}
+                className="border border-border rounded p-2 bg-canvas flex items-start gap-2"
+              >
+                <div className="flex-1 space-y-2">
+                  <input
+                    type="text"
+                    value={c.nombre}
+                    onChange={(e) => setField(i, "nombre", e.target.value)}
+                    placeholder="Nombre (ej: Correctitud)"
+                    className="w-full border border-border rounded px-2 py-1 text-sm bg-white"
+                  />
+                  <textarea
+                    value={c.descripcion}
+                    onChange={(e) => setField(i, "descripcion", e.target.value)}
+                    placeholder="Que evalua este criterio"
+                    className="w-full border border-border rounded px-2 py-1 text-sm bg-white"
+                    rows={2}
+                  />
+                </div>
+                <div className="w-24 shrink-0">
+                  <input
+                    type="number"
+                    min={0}
+                    step="0.5"
+                    value={c.puntaje_max}
+                    onChange={(e) => setField(i, "puntaje_max", e.target.value)}
+                    placeholder="0"
+                    className={`w-full border rounded px-2 py-1 text-sm bg-white ${
+                      puntajeInvalid ? "border-red-400" : "border-border"
+                    }`}
+                  />
+                  <div className="text-[10px] text-muted mt-1 text-center">puntaje max</div>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => removeCriterio(i)}
+                  className="p-1 text-muted hover:bg-red-50 hover:text-red-600 rounded shrink-0"
+                  title="Quitar criterio"
+                >
+                  <Trash2 className="w-4 h-4" />
+                </button>
+              </div>
+            )
+          })}
+        </div>
+      )}
+
+      <button
+        type="button"
+        onClick={addCriterio}
+        className="flex items-center gap-1.5 border border-border rounded px-2.5 py-1 text-xs hover:bg-canvas"
+      >
+        <Plus className="w-3.5 h-3.5" />
+        Agregar criterio
+      </button>
     </div>
   )
 }

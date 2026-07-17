@@ -1,5 +1,6 @@
-import { HelpButton, PageContainer, ReadonlyField } from "@platform/ui"
-import { type ReactNode, useEffect, useRef, useState } from "react"
+import { HelpButton, PageContainer, ReadonlyField, useConfirm } from "@platform/ui"
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
+import { type ReactNode, useState } from "react"
 import {
   type Carrera,
   HttpError,
@@ -21,142 +22,83 @@ interface CarreraContext {
 export function PlanesPage(): ReactNode {
   // Cascading selectors: Universidad → Carrera → lista de Planes.
   // Resetear descendientes en cada cambio para evitar combinaciones inválidas.
-  const [universidades, setUniversidades] = useState<Universidad[]>([])
   const [universidadId, setUniversidadId] = useState<string>("")
-  const [carreras, setCarreras] = useState<Carrera[]>([])
   const [carreraId, setCarreraId] = useState<string>("")
-  const [items, setItems] = useState<Plan[]>([])
-  const [loading, setLoading] = useState(false)
-  const [loadingUniversidades, setLoadingUniversidades] = useState(false)
-  const [loadingCarreras, setLoadingCarreras] = useState(false)
-  const [error, setError] = useState<string | null>(null)
   const [showForm, setShowForm] = useState(false)
-  const [deletingId, setDeletingId] = useState<string | null>(null)
-  const [context, setContext] = useState<Partial<CarreraContext>>({})
-  // Cache carrera_id → contexto resuelto. Persistido en ref para sobrevivir
-  // re-renders sin disparar efectos.
-  const contextCache = useRef<Map<string, CarreraContext>>(new Map())
+  const confirm = useConfirm()
 
-  const loadUniversidades = async () => {
-    setLoadingUniversidades(true)
-    setError(null)
-    try {
-      const res = await universidadesApi.list({ limit: 200 })
-      setUniversidades(res.data)
-    } catch (e) {
-      setError(e instanceof HttpError ? `${e.status}: ${e.detail || e.title}` : String(e))
-    } finally {
-      setLoadingUniversidades(false)
-    }
-  }
+  const queryClient = useQueryClient()
 
-  const loadCarreras = async (uid: string) => {
-    if (!uid) {
-      setCarreras([])
-      return
-    }
-    setLoadingCarreras(true)
-    setError(null)
-    try {
-      const res = await carrerasApi.list({ universidad_id: uid, limit: 200 })
-      setCarreras(res.data)
-    } catch (e) {
-      setError(e instanceof HttpError ? `${e.status}: ${e.detail || e.title}` : String(e))
-    } finally {
-      setLoadingCarreras(false)
-    }
-  }
+  const universidadesQuery = useQuery({
+    queryKey: ["universidades", { limit: 200 }],
+    queryFn: () => universidadesApi.list({ limit: 200 }),
+  })
 
-  const loadPlanes = async (cid: string) => {
-    if (!cid) {
-      setItems([])
-      return
-    }
-    setLoading(true)
-    setError(null)
-    try {
-      const res = await planesApi.list({ carrera_id: cid, limit: 200 })
-      setItems(res.data)
-    } catch (e) {
-      setError(e instanceof HttpError ? `${e.status}: ${e.detail || e.title}` : String(e))
-    } finally {
-      setLoading(false)
-    }
-  }
+  // Server-side filter: carrerasApi.list soporta universidad_id.
+  const carrerasQuery = useQuery({
+    queryKey: ["carreras", { universidad_id: universidadId, limit: 200 }],
+    queryFn: () => carrerasApi.list({ universidad_id: universidadId, limit: 200 }),
+    enabled: !!universidadId,
+  })
 
-  // biome-ignore lint/correctness/useExhaustiveDependencies: loadUniversidades — fetch mount-only; el handler usa setState con identidad estable.
-  useEffect(() => {
-    void loadUniversidades()
-  }, [])
+  // Server-side filter: planesApi.list soporta carrera_id.
+  const planesQuery = useQuery({
+    queryKey: ["planes", { carrera_id: carreraId, limit: 200 }],
+    queryFn: () => planesApi.list({ carrera_id: carreraId, limit: 200 }),
+    enabled: !!carreraId,
+  })
 
-  // biome-ignore lint/correctness/useExhaustiveDependencies: loadCarreras — depende solo de universidadId; el handler captura el arg en cada call.
-  useEffect(() => {
-    void loadCarreras(universidadId)
-  }, [universidadId])
+  // Context del form (breadcrumb readonly): chain fetch carrera → facultad + universidad.
+  // TanStack Query cachea por carreraId, reemplazando el ref-cache manual anterior.
+  // Silencioso: si falla, `data` queda undefined y el form muestra "—" (no rompe la página).
+  const contextQuery = useQuery({
+    queryKey: ["plan-context", carreraId],
+    queryFn: async (): Promise<CarreraContext> => {
+      const carrera = await carrerasApi.get(carreraId)
+      const [facultad, universidad] = await Promise.all([
+        facultadesApi.get(carrera.facultad_id),
+        universidadesApi.get(carrera.universidad_id),
+      ])
+      return { universidad: universidad.nombre, facultad: facultad.nombre }
+    },
+    enabled: !!carreraId,
+  })
 
-  // biome-ignore lint/correctness/useExhaustiveDependencies: loadPlanes — depende solo de carreraId; el handler captura el arg en cada call.
-  useEffect(() => {
-    void loadPlanes(carreraId)
-  }, [carreraId])
+  const deleteMutation = useMutation({
+    mutationFn: (id: string) => planesApi.delete(id),
+    onSuccess: () => void queryClient.invalidateQueries({ queryKey: ["planes"] }),
+  })
 
-  // Chain fetch: carrera → facultad + universidad. No bloquea la lista de planes.
-  // Cacheado por carrera_id en `contextCache` para evitar refetch al re-seleccionar.
-  useEffect(() => {
-    if (!carreraId) {
-      setContext({})
-      return
-    }
-    const cached = contextCache.current.get(carreraId)
-    if (cached) {
-      setContext(cached)
-      return
-    }
-    let cancelled = false
-    setContext({})
-    ;(async () => {
-      try {
-        const carrera = await carrerasApi.get(carreraId)
-        if (cancelled) return
-        const facultad = await facultadesApi.get(carrera.facultad_id)
-        if (cancelled) return
-        const universidad = await universidadesApi.get(carrera.universidad_id)
-        if (cancelled) return
-        const resolved: CarreraContext = {
-          universidad: universidad.nombre,
-          facultad: facultad.nombre,
-        }
-        contextCache.current.set(carreraId, resolved)
-        setContext(resolved)
-      } catch {
-        // Silencioso: no rompemos la página por un breadcrumb. Queda en "?".
-        if (!cancelled) setContext({})
-      }
-    })()
-    return () => {
-      cancelled = true
-    }
-  }, [carreraId])
+  const universidades: Universidad[] = universidadesQuery.data?.data ?? []
+  const carreras: Carrera[] = carrerasQuery.data?.data ?? []
+  const items: Plan[] = planesQuery.data?.data ?? []
+  const context: Partial<CarreraContext> = contextQuery.data ?? {}
+
+  // Error banner: agrega errores de queries + delete (el context es silencioso by design).
+  const queryError =
+    universidadesQuery.error || carrerasQuery.error || planesQuery.error || deleteMutation.error
+  const error = queryError
+    ? queryError instanceof HttpError
+      ? `${queryError.status}: ${queryError.detail || queryError.title}`
+      : String(queryError)
+    : null
+
+  const loadingUniversidades = universidadesQuery.isLoading
+  const loadingCarreras = carrerasQuery.isFetching
+  const loading = planesQuery.isFetching
 
   const carreraMap = new Map(carreras.map((c) => [c.id, c]))
 
   const handleDelete = async (p: Plan) => {
     if (
-      !window.confirm(
-        `¿Eliminar el plan ${p.version} (${p.año_inicio})? Esta acción es lógica (soft-delete).`,
-      )
+      !(await confirm({
+        message: `¿Eliminar el plan ${p.version} (${p.año_inicio})? Esta acción es lógica (soft-delete).`,
+        tone: "danger",
+      }))
     ) {
       return
     }
-    setDeletingId(p.id)
-    setError(null)
-    try {
-      await planesApi.delete(p.id)
-      await loadPlanes(carreraId)
-    } catch (e) {
-      setError(e instanceof HttpError ? `${e.status}: ${e.detail || e.title}` : String(e))
-    } finally {
-      setDeletingId(null)
-    }
+    deleteMutation.mutate(p.id)
   }
 
   return (
@@ -236,7 +178,7 @@ export function PlanesPage(): ReactNode {
             context={context}
             onCreated={async () => {
               setShowForm(false)
-              await loadPlanes(carreraId)
+              await queryClient.invalidateQueries({ queryKey: ["planes"] })
             }}
           />
         )}
@@ -260,7 +202,9 @@ export function PlanesPage(): ReactNode {
             </div>
           ) : items.length === 0 ? (
             <div className="p-8 text-center space-y-3">
-              <p className="text-muted text-sm">No hay planes de estudio en esta carrera todavia.</p>
+              <p className="text-muted text-sm">
+                No hay planes de estudio en esta carrera todavia.
+              </p>
               {carreraId && (
                 <button
                   type="button"
@@ -307,10 +251,12 @@ export function PlanesPage(): ReactNode {
                       <button
                         type="button"
                         onClick={() => handleDelete(p)}
-                        disabled={deletingId === p.id}
+                        disabled={deleteMutation.isPending && deleteMutation.variables === p.id}
                         className="text-xs text-danger hover:text-danger disabled:opacity-50"
                       >
-                        {deletingId === p.id ? "Eliminando…" : "Eliminar"}
+                        {deleteMutation.isPending && deleteMutation.variables === p.id
+                          ? "Eliminando…"
+                          : "Eliminar"}
                       </button>
                     </td>
                   </tr>
@@ -341,32 +287,35 @@ function PlanForm({
     ordenanza: "",
     vigente: true,
   })
-  const [submitting, setSubmitting] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
-  const submit = async (e: React.FormEvent) => {
+  const createMutation = useMutation({
+    mutationFn: (payload: PlanCreate) => planesApi.create(payload),
+    onSuccess: () => onCreated(),
+    onError: (err) =>
+      setError(
+        err instanceof HttpError ? `${err.status}: ${err.detail || err.title}` : String(err),
+      ),
+  })
+
+  const submit = (e: React.FormEvent) => {
     e.preventDefault()
-    setSubmitting(true)
     setError(null)
-    try {
-      const { ordenanza: _omit, ...rest } = form
-      const trimmedOrdenanza = form.ordenanza?.trim()
-      const payload: PlanCreate = {
-        ...rest,
-        carrera_id: carreraId,
-        ...(trimmedOrdenanza ? { ordenanza: trimmedOrdenanza } : {}),
-      }
-      await planesApi.create(payload)
-      onCreated()
-    } catch (e) {
-      setError(e instanceof HttpError ? `${e.status}: ${e.detail || e.title}` : String(e))
-    } finally {
-      setSubmitting(false)
+    const { ordenanza: _omit, ...rest } = form
+    const trimmedOrdenanza = form.ordenanza?.trim()
+    const payload: PlanCreate = {
+      ...rest,
+      carrera_id: carreraId,
+      ...(trimmedOrdenanza ? { ordenanza: trimmedOrdenanza } : {}),
     }
+    createMutation.mutate(payload)
   }
 
   return (
-    <form onSubmit={submit} className="rounded-lg border border-border-soft bg-surface p-6 space-y-4">
+    <form
+      onSubmit={submit}
+      className="rounded-lg border border-border-soft bg-surface p-6 space-y-4"
+    >
       <div className="flex items-center gap-2 mb-2">
         <HelpButton
           size="sm"
@@ -463,10 +412,10 @@ function PlanForm({
       <div className="flex justify-end gap-2">
         <button
           type="submit"
-          disabled={submitting}
+          disabled={createMutation.isPending}
           className="rounded-md bg-accent-brand text-white px-4 py-2 text-sm font-medium hover:bg-accent-brand-deep disabled:opacity-50"
         >
-          {submitting ? "Creando..." : "Crear"}
+          {createMutation.isPending ? "Creando..." : "Crear"}
         </button>
       </div>
     </form>

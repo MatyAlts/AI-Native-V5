@@ -1,4 +1,11 @@
-import { Badge, HeroStatsPanel, HelpButton, PageContainer, ReadonlyField } from "@platform/ui"
+import {
+  Badge,
+  HeroStatsPanel,
+  HelpButton,
+  PageContainer,
+  ReadonlyField,
+  useConfirm,
+} from "@platform/ui"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import { Calendar, ChevronDown, ChevronRight, Layers, Plus, Trash2, Users } from "lucide-react"
 import { type ReactNode, useState } from "react"
@@ -37,6 +44,12 @@ function periodoLabel(p: Periodo): string {
 
 const PAGE_LIMIT = 50
 
+// Shape de la respuesta paginada de comisiones cacheada por TanStack Query.
+type ComisionListData = {
+  data: Comision[]
+  meta: { cursor_next: string | null; total: number | null }
+}
+
 interface MateriaContext {
   universidad: string
   carrera: string
@@ -54,8 +67,11 @@ export function ComisionesPage(): ReactNode {
   const [materiaId, setMateriaId] = useState<string>("")
   const [periodoId, setPeriodoId] = useState<string>("")
   const [cursor, setCursor] = useState<string | undefined>(undefined)
+  const confirm = useConfirm()
   const [showForm, setShowForm] = useState(false)
   const [expandedComisionId, setExpandedComisionId] = useState<string | null>(null)
+  // NB-16: aviso de fallo parcial (comisión creada pero docente no asignado).
+  const [formWarning, setFormWarning] = useState<string | null>(null)
 
   const queryClient = useQueryClient()
 
@@ -377,9 +393,11 @@ export function ComisionesPage(): ReactNode {
           <ComisionForm
             materiaId={materiaId}
             periodoId={periodoId}
+            cursor={cursor}
             context={formContext}
-            onCreated={async () => {
+            onCreated={async (warning) => {
               setShowForm(false)
+              setFormWarning(warning ?? null)
               await queryClient.invalidateQueries({ queryKey: ["comisiones"] })
             }}
           />
@@ -389,6 +407,26 @@ export function ComisionesPage(): ReactNode {
           <div className="rounded-xl border border-danger/30 bg-danger-soft p-4 animate-fade-in-up">
             <div className="text-sm font-semibold text-danger">No pudimos cargar el listado</div>
             <div className="mt-1.5 font-mono text-xs text-danger/85 break-all">{errorMsg}</div>
+          </div>
+        )}
+
+        {formWarning && (
+          <div className="rounded-xl border border-warning/40 bg-warning-soft p-4 animate-fade-in-up">
+            <div className="flex items-start justify-between gap-3">
+              <div>
+                <div className="text-sm font-semibold text-warning">
+                  Comisión creada con una advertencia
+                </div>
+                <div className="mt-1.5 text-xs text-warning/90">{formWarning}</div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setFormWarning(null)}
+                className="press-shrink shrink-0 text-xs text-warning/80 hover:text-warning"
+              >
+                Cerrar
+              </button>
+            </div>
           </div>
         )}
 
@@ -504,12 +542,13 @@ export function ComisionesPage(): ReactNode {
                       </span>
                       <button
                         type="button"
-                        onClick={(e) => {
+                        onClick={async (e) => {
                           e.stopPropagation()
                           if (
-                            window.confirm(
-                              `¿Eliminar la comisión ${c.codigo}? Esta acción es lógica (soft-delete).`,
-                            )
+                            await confirm({
+                              message: `¿Eliminar la comisión ${c.codigo}? Esta acción es lógica (soft-delete).`,
+                              tone: "danger",
+                            })
                           ) {
                             deleteMutation.mutate(c.id)
                           }
@@ -564,13 +603,15 @@ export function ComisionesPage(): ReactNode {
 function ComisionForm({
   materiaId,
   periodoId,
+  cursor,
   context,
   onCreated,
 }: {
   materiaId: string
   periodoId: string
+  cursor: string | undefined
   context: MateriaContext
-  onCreated: () => void
+  onCreated: (warning?: string) => void
 }): ReactNode {
   const [form, setForm] = useState<ComisionCreate>({
     materia_id: materiaId,
@@ -585,18 +626,37 @@ function ComisionForm({
   const [error, setError] = useState<string | null>(null)
   const queryClient = useQueryClient()
 
+  // Query key EXACTA de la página que el usuario está viendo. El optimistic se
+  // acota a ella (NB-15) para no contaminar otras materias/periodos/páginas.
+  const comisionesKey = [
+    "comisiones",
+    { materia_id: materiaId, periodo_id: periodoId, cursor, limit: PAGE_LIMIT },
+  ] as const
+
   const createMutation = useMutation({
     mutationFn: async (vars: { comision: ComisionCreate; docenteEmail: string }) => {
       const comision = await comisionesApi.create(vars.comision)
       const email = vars.docenteEmail.trim()
-      // Asignar el docente por email (opcional). El user_id se resuelve cuando
-      // el docente se loguea con Clerk (matching por email en el backend).
+      // NB-16: crear la comisión y asignar el docente son DOS requests separados
+      // (no hay endpoint atómico en el backend). Si la asignación falla, la comisión
+      // YA existe: revertirla sería mentir. Capturamos el error del docente y lo
+      // devolvemos como fallo parcial para avisar al usuario, dejando el estado
+      // consistente (comisión creada, sin docente).
       if (email) {
-        await comisionesApi.addDocente(comision.id, { email })
+        try {
+          await comisionesApi.addDocente(comision.id, { email })
+        } catch (docenteError) {
+          return { comision, docenteError }
+        }
       }
-      return comision
+      return { comision, docenteError: null }
     },
     onMutate: async (vars) => {
+      // NB-15: acotado a `comisionesKey` (patrón del deleteMutation de arriba).
+      // Antes se recorría TODA la familia `["comisiones", ...]` con getQueriesData
+      // y se escribía la comisión optimista en cada página cacheada.
+      await queryClient.cancelQueries({ queryKey: comisionesKey })
+      const previous = queryClient.getQueryData<ComisionListData>(comisionesKey)
       const data = vars.comision
       const optimistic: Comision = {
         id: `temp-${Date.now()}`,
@@ -611,30 +671,28 @@ function ComisionForm({
         created_at: new Date().toISOString(),
         deleted_at: null,
       }
-      const queries = queryClient.getQueriesData<{
-        data: Comision[]
-        meta: { cursor_next: string | null; total: number | null }
-      }>({ queryKey: ["comisiones"] })
-      const snapshots = queries.map(([key, value]) => ({ key, value }))
-      for (const { key, value } of snapshots) {
-        if (value) {
-          queryClient.setQueryData(key, {
-            ...value,
-            data: [optimistic, ...value.data],
-          })
-        }
+      if (previous) {
+        queryClient.setQueryData(comisionesKey, {
+          ...previous,
+          data: [optimistic, ...previous.data],
+        })
       }
-      return { snapshots }
+      return { previous }
     },
-    onError: (err, _data, ctx) => {
-      if (ctx?.snapshots) {
-        for (const { key, value } of ctx.snapshots) {
-          queryClient.setQueryData(key, value)
-        }
-      }
+    onError: (err, _vars, ctx) => {
+      // Sólo llega acá si `create` lanzó: la comisión NO se creó → revertimos.
+      if (ctx?.previous) queryClient.setQueryData(comisionesKey, ctx.previous)
       setError(err instanceof HttpError ? `${err.status}: ${err.detail || err.title}` : String(err))
     },
-    onSuccess: () => {
+    onSuccess: (result) => {
+      if (result.docenteError) {
+        const e = result.docenteError
+        const detail = e instanceof HttpError ? `${e.status}: ${e.detail || e.title}` : String(e)
+        onCreated(
+          `Se creó la comisión pero no se pudo asignar el docente (${detail}). Asignalo manualmente desde "Gestionar" en la comisión.`,
+        )
+        return
+      }
       onCreated()
     },
     onSettled: () => {
@@ -893,6 +951,7 @@ function DocentesTab({
   isRemoving: boolean
   onAdded: () => void
 }): ReactNode {
+  const confirm = useConfirm()
   const [showForm, setShowForm] = useState(false)
   const [form, setForm] = useState<{
     email: string
@@ -949,8 +1008,13 @@ function DocentesTab({
                 <td className="py-1 text-right">
                   <button
                     type="button"
-                    onClick={() => {
-                      if (window.confirm(`¿Quitar docente ${d.email ?? d.id.slice(0, 8)}?`)) {
+                    onClick={async () => {
+                      if (
+                        await confirm({
+                          message: `¿Quitar docente ${d.email ?? d.id.slice(0, 8)}?`,
+                          tone: "danger",
+                        })
+                      ) {
                         onRemove(d.id)
                       }
                     }}
@@ -1052,6 +1116,7 @@ function AlumnosTab({
   isRemoving: boolean
   onAdded: () => void
 }): ReactNode {
+  const confirm = useConfirm()
   const [showForm, setShowForm] = useState(false)
   const [form, setForm] = useState<InscripcionCreate>({
     student_pseudonym: "",
@@ -1099,8 +1164,13 @@ function AlumnosTab({
                 <td className="py-1 text-right">
                   <button
                     type="button"
-                    onClick={() => {
-                      if (window.confirm(`¿Quitar alumno ${i.student_pseudonym.slice(0, 8)}…?`)) {
+                    onClick={async () => {
+                      if (
+                        await confirm({
+                          message: `¿Quitar alumno ${i.student_pseudonym.slice(0, 8)}…?`,
+                          tone: "danger",
+                        })
+                      ) {
                         onRemove(i.id)
                       }
                     }}

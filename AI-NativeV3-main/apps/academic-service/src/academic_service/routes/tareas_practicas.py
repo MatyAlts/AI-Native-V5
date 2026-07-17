@@ -32,6 +32,10 @@ from academic_service.services.comision_service import (
     OVERSIGHT_ROLES,
     assert_comision_access,
 )
+from academic_service.services.content_visibility import (
+    sanitize_ejercicio_for_student,
+    sanitize_tarea_practica_for_student,
+)
 from academic_service.services.tarea_practica_service import TareaPracticaService
 from academic_service.services.tp_ejercicio_service import TpEjercicioService
 
@@ -72,6 +76,7 @@ async def list_tareas_practicas(
       `published` — se fuerza server-side, sin importar el `estado` pedido,
       para no filtrar borradores/archivadas.
     """
+    is_staff = True  # oversight (comision_id=None) ve todo; se recalcula abajo
     if comision_id is not None:
         is_staff = await assert_comision_access(db, user, comision_id)
         if not is_staff:
@@ -87,6 +92,9 @@ async def list_tareas_practicas(
         cursor=cursor,
     )
     items = [TareaPracticaOut.model_validate(o) for o in objs]
+    if not is_staff:
+        # A0.3: el alumno no debe ver test cases ocultos (con respuesta esperada).
+        items = [sanitize_tarea_practica_for_student(it) for it in items]
     next_cursor = str(objs[-1].id) if len(objs) == limit else None
     return ListResponse(data=items, meta=ListMeta(cursor_next=next_cursor))
 
@@ -108,7 +116,11 @@ async def get_tarea_practica(
     is_staff = await assert_comision_access(db, user, obj.comision_id)
     if not is_staff and obj.estado != "published":
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="No encontrada")
-    return TareaPracticaOut.model_validate(obj)
+    out = TareaPracticaOut.model_validate(obj)
+    if not is_staff:
+        # A0.3: filtrar test cases ocultos (respuesta esperada) para el alumno.
+        out = sanitize_tarea_practica_for_student(out)
+    return out
 
 
 @router.patch("/{tarea_id}", response_model=TareaPracticaOut)
@@ -255,12 +267,11 @@ class TPGenerateResponse(BaseModel):
 async def generate_tarea_practica(
     req: TPGenerateRequest,
     user: User = Depends(require_permission("tarea_practica", "create")),
-    db: AsyncSession = Depends(get_db),
 ) -> TPGenerateResponse:
     """Genera un borrador de TP via IA (ADR-036, Sec 11 epic ai-native-completion).
 
     Flow:
-      1. Valida materia_id existe en este tenant.
+      1. Valida materia_id existe en este tenant (+ consigna de plantilla opcional).
       2. governance-service resuelve el prompt `tp_generator/{version}` activo.
       3. ai-gateway con `feature="tp_generator"` + `materia_id` para BYOK.
       4. Parse del JSON estructurado del LLM (formato declarado en el prompt).
@@ -270,6 +281,11 @@ async def generate_tarea_practica(
       - 400 si materia_id no existe o no pertenece al tenant.
       - 502 si el ai-gateway falla o el LLM devuelve JSON invalido.
       - 403 (Casbin) si el caller es estudiante.
+
+    Manejo del pool (P-9 / A2.4): NO tomamos la sesión DB por `Depends(get_db)`
+    (que la retendría durante los hasta 3×90s del LLM, agotando el pool bajo
+    concurrencia). Leemos lo mínimo (materia + consigna de plantilla) en una
+    sesión CORTA y la soltamos ANTES de pegar al LLM. Este endpoint no persiste.
     """
     import asyncio
     import json
@@ -278,17 +294,39 @@ async def generate_tarea_practica(
     from sqlalchemy import select
 
     from academic_service.config import settings
+    from academic_service.db import tenant_session
     from academic_service.models.institucional import Materia
-    from academic_service.services.ai_clients import AIGatewayClient, GovernanceClient
+    from academic_service.services.ai_clients import (
+        AIGatewayClient,
+        GovernanceClient,
+        get_generation_semaphore,
+    )
 
-    # 1. Validar materia
-    stmt = select(Materia).where(Materia.id == req.materia_id)
-    materia = (await db.execute(stmt)).scalar_one_or_none()
-    if materia is None:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail=f"Materia {req.materia_id} no encontrada en este tenant",
-        )
+    # 1. Lecturas DB en una sesión CORTA (materia + consigna de plantilla). Se
+    # cierra al salir del `async with`, devolviendo la conexión al pool ANTES de
+    # governance/RAG/LLM. Adelantamos la lectura de la plantilla acá (antes se
+    # hacía tras el RAG) para consolidar todo el uso de DB en una sola ventana.
+    consigna_plantilla: str | None = None
+    async with tenant_session(user.tenant_id) as db:
+        stmt = select(Materia).where(Materia.id == req.materia_id)
+        materia = (await db.execute(stmt)).scalar_one_or_none()
+        if materia is None:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"Materia {req.materia_id} no encontrada en este tenant",
+            )
+
+        if req.template_id is not None:
+            from academic_service.models.operacional import TareaPracticaTemplate
+
+            stmt_t = select(TareaPracticaTemplate).where(
+                TareaPracticaTemplate.id == req.template_id,
+                TareaPracticaTemplate.tenant_id == user.tenant_id,
+                TareaPracticaTemplate.deleted_at.is_(None),
+            )
+            template_obj = (await db.execute(stmt_t)).scalar_one_or_none()
+            if template_obj is not None:
+                consigna_plantilla = template_obj.consigna
 
     # 2. Resolver prompt (governance-service)
     governance = GovernanceClient(settings.governance_service_url)
@@ -307,23 +345,9 @@ async def generate_tarea_practica(
         req.descripcion_nl, req.materia_id, user.tenant_id, req.comision_id,
     )
 
-    # 2c. Si el wizard viene desde una plantilla, sumar la consigna como
-    # contexto pedagógico al user message (la consigna define el QUÉ; la
-    # descripcion del docente define el detalle).
-    consigna_plantilla: str | None = None
-    if req.template_id is not None:
-        from academic_service.models.operacional import TareaPracticaTemplate
-
-        stmt_t = select(TareaPracticaTemplate).where(
-            TareaPracticaTemplate.id == req.template_id,
-            TareaPracticaTemplate.tenant_id == user.tenant_id,
-            TareaPracticaTemplate.deleted_at.is_(None),
-        )
-        template_obj = (await db.execute(stmt_t)).scalar_one_or_none()
-        if template_obj is not None:
-            consigna_plantilla = template_obj.consigna
-
-    # 3. Construir mensajes para LLM
+    # 3. Construir mensajes para LLM. La consigna de plantilla (leída en el paso 1
+    # dentro de la sesión corta) suma contexto pedagógico: define el QUÉ, mientras
+    # la descripcion del docente define el detalle.
     user_message_parts: list[str] = []
     if consigna_plantilla:
         user_message_parts.append(
@@ -354,62 +378,69 @@ async def generate_tarea_practica(
     result = None
     t0 = time.perf_counter()
 
-    for attempt in range(max_attempts):
-        try:
-            result = await ai.complete(
-                messages=messages,
-                model=settings.tp_generator_default_model,
-                feature="tp_generator",
-                tenant_id=user.tenant_id,
-                materia_id=req.materia_id,
-                temperature=0.7,
-                max_tokens=8192,
-                response_format={"type": "json_object"},
-            )
-        except httpx.HTTPError as exc:
-            logger.error(
-                "ai_gateway_call_failed attempt=%d exc_type=%s detail=%s",
-                attempt,
-                type(exc).__name__,
-                str(exc)[:200],
-            )
-            if attempt < max_attempts - 1:
-                await asyncio.sleep(0.5 * (2 ** attempt))
+    # Sin sesión DB abierta acá (P-9): la conexión ya volvió al pool. El semáforo
+    # limita cuántas generaciones IA corren a la vez (no cuántas conexiones DB).
+    async with get_generation_semaphore():
+        for attempt in range(max_attempts):
+            try:
+                result = await ai.complete(
+                    messages=messages,
+                    model=settings.tp_generator_default_model,
+                    feature="tp_generator",
+                    tenant_id=user.tenant_id,
+                    materia_id=req.materia_id,
+                    temperature=0.7,
+                    max_tokens=8192,
+                    response_format={"type": "json_object"},
+                )
+            except httpx.HTTPError as exc:
+                logger.error(
+                    "ai_gateway_call_failed attempt=%d exc_type=%s detail=%s",
+                    attempt,
+                    type(exc).__name__,
+                    str(exc)[:200],
+                )
+                if attempt < max_attempts - 1:
+                    await asyncio.sleep(0.5 * (2 ** attempt))
+                    continue
+                raise HTTPException(
+                    status_code=status.HTTP_502_BAD_GATEWAY,
+                    detail="ai-gateway no respondio correctamente tras 3 intentos",
+                ) from exc
+
+            # 5. Parsear JSON
+            raw_content = result.content.strip()
+            if not raw_content.startswith("{"):
+                brace_start = raw_content.find("{")
+                brace_end = raw_content.rfind("}")
+                if brace_start != -1 and brace_end > brace_start:
+                    raw_content = raw_content[brace_start:brace_end + 1]
+            try:
+                parsed = json.loads(raw_content)
+            except json.JSONDecodeError as exc:
+                logger.error(
+                    "tp_generator_invalid_json provider=%s model=%s error=%s raw_start=%r",
+                    result.provider,
+                    result.model,
+                    str(exc),
+                    raw_content[:300],
+                )
+                if attempt < max_attempts - 1:
+                    continue
+                raise HTTPException(
+                    status_code=status.HTTP_502_BAD_GATEWAY,
+                    detail="LLM devolvio JSON invalido (revisar prompt o modelo)",
+                ) from exc
+
+            if "error" in parsed and attempt < max_attempts - 1:
+                logger.warning(
+                    "tp_generator_llm_returned_error attempt=%d: %s",
+                    attempt,
+                    parsed["error"],
+                )
                 continue
-            raise HTTPException(
-                status_code=status.HTTP_502_BAD_GATEWAY,
-                detail="ai-gateway no respondio correctamente tras 3 intentos",
-            ) from exc
 
-        # 5. Parsear JSON
-        raw_content = result.content.strip()
-        if not raw_content.startswith("{"):
-            brace_start = raw_content.find("{")
-            brace_end = raw_content.rfind("}")
-            if brace_start != -1 and brace_end > brace_start:
-                raw_content = raw_content[brace_start:brace_end + 1]
-        try:
-            parsed = json.loads(raw_content)
-        except json.JSONDecodeError as exc:
-            logger.error(
-                "tp_generator_invalid_json provider=%s model=%s error=%s raw_start=%r",
-                result.provider,
-                result.model,
-                str(exc),
-                raw_content[:300],
-            )
-            if attempt < max_attempts - 1:
-                continue
-            raise HTTPException(
-                status_code=status.HTTP_502_BAD_GATEWAY,
-                detail="LLM devolvio JSON invalido (revisar prompt o modelo)",
-            ) from exc
-
-        if "error" in parsed and attempt < max_attempts - 1:
-            logger.warning("tp_generator_llm_returned_error attempt=%d: %s", attempt, parsed["error"])
-            continue
-
-        break
+            break
 
     if result is None:
         raise HTTPException(
@@ -562,20 +593,39 @@ async def get_tarea_practica_ejercicios(
 
     ADR-047: lee de la tabla intermedia `tp_ejercicios` JOIN `ejercicios`
     (cada item incluye el Ejercicio embebido). Lista vacía = TP monolítica.
+
+    A0.3 (seguridad): antes este endpoint devolvía el Ejercicio COMPLETO
+    (test cases ocultos con respuesta esperada, `respuesta_pista`, banco
+    socrático, misconceptions) a cualquiera con `tarea_practica:read` —
+    incluidos los alumnos, que podían leer la solución. Ahora:
+      - valida acceso a la comisión de la TP (cierra el IDOR de paso);
+      - el alumno recibe la vista saneada (`sanitize_ejercicio_for_student`);
+      - docentes / oversight / tutor-service reciben el objeto completo.
     """
+    tp_svc = TareaPracticaService(db)
+    tp = await tp_svc.get(tarea_id)  # 404 si no existe
+    is_staff = await assert_comision_access(db, user, tp.comision_id)
+    if not is_staff and tp.estado != "published":
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="No encontrada")
+
     svc = TpEjercicioService(db)
     pairs = await svc.list_by_tp(tarea_id)
-    return [
-        TpEjercicioRead(
-            id=pair.id,
-            tarea_practica_id=pair.tarea_practica_id,
-            ejercicio_id=pair.ejercicio_id,
-            orden=pair.orden,
-            peso_en_tp=pair.peso_en_tp,
-            ejercicio=EjercicioRead.model_validate(ej),
+    result: list[TpEjercicioRead] = []
+    for pair, ej in pairs:
+        ejercicio = EjercicioRead.model_validate(ej)
+        if not is_staff:
+            ejercicio = sanitize_ejercicio_for_student(ejercicio)
+        result.append(
+            TpEjercicioRead(
+                id=pair.id,
+                tarea_practica_id=pair.tarea_practica_id,
+                ejercicio_id=pair.ejercicio_id,
+                orden=pair.orden,
+                peso_en_tp=pair.peso_en_tp,
+                ejercicio=ejercicio,
+            )
         )
-        for pair, ej in pairs
-    ]
+    return result
 
 
 @router.post(

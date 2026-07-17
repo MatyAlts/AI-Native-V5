@@ -23,6 +23,7 @@ from uuid import UUID, uuid4
 import pytest
 from ai_gateway.services import byok as byok_module
 from ai_gateway.services.byok import (
+    BYOKConflictError,
     BYOKKey,
     _env_fallback_key,
     _get_master_key_bytes,
@@ -36,7 +37,7 @@ from ai_gateway.services.byok import (
     revoke_byok_key,
     rotate_byok_key,
 )
-
+from sqlalchemy.exc import IntegrityError
 
 # ── _get_master_key_bytes ──────────────────────────────────────────────
 
@@ -246,9 +247,10 @@ async def test_resolve_miss_materia_hit_tenant(monkeypatch) -> None:
     materia_id = uuid4()
 
     # Resolver jerarquico (ADR-039): materia -> facultad -> tenant.
-    # Primera call (materia) miss; segunda (facultad) miss; tercera (tenant) hit.
+    # Sin facultad_id la rama facultad se saltea (NB-2), asi que solo hay 2
+    # SELECTs: materia miss + tenant hit.
     tenant_row = _make_byok_row(scope_type="tenant", scope_id=None, encrypted=encrypted)
-    sm, _ = _build_mock_session([None, None, tenant_row])
+    sm, _ = _build_mock_session([None, tenant_row])
     monkeypatch.setattr(byok_module, "_get_sessionmaker", lambda: sm)
 
     result = await resolve_byok_key(tenant_id, "anthropic", materia_id=materia_id)
@@ -262,7 +264,9 @@ async def test_resolve_miss_materia_y_tenant_fallback_env(monkeypatch) -> None:
     monkeypatch.setattr(byok_module.settings, "anthropic_api_key", "sk-env-tail")
 
     # Resolver jerarquico: materia -> facultad -> tenant -> env_fallback.
-    sm, _ = _build_mock_session([None, None, None])  # tres niveles miss
+    # Sin facultad_id la rama facultad se saltea (NB-2): materia miss +
+    # tenant miss = 2 SELECTs, luego env_fallback.
+    sm, _ = _build_mock_session([None, None])
     monkeypatch.setattr(byok_module, "_get_sessionmaker", lambda: sm)
 
     result = await resolve_byok_key(uuid4(), "anthropic", materia_id=uuid4())
@@ -277,16 +281,16 @@ async def test_resolve_sin_materia_id_va_directo_a_tenant(monkeypatch) -> None:
 
     encrypted = encrypt(b"sk-direct-tenant", raw_key)
     tenant_row = _make_byok_row(scope_type="tenant", scope_id=None, encrypted=encrypted)
-    # materia_id=None salta el query de materia. Quedan: facultad miss + tenant hit.
-    sm, session_mock = _build_mock_session([None, tenant_row])
+    # materia_id=None salta el query de materia; facultad_id=None salta el de
+    # facultad (NB-2). Queda solo el SELECT tenant (hit).
+    sm, session_mock = _build_mock_session([tenant_row])
     monkeypatch.setattr(byok_module, "_get_sessionmaker", lambda: sm)
 
     result = await resolve_byok_key(uuid4(), "anthropic", materia_id=None)
     assert result is not None
     assert result.scope_resolved == "tenant"
-    # 1 SET LOCAL + 1 SELECT facultad + 1 SELECT tenant = 3.
-    # SI hubiera intentado materia, serian 4.
-    assert session_mock.execute.call_count == 3
+    # 1 SET LOCAL + 1 SELECT tenant = 2. Sin materia ni facultad.
+    assert session_mock.execute.call_count == 2
 
 
 async def test_resolve_decrypt_fallido_cae_a_env(monkeypatch) -> None:
@@ -297,14 +301,88 @@ async def test_resolve_decrypt_fallido_cae_a_env(monkeypatch) -> None:
     # Encrypted bytes invalidos — al desencriptar tira CryptoError
     bad_encrypted = b"\x00" * 30
     bad_row = _make_byok_row(scope_type="materia", scope_id=uuid4(), encrypted=bad_encrypted)
-    # fila materia (decrypt fail), facultad miss, tenant miss
-    sm, _ = _build_mock_session([bad_row, None, None])
+    # fila materia (decrypt fail), tenant miss. Facultad se saltea (NB-2).
+    sm, _ = _build_mock_session([bad_row, None])
     monkeypatch.setattr(byok_module, "_get_sessionmaker", lambda: sm)
 
     result = await resolve_byok_key(uuid4(), "anthropic", materia_id=bad_row.scope_id)
-    # Como decrypt fallo en materia y miss en facultad/tenant, fallback a env
+    # Como decrypt fallo en materia y miss en tenant, fallback a env
     assert result is not None
     assert result.scope_resolved == "env_fallback"
+
+
+# ── resolve_byok_key: NB-2 rama facultad filtra por scope_id ───────────
+
+
+async def test_resolve_facultad_filtra_por_scope_id(monkeypatch) -> None:
+    """NB-2: con facultad_id dado, la rama facultad resuelve la key de ESA
+    facultad y el SELECT compila con `scope_id == facultad_id` como filtro."""
+    raw_key = _setup_master_key(monkeypatch)
+    from platform_ops.crypto import encrypt
+
+    plaintext = "sk-facultad-key"
+    encrypted = encrypt(plaintext.encode(), raw_key)
+    tenant_id = uuid4()
+    facultad_id = uuid4()
+
+    fac_row = _make_byok_row(
+        scope_type="facultad", scope_id=facultad_id, encrypted=encrypted, budget=25.0
+    )
+
+    captured_stmts: list[Any] = []
+
+    async def _execute(stmt, params=None, *args, **kwargs):
+        # _set_tenant_rls: text() con bind dict que incluye 'tid'.
+        if params is not None and isinstance(params, dict) and "tid" in params:
+            m = MagicMock()
+            m.scalar_one_or_none = MagicMock(return_value=None)
+            return m
+        captured_stmts.append(stmt)
+        result = MagicMock()
+        result.scalar_one_or_none = MagicMock(return_value=fac_row)
+        return result
+
+    session_mock = AsyncMock()
+    session_mock.execute = AsyncMock(side_effect=_execute)
+
+    @asynccontextmanager
+    async def _ctx():
+        yield session_mock
+
+    sm = MagicMock(side_effect=lambda: _ctx())
+    monkeypatch.setattr(byok_module, "_get_sessionmaker", lambda: sm)
+
+    # materia_id=None => la rama materia se saltea; el primer SELECT es facultad.
+    result = await resolve_byok_key(
+        tenant_id, "anthropic", materia_id=None, facultad_id=facultad_id
+    )
+    assert result is not None
+    assert result.scope_resolved == "facultad"
+    assert result.plaintext == plaintext
+    assert result.key_id == fac_row.id
+
+    # El SELECT de facultad filtra por scope_id == facultad_id (NB-2).
+    compiled = captured_stmts[0].compile()
+    assert "scope_id" in str(compiled)
+    assert facultad_id in compiled.params.values()
+
+
+async def test_resolve_sin_facultad_id_saltea_rama_facultad(monkeypatch) -> None:
+    """NB-2: sin facultad_id la rama facultad NO se consulta. Evita devolver
+    la key de OTRA facultad y el 500 MultipleResultsFound con >1 key facultad
+    activa. Cae a tenant/env."""
+    _setup_master_key(monkeypatch)
+    monkeypatch.setattr(byok_module.settings, "anthropic_api_key", "sk-env-x")
+
+    # materia miss + tenant miss = 2 SELECTs. Facultad NUNCA se consulta.
+    sm, session_mock = _build_mock_session([None, None])
+    monkeypatch.setattr(byok_module, "_get_sessionmaker", lambda: sm)
+
+    result = await resolve_byok_key(uuid4(), "anthropic", materia_id=uuid4())
+    assert result is not None
+    assert result.scope_resolved == "env_fallback"
+    # 1 SET LOCAL + SELECT materia + SELECT tenant = 3 (SIN el SELECT facultad).
+    assert session_mock.execute.call_count == 3
 
 
 # ── create_byok_key: validaciones de input ─────────────────────────────
@@ -436,6 +514,86 @@ async def test_create_happy_path_persiste_key(monkeypatch) -> None:
     assert row.scope_type == "tenant"
     assert row.scope_id is None
     assert row.fingerprint_last4 == "1234"
+
+
+async def test_create_segunda_key_activa_raise_conflict(monkeypatch) -> None:
+    """NB-3: crear una 2da key activa con el mismo (scope, scope_id, provider)
+    viola el UNIQUE parcial `uq_byok_keys_active` -> el commit tira
+    IntegrityError -> se traduce a BYOKConflictError (no 500 sin manejar).
+    Ademas hace rollback de la sesion."""
+    _setup_master_key(monkeypatch)
+
+    session_mock = AsyncMock()
+    session_mock.add = MagicMock()
+    session_mock.rollback = AsyncMock()
+    session_mock.refresh = AsyncMock()
+    session_mock.execute = AsyncMock()
+    # El commit simula la violacion del UNIQUE parcial activo.
+    session_mock.commit = AsyncMock(
+        side_effect=IntegrityError(
+            "INSERT INTO byok_keys ...",
+            {},
+            Exception(
+                'duplicate key value violates unique constraint '
+                '"uq_byok_keys_active"'
+            ),
+        )
+    )
+
+    @asynccontextmanager
+    async def _ctx():
+        yield session_mock
+
+    sm = MagicMock(side_effect=lambda: _ctx())
+    monkeypatch.setattr(byok_module, "_get_sessionmaker", lambda: sm)
+
+    with pytest.raises(BYOKConflictError, match="ya existe|Ya existe"):
+        await create_byok_key(
+            tenant_id=uuid4(),
+            user_id=uuid4(),
+            scope_type="tenant",
+            scope_id=None,
+            provider="anthropic",
+            plaintext_value="sk-ant-secretvalue1234",
+        )
+    session_mock.rollback.assert_awaited_once()
+
+
+async def test_create_integrity_error_otra_constraint_repropaga(monkeypatch) -> None:
+    """NB-3: un IntegrityError que NO sea del UNIQUE parcial activo se
+    re-propaga tal cual (no lo enmascaramos como conflict de key activa)."""
+    _setup_master_key(monkeypatch)
+
+    session_mock = AsyncMock()
+    session_mock.add = MagicMock()
+    session_mock.rollback = AsyncMock()
+    session_mock.refresh = AsyncMock()
+    session_mock.execute = AsyncMock()
+    session_mock.commit = AsyncMock(
+        side_effect=IntegrityError(
+            "INSERT INTO byok_keys ...",
+            {},
+            Exception('violates check constraint "ck_byok_provider"'),
+        )
+    )
+
+    @asynccontextmanager
+    async def _ctx():
+        yield session_mock
+
+    sm = MagicMock(side_effect=lambda: _ctx())
+    monkeypatch.setattr(byok_module, "_get_sessionmaker", lambda: sm)
+
+    with pytest.raises(IntegrityError):
+        await create_byok_key(
+            tenant_id=uuid4(),
+            user_id=uuid4(),
+            scope_type="tenant",
+            scope_id=None,
+            provider="anthropic",
+            plaintext_value="sk-ant-secretvalue1234",
+        )
+    session_mock.rollback.assert_awaited_once()
 
 
 # ── rotate_byok_key ────────────────────────────────────────────────────
