@@ -1,37 +1,48 @@
 @import "tailwindcss";
 
 /* Tailwind v4 excluye node_modules por default; los componentes de @platform/ui
-   (ErrorBoundary + Button) viven ahi (pnpm workspace symlink) y sus clases no se
-   generan sin este @source. */
+   (ErrorBoundary) viven ahi (pnpm workspace symlink) y sus clases no se generan
+   sin este @source. */
 @source "../../../packages/ui/src/**/*.{ts,tsx}";
 
 @theme {
-  --color-bg: #FAFAF9;
-  --color-bg-elevated: #FFFFFF;
-  --color-ink: #0A0A0A;
-  --color-ink-soft: #1F1F1F;
-  --color-muted: #737373;
-  --color-muted-soft: #A3A3A3;
-  --color-border: #E5E5E5;
-  --color-border-soft: #F0F0F0;
-  --color-accent: #185FA5;
-  --color-accent-soft: #E8F0F9;
+  /* === Paleta de marca ===
+     Producto comercial: limpio, calmo y confiable. Base clara neutra (levemente
+     fria, no blanco clinico ni papel calido), tinta suave y celeste como acento
+     principal. El coral queda como acento minimo. Nada de #000 / #fff puros. */
+  --color-paper: #f7f9fc;
+  --color-paper-warm: #eef3f9;
+  --color-paper-deep: #e6ecf5;
+  --color-ink: #17212e;
+  --color-ink-soft: #4a5768;
+  --color-ink-faint: #8a97a8;
+  --color-celeste: #2f84c6;
+  --color-celeste-deep: #1f68a4;
+  --color-celeste-soft: #a7cdec;
+  --color-celeste-wash: #e5eff9;
+  --color-coral: #e0603f;
+  --color-coral-deep: #c74e30;
+  --color-coral-soft: #f0a48e;
+  --color-line: #dde4ee;
+  --color-line-soft: #e9eef6;
 
-  /* Tokens del design system que consume el fallback compartido (ErrorBoundary +
-     Button de @platform/ui). Se declaran aca con la paleta de la landing para que
-     Tailwind genere las utilities (bg-canvas, bg-accent-brand, bg-surface-alt...)
-     sin arrastrar todo el theme.css institucional. */
-  --color-canvas: #FAFAF9;
-  --color-body: #1F1F1F;
-  --color-surface-alt: #F0F0F0;
-  --color-border-strong: #A3A3A3;
-  --color-accent-brand: #185FA5;
-  --color-accent-brand-deep: #124B82;
-  --color-danger: #B42318;
+  /* Tokens que consume el fallback compartido de @platform/ui (ErrorBoundary),
+     mapeados a la paleta de la landing para que Tailwind genere las utilities
+     sin arrastrar el theme.css institucional. */
+  --color-canvas: #f7f9fc;
+  --color-body: #4a5768;
+  --color-surface-alt: #eef3f9;
+  --color-border: #dde4ee;
+  --color-border-strong: #8a97a8;
+  --color-accent-brand: #2f84c6;
+  --color-accent-brand-deep: #1f68a4;
+  --color-danger: #c74e30;
 
-  --font-sans: "Inter", ui-sans-serif, system-ui, sans-serif;
-  --font-serif: "Fraunces", ui-serif, Georgia, serif;
-  --font-mono: "JetBrains Mono", ui-monospace, "SF Mono", monospace;
+  /* === Tipografia ===
+     Geist: display / UI, pesos hasta 900, tracking negativo fuerte en titulares.
+     Martian Mono: labels de seccion y numeros, con mesura. */
+  --font-display: "Geist", ui-sans-serif, system-ui, sans-serif;
+  --font-mono: "Martian Mono", ui-monospace, "SF Mono", monospace;
 }
 
 @layer base {
@@ -41,26 +52,67 @@
   }
   html {
     scroll-behavior: smooth;
-    background: var(--color-bg);
+    background: var(--color-paper);
   }
   body {
-    background: var(--color-bg);
+    background: var(--color-paper);
     color: var(--color-ink);
-    font-family: var(--font-sans);
-    font-feature-settings: "ss01", "ss02", "cv01", "cv11";
+    font-family: var(--font-display);
+    line-height: 1.5;
+    overflow-x: hidden;
+    /* Luz calma: un unico wash celeste muy sutil arriba, sin patron de grilla. */
+    background-image: radial-gradient(
+        70rem 55rem at 20% -12%,
+        rgba(47, 132, 198, 0.09),
+        transparent 62%
+      ), radial-gradient(48rem 42rem at 100% 4%, rgba(47, 132, 198, 0.05), transparent 55%);
+    background-attachment: fixed;
   }
   ::selection {
-    background: var(--color-ink);
-    color: var(--color-bg);
+    background: var(--color-celeste);
+    color: #fff;
+  }
+  :focus-visible {
+    outline: 2px solid var(--color-celeste-deep);
+    outline-offset: 3px;
+    border-radius: 2px;
+  }
+  h1,
+  h2,
+  h3 {
+    text-wrap: balance;
+  }
+  p {
+    text-wrap: pretty;
   }
 }
 
 @layer utilities {
-  .font-serif {
-    font-family: var(--font-serif);
-    font-feature-settings: "ss01", "ss02";
-  }
   .font-mono {
     font-family: var(--font-mono);
+  }
+  /* Kicker de seccion: mono en versales, celeste, con mesura. */
+  .kicker {
+    font-family: var(--font-mono);
+    font-size: 0.6875rem;
+    letter-spacing: 0.22em;
+    text-transform: uppercase;
+    color: var(--color-celeste-deep);
+  }
+}
+
+/* Respeto duro a prefers-reduced-motion: framer-motion ya lo respeta via
+   useReducedMotion, pero cortamos cualquier animacion CSS residual y el
+   scroll-behavior suave. */
+@media (prefers-reduced-motion: reduce) {
+  html {
+    scroll-behavior: auto;
+  }
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.001ms !important;
   }
 }

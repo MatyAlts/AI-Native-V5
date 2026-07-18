@@ -1,48 +1,44 @@
-/**
- * Landing page de AI-Native N4 — tesis doctoral UTN.
- *
- * Estructura (scroll vertical, full-width):
- *   1. Hero
- *   2. Qué hace
- *   3. Arquitectura interactiva
- *   4. Las 5 coherencias N4
- *   5. Cadena criptográfica CTR
- *   6. Modelo de datos (UML)
- *   7. Flujo del alumno
- *   8. Stack técnico
- *   9. Números del piloto
- *   10. Acceso a los 3 frontends
- *   11. Para Neyen (guía QA)
- *   12. Footer
- */
-import { Hero } from "./sections/Hero"
-import { QueHace } from "./sections/QueHace"
-import { Arquitectura } from "./sections/Arquitectura"
-import { CoherenciasN4 } from "./sections/CoherenciasN4"
-import { CadenaCTR } from "./sections/CadenaCTR"
-import { ModeloDatos } from "./sections/ModeloDatos"
-import { FlujoAlumno } from "./sections/FlujoAlumno"
-import { Stack } from "./sections/Stack"
-import { Metricas } from "./sections/Metricas"
-import { Acceso } from "./sections/Acceso"
-import { ParaNeyen } from "./sections/ParaNeyen"
+import { Admin } from "./sections/Admin"
+import { Alumno } from "./sections/Alumno"
+import { Beneficios } from "./sections/Beneficios"
+import { CTAFinal } from "./sections/CTAFinal"
 import { Footer } from "./sections/Footer"
+import { Hero } from "./sections/Hero"
+import { Nav } from "./sections/Nav"
+import { QueEs } from "./sections/QueEs"
+import { Tutor } from "./sections/Tutor"
 
+/**
+ * Landing comercial de AI-Native: plataforma para enseñar a programar con un
+ * tutor de IA que acompaña a cada alumno.
+ *
+ * Direccion: producto SaaS educativo serio. Base clara neutra + celeste como
+ * acento. Lenguaje simple, sin jerga tecnica.
+ *
+ * Recorrido (scroll vertical):
+ *   1. Hero: que hace el producto, en una frase
+ *   2. Qué es: explicacion clara + como funciona en 3 pasos
+ *   3. Para el alumno: funcionalidades detalladas
+ *   4. Para el docente: funcionalidades detalladas
+ *   5. Para la institucion: funcionalidades detalladas
+ *   6. Beneficios: por que elegirla
+ *   7. CTA final: pedir demo / conocer mas
+ *   8. Footer: producto + links neutros
+ */
 export function App() {
   return (
-    <main className="bg-bg text-ink">
-      <Hero />
-      <QueHace />
-      <Arquitectura />
-      <CoherenciasN4 />
-      <CadenaCTR />
-      <ModeloDatos />
-      <FlujoAlumno />
-      <Stack />
-      <Metricas />
-      <Acceso />
-      <ParaNeyen />
+    <>
+      <Nav />
+      <main>
+        <Hero />
+        <QueEs />
+        <Alumno />
+        <Tutor />
+        <Admin />
+        <Beneficios />
+        <CTAFinal />
+      </main>
       <Footer />
-    </main>
+    </>
   )
 }
