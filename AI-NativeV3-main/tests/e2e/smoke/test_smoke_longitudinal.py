@@ -20,7 +20,7 @@ from __future__ import annotations
 
 import httpx
 import pytest
-from _helpers import (  # type: ignore[import-not-found]
+from _helpers import (
     COMISION_A_MANANA,
     STUDENT_A1,
 )

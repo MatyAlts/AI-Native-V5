@@ -295,7 +295,7 @@ class PartitionWorker:
             result = await session.execute(stmt)
             # SQLAlchemy 2.0 async: Result tiene rowcount para DML statements
             # pero el typed stub no lo expone explícitamente.
-            if result.rowcount == 0:  # type: ignore[attr-defined]
+            if result.rowcount == 0:
                 # Conflicto: evento duplicado, skip silencioso
                 return None
 

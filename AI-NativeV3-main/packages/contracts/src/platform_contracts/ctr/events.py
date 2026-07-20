@@ -93,7 +93,11 @@ class EpisodioCerrado(CTRBaseEvent):
 
 
 class EpisodioAbandonadoPayload(BaseModel):
-    reason: str  # "timeout", "beforeunload", "explicit"
+    # Valores emitidos hoy: "timeout" (abandonment_worker), "beforeunload" /
+    # "explicit" (frontend), "distraccion_pestana" (distraction_worker).
+    # Se mantiene `str` libre a proposito: cerrarlo a Literal validaria eventos
+    # historicos ya persistidos en el CTR, que es append-only (ADR-010).
+    reason: str
     last_activity_seconds_ago: float
 
 

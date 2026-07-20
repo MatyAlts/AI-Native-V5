@@ -14,7 +14,7 @@ from __future__ import annotations
 
 import httpx
 import pytest
-from _helpers import SERVICES_HEALTH, tail_log  # type: ignore[import-not-found]
+from _helpers import SERVICES_HEALTH, tail_log
 
 
 @pytest.mark.smoke

@@ -7,6 +7,7 @@ validación de request + llaman a services.
 
 from __future__ import annotations
 
+import builtins
 from uuid import UUID, uuid4
 
 from sqlalchemy import text
@@ -191,7 +192,13 @@ class UniversidadService:
             )
         return await self.repo.list(limit=limit, cursor=cursor)
 
-    async def list_mine(self, user: User, limit: int = 50) -> list[Universidad]:
+    # `builtins.list` explicito: la clase define un metodo `list()` (convencion
+    # de todos los services del repo), que sombrea al builtin en las anotaciones
+    # declaradas despues. Sin el prefijo, `list[Universidad]` resuelve al metodo
+    # y el tipo de retorno queda invalido — de rebote, el `for o in objs` de
+    # routes/universidades.py:68 pierde el tipo. No rompe en runtime porque el
+    # modulo usa `from __future__ import annotations`.
+    async def list_mine(self, user: User, limit: int = 50) -> builtins.list[Universidad]:
         """Lista universidades donde el caller tiene rol activo.
 
         - Superadmin → TODAS (equivalente a `list()` con policy `superadmin_view_all`).

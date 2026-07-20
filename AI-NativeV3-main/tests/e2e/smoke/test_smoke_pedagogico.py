@@ -22,7 +22,7 @@ from uuid import UUID
 
 import httpx
 import pytest
-from _helpers import tail_log  # type: ignore[import-not-found]
+from _helpers import tail_log
 
 # Hashes del classifier_config y curso_config en el seed actual.
 # Hardcoded para no depender de un endpoint que los exponga (no lo hay public).

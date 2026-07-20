@@ -401,3 +401,46 @@ async def test_ctr_get_episode_raises_on_5xx() -> None:
     client = CTRClient(CTR)
     with pytest.raises(httpx.HTTPStatusError):
         await client.get_episode(episode_id=eid, tenant_id=uuid4(), caller_id=uuid4())
+
+
+# --- Guards defensivos de ContentClient.retrieve ---------------------------
+# Regresion: ambos guards construian `RetrievalResult(..., rerank_applied=False)`,
+# pero la dataclass de `clients.py` NO tiene ese campo (si lo tiene la de
+# `content_client.py` — la duplicacion documentada en el docstring de arriba).
+# Resultado: los dos caminos defensivos, escritos justamente para degradar sin
+# pegarle al content-service, tiraban TypeError en runtime. mypy lo reportaba
+# como `call-arg` pero el CI nunca corrio para verlo.
+
+
+@pytest.mark.asyncio
+async def test_retrieve_query_vacia_degrada_sin_pegar_al_content_service() -> None:
+    client = ContentClient(CONTENT)
+    result = await client.retrieve(
+        query="   ",
+        top_k=3,
+        tenant_id=uuid4(),
+        caller_id=uuid4(),
+        materia_id=uuid4(),
+    )
+    assert result.chunks == []
+    assert result.latency_ms == 0.0
+    # hash SHA-256 del string vacio (RN-026: lista vacia -> hash del vacio)
+    assert (
+        result.chunks_used_hash
+        == "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    )
+
+
+@pytest.mark.asyncio
+async def test_retrieve_sin_scope_degrada_sin_pegar_al_content_service() -> None:
+    client = ContentClient(CONTENT)
+    result = await client.retrieve(
+        query="recursion",
+        top_k=3,
+        tenant_id=uuid4(),
+        caller_id=uuid4(),
+        materia_id=None,
+        comision_id=None,
+    )
+    assert result.chunks == []
+    assert result.latency_ms == 0.0

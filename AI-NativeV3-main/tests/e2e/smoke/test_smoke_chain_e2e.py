@@ -26,7 +26,7 @@ import json
 from typing import Any
 
 import pytest
-from _helpers import fetch_pg  # type: ignore[import-not-found]
+from _helpers import fetch_pg
 from platform_contracts.ctr.hashing import (
     GENESIS_HASH,
     compute_chain_hash,
@@ -127,7 +127,16 @@ def test_recompute_chain_of_seeded_episode(seeded_episode_id: str) -> None:
         # 1. Recomputar self_hash via el contracts helper. Necesitamos un
         #    pydantic model porque `compute_self_hash` espera CTRBaseEvent.
         event_obj = _CanonicalEvent.model_validate(event_dict)
-        recomputed_self = compute_self_hash(event_obj)
+        # El ignore de la linea siguiente es deliberado: `_CanonicalEvent` NO
+        # hereda de CTRBaseEvent
+        # a proposito: es el espejo minimo del dict que arma verify_episode_chain,
+        # y heredar le agregaria campos que ese dict no tiene, invalidando la
+        # comparacion. En runtime funciona porque compute_self_hash solo usa
+        # `.model_dump_json(exclude=...)`, presente en cualquier BaseModel.
+        # La alternativa (relajar la firma de compute_self_hash a un Protocol)
+        # tocaria codigo de produccion que calcula hashes criptograficos para
+        # acomodar un test — no se hace.
+        recomputed_self = compute_self_hash(event_obj)  # type: ignore[arg-type]
 
         if recomputed_self != stored_self:
             failures.append(

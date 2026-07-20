@@ -27,8 +27,8 @@ class BaseRepository[ModelT: Base]:
 
     async def get(self, id_: UUID) -> ModelT | None:
         stmt = select(self.model).where(
-            self.model.id == id_,  # type: ignore[attr-defined]
-            self.model.deleted_at.is_(None),  # type: ignore[attr-defined]
+            self.model.id == id_,
+            self.model.deleted_at.is_(None),
         )
         result = await self.session.execute(stmt)
         return result.scalar_one_or_none()
@@ -51,15 +51,15 @@ class BaseRepository[ModelT: Base]:
         filters: dict[str, Any] | None = None,
     ) -> list[ModelT]:
         stmt = select(self.model).where(
-            self.model.deleted_at.is_(None),  # type: ignore[attr-defined]
+            self.model.deleted_at.is_(None),
         )
         if cursor:
-            stmt = stmt.where(self.model.id > cursor)  # type: ignore[attr-defined]
+            stmt = stmt.where(self.model.id > cursor)
         if filters:
             for col, val in filters.items():
                 if hasattr(self.model, col):
                     stmt = stmt.where(getattr(self.model, col) == val)
-        stmt = stmt.order_by(self.model.id).limit(limit)  # type: ignore[attr-defined]
+        stmt = stmt.order_by(self.model.id).limit(limit)
         result = await self.session.execute(stmt)
         return list(result.scalars().all())
 
@@ -68,7 +68,7 @@ class BaseRepository[ModelT: Base]:
             select(func.count())
             .select_from(self.model)
             .where(
-                self.model.deleted_at.is_(None),  # type: ignore[attr-defined]
+                self.model.deleted_at.is_(None),
             )
         )
         if filters:
@@ -98,6 +98,6 @@ class BaseRepository[ModelT: Base]:
         from academic_service.models.base import utc_now
 
         obj = await self.get_or_404(id_)
-        obj.deleted_at = utc_now()  # type: ignore[attr-defined]
+        obj.deleted_at = utc_now()
         await self.session.flush()
         return obj

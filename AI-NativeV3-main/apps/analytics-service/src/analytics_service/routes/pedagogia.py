@@ -658,7 +658,13 @@ async def get_pedagogia(  # noqa: PLR0912, PLR0915
             TriangulacionPerfil(
                 apropiacion=a,
                 n_alumnos=len(tri_acc.get(a, [])),
-                completitud_promedio=(round(_mean(tri_acc[a]), 3) if tri_acc.get(a) else None),
+                # El walrus deja la garantia a la vista: `_mean` devuelve None
+                # solo con lista vacia, y `round` se aplica unicamente cuando no
+                # lo es. Equivalente al `if tri_acc.get(a) else None` previo,
+                # pero verificable por el type checker sin un `type: ignore`.
+                completitud_promedio=(
+                    round(m, 3) if (m := _mean(tri_acc.get(a, []))) is not None else None
+                ),
             )
             for a in _APROPIACION_ORDER
         ],

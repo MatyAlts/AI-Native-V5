@@ -17,7 +17,7 @@ import logging
 import time
 from collections.abc import AsyncIterator, Callable
 from datetime import UTC, datetime
-from typing import Any, Literal
+from typing import Any, Literal, NoReturn
 from uuid import UUID, uuid4
 
 from fastapi import HTTPException, status
@@ -762,7 +762,11 @@ class TutorCore:
     async def record_episodio_abandonado(
         self,
         episode_id: UUID,
-        reason: Literal["timeout", "beforeunload", "explicit"],
+        # "distraccion_pestana" lo emite distraction_worker.py (sweep de pestañas
+        # en segundo plano). Faltaba en el Literal aunque el worker ya lo usaba:
+        # no rompia en runtime porque EpisodioAbandonadoPayload.reason es `str`
+        # libre, pero el tipo mentia sobre los valores reales que llegan al CTR.
+        reason: Literal["timeout", "beforeunload", "explicit", "distraccion_pestana"],
         last_activity_seconds_ago: float,
         user_id: UUID,
     ) -> int | None:
@@ -1579,7 +1583,10 @@ class TutorCore:
         """
         assert self.academic is not None  # protegido por el caller
 
-        def _raise(exc: HTTPException) -> None:
+        # NoReturn (no None): el cuerpo siempre termina en `raise exc`. Declararlo
+        # permite que mypy estreche tipos despues de cada `_raise(...)` en vez de
+        # exigir `return` de relleno inalcanzable en los callers.
+        def _raise(exc: HTTPException) -> NoReturn:
             if is_recheck:
                 logger.warning(
                     "TP validation failed on recheck (race detected): "
@@ -1604,7 +1611,6 @@ class TutorCore:
                     detail="Tarea práctica no encontrada",
                 )
             )
-            return
         # 5. Tenant matches (defense in depth)
         if tarea.tenant_id != tenant_id:
             _raise(

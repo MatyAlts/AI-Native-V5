@@ -114,7 +114,6 @@ class ContentClient:
                 chunks=[],
                 chunks_used_hash="e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
                 latency_ms=0.0,
-                rerank_applied=False,
             )
         if materia_id is None and comision_id is None:
             logger.warning(
@@ -125,7 +124,6 @@ class ContentClient:
                 chunks=[],
                 chunks_used_hash="e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
                 latency_ms=0.0,
-                rerank_applied=False,
             )
 
         headers = {

@@ -31,7 +31,7 @@ from __future__ import annotations
 
 import httpx
 import pytest
-from api_gateway.routes.proxy import ROUTE_MAP  # type: ignore[import-not-found]
+from api_gateway.routes.proxy import ROUTE_MAP
 
 # Targets que existen en el ROUTE_MAP pero by-design NO se levantan en piloto
 # local (viven en infra institucional separada). Si alguno de estos está en

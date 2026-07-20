@@ -131,7 +131,10 @@ def _build_caliper_object(event: dict[str, Any], context: dict[str, Any]) -> dic
     """Object del evento — depende del tipo."""
     event_type = event.get("event_type", "")
     episode_id = context["episode_id"]
-    base = {
+    # Anotacion explicita: sin ella se infiere dict[str, str] por los dos
+    # valores iniciales, y la rama de `tests_ejecutados` asigna un dict a
+    # base["extensions"]. El tipo de retorno ya declara dict[str, Any].
+    base: dict[str, Any] = {
         "id": f"{AI_NATIVE_VOCAB_BASE}episode/{episode_id}",
         "type": "DigitalResource",
     }

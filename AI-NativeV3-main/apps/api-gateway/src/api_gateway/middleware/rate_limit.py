@@ -32,7 +32,7 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
         super().__init__(app)
         # RateLimiter declara un protocol _RedisLike más estricto que el typed
         # stub de redis-py; en runtime ambos implementan los métodos requeridos.
-        self.limiter = RateLimiter(redis_client)  # type: ignore[arg-type]
+        self.limiter = RateLimiter(redis_client)
 
     async def dispatch(self, request: Request, call_next: Callable) -> Response:
         path = request.url.path
