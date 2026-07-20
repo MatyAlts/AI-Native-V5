@@ -66,13 +66,22 @@ limiter: Limiter = Limiter(
 
 def rate_limit_exceeded_handler(
     request: Request,
-    exc: RateLimitExceeded,
+    exc: Exception,
 ) -> Response:
     """Handler 429 con `Retry-After` en segundos.
 
     `exc.detail` viene como string tipo "100 per 1 minute". Calculamos
     `Retry-After` aproximado a la ventana del límite (60s para "/minute").
+
+    Firma con `exc: Exception` (no `RateLimitExceeded`) a propósito: Starlette
+    tipa `add_exception_handler`/`ExceptionHandler` genérico sobre `Exception`
+    — un handler que sólo acepta la subclase es incompatible por contravarianza
+    de parámetros aunque el dispatcher SIEMPRE invoque este handler con una
+    `RateLimitExceeded` real (está registrado explícitamente para esa clase en
+    `main.py`). El `isinstance` de abajo hace la garantía visible al type
+    checker sin correr riesgo real de AssertionError en producción.
     """
+    assert isinstance(exc, RateLimitExceeded)
     # slowapi expone el `Limit` violado en `exc.limit`. Su `.limit` es el
     # `RateLimitItem` con `.get_expiry()`. Default conservador: 60s.
     retry_after = 60

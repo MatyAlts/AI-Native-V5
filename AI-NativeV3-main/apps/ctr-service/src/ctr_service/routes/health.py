@@ -51,8 +51,6 @@ async def _check_redis() -> str:
     client: redis.Redis | None = None
     try:
         client = redis.from_url(settings.redis_url, socket_connect_timeout=_DEP_TIMEOUT_SEC)
-        # redis-py async ping() devuelve Awaitable[bool]; el stub a veces lo
-        # tipa como `Awaitable[bool] | bool` cuando el cliente es sync.
         await asyncio.wait_for(client.ping(), timeout=_DEP_TIMEOUT_SEC)
         return "ok"
     except Exception as exc:

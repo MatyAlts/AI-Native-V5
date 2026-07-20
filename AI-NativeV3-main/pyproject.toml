@@ -26,6 +26,24 @@ members = [
     "packages/platform-ops",
 ]
 
+[dependency-groups]
+# Herramientas de calidad del monorepo. El pyproject tenia la CONFIGURACION de
+# ruff y mypy ([tool.ruff], [tool.mypy]) pero nunca los declaraba como
+# dependencia — funcionaban en local porque estaban instalados de antes, y en
+# un runner limpio `uv run ruff` fallaba con "Failed to spawn: ruff".
+# Detectado 2026-07-20 en la primera corrida real del CI (jobs Lint Python,
+# Typecheck Python y Docs drift morian a los 11s sin ejecutar nada).
+# `uv sync` instala el grupo `dev` por default, asi que no hace falta flag extra.
+dev = [
+    "ruff>=0.15.12,<0.16",
+    # `<2` a proposito: mypy 2.x endurece reglas y encuentra 29 errores nuevos
+    # sobre este codigo (verificado 2026-07-20 con 2.3.0). Sin el pin, el CI
+    # correria una version distinta a la verificada en local y fallaria por
+    # razones que nadie introdujo. Subir a 2.x es un trabajo aparte: arreglar
+    # los 29 y recien ahi mover el techo.
+    "mypy>=1.20.2,<2",
+]
+
 [tool.uv.sources]
 platform-contracts = { workspace = true }
 platform-test-utils = { workspace = true }

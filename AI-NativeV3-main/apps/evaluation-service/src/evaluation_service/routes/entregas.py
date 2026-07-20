@@ -27,6 +27,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query, Response, status
 from sqlalchemy import and_, select, text
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.sql.elements import ColumnElement
 
 from evaluation_service.auth import User, get_db, require_permission
 from evaluation_service.models.entregas import Calificacion, Entrega
@@ -135,7 +136,11 @@ async def list_entregas(
     )
     is_oversight = bool(user.roles & frozenset({"superadmin", "docente_admin"}))
 
-    conditions = [Entrega.deleted_at.is_(None)]
+    # Anotado explicito: `.is_(None)` infiere `BinaryExpression[bool]`, pero los
+    # `.append()` de mas abajo agregan comparaciones `==`/`.in_()` que SQLAlchemy
+    # tipa como `ColumnElement[bool]` (el tipo base comun). Sin la anotacion,
+    # mypy fija el tipo de la lista al del primer elemento y rechaza el resto.
+    conditions: list[ColumnElement[bool]] = [Entrega.deleted_at.is_(None)]
 
     if tarea_practica_id:
         conditions.append(Entrega.tarea_practica_id == tarea_practica_id)
@@ -458,6 +463,15 @@ async def recalificar_entrega(
     nota_anterior = float(cal.nota_final)
 
     if "nota_final" in updates:
+        # Ya validado arriba (linea ~457): `nota_final in updates` implica acá
+        # `data.nota_final is not None`. El guard explícito hace esa garantía
+        # visible al type checker (la columna no acepta `Decimal | None`) sin
+        # tocar el orden de validacion existente.
+        if data.nota_final is None:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail="nota_final no puede ser null.",
+            )
         cal.nota_final = data.nota_final
     if "feedback_general" in updates:
         cal.feedback_general = data.feedback_general

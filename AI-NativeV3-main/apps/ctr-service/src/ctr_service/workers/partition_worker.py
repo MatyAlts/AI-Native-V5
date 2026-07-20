@@ -23,7 +23,7 @@ import logging
 import signal
 from dataclasses import dataclass
 from datetime import datetime
-from typing import Any
+from typing import Any, cast
 from uuid import UUID
 
 import redis.asyncio as redis
@@ -46,6 +46,13 @@ logger = logging.getLogger(__name__)
 
 
 MAX_ATTEMPTS = 3  # después se envía a DLQ
+
+# El stub de redis-py tipa xreadgroup() con un Union que cubre variantes de
+# respuesta (dict-shaped) que XREADGROUP nunca produce en la practica; con
+# decode_responses=False la forma real es siempre esta lista de tuplas
+# (ver redis/typing.py::XReadGroupResponse). El cast documenta la garantia
+# real en vez de silenciar el chequeo con type: ignore.
+_XReadGroupMessages = list[tuple[str, list[tuple[str, dict[bytes, bytes]]]]]
 
 
 @dataclass
@@ -154,12 +161,15 @@ class PartitionWorker:
     async def _process_batch(self) -> None:
         """Lee un batch del stream y procesa cada mensaje."""
         # XREADGROUP con block: espera hasta block_ms si no hay mensajes
-        messages = await self.redis.xreadgroup(
-            groupname=self.cfg.consumer_group,
-            consumername=self.consumer_name,
-            streams={self.stream_key: ">"},
-            count=self.cfg.batch_size,
-            block=self.cfg.block_ms,
+        messages = cast(
+            _XReadGroupMessages,
+            await self.redis.xreadgroup(
+                groupname=self.cfg.consumer_group,
+                consumername=self.consumer_name,
+                streams={self.stream_key: ">"},
+                count=self.cfg.batch_size,
+                block=self.cfg.block_ms,
+            ),
         )
 
         if not messages:
@@ -294,7 +304,7 @@ class PartitionWorker:
             result = await session.execute(stmt)
             # SQLAlchemy 2.0 async: Result tiene rowcount para DML statements
             # pero el typed stub no lo expone explícitamente.
-            if result.rowcount == 0:
+            if result.rowcount == 0:  # type: ignore[attr-defined]
                 # Conflicto: evento duplicado, skip silencioso
                 return None
 

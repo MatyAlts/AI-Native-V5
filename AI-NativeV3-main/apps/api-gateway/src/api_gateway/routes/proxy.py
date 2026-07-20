@@ -172,7 +172,11 @@ async def proxy(full_path: str, request: Request) -> StreamingResponse:
         # `?comision_id=a&comision_id=b` del corpus inter-jueces). Pasar el
         # QueryParams directo a httpx los colapsa a uno solo (se queda con el
         # último) — bug silencioso para cualquier endpoint con params repetidos.
-        params=request.query_params.multi_items(),
+        # `tuple(...)` en vez de list: `list[tuple[str, str]]` no es subtipo de
+        # `list[tuple[str, str | int | ...]]` (list es invariante), pero la
+        # tupla homogénea `tuple[X, ...]` sí es covariante — mismo contenido,
+        # sólo se ajusta el contenedor para que el type checker vea la garantía.
+        params=tuple(request.query_params.multi_items()),
         headers=headers,
         content=body,
     )

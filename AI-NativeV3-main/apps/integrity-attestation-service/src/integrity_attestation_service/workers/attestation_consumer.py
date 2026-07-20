@@ -35,7 +35,7 @@ import json
 import logging
 import signal
 from dataclasses import dataclass
-from typing import Any
+from typing import Any, cast
 
 import redis.asyncio as redis
 
@@ -59,6 +59,13 @@ INPUT_STREAM = "attestation.requests"
 DLQ_STREAM = "attestation.dead"
 CONSUMER_GROUP = "attestation_workers"
 MAX_ATTEMPTS = 3
+
+# El stub de redis-py tipa xreadgroup() con un Union que cubre variantes de
+# respuesta (dict-shaped) que XREADGROUP nunca produce en la practica; con
+# decode_responses=False la forma real es siempre esta lista de tuplas
+# (ver redis/typing.py::XReadGroupResponse). El cast documenta la garantia
+# real en vez de silenciar el chequeo con type: ignore.
+_XReadGroupMessages = list[tuple[str, list[tuple[str, dict[bytes, bytes]]]]]
 
 
 @dataclass
@@ -122,12 +129,15 @@ class AttestationConsumer:
         logger.info("AttestationConsumer terminado")
 
     async def _process_batch(self) -> None:
-        messages = await self.redis.xreadgroup(
-            groupname=CONSUMER_GROUP,
-            consumername=self.cfg.consumer_name,
-            streams={INPUT_STREAM: ">"},
-            count=self.cfg.batch_size,
-            block=self.cfg.block_ms,
+        messages = cast(
+            _XReadGroupMessages,
+            await self.redis.xreadgroup(
+                groupname=CONSUMER_GROUP,
+                consumername=self.cfg.consumer_name,
+                streams={INPUT_STREAM: ">"},
+                count=self.cfg.batch_size,
+                block=self.cfg.block_ms,
+            ),
         )
         if not messages:
             return

@@ -20,6 +20,7 @@ from __future__ import annotations
 
 import logging
 import time
+from collections.abc import Awaitable
 from dataclasses import dataclass
 from typing import Protocol
 
@@ -27,9 +28,14 @@ logger = logging.getLogger(__name__)
 
 
 class _RedisLike(Protocol):
-    async def incr(self, key: str) -> int: ...
-    async def expire(self, key: str, seconds: int) -> bool: ...
-    async def ttl(self, key: str) -> int: ...
+    # Firmas `def ... -> Awaitable[T]` (no `async def`) a propósito: el
+    # cliente real (redis.asyncio.Redis) declara sus métodos así — devuelven
+    # Awaitable[T], no Coroutine[Any, Any, T] — para soportar el mismo código
+    # en variantes sync/async. `async def` exigiría Coroutine específicamente
+    # e incompatibilizaría la conformance estructural con el stub real.
+    def incr(self, key: str, /) -> Awaitable[int]: ...
+    def expire(self, key: str, seconds: int, /) -> Awaitable[bool]: ...
+    def ttl(self, key: str, /) -> Awaitable[int]: ...
 
 
 @dataclass

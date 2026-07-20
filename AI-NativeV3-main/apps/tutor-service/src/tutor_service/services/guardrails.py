@@ -59,8 +59,9 @@ import base64
 import binascii
 import hashlib
 import json
+from collections.abc import Awaitable, Sequence
 from dataclasses import dataclass
-from typing import Literal, Protocol
+from typing import Any, Literal, Protocol
 from uuid import UUID
 
 # v1.3.0: cambio de `re` (stdlib) a `regex` (PyPI) para habilitar fuzzy matching
@@ -478,11 +479,25 @@ class _RedisLike(Protocol):
     del detector regex).
     """
 
-    async def zadd(self, key: str, mapping: dict[str, float]) -> int: ...
-    async def zremrangebyscore(self, key: str, min_score: float, max_score: float) -> int: ...
-    async def zcard(self, key: str) -> int: ...
-    async def zrangebyscore(self, key: str, min_score: float, max_score: float) -> list[bytes]: ...
-    async def expire(self, key: str, seconds: int) -> bool: ...
+    # Firmas `def ... -> Awaitable[T]` (no `async def`) a propósito: el cliente
+    # real (redis.asyncio.Redis) declara sus métodos así — devuelven
+    # Awaitable[T], no Coroutine[Any, Any, T] — para soportar el mismo código
+    # en variantes sync/async. `async def` aquí exigiría Coroutine
+    # específicamente e incompatibilizaría la conformance estructural.
+    # `zadd`/`zrangebyscore` tipan el resultado ancho a propósito (`Any` /
+    # `Sequence[Any]`): el detector descarta el valor de `zadd` y sólo hace
+    # `len()` sobre `zrangebyscore` — el stub real de redis-py devuelve Unions
+    # más específicas según overload (withscores, score_cast_func, etc.) que
+    # no aportan nada acá.
+    def zadd(self, key: str, mapping: dict[str, float], /) -> Awaitable[Any]: ...
+    def zremrangebyscore(
+        self, key: str, min_score: float, max_score: float, /
+    ) -> Awaitable[int]: ...
+    def zcard(self, key: str, /) -> Awaitable[int]: ...
+    def zrangebyscore(
+        self, key: str, min_score: float, max_score: float, /
+    ) -> Awaitable[Sequence[Any]]: ...
+    def expire(self, key: str, seconds: int, /) -> Awaitable[bool]: ...
 
 
 # Prefijo de la key Redis del ledger de overuse. Disjunto del prefijo de
