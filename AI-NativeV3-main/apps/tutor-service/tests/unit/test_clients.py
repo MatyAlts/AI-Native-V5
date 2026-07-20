@@ -1,8 +1,14 @@
 """Tests de los clients agrupados en apps/tutor-service/.../services/clients.py.
 
 Cubre las 4 clases: GovernanceClient, ContentClient, AIGatewayClient, CTRClient.
-NOTA: hay duplicación con `governance_client.py` y `content_client.py` (deuda
-documentada en code review pre-defensa). Estos tests cubren el archivo `clients.py`.
+NOTA (2026-07-20): `governance_client.py` y `content_client.py` fueron BORRADOS.
+Eran duplicados sin ningun import desde `src/` — solo los cargaban sus propios
+tests. De esa duplicacion salio un bug real: `content_client.RetrievalResult`
+tiene un campo `rerank_applied` que la de `clients.py` no tiene, y alguien copio
+un constructor de una a la otra -> TypeError en los guards de `retrieve()`.
+`test_governance_client.py` ademas ejercitaba `resolve_for_tenant`, un metodo
+inexistente en el cliente real: 8 asserts en verde sobre codigo que nunca corrio.
+Este archivo cubre `clients.py`, que es el unico que usa el runtime.
 """
 
 from __future__ import annotations

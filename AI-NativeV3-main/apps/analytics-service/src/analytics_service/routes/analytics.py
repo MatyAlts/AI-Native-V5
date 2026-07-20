@@ -845,14 +845,11 @@ async def get_n_level_distribution(
     Modo real: lee eventos del CTR con RLS por tenant; 404 si el episodio
     no existe o no tiene eventos en este tenant.
     """
-    # Import del labeler vía sys.path (mismo patrón que /ab-test-profiles)
-    import sys
-    from pathlib import Path
-
-    classifier_src = Path(__file__).parent.parent.parent.parent.parent / "classifier-service/src"
-    if str(classifier_src) not in sys.path:
-        sys.path.insert(0, str(classifier_src))
-
+    # El sys.path.insert que habia aca era un no-op: `uv sync --all-packages`
+    # instala classifier-service como editable, asi que apps/classifier-service/src
+    # YA esta en sys.path antes de que corra esta funcion (verificado 2026-07-20).
+    # Se mantiene el try/except -> 503 porque SI protege el caso real: un deploy
+    # con venv por servicio donde classifier-service no este instalado.
     try:
         from classifier_service.services.event_labeler import n_level_distribution
     except ImportError as e:
@@ -1882,14 +1879,10 @@ async def ab_test_profiles(
     endpoint es infra de investigación, no CRUD académico bajo compliance
     bit-exact. Ver entrada HU-088 en `BUGS-PILOTO.md`.
     """
-    import sys
-    from pathlib import Path
-
-    # Permitir importar classifier-service en runtime
-    classifier_src = Path(__file__).parent.parent.parent.parent.parent / "classifier-service/src"
-    if str(classifier_src) not in sys.path:
-        sys.path.insert(0, str(classifier_src))
-
+    # Idem /episode/{id}/n-level-distribution: el sys.path.insert que habia aca
+    # era un no-op (editable install del workspace). NO se toca el codigo
+    # importado: `compute_classifier_config_hash` sostiene la reproducibilidad
+    # bit-a-bit de la tesis y su dueño es classifier-service.
     try:
         from classifier_service.services.pipeline import (
             classify_episode_from_events,
