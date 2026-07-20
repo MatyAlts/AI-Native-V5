@@ -35,7 +35,6 @@ jobs:
         uses: astral-sh/setup-uv@v3
         with:
           enable-cache: true
-          cache-dependency-glob: "AI-NativeV3-main/uv.lock"
 
       - name: Setup Python
         run: uv python install ${{ env.PYTHON_VERSION }}
@@ -81,7 +80,6 @@ jobs:
         uses: astral-sh/setup-uv@v3
         with:
           enable-cache: true
-          cache-dependency-glob: "AI-NativeV3-main/uv.lock"
 
       - name: Setup Python
         run: uv python install ${{ env.PYTHON_VERSION }}
@@ -153,7 +151,6 @@ jobs:
         uses: astral-sh/setup-uv@v3
         with:
           enable-cache: true
-          cache-dependency-glob: "AI-NativeV3-main/uv.lock"
 
       - name: Setup Python
         run: uv python install ${{ env.PYTHON_VERSION }}
@@ -206,7 +203,6 @@ jobs:
         uses: astral-sh/setup-uv@v3
         with:
           enable-cache: true
-          cache-dependency-glob: "AI-NativeV3-main/uv.lock"
 
       - name: Setup Python
         run: uv python install ${{ env.PYTHON_VERSION }}
