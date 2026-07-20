@@ -170,7 +170,7 @@ class EjercicioGenerateResponse(BaseModel):
 
 
 @router.post("/generate", response_model=EjercicioGenerateResponse)
-async def generate_ejercicio(
+async def generate_ejercicio(  # noqa: PLR0912, PLR0915
     req: EjercicioGenerateRequest,
     user: User = Depends(require_permission("ejercicio", "create")),
 ) -> EjercicioGenerateResponse:

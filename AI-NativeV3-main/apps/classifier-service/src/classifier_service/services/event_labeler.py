@@ -132,7 +132,7 @@ class EpisodeContext:
     last_tutor_respondio_at: datetime | None
 
 
-def label_event(
+def label_event(  # noqa: PLR0911, PLR0912
     event_type: str,
     payload: dict[str, Any] | None = None,
     context: EpisodeContext | None = None,

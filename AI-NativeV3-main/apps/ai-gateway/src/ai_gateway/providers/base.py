@@ -524,7 +524,7 @@ class OpenRouterProvider(BaseProvider):
 
 
 @lru_cache(maxsize=1)
-def get_provider(name: str = "") -> BaseProvider:
+def get_provider(name: str = "") -> BaseProvider:  # noqa: PLR0911
     """Factory de providers. name='mock' para tests.
 
     Resolución de provider:

@@ -35,7 +35,7 @@ router = APIRouter(prefix="/health", tags=["health"])
 VERSION = "0.1.0"
 
 
-def _check_llm_provider() -> CheckResult:
+def _check_llm_provider() -> CheckResult:  # noqa: PLR0911
     """Valida que la config del provider activo esté coherente.
 
     No pega al provider externo (no hay endpoint de health público gratuito).

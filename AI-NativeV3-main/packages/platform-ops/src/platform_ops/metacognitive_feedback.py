@@ -205,7 +205,7 @@ def _prompts_en_ventana_temprana(
     return count
 
 
-def _select_template(events: list[dict[str, Any]]) -> tuple[FeedbackTemplate, dict[str, Any]]:
+def _select_template(events: list[dict[str, Any]]) -> tuple[FeedbackTemplate, dict[str, Any]]:  # noqa: PLR0911
     """Aplica las reglas en orden fijo y devuelve (plantilla, kwargs).
 
     Reglas (primera matching gana):

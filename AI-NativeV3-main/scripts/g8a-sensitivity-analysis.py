@@ -229,7 +229,7 @@ def _count_anotaciones_per_level(
     return per_level
 
 
-def run_analysis(num_episodes: int) -> str:
+def run_analysis(num_episodes: int) -> str:  # noqa: PLR0915
     """Ejecuta el analisis completo y devuelve la tabla en Markdown."""
     rng = random.Random(RANDOM_SEED)
     print(f"Generando {num_episodes} episodios sinteticos (seed={RANDOM_SEED})...")

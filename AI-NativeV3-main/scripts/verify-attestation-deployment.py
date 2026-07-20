@@ -207,7 +207,7 @@ def _build_canonical_buffer(att: dict) -> bytes:
     )
 
 
-async def check_day_journal(
+async def check_day_journal(  # noqa: PLR0911
     client: httpx.AsyncClient,
     base_url: str,
     day: str,

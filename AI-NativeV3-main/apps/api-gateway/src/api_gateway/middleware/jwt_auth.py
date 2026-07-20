@@ -79,7 +79,7 @@ class JWTMiddleware(BaseHTTPMiddleware):
         # (comportamiento legacy intacto).
         self.gateway_shared_secret = gateway_shared_secret
 
-    async def dispatch(self, request: Request, call_next: Callable) -> Response:
+    async def dispatch(self, request: Request, call_next: Callable) -> Response:  # noqa: PLR0911
         path = request.url.path
         if path in self.EXEMPT_PATHS or path.startswith("/health"):
             return await call_next(request)

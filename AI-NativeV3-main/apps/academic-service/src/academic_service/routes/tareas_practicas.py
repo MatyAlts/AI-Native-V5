@@ -264,7 +264,7 @@ class TPGenerateResponse(BaseModel):
 
 
 @router.post("/generate", response_model=TPGenerateResponse)
-async def generate_tarea_practica(
+async def generate_tarea_practica(  # noqa: PLR0912, PLR0915
     req: TPGenerateRequest,
     user: User = Depends(require_permission("tarea_practica", "create")),
 ) -> TPGenerateResponse:

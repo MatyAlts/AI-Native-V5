@@ -187,7 +187,7 @@ def _verbaliza(events: list[dict]) -> bool:
 
 
 # ── El árbol de 7 subgrupos ──
-def subgrupo(events: list[dict]) -> Subgrupo:
+def subgrupo(events: list[dict]) -> Subgrupo:  # noqa: PLR0911
     sig = _significativos(events)
     if len(sig) < MIN_EVENTS:
         return INDETERMINADO

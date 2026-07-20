@@ -201,7 +201,7 @@ def _env_fallback_key(provider: str) -> str | None:
     return val if val else None
 
 
-async def resolve_byok_key(
+async def resolve_byok_key(  # noqa: PLR0911, PLR0912
     tenant_id: UUID,
     provider: str,
     materia_id: UUID | None = None,

@@ -276,7 +276,7 @@ def _mk_event(
     )
 
 
-def _synthesize_events_for_level(
+def _synthesize_events_for_level(  # noqa: PLR0912, PLR0915
     target_level: str,
     n: int,
     rng: random.Random,

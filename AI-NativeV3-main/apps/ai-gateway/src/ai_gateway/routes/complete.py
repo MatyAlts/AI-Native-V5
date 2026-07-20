@@ -350,7 +350,7 @@ async def _resolve_provider_and_model(
 
 
 @router.post("/complete", response_model=CompleteResponse)
-async def complete(
+async def complete(  # noqa: PLR0915
     req: CompleteRequest,
     caller: ServiceCaller = Depends(get_caller),
 ) -> CompleteResponse:

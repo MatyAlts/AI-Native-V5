@@ -170,7 +170,7 @@ class AcademicExporter:
         h = hashlib.sha256((self.salt + str(uuid)).encode()).hexdigest()
         return f"{prefix}{h[:12]}" if prefix else h[:12]
 
-    async def export_cohort(
+    async def export_cohort(  # noqa: PLR0912, PLR0915
         self,
         comision_id: UUID,
         period_days: int = 90,

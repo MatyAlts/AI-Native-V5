@@ -186,7 +186,7 @@ def _verbaliza(events: list[dict]) -> bool:
     )
 
 
-def clasificar_subgrupo(events: list[dict]) -> Subgrupo:
+def clasificar_subgrupo(events: list[dict]) -> Subgrupo:  # noqa: PLR0911
     """Árbol de 10 subgrupos. El gate `prompts == 0` corrige la inversión:
     sin prompts, delegar es imposible → rama autónoma."""
     sig = _significativos(events)

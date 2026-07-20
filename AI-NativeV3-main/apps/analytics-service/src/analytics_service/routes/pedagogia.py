@@ -351,7 +351,7 @@ def _mean(values: list[float]) -> float | None:
 
 
 @router.get("", response_model=PedagogiaOut)
-async def get_pedagogia(
+async def get_pedagogia(  # noqa: PLR0912, PLR0915
     comision_id: UUID | None = None,
     materia_id: UUID | None = None,
     tenant_id: UUID = Depends(get_tenant_id),
