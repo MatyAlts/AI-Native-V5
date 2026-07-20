@@ -139,7 +139,9 @@ def cohen_kappa_categorical(a: np.ndarray, b: np.ndarray) -> float:
     # Matriz de confusión
     cm = np.zeros((k, k), dtype=float)
     cat_to_idx = {c: i for i, c in enumerate(categories)}
-    for ai, bi in zip(a, b):
+    # strict=True redundante con el guard de largos de arriba — defensa en
+    # profundidad por si ese guard se mueve o se relaja.
+    for ai, bi in zip(a, b, strict=True):
         cm[cat_to_idx[ai], cat_to_idx[bi]] += 1
     n = cm.sum()
     p_o = np.diag(cm).sum() / n
@@ -158,7 +160,6 @@ def main() -> int:
     if args.dry_run:
         print("Clustering dry-run — datos sintéticos.")
         rng = np.random.default_rng(42)
-        n = 100
         # Generar 3 clusters sintéticos en espacio de 5 coherencias
         coherences = np.vstack(
             [

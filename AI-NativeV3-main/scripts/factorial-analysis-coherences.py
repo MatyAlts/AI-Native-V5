@@ -167,7 +167,11 @@ def parallel_analysis(
 
 def suggest_n_factors(observed_eigvals: list[float], random_p95: list[float]) -> int:
     """Cuántos factores conservar: los que tienen eigenvalue observado > p95 random."""
-    return sum(1 for obs, rnd in zip(observed_eigvals, random_p95) if obs > rnd)
+    # strict=True: sin esto, listas de distinto largo truncan en silencio y la
+    # sugerencia de n_factors sale calculada sobre menos eigenvalues de los que
+    # corresponde. A diferencia de los otros zip de scripts/, esta funcion no
+    # valida largos antes.
+    return sum(1 for obs, rnd in zip(observed_eigvals, random_p95, strict=True) if obs > rnd)
 
 
 def main() -> int:

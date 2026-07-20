@@ -493,9 +493,7 @@ def _build_synthetic_episode(rng: random.Random, idx: int, category: str) -> Syn
         dist = {"N1": 0.05, "N2": 0.15, "N3": 0.20, "N4": 0.60}
 
     n_eventos = rng.randint(20, 110)
-    started = datetime(2026, 4, 16, 9, 0, 0, tzinfo=UTC) + timedelta(
-        minutes=rng.randint(0, 600)
-    )
+    started = datetime(2026, 4, 16, 9, 0, 0, tzinfo=UTC) + timedelta(minutes=rng.randint(0, 600))
     dur_min = rng.randint(15, 75)
     cadena = [
         {

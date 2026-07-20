@@ -172,7 +172,9 @@ def summarize_transitions(
 
     n_changed = 0
     transitions: dict[str, int] = {}
-    for base, varied in zip(baseline_classifications, varied_classifications):
+    # strict=True redundante con el ValueError de largos de arriba — defensa en
+    # profundidad por si ese guard se mueve o se relaja.
+    for base, varied in zip(baseline_classifications, varied_classifications, strict=True):
         if base["episode_id"] != varied["episode_id"]:
             raise ValueError(
                 f"Episode order mismatch: {base['episode_id']} vs {varied['episode_id']}"
