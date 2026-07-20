@@ -426,9 +426,7 @@ async def create_byok_key(
 
     master_key = _get_master_key_bytes()
     if master_key is None:
-        raise ValueError(
-            "BYOK_MASTER_KEY no configurada — no se pueden crear keys encriptadas"
-        )
+        raise ValueError("BYOK_MASTER_KEY no configurada — no se pueden crear keys encriptadas")
 
     from platform_ops.crypto import encrypt
 
@@ -526,9 +524,7 @@ async def rotate_byok_key(
 
     master_key = _get_master_key_bytes()
     if master_key is None:
-        raise ValueError(
-            "BYOK_MASTER_KEY no configurada — no se pueden rotar keys encriptadas"
-        )
+        raise ValueError("BYOK_MASTER_KEY no configurada — no se pueden rotar keys encriptadas")
 
     from platform_ops.crypto import encrypt
 
@@ -621,9 +617,7 @@ async def increment_usage(
         # Actualizar last_used_at en la key
         from sqlalchemy import update
 
-        await session.execute(
-            update(BYOKKey).where(BYOKKey.id == key_id).values(last_used_at=now)
-        )
+        await session.execute(update(BYOKKey).where(BYOKKey.id == key_id).values(last_used_at=now))
 
         await session.commit()
 

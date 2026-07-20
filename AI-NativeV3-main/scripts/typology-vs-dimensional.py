@@ -177,9 +177,9 @@ def fit_dimensional_pca_model(
     coherences_inverted = coherences_matrix.copy()
     coherences_inverted[:, 2] = 1.0 - coherences_inverted[:, 2]
     # Standardize
-    coherences_std = (coherences_inverted - coherences_inverted.mean(axis=0)) / coherences_inverted.std(
-        axis=0
-    )
+    coherences_std = (
+        coherences_inverted - coherences_inverted.mean(axis=0)
+    ) / coherences_inverted.std(axis=0)
     # PCA via eigendecomposition de la matriz de covarianza
     cov = np.cov(coherences_std, rowvar=False)
     eigvals, eigvecs = np.linalg.eigh(cov)
@@ -197,7 +197,7 @@ def fit_dimensional_pca_model(
         r_squared=r_sq_adj,
         aic=aic,
         n_parameters=k,
-        notes=f"PC1 explica {eigvals[idx_max]/eigvals.sum()*100:.1f}% de la varianza",
+        notes=f"PC1 explica {eigvals[idx_max] / eigvals.sum() * 100:.1f}% de la varianza",
     )
 
 
@@ -227,7 +227,9 @@ def main() -> int:
         m_pca = fit_dimensional_pca_model(coherences, transfer_score, autoeficacia)
 
         for m in [m_typ, m_sum, m_pca]:
-            print(f"  {m.model_name}: R²_adj={m.r_squared:.3f}, AIC={m.aic:.2f}, k={m.n_parameters}")
+            print(
+                f"  {m.model_name}: R²_adj={m.r_squared:.3f}, AIC={m.aic:.2f}, k={m.n_parameters}"
+            )
         return 0
 
     raise NotImplementedError(

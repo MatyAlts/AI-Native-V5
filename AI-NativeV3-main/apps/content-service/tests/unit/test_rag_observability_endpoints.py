@@ -285,18 +285,14 @@ def test_probar_retrieval_requires_query(client_with) -> None:
 # ── POST /{id}/reingest ──────────────────────────────────────────────
 
 
-def test_reingest_reprocesses_from_storage(
-    client_with, monkeypatch: pytest.MonkeyPatch
-) -> None:
+def test_reingest_reprocesses_from_storage(client_with, monkeypatch: pytest.MonkeyPatch) -> None:
     client, ctx = client_with
     mid = uuid4()
     ctx["material"] = _material(mid, estado="failed", chunks_count=0)
 
     stored = MagicMock()
     stored.get = AsyncMock(return_value=b"# Recursion\n\nUn concepto fundamental.\n")
-    monkeypatch.setattr(
-        "content_service.routes.materiales.get_storage", lambda: stored
-    )
+    monkeypatch.setattr("content_service.routes.materiales.get_storage", lambda: stored)
 
     ingested: dict[str, Any] = {}
 
@@ -335,9 +331,7 @@ def test_reingest_missing_original_is_conflict(
 
     stored = MagicMock()
     stored.get = AsyncMock(side_effect=FileNotFoundError("gone"))
-    monkeypatch.setattr(
-        "content_service.routes.materiales.get_storage", lambda: stored
-    )
+    monkeypatch.setattr("content_service.routes.materiales.get_storage", lambda: stored)
 
     r = client.post(f"/api/v1/materiales/{mid}/reingest")
     assert r.status_code == 409
@@ -393,9 +387,7 @@ def test_reingest_ajeno_es_not_found(client_with, monkeypatch: pytest.MonkeyPatc
         ingest_called["v"] = True
         return MagicMock()
 
-    monkeypatch.setattr(
-        "content_service.routes.materiales.IngestionPipeline.ingest", _fake_ingest
-    )
+    monkeypatch.setattr("content_service.routes.materiales.IngestionPipeline.ingest", _fake_ingest)
 
     r = client.post(f"/api/v1/materiales/{mid}/reingest")
     assert r.status_code == 404
@@ -419,9 +411,7 @@ def test_reingest_superadmin_ve_ajeno(client_with, monkeypatch: pytest.MonkeyPat
         material.estado = "indexed"
         return MagicMock()
 
-    monkeypatch.setattr(
-        "content_service.routes.materiales.IngestionPipeline.ingest", _fake_ingest
-    )
+    monkeypatch.setattr("content_service.routes.materiales.IngestionPipeline.ingest", _fake_ingest)
 
     r = client.post(f"/api/v1/materiales/{mid}/reingest")
     assert r.status_code == 200
@@ -462,9 +452,7 @@ def test_probar_retrieval_superadmin_no_requiere_material_propio(
     ctx["user"] = _superadmin()
     ctx["owns_materia"] = None  # no importa: oversight saltea el gate
 
-    fake = RetrievalResponse(
-        chunks=[], chunks_used_hash="x", latency_ms=1.0, rerank_applied=False
-    )
+    fake = RetrievalResponse(chunks=[], chunks_used_hash="x", latency_ms=1.0, rerank_applied=False)
 
     async def _fake_retrieve(self, request):
         return fake
@@ -483,7 +471,9 @@ def test_probar_retrieval_superadmin_no_requiere_material_propio(
 def test_storage_key_from_path_roundtrip() -> None:
     from content_service.services.storage import storage_key_from_path
 
-    assert storage_key_from_path("mock://materials/t/c/m/original.md") == "materials/t/c/m/original.md"
+    assert (
+        storage_key_from_path("mock://materials/t/c/m/original.md") == "materials/t/c/m/original.md"
+    )
     assert (
         storage_key_from_path("s3://materials/materials/t/c/m/original.pdf")
         == "materials/t/c/m/original.pdf"

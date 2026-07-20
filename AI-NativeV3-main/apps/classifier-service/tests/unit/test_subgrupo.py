@@ -15,7 +15,12 @@ from classifier_service.services.subgrupo import clasificar_subgrupo, compute_su
 
 
 def _ev(seq: int, et: str, **payload: object) -> dict:
-    return {"seq": seq, "event_type": et, "ts": f"2026-06-09T22:00:{seq % 60:02d}Z", "payload": payload}
+    return {
+        "seq": seq,
+        "event_type": et,
+        "ts": f"2026-06-09T22:00:{seq % 60:02d}Z",
+        "payload": payload,
+    }
 
 
 def _autonomo_competente() -> list[dict]:
@@ -39,7 +44,14 @@ def test_autonomo_sin_prompts_NO_cae_en_delegacion() -> None:
 def test_delegador_real_por_solicitud_directa() -> None:
     ev = [_ev(0, "lectura_enunciado")]
     for k in range(5):
-        ev.append(_ev(1 + 2 * k, "prompt_enviado", prompt_kind="solicitud_directa", content="dame el codigo"))
+        ev.append(
+            _ev(
+                1 + 2 * k,
+                "prompt_enviado",
+                prompt_kind="solicitud_directa",
+                content="dame el codigo",
+            )
+        )
         ev.append(_ev(2 + 2 * k, "edicion_codigo", origin="pasted_external"))
     ev.append(_ev(20, "codigo_ejecutado", stdout="", stderr="NameError"))
     assert clasificar_subgrupo(ev).key == "dependiente_delegador"

@@ -128,9 +128,7 @@ def _is_streaming_response(content_type: str | None) -> bool:
 def _passthrough_response_headers(upstream_headers: httpx.Headers) -> dict[str, str]:
     """Headers del upstream a reenviar, sin los hop-by-hop."""
     return {
-        k: v
-        for k, v in upstream_headers.items()
-        if k.lower() not in _EXCLUDED_RESPONSE_HEADERS
+        k: v for k, v in upstream_headers.items() if k.lower() not in _EXCLUDED_RESPONSE_HEADERS
     }
 
 

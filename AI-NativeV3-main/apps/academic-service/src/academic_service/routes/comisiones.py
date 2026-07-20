@@ -65,9 +65,7 @@ def get_invite_rate_limiter() -> InviteJoinRateLimiter:
     """
     global _rate_limit_redis, _invite_rate_limiter
     if _invite_rate_limiter is None:
-        _rate_limit_redis = aioredis.from_url(
-            settings.rate_limit_redis_url, decode_responses=True
-        )
+        _rate_limit_redis = aioredis.from_url(settings.rate_limit_redis_url, decode_responses=True)
         _invite_rate_limiter = InviteJoinRateLimiter(
             _rate_limit_redis,
             actor_config=RateLimitConfig(
@@ -80,6 +78,7 @@ def get_invite_rate_limiter() -> InviteJoinRateLimiter:
             ),
         )
     return _invite_rate_limiter
+
 
 # Roles que pueden ver el `invite_code` (y el `tenant_id`) de una comisión.
 # El estudiante NO: con el código se auto-inscribe sin invitación del docente
@@ -442,9 +441,7 @@ async def remove_docente(
 # ── Inscripciones de comision ─────────────────────────────────────────
 
 
-@comisiones_router.get(
-    "/{comision_id}/inscripciones", response_model=ListResponse[InscripcionOut]
-)
+@comisiones_router.get("/{comision_id}/inscripciones", response_model=ListResponse[InscripcionOut])
 async def list_inscripciones(
     comision_id: UUID,
     user: User = Depends(require_permission("inscripcion", "read")),

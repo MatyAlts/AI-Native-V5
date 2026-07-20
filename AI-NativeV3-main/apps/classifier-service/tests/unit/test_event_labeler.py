@@ -153,9 +153,7 @@ def test_anotacion_dentro_de_60s_de_tutor_respondio_es_n4() -> None:
     """ADR-023: anotacion <60s post-tutor_respondio = apropiacion = N4."""
     # Tutor respondio en t=300, anotacion en t=320 => 20s de delta => N4.
     ctx = _ctx(event_offset=320, started_offset=0, last_tutor_offset=300)
-    assert label_event(
-        "anotacion_creada", {"content": "ahora me doy cuenta"}, context=ctx
-    ) == "N4"
+    assert label_event("anotacion_creada", {"content": "ahora me doy cuenta"}, context=ctx) == "N4"
     # Borde just-before-edge: 59s post-tutor => N4.
     ctx_edge = _ctx(
         event_offset=300 + int(ANOTACION_N4_WINDOW_SECONDS) - 1,
@@ -193,8 +191,11 @@ def test_anotacion_con_tutor_respondio_futuro_no_aplica_n4() -> None:
     """
     # Anotacion a t=100, tutor "respondio" a t=200 (incoherente). NO override N4.
     # Como ademas esta fuera de ventana N1 (>120s desde t=0 si lo pongo asi), cae a N2.
-    ctx = _ctx(event_offset=int(ANOTACION_N1_WINDOW_SECONDS) + 10, started_offset=0,
-               last_tutor_offset=int(ANOTACION_N1_WINDOW_SECONDS) + 200)
+    ctx = _ctx(
+        event_offset=int(ANOTACION_N1_WINDOW_SECONDS) + 10,
+        started_offset=0,
+        last_tutor_offset=int(ANOTACION_N1_WINDOW_SECONDS) + 200,
+    )
     assert label_event("anotacion_creada", {}, context=ctx) == "N2"
 
 

@@ -33,21 +33,21 @@ _SRC = Path(__file__).resolve().parent.parent / "apps" / "classifier-service" / 
 if str(_SRC) not in sys.path:
     sys.path.insert(0, str(_SRC))
 
-from classifier_service.services.ccd import compute_ccd  # noqa: E402
-from classifier_service.services.cii import compute_cii  # noqa: E402
-from classifier_service.services.ct import ct_features  # noqa: E402
-from classifier_service.services.tree import classify  # noqa: E402
+from classifier_service.services.ccd import compute_ccd
+from classifier_service.services.cii import compute_cii
+from classifier_service.services.ct import ct_features
+from classifier_service.services.tree import classify
 
 # ── Constantes (🔧 calibrables — ver docs/NUEVA-MEDICION-SUBGRUPOS.md) ──
 PROMPT_SCALE = 6
 EXEC_SCALE = 8
 FOCUS_SCALE = 3
 MIN_EVENTS = 4
-DEP_SOLICITA = 2          # prompts solicitud_directa para marcar delegación
+DEP_SOLICITA = 2  # prompts solicitud_directa para marcar delegación
 DEP_EXP = 0.4
 REFLEX_EXP = 0.4
-TRABADO_MIN_EJEC = 2      # ejecuciones mínimas para "peleó" (trabado real vs abandonó temprano)
-EDIT_MIN = 10             # ediciones para "escribió bastante" (separa desenganchado de escribe-sin-validar)
+TRABADO_MIN_EJEC = 2  # ejecuciones mínimas para "peleó" (trabado real vs abandonó temprano)
+EDIT_MIN = 10  # ediciones para "escribió bastante" (separa desenganchado de escribe-sin-validar)
 
 _REFLECTIVE_KINDS = {
     "exploracion",
@@ -68,14 +68,34 @@ class Subgrupo:
     eje: str  # roll-up a los 3 ejes (opción A)
 
 
-INDETERMINADO = Subgrupo("indeterminado", "Indeterminado 🔒", "No concluir — episodio muy corto", "sin_clasificar")
-AUTONOMO_COMPETENTE = Subgrupo("autonomo_competente", "Autónomo competente ⭐", "Darle más desafío", "reflexiva")
-AUTONOMO_TRABADO = Subgrupo("autonomo_trabado", "Autónomo trabado 🆘", "Ofrecer scaffolding — NO delegó", "superficial")
+INDETERMINADO = Subgrupo(
+    "indeterminado", "Indeterminado 🔒", "No concluir — episodio muy corto", "sin_clasificar"
+)
+AUTONOMO_COMPETENTE = Subgrupo(
+    "autonomo_competente", "Autónomo competente ⭐", "Darle más desafío", "reflexiva"
+)
+AUTONOMO_TRABADO = Subgrupo(
+    "autonomo_trabado", "Autónomo trabado 🆘", "Ofrecer scaffolding — NO delegó", "superficial"
+)
 DESENGANCHADO = Subgrupo("desenganchado", "Desenganchado 💤", "Re-enganchar", "superficial")
-ESCRIBE_SIN_VALIDAR = Subgrupo("escribe_sin_validar", "Escribió sin validar 📝", "Fomentar el hábito de ejecutar y probar el código", "superficial")
-DEPENDIENTE = Subgrupo("dependiente_delegador", "Dependiente / delegador ⚠️", "Intervenir (copió de la IA)", "delegacion_pasiva")
-COLABORADOR_REFLEXIVO = Subgrupo("colaborador_reflexivo", "Colaborador reflexivo ✅", "Va bien", "reflexiva")
-COLABORADOR_FUNCIONAL = Subgrupo("colaborador_funcional", "Colaborador funcional", "Empujar a profundizar/probar", "superficial")
+ESCRIBE_SIN_VALIDAR = Subgrupo(
+    "escribe_sin_validar",
+    "Escribió sin validar 📝",
+    "Fomentar el hábito de ejecutar y probar el código",
+    "superficial",
+)
+DEPENDIENTE = Subgrupo(
+    "dependiente_delegador",
+    "Dependiente / delegador ⚠️",
+    "Intervenir (copió de la IA)",
+    "delegacion_pasiva",
+)
+COLABORADOR_REFLEXIVO = Subgrupo(
+    "colaborador_reflexivo", "Colaborador reflexivo ✅", "Va bien", "reflexiva"
+)
+COLABORADOR_FUNCIONAL = Subgrupo(
+    "colaborador_funcional", "Colaborador funcional", "Empujar a profundizar/probar", "superficial"
+)
 
 
 # ── Helpers sobre la serie de eventos ──
@@ -101,7 +121,9 @@ def dim_autonomia(events: list[dict]) -> tuple[float, float]:
     """
     prompts = _count(events, "prompt_enviado")
     ediciones = [e for e in events if e["event_type"] == "edicion_codigo"]
-    pegadas = sum(1 for e in ediciones if (e.get("payload") or {}).get("origin") == "pasted_external")
+    pegadas = sum(
+        1 for e in ediciones if (e.get("payload") or {}).get("origin") == "pasted_external"
+    )
     paste_ratio = pegadas / len(ediciones) if ediciones else 0.0
     comp_prompts = 1.0 - min(1.0, prompts / PROMPT_SCALE)
     return 0.5 * comp_prompts + 0.5 * (1.0 - paste_ratio), paste_ratio
@@ -122,7 +144,10 @@ def dim_persistencia(events: list[dict]) -> float:
         p = e.get("payload") or {}
         if e["event_type"] == "codigo_ejecutado" and (p.get("stderr") or "") != "":
             fallos += 1
-            if any(ev["event_type"] in ("edicion_codigo", "codigo_ejecutado") for ev in sorted_ev[i + 1:]):
+            if any(
+                ev["event_type"] in ("edicion_codigo", "codigo_ejecutado")
+                for ev in sorted_ev[i + 1 :]
+            ):
                 recup += 1
     if fallos == 0:
         return 1.0  # no se trabó (no hubo error de ejecución)
@@ -144,7 +169,9 @@ def _resolvio(events: list[dict]) -> bool:
     No hay tests_ejecutados/tp_entregada en el CTR real — la señal es
     codigo_ejecutado con stdout no vacío y stderr vacío en la última corrida.
     'Terminó funcionando' es mejor proxy de 'lo logró' que 'alguna vez le anduvo'."""
-    ejec = [e for e in sorted(events, key=lambda e: e["seq"]) if e["event_type"] == "codigo_ejecutado"]
+    ejec = [
+        e for e in sorted(events, key=lambda e: e["seq"]) if e["event_type"] == "codigo_ejecutado"
+    ]
     if not ejec:
         return False
     p = ejec[-1].get("payload") or {}
@@ -154,7 +181,9 @@ def _resolvio(events: list[dict]) -> bool:
 def _verbaliza(events: list[dict]) -> bool:
     if _count(events, "anotacion_creada") > 0:
         return True
-    return any(e["event_type"] == "prompt_enviado" and _kind(e) in _REFLECTIVE_KINDS for e in events)
+    return any(
+        e["event_type"] == "prompt_enviado" and _kind(e) in _REFLECTIVE_KINDS for e in events
+    )
 
 
 # ── El árbol de 7 subgrupos ──
@@ -168,8 +197,7 @@ def subgrupo(events: list[dict]) -> Subgrupo:
     ediciones = _count(events, "edicion_codigo")
     exp = dim_experimentacion(events)
     sol_directa = sum(
-        1 for e in events
-        if e["event_type"] == "prompt_enviado" and _kind(e) == "solicitud_directa"
+        1 for e in events if e["event_type"] == "prompt_enviado" and _kind(e) == "solicitud_directa"
     )
 
     # "Trabajó poco": pocas ediciones Y casi sin ejecutar. Editar mucho YA es trabajo.
@@ -178,17 +206,17 @@ def subgrupo(events: list[dict]) -> Subgrupo:
     if prompts == 0:
         # FIX inversión: sin prompts, delegar es imposible → rama autónoma.
         if poco_trabajo:
-            return DESENGANCHADO          # trabajó poco en general → re-enganchar
+            return DESENGANCHADO  # trabajó poco en general → re-enganchar
         if _resolvio(events):
             return AUTONOMO_COMPETENTE
         if ejec >= TRABADO_MIN_EJEC:
-            return AUTONOMO_TRABADO       # peleó ejecutando, no logró → scaffolding
-        return ESCRIBE_SIN_VALIDAR        # escribió bastante pero casi no ejecutó/probó
+            return AUTONOMO_TRABADO  # peleó ejecutando, no logró → scaffolding
+        return ESCRIBE_SIN_VALIDAR  # escribió bastante pero casi no ejecutó/probó
 
     # prompts > 0 → usó el tutor. La delegación se chequea ANTES que "poco trabajo":
     # el delegador labura poco JUSTAMENTE porque copia — pero usó el tutor, no está desenganchado.
     if sol_directa >= DEP_SOLICITA and exp < DEP_EXP:
-        return DEPENDIENTE                # delegación real: pidió código directo + poca acción propia
+        return DEPENDIENTE  # delegación real: pidió código directo + poca acción propia
     if poco_trabajo:
         return DESENGANCHADO
     if exp >= REFLEX_EXP:
@@ -235,37 +263,73 @@ def _casos() -> list[tuple[str, list[dict]]]:
     #    El motor viejo lo INVIERTE a delegacion_pasiva (orphan 1.0).
     seq = 0
     ev = []
-    ev.append(_ev(seq, "lectura_enunciado", 0)); seq += 1
+    ev.append(_ev(seq, "lectura_enunciado", 0))
+    seq += 1
     for k in range(6):
-        ev.append(_ev(seq, "edicion_codigo", 30 + k * 40, origin="student_typed")); seq += 1
-        ev.append(_ev(seq, "codigo_ejecutado", 50 + k * 40, stdout="42\n", stderr="")); seq += 1
+        ev.append(_ev(seq, "edicion_codigo", 30 + k * 40, origin="student_typed"))
+        seq += 1
+        ev.append(_ev(seq, "codigo_ejecutado", 50 + k * 40, stdout="42\n", stderr=""))
+        seq += 1
     casos.append(("autónomo (solo, corrió ok)", ev))
 
     # 2. DEPENDIENTE / DELEGADOR — varios prompts solicitud_directa, poca acción propia.
     seq = 0
     ev = []
-    ev.append(_ev(seq, "lectura_enunciado", 0)); seq += 1
+    ev.append(_ev(seq, "lectura_enunciado", 0))
+    seq += 1
     for k in range(5):
-        ev.append(_ev(seq, "prompt_enviado", 20 + k * 30, prompt_kind="solicitud_directa", content="dame el codigo")); seq += 1
-        ev.append(_ev(seq, "edicion_codigo", 35 + k * 30, origin="pasted_external")); seq += 1
+        ev.append(
+            _ev(
+                seq,
+                "prompt_enviado",
+                20 + k * 30,
+                prompt_kind="solicitud_directa",
+                content="dame el codigo",
+            )
+        )
+        seq += 1
+        ev.append(_ev(seq, "edicion_codigo", 35 + k * 30, origin="pasted_external"))
+        seq += 1
     ev.append(_ev(seq, "codigo_ejecutado", 200, stdout="", stderr="NameError"))
     casos.append(("delegador (pide código directo)", ev))
 
     # 3. COLABORADOR REFLEXIVO — usa el tutor para explorar + experimenta y le corre.
     seq = 0
     ev = []
-    ev.append(_ev(seq, "lectura_enunciado", 0)); seq += 1
+    ev.append(_ev(seq, "lectura_enunciado", 0))
+    seq += 1
     for k in range(4):
-        ev.append(_ev(seq, "prompt_enviado", 20 + k * 60, prompt_kind="exploracion", content="que pasa si itero distinto el bucle")); seq += 1
-        ev.append(_ev(seq, "codigo_ejecutado", 50 + k * 60, stdout="ok\n", stderr="")); seq += 1
+        ev.append(
+            _ev(
+                seq,
+                "prompt_enviado",
+                20 + k * 60,
+                prompt_kind="exploracion",
+                content="que pasa si itero distinto el bucle",
+            )
+        )
+        seq += 1
+        ev.append(_ev(seq, "codigo_ejecutado", 50 + k * 60, stdout="ok\n", stderr=""))
+        seq += 1
     casos.append(("colaborador reflexivo", ev))
 
     # 4. DESENGANCHADO — casi nada de actividad, perdió la pestaña.
     seq = 0
     ev = []
-    ev.append(_ev(seq, "lectura_enunciado", 0)); seq += 1
-    ev.append(_ev(seq, "prompt_enviado", 30, prompt_kind="aclaracion_enunciado", content="que hay que hacer")); seq += 1
-    ev.append(_ev(seq, "pestana_perdida", 60)); seq += 1
+    ev.append(_ev(seq, "lectura_enunciado", 0))
+    seq += 1
+    ev.append(
+        _ev(
+            seq,
+            "prompt_enviado",
+            30,
+            prompt_kind="aclaracion_enunciado",
+            content="que hay que hacer",
+        )
+    )
+    seq += 1
+    ev.append(_ev(seq, "pestana_perdida", 60))
+    seq += 1
     ev.append(_ev(seq, "edicion_codigo", 90, origin="student_typed"))
     casos.append(("desenganchado", ev))
 
@@ -302,8 +366,12 @@ def cargar_desde_db(dsn: str, limit: int) -> list[tuple[str, list[dict]]]:
                     ep["id"],
                 )
                 events = [
-                    {"seq": r["seq"], "event_type": r["event_type"],
-                     "ts": r["ts"].isoformat().replace("+00:00", "Z"), "payload": r["payload"]}
+                    {
+                        "seq": r["seq"],
+                        "event_type": r["event_type"],
+                        "ts": r["ts"].isoformat().replace("+00:00", "Z"),
+                        "payload": r["payload"],
+                    }
                     for r in rows
                 ]
                 label = str(ep["student_pseudonym"])[:8] + " / " + str(ep["id"])[:8]
@@ -337,7 +405,9 @@ def imprimir_tabla(episodios: list[tuple[str, list[dict]]]) -> None:
             f"{d['autonomia']:.2f} {d['experimentacion']:.2f} {d['persistencia']:.2f} {d['foco']:.2f} | {cambio}"
         )
     print("-" * len(header))
-    print(f"Total: {len(episodios)} episodios · {cambios} cambian de eje · {salieron_de_delegacion} salen de delegación mal asignada")
+    print(
+        f"Total: {len(episodios)} episodios · {cambios} cambian de eje · {salieron_de_delegacion} salen de delegación mal asignada"
+    )
 
 
 def _eje_actual_difiere(actual: str, eje_nuevo: str) -> bool:
@@ -349,9 +419,15 @@ def _eje_actual_difiere(actual: str, eje_nuevo: str) -> bool:
 
 
 def main() -> None:
-    ap = argparse.ArgumentParser(description="Validación read-only de la nueva medición de apropiación")
-    ap.add_argument("--self-test", action="store_true", help="usa episodios canónicos sintéticos (default)")
-    ap.add_argument("--db", action="store_true", help="lee episodios reales de ctr_store (read-only)")
+    ap = argparse.ArgumentParser(
+        description="Validación read-only de la nueva medición de apropiación"
+    )
+    ap.add_argument(
+        "--self-test", action="store_true", help="usa episodios canónicos sintéticos (default)"
+    )
+    ap.add_argument(
+        "--db", action="store_true", help="lee episodios reales de ctr_store (read-only)"
+    )
     ap.add_argument("--dsn", default=os.environ.get("CTR_STORE_URL", ""), help="DSN de ctr_store")
     ap.add_argument("--limit", type=int, default=25, help="máximo de episodios a leer en modo --db")
     args = ap.parse_args()

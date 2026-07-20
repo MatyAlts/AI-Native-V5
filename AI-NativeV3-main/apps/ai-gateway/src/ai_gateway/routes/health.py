@@ -47,15 +47,11 @@ def _check_llm_provider() -> CheckResult:
         return CheckResult(ok=True, latency_ms=0)
     if provider == "anthropic":
         if not settings.anthropic_api_key:
-            return CheckResult(
-                ok=False, latency_ms=0, error="anthropic api key missing"
-            )
+            return CheckResult(ok=False, latency_ms=0, error="anthropic api key missing")
         return CheckResult(ok=True, latency_ms=0)
     if provider == "mistral":
         if not settings.mistral_api_key:
-            return CheckResult(
-                ok=False, latency_ms=0, error="mistral api key missing"
-            )
+            return CheckResult(ok=False, latency_ms=0, error="mistral api key missing")
         return CheckResult(ok=True, latency_ms=0)
     if provider == "gemini":
         # Gemini puede venir por env o por BYOK; el health solo flagea env-faltante.

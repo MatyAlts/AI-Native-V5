@@ -87,9 +87,7 @@ class FakeCTRClient:
         self.captured_callers.append(caller_id)
         return f"msg-{len(self.published_events)}"
 
-    async def get_episode(
-        self, episode_id: UUID, tenant_id: UUID, caller_id: UUID
-    ) -> dict | None:
+    async def get_episode(self, episode_id: UUID, tenant_id: UUID, caller_id: UUID) -> dict | None:
         return self.episodes.get(episode_id)
 
 
@@ -311,9 +309,7 @@ def _student_headers(user_id: UUID, tenant_id: UUID) -> dict[str, str]:
     }
 
 
-def test_post_reflection_happy_path_returns_202(
-    http_client, fake_ctr: FakeCTRClient
-) -> None:
+def test_post_reflection_happy_path_returns_202(http_client, fake_ctr: FakeCTRClient) -> None:
     client, _ = http_client
     tenant_id = uuid4()
     episode_id = uuid4()
@@ -364,9 +360,7 @@ def test_post_reflection_campo_excede_500_chars_returns_422(
     assert len(fake_ctr.published_events) == 0
 
 
-def test_post_reflection_tiempo_negativo_returns_422(
-    http_client, fake_ctr: FakeCTRClient
-) -> None:
+def test_post_reflection_tiempo_negativo_returns_422(http_client, fake_ctr: FakeCTRClient) -> None:
     client, _ = http_client
     tenant_id = uuid4()
     episode_id = uuid4()
@@ -387,9 +381,7 @@ def test_post_reflection_tiempo_negativo_returns_422(
     assert r.status_code == 422
 
 
-def test_post_reflection_episodio_abierto_returns_409(
-    http_client, fake_ctr: FakeCTRClient
-) -> None:
+def test_post_reflection_episodio_abierto_returns_409(http_client, fake_ctr: FakeCTRClient) -> None:
     """Episodio en estado 'open' rechaza la reflexion (post-cierre solo)."""
     client, _ = http_client
     tenant_id = uuid4()

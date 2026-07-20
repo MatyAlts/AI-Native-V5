@@ -38,9 +38,7 @@ def _build_chain(
             "tenant_id": str(tenant_id),
             "seq": i,
             "event_type": "tutor_respondio" if i % 2 else "prompt_enviado",
-            "ts": (base_ts + timedelta(seconds=i)).isoformat().replace(
-                "+00:00", "Z"
-            ),
+            "ts": (base_ts + timedelta(seconds=i)).isoformat().replace("+00:00", "Z"),
             "payload": {"step": i, "msg": f"event-{i}"},
             "prompt_system_hash": "sha256-prompt-v1",
             "prompt_system_version": "v1.0.1",

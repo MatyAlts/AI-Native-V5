@@ -263,9 +263,7 @@ async def get_my_pretest_autoeficacia(
 # TEST DE TRANSFERENCIA (P2-3)
 # ============================================================================
 
-transferencia_router = APIRouter(
-    prefix="/api/v1/instrumentos/transferencia", tags=["instrumentos"]
-)
+transferencia_router = APIRouter(prefix="/api/v1/instrumentos/transferencia", tags=["instrumentos"])
 
 
 @transferencia_router.get("/catalogo")
@@ -277,7 +275,11 @@ async def get_transferencia_catalogo(
     # Sanitizar: NO devolvemos `expected_solution_pattern` ni `expected_answer`
     # al cliente para no filtrar la solucion. El estudiante recibe solo el enunciado.
     sanitized = [
-        {k: v for k, v in problem.items() if k not in {"expected_solution_pattern", "expected_answer"}}
+        {
+            k: v
+            for k, v in problem.items()
+            if k not in {"expected_solution_pattern", "expected_answer"}
+        }
         for problem in TEST_TRANSFERENCIA_PROBLEMS
     ]
     return {
@@ -494,22 +496,26 @@ async def get_transferencia_cohort_summary(
     """
     # Conteo de estudiantes UNICOS por grupo (no respuestas — un estudiante
     # puede tener varios test_id, pero cuenta como 1 estudiante).
-    stmt = select(
-        RespuestaTestTransferencia.group_assignment,
-        func.count(func.distinct(RespuestaTestTransferencia.student_pseudonym)).label(
-            "n_students"
-        ),
-        func.count(RespuestaTestTransferencia.id).label("n_attempts"),
-        func.sum(
-            case((RespuestaTestTransferencia.correct_answer.is_(True), 1), else_=0).cast(
-                Integer
-            )
-        ).label("n_correct"),
-    ).where(
-        RespuestaTestTransferencia.tenant_id == user.tenant_id,
-        RespuestaTestTransferencia.comision_id == comision_id,
-        RespuestaTestTransferencia.instrument_version == instrument_version,
-    ).group_by(RespuestaTestTransferencia.group_assignment)
+    stmt = (
+        select(
+            RespuestaTestTransferencia.group_assignment,
+            func.count(func.distinct(RespuestaTestTransferencia.student_pseudonym)).label(
+                "n_students"
+            ),
+            func.count(RespuestaTestTransferencia.id).label("n_attempts"),
+            func.sum(
+                case((RespuestaTestTransferencia.correct_answer.is_(True), 1), else_=0).cast(
+                    Integer
+                )
+            ).label("n_correct"),
+        )
+        .where(
+            RespuestaTestTransferencia.tenant_id == user.tenant_id,
+            RespuestaTestTransferencia.comision_id == comision_id,
+            RespuestaTestTransferencia.instrument_version == instrument_version,
+        )
+        .group_by(RespuestaTestTransferencia.group_assignment)
+    )
     rows = (await db.execute(stmt)).all()
 
     by_group: dict[str, dict[str, Any]] = {}

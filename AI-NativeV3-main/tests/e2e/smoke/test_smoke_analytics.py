@@ -15,9 +15,7 @@ import pytest
 
 
 @pytest.mark.smoke
-def test_kappa_endpoint_computes_valid_kappa(
-    client: httpx.Client, auth_headers
-) -> None:
+def test_kappa_endpoint_computes_valid_kappa(client: httpx.Client, auth_headers) -> None:
     """POST /api/v1/analytics/kappa con 5 ratings concordantes → κ alto."""
     payload = {
         "ratings": [
@@ -48,9 +46,7 @@ def test_kappa_endpoint_computes_valid_kappa(
             },
         ]
     }
-    resp = client.post(
-        "/api/v1/analytics/kappa", json=payload, headers=auth_headers("docente")
-    )
+    resp = client.post("/api/v1/analytics/kappa", json=payload, headers=auth_headers("docente"))
     assert resp.status_code == 200, (
         f"POST kappa con headers docente debería OK. "
         f"status={resp.status_code} body={resp.text[:400]}"
@@ -106,9 +102,7 @@ def test_cii_evolution_longitudinal_for_seeded_student(
         params={"comision_id": comision_id},
         headers=auth_headers("docente"),
     )
-    assert resp.status_code == 200, (
-        f"GET cii-evolution-longitudinal falló: {resp.text[:300]}"
-    )
+    assert resp.status_code == 200, f"GET cii-evolution-longitudinal falló: {resp.text[:300]}"
     body = resp.json()
     assert body["student_pseudonym"] == student_id
     assert body["comision_id"] == comision_id

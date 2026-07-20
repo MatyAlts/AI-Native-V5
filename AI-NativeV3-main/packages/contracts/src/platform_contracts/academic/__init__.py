@@ -16,8 +16,8 @@ from platform_contracts.academic.ejercicio import (
     TestCaseSchema,
     TpEjercicioCreate,
     TpEjercicioRead,
-    TpEjercicioUpdate,
     TpEjerciciosValidator,
+    TpEjercicioUpdate,
     TutorRulesSchema,
 )
 from platform_contracts.academic.events import (

@@ -23,7 +23,6 @@ from uuid import UUID
 
 import httpx
 import pytest
-
 from _helpers import (  # type: ignore[import-not-found]
     COMISION_A_MANANA,
     DOCENTE_DEMO,

@@ -32,9 +32,7 @@ def _get_engine() -> AsyncEngine:
     """Lazy singleton para el readiness check."""
     global _engine
     if _engine is None:
-        _engine = create_async_engine(
-            settings.academic_db_url, pool_pre_ping=True
-        )
+        _engine = create_async_engine(settings.academic_db_url, pool_pre_ping=True)
     return _engine
 
 

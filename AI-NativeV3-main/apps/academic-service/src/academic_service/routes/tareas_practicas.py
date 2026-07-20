@@ -332,7 +332,9 @@ async def generate_tarea_practica(
     governance = GovernanceClient(settings.governance_service_url)
     prompt_version_full = f"tp_generator/{settings.tp_generator_prompt_version}"
     try:
-        prompt_cfg = await governance.get_prompt("tp_generator", settings.tp_generator_prompt_version)
+        prompt_cfg = await governance.get_prompt(
+            "tp_generator", settings.tp_generator_prompt_version
+        )
     except Exception as exc:
         logger.error("tp_generator_prompt_fetch_failed: %s", exc)
         raise HTTPException(
@@ -342,7 +344,10 @@ async def generate_tarea_practica(
 
     # 2b. RAG: buscar materiales relevantes con materia_id como scope principal
     rag_context, rag_chunks_used, rag_chunks_hash = await _retrieve_rag_context(
-        req.descripcion_nl, req.materia_id, user.tenant_id, req.comision_id,
+        req.descripcion_nl,
+        req.materia_id,
+        user.tenant_id,
+        req.comision_id,
     )
 
     # 3. Construir mensajes para LLM. La consigna de plantilla (leída en el paso 1
@@ -401,7 +406,7 @@ async def generate_tarea_practica(
                     str(exc)[:200],
                 )
                 if attempt < max_attempts - 1:
-                    await asyncio.sleep(0.5 * (2 ** attempt))
+                    await asyncio.sleep(0.5 * (2**attempt))
                     continue
                 raise HTTPException(
                     status_code=status.HTTP_502_BAD_GATEWAY,
@@ -414,7 +419,7 @@ async def generate_tarea_practica(
                 brace_start = raw_content.find("{")
                 brace_end = raw_content.rfind("}")
                 if brace_start != -1 and brace_end > brace_start:
-                    raw_content = raw_content[brace_start:brace_end + 1]
+                    raw_content = raw_content[brace_start : brace_end + 1]
             try:
                 parsed = json.loads(raw_content)
             except json.JSONDecodeError as exc:
@@ -554,9 +559,7 @@ async def get_tarea_practica_test_cases(
     Tests `is_public=false` quedan opacos al cliente — defensa critica para
     que el alumno no pueda ver los tests hidden via dev tools del browser.
     """
-    is_priv_role = bool(
-        {"docente", "docente_admin", "superadmin", "jtp", "auxiliar"} & user.roles
-    )
+    is_priv_role = bool({"docente", "docente_admin", "superadmin", "jtp", "auxiliar"} & user.roles)
     if include_hidden and not is_priv_role:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,

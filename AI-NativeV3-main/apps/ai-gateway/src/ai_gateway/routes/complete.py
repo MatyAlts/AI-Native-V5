@@ -70,9 +70,22 @@ router = APIRouter(
 # cuando está completa — el alumno recibe todo o un error limpio, nunca basura.
 
 _RETRIABLE_MARKERS = (
-    "503", "500", "502", "504", "429", "unavailable", "overloaded",
-    "high demand", "timeout", "timed out", "rate limit", "temporarily",
-    "connection", "reset", "deadline", "resource_exhausted",
+    "503",
+    "500",
+    "502",
+    "504",
+    "429",
+    "unavailable",
+    "overloaded",
+    "high demand",
+    "timeout",
+    "timed out",
+    "rate limit",
+    "temporarily",
+    "connection",
+    "reset",
+    "deadline",
+    "resource_exhausted",
 )
 
 
@@ -109,15 +122,17 @@ async def _collect_with_retry(
             backoff = 0.6 * (2**attempt)
             logger.warning(
                 "llm_stream_retry attempt=%d/%d model=%s backoff=%.1fs err=%s",
-                attempt + 1, max_attempts, req.model, backoff, exc,
+                attempt + 1,
+                max_attempts,
+                req.model,
+                backoff,
+                exc,
             )
             await asyncio.sleep(backoff)
     raise last_err if last_err else RuntimeError("stream failed")
 
 
-async def _complete_with_retry(
-    provider: BaseProvider, req: CompletionRequest, max_attempts: int
-):
+async def _complete_with_retry(provider: BaseProvider, req: CompletionRequest, max_attempts: int):
     """Llama a provider.complete reintentando errores transitorios.
 
     Paridad con `_collect_with_retry` del path de streaming: los picos de
@@ -135,7 +150,11 @@ async def _complete_with_retry(
             backoff = 0.6 * (2**attempt)
             logger.warning(
                 "llm_complete_retry attempt=%d/%d model=%s backoff=%.1fs err=%s",
-                attempt + 1, max_attempts, req.model, backoff, exc,
+                attempt + 1,
+                max_attempts,
+                req.model,
+                backoff,
+                exc,
             )
             await asyncio.sleep(backoff)
     raise last_err if last_err else RuntimeError("complete failed")
@@ -428,7 +447,9 @@ async def complete(
             ai_gateway_fallback_total.add(1, {"reason": "complete_model_fallback"})
             logger.warning(
                 "llm_complete_fallback primary=%s fallback=%s err=%s",
-                provider_req.model, fb_model, primary_err,
+                provider_req.model,
+                fb_model,
+                primary_err,
             )
             try:
                 response = await _complete_with_retry(
@@ -601,7 +622,9 @@ async def stream_complete(
                 ai_gateway_fallback_total.add(1, {"reason": "stream_model_fallback"})
                 logger.warning(
                     "llm_stream_fallback primary=%s fallback=%s err=%s",
-                    internal_req.model, fb_model, primary_err,
+                    internal_req.model,
+                    fb_model,
+                    primary_err,
                 )
                 try:
                     full_text = await _collect_with_retry(

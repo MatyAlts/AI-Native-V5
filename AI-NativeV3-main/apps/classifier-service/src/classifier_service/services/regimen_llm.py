@@ -95,28 +95,46 @@ RESPONSE_JSON_SCHEMA: dict[str, Any] = {
         "schema": {
             "type": "object",
             "required": [
-                "verbalizacion", "verificacion", "justificacion",
-                "autonomia", "regimen", "confianza", "justificacion_global",
+                "verbalizacion",
+                "verificacion",
+                "justificacion",
+                "autonomia",
+                "regimen",
+                "confianza",
+                "justificacion_global",
             ],
             "additionalProperties": False,
             "properties": {
                 "verbalizacion": {
-                    "type": "object", "required": ["presente", "evidencia"],
+                    "type": "object",
+                    "required": ["presente", "evidencia"],
                     "additionalProperties": False,
-                    "properties": {"presente": {"type": "boolean"}, "evidencia": {"type": "string"}},
+                    "properties": {
+                        "presente": {"type": "boolean"},
+                        "evidencia": {"type": "string"},
+                    },
                 },
                 "verificacion": {
-                    "type": "object", "required": ["presente", "evidencia"],
+                    "type": "object",
+                    "required": ["presente", "evidencia"],
                     "additionalProperties": False,
-                    "properties": {"presente": {"type": "boolean"}, "evidencia": {"type": "string"}},
+                    "properties": {
+                        "presente": {"type": "boolean"},
+                        "evidencia": {"type": "string"},
+                    },
                 },
                 "justificacion": {
-                    "type": "object", "required": ["presente", "evidencia"],
+                    "type": "object",
+                    "required": ["presente", "evidencia"],
                     "additionalProperties": False,
-                    "properties": {"presente": {"type": "boolean"}, "evidencia": {"type": "string"}},
+                    "properties": {
+                        "presente": {"type": "boolean"},
+                        "evidencia": {"type": "string"},
+                    },
                 },
                 "autonomia": {
-                    "type": "object", "required": ["oraculo", "evidencia"],
+                    "type": "object",
+                    "required": ["oraculo", "evidencia"],
                     "additionalProperties": False,
                     "properties": {"oraculo": {"type": "boolean"}, "evidencia": {"type": "string"}},
                 },
@@ -234,7 +252,9 @@ def armar_contexto(events: list[dict]) -> dict[str, Any]:
 
     return {
         "transcript": "\n".join(transcript) if transcript else "(sin diálogo con el tutor)",
-        "codigo_y_notas": "\n".join(codigo_notas) if codigo_notas else "(sin código ni anotaciones)",
+        "codigo_y_notas": "\n".join(codigo_notas)
+        if codigo_notas
+        else "(sin código ni anotaciones)",
         "n_exec": n_exec,
         "n_prompts": n_prompts,
     }
@@ -278,7 +298,7 @@ SALIDA — devolvé EXCLUSIVAMENTE el JSON con la estructura pedida, sin texto a
 _FEWSHOT: list[tuple[str, dict[str, Any]]] = [
     (
         # Episodio 01ab7004 — consenso docente = SUPERFICIAL
-        'ALUMNO: "Me salio esto SyntaxError: invalid syntax. Maybe you meant \'==\' '
+        "ALUMNO: \"Me salio esto SyntaxError: invalid syntax. Maybe you meant '==' "
         "or ':=' instead of '='?\"\n[ejecutó el código 11 veces; ningún otro mensaje]",
         {
             "verbalizacion": {"presente": False, "evidencia": ""},
@@ -295,15 +315,24 @@ _FEWSHOT: list[tuple[str, dict[str, Any]]] = [
     ),
     (
         # Episodio 23ad4ade — consenso docente = REFLEXIVA
-        'ALUMNO: "tengo que usar el formato append, o sea \'a\', verdad?, ya que el '
+        "ALUMNO: \"tengo que usar el formato append, o sea 'a', verdad?, ya que el "
         "formato 'r' es solo de lectura y el formato 'w' volveria a escribir de 0 el "
-        'archivo"\nALUMNO: "el formato \'a\' es el correcto, ya que el ejercicio me pide '
+        "archivo\"\nALUMNO: \"el formato 'a' es el correcto, ya que el ejercicio me pide "
         'agregar un producto al final, sin modificar el archivo"\nALUMNO: "la linea 13 '
         'lo que hace es agregar el producto nuevo al final de la lista"\n[ejecutó el código 2 veces]',
         {
-            "verbalizacion": {"presente": True, "evidencia": "la linea 13 lo que hace es agregar el producto al final"},
-            "verificacion": {"presente": True, "evidencia": "'r' es solo lectura y 'w' volveria a escribir de 0"},
-            "justificacion": {"presente": True, "evidencia": "el formato 'a' es el correcto, ya que el ejercicio me pide agregar al final"},
+            "verbalizacion": {
+                "presente": True,
+                "evidencia": "la linea 13 lo que hace es agregar el producto al final",
+            },
+            "verificacion": {
+                "presente": True,
+                "evidencia": "'r' es solo lectura y 'w' volveria a escribir de 0",
+            },
+            "justificacion": {
+                "presente": True,
+                "evidencia": "el formato 'a' es el correcto, ya que el ejercicio me pide agregar al final",
+            },
             "autonomia": {"oraculo": False, "evidencia": "razona los modos sin que se lo pidan"},
             "regimen": "REFLEXIVA",
             "confianza": 0.95,
@@ -324,7 +353,10 @@ _FEWSHOT: list[tuple[str, dict[str, Any]]] = [
             "verbalizacion": {"presente": False, "evidencia": ""},
             "verificacion": {"presente": False, "evidencia": ""},
             "justificacion": {"presente": False, "evidencia": ""},
-            "autonomia": {"oraculo": True, "evidencia": "pidió 'como lo arreglo' en vez de razonar el error él mismo"},
+            "autonomia": {
+                "oraculo": True,
+                "evidencia": "pidió 'como lo arreglo' en vez de razonar el error él mismo",
+            },
             "regimen": "SUPERFICIAL",
             "confianza": 0.9,
             "justificacion_global": (
@@ -409,8 +441,13 @@ async def clasificar_regimen_llm(
 
     def _result(estado: Estado, regimen, conf, raw, razon) -> RegimenLLMResult:
         return RegimenLLMResult(
-            estado=estado, regimen=regimen, confianza=conf, raw=raw, razon=razon,
-            model_used=model, prompt_version=PROMPT_VERSION,
+            estado=estado,
+            regimen=regimen,
+            confianza=conf,
+            raw=raw,
+            razon=razon,
+            model_used=model,
+            prompt_version=PROMPT_VERSION,
         )
 
     raw: RegimenLLMRaw | None = None
@@ -444,21 +481,40 @@ async def clasificar_regimen_llm(
             raw = None
 
     if raw is None:
-        return _result("error_parseo", None, None, None,
-                       "El modelo no devolvió un JSON válido tras los reintentos.")
+        return _result(
+            "error_parseo",
+            None,
+            None,
+            None,
+            "El modelo no devolvió un JSON válido tras los reintentos.",
+        )
 
     # Verificación de consistencia EN CÓDIGO (la regla manda, no el LLM).
     esperado = regimen_segun_regla(raw)
     if raw.regimen != esperado or not _hay_evidencia_citable(raw):
-        return _result("inconsistente", None, raw.confianza, raw,
-                       f"El régimen del modelo ({raw.regimen}) no respeta la regla "
-                       f"aplicada a sus dimensiones (esperado: {esperado}) o no hay "
-                       f"evidencia citable. Va a revisión humana.")
+        return _result(
+            "inconsistente",
+            None,
+            raw.confianza,
+            raw,
+            f"El régimen del modelo ({raw.regimen}) no respeta la regla "
+            f"aplicada a sus dimensiones (esperado: {esperado}) o no hay "
+            f"evidencia citable. Va a revisión humana.",
+        )
 
     if raw.confianza < confianza_min:
-        return _result("baja_confianza", None, raw.confianza, raw,
-                       f"Confianza {raw.confianza:.2f} < umbral {confianza_min}. "
-                       f"Va a revisión humana.")
+        return _result(
+            "baja_confianza",
+            None,
+            raw.confianza,
+            raw,
+            f"Confianza {raw.confianza:.2f} < umbral {confianza_min}. Va a revisión humana.",
+        )
 
-    return _result("ok", raw.regimen, raw.confianza, raw,
-                   "Clasificación consistente con la regla y confianza suficiente.")
+    return _result(
+        "ok",
+        raw.regimen,
+        raw.confianza,
+        raw,
+        "Clasificación consistente con la regla y confianza suficiente.",
+    )

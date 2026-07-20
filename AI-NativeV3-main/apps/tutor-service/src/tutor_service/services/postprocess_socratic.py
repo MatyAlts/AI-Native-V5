@@ -117,8 +117,7 @@ def _compile_patterns(
     compiled: dict[ViolationCategory, list[tuple[str, re.Pattern[str]]]] = {}
     for cat, items in patterns.items():
         compiled[cat] = [
-            (pid, re.compile(pattern, re.IGNORECASE | re.MULTILINE))
-            for pattern, pid in items
+            (pid, re.compile(pattern, re.IGNORECASE | re.MULTILINE)) for pattern, pid in items
         ]
     return compiled
 

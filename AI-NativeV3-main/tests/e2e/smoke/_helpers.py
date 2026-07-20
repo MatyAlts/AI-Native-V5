@@ -38,9 +38,7 @@ SERVICES_HEALTH = [
     (8012, "integrity-attestation-service"),
 ]
 
-PG_CONN_STR = os.environ.get(
-    "SMOKE_PG_DSN", "postgresql://postgres:postgres@127.0.0.1:5432"
-)
+PG_CONN_STR = os.environ.get("SMOKE_PG_DSN", "postgresql://postgres:postgres@127.0.0.1:5432")
 PILOTO_LOGS_DIR = Path("/tmp/piloto-logs")
 
 

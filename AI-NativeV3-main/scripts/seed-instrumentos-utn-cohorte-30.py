@@ -27,13 +27,9 @@ COMISION_1 = UUID("7b18f4d8-24b7-4034-979e-1fd464939f0e")
 RESPONDIENTES_CUESTIONARIO = [
     UUID(f"c1c1c1c1-{i:04x}-{i:04x}-{i:04x}-{i:012x}") for i in range(1, 19)
 ]
-RESPONDIENTES_PRETEST = [
-    UUID(f"c1c1c1c1-{i:04x}-{i:04x}-{i:04x}-{i:012x}") for i in range(1, 19)
-]
+RESPONDIENTES_PRETEST = [UUID(f"c1c1c1c1-{i:04x}-{i:04x}-{i:04x}-{i:012x}") for i in range(1, 19)]
 # 15 alumnos hicieron el test transferencia (mas exigente)
-RESPONDIENTES_TRANSFER = [
-    UUID(f"c1c1c1c1-{i:04x}-{i:04x}-{i:04x}-{i:012x}") for i in range(1, 16)
-]
+RESPONDIENTES_TRANSFER = [UUID(f"c1c1c1c1-{i:04x}-{i:04x}-{i:04x}-{i:012x}") for i in range(1, 16)]
 
 CUESTIONARIO_IA_VERSION = "cuestionario-ia-v0.1.0-draft"
 PRETEST_VERSION = "lishinski-2016-es-utn-v0.1.0-draft"
@@ -58,7 +54,12 @@ def cuestionario_ia_response_for(idx: int) -> dict:
         "episodios_delegacion_previos": delegacion[idx % 5],
         "verificacion_critica": ((idx + 2) % 5) + 1,
         "uso_no_programacion": freq_options[(idx + 2) % 5],
-        "proyeccion_5_anos": ["Imposible — sera obligatoria", "Improbable", "Posible", "Probable — preferiria evitarla"][idx % 4],
+        "proyeccion_5_anos": [
+            "Imposible — sera obligatoria",
+            "Improbable",
+            "Posible",
+            "Probable — preferiria evitarla",
+        ][idx % 4],
     }
 
 
@@ -81,10 +82,18 @@ def pretest_response_for(idx: int) -> tuple[dict, int, dict]:
     responses = dict(items)
     total = sum(responses.values())
     subs = {
-        "independencia": round((responses["ind_01"] + responses["ind_02"] + responses["ind_03"]) / 3, 2),
-        "complejidad": round((responses["comp_01"] + responses["comp_02"] + responses["comp_03"]) / 3, 2),
-        "aprendizaje": round((responses["apr_01"] + responses["apr_02"] + responses["apr_03"]) / 3, 2),
-        "persistencia": round((responses["per_01"] + responses["per_02"] + responses["per_03"]) / 3, 2),
+        "independencia": round(
+            (responses["ind_01"] + responses["ind_02"] + responses["ind_03"]) / 3, 2
+        ),
+        "complejidad": round(
+            (responses["comp_01"] + responses["comp_02"] + responses["comp_03"]) / 3, 2
+        ),
+        "aprendizaje": round(
+            (responses["apr_01"] + responses["apr_02"] + responses["apr_03"]) / 3, 2
+        ),
+        "persistencia": round(
+            (responses["per_01"] + responses["per_02"] + responses["per_03"]) / 3, 2
+        ),
     }
     return responses, total, subs
 
@@ -94,10 +103,14 @@ def transfer_for(idx: int, test_id: str) -> tuple[bool, int, dict]:
     correct = (idx + hash(test_id)) % 100 < 35
     test_offset = {"transfer-01": 0, "transfer-02": 60, "transfer-03": 30}.get(test_id, 0)
     time_taken = 90 + (idx * 30) + test_offset  # 90-360s
-    return correct, time_taken, {
-        "answer": f"def solucion(...):  # alumno {idx + 1} para {test_id}\n    return None",
-        "submitted_via": "seed-utn-instrumentos",
-    }
+    return (
+        correct,
+        time_taken,
+        {
+            "answer": f"def solucion(...):  # alumno {idx + 1} para {test_id}\n    return None",
+            "submitted_via": "seed-utn-instrumentos",
+        },
+    )
 
 
 async def main() -> None:
@@ -217,7 +230,9 @@ async def main() -> None:
 
         print(f"[OK] {len(RESPONDIENTES_CUESTIONARIO)} respuestas Cuestionario IA")
         print(f"[OK] {len(RESPONDIENTES_PRETEST)} respuestas Pretest Autoeficacia")
-        print(f"[OK] {len(RESPONDIENTES_TRANSFER) * 3} respuestas Test Transferencia (15 alumnos x 3)")
+        print(
+            f"[OK] {len(RESPONDIENTES_TRANSFER) * 3} respuestas Test Transferencia (15 alumnos x 3)"
+        )
     finally:
         await engine.dispose()
 

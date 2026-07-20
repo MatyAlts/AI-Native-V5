@@ -43,9 +43,7 @@ app.include_router(entregas.router)
 
 
 @app.exception_handler(IntegrityError)
-async def integrity_error_handler(
-    request: Request, exc: IntegrityError
-) -> JSONResponse:
+async def integrity_error_handler(request: Request, exc: IntegrityError) -> JSONResponse:
     msg = str(exc.orig) if exc.orig else str(exc)
     if "unique" in msg.lower() or "duplicate" in msg.lower():
         return JSONResponse(

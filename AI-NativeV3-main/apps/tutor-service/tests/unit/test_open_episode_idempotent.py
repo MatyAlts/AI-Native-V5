@@ -284,9 +284,7 @@ async def test_open_episode_reanuda_episodio_sin_cerrar_existente(
 
     tutor = _make_tutor(redis_client, fake_ctr, tenant_id, comision_id)
 
-    returned_id = await _open(
-        tutor, tenant_id, comision_id, student_id, problema_id, ejercicio_id
-    )
+    returned_id = await _open(tutor, tenant_id, comision_id, student_id, problema_id, ejercicio_id)
 
     # Idempotencia: mismo episode_id, sin nuevo episodio_abierto.
     assert returned_id == existing_id
@@ -300,9 +298,7 @@ async def test_open_episode_reanuda_episodio_sin_cerrar_existente(
     assert state.episode_id == existing_id
 
 
-async def test_open_episode_dos_veces_devuelve_mismo_id(
-    redis_client, fake_ctr: _FakeCTR
-) -> None:
+async def test_open_episode_dos_veces_devuelve_mismo_id(redis_client, fake_ctr: _FakeCTR) -> None:
     """Abrir dos veces el mismo ejercicio devuelve el mismo episode_id.
 
     La primera apertura crea (no hay match). La segunda matchea el episodio
@@ -315,9 +311,7 @@ async def test_open_episode_dos_veces_devuelve_mismo_id(
 
     tutor = _make_tutor(redis_client, fake_ctr, tenant_id, comision_id)
 
-    first_id = await _open(
-        tutor, tenant_id, comision_id, student_id, problema_id, ejercicio_id
-    )
+    first_id = await _open(tutor, tenant_id, comision_id, student_id, problema_id, ejercicio_id)
 
     # Simular que el worker persistió el episodio en estado "open" con el
     # ejercicio_id en meta (lo que hace _create_episode en el worker real).
@@ -335,9 +329,7 @@ async def test_open_episode_dos_veces_devuelve_mismo_id(
     # (simula el caso real donde el alumno reabre desde otra pestaña/sesión).
     await tutor.sessions.delete(first_id)
 
-    second_id = await _open(
-        tutor, tenant_id, comision_id, student_id, problema_id, ejercicio_id
-    )
+    second_id = await _open(tutor, tenant_id, comision_id, student_id, problema_id, ejercicio_id)
 
     assert second_id == first_id
     # Solo se emitió UN episodio_abierto (el de la primera apertura).
@@ -345,9 +337,7 @@ async def test_open_episode_dos_veces_devuelve_mismo_id(
     assert len(abiertos) == 1
 
 
-async def test_open_episode_distinto_ejercicio_no_reanuda(
-    redis_client, fake_ctr: _FakeCTR
-) -> None:
+async def test_open_episode_distinto_ejercicio_no_reanuda(redis_client, fake_ctr: _FakeCTR) -> None:
     """Un episodio abierto de OTRO ejercicio del mismo problema NO se reanuda
     — el match por ejercicio_id debe ser exacto."""
     tenant_id = uuid4()

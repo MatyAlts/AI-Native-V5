@@ -60,7 +60,6 @@ import os
 import sys
 from datetime import UTC, date, datetime, timedelta
 from pathlib import Path
-from typing import cast
 from uuid import UUID
 
 ROOT = Path(__file__).parent.parent
@@ -304,8 +303,16 @@ def _build_events_for_episode(
                 "ts": opened_at + timedelta(minutes=22),
                 "payload": {
                     "test_count_total": 5,
-                    "test_count_passed": 5 if is_reflexive else 3 if appropriation == "apropiacion_superficial" else 1,
-                    "test_count_failed": 0 if is_reflexive else 2 if appropriation == "apropiacion_superficial" else 4,
+                    "test_count_passed": 5
+                    if is_reflexive
+                    else 3
+                    if appropriation == "apropiacion_superficial"
+                    else 1,
+                    "test_count_failed": 0
+                    if is_reflexive
+                    else 2
+                    if appropriation == "apropiacion_superficial"
+                    else 4,
                 },
             },
             {
@@ -337,9 +344,7 @@ def _build_events_for_episode(
                         else ""
                     ),
                     "que_quedo_pendiente": (
-                        "Quiero entender cuando hacer copy.deepcopy."
-                        if is_reflexive
-                        else ""
+                        "Quiero entender cuando hacer copy.deepcopy." if is_reflexive else ""
                     ),
                 },
             }
@@ -354,9 +359,7 @@ def _build_events_for_episode(
     prev_chain = GENESIS_HASH
     for seq, spec in enumerate(specs):
         # UUID deterministico del evento (Fibonacci-hash variant)
-        event_uuid = UUID(
-            int=(episode_id.int ^ (seq + 1) * 0x9E3779B97F4A7C15) & ((1 << 128) - 1)
-        )
+        event_uuid = UUID(int=(episode_id.int ^ (seq + 1) * 0x9E3779B97F4A7C15) & ((1 << 128) - 1))
         canonical = _build_event_canonical(
             event_uuid=event_uuid,
             episode_id=episode_id,
@@ -499,7 +502,7 @@ async def seed_unidad_y_tps(academic_url: str) -> None:
                 )
 
             await session.commit()
-            print(f"[OK] 1 unidad + 3 TPs creados en COM-1")
+            print("[OK] 1 unidad + 3 TPs creados en COM-1")
 
     finally:
         await engine.dispose()
@@ -541,7 +544,7 @@ async def seed_inscripciones(academic_url: str) -> None:
                     },
                 )
             await session.commit()
-            print(f"[OK] 30 alumnos inscriptos en COM-1")
+            print("[OK] 30 alumnos inscriptos en COM-1")
     finally:
         await engine.dispose()
 
@@ -599,9 +602,7 @@ async def seed_episodes_y_eventos(
                         days=student_idx * 0.5 + ep_idx * 3,
                         hours=(ep_idx * 4) % 24,
                     )
-                    closed_at = opened_at + timedelta(
-                        minutes=35 + (ep_idx * 5) % 25
-                    )
+                    closed_at = opened_at + timedelta(minutes=35 + (ep_idx * 5) % 25)
 
                     # Episode id deterministico
                     episode_id = UUID(
@@ -762,9 +763,14 @@ async def seed_classifications(
         async with maker() as session:
             await _set_tenant(session, TENANT_UTN)
 
-            for ref_idx, (episode_id, comision_id, pseudo, classified_at, appropriation, _) in enumerate(
-                episode_refs
-            ):
+            for ref_idx, (
+                episode_id,
+                comision_id,
+                pseudo,
+                classified_at,
+                appropriation,
+                _,
+            ) in enumerate(episode_refs):
                 if appropriation == "apropiacion_reflexiva":
                     ct, ccd, orph, stab, evo = 0.85, 0.80, 0.05, 0.78, 0.20
                 elif appropriation == "apropiacion_superficial":
@@ -846,9 +852,9 @@ async def main() -> None:
     print()
     print("=" * 60)
     print("Seed completo:")
-    print(f"  - 1 unidad nueva (Variables y Tipos, orden=3)")
-    print(f"  - 3 TPs publicados (TP-VAR-01/02/03)")
-    print(f"  - 30 alumnos inscriptos")
+    print("  - 1 unidad nueva (Variables y Tipos, orden=3)")
+    print("  - 3 TPs publicados (TP-VAR-01/02/03)")
+    print("  - 30 alumnos inscriptos")
     print(f"  - {len(episode_refs)} episodios CTR (cadena SHA-256 valida)")
     print(f"  - {len(episode_refs)} classifications")
     print("=" * 60)

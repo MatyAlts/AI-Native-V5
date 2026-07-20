@@ -481,9 +481,7 @@ class _RedisLike(Protocol):
     async def zadd(self, key: str, mapping: dict[str, float]) -> int: ...
     async def zremrangebyscore(self, key: str, min_score: float, max_score: float) -> int: ...
     async def zcard(self, key: str) -> int: ...
-    async def zrangebyscore(
-        self, key: str, min_score: float, max_score: float
-    ) -> list[bytes]: ...
+    async def zrangebyscore(self, key: str, min_score: float, max_score: float) -> list[bytes]: ...
     async def expire(self, key: str, seconds: int) -> bool: ...
 
 
@@ -545,9 +543,7 @@ class OveruseDetector:
         await self.redis.zadd(key, {str(prompt_event_id): ts})
         await self.redis.expire(key, _OVERUSE_KEY_TTL_SECONDS)
 
-    async def record_non_prompt_event(
-        self, episode_id: UUID, event_id: UUID, ts: float
-    ) -> None:
+    async def record_non_prompt_event(self, episode_id: UUID, event_id: UUID, ts: float) -> None:
         """Registra un evento cognitivo no-prompt (lectura, edicion, ejecucion).
 
         Se usa para calcular la PROPORCIÓN de prompts en el patrón de inicio.
@@ -574,9 +570,7 @@ class OveruseDetector:
         # Patrón BURST: prompts en la ventana móvil de N segundos. Conteo
         # mediante `zrangebyscore` (inclusivo en ambos extremos), sin trim.
         burst_min = now - OVERUSE_BURST_WINDOW_SECONDS
-        prompts_in_burst_window = await self.redis.zrangebyscore(
-            prompts_key, burst_min, now
-        )
+        prompts_in_burst_window = await self.redis.zrangebyscore(prompts_key, burst_min, now)
         burst_count = len(prompts_in_burst_window)
         if burst_count >= OVERUSE_BURST_THRESHOLD:
             return Match(
@@ -593,12 +587,8 @@ class OveruseDetector:
         # del episodio, ¿la fracción de prompts sobre el total de eventos
         # cognitivos supera el umbral?
         proportion_min = now - OVERUSE_PROPORTION_WINDOW_SECONDS
-        prompts_in_window = await self.redis.zrangebyscore(
-            prompts_key, proportion_min, now
-        )
-        events_in_window = await self.redis.zrangebyscore(
-            events_key, proportion_min, now
-        )
+        prompts_in_window = await self.redis.zrangebyscore(prompts_key, proportion_min, now)
+        events_in_window = await self.redis.zrangebyscore(events_key, proportion_min, now)
         total_in_window = len(prompts_in_window) + len(events_in_window)
         if total_in_window < OVERUSE_MIN_EVENTS_FOR_PROPORTION:
             return None  # piso anti-falso-positivo en episodios cortos

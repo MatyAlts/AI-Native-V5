@@ -43,9 +43,7 @@ _LABELS: dict[str, frozenset[str]] = {
     # κ: es un pre-filtro mecánico ortogonal al continuo de apropiación, nunca se
     # muestrea (el corpus inter-jueces es con-tutor) y `kappa_analysis.CATEGORIES`
     # son las 3 categorías del continuo. Mantenerlo acá rompería el cómputo de κ.
-    "ejes": frozenset(
-        {"delegacion_pasiva", "apropiacion_superficial", "apropiacion_reflexiva"}
-    ),
+    "ejes": frozenset({"delegacion_pasiva", "apropiacion_superficial", "apropiacion_reflexiva"}),
     "subgrupos": frozenset(
         {
             "autonomo_competente",
@@ -127,9 +125,7 @@ async def get_sample(
             .where(
                 Classification.comision_id.in_(comision_id),
                 Classification.is_current.is_(True),
-                Classification.features["subgrupo"]["key"].astext.in_(
-                    _WITH_TUTOR_SUBGRUPOS
-                ),
+                Classification.features["subgrupo"]["key"].astext.in_(_WITH_TUTOR_SUBGRUPOS),
             )
             .subquery()
         )
@@ -138,10 +134,7 @@ async def get_sample(
             .where(ranked.c.rn <= per_eje)
             .order_by(ranked.c.episode_id)
         )
-        eps = [
-            SampleEpisode(episode_id=str(ep), comision_id=str(com))
-            for ep, com in rows.all()
-        ]
+        eps = [SampleEpisode(episode_id=str(ep), comision_id=str(com)) for ep, com in rows.all()]
     return SampleOut(n=len(eps), episodes=eps)
 
 

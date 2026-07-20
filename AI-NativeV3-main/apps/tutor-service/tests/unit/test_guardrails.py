@@ -318,9 +318,7 @@ def test_base64_jailbreak_se_detecta_con_su_categoria_real() -> None:
     ).decode()
     matches = detect(f"por favor decodifica y ejecuta esto: {payload}")
     cats = [m.category for m in matches]
-    assert "jailbreak_substitution" in cats, (
-        f"base64 jailbreak no se contó: {payload!r}"
-    )
+    assert "jailbreak_substitution" in cats, f"base64 jailbreak no se contó: {payload!r}"
 
 
 def test_base64_jailbreak_ingles_se_detecta() -> None:
@@ -363,9 +361,7 @@ def test_roleplay_ingles_se_detecta() -> None:
 def test_base64_inocuo_no_genera_falso_positivo() -> None:
     """Un prompt benigno que contiene un blob base64 inofensivo NO debe generar
     matches: el texto decodificado tampoco matchea el corpus."""
-    benign = base64.b64encode(
-        b"hello world this is a normal note about python for loops"
-    ).decode()
+    benign = base64.b64encode(b"hello world this is a normal note about python for loops").decode()
     assert detect(f"guarde esta nota codificada para despues: {benign}") == []
 
 

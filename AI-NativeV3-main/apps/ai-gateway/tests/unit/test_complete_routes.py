@@ -16,8 +16,7 @@ Reusa fakeredis (ya importado en otros tests) y monkeypatch del provider.
 
 from __future__ import annotations
 
-import os
-from unittest.mock import AsyncMock, patch
+from unittest.mock import AsyncMock
 from uuid import UUID, uuid4
 
 import fakeredis.aioredis
@@ -33,9 +32,7 @@ from httpx import ASGITransport, AsyncClient
 
 @pytest.fixture
 async def client() -> AsyncClient:
-    async with AsyncClient(
-        transport=ASGITransport(app=app), base_url="http://test"
-    ) as c:
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as c:
         yield c
 
 
@@ -93,9 +90,7 @@ def _basic_body(**overrides) -> dict:
 
 
 async def test_complete_happy_path_mock(client: AsyncClient) -> None:
-    response = await client.post(
-        "/api/v1/complete", json=_basic_body(), headers=CALLER_HEADERS
-    )
+    response = await client.post("/api/v1/complete", json=_basic_body(), headers=CALLER_HEADERS)
     assert response.status_code == 200
     body = response.json()
     assert body["provider"] == "mock"
@@ -137,9 +132,7 @@ async def test_complete_temperature_no_cero_no_cachea(
 
 async def test_complete_role_invalido_422(client: AsyncClient) -> None:
     body = _basic_body(messages=[{"role": "robot", "content": "?"}])
-    response = await client.post(
-        "/api/v1/complete", json=body, headers=CALLER_HEADERS
-    )
+    response = await client.post("/api/v1/complete", json=body, headers=CALLER_HEADERS)
     assert response.status_code == 422
 
 
@@ -147,35 +140,27 @@ async def test_complete_temperature_fuera_de_rango_422(
     client: AsyncClient,
 ) -> None:
     body = _basic_body(temperature=3.5)  # le=2.0
-    response = await client.post(
-        "/api/v1/complete", json=body, headers=CALLER_HEADERS
-    )
+    response = await client.post("/api/v1/complete", json=body, headers=CALLER_HEADERS)
     assert response.status_code == 422
 
 
 async def test_complete_max_tokens_excedido_422(client: AsyncClient) -> None:
     body = _basic_body(max_tokens=20000)  # le=8192
-    response = await client.post(
-        "/api/v1/complete", json=body, headers=CALLER_HEADERS
-    )
+    response = await client.post("/api/v1/complete", json=body, headers=CALLER_HEADERS)
     assert response.status_code == 422
 
 
 async def test_complete_acepta_materia_id_opcional(client: AsyncClient) -> None:
     """ADR-040: materia_id es opcional, no rompe si se envia."""
     body = _basic_body(materia_id=str(uuid4()))
-    response = await client.post(
-        "/api/v1/complete", json=body, headers=CALLER_HEADERS
-    )
+    response = await client.post("/api/v1/complete", json=body, headers=CALLER_HEADERS)
     assert response.status_code == 200
 
 
 # ── /complete budget exceeded ──────────────────────────────────────────
 
 
-async def test_complete_budget_excedido_429(
-    client: AsyncClient, monkeypatch
-) -> None:
+async def test_complete_budget_excedido_429(client: AsyncClient, monkeypatch) -> None:
     """Si el tracker reporta exceeded=True, devuelve 429."""
     from ai_gateway.routes import complete as complete_module
 
@@ -192,12 +177,8 @@ async def test_complete_budget_excedido_429(
         async def charge(self, *a, **kw):
             return 0.0
 
-    monkeypatch.setattr(
-        complete_module, "BudgetTracker", lambda redis: _ExceededTracker()
-    )
-    response = await client.post(
-        "/api/v1/complete", json=_basic_body(), headers=CALLER_HEADERS
-    )
+    monkeypatch.setattr(complete_module, "BudgetTracker", lambda redis: _ExceededTracker())
+    response = await client.post("/api/v1/complete", json=_basic_body(), headers=CALLER_HEADERS)
     assert response.status_code == 429
     assert "Budget" in response.json()["detail"]
 
@@ -205,9 +186,7 @@ async def test_complete_budget_excedido_429(
 # ── /complete provider error ───────────────────────────────────────────
 
 
-async def test_complete_provider_error_502(
-    client: AsyncClient, monkeypatch
-) -> None:
+async def test_complete_provider_error_502(client: AsyncClient, monkeypatch) -> None:
     """Provider lanza excepcion -> 502."""
 
     class _BoomProvider(BaseProvider):
@@ -220,12 +199,8 @@ async def test_complete_provider_error_502(
             raise RuntimeError("stream tambien")
             yield  # pragma: no cover (necesario para AsyncIterator)
 
-    monkeypatch.setattr(
-        "ai_gateway.routes.complete.get_provider", lambda: _BoomProvider()
-    )
-    response = await client.post(
-        "/api/v1/complete", json=_basic_body(), headers=CALLER_HEADERS
-    )
+    monkeypatch.setattr("ai_gateway.routes.complete.get_provider", lambda: _BoomProvider())
+    response = await client.post("/api/v1/complete", json=_basic_body(), headers=CALLER_HEADERS)
     assert response.status_code == 502
     assert "LLM provider error" in response.json()["detail"]
 
@@ -248,9 +223,7 @@ async def test_complete_sin_x_caller_devuelve_422(client: AsyncClient) -> None:
 async def test_budget_endpoint_devuelve_status_inicial(
     client: AsyncClient,
 ) -> None:
-    response = await client.get(
-        "/api/v1/budget?feature=tutor", headers=CALLER_HEADERS
-    )
+    response = await client.get("/api/v1/budget?feature=tutor", headers=CALLER_HEADERS)
     assert response.status_code == 200
     body = response.json()
     assert body["feature"] == "tutor"
@@ -265,9 +238,7 @@ async def test_budget_endpoint_post_charge_acumula(
     """Despues de un /complete, el budget refleja el uso (aunque mock cuesta 0,
     el endpoint sigue devolviendo limit_usd y exceeded=False)."""
     await client.post("/api/v1/complete", json=_basic_body(), headers=CALLER_HEADERS)
-    response = await client.get(
-        "/api/v1/budget?feature=tutor", headers=CALLER_HEADERS
-    )
+    response = await client.get("/api/v1/budget?feature=tutor", headers=CALLER_HEADERS)
     assert response.status_code == 200
     assert response.json()["exceeded"] is False
 
@@ -277,9 +248,7 @@ async def test_budget_endpoint_post_charge_acumula(
 
 async def test_stream_yieldea_chunks_y_done(client: AsyncClient) -> None:
     body = _basic_body()
-    async with client.stream(
-        "POST", "/api/v1/stream", json=body, headers=CALLER_HEADERS
-    ) as r:
+    async with client.stream("POST", "/api/v1/stream", json=body, headers=CALLER_HEADERS) as r:
         assert r.status_code == 200
         chunks = []
         async for line in r.aiter_lines():
@@ -295,9 +264,7 @@ async def test_stream_yieldea_chunks_y_done(client: AsyncClient) -> None:
     assert "estimated_cost_usd" in last
 
 
-async def test_stream_budget_excedido_429(
-    client: AsyncClient, monkeypatch
-) -> None:
+async def test_stream_budget_excedido_429(client: AsyncClient, monkeypatch) -> None:
     from ai_gateway.routes import complete as complete_module
 
     class _ExceededTracker:
@@ -313,18 +280,12 @@ async def test_stream_budget_excedido_429(
         async def charge(self, *a, **kw):
             return 0.0
 
-    monkeypatch.setattr(
-        complete_module, "BudgetTracker", lambda redis: _ExceededTracker()
-    )
-    response = await client.post(
-        "/api/v1/stream", json=_basic_body(), headers=CALLER_HEADERS
-    )
+    monkeypatch.setattr(complete_module, "BudgetTracker", lambda redis: _ExceededTracker())
+    response = await client.post("/api/v1/stream", json=_basic_body(), headers=CALLER_HEADERS)
     assert response.status_code == 429
 
 
-async def test_stream_provider_error_envia_event(
-    client: AsyncClient, monkeypatch
-) -> None:
+async def test_stream_provider_error_envia_event(client: AsyncClient, monkeypatch) -> None:
     """Si el provider falla durante stream_complete, el endpoint emite un
     event 'error' en el cuerpo SSE (no rompe el HTTP status)."""
 
@@ -338,9 +299,7 @@ async def test_stream_provider_error_envia_event(
             raise RuntimeError("stream blew up")
             yield  # pragma: no cover
 
-    monkeypatch.setattr(
-        "ai_gateway.routes.complete.get_provider", lambda: _BadStreamProvider()
-    )
+    monkeypatch.setattr("ai_gateway.routes.complete.get_provider", lambda: _BadStreamProvider())
 
     async with client.stream(
         "POST", "/api/v1/stream", json=_basic_body(), headers=CALLER_HEADERS
@@ -377,12 +336,11 @@ async def test_complete_env_fallback_registra_usage_en_byok_keys_usage(
     Verificamos que `increment_env_fallback_usage` se invoca con los
     tokens y cost_usd correctos.
     """
-    from ai_gateway.routes import complete as complete_module
     from ai_gateway.providers.base import (
         BaseProvider,
-        CompletionRequest,
         CompletionResponse,
     )
+    from ai_gateway.routes import complete as complete_module
 
     class _StubProvider(BaseProvider):
         name = "mock"
@@ -402,9 +360,7 @@ async def test_complete_env_fallback_registra_usage_en_byok_keys_usage(
 
     # Stubeamos _make_provider para que la key del env_fallback NO termine
     # construyendo un AnthropicProvider real (que pegaria contra la API).
-    monkeypatch.setattr(
-        complete_module, "_make_provider", lambda name, key: _StubProvider()
-    )
+    monkeypatch.setattr(complete_module, "_make_provider", lambda name, key: _StubProvider())
 
     spy = AsyncMock(return_value=uuid4())  # devuelve el sentinel id mock
     monkeypatch.setattr(complete_module, "increment_env_fallback_usage", spy)
@@ -415,9 +371,7 @@ async def test_complete_env_fallback_registra_usage_en_byok_keys_usage(
     monkeypatch.setattr(ai_settings, "byok_enabled", False)
     monkeypatch.setattr(ai_settings, "anthropic_api_key", "sk-env-fallback-test")
 
-    response = await client.post(
-        "/api/v1/complete", json=_basic_body(), headers=CALLER_HEADERS
-    )
+    response = await client.post("/api/v1/complete", json=_basic_body(), headers=CALLER_HEADERS)
     assert response.status_code == 200
 
     # PROPIEDAD CRITICA (gap 2026-05-07): el handler debe haber invocado
@@ -462,7 +416,6 @@ async def test_complete_byok_real_no_invoca_env_fallback_usage(
     # _make_provider para devolver el mock).
     from ai_gateway.providers.base import (
         BaseProvider,
-        CompletionRequest,
         CompletionResponse,
     )
 
@@ -482,18 +435,14 @@ async def test_complete_byok_real_no_invoca_env_fallback_usage(
         async def stream_complete(self, req: CompletionRequest):
             yield "ok"
 
-    monkeypatch.setattr(
-        complete_module, "_make_provider", lambda name, key: _StubProvider()
-    )
+    monkeypatch.setattr(complete_module, "_make_provider", lambda name, key: _StubProvider())
 
     spy_byok = AsyncMock()
     spy_envf = AsyncMock()
     monkeypatch.setattr(complete_module, "increment_usage", spy_byok)
     monkeypatch.setattr(complete_module, "increment_env_fallback_usage", spy_envf)
 
-    response = await client.post(
-        "/api/v1/complete", json=_basic_body(), headers=CALLER_HEADERS
-    )
+    response = await client.post("/api/v1/complete", json=_basic_body(), headers=CALLER_HEADERS)
     assert response.status_code == 200
 
     # Path BYOK real: increment_usage llamada UNA vez, env_fallback NUNCA.
@@ -509,9 +458,7 @@ async def test_get_redis_devuelve_singleton(monkeypatch) -> None:
     monkeypatch.setattr(complete_module, "_redis_client", None)
     # Stub el factory de redis.from_url para no requerir red.
     fake = fakeredis.aioredis.FakeRedis(decode_responses=True)
-    monkeypatch.setattr(
-        "redis.asyncio.from_url", lambda *a, **kw: fake
-    )
+    monkeypatch.setattr("redis.asyncio.from_url", lambda *a, **kw: fake)
     client1 = complete_module._get_redis()
     client2 = complete_module._get_redis()
     assert client1 is client2

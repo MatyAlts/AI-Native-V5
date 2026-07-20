@@ -189,9 +189,7 @@ async def post_create_key(
             monthly_budget_usd=req.monthly_budget_usd,
         )
     except BYOKConflictError as exc:
-        raise HTTPException(
-            status_code=status.HTTP_409_CONFLICT, detail=str(exc)
-        ) from exc
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from exc
     except ValueError as exc:
         msg = str(exc)
         if "BYOK_MASTER_KEY" in msg:

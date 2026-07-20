@@ -4,9 +4,7 @@ from functools import cached_property, lru_cache
 
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
-_DEFAULT_CORS_ORIGINS_CSV = (
-    "http://localhost:5173,http://localhost:5174,http://localhost:5175"
-)
+_DEFAULT_CORS_ORIGINS_CSV = "http://localhost:5173,http://localhost:5174,http://localhost:5175"
 
 
 class Settings(BaseSettings):

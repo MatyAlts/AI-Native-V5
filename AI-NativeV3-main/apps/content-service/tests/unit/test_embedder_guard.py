@@ -65,7 +65,7 @@ def test_get_embedder_mock_en_produccion_falla_fuerte(
 
 
 def test_get_embedder_fallback_silencioso_falla_fuerte_en_prod(
-    monkeypatch: pytest.MonkeyPatch
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """El caso real del BUG-4: EMBEDDER sin setear + deps reales ausentes.
 
@@ -144,9 +144,7 @@ async def test_ingesta_con_mock_warnea_y_marca_los_chunks(
     session = _FakeSession()
     pipeline = IngestionPipeline(session)
 
-    with caplog.at_level(
-        logging.WARNING, logger="content_service.services.ingestion"
-    ):
+    with caplog.at_level(logging.WARNING, logger="content_service.services.ingestion"):
         result = await pipeline.ingest(material, content, "guia.md")
 
     # 1. Indexó pero deja el modo expuesto (no finge que es real).
@@ -159,8 +157,7 @@ async def test_ingesta_con_mock_warnea_y_marca_los_chunks(
     ingest_warnings = [
         r
         for r in caplog.records
-        if r.name == "content_service.services.ingestion"
-        and r.levelno == logging.WARNING
+        if r.name == "content_service.services.ingestion" and r.levelno == logging.WARNING
     ]
     assert ingest_warnings, "esperaba WARNING al indexar con embedder mock"
     assert "FALSOS" in ingest_warnings[0].getMessage()

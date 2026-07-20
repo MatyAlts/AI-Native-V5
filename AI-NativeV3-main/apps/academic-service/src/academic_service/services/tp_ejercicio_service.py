@@ -53,9 +53,7 @@ class TpEjercicioService:
                 ),
             )
 
-    async def list_by_tp(
-        self, tarea_practica_id: UUID
-    ) -> list[tuple[TpEjercicio, Ejercicio]]:
+    async def list_by_tp(self, tarea_practica_id: UUID) -> list[tuple[TpEjercicio, Ejercicio]]:
         """Lista las asociaciones de una TP con su Ejercicio embebido.
 
         Devuelve tuplas ordenadas por `orden`. NO valida estado de la TP
@@ -126,10 +124,7 @@ class TpEjercicioService:
         if pair is None:
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
-                detail=(
-                    f"Ejercicio {ejercicio_id} no está asociado a la TP "
-                    f"{tarea_practica_id}"
-                ),
+                detail=(f"Ejercicio {ejercicio_id} no está asociado a la TP {tarea_practica_id}"),
             )
 
         changes: dict[str, str | int] = {}
@@ -167,10 +162,7 @@ class TpEjercicioService:
         if pair is None:
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
-                detail=(
-                    f"Ejercicio {ejercicio_id} no está asociado a la TP "
-                    f"{tarea_practica_id}"
-                ),
+                detail=(f"Ejercicio {ejercicio_id} no está asociado a la TP {tarea_practica_id}"),
             )
 
         pair_id = pair.id

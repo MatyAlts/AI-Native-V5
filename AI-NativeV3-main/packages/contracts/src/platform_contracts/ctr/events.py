@@ -470,9 +470,7 @@ class CopiaIntentadaPayload(BaseModel):
     """Intento de copiar contenido del editor Monaco (bloqueado por la UI)."""
 
     seleccion_chars: int = Field(ge=0, description="Caracteres seleccionados al intentar copiar")
-    metodo: Literal["shortcut", "menu_contextual"] = Field(
-        description="Como dispararon la accion"
-    )
+    metodo: Literal["shortcut", "menu_contextual"] = Field(description="Como dispararon la accion")
 
 
 class CopiaIntentada(CTRBaseEvent):

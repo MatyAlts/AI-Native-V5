@@ -251,7 +251,11 @@ def test_sin_eventos_no_modifica_classification() -> None:
 
 
 def test_dos_llamadas_idempotentes() -> None:
-    events = [_adv_event("direct_answer", 3), _adv_event("direct_answer", 3), _adv_event("direct_answer", 3)]
+    events = [
+        _adv_event("direct_answer", 3),
+        _adv_event("direct_answer", 3),
+        _adv_event("direct_answer", 3),
+    ]
     signals = extract_guardrail_signals(events)
     classification = FakeClassification(appropriation="apropiacion_reflexiva")
 

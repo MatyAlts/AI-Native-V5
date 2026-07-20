@@ -81,8 +81,10 @@ async def main() -> int:
     ids = {str(e.get("episode_id", "")) for e in episodios}
     solapados = {fid for fid in _FEWSHOT_EPISODE_IDS if any(i.startswith(fid) for i in ids)}
     if solapados:
-        print(f"[ADVERTENCIA] Few-shot dentro del eval (LEAKAGE): {solapados}. "
-              f"Excluilos del conjunto o rotá few-shot por fold.\n")
+        print(
+            f"[ADVERTENCIA] Few-shot dentro del eval (LEAKAGE): {solapados}. "
+            f"Excluilos del conjunto o rotá few-shot por fold.\n"
+        )
 
     ratings: list[KappaRating] = []
     estados: Counter[str] = Counter()
@@ -103,15 +105,23 @@ async def main() -> int:
             confianza_min=args.confianza_min,
         )
         estados[res.estado] += 1
-        detalle.append({
-            "episode_id": eid, "gold": gold, "estado": res.estado,
-            "regimen": res.regimen, "confianza": res.confianza, "razon": res.razon,
-        })
+        detalle.append(
+            {
+                "episode_id": eid,
+                "gold": gold,
+                "estado": res.estado,
+                "regimen": res.regimen,
+                "confianza": res.confianza,
+                "razon": res.razon,
+            }
+        )
         # Solo los "ok" entran al κ; el resto va a revisión humana (se cuenta aparte).
         if res.estado == "ok" and res.regimen is not None:
             ratings.append(KappaRating(episode_id=eid, rater_a=gold, rater_b=res.regimen))
-        print(f"  {eid[:8]}  gold={gold:11}  →  {res.estado:14} "
-              f"{res.regimen or '—':11} (conf={res.confianza})")
+        print(
+            f"  {eid[:8]}  gold={gold:11}  →  {res.estado:14} "
+            f"{res.regimen or '—':11} (conf={res.confianza})"
+        )
 
     print("\n" + "=" * 60)
     print(f"Episodios: {len(episodios)} · estados: {dict(estados)}")
@@ -121,9 +131,11 @@ async def main() -> int:
         try:
             r = compute_cohen_kappa(ratings, categories=_CATS)
             print("\n" + format_report(r))
-            print(f"\n>>> κ del juez LLM = {r.kappa:.3f}  "
-                  f"IC95% [{r.kappa_ci_95[0]:.3f}, {r.kappa_ci_95[1]:.3f}]  "
-                  f"AC1 = {r.ac1:.3f}  (vs κ ≈ −0,06 conductual)")
+            print(
+                f"\n>>> κ del juez LLM = {r.kappa:.3f}  "
+                f"IC95% [{r.kappa_ci_95[0]:.3f}, {r.kappa_ci_95[1]:.3f}]  "
+                f"AC1 = {r.ac1:.3f}  (vs κ ≈ −0,06 conductual)"
+            )
         except Exception as exc:
             print(f"\nNo se pudo computar κ: {exc}")
     else:

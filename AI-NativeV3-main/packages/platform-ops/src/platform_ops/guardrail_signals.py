@@ -25,7 +25,7 @@ Funciones puras, deterministicas, sin side-effects. Tests golden en
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field, replace
+from dataclasses import dataclass, replace
 from typing import Any
 
 GUARDRAIL_MODIFIER_VERSION = "1.0.0"

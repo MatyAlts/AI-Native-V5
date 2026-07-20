@@ -23,10 +23,7 @@ depends_on: str | Sequence[str] | None = None
 
 _CONSTRAINT = "ck_ejercicios_unidad_tematica"
 _TABLE = "ejercicios"
-_OLD = (
-    "unidad_tematica IN "
-    "('secuenciales', 'condicionales', 'repetitivas', 'mixtos', 'funciones')"
-)
+_OLD = "unidad_tematica IN ('secuenciales', 'condicionales', 'repetitivas', 'mixtos', 'funciones')"
 
 
 def upgrade() -> None:

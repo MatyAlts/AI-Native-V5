@@ -29,7 +29,6 @@ from evaluation_service.models.base import (
     Base,
     TenantMixin,
     TimestampMixin,
-    fk_uuid,
     uuid_pk,
 )
 
@@ -69,9 +68,7 @@ class Entrega(Base, TenantMixin, TimestampMixin):
     ejercicio_estados: Mapped[list[dict[str, Any]]] = mapped_column(
         JSONB, nullable=False, default=list, server_default=sa.text("'[]'::jsonb")
     )
-    submitted_at: Mapped[datetime | None] = mapped_column(
-        DateTime(timezone=True), nullable=True
-    )
+    submitted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
     calificacion: Mapped[Calificacion | None] = relationship(
         back_populates="entrega", uselist=False
@@ -123,9 +120,7 @@ class Calificacion(Base, TenantMixin, TimestampMixin):
     # updated_at: timestamp de la ULTIMA re-calificacion (NB-4). NULL hasta que
     # el docente corrige una nota ya puesta. `graded_at` preserva el momento de
     # la primera calificacion; `updated_at` marca la correccion mas reciente.
-    updated_at: Mapped[datetime | None] = mapped_column(
-        DateTime(timezone=True), nullable=True
-    )
+    updated_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
     entrega: Mapped[Entrega] = relationship(back_populates="calificacion")
 

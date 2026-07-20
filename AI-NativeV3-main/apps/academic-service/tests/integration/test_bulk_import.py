@@ -498,9 +498,7 @@ def _fake_comision(cid: UUID, tenant_id: UUID) -> MagicMock:
     return c
 
 
-def _patch_comision_repo_get(
-    monkeypatch, *, valid_id: UUID, tenant_id: UUID
-) -> None:
+def _patch_comision_repo_get(monkeypatch, *, valid_id: UUID, tenant_id: UUID) -> None:
     """Stubea ComisionRepository.get_or_404: 200 si id == valid_id, 404 sino."""
     from academic_service.repositories import ComisionRepository
 
@@ -580,8 +578,7 @@ async def test_bulk_import_inscripciones_dry_run_comision_inexistente(
     _patch_comision_repo_get(monkeypatch, valid_id=comision_real, tenant_id=tenant_a_id)
 
     csv_text = (
-        "comision_id,student_pseudonym,fecha_inscripcion\n"
-        f"{comision_bogus},{uuid4()},2026-03-15\n"
+        f"comision_id,student_pseudonym,fecha_inscripcion\n{comision_bogus},{uuid4()},2026-03-15\n"
     )
     svc = BulkImportService(mock_session)
     rows = svc.parse_csv(csv_text.encode("utf-8"), "inscripciones")

@@ -282,8 +282,7 @@ def _instance_id_for(template_id: UUID, cohort_idx: int) -> UUID:
     fila real de `tareas_practicas` post-seed.
     """
     return UUID(
-        int=(template_id.int ^ ((cohort_idx + 1) * 0xC0DE_C0DE_C0DE_C0DE))
-        & ((1 << 128) - 1)
+        int=(template_id.int ^ ((cohort_idx + 1) * 0xC0DE_C0DE_C0DE_C0DE)) & ((1 << 128) - 1)
     )
 
 
@@ -641,9 +640,7 @@ async def seed_academic(academic_url: str) -> dict[UUID, list[UUID]]:
                 # para que `Episode.problema_id` apunte a esta misma fila.
                 for cohort_idx, cohort in enumerate(COHORTES):
                     instance_id = _instance_id_for(cast(UUID, tpl["id"]), cohort_idx)
-                    tp_instances_by_comision[cast(UUID, cohort["comision_id"])].append(
-                        instance_id
-                    )
+                    tp_instances_by_comision[cast(UUID, cohort["comision_id"])].append(instance_id)
                     # Fechas: inicio hoy-15d, fin hoy+30d (TP en curso)
                     fecha_inicio = datetime.combine(
                         today - timedelta(days=15),
@@ -944,9 +941,7 @@ async def seed_ctr(
                                 },
                             )
                         classified_at = closed_at + timedelta(minutes=2)
-                        episode_refs.append(
-                            (episode_id, comision_id, pseudo, classified_at)
-                        )
+                        episode_refs.append((episode_id, comision_id, pseudo, classified_at))
 
             await session.commit()
     finally:

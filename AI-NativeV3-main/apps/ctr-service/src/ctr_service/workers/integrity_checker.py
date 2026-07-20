@@ -192,9 +192,7 @@ class IntegrityChecker:
             )
             await session.commit()
 
-        ctr_episodes_integrity_compromised_total.add(
-            1, {"tenant_id": str(tenant_id)}
-        )
+        ctr_episodes_integrity_compromised_total.add(1, {"tenant_id": str(tenant_id)})
 
 
 # ── CLI entry ───────────────────────────────────────────────────────────

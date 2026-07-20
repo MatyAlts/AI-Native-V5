@@ -12,7 +12,7 @@ from uuid import uuid4
 
 import pytest
 from academic_service.schemas.inscripcion import InscripcionCreateIndividual, InscripcionOut
-from academic_service.schemas.usuario_comision import UsuarioComisionCreate, UsuarioComisionOut
+from academic_service.schemas.usuario_comision import UsuarioComisionCreate
 from pydantic import ValidationError
 
 

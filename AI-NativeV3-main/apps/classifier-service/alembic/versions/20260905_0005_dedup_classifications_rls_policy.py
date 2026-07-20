@@ -44,9 +44,7 @@ depends_on: str | Sequence[str] | None = None
 def upgrade() -> None:
     # Borra la policy redundante; conserva la canonica `tenant_isolation`
     # creada por apply_tenant_rls() (migracion 20260901_0001).
-    op.execute(
-        "DROP POLICY IF EXISTS tenant_isolation_classifications ON classifications"
-    )
+    op.execute("DROP POLICY IF EXISTS tenant_isolation_classifications ON classifications")
 
 
 def downgrade() -> None:

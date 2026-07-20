@@ -59,23 +59,53 @@ class Subgrupo:
     eje: str  # roll-up: reflexiva | superficial | delegacion_pasiva | autonomo | sin_clasificar
 
 
-INDETERMINADO = Subgrupo("indeterminado", "Indeterminado", "No concluir - episodio muy corto", "sin_clasificar")
+INDETERMINADO = Subgrupo(
+    "indeterminado", "Indeterminado", "No concluir - episodio muy corto", "sin_clasificar"
+)
 # Brazo sin-tutor (prompts == 0): TODO el brazo rollea al eje `autonomo` (v4.0.0).
 # Estos subgrupos son SOLO alcanzables desde el gate `prompts == 0` en
 # `clasificar_subgrupo`, por eso su eje fijo es `autonomo` sin ambiguedad.
-AUTONOMO_COMPETENTE = Subgrupo("autonomo_competente", "Autonomo competente", "Darle mas desafio", "autonomo")
-AUTONOMO_TRABADO = Subgrupo("autonomo_trabado", "Autonomo trabado", "Ofrecer scaffolding", "autonomo")
-ESCRIBE_SIN_VALIDAR = Subgrupo("escribe_sin_validar", "Escribio sin validar", "Fomentar ejecutar y probar el codigo", "autonomo")
+AUTONOMO_COMPETENTE = Subgrupo(
+    "autonomo_competente", "Autonomo competente", "Darle mas desafio", "autonomo"
+)
+AUTONOMO_TRABADO = Subgrupo(
+    "autonomo_trabado", "Autonomo trabado", "Ofrecer scaffolding", "autonomo"
+)
+ESCRIBE_SIN_VALIDAR = Subgrupo(
+    "escribe_sin_validar",
+    "Escribio sin validar",
+    "Fomentar ejecutar y probar el codigo",
+    "autonomo",
+)
 # `autonomo_desenganchado` = el "poco trabajo" del brazo SIN tutor. Es un subgrupo
 # PROPIO (no el `desenganchado` compartido) justamente para que el brazo prompts==0
 # NUNCA emita el `desenganchado` (eje superficial) — el `desenganchado` queda
 # reservado al brazo CON tutor (prompts > 0), que sigue rolleando a `superficial`.
-AUTONOMO_DESENGANCHADO = Subgrupo("autonomo_desenganchado", "Autonomo desenganchado", "Re-enganchar (trabajo solo, sin avance)", "autonomo")
+AUTONOMO_DESENGANCHADO = Subgrupo(
+    "autonomo_desenganchado",
+    "Autonomo desenganchado",
+    "Re-enganchar (trabajo solo, sin avance)",
+    "autonomo",
+)
 DESENGANCHADO = Subgrupo("desenganchado", "Desenganchado", "Re-enganchar", "superficial")
-DEPENDIENTE = Subgrupo("dependiente_delegador", "Dependiente / delegador", "Intervenir (copio de la IA)", "delegacion_pasiva")
-DEPENDIENTE_SOBREUSO = Subgrupo("dependiente_sobreuso", "Dependiente (sobreuso)", "Intervenir - se apoya de mas en el tutor (overuse)", "delegacion_pasiva")
-COLABORADOR_REFLEXIVO = Subgrupo("colaborador_reflexivo", "Colaborador reflexivo", "Va bien", "reflexiva")
-COLABORADOR_FUNCIONAL = Subgrupo("colaborador_funcional", "Colaborador funcional", "Empujar a profundizar", "superficial")
+DEPENDIENTE = Subgrupo(
+    "dependiente_delegador",
+    "Dependiente / delegador",
+    "Intervenir (copio de la IA)",
+    "delegacion_pasiva",
+)
+DEPENDIENTE_SOBREUSO = Subgrupo(
+    "dependiente_sobreuso",
+    "Dependiente (sobreuso)",
+    "Intervenir - se apoya de mas en el tutor (overuse)",
+    "delegacion_pasiva",
+)
+COLABORADOR_REFLEXIVO = Subgrupo(
+    "colaborador_reflexivo", "Colaborador reflexivo", "Va bien", "reflexiva"
+)
+COLABORADOR_FUNCIONAL = Subgrupo(
+    "colaborador_funcional", "Colaborador funcional", "Empujar a profundizar", "superficial"
+)
 
 
 def _kind(e: dict) -> str:
@@ -95,13 +125,17 @@ def dim_autonomia(events: list[dict]) -> float:
     """1.0 = autónomo puro. origin real en prod: student_typed / pasted_external."""
     prompts = _count(events, "prompt_enviado")
     ediciones = [e for e in events if e.get("event_type") == "edicion_codigo"]
-    pegadas = sum(1 for e in ediciones if (e.get("payload") or {}).get("origin") == "pasted_external")
+    pegadas = sum(
+        1 for e in ediciones if (e.get("payload") or {}).get("origin") == "pasted_external"
+    )
     paste_ratio = pegadas / len(ediciones) if ediciones else 0.0
     return 0.5 * (1.0 - min(1.0, prompts / PROMPT_SCALE)) + 0.5 * (1.0 - paste_ratio)
 
 
 def dim_experimentacion(events: list[dict]) -> float:
-    return min(1.0, (_count(events, "codigo_ejecutado") + _count(events, "tests_ejecutados")) / EXEC_SCALE)
+    return min(
+        1.0, (_count(events, "codigo_ejecutado") + _count(events, "tests_ejecutados")) / EXEC_SCALE
+    )
 
 
 def dim_persistencia(events: list[dict]) -> float:
@@ -112,7 +146,10 @@ def dim_persistencia(events: list[dict]) -> float:
         p = e.get("payload") or {}
         if e.get("event_type") == "codigo_ejecutado" and (p.get("stderr") or "") != "":
             fallos += 1
-            if any(ev.get("event_type") in ("edicion_codigo", "codigo_ejecutado") for ev in sev[i + 1:]):
+            if any(
+                ev.get("event_type") in ("edicion_codigo", "codigo_ejecutado")
+                for ev in sev[i + 1 :]
+            ):
                 recup += 1
     return 1.0 if fallos == 0 else recup / fallos
 
@@ -128,7 +165,11 @@ def dim_foco(events: list[dict]) -> float:
 
 def _resolvio(events: list[dict]) -> bool:
     """La ÚLTIMA ejecución terminó limpia (stdout no vacío, sin stderr)."""
-    ejec = [e for e in sorted(events, key=lambda e: e.get("seq", 0)) if e.get("event_type") == "codigo_ejecutado"]
+    ejec = [
+        e
+        for e in sorted(events, key=lambda e: e.get("seq", 0))
+        if e.get("event_type") == "codigo_ejecutado"
+    ]
     if not ejec:
         return False
     p = ejec[-1].get("payload") or {}
@@ -141,8 +182,7 @@ def _verbaliza(events: list[dict]) -> bool:
     if _count(events, "anotacion_creada") > 0:
         return True
     return any(
-        e.get("event_type") == "prompt_enviado" and _kind(e) in _REFLECTIVE_KINDS
-        for e in events
+        e.get("event_type") == "prompt_enviado" and _kind(e) in _REFLECTIVE_KINDS for e in events
     )
 
 
@@ -158,7 +198,8 @@ def clasificar_subgrupo(events: list[dict]) -> Subgrupo:
     ediciones = _count(events, "edicion_codigo")
     exp = dim_experimentacion(events)
     sol_directa = sum(
-        1 for e in events
+        1
+        for e in events
         if e.get("event_type") == "prompt_enviado" and _kind(e) == "solicitud_directa"
     )
     poco_trabajo = ediciones < EDIT_MIN and ejec < TRABADO_MIN_EJEC

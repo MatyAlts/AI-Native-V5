@@ -180,9 +180,7 @@ async def _aplicar_juez_eje_fino(
         )
     except Exception as exc:
         # Gateway caído / cualquier error: el cierre NO falla — fallback a proxy.
-        _marcar_para_revision(
-            features, result, f"juez_eje_fino_error_gateway: {exc}"
-        )
+        _marcar_para_revision(features, result, f"juez_eje_fino_error_gateway: {exc}")
         logger.warning(
             "eje_fino_llm_fallback_gateway",
             extra={"episode_id": str(episode_id), "error": str(exc)},
@@ -196,8 +194,7 @@ async def _aplicar_juez_eje_fino(
         appropriation = REGIMEN_TO_APPROPRIATION[res.regimen]
         result.appropriation = appropriation  # type: ignore[attr-defined]
         result.reason = (  # type: ignore[attr-defined]
-            f"Juez LLM (eje fino) gobierna: regimen {res.regimen} -> {appropriation}. "
-            f"{res.razon}"
+            f"Juez LLM (eje fino) gobierna: regimen {res.regimen} -> {appropriation}. {res.razon}"
         )
         result.features = features  # type: ignore[attr-defined]
         logger.info(
@@ -211,9 +208,7 @@ async def _aplicar_juez_eje_fino(
         )
     else:
         # Veredicto no-ok: conservar proxy conductual + marcar revisión humana.
-        _marcar_para_revision(
-            features, result, f"juez_eje_fino_{res.estado}: {res.razon}"
-        )
+        _marcar_para_revision(features, result, f"juez_eje_fino_{res.estado}: {res.razon}")
         logger.info(
             "eje_fino_llm_fallback_proxy",
             extra={"episode_id": str(episode_id), "estado": res.estado},

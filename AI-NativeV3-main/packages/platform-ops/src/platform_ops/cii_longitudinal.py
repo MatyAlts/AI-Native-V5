@@ -260,9 +260,11 @@ def compute_cii_evolution_longitudinal(
     # suficientes" aunque el alumno tenga episodios. Fallback al agrupamiento por
     # Unidad para que el resumen refleje la trazabilidad real. Si en el futuro
     # vuelven los templates, per_template tiene prioridad (BC con la tesis / ADR-018).
-    summary_groups = per_template if per_template else [
-        g for g in per_unidad if g.get("unidad_id") != "sin_unidad"
-    ]
+    summary_groups = (
+        per_template
+        if per_template
+        else [g for g in per_unidad if g.get("unidad_id") != "sin_unidad"]
+    )
     mean_slope = compute_mean_slope(summary_groups)
 
     # Tendencia general del alumno (todos los episodios por fecha). Fallback final

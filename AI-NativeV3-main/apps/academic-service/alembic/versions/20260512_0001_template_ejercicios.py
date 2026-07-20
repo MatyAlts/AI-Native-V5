@@ -9,8 +9,8 @@ ahora puede copiar ejercicios secuenciales (epic tp-entregas-correccion)
 desde la plantilla. `test_cases` ya estaba (ADR-034); `ejercicios` faltaba.
 """
 
-from alembic import op
 import sqlalchemy as sa
+from alembic import op
 from sqlalchemy.dialects.postgresql import JSONB
 
 # revision identifiers, used by Alembic.

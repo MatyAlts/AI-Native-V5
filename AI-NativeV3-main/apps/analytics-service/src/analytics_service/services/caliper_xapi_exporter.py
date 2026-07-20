@@ -48,7 +48,6 @@ from __future__ import annotations
 
 from datetime import datetime
 from typing import Any
-from uuid import UUID
 
 # IRIs de namespace AI-Native para terminos del Modelo N4 que no tienen
 # equivalente en Caliper/xAPI estandar. Permite que auditores externos
@@ -314,10 +313,7 @@ def _xapi_statement(event: dict[str, Any], context: dict[str, Any]) -> dict[str,
             "platform": "AI-Native N4",
             "extensions": {
                 f"{AI_NATIVE_VOCAB_BASE}context/episode_id": context["episode_id"],
-                **{
-                    f"{AI_NATIVE_VOCAB_BASE}context/{k}": v
-                    for k, v in extensions.items()
-                },
+                **{f"{AI_NATIVE_VOCAB_BASE}context/{k}": v for k, v in extensions.items()},
             },
         },
         "version": XAPI_VERSION,
@@ -337,9 +333,7 @@ def _xapi_statement(event: dict[str, Any], context: dict[str, Any]) -> dict[str,
     return statement
 
 
-def to_xapi(
-    events: list[dict[str, Any]], context: dict[str, Any]
-) -> list[dict[str, Any]]:
+def to_xapi(events: list[dict[str, Any]], context: dict[str, Any]) -> list[dict[str, Any]]:
     """Lista de xAPI 1.0.3 statements para los eventos de un episodio.
 
     A diferencia de Caliper que envuelve eventos en un sensor envelope, xAPI

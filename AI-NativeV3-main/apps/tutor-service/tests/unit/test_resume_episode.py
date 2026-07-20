@@ -318,9 +318,7 @@ async def test_resume_403_si_estudiante_ajeno_con_sesion_viva(
     # Un estudiante ajeno intenta reanudar el MISMO episodio con sesión viva.
     intruder = uuid4()
     with pytest.raises(HTTPException) as exc_info:
-        await tutor.resume_episode(
-            episode_id=episode_id, tenant_id=tenant_id, user_id=intruder
-        )
+        await tutor.resume_episode(episode_id=episode_id, tenant_id=tenant_id, user_id=intruder)
     assert exc_info.value.status_code == 403
 
     # La sesión del dueño sigue intacta — no se devolvió su contexto al intruso.

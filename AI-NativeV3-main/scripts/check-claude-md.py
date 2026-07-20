@@ -51,8 +51,7 @@ def count_smoke_tests() -> int:
         return 0
     pattern = re.compile(r"^def test_", re.MULTILINE)
     return sum(
-        len(pattern.findall(f.read_text(encoding="utf-8")))
-        for f in smoke_dir.glob("test_*.py")
+        len(pattern.findall(f.read_text(encoding="utf-8"))) for f in smoke_dir.glob("test_*.py")
     )
 
 

@@ -119,21 +119,13 @@ class InterraterRating(Base, TenantMixin):
     __tablename__ = "interrater_ratings"
 
     id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
-    episode_id: Mapped[uuid.UUID] = mapped_column(
-        PgUUID(as_uuid=True), nullable=False, index=True
-    )
-    comision_id: Mapped[uuid.UUID] = mapped_column(
-        PgUUID(as_uuid=True), nullable=False, index=True
-    )
+    episode_id: Mapped[uuid.UUID] = mapped_column(PgUUID(as_uuid=True), nullable=False, index=True)
+    comision_id: Mapped[uuid.UUID] = mapped_column(PgUUID(as_uuid=True), nullable=False, index=True)
     # Materia del episodio. Permite agregar el acuerdo a nivel MATERIA (cruzando
     # comisiones). Nullable: las filas viejas (comisión-scoped) quedan en NULL.
-    materia_id: Mapped[uuid.UUID | None] = mapped_column(
-        PgUUID(as_uuid=True), nullable=True
-    )
+    materia_id: Mapped[uuid.UUID | None] = mapped_column(PgUUID(as_uuid=True), nullable=True)
     # Docente que puso la etiqueta (del header X-User-Id).
-    rater_id: Mapped[uuid.UUID] = mapped_column(
-        PgUUID(as_uuid=True), nullable=False, index=True
-    )
+    rater_id: Mapped[uuid.UUID] = mapped_column(PgUUID(as_uuid=True), nullable=False, index=True)
     # Perfil asignado por el humano. String libre (validado en la capa de ruta
     # contra el protocolo): ejes canónicos / 10 subgrupos / N1-N4.
     label: Mapped[str] = mapped_column(String(40), nullable=False)

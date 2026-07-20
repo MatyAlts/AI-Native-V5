@@ -256,9 +256,7 @@ async def test_resolve_keyless_fallback_usa_key_nativa_si_existe(
 async def byok_client() -> AsyncClient:
     from ai_gateway.main import app
 
-    async with AsyncClient(
-        transport=ASGITransport(app=app), base_url="http://test"
-    ) as c:
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as c:
         yield c
 
 
@@ -300,9 +298,7 @@ async def test_byok_create_acepta_provider_openrouter(
         "provider": "openrouter",
         "plaintext_value": "sk-or-v1-validlength-key",
     }
-    response = await byok_client.post(
-        "/api/v1/byok/keys", json=body, headers=_ADMIN_HEADERS
-    )
+    response = await byok_client.post("/api/v1/byok/keys", json=body, headers=_ADMIN_HEADERS)
     assert response.status_code in (200, 201)
     assert response.json()["provider"] == "openrouter"
 

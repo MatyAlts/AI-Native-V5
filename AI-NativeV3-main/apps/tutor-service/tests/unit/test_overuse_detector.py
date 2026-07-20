@@ -23,7 +23,6 @@ from collections import defaultdict
 from uuid import UUID, uuid4
 
 import pytest
-
 from tutor_service.services.guardrails import (
     OVERUSE_BURST_THRESHOLD,
     OVERUSE_BURST_WINDOW_SECONDS,
@@ -55,14 +54,10 @@ class FakeAsyncRedis:
             self._zsets[key][member] = score
         return len(self._zsets[key]) - before
 
-    async def zremrangebyscore(
-        self, key: str, min_score: float, max_score: float
-    ) -> int:
+    async def zremrangebyscore(self, key: str, min_score: float, max_score: float) -> int:
         if key not in self._zsets:
             return 0
-        to_remove = [
-            m for m, s in self._zsets[key].items() if min_score <= s <= max_score
-        ]
+        to_remove = [m for m, s in self._zsets[key].items() if min_score <= s <= max_score]
         for m in to_remove:
             del self._zsets[key][m]
         return len(to_remove)
@@ -70,16 +65,10 @@ class FakeAsyncRedis:
     async def zcard(self, key: str) -> int:
         return len(self._zsets.get(key, {}))
 
-    async def zrangebyscore(
-        self, key: str, min_score: float, max_score: float
-    ) -> list[bytes]:
+    async def zrangebyscore(self, key: str, min_score: float, max_score: float) -> list[bytes]:
         if key not in self._zsets:
             return []
-        items = [
-            (m, s)
-            for m, s in self._zsets[key].items()
-            if min_score <= s <= max_score
-        ]
+        items = [(m, s) for m, s in self._zsets[key].items() if min_score <= s <= max_score]
         items.sort(key=lambda x: x[1])
         return [m.encode() for m, _ in items]
 
@@ -208,9 +197,7 @@ async def test_limite_seis_prompts_en_exactos_cinco_minutos_dispara_burst(
 
 
 @pytest.mark.asyncio
-async def test_sin_actividad_devuelve_none(
-    detector: OveruseDetector, episode_id: UUID
-) -> None:
+async def test_sin_actividad_devuelve_none(detector: OveruseDetector, episode_id: UUID) -> None:
     """Episodio sin prompts ni non-prompts: el detector no puede gatillar."""
     match = await detector.check(episode_id, 1_000_000.0)
     assert match is None

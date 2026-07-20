@@ -65,7 +65,7 @@ limiter: Limiter = Limiter(
 
 
 def rate_limit_exceeded_handler(
-    request: Request,  # noqa: ARG001 — firma requerida por FastAPI exception handlers
+    request: Request,
     exc: RateLimitExceeded,
 ) -> Response:
     """Handler 429 con `Retry-After` en segundos.
@@ -82,7 +82,7 @@ def rate_limit_exceeded_handler(
         if inner is not None and hasattr(inner, "get_expiry"):
             try:
                 retry_after = int(inner.get_expiry())
-            except Exception:  # noqa: BLE001
+            except Exception:
                 retry_after = 60
 
     return JSONResponse(
@@ -133,7 +133,7 @@ class UserRateLimitMiddleware:
         # `limits`; lo usamos directo para no depender de decoradores por-ruta.
         key = _user_or_ip_key(request)
         # Tomamos el primer (y único) default limit configurado.
-        parsed_limits = limiter._default_limits  # noqa: SLF001 — API interna estable en 0.1.x
+        parsed_limits = limiter._default_limits
         if not parsed_limits:
             await self.app(scope, receive, send)
             return

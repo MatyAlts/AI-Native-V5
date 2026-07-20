@@ -64,11 +64,11 @@ def compute_classifier_config_hash(
 _EXCLUDED_FROM_FEATURES = frozenset(
     {
         "reflexion_completada",  # ADR-035
-        "tp_entregada",          # tp-entregas-correccion: meta-evento de entrega formal
-        "tp_calificada",         # tp-entregas-correccion: meta-evento de calificacion docente
-        "pestana_perdida",       # side-channel integridad de foco — NO cognitivo
-        "pestana_recuperada",    # side-channel integridad de foco — NO cognitivo
-        "episodio_reabierto",    # reapertura docente (2026-06-19): meta-evento de gobernanza
+        "tp_entregada",  # tp-entregas-correccion: meta-evento de entrega formal
+        "tp_calificada",  # tp-entregas-correccion: meta-evento de calificacion docente
+        "pestana_perdida",  # side-channel integridad de foco — NO cognitivo
+        "pestana_recuperada",  # side-channel integridad de foco — NO cognitivo
+        "episodio_reabierto",  # reapertura docente (2026-06-19): meta-evento de gobernanza
     }
 )
 
@@ -101,9 +101,7 @@ def classify_episode_from_events(
     reproducibilidad.
     """
     profile = reference_profile or DEFAULT_REFERENCE_PROFILE
-    classifier_events = [
-        e for e in events if e.get("event_type") not in _EXCLUDED_FROM_FEATURES
-    ]
+    classifier_events = [e for e in events if e.get("event_type") not in _EXCLUDED_FROM_FEATURES]
     ct = ct_features(classifier_events)
     ccd = compute_ccd(classifier_events)
     cii = compute_cii(classifier_events)
@@ -212,9 +210,7 @@ async def persist_classification(
         # UpDownCounter — aproximación al gauge per-cohort. Cada clasificación
         # contribuye con su valor; el panel del dashboard 5 muestra avg() por
         # cohorte, lo cual es equivalente al promedio de los emisores.
-        classifier_ccd_orphan_ratio.add(
-            float(result.ccd_orphan_ratio), {"cohort": cohort_label}
-        )
+        classifier_ccd_orphan_ratio.add(float(result.ccd_orphan_ratio), {"cohort": cohort_label})
     if result.cii_evolution is not None:
         classifier_cii_evolution_slope.record(float(result.cii_evolution))
 

@@ -31,7 +31,9 @@ depends_on: str | Sequence[str] | None = None
 def upgrade() -> None:
     op.create_table(
         "student_profiles",
-        sa.Column("student_pseudonym", postgresql.UUID(as_uuid=True), primary_key=True, nullable=False),
+        sa.Column(
+            "student_pseudonym", postgresql.UUID(as_uuid=True), primary_key=True, nullable=False
+        ),
         sa.Column("tenant_id", postgresql.UUID(as_uuid=True), nullable=False),
         sa.Column("full_name", sa.String(length=200), nullable=True),
         sa.Column("email", sa.String(length=254), nullable=True),

@@ -64,9 +64,7 @@ class ContentClient:
         El tutor continua el flujo sin RAG cuando esto pasa.
         """
         if not query or not query.strip():
-            logger.debug(
-                "retrieve skipped: query vacio (tenant=%s)", tenant_id
-            )
+            logger.debug("retrieve skipped: query vacio (tenant=%s)", tenant_id)
             return RetrievalResult(
                 chunks=[],
                 chunks_used_hash="e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",

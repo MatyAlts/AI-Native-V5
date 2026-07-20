@@ -147,11 +147,7 @@ def _episode_id_for(student_idx: int, ep_idx: int, cohort_idx: int = 0) -> UUID:
     `80000000-0000-0000-0000-0000000f69b4` (el SEEDED_EPISODE_ID).
     """
     return UUID(
-        int=(
-            (cohort_idx + 1) * 1_000_000
-            + (student_idx + 1) * 10_000
-            + (ep_idx + 1) * 100
-        )
+        int=((cohort_idx + 1) * 1_000_000 + (student_idx + 1) * 10_000 + (ep_idx + 1) * 100)
         | (1 << 127)
     )
 
@@ -254,9 +250,7 @@ def _build_events_for_episode(
     results: list[dict] = []
     prev_chain = GENESIS_HASH
     for seq, spec in enumerate(specs):
-        event_uuid = UUID(
-            int=(episode_id.int ^ (seq + 1) * 0x9E3779B97F4A7C15) & ((1 << 128) - 1)
-        )
+        event_uuid = UUID(int=(episode_id.int ^ (seq + 1) * 0x9E3779B97F4A7C15) & ((1 << 128) - 1))
         canonical = _build_event_canonical(
             event_uuid=event_uuid,
             episode_id=episode_id,
@@ -558,9 +552,7 @@ async def seed_ctr(ctr_url: str) -> list[tuple[UUID, datetime]]:
             for ep_idx in range(A1_NUM_EPISODES):
                 episode_id = _episode_id_for(A1_STUDENT_IDX, ep_idx, cohort_idx=0)
                 problema_id = tp_instance_ids[ep_idx % len(tp_instance_ids)]
-                opened_at = base_time + timedelta(
-                    days=(A1_STUDENT_IDX * 0.2) + (ep_idx * 5)
-                )
+                opened_at = base_time + timedelta(days=(A1_STUDENT_IDX * 0.2) + (ep_idx * 5))
                 closed_at = opened_at + timedelta(minutes=45)
 
                 events = _build_events_for_episode(

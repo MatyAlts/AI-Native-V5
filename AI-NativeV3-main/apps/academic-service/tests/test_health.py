@@ -13,9 +13,7 @@ from platform_observability.health import CheckResult
 
 @pytest.fixture
 async def client() -> AsyncClient:
-    async with AsyncClient(
-        transport=ASGITransport(app=app), base_url="http://test"
-    ) as c:
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as c:
         yield c
 
 

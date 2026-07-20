@@ -56,7 +56,9 @@ async def main() -> int:
 
     async with engine.connect() as conn:
         # Set RLS para poder leer/escribir chunks
-        await conn.exec_driver_sql("SET LOCAL app.current_tenant = '00000000-0000-0000-0000-000000000000'")
+        await conn.exec_driver_sql(
+            "SET LOCAL app.current_tenant = '00000000-0000-0000-0000-000000000000'"
+        )
 
         # Contar
         count_result = await conn.exec_driver_sql("SELECT count(*) FROM chunks")

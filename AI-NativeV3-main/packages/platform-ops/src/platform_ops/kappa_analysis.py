@@ -326,9 +326,7 @@ def format_report(result: KappaResult) -> str:
     lines.append(header)
     lines.append("-" * len(header))
     for c in cats:
-        row = f"  {c:>25} | " + " | ".join(
-            f"{result.confusion_matrix[c][cc]:>15}" for cc in cats
-        )
+        row = f"  {c:>25} | " + " | ".join(f"{result.confusion_matrix[c][cc]:>15}" for cc in cats)
         lines.append(row)
 
     return "\n".join(lines)
@@ -484,9 +482,7 @@ def compute_three_pair_reliability(
     )
 
     def _pair(a: Sequence[str], b: Sequence[str]) -> KappaResult:
-        ratings = [
-            KappaRating(episode_id=f"u_{i}", rater_a=a[i], rater_b=b[i]) for i in range(n)
-        ]
+        ratings = [KappaRating(episode_id=f"u_{i}", rater_a=a[i], rater_b=b[i]) for i in range(n)]
         return compute_cohen_kappa(ratings, categories=cats)
 
     clf_a1 = _pair(classifier_labels, annotator1_labels)

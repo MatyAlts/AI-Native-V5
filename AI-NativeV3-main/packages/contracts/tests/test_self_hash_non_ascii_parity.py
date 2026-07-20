@@ -23,7 +23,7 @@ from __future__ import annotations
 import hashlib
 import json
 from datetime import UTC, datetime
-from uuid import UUID, uuid4
+from uuid import UUID
 
 from platform_contracts.ctr import (
     AnotacionCreada,

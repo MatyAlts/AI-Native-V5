@@ -16,12 +16,11 @@ import uuid
 from collections.abc import AsyncIterator
 
 import pytest
+from evaluation_service.auth import get_db
+from evaluation_service.main import app
 from httpx import ASGITransport, AsyncClient
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
-
-from evaluation_service.auth import get_db
-from evaluation_service.main import app
 
 DB_URL = os.environ.get(
     "EVAL_TEST_DB_URL",
@@ -156,9 +155,7 @@ async def test_recalificar_actualiza_nota_in_place(recalificar_setup: dict) -> N
     """PATCH re-califica in-place: 200 con la nota nueva, sin violar el UNIQUE."""
     entrega_id = recalificar_setup["entrega_id"]
 
-    async with AsyncClient(
-        transport=ASGITransport(app=app), base_url="http://test"
-    ) as client:
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
         resp = await client.patch(
             f"/api/v1/entregas/{entrega_id}/calificacion",
             json={"nota_final": 9.5, "feedback_general": "Corregido: mejor de lo evaluado"},
@@ -177,9 +174,7 @@ async def test_recalificar_sin_calificacion_previa_404(
     recalificar_setup: dict,
 ) -> None:
     """PATCH sobre una entrega sin calificacion → 404 (usar POST /calificar)."""
-    async with AsyncClient(
-        transport=ASGITransport(app=app), base_url="http://test"
-    ) as client:
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
         resp = await client.patch(
             f"/api/v1/entregas/{uuid.uuid4()}/calificacion",
             json={"nota_final": 7.0},

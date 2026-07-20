@@ -17,7 +17,6 @@ from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field
 
-
 # ============================================================================
 # P2-2 — CUESTIONARIO IA PREVIA
 # ============================================================================

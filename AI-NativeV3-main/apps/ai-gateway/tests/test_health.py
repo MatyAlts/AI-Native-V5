@@ -14,9 +14,7 @@ from platform_observability.health import CheckResult
 
 @pytest.fixture
 async def client() -> AsyncClient:
-    async with AsyncClient(
-        transport=ASGITransport(app=app), base_url="http://test"
-    ) as c:
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as c:
         yield c
 
 
@@ -47,9 +45,7 @@ async def test_health_ready_mock_provider_redis_ok(client: AsyncClient) -> None:
 
 
 async def test_health_ready_redis_down_returns_error(client: AsyncClient) -> None:
-    with _patch_redis(_ko("redis down")), patch.dict(
-        os.environ, {"LLM_PROVIDER": "mock"}
-    ):
+    with _patch_redis(_ko("redis down")), patch.dict(os.environ, {"LLM_PROVIDER": "mock"}):
         response = await client.get("/health/ready")
     assert response.status_code == 503
     assert response.json()["status"] == "error"
@@ -59,9 +55,11 @@ async def test_health_ready_anthropic_no_key_returns_degraded(
     client: AsyncClient,
 ) -> None:
     """LLM_PROVIDER=anthropic sin api key → llm_provider KO → degraded."""
-    with _patch_redis(_ok()), patch.dict(
-        os.environ, {"LLM_PROVIDER": "anthropic"}
-    ), patch("ai_gateway.routes.health.settings.anthropic_api_key", ""):
+    with (
+        _patch_redis(_ok()),
+        patch.dict(os.environ, {"LLM_PROVIDER": "anthropic"}),
+        patch("ai_gateway.routes.health.settings.anthropic_api_key", ""),
+    ):
         response = await client.get("/health/ready")
     assert response.status_code == 200
     body = response.json()

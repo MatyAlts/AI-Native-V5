@@ -48,9 +48,7 @@ async def _run(tenant_id: UUID) -> int:
 
     async with tenant_session(tenant_id) as session:
         rows = await session.execute(
-            text(
-                "SELECT DISTINCT episode_id FROM classifications WHERE is_current = true"
-            )
+            text("SELECT DISTINCT episode_id FROM classifications WHERE is_current = true")
         )
         episode_ids = [str(r[0]) for r in rows.all()]
 
@@ -61,9 +59,7 @@ async def _run(tenant_id: UUID) -> int:
     async with httpx.AsyncClient(timeout=30.0) as client:
         for i, eid in enumerate(episode_ids, 1):
             try:
-                r = await client.post(
-                    f"{base}/api/v1/classify_episode/{eid}", headers=headers
-                )
+                r = await client.post(f"{base}/api/v1/classify_episode/{eid}", headers=headers)
                 if r.status_code == 201:
                     nuevos += 1
                 elif r.status_code == 200:
@@ -71,7 +67,7 @@ async def _run(tenant_id: UUID) -> int:
                 else:
                     errores += 1
                     print(f"  [{i}] {eid} -> HTTP {r.status_code}: {r.text[:140]}")
-            except Exception as e:  # noqa: BLE001 — best-effort batch, seguimos
+            except Exception as e:
                 errores += 1
                 print(f"  [{i}] {eid} -> ERROR {e}")
             if i % 25 == 0:

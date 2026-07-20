@@ -19,8 +19,6 @@ Convenciones:
 
 from __future__ import annotations
 
-import pytest
-
 from classifier_service.services.event_labeler_lexical import (
     LEXICAL_CORPUS_HASH,
     LEXICAL_CORPUS_VERSION,
@@ -93,7 +91,7 @@ class TestLexicalLabel:
         # bumpear LEXICAL_CORPUS_VERSION y actualizar este golden con el valor
         # recomputado.
         golden = "40db6b9047b3c8fee3665c95f5b86d6ea790afd558564349cb009c0f2ca3fe95"
-        assert LEXICAL_CORPUS_HASH == golden, (
+        assert golden == LEXICAL_CORPUS_HASH, (
             f"Corpus hash drift detectado. LEXICAL_CORPUS_HASH={LEXICAL_CORPUS_HASH} "
             f"esperado golden={golden}. Si el cambio es legitimo, bumpear "
             f"LEXICAL_CORPUS_VERSION y actualizar este golden."

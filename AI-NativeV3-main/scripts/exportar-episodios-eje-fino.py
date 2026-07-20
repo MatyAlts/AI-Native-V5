@@ -36,6 +36,7 @@ RATER_B_DEFAULT = "cf6bd3bb-98f1-5e4a-982d-34858d199a1f"
 EJE_FINO_LABELS = ("apropiacion_superficial", "apropiacion_reflexiva")
 ZONA_GRIS = ("colaborador_reflexivo", "colaborador_funcional")
 
+
 # El driver del proyecto es 'postgresql+asyncpg://...'; asyncpg quiere 'postgresql://...'.
 def _dsn(url: str) -> str:
     return url.replace("postgresql+asyncpg://", "postgresql://").replace("+asyncpg", "")
@@ -68,11 +69,16 @@ FROM events WHERE episode_id = $1 ORDER BY seq
 async def main() -> int:
     ap = argparse.ArgumentParser(description="Export episodios eje fino → JSON")
     ap.add_argument("--classifier-db", default=os.environ.get("CLASSIFIER_DB_URL", ""))
-    ap.add_argument("--ctr-db", default=os.environ.get("CTR_STORE_URL", os.environ.get("CTR_DB_URL", "")))
+    ap.add_argument(
+        "--ctr-db", default=os.environ.get("CTR_STORE_URL", os.environ.get("CTR_DB_URL", ""))
+    )
     ap.add_argument("--out", default="episodios_eje_fino.json")
     ap.add_argument("--raters", nargs=2, default=[RATER_A_DEFAULT, RATER_B_DEFAULT])
-    ap.add_argument("--solo-zona-gris", action="store_true",
-                    help="exporta solo colaborador_* (lo que el juez realmente clasifica)")
+    ap.add_argument(
+        "--solo-zona-gris",
+        action="store_true",
+        help="exporta solo colaborador_* (lo que el juez realmente clasifica)",
+    )
     args = ap.parse_args()
 
     if not args.classifier_db or not args.ctr_db:
@@ -82,7 +88,9 @@ async def main() -> int:
     cls_conn = await asyncpg.connect(_dsn(args.classifier_db))
     ctr_conn = await asyncpg.connect(_dsn(args.ctr_db))
     try:
-        gold_rows = await cls_conn.fetch(GOLD_SQL, args.raters[0], args.raters[1], list(EJE_FINO_LABELS))
+        gold_rows = await cls_conn.fetch(
+            GOLD_SQL, args.raters[0], args.raters[1], list(EJE_FINO_LABELS)
+        )
         print(f"Episodios gold del eje fino: {len(gold_rows)}")
 
         salida: list[dict] = []
@@ -99,19 +107,23 @@ async def main() -> int:
                         payload = json.loads(payload)
                     except json.JSONDecodeError:
                         payload = {}
-                events.append({
-                    "seq": ev["seq"],
-                    "event_type": ev["event_type"],
-                    "payload": payload or {},
-                })
-            salida.append({
-                "episode_id": row["episode_id"],
-                "gold": row["gold"],
-                "materia_id": None,        # classifications no expone materia_id; BYOK cae a tenant
-                "subgrupo": subgrupo,
-                "enunciado": "",           # opcional; enriquecer desde academic_main si hace falta
-                "events": events,
-            })
+                events.append(
+                    {
+                        "seq": ev["seq"],
+                        "event_type": ev["event_type"],
+                        "payload": payload or {},
+                    }
+                )
+            salida.append(
+                {
+                    "episode_id": row["episode_id"],
+                    "gold": row["gold"],
+                    "materia_id": None,  # classifications no expone materia_id; BYOK cae a tenant
+                    "subgrupo": subgrupo,
+                    "enunciado": "",  # opcional; enriquecer desde academic_main si hace falta
+                    "events": events,
+                }
+            )
     finally:
         await cls_conn.close()
         await ctr_conn.close()

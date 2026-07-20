@@ -11,7 +11,6 @@ Cubre `apps/ai-gateway/src/ai_gateway/routes/health.py`:
 from __future__ import annotations
 
 import base64
-import os
 from unittest.mock import AsyncMock, patch
 
 import pytest
@@ -23,9 +22,7 @@ from platform_observability.health import CheckResult
 
 @pytest.fixture
 async def client() -> AsyncClient:
-    async with AsyncClient(
-        transport=ASGITransport(app=app), base_url="http://test"
-    ) as c:
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as c:
         yield c
 
 

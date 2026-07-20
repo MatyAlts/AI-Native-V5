@@ -124,9 +124,7 @@ async def _load_episode_infos(
 
     # 2. ejercicio_id desde el evento episodio_abierto (seq=0) para los
     # episodios cuyo meta no lo tiene. Una sola query batch.
-    needs_event_lookup = [
-        row.id for row in ep_rows if not (row.meta or {}).get("ejercicio_id")
-    ]
+    needs_event_lookup = [row.id for row in ep_rows if not (row.meta or {}).get("ejercicio_id")]
     ejercicio_by_event: dict[UUID, str | None] = {}
     if needs_event_lookup:
         ev_stmt = (
@@ -146,9 +144,7 @@ async def _load_episode_infos(
         .where(Classification.episode_id.in_(ep_ids))
         .where(Classification.is_current.is_(True))
     )
-    classified_ids = {
-        row.episode_id for row in (await classifier_session.execute(cls_stmt)).all()
-    }
+    classified_ids = {row.episode_id for row in (await classifier_session.execute(cls_stmt)).all()}
 
     infos: list[EpisodeInfo] = []
     for row in ep_rows:
@@ -271,21 +267,14 @@ async def main(apply: bool, comision_id: UUID | None) -> int:
             print()
             print("=" * 70)
             if not apply:
-                print(
-                    f"DRY-RUN: marcaria {len(marks)} episodios de {len(students)} alumnos."
-                )
+                print(f"DRY-RUN: marcaria {len(marks)} episodios de {len(students)} alumnos.")
                 print("Para aplicar de verdad, correr con --apply.")
                 return 0
 
             infos_by_id = {info.episode_id: info for info in infos}
             superseded_at = datetime.now(UTC).isoformat()
-            n_marked, n_skipped = await _apply_marks(
-                ctr_s, infos_by_id, marks, superseded_at
-            )
-            print(
-                f"APPLY: {n_marked} marcados / {n_skipped} ya estaban / "
-                f"{len(students)} alumnos."
-            )
+            n_marked, n_skipped = await _apply_marks(ctr_s, infos_by_id, marks, superseded_at)
+            print(f"APPLY: {n_marked} marcados / {n_skipped} ya estaban / {len(students)} alumnos.")
             return 0
     finally:
         await ctr_engine.dispose()

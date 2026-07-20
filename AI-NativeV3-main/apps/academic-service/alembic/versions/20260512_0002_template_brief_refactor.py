@@ -15,8 +15,8 @@ Cambios en `tareas_practicas_templates`:
   `fecha_inicio`, `fecha_fin` (todos son del nivel de instancia, no del brief).
 """
 
-from alembic import op
 import sqlalchemy as sa
+from alembic import op
 from sqlalchemy.dialects.postgresql import JSONB
 
 # revision identifiers, used by Alembic.

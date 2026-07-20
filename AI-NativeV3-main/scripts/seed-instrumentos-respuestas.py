@@ -105,7 +105,7 @@ def pretest_response_for(student_idx: int) -> tuple[dict, int, dict]:
     Likert 1-7. Cada estudiante tiene un nivel base (1-7) que aplica a todos los items
     con +/- 1 de variacion segun subscale.
     """
-    base = ((student_idx % 7) + 1)  # 1-7
+    base = (student_idx % 7) + 1  # 1-7
     items = [
         ("ind_01", base),
         ("ind_02", min(7, base + 1)),
@@ -124,10 +124,18 @@ def pretest_response_for(student_idx: int) -> tuple[dict, int, dict]:
     total = sum(responses.values())
     # Promedios por sub-escala
     subscale_scores: dict = {
-        "independencia": round((responses["ind_01"] + responses["ind_02"] + responses["ind_03"]) / 3, 2),
-        "complejidad": round((responses["comp_01"] + responses["comp_02"] + responses["comp_03"]) / 3, 2),
-        "aprendizaje": round((responses["apr_01"] + responses["apr_02"] + responses["apr_03"]) / 3, 2),
-        "persistencia": round((responses["per_01"] + responses["per_02"] + responses["per_03"]) / 3, 2),
+        "independencia": round(
+            (responses["ind_01"] + responses["ind_02"] + responses["ind_03"]) / 3, 2
+        ),
+        "complejidad": round(
+            (responses["comp_01"] + responses["comp_02"] + responses["comp_03"]) / 3, 2
+        ),
+        "aprendizaje": round(
+            (responses["apr_01"] + responses["apr_02"] + responses["apr_03"]) / 3, 2
+        ),
+        "persistencia": round(
+            (responses["per_01"] + responses["per_02"] + responses["per_03"]) / 3, 2
+        ),
     }
     return responses, total, subscale_scores
 
@@ -150,7 +158,7 @@ def transfer_response_for(student_idx: int, test_id: str) -> tuple[bool, int, di
         time_taken,
         {
             "answer": f"# Respuesta placeholder de estudiante {student_idx + 1} a {test_id}\n"
-                       f"def solucion(...): ...  # TODO contenido real cuando catedra apruebe",
+            f"def solucion(...): ...  # TODO contenido real cuando catedra apruebe",
             "submitted_via": "seed-instrumentos-respuestas.py",
         },
     )
@@ -285,8 +293,10 @@ async def seed() -> None:
     print(f"Seed instrumentos completado para tenant {TENANT_ID}:")
     print(f"  - Cuestionario IA: {total_cuestionario} respuestas insertadas")
     print(f"  - Pretest autoeficacia: {total_pretest} respuestas insertadas")
-    print(f"  - Test transferencia: {total_transfer} respuestas insertadas (3 problemas x 18 estudiantes = 54 esperadas en primer run)")
-    print(f"  (0 = ya existian via ON CONFLICT DO NOTHING; re-correr el script no duplica)")
+    print(
+        f"  - Test transferencia: {total_transfer} respuestas insertadas (3 problemas x 18 estudiantes = 54 esperadas en primer run)"
+    )
+    print("  (0 = ya existian via ON CONFLICT DO NOTHING; re-correr el script no duplica)")
 
 
 if __name__ == "__main__":

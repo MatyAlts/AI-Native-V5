@@ -107,9 +107,7 @@ class IngestionPipeline:
             #    estado="failed" se marca fuera del savepoint (except de abajo),
             #    así el marcador de fallo persiste pero el borrado NO.
             async with self.session.begin_nested():
-                await self.session.execute(
-                    delete(Chunk).where(Chunk.material_id == material.id)
-                )
+                await self.session.execute(delete(Chunk).where(Chunk.material_id == material.id))
                 for final_chunk, vector in zip(chunks, vectors, strict=True):
                     chunk_row = Chunk(
                         tenant_id=material.tenant_id,

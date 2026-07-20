@@ -107,12 +107,8 @@ def upgrade() -> None:
             ),
         )
         op.create_index("ix_entregas_tenant_id", "entregas", ["tenant_id"])
-        op.create_index(
-            "ix_entregas_tarea_practica_id", "entregas", ["tarea_practica_id"]
-        )
-        op.create_index(
-            "ix_entregas_student_pseudonym", "entregas", ["student_pseudonym"]
-        )
+        op.create_index("ix_entregas_tarea_practica_id", "entregas", ["tarea_practica_id"])
+        op.create_index("ix_entregas_student_pseudonym", "entregas", ["student_pseudonym"])
         op.create_index("ix_entregas_comision_id", "entregas", ["comision_id"])
         op.create_index("ix_entregas_deleted_at", "entregas", ["deleted_at"])
 
@@ -165,23 +161,15 @@ def upgrade() -> None:
                 name="fk_calificaciones_entrega_id_entregas",
                 ondelete="RESTRICT",
             ),
-            sa.UniqueConstraint(
-                "entrega_id", name="uq_calificaciones_entrega_id"
-            ),
+            sa.UniqueConstraint("entrega_id", name="uq_calificaciones_entrega_id"),
             sa.CheckConstraint(
                 "nota_final >= 0 AND nota_final <= 10",
                 name="ck_calificaciones_nota",
             ),
         )
-        op.create_index(
-            "ix_calificaciones_tenant_id", "calificaciones", ["tenant_id"]
-        )
-        op.create_index(
-            "ix_calificaciones_entrega_id", "calificaciones", ["entrega_id"]
-        )
-        op.create_index(
-            "ix_calificaciones_deleted_at", "calificaciones", ["deleted_at"]
-        )
+        op.create_index("ix_calificaciones_tenant_id", "calificaciones", ["tenant_id"])
+        op.create_index("ix_calificaciones_entrega_id", "calificaciones", ["entrega_id"])
+        op.create_index("ix_calificaciones_deleted_at", "calificaciones", ["deleted_at"])
 
         op.execute("ALTER TABLE calificaciones ENABLE ROW LEVEL SECURITY")
         op.execute("ALTER TABLE calificaciones FORCE ROW LEVEL SECURITY")
@@ -198,9 +186,7 @@ def downgrade() -> None:
     # en deploys fresh donde evaluation-service creo las tablas. Preservamos
     # la simetria por convencion alembic, pero el operador deberia validar
     # ANTES de bajar.
-    op.execute(
-        "DROP POLICY IF EXISTS calificaciones_tenant_isolation ON calificaciones"
-    )
+    op.execute("DROP POLICY IF EXISTS calificaciones_tenant_isolation ON calificaciones")
     op.drop_table("calificaciones")
 
     op.execute("DROP POLICY IF EXISTS entregas_tenant_isolation ON entregas")

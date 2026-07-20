@@ -20,10 +20,10 @@ from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from academic_service.auth import User, get_current_user, get_db, require_role
-from academic_service.services.comision_service import assert_comision_member
 from academic_service.models.operacional import Inscripcion, UsuarioComision
 from academic_service.models.transversal import StudentProfile
 from academic_service.schemas.student_profile import StudentProfileOut, StudentProfileUpsert
+from academic_service.services.comision_service import assert_comision_member
 
 users_router = APIRouter(prefix="/api/v1/users", tags=["users"])
 

@@ -333,7 +333,7 @@ class AcademicExporter:
         if include_reflections:
             total_reflections = sum(r.reflection_count for r in records)
             try:
-                import structlog  # noqa: PLC0415
+                import structlog
 
                 structlog.get_logger().info(
                     "reflections_exported_with_consent",

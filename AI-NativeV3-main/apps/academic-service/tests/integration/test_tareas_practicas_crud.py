@@ -10,7 +10,7 @@ El test de RLS multi-tenant a nivel DB vive en test_rls_isolation.py.
 
 from __future__ import annotations
 
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 from unittest.mock import AsyncMock, MagicMock
 from uuid import UUID, uuid4
@@ -273,7 +273,7 @@ async def test_update_fecha_fin_en_published_ok(
     svc = TareaPracticaService(mock_session)
 
     tid = uuid4()
-    inicio = datetime(2026, 6, 1, tzinfo=timezone.utc)
+    inicio = datetime(2026, 6, 1, tzinfo=UTC)
     obj = _fake_tarea(
         tid,
         tenant_a_id,
@@ -305,7 +305,7 @@ async def test_update_fecha_fin_anterior_a_inicio_falla_422(
     svc = TareaPracticaService(mock_session)
 
     tid = uuid4()
-    inicio = datetime(2026, 6, 1, tzinfo=timezone.utc)
+    inicio = datetime(2026, 6, 1, tzinfo=UTC)
     obj = _fake_tarea(
         tid,
         tenant_a_id,

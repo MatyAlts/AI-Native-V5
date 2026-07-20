@@ -14,9 +14,8 @@ from __future__ import annotations
 from decimal import Decimal
 
 import pytest
-from pydantic import ValidationError
-
 from evaluation_service.schemas.entrega import CalificacionCreate, CriterioCalificacion
+from pydantic import ValidationError
 
 
 class TestCalificacionRules:

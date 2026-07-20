@@ -19,8 +19,6 @@ key porque no hacen decrypt.
 
 from __future__ import annotations
 
-import os
-
 import httpx
 import pytest
 
@@ -64,9 +62,7 @@ def test_post_keys_403_for_non_admin(client: httpx.Client, auth_headers) -> None
         "plaintext_value": TEST_PLAINTEXT,
         "monthly_budget_usd": 5.0,
     }
-    resp = client.post(
-        "/api/v1/byok/keys", json=payload, headers=auth_headers("estudiante")
-    )
+    resp = client.post("/api/v1/byok/keys", json=payload, headers=auth_headers("estudiante"))
     assert resp.status_code == 403, (
         f"estudiante NO debe poder POST /api/v1/byok/keys. "
         f"status={resp.status_code} body={resp.text[:200]}"
@@ -115,14 +111,10 @@ def test_create_revoke_flow(client: httpx.Client, auth_headers) -> None:
         list_resp = client.get("/api/v1/byok/keys", headers=headers)
         assert list_resp.status_code == 200
         ids_in_list = {k["id"] for k in list_resp.json()}
-        assert key_id in ids_in_list, (
-            f"La key creada {key_id} no aparece en GET /api/v1/byok/keys"
-        )
+        assert key_id in ids_in_list, f"La key creada {key_id} no aparece en GET /api/v1/byok/keys"
 
         # Revoke
-        revoke_resp = client.post(
-            f"/api/v1/byok/keys/{key_id}/revoke", headers=headers
-        )
+        revoke_resp = client.post(f"/api/v1/byok/keys/{key_id}/revoke", headers=headers)
         assert revoke_resp.status_code == 200, (
             f"POST /api/v1/byok/keys/{{id}}/revoke deberia OK. "
             f"status={revoke_resp.status_code} body={revoke_resp.text[:300]}"

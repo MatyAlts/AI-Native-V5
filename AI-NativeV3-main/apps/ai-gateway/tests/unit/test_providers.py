@@ -12,7 +12,6 @@ Cubre `apps/ai-gateway/src/ai_gateway/providers/base.py`:
 
 from __future__ import annotations
 
-import os
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from unittest.mock import AsyncMock, MagicMock
@@ -185,9 +184,7 @@ async def test_anthropic_filtra_blocks_sin_text() -> None:
     provider = AnthropicProvider(api_key="sk-ant-fake")
     provider._client = client
 
-    req = CompletionRequest(
-        messages=[{"role": "user", "content": "?"}], model="claude-sonnet-4-6"
-    )
+    req = CompletionRequest(messages=[{"role": "user", "content": "?"}], model="claude-sonnet-4-6")
     response = await provider.complete(req)
     assert response.content == "hola"
 

@@ -22,7 +22,6 @@ from platform_ops.cec_features import (
     naming_consistency,
 )
 
-
 # ---------------------------------------------------------------------------
 # depth_variance
 # ---------------------------------------------------------------------------
@@ -42,12 +41,7 @@ def test_dos_snapshots_con_misma_profundidad_devuelve_cero() -> None:
 def test_snapshots_con_profundidad_creciente_dan_varianza_positiva() -> None:
     s1 = "x = 1\n"  # depth 0
     s2 = "def f():\n    return 1\n"  # depth 1
-    s3 = (
-        "def f():\n"
-        "    for i in range(10):\n"
-        "        if i > 5:\n"
-        "            print(i)\n"
-    )  # depth 3
+    s3 = "def f():\n    for i in range(10):\n        if i > 5:\n            print(i)\n"  # depth 3
     dv = depth_variance([s1, s2, s3])
     assert dv > 0.0
 
@@ -112,24 +106,12 @@ def test_codigo_invalido_devuelve_count_cero_sin_romper() -> None:
 
 
 def test_codigo_solo_snake_case_devuelve_1() -> None:
-    code = (
-        "def my_function():\n"
-        "    return 1\n"
-        "\n"
-        "def another_function():\n"
-        "    return 2\n"
-    )
+    code = "def my_function():\n    return 1\n\ndef another_function():\n    return 2\n"
     assert naming_consistency(code) == 1.0
 
 
 def test_codigo_mezcla_snake_y_camel_devuelve_menor_a_1() -> None:
-    code = (
-        "def my_function():\n"
-        "    return 1\n"
-        "\n"
-        "def anotherFunction():\n"
-        "    return 2\n"
-    )
+    code = "def my_function():\n    return 1\n\ndef anotherFunction():\n    return 2\n"
     result = naming_consistency(code)
     assert 0.0 < result < 1.0
 
@@ -141,13 +123,7 @@ def test_codigo_sin_identificadores_clasificables_devuelve_1() -> None:
 
 
 def test_clase_pascal_y_funciones_snake_se_cuentan_separadas() -> None:
-    code = (
-        "class MiClase:\n"
-        "    pass\n"
-        "\n"
-        "def mi_funcion():\n"
-        "    return 1\n"
-    )
+    code = "class MiClase:\n    pass\n\ndef mi_funcion():\n    return 1\n"
     # Una pascal, una snake => 0.5
     result = naming_consistency(code)
     assert result == 0.5

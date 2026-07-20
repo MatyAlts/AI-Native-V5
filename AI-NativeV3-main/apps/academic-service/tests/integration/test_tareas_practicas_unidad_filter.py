@@ -49,9 +49,7 @@ def _fake_tarea(
     return t
 
 
-async def test_list_sin_unidad_id_no_agrega_filtro(
-    mock_session, tenant_a_id: UUID
-) -> None:
+async def test_list_sin_unidad_id_no_agrega_filtro(mock_session, tenant_a_id: UUID) -> None:
     """list() sin unidad_id → repo NO recibe ese filter (comportamiento actual)."""
     svc = TareaPracticaService(mock_session)
 
@@ -64,9 +62,7 @@ async def test_list_sin_unidad_id_no_agrega_filtro(
     svc.repo.list.assert_called_once_with(limit=50, cursor=None, filters={})
 
 
-async def test_list_filtra_por_unidad_id(
-    mock_session, tenant_a_id: UUID
-) -> None:
+async def test_list_filtra_por_unidad_id(mock_session, tenant_a_id: UUID) -> None:
     """list(unidad_id=X) propaga el filtro al repo (fix A13)."""
     svc = TareaPracticaService(mock_session)
 
@@ -90,9 +86,7 @@ async def test_list_combina_unidad_id_con_comision_y_estado(
 
     target_comision = uuid4()
     target_unidad = uuid4()
-    fake = [
-        _fake_tarea(uuid4(), tenant_a_id, target_comision, unidad_id=target_unidad)
-    ]
+    fake = [_fake_tarea(uuid4(), tenant_a_id, target_comision, unidad_id=target_unidad)]
     svc.repo.list = AsyncMock(return_value=fake)
 
     result = await svc.list(

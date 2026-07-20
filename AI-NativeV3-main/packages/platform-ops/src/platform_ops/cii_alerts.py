@@ -208,8 +208,7 @@ def compute_student_alerts(
                     "atención."
                 ),
                 "research_note": (
-                    f"slope {student_slope:+.3f}, "
-                    "retroceso > 0.3 categorías ordinales por episodio"
+                    f"slope {student_slope:+.3f}, retroceso > 0.3 categorías ordinales por episodio"
                 ),
                 "threshold_used": "slope < -0.3",
             }

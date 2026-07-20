@@ -136,9 +136,7 @@ async def test_config_ldap_pasa_valores_correctos_a_keycloak(federator, ldap_spe
             import json
 
             captured_bodies.append(json.loads(request.content))
-            return Response(
-                201, headers={"location": f"{KC_BASE}/admin/realms/utn/components/xxx"}
-            )
+            return Response(201, headers={"location": f"{KC_BASE}/admin/realms/utn/components/xxx"})
 
         router.post(f"{KC_BASE}/admin/realms/utn/components").mock(side_effect=capture)
 
@@ -172,9 +170,7 @@ async def test_crea_mappers_estandar(federator, ldap_spec) -> None:
                 Response(200, json=[]),  # group check vacío → crear
             ]
         )
-        router.put(f"{KC_BASE}/admin/realms/utn/components/prov-1").mock(
-            return_value=Response(204)
-        )
+        router.put(f"{KC_BASE}/admin/realms/utn/components/prov-1").mock(return_value=Response(204))
 
         async def capture_mapper(request):
             import json
@@ -218,9 +214,7 @@ async def test_tenant_id_mapper_tiene_uuid_correcto(federator, ldap_spec) -> Non
                 Response(200, json=[]),
             ]
         )
-        router.put(f"{KC_BASE}/admin/realms/utn/components/prov-1").mock(
-            return_value=Response(204)
-        )
+        router.put(f"{KC_BASE}/admin/realms/utn/components/prov-1").mock(return_value=Response(204))
 
         async def capture(request):
             import json

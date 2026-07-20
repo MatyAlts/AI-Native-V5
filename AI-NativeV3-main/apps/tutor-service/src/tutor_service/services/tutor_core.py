@@ -254,8 +254,7 @@ class TutorCore:
                 # el CTR devolvió un estado no reanudable), degradamos a abrir
                 # un episodio nuevo en vez de propagar el error al alumno.
                 logger.warning(
-                    "resume del episodio existente %s falló; se abre uno nuevo "
-                    "(fail-soft)",
+                    "resume del episodio existente %s falló; se abre uno nuevo (fail-soft)",
                     existing_id,
                     exc_info=True,
                 )

@@ -37,15 +37,15 @@ from typing import Any
 REPO_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(REPO_ROOT / "apps" / "classifier-service" / "src"))
 
-from classifier_service.services import event_labeler  # noqa: E402
+from classifier_service.services import event_labeler
 
 # Combinaciones de ventanas a evaluar.
 # Cada tuple es (N1_window_seconds, N4_window_seconds).
 # (120, 60) es el baseline v1.1.0 — primero del list para que la tabla lo destaque.
 WINDOWS_TO_TEST: list[tuple[float, float]] = [
-    (60.0, 30.0),    # ventanas mas estrictas
+    (60.0, 30.0),  # ventanas mas estrictas
     (90.0, 30.0),
-    (120.0, 60.0),   # baseline v1.1.0
+    (120.0, 60.0),  # baseline v1.1.0
     (180.0, 60.0),
     (180.0, 120.0),
     (240.0, 120.0),  # ventanas mas laxas
@@ -292,8 +292,7 @@ def run_analysis(num_episodes: int) -> str:
 
     md_lines: list[str] = []
     md_lines.append(
-        f"# Analisis de sensibilidad — override temporal de `anotacion_creada` "
-        f"(ADR-023, v1.1.0)"
+        "# Analisis de sensibilidad — override temporal de `anotacion_creada` (ADR-023, v1.1.0)"
     )
     md_lines.append("")
     md_lines.append(
@@ -308,9 +307,7 @@ def run_analysis(num_episodes: int) -> str:
         "| Ventana N1 (s) | Ventana N4 (s) | Anot N1 | Anot N2 | Anot N4 | "
         "% N1 (vs baseline) | % N4 (vs baseline) |"
     )
-    md_lines.append(
-        "|---:|---:|---:|---:|---:|---:|---:|"
-    )
+    md_lines.append("|---:|---:|---:|---:|---:|---:|---:|")
 
     base_n1 = baseline_anot["N1"] or 1  # evita div/0
     base_n4 = baseline_anot["N4"] or 1
@@ -332,9 +329,7 @@ def run_analysis(num_episodes: int) -> str:
         "| Ventana N1 (s) | Ventana N4 (s) | ratio N1 | ratio N2 | ratio N3 | "
         "ratio N4 | ratio meta |"
     )
-    md_lines.append(
-        "|---:|---:|---:|---:|---:|---:|---:|"
-    )
+    md_lines.append("|---:|---:|---:|---:|---:|---:|---:|")
     for r in rows:
         ra = r["ratios"]
         marker = " **(baseline)**" if r["is_baseline"] else ""
@@ -381,9 +376,7 @@ def run_analysis(num_episodes: int) -> str:
             else ""
         )
     if base_row is not None and n4_lax is not None:
-        delta_n4_lax = _pct_change(
-            n4_lax["anot_per_level"]["N4"], base_row["anot_per_level"]["N4"]
-        )
+        delta_n4_lax = _pct_change(n4_lax["anot_per_level"]["N4"], base_row["anot_per_level"]["N4"])
         md_lines.append(
             f"- **Sensibilidad de N4**: ampliar la ventana N4 de 60s a 120s "
             f"aumenta `anotaciones_N4` en {delta_n4_lax:+.1f}% (de "

@@ -19,7 +19,6 @@ Convenciones:
 from __future__ import annotations
 
 import pytest
-
 from tutor_service.services.postprocess_socratic import (
     SOCRATIC_CORPUS_HASH,
     SOCRATIC_CORPUS_VERSION,
@@ -32,7 +31,9 @@ GOLDEN_HASH = "a9b1d8cc5fab959f031f30f9bbb4c2bb632c41acad6f6af3f20897aef2b105b9"
 
 class TestPostprocessSocratic:
     def test_respuesta_socratica_simple_score_alto_sin_violations(self) -> None:
-        response = "¿Qué pasa si en lugar de un for usás un while? ¿Qué condición tendría que cumplir?"
+        response = (
+            "¿Qué pasa si en lugar de un for usás un while? ¿Qué condición tendría que cumplir?"
+        )
         result = postprocess(response)
         assert result.socratic_compliance == 1.0
         assert result.violations == []
@@ -102,7 +103,7 @@ class TestPostprocessSocratic:
         # post-validación intercoder), bumpear SOCRATIC_CORPUS_VERSION y
         # actualizar este golden con el valor recomputado.
         golden = "a9b1d8cc5fab959f031f30f9bbb4c2bb632c41acad6f6af3f20897aef2b105b9"
-        assert SOCRATIC_CORPUS_HASH == golden, (
+        assert golden == SOCRATIC_CORPUS_HASH, (
             f"Corpus hash drift detectado. SOCRATIC_CORPUS_HASH={SOCRATIC_CORPUS_HASH} "
             f"esperado golden={golden}. Si el cambio es legítimo, bumpear "
             f"SOCRATIC_CORPUS_VERSION y actualizar este golden."

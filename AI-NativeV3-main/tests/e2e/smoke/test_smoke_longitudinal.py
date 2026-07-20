@@ -20,7 +20,6 @@ from __future__ import annotations
 
 import httpx
 import pytest
-
 from _helpers import (  # type: ignore[import-not-found]
     COMISION_A_MANANA,
     STUDENT_A1,
@@ -50,9 +49,7 @@ def test_longitudinal_devuelve_slope_para_estudiante_narrativo(
     assert isinstance(body["evolution_per_template"], list)
 
     # ADR-042: A1 debe tener >=1 template evaluable (no insufficient_data).
-    eligible = [
-        t for t in body["evolution_per_template"] if not t.get("insufficient_data")
-    ]
+    eligible = [t for t in body["evolution_per_template"] if not t.get("insufficient_data")]
     assert len(eligible) >= 1, (
         f"Esperado >=1 template longitudinal-eligible para A1, got body={body}. "
         f"Posible regresion del seed (NARRATIVE_STUDENTS_LONGITUDINAL no aplicado) "
@@ -63,15 +60,11 @@ def test_longitudinal_devuelve_slope_para_estudiante_narrativo(
     # del patron del seed) y n_episodes >= 3.
     first = eligible[0]
     assert first.get("slope") is not None, f"slope null en template eligible: {first}"
-    assert first.get("n_episodes", 0) >= 3, (
-        f"n_episodes < MIN=3 en template eligible: {first}"
-    )
+    assert first.get("n_episodes", 0) >= 3, f"n_episodes < MIN=3 en template eligible: {first}"
 
 
 @pytest.mark.smoke
-def test_longitudinal_n_groups_evaluated_para_a1(
-    client: httpx.Client, auth_headers
-) -> None:
+def test_longitudinal_n_groups_evaluated_para_a1(client: httpx.Client, auth_headers) -> None:
     """ADR-042: contador agregado n_groups_evaluated debe ser >=1 para A1."""
     resp = client.get(
         f"/api/v1/analytics/student/{STUDENT_A1}/cii-evolution-longitudinal",

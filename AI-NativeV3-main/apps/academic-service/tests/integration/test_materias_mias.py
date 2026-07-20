@@ -265,6 +265,7 @@ def test_endpoint_requires_materia_read_permission(tenant_a_id: UUID) -> None:
     El seed agrega `("role:estudiante", "*", "materia:*", "read")` post B.2.
     Un rol arbitrario sin policies cae a 403 via `require_permission`.
     """
+
     async def _override_user() -> User:
         return User(
             id=uuid4(),

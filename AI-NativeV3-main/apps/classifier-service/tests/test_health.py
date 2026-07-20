@@ -13,9 +13,7 @@ from platform_observability.health import CheckResult
 
 @pytest.fixture
 async def client() -> AsyncClient:
-    async with AsyncClient(
-        transport=ASGITransport(app=app), base_url="http://test"
-    ) as c:
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as c:
         yield c
 
 
@@ -40,9 +38,7 @@ def _patch(db: CheckResult, redis: CheckResult) -> Any:
     ]
 
 
-async def _with_patches(
-    client: AsyncClient, db: CheckResult, redis: CheckResult
-) -> Any:
+async def _with_patches(client: AsyncClient, db: CheckResult, redis: CheckResult) -> Any:
     patches = _patch(db, redis)
     for p in patches:
         p.start()

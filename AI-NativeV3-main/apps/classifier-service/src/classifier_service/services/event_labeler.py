@@ -170,7 +170,7 @@ def label_event(
                 lex = lexical_label(content)
                 if lex is not None:
                     return lex
-        except Exception:  # noqa: BLE001 — fail-soft per ADR-045
+        except Exception:
             pass
         # Override temporal v1.1.0 (ADR-023) — N4 gana sobre N1 si ambas matchean.
         if context is not None:

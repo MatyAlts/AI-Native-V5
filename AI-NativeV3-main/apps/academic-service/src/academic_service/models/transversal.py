@@ -57,9 +57,7 @@ class StudentProfile(Base, TenantMixin):
 
     __tablename__ = "student_profiles"
 
-    student_pseudonym: Mapped[uuid.UUID] = mapped_column(
-        PgUUID(as_uuid=True), primary_key=True
-    )
+    student_pseudonym: Mapped[uuid.UUID] = mapped_column(PgUUID(as_uuid=True), primary_key=True)
     full_name: Mapped[str | None] = mapped_column(String(200), nullable=True)
     email: Mapped[str | None] = mapped_column(String(254), nullable=True)
     updated_at: Mapped[datetime] = mapped_column(

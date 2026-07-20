@@ -183,16 +183,33 @@ def test_ninguna_plantilla_nombra_categoria_de_apropiacion() -> None:
     """Cubre invariante: no nombrar `reflexiva`, `superficial`, `delegacion`."""
     casos = [
         # sin tutor
-        [_ev("episodio_abierto", 0), _ev("edicion_codigo", 1), _ev("codigo_ejecutado", 2),
-         _ev("edicion_codigo", 3), _ev("tests_ejecutados", 4, {"test_count_failed": 0}),
-         _ev("episodio_cerrado", 5)],
+        [
+            _ev("episodio_abierto", 0),
+            _ev("edicion_codigo", 1),
+            _ev("codigo_ejecutado", 2),
+            _ev("edicion_codigo", 3),
+            _ev("tests_ejecutados", 4, {"test_count_failed": 0}),
+            _ev("episodio_cerrado", 5),
+        ],
         # solo conversacion
-        [_ev("episodio_abierto", 0), _ev("prompt_enviado", 1), _ev("tutor_respondio", 2),
-         _ev("prompt_enviado", 3), _ev("tutor_respondio", 4), _ev("episodio_cerrado", 5)],
+        [
+            _ev("episodio_abierto", 0),
+            _ev("prompt_enviado", 1),
+            _ev("tutor_respondio", 2),
+            _ev("prompt_enviado", 3),
+            _ev("tutor_respondio", 4),
+            _ev("episodio_cerrado", 5),
+        ],
         # mixto largo
-        [_ev("episodio_abierto", 0), _ev("lectura_enunciado", 1), _ev("edicion_codigo", 5),
-         _ev("codigo_ejecutado", 10), _ev("prompt_enviado", 11), _ev("tutor_respondio", 12),
-         _ev("episodio_cerrado", 13)],
+        [
+            _ev("episodio_abierto", 0),
+            _ev("lectura_enunciado", 1),
+            _ev("edicion_codigo", 5),
+            _ev("codigo_ejecutado", 10),
+            _ev("prompt_enviado", 11),
+            _ev("tutor_respondio", 12),
+            _ev("episodio_cerrado", 13),
+        ],
     ]
     PALABRAS_PROHIBIDAS = ["reflexiva", "superficial", "delegacion", "delegación"]
     for events in casos:

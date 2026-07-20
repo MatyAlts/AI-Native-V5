@@ -75,7 +75,7 @@ from sqlalchemy.ext.asyncio import create_async_engine
 ROOT = Path(__file__).parent.parent
 sys.path.insert(0, str(ROOT / "apps" / "classifier-service" / "src"))
 
-from classifier_service.services import (  # noqa: E402
+from classifier_service.services import (
     DEFAULT_REFERENCE_PROFILE,
     compute_classifier_config_hash,
 )
@@ -102,9 +102,7 @@ class LegacyClassification:
     legacy_hash: str
 
 
-async def list_legacy(
-    db_url: str, vigente_hash: str
-) -> list[LegacyClassification]:
+async def list_legacy(db_url: str, vigente_hash: str) -> list[LegacyClassification]:
     """Lista classifications current con hash distinto al vigente."""
     engine = create_async_engine(db_url, echo=False)
     try:

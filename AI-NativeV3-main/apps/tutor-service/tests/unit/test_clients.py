@@ -328,11 +328,7 @@ async def test_ai_gateway_stream_raises_on_error_event() -> None:
 @pytest.mark.asyncio
 @respx.mock
 async def test_ai_gateway_stream_skips_invalid_lines() -> None:
-    sse_body = (
-        b"event: ping\n\n"
-        b"data: not-json\n\n"
-        b'data: {"type":"token","content":"ok"}\n\n'
-    )
+    sse_body = b'event: ping\n\ndata: not-json\n\ndata: {"type":"token","content":"ok"}\n\n'
     respx.post(f"{AI_GW}/api/v1/stream").mock(
         return_value=httpx.Response(
             200, content=sse_body, headers={"Content-Type": "text/event-stream"}
@@ -382,9 +378,7 @@ async def test_ctr_get_episode_returns_data() -> None:
         )
     )
     client = CTRClient(CTR)
-    data = await client.get_episode(
-        episode_id=eid, tenant_id=uuid4(), caller_id=uuid4()
-    )
+    data = await client.get_episode(episode_id=eid, tenant_id=uuid4(), caller_id=uuid4())
     assert data is not None
     assert data["id"] == str(eid)
 
@@ -393,13 +387,9 @@ async def test_ctr_get_episode_returns_data() -> None:
 @respx.mock
 async def test_ctr_get_episode_returns_none_on_404() -> None:
     eid = uuid4()
-    respx.get(f"{CTR}/api/v1/episodes/{eid}").mock(
-        return_value=httpx.Response(404)
-    )
+    respx.get(f"{CTR}/api/v1/episodes/{eid}").mock(return_value=httpx.Response(404))
     client = CTRClient(CTR)
-    data = await client.get_episode(
-        episode_id=eid, tenant_id=uuid4(), caller_id=uuid4()
-    )
+    data = await client.get_episode(episode_id=eid, tenant_id=uuid4(), caller_id=uuid4())
     assert data is None
 
 
@@ -407,11 +397,7 @@ async def test_ctr_get_episode_returns_none_on_404() -> None:
 @respx.mock
 async def test_ctr_get_episode_raises_on_5xx() -> None:
     eid = uuid4()
-    respx.get(f"{CTR}/api/v1/episodes/{eid}").mock(
-        return_value=httpx.Response(500)
-    )
+    respx.get(f"{CTR}/api/v1/episodes/{eid}").mock(return_value=httpx.Response(500))
     client = CTRClient(CTR)
     with pytest.raises(httpx.HTTPStatusError):
-        await client.get_episode(
-            episode_id=eid, tenant_id=uuid4(), caller_id=uuid4()
-        )
+        await client.get_episode(episode_id=eid, tenant_id=uuid4(), caller_id=uuid4())

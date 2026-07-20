@@ -149,7 +149,9 @@ def _rich_tp() -> dict:
     }
 
 
-def _published_tp_response(tarea_id: UUID, comision_id: UUID, tenant_id: UUID) -> TareaPracticaResponse:
+def _published_tp_response(
+    tarea_id: UUID, comision_id: UUID, tenant_id: UUID
+) -> TareaPracticaResponse:
     now = datetime.now(UTC)
     return TareaPracticaResponse(
         id=tarea_id,

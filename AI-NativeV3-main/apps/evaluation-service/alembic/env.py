@@ -35,7 +35,7 @@ SRC = Path(__file__).parent.parent / "src"
 if str(SRC) not in sys.path:
     sys.path.insert(0, str(SRC))
 
-from evaluation_service.models import Base  # noqa: E402
+from evaluation_service.models import Base
 
 config = context.config
 if config.config_file_name is not None:

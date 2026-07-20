@@ -397,9 +397,7 @@ class RealLongitudinalDataSource:
         ep_result = await self.ctr.execute(ep_stmt)
         # Excluir superseded (ghost resume duplicates) — filtro en Python sobre
         # el meta JSONB para no depender del operador JSONB del backend.
-        episodes_raw = [
-            row for row in ep_result.all() if not (row.meta or {}).get("superseded")
-        ]
+        episodes_raw = [row for row in ep_result.all() if not (row.meta or {}).get("superseded")]
         if not episodes_raw:
             return []
 

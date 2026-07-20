@@ -48,14 +48,14 @@ def test_manifest_yaml_existe_y_se_parsea() -> None:
     repo_root = Path(__file__).resolve().parents[4]
     manifest = repo_root / "ai-native-prompts" / "manifest.yaml"
     assert manifest.exists(), (
-        f"ai-native-prompts/manifest.yaml debe existir post-G12-activation; "
-        f"si fue borrado, el endpoint /active_configs devuelve el default v1.0.0 "
-        f"hardcodeado mientras el tutor usa v1.2.0 — desalineacion silenciosa."
+        "ai-native-prompts/manifest.yaml debe existir post-G12-activation; "
+        "si fue borrado, el endpoint /active_configs devuelve el default v1.0.0 "
+        "hardcodeado mientras el tutor usa v1.2.0 — desalineacion silenciosa."
     )
     text = manifest.read_text(encoding="utf-8")
     # Sanity check minimo — no parseamos YAML completo aca, solo verificamos
     # que la version declarada coincide con el config del tutor.
     assert "tutor: v1.2.0" in text, (
-        f"manifest.yaml debe declarar 'tutor: v1.2.0' bajo active.default; "
-        f"contenido actual no incluye esa linea."
+        "manifest.yaml debe declarar 'tutor: v1.2.0' bajo active.default; "
+        "contenido actual no incluye esa linea."
     )

@@ -93,9 +93,7 @@ async def academic_session() -> AsyncSession:
     await engine.dispose()
 
 
-async def _add_episode(
-    session: AsyncSession, *, student: UUID, problema_id: UUID
-) -> UUID:
+async def _add_episode(session: AsyncSession, *, student: UUID, problema_id: UUID) -> UUID:
     from ctr_service.models import Episode
 
     ep_id = uuid4()
@@ -118,9 +116,7 @@ async def _add_episode(
     return ep_id
 
 
-async def _add_tarea(
-    session: AsyncSession, *, problema_id: UUID, template_id: UUID | None
-) -> None:
+async def _add_tarea(session: AsyncSession, *, problema_id: UUID, template_id: UUID | None) -> None:
     from sqlalchemy import text
 
     await session.execute(

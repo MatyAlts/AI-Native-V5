@@ -43,7 +43,9 @@ def _user(roles: set[str], uid: UUID | None = None) -> User:
 # ── Capa 1: assert_comision_member ────────────────────────────────────────
 
 
-@pytest.mark.parametrize("role", ["superadmin", "docente_admin", "tutor_service", "classifier_worker"])
+@pytest.mark.parametrize(
+    "role", ["superadmin", "docente_admin", "tutor_service", "classifier_worker"]
+)
 async def test_oversight_y_service_accounts_pasan_sin_tocar_db(monkeypatch, role) -> None:
     """Los roles de `CTR_OVERSIGHT_ROLES` no consultan membresía: acceso total."""
     monkeypatch.setattr(deps.settings, "enforce_comision_access", True)

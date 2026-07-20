@@ -60,13 +60,12 @@ from __future__ import annotations
 import asyncio
 import hashlib
 import os
-import sys
 from datetime import UTC, date, datetime, timedelta
 from pathlib import Path
 from uuid import UUID
 
 from sqlalchemy import text
-from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine, AsyncSession
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
 ROOT = Path(__file__).parent.parent
 
@@ -92,11 +91,36 @@ CURSO_CONFIG_HASH = hashlib.sha256(b"curso-config-utn-vps-v1").hexdigest()
 
 # Unidades tematicas — orden visible en sidebar del estudiante
 UNIDADES = [
-    {"id": UUID("d0d0d0d0-0010-0010-0010-d0d0d0d00010"), "nombre": "Variables y Tipos", "orden": 1, "descripcion": "Tipos primitivos, mutabilidad, scope y pasaje por referencia en Python."},
-    {"id": UUID("d0d0d0d0-0020-0020-0020-d0d0d0d00020"), "nombre": "Secuenciales", "orden": 2, "descripcion": "Operadores, expresiones y entrada/salida basica."},
-    {"id": UUID("d0d0d0d0-0030-0030-0030-d0d0d0d00030"), "nombre": "Condicionales", "orden": 3, "descripcion": "Estructuras de decision: if/elif/else, operadores logicos."},
-    {"id": UUID("d0d0d0d0-0040-0040-0040-d0d0d0d00040"), "nombre": "Repetitivas", "orden": 4, "descripcion": "for, while, control de iteracion (break, continue)."},
-    {"id": UUID("d0d0d0d0-0050-0050-0050-d0d0d0d00050"), "nombre": "Funciones", "orden": 5, "descripcion": "Definicion, parametros, retorno, scope local vs global."},
+    {
+        "id": UUID("d0d0d0d0-0010-0010-0010-d0d0d0d00010"),
+        "nombre": "Variables y Tipos",
+        "orden": 1,
+        "descripcion": "Tipos primitivos, mutabilidad, scope y pasaje por referencia en Python.",
+    },
+    {
+        "id": UUID("d0d0d0d0-0020-0020-0020-d0d0d0d00020"),
+        "nombre": "Secuenciales",
+        "orden": 2,
+        "descripcion": "Operadores, expresiones y entrada/salida basica.",
+    },
+    {
+        "id": UUID("d0d0d0d0-0030-0030-0030-d0d0d0d00030"),
+        "nombre": "Condicionales",
+        "orden": 3,
+        "descripcion": "Estructuras de decision: if/elif/else, operadores logicos.",
+    },
+    {
+        "id": UUID("d0d0d0d0-0040-0040-0040-d0d0d0d00040"),
+        "nombre": "Repetitivas",
+        "orden": 4,
+        "descripcion": "for, while, control de iteracion (break, continue).",
+    },
+    {
+        "id": UUID("d0d0d0d0-0050-0050-0050-d0d0d0d00050"),
+        "nombre": "Funciones",
+        "orden": 5,
+        "descripcion": "Definicion, parametros, retorno, scope local vs global.",
+    },
 ]
 
 # 3 TP templates publicados (uno por las primeras 3 unidades)

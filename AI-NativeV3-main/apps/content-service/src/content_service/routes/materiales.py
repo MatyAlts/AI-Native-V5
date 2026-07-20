@@ -56,6 +56,7 @@ def _is_semantic_model(model_name: str | None) -> bool | None:
         return None
     return model_name != MockEmbedder.model_name
 
+
 router = APIRouter(prefix="/api/v1/materiales", tags=["materiales"])
 
 

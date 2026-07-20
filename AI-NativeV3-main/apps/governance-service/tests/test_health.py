@@ -14,21 +14,15 @@ from httpx import ASGITransport, AsyncClient
 
 @pytest.fixture
 async def client() -> AsyncClient:
-    async with AsyncClient(
-        transport=ASGITransport(app=app), base_url="http://test"
-    ) as c:
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as c:
         yield c
 
 
 def _patch_prompts_dir(path: str) -> Any:
-    return patch(
-        "governance_service.routes.health.settings.prompts_repo_path", path
-    )
+    return patch("governance_service.routes.health.settings.prompts_repo_path", path)
 
 
-async def test_health_ready_prompt_present(
-    tmp_path: Path, client: AsyncClient
-) -> None:
+async def test_health_ready_prompt_present(tmp_path: Path, client: AsyncClient) -> None:
     prompt_path = tmp_path / "prompts" / "tutor" / "v1.0.1" / "system.md"
     prompt_path.parent.mkdir(parents=True)
     prompt_path.write_text("# tutor system prompt")
@@ -41,9 +35,7 @@ async def test_health_ready_prompt_present(
     assert body["checks"]["prompts_filesystem"]["ok"] is True
 
 
-async def test_health_ready_prompt_missing(
-    tmp_path: Path, client: AsyncClient
-) -> None:
+async def test_health_ready_prompt_missing(tmp_path: Path, client: AsyncClient) -> None:
     """Prompt no existe → critical check falla → 503."""
     with _patch_prompts_dir(str(tmp_path)):
         response = await client.get("/health/ready")
@@ -54,9 +46,7 @@ async def test_health_ready_prompt_missing(
     assert "not found" in body["checks"]["prompts_filesystem"]["error"]
 
 
-async def test_health_ready_prompt_unreadable(
-    tmp_path: Path, client: AsyncClient
-) -> None:
+async def test_health_ready_prompt_unreadable(tmp_path: Path, client: AsyncClient) -> None:
     """Prompt existe pero permisos no permiten lectura → 503."""
     prompt_path = tmp_path / "prompts" / "tutor" / "v1.0.1" / "system.md"
     prompt_path.parent.mkdir(parents=True)
@@ -70,9 +60,7 @@ async def test_health_ready_prompt_unreadable(
         # es 503. Si el sistema permite leer (root/CI quirk), test no falla.
         if response.status_code == 503:
             body = response.json()
-            assert "not readable" in body["checks"]["prompts_filesystem"][
-                "error"
-            ]
+            assert "not readable" in body["checks"]["prompts_filesystem"]["error"]
     finally:
         os.chmod(prompt_path, 0o644)
 

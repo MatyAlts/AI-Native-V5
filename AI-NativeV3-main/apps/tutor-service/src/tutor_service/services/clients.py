@@ -251,7 +251,10 @@ class AIGatewayClient:
                     # caller (tutor_core). Si falta algun campo (compat con
                     # versiones viejas del endpoint), yieldeamos lo que haya
                     # — el caller maneja None.
-                    if any(k in event for k in ("provider", "tokens_input", "tokens_output", "estimated_cost_usd")):
+                    if any(
+                        k in event
+                        for k in ("provider", "tokens_input", "tokens_output", "estimated_cost_usd")
+                    ):
                         yield {
                             "type": "usage",
                             "provider": event.get("provider"),

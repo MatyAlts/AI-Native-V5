@@ -277,9 +277,7 @@ async def test_sweep_caller_es_service_account_para_timeout(
     fake_ctr.published_callers.clear()
 
     sweep_now = time.time() + 3600
-    await _sweep_once(
-        sessions=sessions, tutor=tutor, idle_timeout_seconds=30 * 60, now=sweep_now
-    )
+    await _sweep_once(sessions=sessions, tutor=tutor, idle_timeout_seconds=30 * 60, now=sweep_now)
 
     assert len(fake_ctr.published_callers) == 1
     assert fake_ctr.published_callers[0] == TUTOR_SERVICE_USER_ID

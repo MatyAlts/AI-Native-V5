@@ -165,9 +165,7 @@ async def test_staff_con_membresia_ve_todas_las_inscripciones(
 # ── Caso C: alumno inscripto sin fila propia → lista vacía ────────────
 
 
-async def test_alumno_sin_fila_propia_recibe_lista_vacia(
-    mock_session, tenant_a_id: UUID
-) -> None:
+async def test_alumno_sin_fila_propia_recibe_lista_vacia(mock_session, tenant_a_id: UUID) -> None:
     """Caso C — alumno inscripto cuyo pseudonym no matchea ninguna fila.
 
     El filtro `WHERE student_pseudonym = user.id` no matchea, entonces el
@@ -193,9 +191,7 @@ async def test_alumno_sin_fila_propia_recibe_lista_vacia(
 # ── Compat: callers internos sin user (legacy) ────────────────────────
 
 
-async def test_caller_interno_sin_user_no_filtra(
-    mock_session, tenant_a_id: UUID
-) -> None:
+async def test_caller_interno_sin_user_no_filtra(mock_session, tenant_a_id: UUID) -> None:
     """`user=None` mantiene comportamiento legacy (sin filtrado adicional).
 
     Aplica para callers internos que ya filtraron autorización aguas

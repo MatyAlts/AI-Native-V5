@@ -19,7 +19,6 @@ from analytics_service import config
 from analytics_service.routes import analytics as routes
 from fastapi import HTTPException
 
-
 # ── Rama estudiante (require_student_progress_access) ──────────────────
 
 

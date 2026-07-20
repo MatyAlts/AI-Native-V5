@@ -37,9 +37,7 @@ INTERRATER_URL = "/api/v1/interrater/sample?comision_id=22222222-2222-2222-2222-
 
 @pytest.fixture
 async def client() -> AsyncClient:
-    async with AsyncClient(
-        transport=ASGITransport(app=app), base_url="http://test"
-    ) as c:
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as c:
         yield c
 
 
@@ -112,9 +110,7 @@ async def test_flag_on_token_servicio_valido_devuelve_200(
 ) -> None:
     """Camino de reclassify_all / academic-service: token de service-account -> 200."""
     _enable_flag(monkeypatch)
-    resp = await client.get(
-        CONFIG_HASH_URL, headers={"X-Internal-Service-Token": SERVICE_TOKEN}
-    )
+    resp = await client.get(CONFIG_HASH_URL, headers={"X-Internal-Service-Token": SERVICE_TOKEN})
     assert resp.status_code == 200
 
 
@@ -122,9 +118,7 @@ async def test_flag_on_token_servicio_invalido_devuelve_401(
     client: AsyncClient, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     _enable_flag(monkeypatch)
-    resp = await client.get(
-        CONFIG_HASH_URL, headers={"X-Internal-Service-Token": "wrong-token"}
-    )
+    resp = await client.get(CONFIG_HASH_URL, headers={"X-Internal-Service-Token": "wrong-token"})
     assert resp.status_code == 401
 
 

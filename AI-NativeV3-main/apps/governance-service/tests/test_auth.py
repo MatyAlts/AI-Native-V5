@@ -48,9 +48,7 @@ def _reset_state(prompts_repo: Path, monkeypatch: pytest.MonkeyPatch) -> Any:
 
 @pytest.fixture
 async def client() -> AsyncClient:
-    async with AsyncClient(
-        transport=ASGITransport(app=app), base_url="http://test"
-    ) as c:
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as c:
         yield c
 
 
@@ -113,9 +111,7 @@ async def test_flag_on_firma_valida_devuelve_200(
     monkeypatch.setattr(settings, "require_gateway_signature", True)
     monkeypatch.setattr(settings, "gateway_shared_secret", SECRET)
     monkeypatch.setattr(settings, "internal_service_token", SERVICE_TOKEN)
-    resp = await client.get(
-        "/api/v1/prompts/tutor/v1.0.0", headers=_valid_signature_headers()
-    )
+    resp = await client.get("/api/v1/prompts/tutor/v1.0.0", headers=_valid_signature_headers())
     assert resp.status_code == 200
     assert resp.json()["name"] == "tutor"
 
@@ -157,14 +153,10 @@ async def test_flag_on_protege_active_configs_y_verify(
     monkeypatch.setattr(settings, "internal_service_token", SERVICE_TOKEN)
 
     assert (await client.get("/api/v1/active_configs")).status_code == 401
-    assert (
-        await client.post("/api/v1/prompts/tutor/v1.0.0/verify")
-    ).status_code == 401
+    assert (await client.post("/api/v1/prompts/tutor/v1.0.0/verify")).status_code == 401
 
     headers = _valid_signature_headers()
-    assert (
-        await client.get("/api/v1/active_configs", headers=headers)
-    ).status_code == 200
+    assert (await client.get("/api/v1/active_configs", headers=headers)).status_code == 200
     assert (
         await client.post("/api/v1/prompts/tutor/v1.0.0/verify", headers=headers)
     ).status_code == 200

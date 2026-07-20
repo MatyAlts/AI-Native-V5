@@ -288,8 +288,6 @@ class TpEjerciciosValidator(BaseModel):
 
         peso_total = sum(e.peso_en_tp for e in self.tp_ejercicios)
         if abs(float(peso_total) - 1.0) > 0.001:
-            raise ValueError(
-                f"La suma de peso_en_tp debe ser 1.0 (actual: {peso_total})"
-            )
+            raise ValueError(f"La suma de peso_en_tp debe ser 1.0 (actual: {peso_total})")
 
         return self

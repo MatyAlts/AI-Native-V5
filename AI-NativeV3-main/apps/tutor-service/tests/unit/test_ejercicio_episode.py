@@ -66,16 +66,20 @@ def tutor_with_academic(fake_redis):
     ctr.publish_event = AsyncMock()
     ctr.find_open_episode = AsyncMock(return_value=None)
 
-    return TutorCore(
-        governance=FakeGovernanceClient(),
-        content=FakeContentClient(),
-        ai_gateway=FakeAIGatewayClient(),
-        ctr=ctr,
-        sessions=SessionManager(fake_redis),
-        academic=academic,
-        default_prompt_version="v1.0.0",
-        default_model="claude-sonnet-4-6",
-    ), academic, ctr
+    return (
+        TutorCore(
+            governance=FakeGovernanceClient(),
+            content=FakeContentClient(),
+            ai_gateway=FakeAIGatewayClient(),
+            ctr=ctr,
+            sessions=SessionManager(fake_redis),
+            academic=academic,
+            default_prompt_version="v1.0.0",
+            default_model="claude-sonnet-4-6",
+        ),
+        academic,
+        ctr,
+    )
 
 
 @pytest.mark.asyncio

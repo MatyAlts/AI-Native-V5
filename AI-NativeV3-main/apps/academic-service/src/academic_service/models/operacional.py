@@ -198,9 +198,7 @@ class Unidad(Base, TenantMixin, TimestampMixin):
     )
     created_by: Mapped[uuid.UUID] = mapped_column(PgUUID(as_uuid=True), nullable=False)
 
-    tareas_practicas: Mapped[list[TareaPractica]] = relationship(
-        back_populates="unidad"
-    )
+    tareas_practicas: Mapped[list[TareaPractica]] = relationship(back_populates="unidad")
 
     __table_args__ = (
         UniqueConstraint("tenant_id", "comision_id", "nombre", name="uq_unidad_nombre"),

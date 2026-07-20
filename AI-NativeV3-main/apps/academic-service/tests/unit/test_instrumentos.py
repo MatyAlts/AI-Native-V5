@@ -19,7 +19,6 @@ from __future__ import annotations
 from uuid import uuid4
 
 import pytest
-
 from academic_service.schemas.instrumentos import (
     CuestionarioIACreate,
     PretestAutoeficaciaCreate,
@@ -35,7 +34,6 @@ from academic_service.services.instrumentos_content import (
     validate_cuestionario_ia_responses,
     validate_pretest_autoeficacia_responses,
 )
-
 
 # ============================================================================
 # CUESTIONARIO IA (P2-2)

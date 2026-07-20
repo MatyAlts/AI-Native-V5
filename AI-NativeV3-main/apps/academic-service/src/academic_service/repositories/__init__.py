@@ -100,9 +100,7 @@ class TpEjercicioRepository:
         result = await self.session.execute(stmt)
         return list(result.scalars().all())
 
-    async def get_pair(
-        self, tarea_practica_id: UUID, ejercicio_id: UUID
-    ) -> TpEjercicio | None:
+    async def get_pair(self, tarea_practica_id: UUID, ejercicio_id: UUID) -> TpEjercicio | None:
         stmt = select(TpEjercicio).where(
             TpEjercicio.tarea_practica_id == tarea_practica_id,
             TpEjercicio.ejercicio_id == ejercicio_id,

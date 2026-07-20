@@ -63,9 +63,7 @@ class UnidadService:
         await self.comisiones.get_or_404(data.comision_id)
 
         # Verifica unicidad de nombre dentro de (tenant, comision)
-        existing = await self._find_by_nombre(
-            user.tenant_id, data.comision_id, data.nombre
-        )
+        existing = await self._find_by_nombre(user.tenant_id, data.comision_id, data.nombre)
         if existing is not None:
             raise HTTPException(
                 status_code=status.HTTP_409_CONFLICT,
@@ -112,9 +110,7 @@ class UnidadService:
         await self.session.refresh(unidad)
         return unidad
 
-    async def list_by_comision(
-        self, tenant_id: UUID, comision_id: UUID
-    ) -> list[Unidad]:
+    async def list_by_comision(self, tenant_id: UUID, comision_id: UUID) -> list[Unidad]:
         """Lista Unidades activas de una comisión ordenadas por `orden` ASC."""
         stmt = (
             select(Unidad)
@@ -157,9 +153,7 @@ class UnidadService:
         # Si se cambia el nombre, validar unicidad dentro de la misma comisión
         new_nombre = changes.get("nombre")
         if new_nombre is not None and new_nombre != obj.nombre:
-            existing = await self._find_by_nombre(
-                obj.tenant_id, obj.comision_id, new_nombre
-            )
+            existing = await self._find_by_nombre(obj.tenant_id, obj.comision_id, new_nombre)
             if existing is not None:
                 raise HTTPException(
                     status_code=status.HTTP_409_CONFLICT,
@@ -257,11 +251,7 @@ class UnidadService:
             action="unidad.reorder",
             resource_type="unidad",
             resource_id=unidad_ids[0] if unidad_ids else None,
-            changes={
-                "reorder": [
-                    {"id": str(item.id), "orden": item.orden} for item in items
-                ]
-            },
+            changes={"reorder": [{"id": str(item.id), "orden": item.orden} for item in items]},
         )
         self.session.add(audit)
         await self.session.flush()

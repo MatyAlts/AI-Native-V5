@@ -19,6 +19,7 @@ _INVITE_ALPHABET = "ABCDEFGHJKMNPQRSTUVWXYZ23456789"
 def _generate_invite_code() -> str:
     return "".join(secrets.choice(_INVITE_ALPHABET) for _ in range(6))
 
+
 from fastapi import HTTPException, status
 from sqlalchemy import and_, select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -62,9 +63,7 @@ async def comisiones_del_usuario(session: AsyncSession, user_id: UUID) -> set[UU
     return {r[0] for r in rows.all()}
 
 
-async def assert_comision_member(
-    session: AsyncSession, user: User, comision_id: UUID
-) -> None:
+async def assert_comision_member(session: AsyncSession, user: User, comision_id: UUID) -> None:
     """Lanza 403 si `user` no es staff de `comision_id`.
 
     El aislamiento entre docentes NO lo da la RLS (en prod todos comparten
@@ -86,9 +85,7 @@ async def assert_comision_member(
         )
 
 
-async def comisiones_inscriptas_del_usuario(
-    session: AsyncSession, user_id: UUID
-) -> set[UUID]:
+async def comisiones_inscriptas_del_usuario(session: AsyncSession, user_id: UUID) -> set[UUID]:
     """comision_ids donde `user_id` es estudiante con inscripcion vigente.
 
     Paridad con `/materias/mias`: solo los estados que el alumno ve en su
@@ -105,9 +102,7 @@ async def comisiones_inscriptas_del_usuario(
     return {r[0] for r in rows.all()}
 
 
-async def assert_comision_access(
-    session: AsyncSession, user: User, comision_id: UUID
-) -> bool:
+async def assert_comision_access(session: AsyncSession, user: User, comision_id: UUID) -> bool:
     """Lanza 403 si `user` no es staff NI estudiante inscripto de la comision.
 
     Gate de LECTURA para recursos que consumen tanto docentes (web-teacher)
@@ -479,7 +474,9 @@ class ComisionService:
         result = await self.session.execute(stmt)
         uc = result.scalar_one_or_none()
         if uc is None:
-            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Asignacion no encontrada")
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND, detail="Asignacion no encontrada"
+            )
         uc.deleted_at = utc_now()
         audit = AuditLog(
             tenant_id=uc.tenant_id,
@@ -628,7 +625,9 @@ class ComisionService:
         result = await self.session.execute(stmt)
         insc = result.scalar_one_or_none()
         if insc is None:
-            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Inscripcion no encontrada")
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND, detail="Inscripcion no encontrada"
+            )
         insc.deleted_at = utc_now()
         audit = AuditLog(
             tenant_id=insc.tenant_id,

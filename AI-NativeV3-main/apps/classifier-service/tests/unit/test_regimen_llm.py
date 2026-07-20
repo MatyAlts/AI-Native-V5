@@ -63,7 +63,11 @@ def test_regla_sin_verificacion_ni_justificacion_es_superficial() -> None:
 def test_armar_contexto_extrae_dialogo_y_conteos() -> None:
     events = [
         {"seq": 2, "event_type": "prompt_enviado", "payload": {"content": "por qué da error?"}},
-        {"seq": 3, "event_type": "tutor_respondio", "payload": {"content": "qué esperás que pase?"}},
+        {
+            "seq": 3,
+            "event_type": "tutor_respondio",
+            "payload": {"content": "qué esperás que pase?"},
+        },
         {"seq": 4, "event_type": "codigo_ejecutado", "payload": {"stderr": "NameError"}},
         {"seq": 5, "event_type": "codigo_ejecutado", "payload": {"stderr": ""}},
         {"seq": 6, "event_type": "edicion_codigo", "payload": {"snapshot": "print('hola')"}},
@@ -100,8 +104,12 @@ _EVENTS = [{"seq": 1, "event_type": "prompt_enviado", "payload": {"content": "te
 async def test_clasifica_ok_cuando_es_consistente_y_confiado() -> None:
     salida = _raw(True, True, True, False, "REFLEXIVA", conf=0.95).model_dump()
     r = await clasificar_regimen_llm(
-        events=_EVENTS, enunciado="x", episode_id="e1",
-        complete=_mock_complete(salida), model="gpt-4o", tenant_id=TENANT,
+        events=_EVENTS,
+        enunciado="x",
+        episode_id="e1",
+        complete=_mock_complete(salida),
+        model="gpt-4o",
+        tenant_id=TENANT,
     )
     assert r.estado == "ok"
     assert r.regimen == "REFLEXIVA"
@@ -113,8 +121,12 @@ async def test_descarta_si_el_modelo_contradice_la_regla() -> None:
     # El modelo dice REFLEXIVA pero las dimensiones (oráculo) dan SUPERFICIAL.
     salida = _raw(True, True, True, True, "REFLEXIVA").model_dump()
     r = await clasificar_regimen_llm(
-        events=_EVENTS, enunciado="x", episode_id="e2",
-        complete=_mock_complete(salida), model="gpt-4o", tenant_id=TENANT,
+        events=_EVENTS,
+        enunciado="x",
+        episode_id="e2",
+        complete=_mock_complete(salida),
+        model="gpt-4o",
+        tenant_id=TENANT,
     )
     assert r.estado == "inconsistente"
     assert r.regimen is None  # no se infiere etiqueta de salida inconsistente
@@ -124,8 +136,12 @@ async def test_descarta_si_el_modelo_contradice_la_regla() -> None:
 async def test_rutea_a_revision_si_baja_confianza() -> None:
     salida = _raw(True, True, True, False, "REFLEXIVA", conf=0.4).model_dump()
     r = await clasificar_regimen_llm(
-        events=_EVENTS, enunciado="x", episode_id="e3",
-        complete=_mock_complete(salida), model="gpt-4o", tenant_id=TENANT,
+        events=_EVENTS,
+        enunciado="x",
+        episode_id="e3",
+        complete=_mock_complete(salida),
+        model="gpt-4o",
+        tenant_id=TENANT,
     )
     assert r.estado == "baja_confianza"
     assert r.regimen is None
@@ -134,8 +150,12 @@ async def test_rutea_a_revision_si_baja_confianza() -> None:
 @pytest.mark.asyncio
 async def test_error_parseo_si_json_invalido() -> None:
     r = await clasificar_regimen_llm(
-        events=_EVENTS, enunciado="x", episode_id="e4",
-        complete=_mock_complete("esto no es json"), model="gpt-4o", tenant_id=TENANT,
+        events=_EVENTS,
+        enunciado="x",
+        episode_id="e4",
+        complete=_mock_complete("esto no es json"),
+        model="gpt-4o",
+        tenant_id=TENANT,
         max_reintentos=1,
     )
     assert r.estado == "error_parseo"
@@ -172,7 +192,9 @@ async def test_juez_noop_con_flag_off(monkeypatch) -> None:
 async def test_juez_noop_para_delegacion_pasiva(monkeypatch) -> None:
     """La delegación pasiva (overuse) la resuelve la etapa dura, NO el juez."""
     monkeypatch.setattr(_settings, "eje_fino_llm_enabled", True)
-    result = _FakeResult({"subgrupo": {"key": "dependiente_sobreuso"}}, appropriation="delegacion_pasiva")
+    result = _FakeResult(
+        {"subgrupo": {"key": "dependiente_sobreuso"}}, appropriation="delegacion_pasiva"
+    )
     await _aplicar_juez_eje_fino(result, [], uuid4(), {}, uuid4())
     assert "regimen_llm" not in result.features
     assert result.appropriation == "delegacion_pasiva"  # intacto

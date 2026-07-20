@@ -114,9 +114,7 @@ class PartitionWorker:
                 try:
                     await self._process_batch()
                 except Exception:
-                    logger.exception(
-                        "Error procesando batch en partition=%d", self.cfg.partition
-                    )
+                    logger.exception("Error procesando batch en partition=%d", self.cfg.partition)
                     await asyncio.sleep(1)
         finally:
             xpending_task.cancel()
@@ -151,9 +149,7 @@ class PartitionWorker:
                     ctr_worker_xpending_count.add(delta, partition_label)
                     last_value = current
             except Exception:
-                logger.debug(
-                    "Error en xpending poll para partition=%d", self.cfg.partition
-                )
+                logger.debug("Error en xpending poll para partition=%d", self.cfg.partition)
             await asyncio.sleep(30)
 
     async def _process_batch(self) -> None:
@@ -453,9 +449,7 @@ class PartitionWorker:
 
                 # Métrica: incremento del counter post-commit. tenant_id como
                 # único label (episode_id prohibido por cardinalidad).
-                ctr_episodes_integrity_compromised_total.add(
-                    1, {"tenant_id": str(tenant_id)}
-                )
+                ctr_episodes_integrity_compromised_total.add(1, {"tenant_id": str(tenant_id)})
             except Exception:
                 logger.exception("Error guardando dead-letter en DB")
 

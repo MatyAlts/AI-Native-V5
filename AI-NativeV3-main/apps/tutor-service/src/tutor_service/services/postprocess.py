@@ -104,7 +104,6 @@ _DIRECT_PROMPT_PATTERNS = [
     # producía falsos negativos: prompts claramente delegantes caían en
     # "neutral" y luego en `aclaracion_enunciado`, escapando de
     # `delegacion_pasiva` en el classifier.
-
     # "dame/dale/escribime/hacelo/respondeme/pasame/mostrame/decime + sustantivo"
     r"\b(dame|dale|escrib(e|í|ime|ímelo)|hac(e|é|elo|emelo|elo)|respond(e|eme|ele|émelo)|"
     r"pas(a|á|ame|ámelo)|mostr(a|á|ame|ámelo)|dec(i|í|ime|ímelo)|prov(e|é|eeme))\b"
@@ -173,19 +172,96 @@ _QUESTION_MARK_PATTERN = re.compile(r"[?¿]")
 # Stopwords mínimas para el cálculo de Jaccard del detector de off-topic.
 # Lista deliberadamente acotada al castellano + inglés básicos. La similitud
 # léxica es operacionalización conservadora — no clasificación semántica.
-_STOPWORDS = frozenset({
-    # Español
-    "a", "al", "ante", "bajo", "con", "de", "del", "desde", "el", "en", "es",
-    "ese", "esa", "eso", "esta", "este", "esto", "estos", "estas", "fue",
-    "ha", "han", "hay", "la", "las", "le", "les", "lo", "los", "me", "mi",
-    "mis", "no", "nos", "o", "para", "pero", "por", "que", "qué", "se",
-    "ser", "si", "sí", "sin", "sobre", "su", "sus", "te", "tu", "tus", "un",
-    "una", "uno", "unos", "unas", "y", "ya", "yo",
-    # English
-    "a", "an", "and", "are", "as", "at", "be", "by", "for", "from", "have",
-    "in", "is", "it", "its", "of", "on", "or", "the", "this", "to", "was",
-    "were", "with", "you", "your",
-})
+_STOPWORDS = frozenset(
+    {
+        # Español
+        "a",
+        "al",
+        "ante",
+        "bajo",
+        "con",
+        "de",
+        "del",
+        "desde",
+        "el",
+        "en",
+        "es",
+        "ese",
+        "esa",
+        "eso",
+        "esta",
+        "este",
+        "esto",
+        "estos",
+        "estas",
+        "fue",
+        "ha",
+        "han",
+        "hay",
+        "la",
+        "las",
+        "le",
+        "les",
+        "lo",
+        "los",
+        "me",
+        "mi",
+        "mis",
+        "no",
+        "nos",
+        "o",
+        "para",
+        "pero",
+        "por",
+        "que",
+        "qué",
+        "se",
+        "ser",
+        "si",
+        "sí",
+        "sin",
+        "sobre",
+        "su",
+        "sus",
+        "te",
+        "tu",
+        "tus",
+        "un",
+        "una",
+        "uno",
+        "unos",
+        "unas",
+        "y",
+        "ya",
+        "yo",
+        # English
+        "an",
+        "and",
+        "are",
+        "as",
+        "at",
+        "be",
+        "by",
+        "for",
+        "from",
+        "have",
+        "in",
+        "is",
+        "it",
+        "its",
+        "of",
+        "on",
+        "or",
+        "the",
+        "this",
+        "to",
+        "was",
+        "were",
+        "with",
+        "you",
+        "your",
+    }
+)
 
 _TOKEN_PATTERN = re.compile(r"\b[a-záéíóúñü0-9_]{3,}\b", re.IGNORECASE)
 
@@ -325,11 +401,7 @@ def has_question(response: str) -> bool:
 def _significant_tokens(text: str) -> set[str]:
     """Tokens significativos para Jaccard: palabras de >=3 chars que no son
     stopwords. Idempotente."""
-    return {
-        t.lower()
-        for t in _TOKEN_PATTERN.findall(text)
-        if t.lower() not in _STOPWORDS
-    }
+    return {t.lower() for t in _TOKEN_PATTERN.findall(text) if t.lower() not in _STOPWORDS}
 
 
 def lexical_similarity_jaccard(prompt: str, response: str) -> float:

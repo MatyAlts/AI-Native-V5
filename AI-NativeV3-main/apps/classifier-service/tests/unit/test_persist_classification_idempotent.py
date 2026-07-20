@@ -27,7 +27,6 @@ from unittest.mock import AsyncMock, MagicMock
 from uuid import UUID, uuid4
 
 import pytest
-
 from classifier_service.models import Classification
 from classifier_service.services.pipeline import (
     compute_classifier_config_hash,
@@ -246,9 +245,7 @@ async def test_idempotent_persist_reclasifica_cuando_cambia_hash() -> None:
     # Ejecutó al menos 2 statements: 1 SELECT (idempotency check) +
     # 1 UPDATE (marcar vieja) + (puede haber más). Verificamos que hubo
     # un UPDATE en la traza de calls.
-    has_update = any(
-        str(stmt).strip().startswith("UPDATE") for stmt in session.execute_calls
-    )
+    has_update = any(str(stmt).strip().startswith("UPDATE") for stmt in session.execute_calls)
     assert has_update, (
         "Reclasificación con hash distinto debe emitir UPDATE para marcar "
         "la fila vieja como is_current=false (ADR-010 append-only)."

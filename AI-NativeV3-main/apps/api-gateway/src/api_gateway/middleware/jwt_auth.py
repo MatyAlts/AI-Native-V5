@@ -111,9 +111,7 @@ class JWTMiddleware(BaseHTTPMiddleware):
                 # Completar realm demo si no vino desde proxy.
                 if self.demo_user_realm and not request.headers.get("x-user-realm"):
                     headers = [
-                        (k, v)
-                        for k, v in request.scope["headers"]
-                        if k.lower() != b"x-user-realm"
+                        (k, v) for k, v in request.scope["headers"] if k.lower() != b"x-user-realm"
                     ]
                     headers.append((b"x-user-realm", self.demo_user_realm.encode()))
                     request.scope["headers"] = headers

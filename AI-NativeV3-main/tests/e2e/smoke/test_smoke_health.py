@@ -14,7 +14,6 @@ from __future__ import annotations
 
 import httpx
 import pytest
-
 from _helpers import SERVICES_HEALTH, tail_log  # type: ignore[import-not-found]
 
 
@@ -43,10 +42,7 @@ def test_health_endpoint_responds_ready_or_degraded(port: int, name: str) -> Non
     if status == "degraded":
         # No falla — degraded es válido — pero loggea para visibility
         # (un test que falla seria mas ruidoso pero menos accionable).
-        print(
-            f"\n[WARN] {name} reporta degraded — alguna dep cayó. "
-            f"checks={body.get('checks')}"
-        )
+        print(f"\n[WARN] {name} reporta degraded — alguna dep cayó. checks={body.get('checks')}")
 
 
 @pytest.mark.smoke

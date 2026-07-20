@@ -13,9 +13,7 @@ from platform_observability.health import CheckResult
 
 @pytest.fixture
 async def client() -> AsyncClient:
-    async with AsyncClient(
-        transport=ASGITransport(app=app), base_url="http://test"
-    ) as c:
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as c:
         yield c
 
 
@@ -40,9 +38,7 @@ def _patch(db: CheckResult, pgvector: CheckResult) -> Any:
     ]
 
 
-async def _with_patches(
-    client: AsyncClient, db: CheckResult, pgvector: CheckResult
-) -> Any:
+async def _with_patches(client: AsyncClient, db: CheckResult, pgvector: CheckResult) -> Any:
     patches = _patch(db, pgvector)
     for p in patches:
         p.start()
@@ -70,9 +66,7 @@ async def test_health_ready_db_down(client: AsyncClient) -> None:
 
 async def test_health_ready_pgvector_missing(client: AsyncClient) -> None:
     """DB up but pgvector extension not installed → 503 (D7)."""
-    response = await _with_patches(
-        client, _ok(), _ko("pgvector extension not installed")
-    )
+    response = await _with_patches(client, _ok(), _ko("pgvector extension not installed"))
     assert response.status_code == 503
     body = response.json()
     assert body["status"] == "error"

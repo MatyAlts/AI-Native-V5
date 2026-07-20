@@ -205,14 +205,10 @@ async def test_check_http_ok_caches_result() -> None:
         return now[0]
 
     with _patch_httpx(factory):
-        first = await check_http(
-            "http://x/y", timeout=1.0, cache_ttl=5.0, _now=fake_now
-        )
+        first = await check_http("http://x/y", timeout=1.0, cache_ttl=5.0, _now=fake_now)
         # advance 1s — cache still valid
         now[0] += 1
-        second = await check_http(
-            "http://x/y", timeout=1.0, cache_ttl=5.0, _now=fake_now
-        )
+        second = await check_http("http://x/y", timeout=1.0, cache_ttl=5.0, _now=fake_now)
 
     assert first.ok is True
     assert second.ok is True
@@ -247,9 +243,7 @@ async def test_check_http_unexpected_status() -> None:
         return client
 
     with _patch_httpx(factory):
-        result = await check_http(
-            "http://x/y", timeout=1.0, expect_status=200, cache_ttl=5.0
-        )
+        result = await check_http("http://x/y", timeout=1.0, expect_status=200, cache_ttl=5.0)
 
     assert result.ok is False
     assert result.error is not None
@@ -264,9 +258,7 @@ async def test_check_http_timeout() -> None:
         return client
 
     with _patch_httpx(factory):
-        result = await check_http(
-            "http://x/y", timeout=0.05, cache_ttl=5.0
-        )
+        result = await check_http("http://x/y", timeout=0.05, cache_ttl=5.0)
 
     assert result.ok is False
     assert result.error is not None
@@ -281,9 +273,7 @@ async def test_check_http_failure() -> None:
         return client
 
     with _patch_httpx(factory):
-        result = await check_http(
-            "http://x/y", timeout=1.0, cache_ttl=5.0
-        )
+        result = await check_http("http://x/y", timeout=1.0, cache_ttl=5.0)
 
     assert result.ok is False
     assert result.error is not None
@@ -381,8 +371,6 @@ def test_assemble_readiness_missing_critical_treated_as_failure() -> None:
 
 def test_assemble_readiness_does_not_mutate_input_dict() -> None:
     checks: dict[str, CheckResult] = {"redis": _ok()}
-    assemble_readiness(
-        "svc", "0.1.0", checks, critical={"db", "redis"}
-    )
+    assemble_readiness("svc", "0.1.0", checks, critical={"db", "redis"})
     # caller's dict must not have been mutated with the synthetic "db" key
     assert "db" not in checks

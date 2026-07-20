@@ -26,14 +26,13 @@ import json
 from typing import Any
 
 import pytest
+from _helpers import fetch_pg  # type: ignore[import-not-found]
 from platform_contracts.ctr.hashing import (
     GENESIS_HASH,
     compute_chain_hash,
     compute_self_hash,
 )
 from pydantic import BaseModel
-
-from _helpers import fetch_pg  # type: ignore[import-not-found]
 
 
 class _CanonicalEvent(BaseModel):

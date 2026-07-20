@@ -91,7 +91,12 @@ def test_prompt_aclaracion_enunciado_cuenta_como_verbalizacion() -> None:
     es señal de querer entender el problema — cuenta como verbalización."""
     events = [
         _ev(0, "codigo_ejecutado", 0),
-        _ev(1, "prompt_enviado", 30, {"prompt_kind": "aclaracion_enunciado", "content": "no entiendo..."}),
+        _ev(
+            1,
+            "prompt_enviado",
+            30,
+            {"prompt_kind": "aclaracion_enunciado", "content": "no entiendo..."},
+        ),
     ]
     r = compute_ccd(events)
     assert r["aligned"] == 1

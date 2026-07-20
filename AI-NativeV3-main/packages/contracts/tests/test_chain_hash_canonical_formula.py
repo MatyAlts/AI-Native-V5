@@ -25,7 +25,6 @@ import hashlib
 
 from platform_contracts.ctr.hashing import GENESIS_HASH, compute_chain_hash
 
-
 # Fixtures bit-exact: 4 eventos consecutivos del episodio
 # 80000000-0000-0000-0000-0000000f69b4 (ctr_store del piloto, 2026-05-04).
 # Cada tupla = (seq, self_hash, prev_chain_hash, chain_hash_esperado).
@@ -76,8 +75,7 @@ def test_chain_hash_matches_real_db_consecutive_events() -> None:
     for seq, self_hash, prev_chain_hash, expected_chain in _REAL_CHAIN_FIXTURES:
         actual = compute_chain_hash(self_hash, prev_chain_hash)
         assert actual == expected_chain, (
-            f"chain_hash mismatch en seq={seq}: "
-            f"actual={actual} expected={expected_chain}"
+            f"chain_hash mismatch en seq={seq}: actual={actual} expected={expected_chain}"
         )
 
 

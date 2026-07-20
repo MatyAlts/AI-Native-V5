@@ -93,9 +93,7 @@ def _check_file_readable(path: str) -> CheckResult:
 @router.get("/ready", response_model=HealthResponse)
 async def ready(response: Response) -> HealthResponse:
     dir_check = _check_dir_writable(str(settings.attestation_log_dir))
-    key_check = _check_file_readable(
-        str(settings.attestation_private_key_path)
-    )
+    key_check = _check_file_readable(str(settings.attestation_private_key_path))
     health, http_code = assemble_readiness(
         service="integrity-attestation-service",
         version=VERSION,

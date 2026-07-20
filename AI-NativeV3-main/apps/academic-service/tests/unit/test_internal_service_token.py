@@ -13,7 +13,6 @@ from typing import Any
 from uuid import uuid4
 
 import pytest
-
 from academic_service.config import settings
 from academic_service.services.ai_clients import AIGatewayClient
 
@@ -34,7 +33,7 @@ class _FakeAsyncClient:
     def __init__(self, *args: Any, **kwargs: Any) -> None:
         pass
 
-    async def __aenter__(self) -> "_FakeAsyncClient":
+    async def __aenter__(self) -> _FakeAsyncClient:
         return self
 
     async def __aexit__(self, *args: Any) -> None:

@@ -4,7 +4,11 @@ from api_gateway.middleware.jwt_auth import JWTMiddleware
 from api_gateway.middleware.rate_limit import RateLimitMiddleware
 from api_gateway.middleware.user_rate_limit import (
     UserRateLimitMiddleware,
+)
+from api_gateway.middleware.user_rate_limit import (
     limiter as user_rate_limiter,
+)
+from api_gateway.middleware.user_rate_limit import (
     rate_limit_exceeded_handler as user_rate_limit_exceeded_handler,
 )
 

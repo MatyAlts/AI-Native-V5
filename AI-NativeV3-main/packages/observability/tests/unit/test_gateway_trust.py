@@ -75,10 +75,7 @@ def test_escalacion_de_roles_falla() -> None:
     """
     ts = int(time.time())
     sig = sign_headers(SECRET, USER_ID, TENANT_ID, "estudiante", ts)
-    assert (
-        verify_gateway_signature(SECRET, USER_ID, TENANT_ID, "superadmin", ts, sig)
-        is False
-    )
+    assert verify_gateway_signature(SECRET, USER_ID, TENANT_ID, "superadmin", ts, sig) is False
 
 
 def test_ts_viejo_falla_anti_replay() -> None:
@@ -141,20 +138,14 @@ def test_ts_no_numerico_falla_sin_lanzar() -> None:
     """ts no convertible a int (ej. header basura) => False, no excepción."""
     ts = int(time.time())
     sig = sign_headers(SECRET, USER_ID, TENANT_ID, ROLES, ts)
-    assert (
-        verify_gateway_signature(SECRET, USER_ID, TENANT_ID, ROLES, "no-soy-int", sig)
-        is False
-    )
+    assert verify_gateway_signature(SECRET, USER_ID, TENANT_ID, ROLES, "no-soy-int", sig) is False
 
 
 def test_ts_string_numerico_valida() -> None:
     """Los servicios reciben x-gateway-ts como string; verify acepta str numérico."""
     ts = int(time.time())
     sig = sign_headers(SECRET, USER_ID, TENANT_ID, ROLES, ts)
-    assert (
-        verify_gateway_signature(SECRET, USER_ID, TENANT_ID, ROLES, str(ts), sig)
-        is True
-    )
+    assert verify_gateway_signature(SECRET, USER_ID, TENANT_ID, ROLES, str(ts), sig) is True
 
 
 def test_ts_none_falla_sin_lanzar() -> None:

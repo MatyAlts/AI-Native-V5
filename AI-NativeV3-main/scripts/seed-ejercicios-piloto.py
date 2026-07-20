@@ -59,9 +59,7 @@ TENANT_ID = UUID("aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa")
 # Mismo docente service-account que los demas seeds
 DOCENTE_USER_ID = UUID("11111111-1111-1111-1111-111111111111")
 
-DEFAULT_DB_URL = (
-    "postgresql+asyncpg://postgres:postgres@127.0.0.1:5432/academic_main"
-)
+DEFAULT_DB_URL = "postgresql+asyncpg://postgres:postgres@127.0.0.1:5432/academic_main"
 
 
 async def _set_tenant(session: AsyncSession, tenant_id: UUID) -> None:
@@ -101,9 +99,7 @@ def _normalize(ejercicio: dict) -> dict:
         "inicial_codigo": ejercicio.get("inicial_codigo"),
         "unidad_tematica": ejercicio["unidad_tematica"],
         "dificultad": ejercicio.get("dificultad"),
-        "prerequisitos": ejercicio.get(
-            "prerequisitos", {"sintacticos": [], "conceptuales": []}
-        ),
+        "prerequisitos": ejercicio.get("prerequisitos", {"sintacticos": [], "conceptuales": []}),
         "test_cases": ejercicio.get("test_cases", []),
         "rubrica": ejercicio.get("rubrica"),
         "tutor_rules": ejercicio.get("tutor_rules"),
@@ -115,9 +111,7 @@ def _normalize(ejercicio: dict) -> dict:
     }
 
 
-async def _exists(
-    session: AsyncSession, titulo: str, unidad: str
-) -> bool:
+async def _exists(session: AsyncSession, titulo: str, unidad: str) -> bool:
     """Match idempotente: skipea si ya hay un ejercicio con mismo (titulo, unidad)."""
     result = await session.execute(
         text(
@@ -164,9 +158,7 @@ async def _insert(session: AsyncSession, e: dict) -> None:
             "prereq": json.dumps(e["prerequisitos"], ensure_ascii=False),
             "tests": json.dumps(e["test_cases"], ensure_ascii=False),
             "rubrica": (
-                json.dumps(e["rubrica"], ensure_ascii=False)
-                if e["rubrica"] is not None
-                else None
+                json.dumps(e["rubrica"], ensure_ascii=False) if e["rubrica"] is not None else None
             ),
             "rules": (
                 json.dumps(e["tutor_rules"], ensure_ascii=False)
@@ -215,9 +207,7 @@ async def seed() -> None:
                     continue
                 await _insert(session, e)
                 inserted += 1
-                by_unidad[e["unidad_tematica"]] = (
-                    by_unidad.get(e["unidad_tematica"], 0) + 1
-                )
+                by_unidad[e["unidad_tematica"]] = by_unidad.get(e["unidad_tematica"], 0) + 1
             await session.commit()
     finally:
         await engine.dispose()

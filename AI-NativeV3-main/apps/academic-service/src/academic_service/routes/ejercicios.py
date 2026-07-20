@@ -58,8 +58,7 @@ async def create_ejercicio(
 async def list_ejercicios(
     limit: int = Query(50, ge=1, le=200),
     cursor: UUID | None = None,
-    unidad_tematica: str
-    | None = None,
+    unidad_tematica: str | None = None,
     dificultad: Literal["basica", "intermedia", "avanzada"] | None = None,
     created_by: UUID | None = None,
     created_via_ai: bool | None = None,
@@ -238,9 +237,7 @@ async def generate_ejercicio(
 
     # 2. Resolver prompt activo
     governance = GovernanceClient(settings.governance_service_url)
-    prompt_version_full = (
-        f"ejercicio_generator/{settings.ejercicio_generator_prompt_version}"
-    )
+    prompt_version_full = f"ejercicio_generator/{settings.ejercicio_generator_prompt_version}"
     try:
         prompt_cfg = await governance.get_prompt(
             "ejercicio_generator", settings.ejercicio_generator_prompt_version
@@ -314,7 +311,7 @@ async def generate_ejercicio(
                     str(exc)[:200],
                 )
                 if attempt < max_attempts - 1:
-                    await asyncio.sleep(0.5 * (2 ** attempt))  # 0.5s, 1.0s
+                    await asyncio.sleep(0.5 * (2**attempt))  # 0.5s, 1.0s
                     continue
                 raise HTTPException(
                     status_code=status.HTTP_502_BAD_GATEWAY,
@@ -332,8 +329,7 @@ async def generate_ejercicio(
                 parsed = json.loads(raw_content)
             except json.JSONDecodeError as exc:
                 logger.error(
-                    "ejercicio_generator_invalid_json provider=%s model=%s error=%s "
-                    "raw_start=%r",
+                    "ejercicio_generator_invalid_json provider=%s model=%s error=%s raw_start=%r",
                     result.provider,
                     result.model,
                     str(exc),

@@ -15,18 +15,15 @@ from __future__ import annotations
 
 import httpx
 import pytest
+from api_gateway.routes import proxy
 from fastapi import FastAPI
 from httpx import ASGITransport, AsyncClient
-
-from api_gateway.routes import proxy
 
 
 class _FakeUpstream:
     """Respuesta upstream falsa que registra si se buffereó (`aread`)."""
 
-    def __init__(
-        self, chunks: list[bytes], content_type: str, status_code: int = 200
-    ) -> None:
+    def __init__(self, chunks: list[bytes], content_type: str, status_code: int = 200) -> None:
         self._chunks = chunks
         self.headers = httpx.Headers({"content-type": content_type})
         self.status_code = status_code
@@ -58,10 +55,10 @@ class _FakeClient:
         self._upstream = upstream
         self.closed = False
 
-    def build_request(self, *args, **kwargs):  # noqa: ANN002, ANN003
+    def build_request(self, *args, **kwargs):
         return ("fake-request", args, kwargs)
 
-    async def send(self, request, stream: bool = False):  # noqa: ANN001
+    async def send(self, request, stream: bool = False):
         return self._upstream
 
     async def aclose(self) -> None:

@@ -36,11 +36,10 @@ import json
 import os
 import random
 import sys
-from collections import Counter
 from dataclasses import dataclass, field
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
-from typing import Any, Callable
+from typing import Any
 
 # ---------------------------------------------------------------------------
 # Carga de la funcion pura real `label_event` SIN arrastrar el import chain
@@ -101,7 +100,9 @@ LABELER_VERSION = _LABELER.LABELER_VERSION
 #     CEGADO -> la etiqueta del sistema viaja SOLO en ground-truth-*.csv (NO en la
 #     ficha del etiquetador). Si se quisiera un estrato complementario por TIPO DE
 #     EVENTO crudo (sin pasar por la funcion), poner True abajo y agregar la rama.
-STRATIFY_BY_RAW_EVENT_TYPE_COMPLEMENT = False  # default: estratificar por label del sistema + cegado.
+STRATIFY_BY_RAW_EVENT_TYPE_COMPLEMENT = (
+    False  # default: estratificar por label del sistema + cegado.
+)
 
 # (2) CONSENTIMIENTO PROTOCOLO B.
 #     El Protocolo B expone el TEXTO COMPLETO de los prompts del estudiante (la
@@ -109,7 +110,9 @@ STRATIFY_BY_RAW_EVENT_TYPE_COMPLEMENT = False  # default: estratificar por label
 #     informado especifico, separado del consentimiento general del piloto
 #     (ver docs/limitaciones-declaradas.md). Default: gateado detras del flag
 #     --include-consent-records con WARNING explicito.
-CONSENT_PROTOCOL_B_REQUIRED = True  # default: exigir el flag de consentimiento para exponer prompts.
+CONSENT_PROTOCOL_B_REQUIRED = (
+    True  # default: exigir el flag de consentimiento para exponer prompts.
+)
 
 # (3) POLITICA ANTE ESTRATO SUB-POBLADO.
 #     Que hacer si un estrato (ej. N1, tipicamente <5% de la poblacion real) tiene
@@ -118,7 +121,9 @@ CONSENT_PROTOCOL_B_REQUIRED = True  # default: exigir el flag de consentimiento 
 #       "reduce_target"  -> bajar el n de TODOS los estratos al minimo comun.
 #       "oversample"     -> permitir repeticion (NO recomendado: sesga kappa).
 #       "declare_limit"  -> abortar y declarar la limitacion en el reporte.
-UNDERPOPULATED_STRATUM_POLICY = "take_all_available"  # take_all_available | reduce_target | oversample | declare_limit
+UNDERPOPULATED_STRATUM_POLICY = (
+    "take_all_available"  # take_all_available | reduce_target | oversample | declare_limit
+)
 
 # (4) SELECCION DENTRO DEL ESTRATO.
 #     Una vez fijado el estrato, como se eligen los n elementos. Default: aleatorio
@@ -207,7 +212,7 @@ def _yaml_scalar(value: Any) -> str:
     needs_quote = (
         s == ""
         or s != s.strip()
-        or any(c in s for c in ':#{}[],&*!|>\'"%@`')
+        or any(c in s for c in ":#{}[],&*!|>'\"%@`")
         or s in ("null", "true", "false", "~")
         or s.startswith(("- ", "? "))
     )
@@ -288,7 +293,7 @@ def _synthesize_events_for_level(
     while len(out) < n and attempts < n * 50:
         attempts += 1
         epi = f"ep_dry_{rng.randint(1, 9999):04d}"
-        started = datetime(2026, 4, 15, 14, 0, 0, tzinfo=timezone.utc) + timedelta(
+        started = datetime(2026, 4, 15, 14, 0, 0, tzinfo=UTC) + timedelta(
             minutes=rng.randint(0, 600)
         )
         ev: SyntheticEvent | None = None
@@ -298,8 +303,12 @@ def _synthesize_events_for_level(
             if choice < 0.5:
                 ts = started + timedelta(seconds=rng.uniform(0, 30))
                 ev = _mk_event(
-                    rng=rng, counter=counter, episode_id=epi,
-                    episode_started_at=started, base_ts=ts, seq=1,
+                    rng=rng,
+                    counter=counter,
+                    episode_id=epi,
+                    episode_started_at=started,
+                    base_ts=ts,
+                    seq=1,
                     event_type="lectura_enunciado",
                     payload={"duration_seconds": round(rng.uniform(5, 90), 1)},
                     last_tutor_respondio_at=None,
@@ -310,8 +319,12 @@ def _synthesize_events_for_level(
                 ts = started + timedelta(seconds=delta)
                 text = rng.choice(_NOTE_TEXTS)
                 ev = _mk_event(
-                    rng=rng, counter=counter, episode_id=epi,
-                    episode_started_at=started, base_ts=ts, seq=2,
+                    rng=rng,
+                    counter=counter,
+                    episode_id=epi,
+                    episode_started_at=started,
+                    base_ts=ts,
+                    seq=2,
                     event_type="anotacion_creada",
                     payload={"content": text, "words": len(text.split())},
                     last_tutor_respondio_at=None,
@@ -321,8 +334,12 @@ def _synthesize_events_for_level(
             if choice < 0.6:
                 ts = started + timedelta(seconds=rng.uniform(130, 800))
                 ev = _mk_event(
-                    rng=rng, counter=counter, episode_id=epi,
-                    episode_started_at=started, base_ts=ts, seq=5,
+                    rng=rng,
+                    counter=counter,
+                    episode_id=epi,
+                    episode_started_at=started,
+                    base_ts=ts,
+                    seq=5,
                     event_type="edicion_codigo",
                     payload={
                         "snapshot": "def solve(xs):\n    return sorted(xs)",
@@ -337,8 +354,12 @@ def _synthesize_events_for_level(
                 ts = started + timedelta(seconds=rng.uniform(200, 900))
                 text = rng.choice(_NOTE_TEXTS)
                 ev = _mk_event(
-                    rng=rng, counter=counter, episode_id=epi,
-                    episode_started_at=started, base_ts=ts, seq=6,
+                    rng=rng,
+                    counter=counter,
+                    episode_id=epi,
+                    episode_started_at=started,
+                    base_ts=ts,
+                    seq=6,
                     event_type="anotacion_creada",
                     payload={"content": text, "words": len(text.split())},
                     last_tutor_respondio_at=None,
@@ -348,8 +369,12 @@ def _synthesize_events_for_level(
             if choice < 0.5:
                 ts = started + timedelta(seconds=rng.uniform(150, 700))
                 ev = _mk_event(
-                    rng=rng, counter=counter, episode_id=epi,
-                    episode_started_at=started, base_ts=ts, seq=7,
+                    rng=rng,
+                    counter=counter,
+                    episode_id=epi,
+                    episode_started_at=started,
+                    base_ts=ts,
+                    seq=7,
                     event_type="codigo_ejecutado",
                     payload={
                         "code": "print(solve([3,1,2]))",
@@ -365,8 +390,12 @@ def _synthesize_events_for_level(
                 ts = started + timedelta(seconds=rng.uniform(150, 700))
                 failed = rng.randint(1, 4)
                 ev = _mk_event(
-                    rng=rng, counter=counter, episode_id=epi,
-                    episode_started_at=started, base_ts=ts, seq=8,
+                    rng=rng,
+                    counter=counter,
+                    episode_id=epi,
+                    episode_started_at=started,
+                    base_ts=ts,
+                    seq=8,
                     event_type="tests_ejecutados",
                     payload={
                         "test_count_total": failed + rng.randint(0, 3),
@@ -385,8 +414,12 @@ def _synthesize_events_for_level(
                 ts = tutor_ts + timedelta(seconds=rng.uniform(0.5, 5))
                 content = rng.choice(_PROMPT_REFLEXIVA + _PROMPT_SUPERFICIAL)
                 ev = _mk_event(
-                    rng=rng, counter=counter, episode_id=epi,
-                    episode_started_at=started, base_ts=ts, seq=10,
+                    rng=rng,
+                    counter=counter,
+                    episode_id=epi,
+                    episode_started_at=started,
+                    base_ts=ts,
+                    seq=10,
                     event_type="prompt_enviado",
                     payload={"content": content, "prompt_kind": "exploracion"},
                     last_tutor_respondio_at=None,
@@ -396,8 +429,12 @@ def _synthesize_events_for_level(
                 ts = tutor_ts + timedelta(seconds=rng.uniform(1, 58))
                 text = rng.choice(_NOTE_TEXTS)
                 ev = _mk_event(
-                    rng=rng, counter=counter, episode_id=epi,
-                    episode_started_at=started, base_ts=ts, seq=12,
+                    rng=rng,
+                    counter=counter,
+                    episode_id=epi,
+                    episode_started_at=started,
+                    base_ts=ts,
+                    seq=12,
                     event_type="anotacion_creada",
                     payload={"content": text, "words": len(text.split())},
                     last_tutor_respondio_at=tutor_ts,
@@ -406,8 +443,12 @@ def _synthesize_events_for_level(
                 # edicion copiada del tutor -> N4 por override de origen
                 ts = tutor_ts + timedelta(seconds=rng.uniform(1, 30))
                 ev = _mk_event(
-                    rng=rng, counter=counter, episode_id=epi,
-                    episode_started_at=started, base_ts=ts, seq=13,
+                    rng=rng,
+                    counter=counter,
+                    episode_id=epi,
+                    episode_started_at=started,
+                    base_ts=ts,
+                    seq=13,
                     event_type="edicion_codigo",
                     payload={
                         "snapshot": "def solve(xs):\n    return sorted(set(xs))",
@@ -439,14 +480,10 @@ def synthesize_events(rng: random.Random, per_level: dict[str, int]) -> list[Syn
     return universe
 
 
-def _build_synthetic_episode(
-    rng: random.Random, idx: int, category: str
-) -> SyntheticEpisode:
+def _build_synthetic_episode(rng: random.Random, idx: int, category: str) -> SyntheticEpisode:
     """Construye un episodio cerrado sintetico con prompts coherentes con la categoria."""
     if category == "apropiacion_reflexiva":
-        prompts = rng.sample(_PROMPT_REFLEXIVA, k=rng.randint(2, 3)) + rng.sample(
-            _NOTE_TEXTS, k=1
-        )
+        prompts = rng.sample(_PROMPT_REFLEXIVA, k=rng.randint(2, 3)) + rng.sample(_NOTE_TEXTS, k=1)
         dist = {"N1": 0.12, "N2": 0.40, "N3": 0.24, "N4": 0.24}
     elif category == "apropiacion_superficial":
         prompts = rng.sample(_PROMPT_SUPERFICIAL, k=rng.randint(2, 3))
@@ -456,12 +493,16 @@ def _build_synthetic_episode(
         dist = {"N1": 0.05, "N2": 0.15, "N3": 0.20, "N4": 0.60}
 
     n_eventos = rng.randint(20, 110)
-    started = datetime(2026, 4, 16, 9, 0, 0, tzinfo=timezone.utc) + timedelta(
+    started = datetime(2026, 4, 16, 9, 0, 0, tzinfo=UTC) + timedelta(
         minutes=rng.randint(0, 600)
     )
     dur_min = rng.randint(15, 75)
     cadena = [
-        {"seq": 1, "ts": started.isoformat().replace("+00:00", "Z"), "event_type": "episodio_abierto"},
+        {
+            "seq": 1,
+            "ts": started.isoformat().replace("+00:00", "Z"),
+            "event_type": "episodio_abierto",
+        },
         {
             "seq": 2,
             "ts": (started + timedelta(seconds=20)).isoformat().replace("+00:00", "Z"),
@@ -485,9 +526,7 @@ def _build_synthetic_episode(
     )
 
 
-def synthesize_episodes(
-    rng: random.Random, per_category: dict[str, int]
-) -> list[SyntheticEpisode]:
+def synthesize_episodes(rng: random.Random, per_category: dict[str, int]) -> list[SyntheticEpisode]:
     universe: list[SyntheticEpisode] = []
     idx = 1
     for cat in APPROPRIATION_CATEGORIES:
@@ -509,9 +548,7 @@ class StratumReport:
     selected: int
 
 
-def _select_within_stratum(
-    items: list[Any], n: int, rng: random.Random
-) -> tuple[list[Any], int]:
+def _select_within_stratum(items: list[Any], n: int, rng: random.Random) -> tuple[list[Any], int]:
     """Aplica WITHIN_STRATUM_SELECTION + UNDERPOPULATED_STRATUM_POLICY.
 
     Devuelve (seleccionados, n_efectivo). No invent datos: si hay menos de n
@@ -594,7 +631,7 @@ def stratify_episodes(
 # Escritores de output (compartidos dry-run <-> real).
 # ---------------------------------------------------------------------------
 def _iso_z(dt: datetime) -> str:
-    return dt.astimezone(timezone.utc).isoformat().replace("+00:00", "Z")
+    return dt.astimezone(UTC).isoformat().replace("+00:00", "Z")
 
 
 def write_protocol_a_fiches(
@@ -664,9 +701,7 @@ def write_protocol_b_dossiers(
     written = 0
     for i, ep in enumerate(sorted(episodes, key=lambda e: e.episode_id), start=1):
         eid = f"ep_{i:03d}"
-        dist_lines = "".join(
-            f"  {lv}: {ep.distribucion_niveles.get(lv, 0.0)}\n" for lv in N_LEVELS
-        )
+        dist_lines = "".join(f"  {lv}: {ep.distribucion_niveles.get(lv, 0.0)}\n" for lv in N_LEVELS)
         cadena_lines = "".join(
             "  - { "
             + f"seq: {e['seq']}, ts: {_yaml_scalar(e['ts'])}, event_type: {_yaml_scalar(e['event_type'])}"
@@ -720,7 +755,7 @@ def write_metadata(
     dry_run: bool,
 ) -> Path:
     path = out_dir / "metadata.json"
-    now = _iso_z(datetime.now(timezone.utc))
+    now = _iso_z(datetime.now(UTC))
     meta = {
         "script": "scripts/select-intercoder-corpus.py",
         "script_version": SCRIPT_VERSION,
@@ -752,11 +787,21 @@ def write_metadata(
             "within_stratum_selection": WITHIN_STRATUM_SELECTION,
         },
         "protocol_a_strata": [
-            {"level": r.name, "requested": r.requested, "available": r.available, "selected": r.selected}
+            {
+                "level": r.name,
+                "requested": r.requested,
+                "available": r.available,
+                "selected": r.selected,
+            }
             for r in event_reports
         ],
         "protocol_b_strata": [
-            {"category": r.name, "requested": r.requested, "available": r.available, "selected": r.selected}
+            {
+                "category": r.name,
+                "requested": r.requested,
+                "available": r.available,
+                "selected": r.selected,
+            }
             for r in episode_reports
         ],
     }
@@ -813,11 +858,11 @@ def load_episodes_from_db(args: argparse.Namespace) -> list[SyntheticEpisode]:
 # ---------------------------------------------------------------------------
 def _per_level_for_mode(mode: str, n_events: int) -> dict[str, int]:
     if mode == "internal-calibration":
-        return {lv: 5 for lv in N_LEVELS}  # 20 eventos (5 por nivel)
+        return dict.fromkeys(N_LEVELS, 5)  # 20 eventos (5 por nivel)
     # protocol-a / full: reparto equitativo de n_events entre 4 niveles.
     base = n_events // len(N_LEVELS)
     rem = n_events % len(N_LEVELS)
-    per = {lv: base for lv in N_LEVELS}
+    per = dict.fromkeys(N_LEVELS, base)
     for i in range(rem):  # distribuir el resto de forma determinista
         per[N_LEVELS[i]] += 1
     return per
@@ -833,7 +878,7 @@ def _per_category_for_mode(mode: str, n_episodes: int) -> dict[str, int]:
         }
     base = n_episodes // len(APPROPRIATION_CATEGORIES)
     rem = n_episodes % len(APPROPRIATION_CATEGORIES)
-    per = {c: base for c in APPROPRIATION_CATEGORIES}
+    per = dict.fromkeys(APPROPRIATION_CATEGORIES, base)
     for i in range(rem):
         per[APPROPRIATION_CATEGORIES[i]] += 1
     return per
@@ -895,7 +940,9 @@ def run(args: argparse.Namespace) -> int:
         print(f"[OK] Protocolo A: {n_fiches} fichas YAML en {out_dir / 'protocol-a'}")
         print(f"[OK] Ground-truth A: {gt_a}")
         for r in event_reports:
-            print(f"     estrato {r.name}: requerido={r.requested} disp={r.available} sel={r.selected}")
+            print(
+                f"     estrato {r.name}: requerido={r.requested} disp={r.available} sel={r.selected}"
+            )
 
     if wants_b:
         universe_ep = synthesize_episodes(rng, per_category)
@@ -905,7 +952,9 @@ def run(args: argparse.Namespace) -> int:
         print(f"[OK] Protocolo B: {n_dossiers} dossiers YAML en {out_dir / 'protocol-b'}")
         print(f"[OK] Ground-truth B: {gt_b}")
         for r in episode_reports:
-            print(f"     categoria {r.name}: requerido={r.requested} disp={r.available} sel={r.selected}")
+            print(
+                f"     categoria {r.name}: requerido={r.requested} disp={r.available} sel={r.selected}"
+            )
 
     meta_path = write_metadata(
         out_dir,
@@ -936,8 +985,12 @@ def build_parser() -> argparse.ArgumentParser:
         required=True,
     )
     p.add_argument("--n-events", type=int, default=200, help="Total eventos Protocolo A (def 200).")
-    p.add_argument("--n-episodes", type=int, default=50, help="Total episodios Protocolo B (def 50).")
-    p.add_argument("--seed", type=int, default=DEFAULT_SEED, help=f"Seed reproducible (def {DEFAULT_SEED}).")
+    p.add_argument(
+        "--n-episodes", type=int, default=50, help="Total episodios Protocolo B (def 50)."
+    )
+    p.add_argument(
+        "--seed", type=int, default=DEFAULT_SEED, help=f"Seed reproducible (def {DEFAULT_SEED})."
+    )
     p.add_argument(
         "--output-dir",
         default="docs/research/intercoder-corpus/round-01/",

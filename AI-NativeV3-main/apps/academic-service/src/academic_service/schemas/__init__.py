@@ -28,10 +28,6 @@ from academic_service.schemas.inscripcion import (
     InscripcionOut,
     MateriaInscripta,
 )
-from academic_service.schemas.usuario_comision import (
-    UsuarioComisionCreate,
-    UsuarioComisionOut,
-)
 from academic_service.schemas.materia import MateriaCreate, MateriaOut, MateriaUpdate
 from academic_service.schemas.plan import PlanCreate, PlanOut, PlanUpdate
 from academic_service.schemas.tarea_practica import (
@@ -52,6 +48,10 @@ from academic_service.schemas.universidad import (
     UniversidadOut,
     UniversidadUpdate,
 )
+from academic_service.schemas.usuario_comision import (
+    UsuarioComisionCreate,
+    UsuarioComisionOut,
+)
 
 __all__ = [
     "BaseResponse",
@@ -69,8 +69,6 @@ __all__ = [
     "InscripcionCreate",
     "InscripcionCreateIndividual",
     "InscripcionOut",
-    "UsuarioComisionCreate",
-    "UsuarioComisionOut",
     "ListMeta",
     "ListResponse",
     "MateriaCreate",
@@ -96,4 +94,6 @@ __all__ = [
     "UniversidadCreate",
     "UniversidadOut",
     "UniversidadUpdate",
+    "UsuarioComisionCreate",
+    "UsuarioComisionOut",
 ]

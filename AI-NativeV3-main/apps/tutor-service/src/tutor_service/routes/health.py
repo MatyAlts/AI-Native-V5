@@ -34,12 +34,8 @@ VERSION = "0.1.0"
 async def ready(response: Response) -> HealthResponse:
     redis_check, academic_check, ai_check = await asyncio.gather(
         check_redis(settings.redis_url),
-        check_http(
-            f"{settings.academic_service_url.rstrip('/')}/health/live"
-        ),
-        check_http(
-            f"{settings.ai_gateway_url.rstrip('/')}/health/live"
-        ),
+        check_http(f"{settings.academic_service_url.rstrip('/')}/health/live"),
+        check_http(f"{settings.ai_gateway_url.rstrip('/')}/health/live"),
     )
     health, http_code = assemble_readiness(
         service="tutor-service",

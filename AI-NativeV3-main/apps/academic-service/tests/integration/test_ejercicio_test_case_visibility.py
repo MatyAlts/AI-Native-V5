@@ -101,7 +101,11 @@ def _ejercicio_attrs() -> SimpleNamespace:
         respuesta_pista=[{"nivel": 4, "pista": "PISTA_SOLUCION: usa int() y +"}],
         heuristica_cierre={"tests_min_pasados": 1, "heuristica": "cierra si pasa el publico"},
         anti_patrones=[
-            {"patron": "dar codigo", "descripcion": "no dar la solucion", "mensaje_orientacion": "pregunta"}
+            {
+                "patron": "dar codigo",
+                "descripcion": "no dar la solucion",
+                "mensaje_orientacion": "pregunta",
+            }
         ],
         created_by=uuid4(),
         created_via_ai=False,
@@ -110,7 +114,9 @@ def _ejercicio_attrs() -> SimpleNamespace:
     )
 
 
-def _tp_attrs(*, estado: str = "published", test_cases: list[dict] | None = None) -> SimpleNamespace:
+def _tp_attrs(
+    *, estado: str = "published", test_cases: list[dict] | None = None
+) -> SimpleNamespace:
     """TareaPractica ORM-like para el detalle monolítico."""
     return SimpleNamespace(
         id=uuid4(),

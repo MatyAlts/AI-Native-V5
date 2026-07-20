@@ -77,10 +77,7 @@ async def test_retrieve_propagates_service_account_headers() -> None:
 
     assert captured["headers"]["x-tenant-id"] == str(tenant_id)
     assert captured["headers"]["x-user-roles"] == "tutor_service"
-    assert (
-        captured["headers"]["x-user-id"]
-        == "00000000-0000-0000-0000-000000000099"
-    )
+    assert captured["headers"]["x-user-id"] == "00000000-0000-0000-0000-000000000099"
 
 
 @pytest.mark.asyncio
@@ -92,9 +89,7 @@ async def test_retrieve_raises_on_http_error() -> None:
     client = ContentClient(BASE_URL)
 
     with pytest.raises(httpx.HTTPStatusError):
-        await client.retrieve(
-            query="x", comision_id=uuid4(), tenant_id=uuid4()
-        )
+        await client.retrieve(query="x", comision_id=uuid4(), tenant_id=uuid4())
 
 
 @pytest.mark.asyncio
@@ -106,14 +101,10 @@ async def test_retrieve_handles_missing_optional_fields() -> None:
     del payload["chunks"][0]["meta"]
     payload["rerank_applied"] = False
 
-    respx.post(f"{BASE_URL}/api/v1/retrieve").mock(
-        return_value=httpx.Response(200, json=payload)
-    )
+    respx.post(f"{BASE_URL}/api/v1/retrieve").mock(return_value=httpx.Response(200, json=payload))
     client = ContentClient(BASE_URL)
 
-    result = await client.retrieve(
-        query="x", comision_id=uuid4(), tenant_id=uuid4()
-    )
+    result = await client.retrieve(query="x", comision_id=uuid4(), tenant_id=uuid4())
 
     assert result.chunks[0].score_rerank is None
     assert result.chunks[0].meta == {}

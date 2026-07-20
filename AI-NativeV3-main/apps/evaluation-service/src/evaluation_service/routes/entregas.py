@@ -94,9 +94,7 @@ async def create_entrega(
             text("SELECT set_config('app.current_tenant', :t, true)"),
             {"t": str(user.tenant_id)},
         )
-        existing = await _find_existing_entrega(
-            db, data.tarea_practica_id, student_id
-        )
+        existing = await _find_existing_entrega(db, data.tarea_practica_id, student_id)
         if existing is not None:
             response.status_code = status.HTTP_200_OK
             return EntregaOut.model_validate(existing)
@@ -185,12 +183,7 @@ async def list_entregas(
     if cursor is not None:
         conditions.append(Entrega.id > cursor)
 
-    stmt = (
-        select(Entrega)
-        .where(and_(*conditions))
-        .order_by(Entrega.id.asc())
-        .limit(limit)
-    )
+    stmt = select(Entrega).where(and_(*conditions)).order_by(Entrega.id.asc()).limit(limit)
     rows = (await db.execute(stmt)).scalars().all()
     data = [EntregaOut.model_validate(r) for r in rows]
     cursor_next = str(rows[-1].id) if len(rows) == limit else None
@@ -252,11 +245,7 @@ async def submit_entrega(
 
     # Audit log (meta-evento, NO va al CTR chain — ADR-010)
     log = structlog.get_logger()
-    episode_ids = [
-        e.get("episode_id")
-        for e in estados
-        if e.get("episode_id")
-    ]
+    episode_ids = [e.get("episode_id") for e in estados if e.get("episode_id")]
     log.info(
         "tp_entregada",
         entrega_id=str(entrega.id),
@@ -309,10 +298,7 @@ async def mark_ejercicio_completado(
     estados = list(entrega.ejercicio_estados or [])
     found = False
     for est in estados:
-        matches_by_uuid = (
-            ejercicio_id is not None
-            and est.get("ejercicio_id") == str(ejercicio_id)
-        )
+        matches_by_uuid = ejercicio_id is not None and est.get("ejercicio_id") == str(ejercicio_id)
         matches_by_orden = est.get("orden") == orden and est.get("ejercicio_id") is None
         if matches_by_uuid or matches_by_orden:
             est["completado"] = completado
@@ -330,13 +316,15 @@ async def mark_ejercicio_completado(
     # Solo agregamos un estado nuevo al MARCAR completado. Des-marcar un ejercicio
     # que no figura es un no-op (no tiene sentido un registro "incompleto" vacío).
     if not found and completado:
-        estados.append({
-            "ejercicio_id": str(ejercicio_id) if ejercicio_id else None,
-            "orden": orden,
-            "episode_id": str(episode_id) if episode_id else None,
-            "completado": True,
-            "completed_at": datetime.now(UTC).isoformat(),
-        })
+        estados.append(
+            {
+                "ejercicio_id": str(ejercicio_id) if ejercicio_id else None,
+                "orden": orden,
+                "episode_id": str(episode_id) if episode_id else None,
+                "completado": True,
+                "completed_at": datetime.now(UTC).isoformat(),
+            }
+        )
 
     entrega.ejercicio_estados = estados
     await db.flush()
@@ -346,7 +334,10 @@ async def mark_ejercicio_completado(
 
 # ── Endpoints de Calificaciones ───────────────────────────────────────────
 
-@router.post("/{entrega_id}/calificar", response_model=CalificacionOut, status_code=status.HTTP_201_CREATED)
+
+@router.post(
+    "/{entrega_id}/calificar", response_model=CalificacionOut, status_code=status.HTTP_201_CREATED
+)
 async def calificar_entrega(
     entrega_id: UUID,
     data: CalificacionCreate,
@@ -368,9 +359,7 @@ async def calificar_entrega(
         )
 
     # Verificar que no tenga ya calificacion
-    existing_stmt = select(Calificacion).where(
-        Calificacion.entrega_id == entrega_id
-    )
+    existing_stmt = select(Calificacion).where(Calificacion.entrega_id == entrega_id)
     existing_cal = (await db.execute(existing_stmt)).scalar_one_or_none()
     if existing_cal is not None:
         raise HTTPException(
@@ -473,9 +462,7 @@ async def recalificar_entrega(
     if "feedback_general" in updates:
         cal.feedback_general = data.feedback_general
     if "detalle_criterios" in updates:
-        cal.detalle_criterios = [
-            c.model_dump(mode="json") for c in (data.detalle_criterios or [])
-        ]
+        cal.detalle_criterios = [c.model_dump(mode="json") for c in (data.detalle_criterios or [])]
 
     now = datetime.now(UTC)
     cal.graded_by = user.id
@@ -571,9 +558,7 @@ async def _find_existing_entrega(
 
 
 async def _get_or_404(db: AsyncSession, entrega_id: UUID) -> Entrega:
-    stmt = select(Entrega).where(
-        and_(Entrega.id == entrega_id, Entrega.deleted_at.is_(None))
-    )
+    stmt = select(Entrega).where(and_(Entrega.id == entrega_id, Entrega.deleted_at.is_(None)))
     obj = (await db.execute(stmt)).scalar_one_or_none()
     if obj is None:
         raise HTTPException(

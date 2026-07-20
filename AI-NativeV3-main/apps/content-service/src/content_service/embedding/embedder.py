@@ -119,7 +119,11 @@ class GeminiEmbedder(BaseEmbedder):
         resp = await self._http.post(
             self._url,
             params={"key": self._api_key},
-            json={"model": f"models/{self.model_name}", "content": {"parts": [{"text": text}]}, "taskType": task_type},
+            json={
+                "model": f"models/{self.model_name}",
+                "content": {"parts": [{"text": text}]},
+                "taskType": task_type,
+            },
         )
         resp.raise_for_status()
         values = resp.json()["embedding"]["values"]
@@ -142,7 +146,6 @@ class SentenceTransformerEmbedder(BaseEmbedder):
 
     def _ensure_model(self) -> Any:
         if self._model is None:
-            import torch
             from sentence_transformers import SentenceTransformer
 
             # EasyPanel: forzamos CPU para evitar dependencia de runtime GPU/NVIDIA.
@@ -195,8 +198,7 @@ def _guard_non_semantic(embedder: BaseEmbedder, *, which: str, fell_back: bool) 
     """
     env = _resolve_environment()
     reason = (
-        "EMBEDDER sin setear y sentence-transformers no instalado "
-        "(fallback silencioso a mock)"
+        "EMBEDDER sin setear y sentence-transformers no instalado (fallback silencioso a mock)"
         if fell_back
         else f"EMBEDDER={which!r}"
     )

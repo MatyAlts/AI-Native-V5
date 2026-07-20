@@ -31,7 +31,6 @@ from __future__ import annotations
 
 import httpx
 import pytest
-
 from api_gateway.routes.proxy import ROUTE_MAP  # type: ignore[import-not-found]
 
 # Targets que existen en el ROUTE_MAP pero by-design NO se levantan en piloto
@@ -65,9 +64,7 @@ def test_route_map_no_esta_vacio() -> None:
 def test_route_map_targets_son_urls_validas() -> None:
     """Todos los target URLs del ROUTE_MAP deben ser strings http(s)://."""
     for prefix, target in ROUTE_MAP.items():
-        assert isinstance(target, str), (
-            f"target del prefix {prefix!r} no es string: {target!r}"
-        )
+        assert isinstance(target, str), f"target del prefix {prefix!r} no es string: {target!r}"
         assert target.startswith(("http://", "https://")), (
             f"target del prefix {prefix!r} no es URL http(s): {target!r}"
         )
@@ -91,9 +88,7 @@ def test_route_map_target_health_responde(prefix: str, target: str) -> None:
     target_url = target.rstrip("/")
     for skip_port, reason in SKIP_TARGETS_BY_PORT.items():
         if f":{skip_port}" in target_url:
-            pytest.skip(
-                f"prefix={prefix!r} → {target_url} skipeado: {reason}"
-            )
+            pytest.skip(f"prefix={prefix!r} → {target_url} skipeado: {reason}")
 
     health_url = f"{target_url}/health"
     try:
@@ -104,7 +99,7 @@ def test_route_map_target_health_responde(prefix: str, target: str) -> None:
             f"El servicio no está levantado o cambió de puerto sin actualizar "
             f"el ROUTE_MAP. Error: {exc}"
         )
-    except Exception as exc:  # noqa: BLE001
+    except Exception as exc:
         pytest.fail(
             f"ROUTE_MAP[{prefix!r}] = {target_url} — error inesperado en "
             f"GET {health_url}: {type(exc).__name__}: {exc}"

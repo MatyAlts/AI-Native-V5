@@ -22,17 +22,12 @@ from uuid import UUID
 
 import httpx
 import pytest
-
 from _helpers import tail_log  # type: ignore[import-not-found]
 
 # Hashes del classifier_config y curso_config en el seed actual.
 # Hardcoded para no depender de un endpoint que los exponga (no lo hay public).
-SEEDED_CLASSIFIER_CONFIG_HASH = (
-    "9dd96894fc88e68390b0d078d19c98acdb1b9810fec9757b0c05d577495c6edd"
-)
-SEEDED_CURSO_CONFIG_HASH = (
-    "fd7ab31baa147f2c15a52947af98b11aa3b1f1c99e4cba00afa242bb5698832a"
-)
+SEEDED_CLASSIFIER_CONFIG_HASH = "9dd96894fc88e68390b0d078d19c98acdb1b9810fec9757b0c05d577495c6edd"
+SEEDED_CURSO_CONFIG_HASH = "fd7ab31baa147f2c15a52947af98b11aa3b1f1c99e4cba00afa242bb5698832a"
 
 
 @pytest.mark.smoke
@@ -94,7 +89,9 @@ def test_open_then_abandon_episode_idempotent(
     }
     open_resp = client.post("/api/v1/episodes", json=payload, headers=headers)
     if open_resp.status_code != 201:
-        pytest.skip(f"open_episode failing — ver test_open_episode_returns_uuid: {open_resp.text[:200]}")
+        pytest.skip(
+            f"open_episode failing — ver test_open_episode_returns_uuid: {open_resp.text[:200]}"
+        )
 
     episode_id = open_resp.json()["episode_id"]
 

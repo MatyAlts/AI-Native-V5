@@ -115,7 +115,9 @@ async def check_pubkey(
             expected_path = Path(expected_pubkey_path)
             if not expected_path.exists():
                 return (
-                    CheckResult("Pubkey", False, f"expected pubkey path no existe: {expected_path}"),
+                    CheckResult(
+                        "Pubkey", False, f"expected pubkey path no existe: {expected_path}"
+                    ),
                     served_pem,
                 )
             expected_pem = expected_path.read_bytes().strip()
@@ -246,9 +248,7 @@ async def check_day_journal(
                 n_failed += 1
                 errors.append(f"  linea {idx + 1}: formato invalido ({e})")
         if n_failed > 0:
-            detail = (
-                f"{n_verified}/{n_total} OK, {n_failed} fallos:\n" + "\n".join(errors[:5])
-            )
+            detail = f"{n_verified}/{n_total} OK, {n_failed} fallos:\n" + "\n".join(errors[:5])
             if len(errors) > 5:
                 detail += f"\n  ... y {len(errors) - 5} mas."
             return CheckResult("Day journal", False, detail)
@@ -265,7 +265,7 @@ async def main(
     redis_url: str | None,
     day: str | None,
 ) -> int:
-    print(f"=== Verify attestation deployment ===")
+    print("=== Verify attestation deployment ===")
     print(f"Service URL: {service_url}")
     print(f"Expected pubkey: {expected_pubkey_path or '(no verificacion vs PEM local)'}")
     print(f"Redis URL: {redis_url or '(skip consumer lag)'}")
@@ -278,9 +278,7 @@ async def main(
         results.append(await check_http_health(client, service_url))
 
         # 2. Pubkey
-        pubkey_result, served_pem = await check_pubkey(
-            client, service_url, expected_pubkey_path
-        )
+        pubkey_result, served_pem = await check_pubkey(client, service_url, expected_pubkey_path)
         results.append(pubkey_result)
 
         # 3. Consumer lag (opcional)
@@ -320,9 +318,7 @@ def _parse_args() -> argparse.Namespace:
     )
     p.add_argument(
         "--service-url",
-        default=os.environ.get(
-            "ATTESTATION_SERVICE_URL", "http://127.0.0.1:8012"
-        ),
+        default=os.environ.get("ATTESTATION_SERVICE_URL", "http://127.0.0.1:8012"),
         help="URL del servicio attestation (default 127.0.0.1:8012).",
     )
     p.add_argument(

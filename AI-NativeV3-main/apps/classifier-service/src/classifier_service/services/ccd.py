@@ -126,10 +126,7 @@ def compute_ccd(events: list[dict]) -> dict[str, Any]:
         e
         for e in sorted_events
         if e["event_type"] == "codigo_ejecutado"
-        or (
-            e["event_type"] == "prompt_enviado"
-            and _kind(e) not in _REFLECTIVE_KINDS
-        )
+        or (e["event_type"] == "prompt_enviado" and _kind(e) not in _REFLECTIVE_KINDS)
     ]
 
     # Verbalizaciones reflexivas: anotacion_creada O prompt con kind reflexivo
@@ -137,10 +134,7 @@ def compute_ccd(events: list[dict]) -> dict[str, Any]:
         e
         for e in sorted_events
         if e["event_type"] == "anotacion_creada"
-        or (
-            e["event_type"] == "prompt_enviado"
-            and _kind(e) in _REFLECTIVE_KINDS
-        )
+        or (e["event_type"] == "prompt_enviado" and _kind(e) in _REFLECTIVE_KINDS)
     ]
 
     if not actions:

@@ -282,17 +282,27 @@ def test_tp_entregada_no_afecta_clasificacion_ni_features() -> None:
         _ev(4, "episodio_cerrado", 8, {"reason": "completed"}),
     ]
     events_with_entrega = base_events + [
-        _ev(5, "tp_entregada", 10, {
-            "tarea_practica_id": "00000000-0000-0000-0000-000000000001",
-            "entrega_id": "00000000-0000-0000-0000-000000000002",
-            "n_ejercicios": 2,
-            "exercise_episode_ids": [],
-        }),
-        _ev(6, "tp_calificada", 15, {
-            "entrega_id": "00000000-0000-0000-0000-000000000002",
-            "nota_final": 8.5,
-            "graded_by": "00000000-0000-0000-0000-000000000010",
-        }),
+        _ev(
+            5,
+            "tp_entregada",
+            10,
+            {
+                "tarea_practica_id": "00000000-0000-0000-0000-000000000001",
+                "entrega_id": "00000000-0000-0000-0000-000000000002",
+                "n_ejercicios": 2,
+                "exercise_episode_ids": [],
+            },
+        ),
+        _ev(
+            6,
+            "tp_calificada",
+            15,
+            {
+                "entrega_id": "00000000-0000-0000-0000-000000000002",
+                "nota_final": 8.5,
+                "graded_by": "00000000-0000-0000-0000-000000000010",
+            },
+        ),
     ]
 
     r_sin = classify_episode_from_events(base_events)

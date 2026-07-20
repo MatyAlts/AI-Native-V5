@@ -158,9 +158,7 @@ def assert_material_owner(user: User, material: Material) -> None:
         )
 
 
-async def assert_materia_upload_access(
-    session: AsyncSession, user: User, materia_id: UUID
-) -> None:
+async def assert_materia_upload_access(session: AsyncSession, user: User, materia_id: UUID) -> None:
     """Fail-closed: el caller sólo corre retrieval sobre materias donde subió material.
 
     Sin `usuarios_comision`/`inscripciones` locales (ADR-003), el scope mínimo
@@ -185,7 +183,6 @@ async def assert_materia_upload_access(
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail=(
-                "No tenes material propio en esta materia; "
-                "no podes correr retrieval sobre ella."
+                "No tenes material propio en esta materia; no podes correr retrieval sobre ella."
             ),
         )

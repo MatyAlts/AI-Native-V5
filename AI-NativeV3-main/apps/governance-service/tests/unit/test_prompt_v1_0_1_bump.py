@@ -134,6 +134,5 @@ def test_manifest_global_activa_v101_para_tutor_default(loader: PromptLoader) ->
     )
     # Sanity: classifier sigue en v1.0.0 (no hubo bump del classifier prompt).
     assert default.get("classifier") == "v1.0.0", (
-        f"manifest.yaml debe mantener classifier=v1.0.0; "
-        f"obtenido: {default.get('classifier')!r}"
+        f"manifest.yaml debe mantener classifier=v1.0.0; obtenido: {default.get('classifier')!r}"
     )

@@ -55,9 +55,7 @@ class HealthResponse(BaseModel):
     checks: dict[str, CheckResult] = Field(default_factory=dict)
 
 
-async def check_postgres(
-    engine: AsyncEngine, timeout: float = DEFAULT_TIMEOUT_SEC
-) -> CheckResult:
+async def check_postgres(engine: AsyncEngine, timeout: float = DEFAULT_TIMEOUT_SEC) -> CheckResult:
     """Ejecuta `SELECT 1` con timeout. Captura todas las exceptions."""
     from sqlalchemy import text
 
@@ -69,9 +67,7 @@ async def check_postgres(
                 await conn.execute(text("SELECT 1"))
 
         await asyncio.wait_for(_probe(), timeout=timeout)
-        return CheckResult(
-            ok=True, latency_ms=int((time.perf_counter() - start) * 1000)
-        )
+        return CheckResult(ok=True, latency_ms=int((time.perf_counter() - start) * 1000))
     except TimeoutError:
         return CheckResult(
             ok=False,
@@ -87,22 +83,16 @@ async def check_postgres(
         )
 
 
-async def check_redis(
-    redis_url: str, timeout: float = DEFAULT_TIMEOUT_SEC
-) -> CheckResult:
+async def check_redis(redis_url: str, timeout: float = DEFAULT_TIMEOUT_SEC) -> CheckResult:
     """Conecta a Redis, ejecuta PING, garantiza cleanup de conexión."""
     import redis.asyncio as redis_async
 
     start = time.perf_counter()
     client: Any = None
     try:
-        client = redis_async.from_url(
-            redis_url, socket_connect_timeout=timeout
-        )
+        client = redis_async.from_url(redis_url, socket_connect_timeout=timeout)
         await asyncio.wait_for(client.ping(), timeout=timeout)
-        return CheckResult(
-            ok=True, latency_ms=int((time.perf_counter() - start) * 1000)
-        )
+        return CheckResult(ok=True, latency_ms=int((time.perf_counter() - start) * 1000))
     except TimeoutError:
         return CheckResult(
             ok=False,
@@ -153,9 +143,7 @@ async def check_http(
     start = time.perf_counter()
     try:
         async with httpx.AsyncClient(timeout=timeout) as client:
-            response = await asyncio.wait_for(
-                client.get(url), timeout=timeout
-            )
+            response = await asyncio.wait_for(client.get(url), timeout=timeout)
         latency_ms = int((time.perf_counter() - start) * 1000)
         if response.status_code == expect_status:
             result = CheckResult(ok=True, latency_ms=latency_ms)
@@ -163,10 +151,7 @@ async def check_http(
             result = CheckResult(
                 ok=False,
                 latency_ms=latency_ms,
-                error=(
-                    f"unexpected status {response.status_code} "
-                    f"(expected {expect_status})"
-                ),
+                error=(f"unexpected status {response.status_code} (expected {expect_status})"),
             )
     except TimeoutError:
         result = CheckResult(
@@ -175,9 +160,7 @@ async def check_http(
             error=f"timeout after {timeout}s",
         )
     except Exception as exc:
-        logger.warning(
-            "check_http_failed", exc_info=exc, extra={"url": url}
-        )
+        logger.warning("check_http_failed", exc_info=exc, extra={"url": url})
         result = CheckResult(
             ok=False,
             latency_ms=int((time.perf_counter() - start) * 1000),
@@ -206,14 +189,10 @@ def assemble_readiness(
     """
     aggregated = dict(checks)
     for key in critical - aggregated.keys():
-        aggregated[key] = CheckResult(
-            ok=False, latency_ms=0, error="check missing"
-        )
+        aggregated[key] = CheckResult(ok=False, latency_ms=0, error="check missing")
 
     critical_failed = any(not aggregated[k].ok for k in critical)
-    non_critical_failed = any(
-        not v.ok for k, v in aggregated.items() if k not in critical
-    )
+    non_critical_failed = any(not v.ok for k, v in aggregated.items() if k not in critical)
 
     if critical_failed:
         status_str = "error"

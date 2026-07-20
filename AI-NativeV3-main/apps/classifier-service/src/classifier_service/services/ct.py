@@ -182,9 +182,7 @@ def _build_window(events: list[dict]) -> WorkWindow:
     # solo se contaba `codigo_ejecutado` y los alumnos que usaban tests pero
     # no run libre caían en `prompt_exec_ratio = 1.0` (balance = 0), forzando
     # `ct_summary = 0.5` constante.
-    execs = sum(
-        1 for e in events if e["event_type"] in ("codigo_ejecutado", "tests_ejecutados")
-    )
+    execs = sum(1 for e in events if e["event_type"] in ("codigo_ejecutado", "tests_ejecutados"))
     reflections = sum(1 for e in events if e["event_type"] == "anotacion_creada")
     return WorkWindow(
         start=first_ts,

@@ -17,7 +17,7 @@ import base64
 from contextlib import asynccontextmanager
 from datetime import UTC, datetime
 from typing import Any
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock
 from uuid import UUID, uuid4
 
 import pytest
@@ -533,10 +533,7 @@ async def test_create_segunda_key_activa_raise_conflict(monkeypatch) -> None:
         side_effect=IntegrityError(
             "INSERT INTO byok_keys ...",
             {},
-            Exception(
-                'duplicate key value violates unique constraint '
-                '"uq_byok_keys_active"'
-            ),
+            Exception('duplicate key value violates unique constraint "uq_byok_keys_active"'),
         )
     )
 
@@ -914,9 +911,7 @@ async def test_usage_existente_devuelve_totales(monkeypatch) -> None:
 
 
 def test_key_to_dict_no_expone_encrypted_value() -> None:
-    row = _make_byok_row(
-        scope_type="materia", scope_id=uuid4(), encrypted=b"SECRET_BYTES" * 4
-    )
+    row = _make_byok_row(scope_type="materia", scope_id=uuid4(), encrypted=b"SECRET_BYTES" * 4)
     out = _key_to_dict(row)
     assert "encrypted_value" not in out
     # Tampoco aparece como bytes en ningun campo serializado

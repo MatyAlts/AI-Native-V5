@@ -71,9 +71,7 @@ def upgrade() -> None:
         """
     )
     # Permiso explicito para el rol no-superuser
-    op.execute(
-        "GRANT EXECUTE ON FUNCTION universidades_for_user(UUID) TO academic_user"
-    )
+    op.execute("GRANT EXECUTE ON FUNCTION universidades_for_user(UUID) TO academic_user")
 
     # 2) Drop la policy laxa que permitia a cualquier user listar TODAS las unis.
     op.execute("DROP POLICY IF EXISTS authenticated_can_list ON universidades")

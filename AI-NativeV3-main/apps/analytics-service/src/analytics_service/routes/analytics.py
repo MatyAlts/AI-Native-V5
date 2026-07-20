@@ -464,9 +464,7 @@ async def interrater_aggregate(
         if protocol == "ejes" and ep_ids:
             mrows = (
                 await s.execute(
-                    select(
-                        Classification.episode_id, Classification.appropriation
-                    ).where(
+                    select(Classification.episode_id, Classification.appropriation).where(
                         Classification.episode_id.in_(ep_ids),
                         Classification.is_current.is_(True),
                     )
@@ -486,9 +484,7 @@ async def interrater_aggregate(
         common = sorted(set(a_map) & set(b_map))
         if not common:
             return 0, None, None
-        ratings = [
-            KappaRating(episode_id=e, rater_a=a_map[e], rater_b=b_map[e]) for e in common
-        ]
+        ratings = [KappaRating(episode_id=e, rater_a=a_map[e], rater_b=b_map[e]) for e in common]
         cats = sorted({r.rater_a for r in ratings} | {r.rater_b for r in ratings})
         try:
             res = compute_cohen_kappa(ratings, categories=cats)
@@ -506,7 +502,9 @@ async def interrater_aggregate(
         for r in raters:
             n, k, interp = _kappa(machine, by_rater[r])
             mh.append(
-                PairKappaOut(rater_a="maquina", rater_b=r, n_episodes=n, kappa=k, interpretation=interp)
+                PairKappaOut(
+                    rater_a="maquina", rater_b=r, n_episodes=n, kappa=k, interpretation=interp
+                )
             )
 
     return InterraterAggregateOut(
@@ -1404,9 +1402,7 @@ async def get_student_alerts(
         )
 
         # 1. Slope del estudiante target (lista vacía si no tiene clasificaciones).
-        student_evolution = compute_cii_evolution_longitudinal(
-            grouped.get(student_pseudonym, [])
-        )
+        student_evolution = compute_cii_evolution_longitudinal(grouped.get(student_pseudonym, []))
         student_slope = student_evolution["mean_slope"]
 
         # 2. Slopes de toda la cohorte (para cuartiles). Solo aportan los alumnos

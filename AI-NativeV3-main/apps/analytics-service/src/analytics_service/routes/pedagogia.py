@@ -363,8 +363,8 @@ async def get_pedagogia(
 
     from platform_ops import set_tenant_rls
     from platform_ops.kappa_analysis import KappaRating, compute_cohen_kappa
-    from platform_ops.longitudinal import StudentTrajectory, summarize_cohort
     from platform_ops.longitudinal import ClassificationPoint as _CP
+    from platform_ops.longitudinal import StudentTrajectory, summarize_cohort
     from sqlalchemy import bindparam, text
     from sqlalchemy.ext.asyncio import async_sessionmaker
 
@@ -419,9 +419,7 @@ async def get_pedagogia(
             "SELECT student_pseudonym, ejercicio_estados FROM entregas "
             "WHERE tenant_id = :t AND comision_id IN :cids"
         ).bindparams(bindparam("cids", expanding=True))
-        ent_rows = (
-            await acad_s.execute(ent_stmt, {"t": str(tenant_id), "cids": cids})
-        ).all()
+        ent_rows = (await acad_s.execute(ent_stmt, {"t": str(tenant_id), "cids": cids})).all()
 
     # 2. Episodios del scope (ctr_store) → episode_id → student + orden temporal.
     async with ctr_maker() as ctr_s:
@@ -446,9 +444,7 @@ async def get_pedagogia(
                 "WHERE tenant_id = :t AND event_type = 'intento_adverso_detectado' "
                 "AND episode_id IN :eids GROUP BY episode_id"
             ).bindparams(bindparam("eids", expanding=True))
-            adv_rows = (
-                await ctr_s.execute(adv_stmt, {"t": str(tenant_id), "eids": ep_ids})
-            ).all()
+            adv_rows = (await ctr_s.execute(adv_stmt, {"t": str(tenant_id), "eids": ep_ids})).all()
             for r in adv_rows:
                 adversos_por_episodio[str(r.episode_id)] = int(r.n)
                 n_adversos_total += int(r.n)
@@ -502,7 +498,10 @@ async def get_pedagogia(
         n_indeterminados=n_indeterminados,
         por_apropiacion=dict(por_apropiacion),
         por_subgrupo=sorted(
-            (SubgrupoCount(key=k, label=subgrupo_labels.get(k, k), n=v) for k, v in por_subgrupo.items()),
+            (
+                SubgrupoCount(key=k, label=subgrupo_labels.get(k, k), n=v)
+                for k, v in por_subgrupo.items()
+            ),
             key=lambda s: s.n,
             reverse=True,
         ),
@@ -659,9 +658,7 @@ async def get_pedagogia(
             TriangulacionPerfil(
                 apropiacion=a,
                 n_alumnos=len(tri_acc.get(a, [])),
-                completitud_promedio=(
-                    round(_mean(tri_acc[a]), 3) if tri_acc.get(a) else None
-                ),
+                completitud_promedio=(round(_mean(tri_acc[a]), 3) if tri_acc.get(a) else None),
             )
             for a in _APROPIACION_ORDER
         ],
@@ -673,9 +670,15 @@ async def get_pedagogia(
             SenalesPerfil(
                 apropiacion=a,
                 n=len(coher_by_appr[a]["ct"]),
-                ct_promedio=(round(m, 3) if (m := _mean(coher_by_appr[a]["ct"])) is not None else None),
-                ccd_promedio=(round(m, 3) if (m := _mean(coher_by_appr[a]["ccd"])) is not None else None),
-                cii_promedio=(round(m, 3) if (m := _mean(coher_by_appr[a]["cii"])) is not None else None),
+                ct_promedio=(
+                    round(m, 3) if (m := _mean(coher_by_appr[a]["ct"])) is not None else None
+                ),
+                ccd_promedio=(
+                    round(m, 3) if (m := _mean(coher_by_appr[a]["ccd"])) is not None else None
+                ),
+                cii_promedio=(
+                    round(m, 3) if (m := _mean(coher_by_appr[a]["cii"])) is not None else None
+                ),
             )
             for a in _APROPIACION_ORDER
         ]
@@ -715,13 +718,19 @@ async def get_pedagogia(
     for ep, rater, label in rat_g:
         by_rater[str(rater)][str(ep)] = label
 
-    def _kappa_par(a_label: str, b_label: str, a_map: dict[str, str], b_map: dict[str, str]) -> KappaPar:
+    def _kappa_par(
+        a_label: str, b_label: str, a_map: dict[str, str], b_map: dict[str, str]
+    ) -> KappaPar:
         common = sorted(set(a_map) & set(b_map))
         base = {"rater_a": a_label, "rater_b": b_label, "n_episodios": len(common)}
         if not common:
             return KappaPar(
-                **base, kappa=None, interpretacion=None, ac1=None,
-                ac1_interpretacion=None, acuerdo_observado=None,
+                **base,
+                kappa=None,
+                interpretacion=None,
+                ac1=None,
+                ac1_interpretacion=None,
+                acuerdo_observado=None,
             )
         ratings = [KappaRating(episode_id=e, rater_a=a_map[e], rater_b=b_map[e]) for e in common]
         cats = sorted({r.rater_a for r in ratings} | {r.rater_b for r in ratings})
@@ -735,10 +744,14 @@ async def get_pedagogia(
                 ac1_interpretacion=res.ac1_interpretation,
                 acuerdo_observado=round(res.observed_agreement, 3),
             )
-        except Exception:  # noqa: BLE001 — par sin señal (1 sola categoría, etc.)
+        except Exception:
             return KappaPar(
-                **base, kappa=None, interpretacion=None, ac1=None,
-                ac1_interpretacion=None, acuerdo_observado=None,
+                **base,
+                kappa=None,
+                interpretacion=None,
+                ac1=None,
+                ac1_interpretacion=None,
+                acuerdo_observado=None,
             )
 
     # Codificadores con masa suficiente (descarta cuentas de prueba / ruido).

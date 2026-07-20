@@ -186,9 +186,7 @@ def test_n_intentos_fallidos_seguidos_devuelven_429(client, monkeypatch) -> None
     async def _always_404(self, invite_code, user):
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="inválido")
 
-    monkeypatch.setattr(
-        comisiones_routes.ComisionService, "join_by_invite_code", _always_404
-    )
+    monkeypatch.setattr(comisiones_routes.ComisionService, "join_by_invite_code", _always_404)
 
     for _ in range(3):
         r = client.post("/api/v1/comisiones/join", json={"invite_code": "ZZZ999"})

@@ -59,7 +59,7 @@ import argparse
 import csv
 import json
 import sys
-from dataclasses import asdict, dataclass
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
@@ -136,7 +136,7 @@ def _variar_tree_thresholds() -> list[SensitivityRunInput]:
             new_value = max(0.0, min(1.0, new_value))
             runs.append(
                 SensitivityRunInput(
-                    name=f"tree_{key}_{int(variation*100):+d}pct",
+                    name=f"tree_{key}_{int(variation * 100):+d}pct",
                     parameter_path=f"tree.DEFAULT_REFERENCE_PROFILE.thresholds.{key}",
                     parameter_value=new_value,
                     baseline_value=baseline_value,
@@ -148,9 +148,7 @@ def _variar_tree_thresholds() -> list[SensitivityRunInput]:
 def all_sensitivity_runs() -> list[SensitivityRunInput]:
     """Devuelve todas las corridas planificadas (16 + 4 + 24 = 44)."""
     return (
-        _variar_ct_pause_threshold()
-        + _variar_ccd_correlation_window()
-        + _variar_tree_thresholds()
+        _variar_ct_pause_threshold() + _variar_ccd_correlation_window() + _variar_tree_thresholds()
     )
 
 

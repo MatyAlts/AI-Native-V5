@@ -201,9 +201,7 @@ def upgrade() -> None:
     )
 
     op.create_index("ix_tp_ejercicios_tenant_id", "tp_ejercicios", ["tenant_id"])
-    op.create_index(
-        "ix_tp_ejercicios_tarea_practica_id", "tp_ejercicios", ["tarea_practica_id"]
-    )
+    op.create_index("ix_tp_ejercicios_tarea_practica_id", "tp_ejercicios", ["tarea_practica_id"])
     op.create_index("ix_tp_ejercicios_ejercicio_id", "tp_ejercicios", ["ejercicio_id"])
 
     # RLS para tp_ejercicios

@@ -64,9 +64,7 @@ def _kmeans_pp_init(X: np.ndarray, k: int, seed: int = 42) -> np.ndarray:
     centers[0] = X[idx]
     for i in range(1, k):
         # Distancia mínima de cada punto al centro más cercano ya elegido
-        dists_sq = np.min(
-            np.sum((X[:, None, :] - centers[:i, :]) ** 2, axis=2), axis=1
-        )
+        dists_sq = np.min(np.sum((X[:, None, :] - centers[:i, :]) ** 2, axis=2), axis=1)
         # Sample siguiente centro con probabilidad ∝ dist²
         if dists_sq.sum() == 0:
             idx = int(rng.integers(n))
@@ -77,7 +75,9 @@ def _kmeans_pp_init(X: np.ndarray, k: int, seed: int = 42) -> np.ndarray:
     return centers
 
 
-def kmeans(X: np.ndarray, k: int, max_iter: int = 100, tol: float = 1e-4, seed: int = 42) -> ClusteringResult:
+def kmeans(
+    X: np.ndarray, k: int, max_iter: int = 100, tol: float = 1e-4, seed: int = 42
+) -> ClusteringResult:
     """k-means estándar.
 
     No usa sklearn — implementación pura numpy.
@@ -113,9 +113,7 @@ def kmeans(X: np.ndarray, k: int, max_iter: int = 100, tol: float = 1e-4, seed: 
     )
 
 
-def assign_cluster_names(
-    cluster_centers: np.ndarray, cluster_labels: np.ndarray
-) -> np.ndarray:
+def assign_cluster_names(cluster_centers: np.ndarray, cluster_labels: np.ndarray) -> np.ndarray:
     """Asigna nombres semánticos a los clusters por orden de sum_coherences.
 
     El cluster con mayor sum → "reflexiva", menor → "delegacion", medio → "superficial".

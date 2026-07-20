@@ -23,9 +23,7 @@ from httpx import ASGITransport, AsyncClient
 
 @pytest.fixture
 async def client() -> AsyncClient:
-    async with AsyncClient(
-        transport=ASGITransport(app=app), base_url="http://test"
-    ) as c:
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as c:
         yield c
 
 
@@ -57,9 +55,7 @@ async def test_estudiante_get_keys_devuelve_403(client: AsyncClient) -> None:
     assert "byok_key:read" in response.json()["detail"]
 
 
-async def test_docente_normal_get_keys_devuelve_200(
-    client: AsyncClient, monkeypatch
-) -> None:
+async def test_docente_normal_get_keys_devuelve_200(client: AsyncClient, monkeypatch) -> None:
     # F11: el docente puede LEER keys (read-only); las mutaciones siguen admin.
     async def _fake_list(*args, **kwargs):
         return []
@@ -96,9 +92,7 @@ async def test_post_key_estudiante_devuelve_403(client: AsyncClient) -> None:
         "provider": "anthropic",
         "plaintext_value": "sk-ant-1234567890",
     }
-    response = await client.post(
-        "/api/v1/byok/keys", json=body, headers=ESTUDIANTE_HEADERS
-    )
+    response = await client.post("/api/v1/byok/keys", json=body, headers=ESTUDIANTE_HEADERS)
     assert response.status_code == 403
 
 
@@ -145,9 +139,7 @@ async def test_post_key_validation_error_scope_type_invalid(
         "provider": "anthropic",
         "plaintext_value": "sk-ant-1234567890",
     }
-    response = await client.post(
-        "/api/v1/byok/keys", json=body, headers=ADMIN_HEADERS
-    )
+    response = await client.post("/api/v1/byok/keys", json=body, headers=ADMIN_HEADERS)
     assert response.status_code == 422  # pydantic schema rejection
 
 
@@ -159,9 +151,7 @@ async def test_post_key_plaintext_demasiado_corto_422(client: AsyncClient) -> No
         "provider": "anthropic",
         "plaintext_value": "abc",
     }
-    response = await client.post(
-        "/api/v1/byok/keys", json=body, headers=ADMIN_HEADERS
-    )
+    response = await client.post("/api/v1/byok/keys", json=body, headers=ADMIN_HEADERS)
     assert response.status_code == 422
 
 
@@ -172,15 +162,11 @@ async def test_post_key_provider_no_listado_422(client: AsyncClient) -> None:
         "provider": "midudev-llm",
         "plaintext_value": "sk-something-validlength",
     }
-    response = await client.post(
-        "/api/v1/byok/keys", json=body, headers=ADMIN_HEADERS
-    )
+    response = await client.post("/api/v1/byok/keys", json=body, headers=ADMIN_HEADERS)
     assert response.status_code == 422
 
 
-async def test_post_key_master_key_missing_devuelve_500(
-    client: AsyncClient, monkeypatch
-) -> None:
+async def test_post_key_master_key_missing_devuelve_500(client: AsyncClient, monkeypatch) -> None:
     """Si BYOK_MASTER_KEY no esta seteada, el service raisea ValueError con
     mensaje conteniendo 'BYOK_MASTER_KEY' y el route lo mapea a 500."""
 
@@ -194,16 +180,12 @@ async def test_post_key_master_key_missing_devuelve_500(
         "provider": "anthropic",
         "plaintext_value": "sk-ant-secret-key123",
     }
-    response = await client.post(
-        "/api/v1/byok/keys", json=body, headers=ADMIN_HEADERS
-    )
+    response = await client.post("/api/v1/byok/keys", json=body, headers=ADMIN_HEADERS)
     assert response.status_code == 500
     assert "BYOK_MASTER_KEY" in response.json()["detail"]
 
 
-async def test_post_key_value_error_no_master_es_400(
-    client: AsyncClient, monkeypatch
-) -> None:
+async def test_post_key_value_error_no_master_es_400(client: AsyncClient, monkeypatch) -> None:
     """Otros ValueError (no master key) -> 400."""
 
     async def _fake_create(**kwargs):
@@ -216,15 +198,11 @@ async def test_post_key_value_error_no_master_es_400(
         "provider": "anthropic",
         "plaintext_value": "sk-ant-secret-key123",
     }
-    response = await client.post(
-        "/api/v1/byok/keys", json=body, headers=ADMIN_HEADERS
-    )
+    response = await client.post("/api/v1/byok/keys", json=body, headers=ADMIN_HEADERS)
     assert response.status_code == 400
 
 
-async def test_post_key_conflict_activa_devuelve_409(
-    client: AsyncClient, monkeypatch
-) -> None:
+async def test_post_key_conflict_activa_devuelve_409(client: AsyncClient, monkeypatch) -> None:
     """NB-3: si el service raisea BYOKConflictError (ya hay una key activa
     para (scope, scope_id, provider)), el route lo mapea a 409 — NO a 500."""
     from ai_gateway.services.byok import BYOKConflictError
@@ -242,9 +220,7 @@ async def test_post_key_conflict_activa_devuelve_409(
         "provider": "anthropic",
         "plaintext_value": "sk-ant-secret-key123",
     }
-    response = await client.post(
-        "/api/v1/byok/keys", json=body, headers=ADMIN_HEADERS
-    )
+    response = await client.post("/api/v1/byok/keys", json=body, headers=ADMIN_HEADERS)
     assert response.status_code == 409
     assert "activa" in response.json()["detail"]
 
@@ -276,9 +252,7 @@ async def test_post_key_happy_path(client: AsyncClient, monkeypatch) -> None:
         "plaintext_value": "sk-ant-completebody123",
         "monthly_budget_usd": 100.0,
     }
-    response = await client.post(
-        "/api/v1/byok/keys", json=body, headers=DOCENTE_ADMIN_HEADERS
-    )
+    response = await client.post("/api/v1/byok/keys", json=body, headers=DOCENTE_ADMIN_HEADERS)
     assert response.status_code == 201
     out = response.json()
     assert out["id"] == fake_id
@@ -298,9 +272,7 @@ async def test_get_keys_lista_vacia(client: AsyncClient, monkeypatch) -> None:
     assert response.json() == []
 
 
-async def test_get_keys_con_filtro_scope_type(
-    client: AsyncClient, monkeypatch
-) -> None:
+async def test_get_keys_con_filtro_scope_type(client: AsyncClient, monkeypatch) -> None:
     captured: dict = {}
 
     async def _fake_list(tenant_id: UUID, *, scope_type=None, scope_id=None):
@@ -337,9 +309,7 @@ async def test_rotate_key_no_existe_404(client: AsyncClient, monkeypatch) -> Non
     assert response.status_code == 404
 
 
-async def test_rotate_key_master_missing_500(
-    client: AsyncClient, monkeypatch
-) -> None:
+async def test_rotate_key_master_missing_500(client: AsyncClient, monkeypatch) -> None:
     async def _fake_rotate(*args, **kwargs):
         raise ValueError("BYOK_MASTER_KEY no configurada")
 
@@ -411,9 +381,7 @@ async def test_revoke_key_no_existe_404(client: AsyncClient, monkeypatch) -> Non
         return None
 
     monkeypatch.setattr("ai_gateway.routes.byok.revoke_byok_key", _fake_revoke)
-    response = await client.post(
-        f"/api/v1/byok/keys/{uuid4()}/revoke", headers=ADMIN_HEADERS
-    )
+    response = await client.post(f"/api/v1/byok/keys/{uuid4()}/revoke", headers=ADMIN_HEADERS)
     assert response.status_code == 404
 
 
@@ -436,9 +404,7 @@ async def test_revoke_key_happy_path(client: AsyncClient, monkeypatch) -> None:
         }
 
     monkeypatch.setattr("ai_gateway.routes.byok.revoke_byok_key", _fake_revoke)
-    response = await client.post(
-        f"/api/v1/byok/keys/{key_id}/revoke", headers=ADMIN_HEADERS
-    )
+    response = await client.post(f"/api/v1/byok/keys/{key_id}/revoke", headers=ADMIN_HEADERS)
     assert response.status_code == 200
     assert response.json()["revoked_at"] is not None
 
@@ -450,9 +416,7 @@ async def test_test_key_devuelve_501_para_admin(client: AsyncClient) -> None:
     """NB-23: probar una key contra el provider no esta implementado (adapters
     diferidos). El endpoint existe y responde 501 explicito — no 404 ambiguo,
     no una validacion fingida — con un mensaje claro."""
-    response = await client.post(
-        f"/api/v1/byok/keys/{uuid4()}/test", headers=ADMIN_HEADERS
-    )
+    response = await client.post(f"/api/v1/byok/keys/{uuid4()}/test", headers=ADMIN_HEADERS)
     assert response.status_code == 501
     detail = response.json()["detail"]
     assert "no esta implementado" in detail
@@ -461,18 +425,14 @@ async def test_test_key_devuelve_501_para_admin(client: AsyncClient) -> None:
 
 async def test_test_key_estudiante_devuelve_403(client: AsyncClient) -> None:
     """El stub /test respeta el mismo gate de auth que el resto del router."""
-    response = await client.post(
-        f"/api/v1/byok/keys/{uuid4()}/test", headers=ESTUDIANTE_HEADERS
-    )
+    response = await client.post(f"/api/v1/byok/keys/{uuid4()}/test", headers=ESTUDIANTE_HEADERS)
     assert response.status_code == 403
 
 
 # ── GET /keys/{id}/usage ───────────────────────────────────────────────
 
 
-async def test_get_usage_default_yyyymm(
-    client: AsyncClient, monkeypatch
-) -> None:
+async def test_get_usage_default_yyyymm(client: AsyncClient, monkeypatch) -> None:
     """Sin yyyymm, el service computa el mes actual."""
     captured: dict = {}
 
@@ -488,9 +448,7 @@ async def test_get_usage_default_yyyymm(
         }
 
     monkeypatch.setattr("ai_gateway.routes.byok.get_byok_key_usage", _fake_usage)
-    response = await client.get(
-        f"/api/v1/byok/keys/{uuid4()}/usage", headers=ADMIN_HEADERS
-    )
+    response = await client.get(f"/api/v1/byok/keys/{uuid4()}/usage", headers=ADMIN_HEADERS)
     assert response.status_code == 200
     assert captured["yyyymm"] is None  # el service decide el default
 

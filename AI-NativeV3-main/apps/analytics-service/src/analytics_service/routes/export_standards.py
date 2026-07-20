@@ -40,9 +40,7 @@ logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/v1/export", tags=["export-standards"])
 
 
-async def _fetch_episode_events(
-    episode_id: UUID, tenant_id: UUID
-) -> tuple[UUID, list[dict]]:
+async def _fetch_episode_events(episode_id: UUID, tenant_id: UUID) -> tuple[UUID, list[dict]]:
     """Fetch comision_id + eventos del episodio del ctr_store con RLS por tenant.
 
     Devuelve `(comision_id, events)`. El `comision_id` se resuelve desde el

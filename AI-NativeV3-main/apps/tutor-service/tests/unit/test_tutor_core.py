@@ -912,9 +912,7 @@ async def test_tutor_respondio_persiste_tokens_input_output_y_provider(
     async for _ in tutor.interact(episode_id, "¿qué es recursión?"):
         pass
 
-    response_ev = next(
-        e for e in fake_ctr.published_events if e["event_type"] == "tutor_respondio"
-    )
+    response_ev = next(e for e in fake_ctr.published_events if e["event_type"] == "tutor_respondio")
     # Campos clave del fix
     assert response_ev["payload"]["tokens_input"] == 42
     assert response_ev["payload"]["tokens_output"] == 15
@@ -959,9 +957,7 @@ async def test_tutor_respondio_sin_usage_event_omite_campos_de_token(
     async for _ in tutor.interact(episode_id, "x"):
         pass
 
-    response_ev = next(
-        e for e in fake_ctr.published_events if e["event_type"] == "tutor_respondio"
-    )
+    response_ev = next(e for e in fake_ctr.published_events if e["event_type"] == "tutor_respondio")
     # Campos opcionales ausentes => deserializan a None en el schema.
     assert "tokens_input" not in response_ev["payload"]
     assert "tokens_output" not in response_ev["payload"]
@@ -1111,7 +1107,8 @@ async def test_interact_sin_current_code_no_inyecta_mensaje(
         pass
 
     code_msgs = [
-        m for m in fake_ai.last_messages
+        m
+        for m in fake_ai.last_messages
         if m["role"] == "system" and "Código que el alumno tiene actualmente" in m["content"]
     ]
     assert code_msgs == [], "no debería inyectar system de código cuando current_code=None"

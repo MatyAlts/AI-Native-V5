@@ -32,6 +32,4 @@ def upgrade() -> None:
 
 def downgrade() -> None:
     for table in TABLES:
-        op.execute(
-            f"ALTER TABLE {table} NO FORCE ROW LEVEL SECURITY"
-        )
+        op.execute(f"ALTER TABLE {table} NO FORCE ROW LEVEL SECURITY")

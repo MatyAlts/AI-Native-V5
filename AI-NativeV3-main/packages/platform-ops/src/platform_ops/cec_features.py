@@ -97,8 +97,7 @@ def _max_depth(node: ast.AST, current: int = 0) -> int:
             d = _max_depth(child, current + 1)
         else:
             d = _max_depth(child, current)
-        if d > max_d:
-            max_d = d
+        max_d = max(max_d, d)
     return max_d
 
 
@@ -223,12 +222,7 @@ def naming_consistency(code: str) -> float:
     styles: list[str] = []
     for node in ast.walk(tree):
         # Funciones
-        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
-            style = _classify_identifier(node.name)
-            if style:
-                styles.append(style)
-        # Clases (separadas, PEP 8 espera PascalCase)
-        elif isinstance(node, ast.ClassDef):
+        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)) or isinstance(node, ast.ClassDef):
             style = _classify_identifier(node.name)
             if style:
                 styles.append(style)

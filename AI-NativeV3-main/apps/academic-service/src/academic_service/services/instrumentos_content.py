@@ -28,7 +28,6 @@ from __future__ import annotations
 
 from typing import Any
 
-
 # ============================================================================
 # CUESTIONARIO IA PREVIA (P2-2)
 # Version: cuestionario-ia-v0.1.0-draft
@@ -141,9 +140,7 @@ def validate_cuestionario_ia_responses(responses: dict[str, Any]) -> list[str]:
             continue
         item_type = item["type"]
         if item_type == "likert":
-            if not isinstance(value, int) or not (
-                item["scale_min"] <= value <= item["scale_max"]
-            ):
+            if not isinstance(value, int) or not (item["scale_min"] <= value <= item["scale_max"]):
                 errors.append(
                     f"Item {item_id} (likert) requiere int en [{item['scale_min']}, {item['scale_max']}], recibido: {value!r}"
                 )
@@ -389,9 +386,7 @@ def get_test_by_id(test_id: str) -> dict[str, Any] | None:
     return next((t for t in TEST_TRANSFERENCIA_PROBLEMS if t["test_id"] == test_id), None)
 
 
-def evaluate_test_transferencia_answer(
-    test_id: str, response_detail: dict[str, Any]
-) -> bool:
+def evaluate_test_transferencia_answer(test_id: str, response_detail: dict[str, Any]) -> bool:
     """Evalua si la respuesta del estudiante es correcta.
 
     [PLACEHOLDER CATEDRA UTN] La logica de evaluacion automatica (matching

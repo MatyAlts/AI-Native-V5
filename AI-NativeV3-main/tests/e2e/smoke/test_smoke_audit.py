@@ -34,8 +34,7 @@ def test_audit_verify_via_gateway_returns_valid(
         headers=auth_headers("docente"),
     )
     assert resp.status_code == 200, (
-        f"POST audit/verify alias deberia OK. "
-        f"status={resp.status_code} body={resp.text[:400]}"
+        f"POST audit/verify alias deberia OK. status={resp.status_code} body={resp.text[:400]}"
     )
     body = resp.json()
     assert body["valid"] is True, (
@@ -86,8 +85,7 @@ def test_audit_verify_alias_matches_legacy(seeded_episode_id: str) -> None:
     le = via_legacy.json()
     for field in ("episode_id", "valid", "events_count", "failing_seq", "integrity_compromised"):
         assert a[field] == le[field], (
-            f"Campo {field!r} difiere entre alias y legacy. "
-            f"alias={a[field]!r} legacy={le[field]!r}"
+            f"Campo {field!r} difiere entre alias y legacy. alias={a[field]!r} legacy={le[field]!r}"
         )
 
 

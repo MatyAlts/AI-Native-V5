@@ -21,7 +21,6 @@ from __future__ import annotations
 from uuid import uuid4
 
 import pytest
-
 from analytics_service.services.caliper_xapi_exporter import (
     AI_NATIVE_VOCAB_BASE,
     CALIPER_CONTEXT,
@@ -29,7 +28,6 @@ from analytics_service.services.caliper_xapi_exporter import (
     to_caliper,
     to_xapi,
 )
-
 
 # ============================================================================
 # Fixtures: eventos CTR sintéticos
@@ -176,7 +174,11 @@ class TestCaliperActorMapping:
         self, sample_events: list[dict], episode_id: str, student_id: str
     ) -> None:
         envelope = to_caliper(sample_events, {"episode_id": episode_id})
-        prompt_event = next(e for e in envelope["data"] if "MessageEvent" in e["type"] and "student" in e["actor"]["id"])
+        prompt_event = next(
+            e
+            for e in envelope["data"]
+            if "MessageEvent" in e["type"] and "student" in e["actor"]["id"]
+        )
         assert prompt_event["actor"]["type"] == "Person"
         assert student_id in prompt_event["actor"]["id"]
 
@@ -216,24 +218,25 @@ class TestCaliperEventTypeMapping:
         assert envelope["data"][0]["type"] == expected_caliper_type
 
     def test_unknown_event_falls_to_generic_event(self, episode_id: str) -> None:
-        evt = {"id": "x", "event_type": "completamente_inventado", "ts": "2026-05-17T10:00:00Z", "payload": {}}
+        evt = {
+            "id": "x",
+            "event_type": "completamente_inventado",
+            "ts": "2026-05-17T10:00:00Z",
+            "payload": {},
+        }
         envelope = to_caliper([evt], {"episode_id": episode_id})
         assert envelope["data"][0]["type"] == "Event"
         assert AI_NATIVE_VOCAB_BASE in envelope["data"][0]["action"]
 
 
 class TestCaliperExtensions:
-    def test_preserves_self_chain_hashes(
-        self, sample_events: list[dict], episode_id: str
-    ) -> None:
+    def test_preserves_self_chain_hashes(self, sample_events: list[dict], episode_id: str) -> None:
         envelope = to_caliper(sample_events, {"episode_id": episode_id})
         first = envelope["data"][0]
         assert first["extensions"]["self_hash"] == "a" * 64
         assert first["extensions"]["chain_hash"] == "b" * 64
 
-    def test_preserves_labeler_version(
-        self, sample_events: list[dict], episode_id: str
-    ) -> None:
+    def test_preserves_labeler_version(self, sample_events: list[dict], episode_id: str) -> None:
         envelope = to_caliper(sample_events, {"episode_id": episode_id})
         for ev in envelope["data"]:
             assert ev["extensions"]["labeler_version"] == "1.2.0"
@@ -242,7 +245,11 @@ class TestCaliperExtensions:
         self, sample_events: list[dict], episode_id: str
     ) -> None:
         envelope = to_caliper(sample_events, {"episode_id": episode_id})
-        prompt = next(e for e in envelope["data"] if e["object"].get("type") == "Message" and "complejidad" in e["object"].get("body", ""))
+        prompt = next(
+            e
+            for e in envelope["data"]
+            if e["object"].get("type") == "Message" and "complejidad" in e["object"].get("body", "")
+        )
         assert prompt["extensions"]["prompt_system_hash"] == "1" * 64
         assert prompt["extensions"]["chunks_used_hash"] == "2" * 64
 
@@ -289,9 +296,7 @@ class TestXapiVerbMapping:
             ("reflexion_completada", "reflected"),
         ],
     )
-    def test_verb_iri(
-        self, ctr_event: str, expected_verb_substring: str, episode_id: str
-    ) -> None:
+    def test_verb_iri(self, ctr_event: str, expected_verb_substring: str, episode_id: str) -> None:
         evt = {"id": "x", "event_type": ctr_event, "ts": "2026-05-17T10:00:00Z", "payload": {}}
         statements = to_xapi([evt], {"episode_id": episode_id})
         assert expected_verb_substring in statements[0]["verb"]["id"]
