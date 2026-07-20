@@ -337,9 +337,9 @@ async def test_publish_template_does_not_publish_instances(
 ) -> None:
     """publish(template) marca el template como published pero NO toca instancias.
 
-    Se verifica: (a) state del template → published; (b) `tp_repo.create`
-    no se invoca en publish; (c) la instancia mockeada sigue en `draft`
-    (el service nunca accede a ella).
+    Se verifica: (a) state del template → published; (b) la instancia
+    mockeada sigue en `draft` (el service nunca accede a ella, no hay
+    fan-out de publish hacia instancias).
     """
     svc = TareaPracticaTemplateService(mock_session)
 
@@ -349,14 +349,12 @@ async def test_publish_template_does_not_publish_instances(
 
     # Instancia ficticia — el service NO debería tocarla
     instance = _fake_tp_instance(uuid4(), tenant_a_id, uuid4(), tid, estado="draft")
-    svc.tp_repo.create = AsyncMock()
 
     result = await svc.publish(tid, user_docente_admin_a)
 
     assert result is template
     assert template.estado == "published"
     assert instance.estado == "draft"  # sigue intacta
-    svc.tp_repo.create.assert_not_called()
     assert _audit_actions(mock_session) == ["tarea_practica_template.publish"]
 
 

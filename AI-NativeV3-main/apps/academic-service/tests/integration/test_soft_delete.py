@@ -22,6 +22,7 @@ def mock_session():
     session.flush = AsyncMock()
     session.refresh = AsyncMock()
     session.add = MagicMock()
+    session.execute = AsyncMock()
     return session
 
 
