@@ -34,7 +34,11 @@ jobs:
       - name: Install uv
         uses: astral-sh/setup-uv@v3
         with:
-          enable-cache: true
+          # enable-cache desactivado: setup-uv cachea contra `**/uv.lock` y ese
+          # archivo NO esta versionado (.gitignore:28). Con cache activada la
+          # action aborta con "No file matched to [**/uv.lock]" antes de instalar.
+          # Si algun dia se versiona el lockfile, volver a poner `true`.
+          enable-cache: false
 
       - name: Setup Python
         run: uv python install ${{ env.PYTHON_VERSION }}
@@ -79,7 +83,11 @@ jobs:
       - name: Install uv
         uses: astral-sh/setup-uv@v3
         with:
-          enable-cache: true
+          # enable-cache desactivado: setup-uv cachea contra `**/uv.lock` y ese
+          # archivo NO esta versionado (.gitignore:28). Con cache activada la
+          # action aborta con "No file matched to [**/uv.lock]" antes de instalar.
+          # Si algun dia se versiona el lockfile, volver a poner `true`.
+          enable-cache: false
 
       - name: Setup Python
         run: uv python install ${{ env.PYTHON_VERSION }}
@@ -150,7 +158,11 @@ jobs:
       - name: Install uv
         uses: astral-sh/setup-uv@v3
         with:
-          enable-cache: true
+          # enable-cache desactivado: setup-uv cachea contra `**/uv.lock` y ese
+          # archivo NO esta versionado (.gitignore:28). Con cache activada la
+          # action aborta con "No file matched to [**/uv.lock]" antes de instalar.
+          # Si algun dia se versiona el lockfile, volver a poner `true`.
+          enable-cache: false
 
       - name: Setup Python
         run: uv python install ${{ env.PYTHON_VERSION }}
@@ -202,7 +214,11 @@ jobs:
       - name: Install uv
         uses: astral-sh/setup-uv@v3
         with:
-          enable-cache: true
+          # enable-cache desactivado: setup-uv cachea contra `**/uv.lock` y ese
+          # archivo NO esta versionado (.gitignore:28). Con cache activada la
+          # action aborta con "No file matched to [**/uv.lock]" antes de instalar.
+          # Si algun dia se versiona el lockfile, volver a poner `true`.
+          enable-cache: false
 
       - name: Setup Python
         run: uv python install ${{ env.PYTHON_VERSION }}
