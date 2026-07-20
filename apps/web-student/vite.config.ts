@@ -44,12 +44,12 @@ export default defineConfig({
             const setDefault = (name: string, fallback: string) => {
               if (!proxyReq.getHeader(name)) proxyReq.setHeader(name, fallback)
             }
-            setDefault("x-user-id", "e19354fb-c05a-4535-a0bf-a7d3ea09692d") // alumno01
+            setDefault("x-user-id", "b1b1b1b1-0001-0001-0001-000000000001") // alumno seed-3-comisiones
             // Tenant dinámico: si el cliente manda `x-selected-tenant`
             // (escrito por el TenantSelector via monkey-patch en main.tsx),
             // usamos eso. Fallback a la Universidad Final E2E.
             const clientTenant = req.headers["x-selected-tenant"]
-            const tenantFallback = "d6269f07-022f-4181-a24d-db7e16e655ae"
+            const tenantFallback = "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa"
             const tenantId =
               typeof clientTenant === "string" && clientTenant.length === 36
                 ? clientTenant
