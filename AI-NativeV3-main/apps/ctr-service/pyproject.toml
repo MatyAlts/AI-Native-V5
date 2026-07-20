@@ -21,6 +21,11 @@ dependencies = [
     "opentelemetry-exporter-otlp>=1.27",
     "platform-contracts",
     "platform-observability",
+    # Usado en auth/dependencies.py (`from platform_ops import set_tenant_rls`).
+    # Faltaba declararlo: funcionaba solo porque el workspace uv comparte un
+    # unico venv entre los 11 servicios. Con venv por servicio (deploy aislado)
+    # el import fallaba y con el se caia el `SET LOCAL app.current_tenant`.
+    "platform-ops",
 ]
 
 [dependency-groups]
@@ -31,7 +36,6 @@ dev = [
     "httpx>=0.27",
     "testcontainers[postgres,redis]>=4.8",
     "hypothesis>=6.108",
-    "platform-test-utils",
 ]
 
 [build-system]
