@@ -1,7 +1,7 @@
 import { cleanup, render, screen } from "@testing-library/react"
 import { Home } from "lucide-react"
 import { afterEach, describe, expect, it } from "vitest"
-import { Sidebar, type NavGroup } from "./Sidebar"
+import { type NavGroup, Sidebar } from "./Sidebar"
 
 afterEach(() => {
   cleanup()

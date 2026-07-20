@@ -20,8 +20,8 @@
  */
 import { useQuery } from "@tanstack/react-query"
 import { Link, createFileRoute, useNavigate, useParams } from "@tanstack/react-router"
-import { z } from "zod"
 import { useEffect, useRef, useState } from "react"
+import { z } from "zod"
 import { ExerciseListView } from "../components/ExerciseListView"
 import { GradeDetailView } from "../components/GradeDetailView"
 import { OpeningStage } from "../components/OpeningStage"
@@ -105,7 +105,11 @@ function MateriaPage() {
   // useState) asi que el segundo click ve el flag ya seteado y aborta.
   const openingRef = useRef(false)
 
-  const { data: materias, isLoading, error } = useQuery({
+  const {
+    data: materias,
+    isLoading,
+    error,
+  } = useQuery({
     queryKey: ["mis-materias"],
     queryFn: () => listMisMaterias(),
     staleTime: 5 * 60 * 1000,
@@ -135,9 +139,13 @@ function MateriaPage() {
     // Quitar el query param de la URL sin reemplazar la entrada de historial
     void navigate({ to: "/materia/$id", params: { id }, replace: true })
     // Fetch de la tarea y abrir el ExerciseListView
-    getTareaById(ctx.tarea_id).then((tarea) => {
-      if (tarea) setView({ kind: "exercise-list", tarea })
-    }).catch(() => { /* best-effort */ })
+    getTareaById(ctx.tarea_id)
+      .then((tarea) => {
+        if (tarea) setView({ kind: "exercise-list", tarea })
+      })
+      .catch(() => {
+        /* best-effort */
+      })
   }, [returnToExercise, materia, id, navigate])
 
   if (isLoading) {
@@ -192,8 +200,7 @@ function MateriaPage() {
       try {
         const my = await listStudentEpisodes(materia!.comision_id)
         const reanudables = my.episodes.filter(
-          (e) =>
-            (e.estado === "paused" || e.estado === "open") && e.problema_id === tarea.id,
+          (e) => (e.estado === "paused" || e.estado === "open") && e.problema_id === tarea.id,
         )
         for (const candidate of reanudables) {
           const st = await getEpisodeState(candidate.episode_id)
@@ -300,9 +307,7 @@ function MateriaPage() {
       <ContextualHeader materia={materia} />
 
       {currentView.kind === "opening" && currentView.error && (
-        <div className="bg-danger-soft text-danger px-6 py-2 text-sm">
-          {currentView.error}
-        </div>
+        <div className="bg-danger-soft text-danger px-6 py-2 text-sm">{currentView.error}</div>
       )}
 
       {currentView.kind === "unidades" && (
@@ -310,12 +315,8 @@ function MateriaPage() {
           <div className="max-w-3xl mx-auto">
             <UnidadSelector
               comisionId={materia.comision_id}
-              onSelect={(unidadId) =>
-                setView({ kind: "selector", unidadId: unidadId ?? null })
-              }
-              onAutoSkip={(unidadId) =>
-                setView({ kind: "selector", unidadId, autoSkipped: true })
-              }
+              onSelect={(unidadId) => setView({ kind: "selector", unidadId: unidadId ?? null })}
+              onAutoSkip={(unidadId) => setView({ kind: "selector", unidadId, autoSkipped: true })}
             />
           </div>
         </div>
@@ -353,10 +354,7 @@ function MateriaPage() {
       )}
 
       {currentView.kind === "grade-detail" && (
-        <GradeDetailView
-          entrega={currentView.entrega}
-          onBack={() => setView(currentView.back)}
-        />
+        <GradeDetailView entrega={currentView.entrega} onBack={() => setView(currentView.back)} />
       )}
 
       {currentView.kind === "opening" && (
@@ -396,20 +394,14 @@ function ContextualHeader({ materia }: { materia: MateriaInscripta }) {
       data-testid="materia-context-header"
       className="border-b border-border-soft px-6 py-3 bg-white flex items-center gap-3 flex-wrap"
     >
-      <Link
-        to="/"
-        className="text-xs text-muted hover:text-body"
-        data-testid="materia-back-link"
-      >
+      <Link to="/" className="text-xs text-muted hover:text-body" data-testid="materia-back-link">
         ← Mis materias
       </Link>
       <span aria-hidden="true" className="text-muted-soft">
         |
       </span>
       <MateriaContextLine materia={materia} />
-      <span className="text-sm font-medium text-ink truncate ml-auto">
-        {materia.nombre}
-      </span>
+      <span className="text-sm font-medium text-ink truncate ml-auto">{materia.nombre}</span>
       <Link
         to="/instrumentos"
         search={{ comisionId: materia.comision_id }}
@@ -457,9 +449,7 @@ function PageError({ detail }: { detail: string }) {
   return (
     <div className="flex-1 flex items-center justify-center p-8">
       <div className="max-w-md text-center">
-        <p className="text-sm font-medium text-danger mb-2">
-          No pudimos cargar la materia.
-        </p>
+        <p className="text-sm font-medium text-danger mb-2">No pudimos cargar la materia.</p>
         <p className="text-xs font-mono text-muted">{detail}</p>
       </div>
     </div>
@@ -474,11 +464,7 @@ function MateriaNotFound({ id }: { id: string }) {
           Esta materia no esta entre tus inscripciones activas.
         </p>
         <p className="text-xs font-mono text-muted mb-4">id: {id}</p>
-        <Link
-          to="/"
-          className="text-sm underline text-body"
-          data-testid="materia-not-found-back"
-        >
+        <Link to="/" className="text-sm underline text-body" data-testid="materia-not-found-back">
           Volver a mis materias
         </Link>
       </div>

@@ -249,7 +249,10 @@ function PeriodoForm({ onCreated }: { onCreated: () => void }): ReactNode {
   }
 
   return (
-    <form onSubmit={submit} className="rounded-lg border border-border-soft bg-surface p-6 space-y-4">
+    <form
+      onSubmit={submit}
+      className="rounded-lg border border-border-soft bg-surface p-6 space-y-4"
+    >
       <div className="flex items-center gap-2 mb-2">
         <HelpButton
           size="sm"

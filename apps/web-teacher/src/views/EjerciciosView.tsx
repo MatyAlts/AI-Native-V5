@@ -55,7 +55,7 @@ import {
   listMaterias,
   updateEjercicio,
 } from "../lib/api"
-import { isPyodideRuntimeReady, runTestCases, type TestCaseRunResult } from "../lib/pyodideRunner"
+import { type TestCaseRunResult, isPyodideRuntimeReady, runTestCases } from "../lib/pyodideRunner"
 import { helpContent } from "../utils/helpContent"
 
 interface Props {
@@ -310,7 +310,6 @@ export function EjerciciosView({ comisionId, getToken }: Props) {
     <PageContainer
       title="Banco de Ejercicios"
       description="Ejercicios reusables del tenant. Cada uno tiene su contexto pedagogico (banco socratico, misconceptions, anti-patrones)."
-
       helpContent={helpContent.ejercicios}
     >
       <div className="flex flex-wrap items-center justify-between gap-3 mb-4">
@@ -538,9 +537,7 @@ export function EjerciciosView({ comisionId, getToken }: Props) {
           unidades={unidadesComision}
           onClose={closeModal}
           onSubmit={(body) =>
-            modal.kind === "edit"
-              ? handleUpdate(modal.ejercicio.id, body)
-              : handleCreate(body)
+            modal.kind === "edit" ? handleUpdate(modal.ejercicio.id, body) : handleCreate(body)
           }
         />
       )}
@@ -597,13 +594,13 @@ export function EjerciciosView({ comisionId, getToken }: Props) {
             <AlertTriangle className="w-5 h-5 text-warning shrink-0 mt-0.5" />
             <div className="space-y-2 text-sm">
               <p>
-                Vas a editar <strong>{modal.ejercicio.titulo}</strong>. Este ejercicio es
-                reusable: puede estar asignado a TPs y tener entregas de alumnos.
+                Vas a editar <strong>{modal.ejercicio.titulo}</strong>. Este ejercicio es reusable:
+                puede estar asignado a TPs y tener entregas de alumnos.
               </p>
               <p className="text-muted">
-                Los cambios se aplican sobre esta misma version (no se crea una copia), asi
-                que afectan a todas las TPs que lo referencian y al contexto de las entregas
-                ya trabajadas. Revisa el impacto antes de guardar.
+                Los cambios se aplican sobre esta misma version (no se crea una copia), asi que
+                afectan a todas las TPs que lo referencian y al contexto de las entregas ya
+                trabajadas. Revisa el impacto antes de guardar.
               </p>
             </div>
           </div>
@@ -627,16 +624,10 @@ export function EjerciciosView({ comisionId, getToken }: Props) {
       )}
 
       {modal.kind === "confirm-delete" && (
-        <Modal
-          isOpen={true}
-          onClose={closeModal}
-          title="Eliminar ejercicio"
-         
-          size="sm"
-        >
+        <Modal isOpen={true} onClose={closeModal} title="Eliminar ejercicio" size="sm">
           <p className="text-sm">
-            Vas a eliminar el ejercicio <strong>{modal.ejercicio.titulo}</strong>. Los TPs
-            que lo referencian seguiran apuntando a esta version (soft delete).
+            Vas a eliminar el ejercicio <strong>{modal.ejercicio.titulo}</strong>. Los TPs que lo
+            referencian seguiran apuntando a esta version (soft delete).
           </p>
           <div className="flex justify-end gap-2 mt-4">
             <button
@@ -760,9 +751,7 @@ function EjercicioFormModal({ initial, title, unidades, onClose, onSubmit }: For
             className="w-full border border-border rounded px-2 py-1 text-sm font-mono mb-2"
             rows={6}
           />
-          <label className="block text-xs text-muted mb-1">
-            Codigo inicial (opcional)
-          </label>
+          <label className="block text-xs text-muted mb-1">Codigo inicial (opcional)</label>
           <textarea
             value={draft.inicial_codigo ?? ""}
             onChange={(e) => set("inicial_codigo", e.target.value || null)}
@@ -789,9 +778,7 @@ function EjercicioFormModal({ initial, title, unidades, onClose, onSubmit }: For
               <label className="block text-xs text-muted mb-1">Dificultad</label>
               <select
                 value={draft.dificultad ?? ""}
-                onChange={(e) =>
-                  set("dificultad", (e.target.value || null) as Dificultad | null)
-                }
+                onChange={(e) => set("dificultad", (e.target.value || null) as Dificultad | null)}
                 className="w-full border border-border rounded px-2 py-1 text-sm bg-white"
               >
                 <option value="">Sin especificar</option>
@@ -992,9 +979,7 @@ function StudentTestCasePreview({ testCases }: { testCases: TestCaseEjercicio[] 
                 >
                   <div className="flex items-center gap-2">
                     <span className="font-medium">{tc.name || `Test ${i + 1}`}</span>
-                    <Badge>
-                      {tc.type === "stdin_stdout" ? "stdin/stdout" : "pytest"}
-                    </Badge>
+                    <Badge>{tc.type === "stdin_stdout" ? "stdin/stdout" : "pytest"}</Badge>
                     <span className="text-muted-soft ml-auto">peso {tc.weight}</span>
                   </div>
                   {tc.code && (
@@ -1024,8 +1009,8 @@ function StudentTestCasePreview({ testCases }: { testCases: TestCaseEjercicio[] 
 
           {ocultos > 0 && (
             <p className="text-[11px] text-muted">
-              {ocultos} test{ocultos !== 1 ? "s" : ""} oculto{ocultos !== 1 ? "s" : ""} de
-              control ({ocultos !== 1 ? "no viajan" : "no viaja"} al alumno).
+              {ocultos} test{ocultos !== 1 ? "s" : ""} oculto{ocultos !== 1 ? "s" : ""} de control (
+              {ocultos !== 1 ? "no viajan" : "no viaja"} al alumno).
             </p>
           )}
         </div>
@@ -1309,8 +1294,8 @@ function RubricaCriteriosEditor({
   return (
     <div>
       <p className="text-xs text-muted mb-2">
-        Criterios contra los que se corrige el ejercicio. Cada uno con un puntaje maximo
-        mayor a 0. Sin criterios, el ejercicio no usa rubrica.
+        Criterios contra los que se corrige el ejercicio. Cada uno con un puntaje maximo mayor a 0.
+        Sin criterios, el ejercicio no usa rubrica.
       </p>
 
       {criterios.length === 0 ? (
@@ -1395,13 +1380,7 @@ function EjercicioViewModal({
   onClose: () => void
 }) {
   return (
-    <Modal
-      isOpen={true}
-      onClose={onClose}
-      title={ejercicio.titulo}
-     
-      size="lg"
-    >
+    <Modal isOpen={true} onClose={onClose} title={ejercicio.titulo} size="lg">
       <div className="space-y-3 text-sm">
         <div className="flex gap-2">
           <Badge>{UNIDAD_LABEL[ejercicio.unidad_tematica]}</Badge>
@@ -1458,12 +1437,8 @@ function ReadOnlyJson({ label, value }: { label: string; value: unknown }) {
   if (Array.isArray(value) && value.length === 0) return null
   return (
     <details className="border border-border rounded">
-      <summary className="cursor-pointer px-2 py-1 text-xs font-medium bg-canvas">
-        {label}
-      </summary>
-      <pre className="p-2 text-xs font-mono overflow-x-auto">
-        {JSON.stringify(value, null, 2)}
-      </pre>
+      <summary className="cursor-pointer px-2 py-1 text-xs font-medium bg-canvas">{label}</summary>
+      <pre className="p-2 text-xs font-mono overflow-x-auto">{JSON.stringify(value, null, 2)}</pre>
     </details>
   )
 }
@@ -1496,14 +1471,10 @@ function EjercicioAIWizard({ getToken, onClose, onGenerated, comisionMateriaId }
   }, [getToken])
 
   // Unidades segun la materia elegida en el wizard (sin materia -> union).
-  const unidadesWizard = unidadKeysParaMateria(
-    materias.find((m) => m.id === materiaId)?.nombre,
-  )
+  const unidadesWizard = unidadKeysParaMateria(materias.find((m) => m.id === materiaId)?.nombre)
   // Si al cambiar de materia la unidad actual ya no aplica, elegir la primera.
   useEffect(() => {
-    const keys = unidadKeysParaMateria(
-      materias.find((m) => m.id === materiaId)?.nombre,
-    )
+    const keys = unidadKeysParaMateria(materias.find((m) => m.id === materiaId)?.nombre)
     setUnidad((prev) =>
       keys.includes(prev) ? prev : ((keys[0] ?? "secuenciales") as UnidadTematica),
     )
@@ -1557,8 +1528,8 @@ function EjercicioAIWizard({ getToken, onClose, onGenerated, comisionMateriaId }
           </select>
           {materias.length === 0 && (
             <p className="text-xs text-muted mt-1">
-              No hay materias cargadas en este tenant. Dejala sin especificar y el backend
-              elige la primera disponible.
+              No hay materias cargadas en este tenant. Dejala sin especificar y el backend elige la
+              primera disponible.
             </p>
           )}
         </div>
@@ -1604,9 +1575,7 @@ function EjercicioAIWizard({ getToken, onClose, onGenerated, comisionMateriaId }
           </div>
         </div>
         <div>
-          <label className="block text-xs text-muted mb-1">
-            Contexto adicional (opcional)
-          </label>
+          <label className="block text-xs text-muted mb-1">Contexto adicional (opcional)</label>
           <textarea
             value={contexto}
             onChange={(e) => setContexto(e.target.value)}
@@ -1764,7 +1733,8 @@ function ImportJsonModal({ materiaId, getToken, onClose, onImported }: ImportMod
               {MASTER_PROMPT}
             </pre>
             <p className="text-xs text-muted">
-              Pega el prompt en tu IA, agrega tu consigna al final, y trae aca el JSON que te devuelva.
+              Pega el prompt en tu IA, agrega tu consigna al final, y trae aca el JSON que te
+              devuelva.
             </p>
           </div>
         </details>
@@ -1776,7 +1746,9 @@ function ImportJsonModal({ materiaId, getToken, onClose, onImported }: ImportMod
             onChange={(e) => setJsonText(e.target.value)}
             rows={10}
             className="w-full border border-border rounded px-2 py-1 font-mono text-xs"
-            placeholder={'{ "titulo": "...", "enunciado_md": "...", "unidad_tematica": "...", ... }'}
+            placeholder={
+              '{ "titulo": "...", "enunciado_md": "...", "unidad_tematica": "...", ... }'
+            }
           />
         </div>
 

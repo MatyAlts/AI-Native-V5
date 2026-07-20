@@ -348,7 +348,7 @@ function CreateKeyModal({
               value={form.scope_type}
               onChange={(e) => {
                 const next = { ...form, scope_type: e.target.value as ByokKeyCreate["scope_type"] }
-                delete next.scope_id
+                next.scope_id = undefined
                 setForm(next)
               }}
               className={inputClass}
@@ -380,7 +380,7 @@ function CreateKeyModal({
                   if (e.target.value) {
                     next.scope_id = e.target.value
                   } else {
-                    delete next.scope_id
+                    next.scope_id = undefined
                   }
                   setForm(next)
                 }}
@@ -429,7 +429,7 @@ function CreateKeyModal({
                 if (e.target.value) {
                   next.monthly_budget_usd = Number(e.target.value)
                 } else {
-                  delete next.monthly_budget_usd
+                  next.monthly_budget_usd = undefined
                 }
                 setForm(next)
               }}

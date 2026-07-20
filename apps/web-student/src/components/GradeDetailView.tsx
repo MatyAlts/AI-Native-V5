@@ -63,12 +63,10 @@ export function GradeDetailView({ entrega, onBack }: GradeDetailViewProps) {
           Volver a la TP
         </button>
 
-        <h2 className="text-xl font-semibold text-ink mb-6">
-          Resultado de tu entrega
-        </h2>
+        <h2 className="text-xl font-semibold text-ink mb-6">Resultado de tu entrega</h2>
 
         {/* Estado: esperando correccion */}
-        {(entrega.estado === "submitted") && (
+        {entrega.estado === "submitted" && (
           <div
             data-testid="pending-correction-state"
             className="rounded-lg border border-accent-brand/30 bg-accent-brand-soft p-6 text-center"
@@ -105,9 +103,7 @@ export function GradeDetailView({ entrega, onBack }: GradeDetailViewProps) {
             {/* Nota final */}
             <div className="rounded-lg border border-border-soft bg-surface p-6 flex items-center gap-6">
               <div className="text-center">
-                <p className="text-xs font-mono text-muted mb-1">
-                  NOTA FINAL
-                </p>
+                <p className="text-xs font-mono text-muted mb-1">NOTA FINAL</p>
                 <p
                   data-testid="nota-final"
                   className="text-5xl font-bold"
@@ -165,17 +161,13 @@ export function GradeDetailView({ entrega, onBack }: GradeDetailViewProps) {
                       className="border-b border-border-soft pb-3 last:border-0 last:pb-0"
                     >
                       <div className="flex items-center justify-between mb-1">
-                        <span className="text-sm font-medium text-body">
-                          {criterio.nombre}
-                        </span>
+                        <span className="text-sm font-medium text-body">{criterio.nombre}</span>
                         <span className="text-xs font-mono text-muted">
                           {criterio.puntaje} / {Math.round(criterio.peso * 10)}
                         </span>
                       </div>
                       {criterio.comentario && (
-                        <p className="text-xs text-muted leading-relaxed">
-                          {criterio.comentario}
-                        </p>
+                        <p className="text-xs text-muted leading-relaxed">{criterio.comentario}</p>
                       )}
                     </li>
                   ))}

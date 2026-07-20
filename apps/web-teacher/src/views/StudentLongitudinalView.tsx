@@ -2,6 +2,7 @@ import { Badge, PageContainer } from "@platform/ui"
 import { Link } from "@tanstack/react-router"
 import { TriangleAlert } from "lucide-react"
 import { useEffect, useMemo, useState } from "react"
+import { useStudentProfiles } from "../hooks/useStudentProfiles"
 import { useViewMode } from "../hooks/useViewMode"
 import {
   type CIIEvolutionLongitudinal,
@@ -22,7 +23,6 @@ import {
   studentShortLabel,
 } from "../utils/docenteLabels"
 import { helpContent } from "../utils/helpContent"
-import { useStudentProfiles } from "../hooks/useStudentProfiles"
 
 interface Props {
   getToken: () => Promise<string | null>
@@ -367,9 +367,7 @@ export function StudentLongitudinalView({ getToken, initialComisionId, initialSt
                 {data.n_episodes_total === 0 ? (
                   <>
                     <div className="font-semibold text-ink">
-                      {isDocente
-                        ? "Este alumno todavia no empezo."
-                        : "Sin episodios cerrados."}
+                      {isDocente ? "Este alumno todavia no empezo." : "Sin episodios cerrados."}
                     </div>
                     <div className="mt-1">
                       {isDocente

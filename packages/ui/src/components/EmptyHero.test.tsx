@@ -35,9 +35,7 @@ describe("EmptyHero", () => {
   })
 
   it("muestra el hint chico cuando se provee", () => {
-    render(
-      <EmptyHero icon={<svg />} title="t" description="d" hint="Después podés cambiarla" />,
-    )
+    render(<EmptyHero icon={<svg />} title="t" description="d" hint="Después podés cambiarla" />)
     expect(screen.getByText("Después podés cambiarla")).toBeInTheDocument()
   })
 })

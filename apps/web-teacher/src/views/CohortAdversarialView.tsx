@@ -2,6 +2,7 @@ import { Badge, PageContainer, StateMessage } from "@platform/ui"
 import { Link } from "@tanstack/react-router"
 import { ChevronRight, ExternalLink, Info } from "lucide-react"
 import { useEffect, useMemo, useState } from "react"
+import { useStudentProfiles } from "../hooks/useStudentProfiles"
 import { useViewMode } from "../hooks/useViewMode"
 import {
   type AdversarialRecentEvent,
@@ -18,7 +19,6 @@ import {
   studentShortLabel,
 } from "../utils/docenteLabels"
 import { helpContent } from "../utils/helpContent"
-import { useStudentProfiles } from "../hooks/useStudentProfiles"
 
 // Umbral minimo de eventos para hacer afirmaciones de "% concentrado".
 // Con N<5 cualquier proporcion (50%, 100%) es estadisticamente engañosa.
@@ -190,9 +190,7 @@ function SeverityBars({
               className="inline-block w-2.5 h-2.5 rounded-full"
               style={{ backgroundColor: colors[sev] }}
             />
-            <span className="text-sm text-ink">
-              {SEVERITY_DOCENTE[sev] ?? `Sev. ${sev}`}
-            </span>
+            <span className="text-sm text-ink">{SEVERITY_DOCENTE[sev] ?? `Sev. ${sev}`}</span>
             <span className="text-sm font-semibold text-ink">{counts[sev] ?? 0}</span>
           </div>
         ))}
@@ -511,10 +509,7 @@ export function CohortAdversarialView({ getToken, initialComisionId }: Props) {
                               {s.n_events}{" "}
                               {isDocente ? `intento${s.n_events !== 1 ? "s" : ""}` : "ev."}
                             </Badge>
-                            <ChevronRight
-                              aria-hidden="true"
-                              className="h-4 w-4 text-muted"
-                            />
+                            <ChevronRight aria-hidden="true" className="h-4 w-4 text-muted" />
                           </span>
                         </Link>
                       ) : (
@@ -598,7 +593,8 @@ export function CohortAdversarialView({ getToken, initialComisionId }: Props) {
                                 {resolveCategoryLabel(ev.category, true)}
                               </div>
                               <div className="text-xs text-muted mt-0.5">
-                                {studentShortLabel(ev.student_pseudonym, profilesMap)} · {ev.ts.slice(0, 10)}
+                                {studentShortLabel(ev.student_pseudonym, profilesMap)} ·{" "}
+                                {ev.ts.slice(0, 10)}
                                 <span className="mx-1.5">·</span>
                                 Riesgo: {SEVERITY_DOCENTE[String(ev.severity)] ?? ev.severity}
                               </div>
@@ -675,7 +671,10 @@ export function CohortAdversarialView({ getToken, initialComisionId }: Props) {
 
 // ── Tab Integridad: foco + clipboard ──────────────────────────────────
 
-function formatIntegrityEvent(ev: IntegrityRecentEvent, isDocente: boolean): {
+function formatIntegrityEvent(
+  ev: IntegrityRecentEvent,
+  isDocente: boolean,
+): {
   label: string
   detail: string
   badgeColor: string
@@ -743,9 +742,7 @@ function IntegrityTab({
         <div className="flex flex-wrap gap-x-8 gap-y-3 items-start">
           <div>
             <div className="text-3xl font-semibold text-ink">{data.n_events_total}</div>
-            <div className="text-xs text-muted mt-0.5">
-              eventos de integridad detectados
-            </div>
+            <div className="text-xs text-muted mt-0.5">eventos de integridad detectados</div>
           </div>
           <div className="flex flex-wrap gap-x-4 gap-y-2 items-center pt-1">
             {Object.entries(data.counts_by_type)
@@ -757,10 +754,7 @@ function IntegrityTab({
                 } as IntegrityRecentEvent
                 const formatted = formatIntegrityEvent(fake, isDocente)
                 return (
-                  <span
-                    key={type}
-                    className="inline-flex items-center gap-1.5 text-xs text-muted"
-                  >
+                  <span key={type} className="inline-flex items-center gap-1.5 text-xs text-muted">
                     <span className="font-medium text-ink">{count}</span> {formatted.label}
                   </span>
                 )
@@ -838,17 +832,19 @@ function IntegrityTab({
                       </span>
                       <div className="min-w-0 flex-1">
                         <div className="text-xs text-muted">
-                          {studentShortLabel(ev.student_pseudonym, profilesMap)} · {ev.ts.slice(0, 19).replace("T", " ")}
+                          {studentShortLabel(ev.student_pseudonym, profilesMap)} ·{" "}
+                          {ev.ts.slice(0, 19).replace("T", " ")}
                         </div>
                         <div className="text-sm text-ink mt-0.5">{formatted.detail}</div>
-                        {ev.payload.contenido_preview && ev.payload.contenido_preview.length > 0 && (
-                          <div className="mt-2 text-xs text-muted bg-canvas border border-border rounded-md px-2.5 py-1.5 font-mono break-words">
-                            <span className="text-[10px] uppercase tracking-wider text-muted/70 mr-1">
-                              Contenido intentado pegar:
-                            </span>
-                            "{ev.payload.contenido_preview}"
-                          </div>
-                        )}
+                        {ev.payload.contenido_preview &&
+                          ev.payload.contenido_preview.length > 0 && (
+                            <div className="mt-2 text-xs text-muted bg-canvas border border-border rounded-md px-2.5 py-1.5 font-mono break-words">
+                              <span className="text-[10px] uppercase tracking-wider text-muted/70 mr-1">
+                                Contenido intentado pegar:
+                              </span>
+                              "{ev.payload.contenido_preview}"
+                            </div>
+                          )}
                       </div>
                     </div>
                     <div className="shrink-0 flex items-center gap-1 text-xs text-[var(--color-accent-brand)] mt-1">

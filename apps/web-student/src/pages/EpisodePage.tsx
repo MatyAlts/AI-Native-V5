@@ -519,9 +519,7 @@ export function EpisodeView({ episodeId, onExit, ejercicioContext, getToken }: E
       // alumno y quedaria colgada sin evento tutor_respondio en el CTR (el LLM
       // fallo a mitad). NO tocamos `closed` ni sessionStorage: el episodio sigue
       // abierto.
-      setMessages((m) =>
-        m.length > 0 && m[m.length - 1]?.role === "tutor" ? m.slice(0, -1) : m,
-      )
+      setMessages((m) => (m.length > 0 && m[m.length - 1]?.role === "tutor" ? m.slice(0, -1) : m))
       console.warn("tutor stream failed (retryable):", e)
       setLastFailedMessage(userMessage)
       setSendError(

@@ -40,8 +40,7 @@ const titleClasses: Record<Variant, string> = {
 }
 
 const closeBtnClasses: Record<Variant, string> = {
-  light:
-    "text-muted hover:text-ink hover:bg-surface-alt focus-visible:ring-border-strong",
+  light: "text-muted hover:text-ink hover:bg-surface-alt focus-visible:ring-border-strong",
   dark: "text-sidebar-text-muted hover:text-sidebar-text hover:bg-sidebar-bg-edge focus-visible:ring-border-strong",
 }
 

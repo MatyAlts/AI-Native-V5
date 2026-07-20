@@ -1,7 +1,7 @@
 import {
   Badge,
-  HeroStatsPanel,
   HelpButton,
+  HeroStatsPanel,
   PageContainer,
   ReadonlyField,
   useConfirm,
@@ -14,9 +14,9 @@ import {
   type Carrera,
   type Comision,
   type ComisionCreate,
+  HttpError,
   type InscripcionCreate,
   type InscripcionOut,
-  HttpError,
   type Materia,
   type Periodo,
   type Plan,
@@ -486,9 +486,7 @@ export function ComisionesPage(): ReactNode {
 
                     <button
                       type="button"
-                      onClick={() =>
-                        setExpandedComisionId((prev) => (prev === c.id ? null : c.id))
-                      }
+                      onClick={() => setExpandedComisionId((prev) => (prev === c.id ? null : c.id))}
                       className="press-shrink p-4 text-left flex flex-col gap-3"
                       aria-expanded={expanded}
                     >
@@ -532,9 +530,7 @@ export function ComisionesPage(): ReactNode {
                     <footer className="flex items-stretch border-t border-border-soft">
                       <span
                         className={`flex-1 inline-flex items-center justify-center gap-1.5 px-3 py-2.5 text-xs font-medium ${
-                          expanded
-                            ? "text-accent-brand-deep"
-                            : "text-muted"
+                          expanded ? "text-accent-brand-deep" : "text-muted"
                         }`}
                       >
                         <Users className="h-3.5 w-3.5" />
@@ -874,7 +870,8 @@ function ComisionDetail({ comisionId }: { comisionId: string }): ReactNode {
 
   const removeDocenteMutation = useMutation({
     mutationFn: (ucId: string) => comisionDocentesApi.delete(comisionId, ucId),
-    onSuccess: () => void queryClient.invalidateQueries({ queryKey: ["comision-docentes", comisionId] }),
+    onSuccess: () =>
+      void queryClient.invalidateQueries({ queryKey: ["comision-docentes", comisionId] }),
   })
 
   const removeInscripcionMutation = useMutation({
@@ -1055,7 +1052,10 @@ function DocentesTab({
             <select
               value={form.rol}
               onChange={(e) =>
-                setForm({ ...form, rol: e.target.value as NonNullable<UsuarioComisionCreate["rol"]> })
+                setForm({
+                  ...form,
+                  rol: e.target.value as NonNullable<UsuarioComisionCreate["rol"]>,
+                })
               }
               className={inputClass}
             >

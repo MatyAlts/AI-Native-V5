@@ -18,10 +18,7 @@
 import { createFileRoute, useNavigate, useParams } from "@tanstack/react-router"
 import { createOrGetEntrega, getEpisodeState, submitEntrega } from "../lib/api"
 import { type EjercicioContext, EpisodeView } from "../pages/EpisodePage"
-import {
-  ACTIVE_EXERCISE_CONTEXT_KEY,
-  type ActiveExerciseContext,
-} from "./materia.$id"
+import { ACTIVE_EXERCISE_CONTEXT_KEY, type ActiveExerciseContext } from "./materia.$id"
 
 export const Route = createFileRoute("/episodio/$id")({
   component: EpisodioPage,

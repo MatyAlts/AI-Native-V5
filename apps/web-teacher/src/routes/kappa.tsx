@@ -1,7 +1,7 @@
 import { createFileRoute } from "@tanstack/react-router"
 import { useCallback, useEffect, useState } from "react"
 import { z } from "zod"
-import { getKappaSample, type RatingLabel } from "../lib/api"
+import { type RatingLabel, getKappaSample } from "../lib/api"
 import { KappaRatingView } from "../views/KappaRatingView"
 
 type Episode = { episode_id: string; classifier_label: RatingLabel; summary: string }

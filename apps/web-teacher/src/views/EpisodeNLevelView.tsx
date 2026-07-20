@@ -291,9 +291,7 @@ export function EpisodeNLevelView({ getToken, initialEpisodeId }: Props) {
             {isDocente && (
               <DocenteAppropriationVerdict classification={classification} distribution={data} />
             )}
-            {classification?.regimen_llm && (
-              <DocenteJuezLLM regimen={classification.regimen_llm} />
-            )}
+            {classification?.regimen_llm && <DocenteJuezLLM regimen={classification.regimen_llm} />}
             <div className="rounded-xl border border-border bg-white overflow-hidden">
               <div className="flex items-start justify-between gap-4 border-b border-border px-6 py-4">
                 <div>
@@ -383,8 +381,7 @@ const JUEZ_REVISION_MSG: Record<string, string> = {
 function DocenteJuezLLM({ regimen }: { regimen: RegimenLLM }) {
   const kicker = (
     <div className="text-xs uppercase tracking-wider text-muted">
-      Veredicto del juez IA{" "}
-      <span className="font-normal normal-case">· clasificacion oficial</span>
+      Veredicto del juez IA <span className="font-normal normal-case">· clasificacion oficial</span>
     </div>
   )
 
@@ -514,7 +511,8 @@ const APPROPRIATION_DISPLAY: Record<
     label: "Autonomo (sin tutor)",
     chip: "bg-neutral text-white",
     container: "border-border-strong/40 bg-surface-alt",
-    headline: "El alumno trabajo por su cuenta, sin apoyarse en el tutor. Es un perfil propio, no un punto de la escala de apropiacion.",
+    headline:
+      "El alumno trabajo por su cuenta, sin apoyarse en el tutor. Es un perfil propio, no un punto de la escala de apropiacion.",
   },
 }
 

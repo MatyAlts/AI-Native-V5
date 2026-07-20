@@ -11,16 +11,7 @@ import { cn } from "../utils/cn"
  * Variant `n2` cohesiona visualmente con `info` y con el acento brand (Stack
  * Blue): "lectura activa" comparte el hue 245 con la columna del sistema.
  */
-type Variant =
-  | "default"
-  | "success"
-  | "warning"
-  | "danger"
-  | "info"
-  | "n1"
-  | "n2"
-  | "n3"
-  | "n4"
+type Variant = "default" | "success" | "warning" | "danger" | "info" | "n1" | "n2" | "n3" | "n4"
 
 interface BadgeProps extends HTMLAttributes<HTMLSpanElement> {
   variant?: Variant

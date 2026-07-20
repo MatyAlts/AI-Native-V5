@@ -2,8 +2,8 @@ import { PageContainer } from "@platform/ui"
 import { Link } from "@tanstack/react-router"
 import { useCallback, useEffect, useMemo, useState } from "react"
 import {
-  AcademicContextSelector,
   type AcademicContext,
+  AcademicContextSelector,
 } from "../components/AcademicContextSelector"
 import {
   comisionesApi,
@@ -314,7 +314,9 @@ function EpisodeCodingCard({
                 disabled={saving}
                 onClick={() => void handleRate(p.label)}
                 className={`flex-1 min-w-[150px] px-3 py-2 rounded text-white text-xs font-medium transition disabled:opacity-50 ${p.color} ${
-                  isSelected ? "ring-2 ring-offset-2 ring-[#111111]" : "opacity-70 hover:opacity-100"
+                  isSelected
+                    ? "ring-2 ring-offset-2 ring-[#111111]"
+                    : "opacity-70 hover:opacity-100"
                 }`}
               >
                 {p.display}

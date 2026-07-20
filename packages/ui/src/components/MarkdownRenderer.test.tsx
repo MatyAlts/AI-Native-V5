@@ -43,9 +43,7 @@ describe("MarkdownRenderer", () => {
   })
 
   it("aplica className extra en el wrapper", () => {
-    const { container } = render(
-      <MarkdownRenderer content="texto" className="extra-class" />,
-    )
+    const { container } = render(<MarkdownRenderer content="texto" className="extra-class" />)
     const wrapper = container.firstChild as HTMLElement
     expect(wrapper.className).toContain("extra-class")
   })

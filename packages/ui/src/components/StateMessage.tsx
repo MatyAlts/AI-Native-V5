@@ -39,29 +39,18 @@ export function StateMessage({
       aria-live={variant === "loading" ? "polite" : undefined}
       className={cn(
         "flex flex-col items-center justify-center gap-3 px-6 py-10 text-center",
-        variant === "empty" &&
-          "rounded-md border border-dashed border-border bg-surface-alt/40",
+        variant === "empty" && "rounded-md border border-dashed border-border bg-surface-alt/40",
         variant === "error" && "rounded-md border border-danger/20 bg-danger-soft",
         className,
       )}
     >
       {variant === "loading" ? <Spinner /> : null}
       <div className="space-y-1">
-        <p
-          className={cn(
-            "text-sm font-medium",
-            variant === "error" ? "text-danger" : "text-body",
-          )}
-        >
+        <p className={cn("text-sm font-medium", variant === "error" ? "text-danger" : "text-body")}>
           {resolved.title}
         </p>
         {resolved.description ? (
-          <p
-            className={cn(
-              "text-xs",
-              variant === "error" ? "text-danger/80" : "text-muted",
-            )}
-          >
+          <p className={cn("text-xs", variant === "error" ? "text-danger/80" : "text-muted")}>
             {resolved.description}
           </p>
         ) : null}

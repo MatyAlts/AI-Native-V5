@@ -595,9 +595,7 @@ function TemplateFormModal({
         </label>
 
         <label className="block">
-          <span className="block text-xs font-medium text-muted mb-1">
-            Consigna pedagógica
-          </span>
+          <span className="block text-xs font-medium text-muted mb-1">Consigna pedagógica</span>
           <textarea
             value={consigna}
             onChange={(e) => setConsigna(e.target.value)}
@@ -690,8 +688,8 @@ function NewVersionModal({
               <div className="space-y-3 text-sidebar-text-muted">
                 <p>
                   Crea una nueva versión (v+1) en estado borrador. La versión anterior queda
-                  archivable y los TPs ya creados que referencian la versión vieja preservan su
-                  link — la trazabilidad histórica no se rompe.
+                  archivable y los TPs ya creados que referencian la versión vieja preservan su link
+                  — la trazabilidad histórica no se rompe.
                 </p>
               </div>
             }

@@ -137,34 +137,28 @@ export function OpeningStage({
         </p>
 
         <h2 className="text-2xl font-semibold leading-tight text-ink mb-8">
-          <span className="font-mono text-base text-muted mr-2">
-            {tareaCodigo}
-          </span>
+          <span className="font-mono text-base text-muted mr-2">{tareaCodigo}</span>
           {tareaTitulo}
         </h2>
 
         <ol className="space-y-3" aria-label="Chequeos de apertura del episodio">
           {steps.map((step) => (
-            <StepRow
-              key={step.key}
-              step={step}
-              {...(onShowError ? { onShowError } : {})}
-            />
+            <StepRow key={step.key} step={step} {...(onShowError ? { onShowError } : {})} />
           ))}
         </ol>
 
         {showRetry && !episodeReady && !errorMessage && (
-          <p
-            data-testid="opening-retry-line"
-            className="mt-4 text-xs text-muted font-mono"
-          >
+          <p data-testid="opening-retry-line" className="mt-4 text-xs text-muted font-mono">
             ▱ retrying chain commit (red lenta detectada)
           </p>
         )}
 
         {episodeId && (
           <p className="mt-6 text-xs font-mono text-muted">
-            episodio: <span className="text-body">{episodeId.slice(0, 6)}...{episodeId.slice(-4)}</span>
+            episodio:{" "}
+            <span className="text-body">
+              {episodeId.slice(0, 6)}...{episodeId.slice(-4)}
+            </span>
           </p>
         )}
 
@@ -173,16 +167,10 @@ export function OpeningStage({
             data-testid="opening-error-panel"
             className="mt-6 rounded-md border border-danger bg-danger-soft p-4 text-sm"
           >
-            <p className="font-medium text-danger mb-1">
-              No pudimos abrir el episodio
-            </p>
-            <p className="text-body break-words font-mono text-xs">
-              {errorMessage}
-            </p>
+            <p className="font-medium text-danger mb-1">No pudimos abrir el episodio</p>
+            <p className="text-body break-words font-mono text-xs">{errorMessage}</p>
             {humanizeErrorHint(errorMessage) && (
-              <p className="text-body mt-2 text-sm">
-                {humanizeErrorHint(errorMessage)}
-              </p>
+              <p className="text-body mt-2 text-sm">{humanizeErrorHint(errorMessage)}</p>
             )}
           </div>
         )}

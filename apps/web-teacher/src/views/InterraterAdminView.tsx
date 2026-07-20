@@ -1,10 +1,10 @@
 import { PageContainer } from "@platform/ui"
 import { useState } from "react"
 import {
-  AcademicContextSelector,
   type AcademicContext,
+  AcademicContextSelector,
 } from "../components/AcademicContextSelector"
-import { getInterraterAggregate, type InterraterAggregate, type InterraterPair } from "../lib/api"
+import { type InterraterAggregate, type InterraterPair, getInterraterAggregate } from "../lib/api"
 import { helpContent } from "../utils/helpContent"
 
 interface Props {
@@ -116,10 +116,7 @@ function DistributionPanel({ distribution }: { distribution: Record<string, numb
               <div key={label} className="flex items-center gap-3">
                 <div className="min-w-[200px] text-sm">{label}</div>
                 <div className="flex-1 h-3 bg-border rounded overflow-hidden">
-                  <div
-                    className="h-full bg-accent-brand rounded"
-                    style={{ width: `${pct}%` }}
-                  />
+                  <div className="h-full bg-accent-brand rounded" style={{ width: `${pct}%` }} />
                 </div>
                 <div className="text-xs text-muted min-w-[70px] text-right">
                   {count} ({pct.toFixed(0)}%)
@@ -163,10 +160,7 @@ function PairsTable({
             {pairs.map((p) => {
               const goodKappa = p.kappa !== null && p.kappa >= 0.7
               return (
-                <tr
-                  key={`${p.rater_a}-${p.rater_b}`}
-                  className="border-b border-border/50"
-                >
+                <tr key={`${p.rater_a}-${p.rater_b}`} className="border-b border-border/50">
                   <td className="py-2 font-mono text-xs">{short(p.rater_a)}</td>
                   <td className="py-2 font-mono text-xs">{short(p.rater_b)}</td>
                   <td className="py-2 text-center">{p.n_episodes}</td>
@@ -176,9 +170,7 @@ function PairsTable({
                     ) : (
                       <span
                         className={`font-semibold px-2 py-0.5 rounded ${
-                          goodKappa
-                            ? "bg-green-100 text-green-800"
-                            : "bg-danger-soft text-danger"
+                          goodKappa ? "bg-green-100 text-green-800" : "bg-danger-soft text-danger"
                         }`}
                       >
                         {p.kappa.toFixed(3)}

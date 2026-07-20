@@ -35,7 +35,8 @@ const ANCHORS: Anchor[] = [
     context: "Colabora bien con el tutor",
     label: "apropiacion_reflexiva",
     why: "Explica qué hace su código ('open abre el archivo', 'el print muestra un mensaje'), lo ejecuta dos veces para verificar, y justifica usar el modo 'a' ('agrega sin borrar lo que había antes').",
-    whyNot: "NO superficial: hay verbalización, verificación propia y justificación, no solo usar la respuesta.",
+    whyNot:
+      "NO superficial: hay verbalización, verificación propia y justificación, no solo usar la respuesta.",
   },
   {
     episode_id: "2b083646-c873-4323-8bd9-cd674273fee8",
@@ -110,8 +111,7 @@ export function InterraterTraining({ getToken, onPass }: Props) {
   }
 
   if (phase === "teaching") return <Teaching onStart={start} getToken={getToken} />
-  if (phase === "result")
-    return <Result correct={correct} onPass={onPass} onRetry={start} />
+  if (phase === "result") return <Result correct={correct} onPass={onPass} onRetry={start} />
 
   // calibration
   const a = ANCHORS[idx]
@@ -241,8 +241,18 @@ function Result({
 
 // ── Enseñanza completa de los 3 ejes ────────────────────────────────────────
 const TONE: Record<string, { dot: string; border: string; bg: string; text: string }> = {
-  green: { dot: "bg-green-600", border: "border-green-300", bg: "bg-green-50", text: "text-green-900" },
-  amber: { dot: "bg-amber-500", border: "border-amber-300", bg: "bg-amber-50", text: "text-amber-900" },
+  green: {
+    dot: "bg-green-600",
+    border: "border-green-300",
+    bg: "bg-green-50",
+    text: "text-green-900",
+  },
+  amber: {
+    dot: "bg-amber-500",
+    border: "border-amber-300",
+    bg: "bg-amber-50",
+    text: "text-amber-900",
+  },
   red: { dot: "bg-red-600", border: "border-red-300", bg: "bg-red-50", text: "text-red-900" },
 }
 
@@ -347,8 +357,8 @@ function Teaching({
           pas="No puede, o repite lo que le dijo la IA."
         />
         <p className="text-xs text-muted border-t border-border pt-3">
-          <strong>El atajo:</strong> reflexivo = <strong>prueba (3) Y explica (4-5)</strong>, las dos
-          cosas. Si falta una, es superficial. Si le terceriza todo a la IA, es pasivo.
+          <strong>El atajo:</strong> reflexivo = <strong>prueba (3) Y explica (4-5)</strong>, las
+          dos cosas. Si falta una, es superficial. Si le terceriza todo a la IA, es pasivo.
         </p>
       </section>
 
@@ -408,7 +418,9 @@ function Teaching({
 
       {/* Fronteras */}
       <section className="rounded-xl border border-amber-300 bg-amber-50 p-6 space-y-3">
-        <h3 className="text-lg font-bold text-amber-900">Cuándo dudás entre dos (lo más difícil)</h3>
+        <h3 className="text-lg font-bold text-amber-900">
+          Cuándo dudás entre dos (lo más difícil)
+        </h3>
         <Duda
           titulo="“Hizo cosas pero no sé si pensó” — ¿superficial o reflexivo?"
           regla="Preguntate: ¿probó su código Y explicó el porqué? Las DOS = reflexivo. Si falta una de las dos = superficial. Esta es la frontera donde más se confunde la gente."
@@ -452,8 +464,8 @@ function Teaching({
             <strong>superficial</strong>.
           </li>
           <li>
-            ¿Probó (verificó) Y explicó el porqué? → las dos, <strong>reflexivo</strong>; solo usó la
-            respuesta, <strong>superficial</strong>.
+            ¿Probó (verificó) Y explicó el porqué? → las dos, <strong>reflexivo</strong>; solo usó
+            la respuesta, <strong>superficial</strong>.
           </li>
           <li>
             ¿Le terceriza todo a la IA (sobreuso)? → <strong>pasivo</strong>.

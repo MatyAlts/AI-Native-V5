@@ -79,9 +79,13 @@ export function Sidebar({
       <div
         className={`flex items-center ${collapsed ? "justify-center" : "justify-between"} px-3 h-14 border-b border-border-soft`}
       >
-        {!collapsed && <span className="text-sm font-semibold tracking-tight text-ink">{headerLabel}</span>}
+        {!collapsed && (
+          <span className="text-sm font-semibold tracking-tight text-ink">{headerLabel}</span>
+        )}
         {collapsed && (
-          <span className="text-sm font-semibold tracking-tight text-ink">{collapsedHeaderLabel}</span>
+          <span className="text-sm font-semibold tracking-tight text-ink">
+            {collapsedHeaderLabel}
+          </span>
         )}
       </div>
 

@@ -68,10 +68,7 @@ export function InstrumentosCohorteView({ comisionId, getToken }: Props) {
   const nCuestionario = cuestionarioIA?.n_responses ?? 0
   const nPretest = pretest?.n_responses ?? 0
   const nTransferencia = transferencia
-    ? Object.values(transferencia.by_group).reduce(
-        (acc, g) => acc + (g.n_students ?? 0),
-        0,
-      )
+    ? Object.values(transferencia.by_group).reduce((acc, g) => acc + (g.n_students ?? 0), 0)
     : 0
   const totalRespondientes = Math.max(nCuestionario, nPretest, nTransferencia)
   const noResponsesYet = !loading && totalRespondientes === 0
@@ -113,8 +110,8 @@ export function InstrumentosCohorteView({ comisionId, getToken }: Props) {
                 Todavía no respondió ningún alumno
               </h3>
               <p className="text-sm text-muted mb-3">
-                Compartí este link con tu cohorte para que respondan los 3 instrumentos
-                (5–10 min cada uno). Los datos se agregan acá cuando llegan a 5 respondientes.
+                Compartí este link con tu cohorte para que respondan los 3 instrumentos (5–10 min
+                cada uno). Los datos se agregan acá cuando llegan a 5 respondientes.
               </p>
               <div className="flex items-center gap-2 bg-white border border-border rounded-lg px-3 py-2">
                 <code className="flex-1 min-w-0 text-xs font-mono text-ink truncate">
@@ -147,8 +144,8 @@ export function InstrumentosCohorteView({ comisionId, getToken }: Props) {
           {cuestionarioIA && !cuestionarioIA.insufficient_data && (
             <p className="text-xs text-muted mt-2">
               {cuestionarioIA.n_responses} alumno
-              {cuestionarioIA.n_responses !== 1 ? "s" : ""} respondió. Distribuciones
-              por item disponibles en modo investigador.
+              {cuestionarioIA.n_responses !== 1 ? "s" : ""} respondió. Distribuciones por item
+              disponibles en modo investigador.
             </p>
           )}
         </InstrumentoStatCard>
@@ -164,8 +161,7 @@ export function InstrumentosCohorteView({ comisionId, getToken }: Props) {
         >
           {pretest && !pretest.insufficient_data && (
             <p className="text-xs text-muted mt-2">
-              {pretest.n_responses} alumno{pretest.n_responses !== 1 ? "s" : ""} ·
-              score promedio:{" "}
+              {pretest.n_responses} alumno{pretest.n_responses !== 1 ? "s" : ""} · score promedio:{" "}
               <strong className="text-ink">
                 {pretest.avg_total_score !== undefined && pretest.avg_total_score !== null
                   ? pretest.avg_total_score.toFixed(1)
@@ -237,10 +233,7 @@ function InstrumentoStatCard({
       {loading ? (
         <div className="text-xs text-muted-soft animate-pulse">Cargando...</div>
       ) : isInsufficient ? (
-        <div
-          className="flex items-baseline gap-2"
-          data-testid={`${testId}-insufficient`}
-        >
+        <div className="flex items-baseline gap-2" data-testid={`${testId}-insufficient`}>
           <span className="text-2xl font-bold text-muted-soft">{n}</span>
           <span className="text-xs text-muted">
             {isDocente
@@ -287,12 +280,8 @@ function TransferenciaStatCard({
           🎯
         </div>
         <div className="min-w-0 flex-1">
-          <h3 className="text-sm font-semibold text-ink leading-tight">
-            Test de transferencia
-          </h3>
-          <p className="text-xs text-muted mt-0.5">
-            Problemas sin IA para medir transferencia
-          </p>
+          <h3 className="text-sm font-semibold text-ink leading-tight">Test de transferencia</h3>
+          <p className="text-xs text-muted mt-0.5">Problemas sin IA para medir transferencia</p>
         </div>
       </div>
 
@@ -331,9 +320,7 @@ function TransferenciaStatCard({
                   <>
                     <td className="text-right">{stats.n_students}</td>
                     <td className="text-right font-mono">
-                      {stats.accuracy !== undefined
-                        ? `${(stats.accuracy * 100).toFixed(1)}%`
-                        : "—"}
+                      {stats.accuracy !== undefined ? `${(stats.accuracy * 100).toFixed(1)}%` : "—"}
                     </td>
                   </>
                 )}

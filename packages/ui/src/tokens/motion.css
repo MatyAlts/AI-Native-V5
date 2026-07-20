@@ -27,8 +27,12 @@
 
 /* ═══ Keyframes ════════════════════════════════════════════════════════ */
 @keyframes fade-in {
-  from { opacity: 0; }
-  to { opacity: 1; }
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
 }
 
 @keyframes fade-in-up {
@@ -65,13 +69,22 @@
 }
 
 @keyframes shimmer {
-  0% { background-position: -200% 0; }
-  100% { background-position: 200% 0; }
+  0% {
+    background-position: -200% 0;
+  }
+  100% {
+    background-position: 200% 0;
+  }
 }
 
 @keyframes pulse-soft {
-  0%, 100% { opacity: 1; }
-  50% { opacity: 0.55; }
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.55;
+  }
 }
 
 @keyframes ring-expand {
@@ -107,36 +120,41 @@
 }
 
 /* Stagger delays — usar combo `animate-fade-in-up animate-delay-N` */
-.animate-delay-50 { animation-delay: 50ms; }
-.animate-delay-100 { animation-delay: 100ms; }
-.animate-delay-150 { animation-delay: 150ms; }
-.animate-delay-200 { animation-delay: 200ms; }
-.animate-delay-300 { animation-delay: 300ms; }
-.animate-delay-400 { animation-delay: 400ms; }
+.animate-delay-50 {
+  animation-delay: 50ms;
+}
+.animate-delay-100 {
+  animation-delay: 100ms;
+}
+.animate-delay-150 {
+  animation-delay: 150ms;
+}
+.animate-delay-200 {
+  animation-delay: 200ms;
+}
+.animate-delay-300 {
+  animation-delay: 300ms;
+}
+.animate-delay-400 {
+  animation-delay: 400ms;
+}
 
 /* ═══ Hover effects ═══════════════════════════════════════════════════ */
 .hover-lift {
-  transition:
-    transform var(--motion-fast) var(--ease-out-expo),
-    box-shadow var(--motion-fast) var(--ease-soft),
-    border-color var(--motion-fast) var(--ease-soft);
+  transition: transform var(--motion-fast) var(--ease-out-expo), box-shadow var(--motion-fast)
+    var(--ease-soft), border-color var(--motion-fast) var(--ease-soft);
 }
 .hover-lift:hover {
   transform: translateY(-2px);
-  box-shadow:
-    0 4px 16px -2px rgba(0, 0, 0, 0.06),
-    0 2px 6px -1px rgba(0, 0, 0, 0.04);
+  box-shadow: 0 4px 16px -2px rgba(0, 0, 0, 0.06), 0 2px 6px -1px rgba(0, 0, 0, 0.04);
 }
 
 .hover-glow {
-  transition:
-    box-shadow var(--motion-base) var(--ease-soft),
-    border-color var(--motion-fast) var(--ease-soft);
+  transition: box-shadow var(--motion-base) var(--ease-soft), border-color var(--motion-fast)
+    var(--ease-soft);
 }
 .hover-glow:hover {
-  box-shadow:
-    0 0 0 4px var(--color-accent-brand-soft),
-    0 4px 12px -2px rgba(24, 95, 165, 0.12);
+  box-shadow: 0 0 0 4px var(--color-accent-brand-soft), 0 4px 12px -2px rgba(24, 95, 165, 0.12);
   border-color: var(--color-accent-brand);
 }
 

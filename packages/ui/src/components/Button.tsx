@@ -16,12 +16,9 @@ interface ButtonProps extends ButtonHTMLAttributes<HTMLButtonElement> {
    ghost: transparente con hover sutil sobre surface-alt.
    danger: severity profundo (no Tailwind red-600 saturado). */
 const variants: Record<Variant, string> = {
-  primary:
-    "bg-accent-brand text-white hover:bg-accent-brand-deep focus-visible:ring-accent-brand",
-  secondary:
-    "bg-surface-alt text-ink hover:bg-border-soft focus-visible:ring-border-strong",
-  ghost:
-    "bg-transparent text-ink hover:bg-surface-alt focus-visible:ring-border-strong",
+  primary: "bg-accent-brand text-white hover:bg-accent-brand-deep focus-visible:ring-accent-brand",
+  secondary: "bg-surface-alt text-ink hover:bg-border-soft focus-visible:ring-border-strong",
+  ghost: "bg-transparent text-ink hover:bg-surface-alt focus-visible:ring-border-strong",
   danger: "bg-danger text-white hover:bg-danger/90 focus-visible:ring-danger",
 }
 

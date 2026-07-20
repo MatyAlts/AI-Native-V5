@@ -206,7 +206,11 @@ const APR = {
 } satisfies Record<string, AprStyle>
 const aprStyle = (k: string): AprStyle => APR[k as keyof typeof APR] ?? APR.indeterminado
 // ordinal 0/1/2 -> color (delegación, superficial, reflexiva)
-const ORDINAL_HEX = [APR.delegacion_pasiva.hex, APR.apropiacion_superficial.hex, APR.apropiacion_reflexiva.hex]
+const ORDINAL_HEX = [
+  APR.delegacion_pasiva.hex,
+  APR.apropiacion_superficial.hex,
+  APR.apropiacion_reflexiva.hex,
+]
 
 const APR_ORDER = ["apropiacion_reflexiva", "apropiacion_superficial", "delegacion_pasiva"]
 
@@ -255,10 +259,7 @@ export function PedagogiaPage(): ReactNode {
     let cancelled = false
     setLoading(true)
     setError(null)
-    const qs =
-      scopeValue === "general"
-        ? `materia_id=${materiaId}`
-        : `comision_id=${scopeValue}`
+    const qs = scopeValue === "general" ? `materia_id=${materiaId}` : `comision_id=${scopeValue}`
     fetch(`/api/v1/analytics/pedagogia?${qs}`)
       .then(async (r) => {
         if (!r.ok) throw new Error(`HTTP ${r.status}`)
@@ -379,7 +380,9 @@ function CurvaApropiacionSection({ block }: { block: CurvaApropiacionBlock }): R
       ) : (
         <div className="rounded-lg border border-border bg-surface p-4">
           <div className="mb-3 flex items-center gap-3">
-            <span className={`text-sm font-medium ${delta > 0.05 ? "text-success" : delta < -0.05 ? "text-danger" : "text-muted"}`}>
+            <span
+              className={`text-sm font-medium ${delta > 0.05 ? "text-success" : delta < -0.05 ? "text-danger" : "text-muted"}`}
+            >
               {delta > 0 ? "↑" : delta < 0 ? "↓" : "→"} {delta >= 0 ? "+" : ""}
               {delta.toFixed(2)} niveles entre el 1.º y el último episodio
             </span>
@@ -432,7 +435,9 @@ function CurvaAdversaSection({ block }: { block: CurvaAdversaBlock }): ReactNode
       ) : (
         <div className="rounded-lg border border-border bg-surface p-4">
           <div className="mb-3 flex items-center gap-3">
-            <span className={`text-sm font-medium ${delta < -0.02 ? "text-success" : delta > 0.02 ? "text-danger" : "text-muted"}`}>
+            <span
+              className={`text-sm font-medium ${delta < -0.02 ? "text-success" : delta > 0.02 ? "text-danger" : "text-muted"}`}
+            >
               {delta < 0 ? "↓" : delta > 0 ? "↑" : "→"} {delta >= 0 ? "+" : ""}
               {delta.toFixed(2)} intentos/alumno entre el 1.º y el último episodio
             </span>
@@ -492,8 +497,7 @@ function LineChart({
   const xMax = Math.max(...xs)
   const xFor = (x: number) =>
     padL + (xMax === xMin ? 0.5 : (x - xMin) / (xMax - xMin)) * (W - padL - padR)
-  const yFor = (y: number) =>
-    H - padB - ((y - yMin) / (yMax - yMin || 1)) * (H - padT - padB)
+  const yFor = (y: number) => H - padB - ((y - yMin) / (yMax - yMin || 1)) * (H - padT - padB)
   const linePts = points.map((p) => `${xFor(p.x).toFixed(1)},${yFor(p.y).toFixed(1)}`).join(" ")
   const areaPts = `${xFor(points[0]?.x ?? 0).toFixed(1)},${(H - padB).toFixed(1)} ${linePts} ${xFor(points[points.length - 1]?.x ?? 0).toFixed(1)},${(H - padB).toFixed(1)}`
   // Etiquetas de eje X: cada N para no saturar.
@@ -533,7 +537,13 @@ function LineChart({
       {/* Área */}
       {area && <polygon points={areaPts} fill={stroke} opacity={0.08} />}
       {/* Línea */}
-      <polyline points={linePts} fill="none" stroke={stroke} strokeWidth={2.5} strokeLinejoin="round" />
+      <polyline
+        points={linePts}
+        fill="none"
+        stroke={stroke}
+        strokeWidth={2.5}
+        strokeLinejoin="round"
+      />
       {/* Puntos + eje X */}
       {points.map((p, i) => (
         <g key={p.x}>
@@ -571,11 +581,7 @@ function LineChart({
 function KappaSection({ block }: { block: KappaBlock }): ReactNode {
   if (!block.disponible || block.n_codificadores === 0) {
     return (
-      <Section
-        n="★"
-        title="Validación: acuerdo máquina–humano (κ)"
-        subtitle="Cohen's kappa"
-      >
+      <Section n="★" title="Validación: acuerdo máquina–humano (κ)" subtitle="Cohen's kappa">
         <Empty>
           Todavía no hay codificación humana cargada en este scope. Cuando los docentes etiqueten
           episodios, acá aparece el κ máquina–humano y entre docentes.
@@ -628,10 +634,10 @@ function KappaSection({ block }: { block: KappaBlock }): ReactNode {
         cada docente por separado, y no puede superar el techo humano–humano: si los docentes no
         concuerdan entre sí, no se le exige más a la máquina. La brecha vive sobre todo en el eje
         superficial↔reflexiva (la máquina decide por señales conductuales; el criterio docente lee
-        la conversación). Un valor bajo es un hallazgo válido, no se maquilla. El piloto held-out del
-        paper reporta κ = 0.68 sobre el <strong>juez aislado</strong> en el eje fino (n=95); este
-        panel mide el <strong>sistema completo</strong> contra consenso docente, por eso los valores
-        difieren sin contradecirse.
+        la conversación). Un valor bajo es un hallazgo válido, no se maquilla. El piloto held-out
+        del paper reporta κ = 0.68 sobre el <strong>juez aislado</strong> en el eje fino (n=95);
+        este panel mide el <strong>sistema completo</strong> contra consenso docente, por eso los
+        valores difieren sin contradecirse.
       </p>
     </Section>
   )
@@ -697,10 +703,30 @@ const ABLACION = {
   lift: 0.54,
   nGrises: 95,
   filas: [
-    { label: "Baseline (clase mayoritaria)", kappa: 0.0, detalle: "κ = 0 por construcción", tono: "muted" },
-    { label: "Mismo LLM, sin el árbol", kappa: 0.14, detalle: "zero-shot: solo los nombres de clase", tono: "danger" },
-    { label: "Modelo abierto + árbol", kappa: 0.47, detalle: "Llama 3.3 70B, self-hosteable (n=92)", tono: "brand" },
-    { label: "Juez + árbol de decisión", kappa: 0.68, detalle: "Gemini 2.5 Flash · IC 95% 0.53–0.83", tono: "success" },
+    {
+      label: "Baseline (clase mayoritaria)",
+      kappa: 0.0,
+      detalle: "κ = 0 por construcción",
+      tono: "muted",
+    },
+    {
+      label: "Mismo LLM, sin el árbol",
+      kappa: 0.14,
+      detalle: "zero-shot: solo los nombres de clase",
+      tono: "danger",
+    },
+    {
+      label: "Modelo abierto + árbol",
+      kappa: 0.47,
+      detalle: "Llama 3.3 70B, self-hosteable (n=92)",
+      tono: "brand",
+    },
+    {
+      label: "Juez + árbol de decisión",
+      kappa: 0.68,
+      detalle: "Gemini 2.5 Flash · IC 95% 0.53–0.83",
+      tono: "success",
+    },
   ],
 } as const
 
@@ -740,7 +766,9 @@ function AblacionSection(): ReactNode {
               <div key={f.label}>
                 <div className="mb-1 flex items-baseline justify-between gap-2">
                   <span className="text-sm text-ink">{f.label}</span>
-                  <span className="font-mono text-sm tabular-nums text-ink">κ {f.kappa.toFixed(2)}</span>
+                  <span className="font-mono text-sm tabular-nums text-ink">
+                    κ {f.kappa.toFixed(2)}
+                  </span>
                 </div>
                 <div className="h-5 overflow-hidden rounded bg-surface-alt">
                   <div
@@ -758,8 +786,8 @@ function AblacionSection(): ReactNode {
           episodios grises del eje fino (superficial↔reflexiva). El árbol de decisión,{" "}
           <strong>no el modelo</strong>, carga el desempeño: sin él, el LLM colapsa a la clase
           mayoritaria. Es un resultado <strong>fijo del piloto held-out</strong> (no se recomputa en
-          vivo: correr el juez sin árbol consume LLM). La contraparte reproducible, un modelo abierto
-          self-hosteable, llega a 0.47 (trade-off precisión / reproducibilidad).
+          vivo: correr el juez sin árbol consume LLM). La contraparte reproducible, un modelo
+          abierto self-hosteable, llega a 0.47 (trade-off precisión / reproducibilidad).
         </p>
       </div>
     </Section>
@@ -778,11 +806,7 @@ function DistribucionSection({ block }: { block: DistribucionBlock }): ReactNode
   const maxSub = Math.max(1, ...block.por_subgrupo.map((s) => s.n))
 
   return (
-    <Section
-      n="1"
-      title="Distribución de perfiles"
-      subtitle={`${total} episodios clasificados`}
-    >
+    <Section n="1" title="Distribución de perfiles" subtitle={`${total} episodios clasificados`}>
       {total === 0 ? (
         <Empty>No hay episodios clasificados en este scope.</Empty>
       ) : (
@@ -869,7 +893,12 @@ const LABEL_STYLE = {
   mejorando: { text: "text-success", soft: "bg-success-soft", arrow: "↑", label: "Mejoró" },
   estable: { text: "text-muted", soft: "bg-surface-alt", arrow: "→", label: "Estable" },
   empeorando: { text: "text-danger", soft: "bg-danger-soft", arrow: "↓", label: "Empeoró" },
-  insuficiente: { text: "text-muted-soft", soft: "bg-surface-alt", arrow: "·", label: "Datos insuf." },
+  insuficiente: {
+    text: "text-muted-soft",
+    soft: "bg-surface-alt",
+    arrow: "·",
+    label: "Datos insuf.",
+  },
 } satisfies Record<string, { text: string; soft: string; arrow: string; label: string }>
 
 function TrayectoriaSection({ block }: { block: TrayectoriaBlock }): ReactNode {
@@ -901,8 +930,8 @@ function TrayectoriaSection({ block }: { block: TrayectoriaBlock }): ReactNode {
             {block.net_progression_ratio >= 0 ? "+" : ""}
             {block.net_progression_ratio.toFixed(2)}
           </span>{" "}
-          (mejorando − empeorando, sobre alumnos con 3+ episodios; rango −1 a +1). Operacionalización
-          longitudinal: último tercio vs primer tercio en escala ordinal.
+          (mejorando − empeorando, sobre alumnos con 3+ episodios; rango −1 a +1).
+          Operacionalización longitudinal: último tercio vs primer tercio en escala ordinal.
         </p>
       </div>
 
@@ -1003,7 +1032,12 @@ function Sparkline({ serie }: { serie: number[] }): ReactNode {
         />
       ))}
       {n > 1 && (
-        <polyline points={poly} fill="none" stroke="var(--color-muted-soft, #94a3b8)" strokeWidth={1.5} />
+        <polyline
+          points={poly}
+          fill="none"
+          stroke="var(--color-muted-soft, #94a3b8)"
+          strokeWidth={1.5}
+        />
       )}
       {serie.map((v, i) => (
         <circle
@@ -1117,7 +1151,8 @@ function TriangulacionSection({ block }: { block: TriangulacionBlock }): ReactNo
       <div className="space-y-3">
         {block.por_perfil.map((p) => {
           const s = aprStyle(p.apropiacion)
-          const pct = p.completitud_promedio == null ? null : Math.round(p.completitud_promedio * 100)
+          const pct =
+            p.completitud_promedio == null ? null : Math.round(p.completitud_promedio * 100)
           return (
             <div key={p.apropiacion} className="flex items-center gap-3">
               <span className={`w-28 shrink-0 text-sm font-medium ${s.text}`}>{s.short}</span>
@@ -1188,7 +1223,9 @@ function CoherBar({ label, value }: { label: string; value: number | null }): Re
       <div className="mt-1 h-1.5 overflow-hidden rounded-full bg-surface-alt">
         {pct != null && (
           <div
-            className={pct > 60 ? "h-full bg-success" : pct > 40 ? "h-full bg-warning" : "h-full bg-danger"}
+            className={
+              pct > 60 ? "h-full bg-success" : pct > 40 ? "h-full bg-warning" : "h-full bg-danger"
+            }
             style={{ width: `${pct}%` }}
           />
         )}

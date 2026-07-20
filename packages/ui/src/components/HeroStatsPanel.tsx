@@ -51,13 +51,7 @@ const trackBgByTone: Record<StatTone, string> = {
   danger: "bg-danger-soft",
 }
 
-export function HeroStatsPanel({
-  eyebrow,
-  icon,
-  stats,
-  footnote,
-  className,
-}: HeroStatsPanelProps) {
+export function HeroStatsPanel({ eyebrow, icon, stats, footnote, className }: HeroStatsPanelProps) {
   const cols =
     stats.length <= 2
       ? "grid-cols-2"

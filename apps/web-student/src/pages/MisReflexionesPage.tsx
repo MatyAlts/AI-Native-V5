@@ -62,9 +62,8 @@ export function MisReflexionesPage() {
               Mis reflexiones
             </h1>
             <p className="text-sm text-muted leading-relaxed mt-2 max-w-xl">
-              Todo lo que pensaste cuando cerraste cada episodio. Son tuyas — nadie
-              te calificó, nadie te respondió. Releerlas mientras todavía esta
-              fresco es parte del proceso.
+              Todo lo que pensaste cuando cerraste cada episodio. Son tuyas — nadie te calificó,
+              nadie te respondió. Releerlas mientras todavía esta fresco es parte del proceso.
             </p>
           </div>
           <HelpButton title="Mis reflexiones" content={helpContent.reflexiones} />
@@ -117,7 +116,7 @@ function ReflectionCard({ reflection }: ReflectionCardProps) {
   const tareaLabel =
     reflection.tarea_codigo && reflection.tarea_titulo
       ? `${reflection.tarea_codigo} · ${reflection.tarea_titulo}`
-      : reflection.tarea_titulo ?? reflection.tarea_codigo ?? "TP (sin titulo)"
+      : (reflection.tarea_titulo ?? reflection.tarea_codigo ?? "TP (sin titulo)")
 
   return (
     <article
@@ -128,9 +127,7 @@ function ReflectionCard({ reflection }: ReflectionCardProps) {
       <header className="mb-4">
         <div className="flex items-center gap-2 mb-2">
           <BookOpenText className="h-3.5 w-3.5 text-accent-brand" aria-hidden="true" />
-          <p className="text-xs font-mono uppercase tracking-wider text-muted">
-            {tareaLabel}
-          </p>
+          <p className="text-xs font-mono uppercase tracking-wider text-muted">{tareaLabel}</p>
         </div>
         {closedAt && (
           <p className="text-xs text-muted-soft inline-flex items-center gap-1.5">
@@ -196,9 +193,7 @@ function ErrorPanel({ error }: { error: string }) {
       className="rounded-xl border border-danger/30 bg-danger-soft p-6"
       data-testid="mis-reflexiones-error"
     >
-      <p className="text-sm font-semibold text-danger mb-2">
-        No pudimos cargar tus reflexiones.
-      </p>
+      <p className="text-sm font-semibold text-danger mb-2">No pudimos cargar tus reflexiones.</p>
       <p className="text-xs font-mono text-danger/80 break-all">{error}</p>
     </div>
   )
@@ -212,9 +207,8 @@ function EmptyState() {
     >
       <p className="text-base font-medium text-ink mb-2">Todavia no escribiste reflexiones</p>
       <p className="text-sm text-muted max-w-md mx-auto leading-relaxed">
-        Cuando cerres un episodio del tutor, vas a poder dejar una reflexion
-        sobre lo que pensaste mientras lo resolvias. Las vas a poder releer
-        aca cuando quieras.
+        Cuando cerres un episodio del tutor, vas a poder dejar una reflexion sobre lo que pensaste
+        mientras lo resolvias. Las vas a poder releer aca cuando quieras.
       </p>
     </div>
   )

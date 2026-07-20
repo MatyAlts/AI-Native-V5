@@ -72,32 +72,31 @@ export const helpContent: HelpContentMap = {
     <div className="space-y-4 text-muted-soft">
       <p className="text-lg font-medium text-[var(--text-inverse)]">Mis reflexiones</p>
       <p>
-        Despues de cerrar un episodio, podes dejar una reflexion metacognitiva de un
-        minuto: lo que penso, lo que te trabo, lo que aprendiste. Aca podes releerlas
-        cuando quieras.
+        Despues de cerrar un episodio, podes dejar una reflexion metacognitiva de un minuto: lo que
+        penso, lo que te trabo, lo que aprendiste. Aca podes releerlas cuando quieras.
       </p>
       <ul className="list-disc list-inside space-y-2 ml-4">
         <li>
-          <strong>Solo tuyas:</strong> el listado filtra por tu identidad — nadie mas ve
-          tus reflexiones, ni el docente ni otros alumnos.
+          <strong>Solo tuyas:</strong> el listado filtra por tu identidad — nadie mas ve tus
+          reflexiones, ni el docente ni otros alumnos.
         </li>
         <li>
           <strong>No se califican:</strong> no hay nota ni feedback. Son para vos.
         </li>
         <li>
-          <strong>Append-only:</strong> una vez enviada queda registrada en la cadena
-          criptografica del episodio (ADR-035). No se editan ni se borran.
+          <strong>Append-only:</strong> una vez enviada queda registrada en la cadena criptografica
+          del episodio (ADR-035). No se editan ni se borran.
         </li>
         <li>
-          <strong>No afectan tu clasificacion N4:</strong> el clasificador ignora las
-          reflexiones (ADR-027). Las podes dejar en blanco sin penalizacion.
+          <strong>No afectan tu clasificacion N4:</strong> el clasificador ignora las reflexiones
+          (ADR-027). Las podes dejar en blanco sin penalizacion.
         </li>
       </ul>
       <div className="bg-sidebar-bg-edge p-4 rounded-lg mt-2">
         <p className="text-warning font-medium">Como volves a ver una?</p>
         <p className="text-sm mt-1">
-          Aparecen ordenadas de mas reciente a mas antigua. Cada card muestra la TP, la
-          fecha de cierre del episodio y las tres respuestas tal como las escribiste.
+          Aparecen ordenadas de mas reciente a mas antigua. Cada card muestra la TP, la fecha de
+          cierre del episodio y las tres respuestas tal como las escribiste.
         </p>
       </div>
     </div>

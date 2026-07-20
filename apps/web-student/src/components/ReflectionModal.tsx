@@ -111,10 +111,9 @@ export function ReflectionModal({ isOpen, episodeId, onClose }: ReflectionModalP
     >
       <div className="space-y-4 text-sm text-body">
         <p className="text-muted">
-          Tomate un minuto para pensar sobre el episodio que acabas de cerrar.
-          Esto es para vos — no es una entrega, no se califica, y nadie te va
-          a responder. Pensar sobre lo que hiciste mientras todavia esta fresco
-          es parte del proceso.
+          Tomate un minuto para pensar sobre el episodio que acabas de cerrar. Esto es para vos — no
+          es una entrega, no se califica, y nadie te va a responder. Pensar sobre lo que hiciste
+          mientras todavia esta fresco es parte del proceso.
         </p>
 
         <ReflectionTextarea
@@ -142,9 +141,7 @@ export function ReflectionModal({ isOpen, episodeId, onClose }: ReflectionModalP
         />
 
         {error && (
-          <div className="bg-danger-soft text-danger px-3 py-2 text-sm rounded">
-            {error}
-          </div>
+          <div className="bg-danger-soft text-danger px-3 py-2 text-sm rounded">{error}</div>
         )}
 
         <div className="flex justify-end gap-2 pt-2">
@@ -199,11 +196,7 @@ function ReflectionTextarea({ id, label, hint, value, onChange }: ReflectionText
         rows={3}
         className="w-full px-3 py-2 text-sm border border-border bg-surface rounded resize-none focus:outline-none focus:ring-2 focus:ring-blue-500"
       />
-      <p
-        className={`text-xs mt-1 text-right ${
-          overLimit ? "text-danger" : "text-muted"
-        }`}
-      >
+      <p className={`text-xs mt-1 text-right ${overLimit ? "text-danger" : "text-muted"}`}>
         {remaining} chars restantes
       </p>
     </div>

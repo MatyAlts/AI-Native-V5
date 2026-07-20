@@ -137,8 +137,7 @@ export function ExerciseListView({
   const totalEjercicios = ejercicios.length
   const todosCompletos = completados === totalEjercicios && totalEjercicios > 0
 
-  const canSubmit =
-    todosCompletos && entrega?.estado === "draft"
+  const canSubmit = todosCompletos && entrega?.estado === "draft"
 
   const isLocked = (orden: number): boolean => {
     if (orden === 1) return false
@@ -166,15 +165,9 @@ export function ExerciseListView({
     return (
       <div className="flex-1 flex items-center justify-center px-4">
         <div className="max-w-md text-center">
-          <p className="text-sm font-medium text-danger mb-2">
-            No pudimos cargar la entrega.
-          </p>
+          <p className="text-sm font-medium text-danger mb-2">No pudimos cargar la entrega.</p>
           <p className="text-xs font-mono text-muted mb-4">{error}</p>
-          <button
-            type="button"
-            onClick={onBack}
-            className="text-sm underline text-body"
-          >
+          <button type="button" onClick={onBack} className="text-sm underline text-body">
             Volver
           </button>
         </div>
@@ -198,9 +191,7 @@ export function ExerciseListView({
           <p className="text-xs font-mono text-muted mb-1">
             {tarea.codigo} (v{tarea.version})
           </p>
-          <h2 className="text-xl font-semibold text-ink mb-2">
-            {tarea.titulo}
-          </h2>
+          <h2 className="text-xl font-semibold text-ink mb-2">{tarea.titulo}</h2>
           {entrega && (
             <span
               data-testid="entrega-estado-badge"
@@ -215,9 +206,7 @@ export function ExerciseListView({
         {totalEjercicios > 0 && (
           <div className="mb-6" data-testid="entrega-progress">
             <div className="flex items-center justify-between mb-1">
-              <span className="text-xs text-muted">
-                Ejercicios completados
-              </span>
+              <span className="text-xs text-muted">Ejercicios completados</span>
               <span className="text-xs font-mono text-body">
                 {completados}/{totalEjercicios}
               </span>
@@ -242,8 +231,8 @@ export function ExerciseListView({
           <div className="mb-6 rounded-lg border border-border-soft bg-surface-alt p-4">
             {entrega.estado === "submitted" && (
               <p className="text-sm text-body">
-                <span className="font-medium">Pendiente de correccion.</span>{" "}
-                Tu docente revisara la entrega proximamente.
+                <span className="font-medium">Pendiente de correccion.</span> Tu docente revisara la
+                entrega proximamente.
               </p>
             )}
             {(entrega.estado === "graded" || entrega.estado === "returned") && (
@@ -251,13 +240,13 @@ export function ExerciseListView({
                 <p className="text-sm text-body">
                   {entrega.estado === "graded" ? (
                     <>
-                      <span className="font-medium">Calificada.</span>{" "}
-                      Tu docente ya corrigio la entrega.
+                      <span className="font-medium">Calificada.</span> Tu docente ya corrigio la
+                      entrega.
                     </>
                   ) : (
                     <>
-                      <span className="font-medium">Devuelta para revisar.</span>{" "}
-                      Tu docente devolvio la entrega con observaciones.
+                      <span className="font-medium">Devuelta para revisar.</span> Tu docente
+                      devolvio la entrega con observaciones.
                     </>
                   )}
                 </p>
@@ -312,11 +301,7 @@ export function ExerciseListView({
                   <div className="flex-1 min-w-0">
                     <p
                       className={`text-sm font-medium truncate ${
-                        locked
-                          ? "text-muted"
-                          : completed
-                            ? "text-success"
-                            : "text-ink"
+                        locked ? "text-muted" : completed ? "text-success" : "text-ink"
                       }`}
                     >
                       Ejercicio {ejercicio.orden}: {ejercicio.titulo}
@@ -355,9 +340,7 @@ export function ExerciseListView({
                     </button>
                   )}
                   {completed && (
-                    <span className="shrink-0 text-xs text-success font-medium">
-                      Completado
-                    </span>
+                    <span className="shrink-0 text-xs text-success font-medium">Completado</span>
                   )}
                 </div>
               </li>

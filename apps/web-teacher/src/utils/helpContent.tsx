@@ -23,11 +23,11 @@ export const helpContent: HelpContentMap = {
         </li>
         <li>
           <strong>alertas:</strong> cantidad de estudiantes con al menos una alerta predictiva
-          activa en la cohorte (ADR-022). Combina las 3 alertas pedagogicas: regresion vs cohorte
-          (z &lt; -1σ), cuartil inferior (Q1) y slope negativo significativo (&lt; -0.3). Si la
-          cohorte tiene menos de 5 estudiantes con slope longitudinal computable, la card muestra
-          "—" (privacidad k-anonymity, RN-131). El hover del KPI lista el breakdown por tipo. La
-          lista detallada por estudiante esta disponible desde el drill-down.
+          activa en la cohorte (ADR-022). Combina las 3 alertas pedagogicas: regresion vs cohorte (z
+          &lt; -1σ), cuartil inferior (Q1) y slope negativo significativo (&lt; -0.3). Si la cohorte
+          tiene menos de 5 estudiantes con slope longitudinal computable, la card muestra "—"
+          (privacidad k-anonymity, RN-131). El hover del KPI lista el breakdown por tipo. La lista
+          detallada por estudiante esta disponible desde el drill-down.
         </li>
         <li>
           <strong>adversos sem.:</strong> eventos adversos detectados en los ultimos 7 dias (filtro
@@ -451,9 +451,7 @@ export const helpContent: HelpContentMap = {
 
   cohortAdversarial: (
     <div className="space-y-4 text-sidebar-text-muted">
-      <p className="text-lg font-medium text-[var(--text-inverse)]">
-        Uso inapropiado del tutor IA
-      </p>
+      <p className="text-lg font-medium text-[var(--text-inverse)]">Uso inapropiado del tutor IA</p>
       <p>
         Esta pantalla muestra cuando un alumno intento que el tutor le DE la solucion en vez de
         guiarlo (el tutor esta diseñado para acompañar el razonamiento, no para resolver). El
@@ -511,15 +509,14 @@ export const helpContent: HelpContentMap = {
       </p>
       <ul className="list-disc list-inside space-y-2 ml-4">
         <li>
-          <strong>Crear con IA:</strong> describis el ejercicio en lenguaje natural, eligis unidad
-          y dificultad, y el wizard genera un borrador completo con enunciado, tests, rubrica,
-          banco socratico N1-N4, misconceptions, anti-patrones y heuristica de cierre. Revisas,
-          editas y guardas.
+          <strong>Crear con IA:</strong> describis el ejercicio en lenguaje natural, eligis unidad y
+          dificultad, y el wizard genera un borrador completo con enunciado, tests, rubrica, banco
+          socratico N1-N4, misconceptions, anti-patrones y heuristica de cierre. Revisas, editas y
+          guardas.
         </li>
         <li>
           <strong>Crear manual:</strong> form completo con secciones colapsables (datos basicos,
-          tests, rubrica, pedagogia). Los campos pedagogicos avanzados se editan como JSON
-          tipado.
+          tests, rubrica, pedagogia). Los campos pedagogicos avanzados se editan como JSON tipado.
         </li>
         <li>
           <strong>Filtros:</strong> por unidad tematica (secuenciales, condicionales, repetitivas,
@@ -527,12 +524,12 @@ export const helpContent: HelpContentMap = {
         </li>
         <li>
           <strong>Editar:</strong> el ejercicio se actualiza globalmente. Cuidado: si el ejercicio
-          esta referenciado por TPs publicadas, las ediciones se propagan retroactivamente
-          (deuda diferida ADR-047).
+          esta referenciado por TPs publicadas, las ediciones se propagan retroactivamente (deuda
+          diferida ADR-047).
         </li>
         <li>
-          <strong>Eliminar:</strong> soft delete. Los TPs que lo referencian siguen apuntando a
-          esta version (el ejercicio sobrevive en DB con `deleted_at`).
+          <strong>Eliminar:</strong> soft delete. Los TPs que lo referencian siguen apuntando a esta
+          version (el ejercicio sobrevive en DB con `deleted_at`).
         </li>
       </ul>
       <div className="bg-sidebar-bg-edge p-4 rounded-lg mt-4">
@@ -634,8 +631,8 @@ export const helpContent: HelpContentMap = {
         <p className="text-accent-brand font-medium">Limitaciones declaradas:</p>
         <p className="text-sm mt-1">
           Slope cardinal sobre datos ordinales es operacionalizacion conservadora (ADR-018, no es
-          verdad academica). TPs huerfanas (sin template_id) NO entran al calculo del mean_slope
-          por estudiante. Cuartiles por template/unidad agregados es agenda piloto-2.
+          verdad academica). TPs huerfanas (sin template_id) NO entran al calculo del mean_slope por
+          estudiante. Cuartiles por template/unidad agregados es agenda piloto-2.
         </p>
       </div>
     </div>
@@ -688,8 +685,8 @@ export const helpContent: HelpContentMap = {
           Apropiacion reflexiva. Elegi el que mejor describe el proceso del alumno.
         </li>
         <li>
-          <strong>Re-etiquetar:</strong> podes cambiar tu codificacion cuando quieras; se guarda
-          por upsert. El avance muestra cuantos codificaste sobre el total.
+          <strong>Re-etiquetar:</strong> podes cambiar tu codificacion cuando quieras; se guarda por
+          upsert. El avance muestra cuantos codificaste sobre el total.
         </li>
       </ul>
     </div>

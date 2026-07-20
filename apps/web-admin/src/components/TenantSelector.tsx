@@ -56,13 +56,11 @@ export function TenantSelector() {
     localStorage.setItem(SELECTED_TENANT_STORAGE_KEY, tenantId)
     // Volver al home y limpiar query params: ids específicos del tenant
     // viejo (comisionId, etc.) son inválidos para el tenant nuevo.
-    window.location.replace(window.location.origin + "/")
+    window.location.replace(`${window.location.origin}/`)
   }
 
   if (loading) {
-    return (
-      <div className="text-xs text-muted px-3 py-1.5">Cargando universidades…</div>
-    )
+    return <div className="text-xs text-muted px-3 py-1.5">Cargando universidades…</div>
   }
 
   return (

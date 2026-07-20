@@ -46,8 +46,7 @@ export function FacultadesPage(): ReactNode {
   const loadingUnis = universidadesQuery.isLoading
   const loading = facultadesQuery.isFetching && !!universidadId
 
-  const queryError =
-    universidadesQuery.error || facultadesQuery.error || deleteMutation.error
+  const queryError = universidadesQuery.error || facultadesQuery.error || deleteMutation.error
   const error = queryError
     ? queryError instanceof HttpError
       ? `${queryError.status}: ${queryError.detail || queryError.title}`
@@ -148,15 +147,24 @@ export function FacultadesPage(): ReactNode {
             <table className="w-full text-sm">
               <thead className="bg-accent-brand/10 border-b-2 border-accent-brand/40 text-left">
                 <tr>
-                  <th className="px-4 py-2.5 font-semibold text-accent-brand-deep text-[11px] uppercase tracking-wider">Código</th>
-                  <th className="px-4 py-2.5 font-semibold text-accent-brand-deep text-[11px] uppercase tracking-wider">Nombre</th>
-                  <th className="px-4 py-2.5 font-semibold text-accent-brand-deep text-[11px] uppercase tracking-wider">Universidad</th>
+                  <th className="px-4 py-2.5 font-semibold text-accent-brand-deep text-[11px] uppercase tracking-wider">
+                    Código
+                  </th>
+                  <th className="px-4 py-2.5 font-semibold text-accent-brand-deep text-[11px] uppercase tracking-wider">
+                    Nombre
+                  </th>
+                  <th className="px-4 py-2.5 font-semibold text-accent-brand-deep text-[11px] uppercase tracking-wider">
+                    Universidad
+                  </th>
                   <th className="px-4 py-2.5 font-medium" />
                 </tr>
               </thead>
               <tbody>
                 {items.map((f) => (
-                  <tr key={f.id} className="border-b border-border-soft hover:bg-accent-brand/8 transition-colors">
+                  <tr
+                    key={f.id}
+                    className="border-b border-border-soft hover:bg-accent-brand/8 transition-colors"
+                  >
                     <td className="px-4 py-2 font-mono text-xs">{f.codigo}</td>
                     <td className="px-4 py-2">{f.nombre}</td>
                     <td className="px-4 py-2 text-muted text-xs">
@@ -215,7 +223,10 @@ function FacultadForm({
   }
 
   return (
-    <form onSubmit={submit} className="rounded-lg border border-border-soft bg-surface p-6 space-y-4">
+    <form
+      onSubmit={submit}
+      className="rounded-lg border border-border-soft bg-surface p-6 space-y-4"
+    >
       <div className="flex items-center gap-2 mb-2">
         <HelpButton
           size="sm"

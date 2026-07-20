@@ -71,12 +71,7 @@ export function KpiCard({
           {label}
         </span>
         {delta && (
-          <span
-            className={cn(
-              "text-xs font-medium leading-none",
-              deltaToneClasses[deltaTone],
-            )}
-          >
+          <span className={cn("text-xs font-medium leading-none", deltaToneClasses[deltaTone])}>
             {delta}
           </span>
         )}

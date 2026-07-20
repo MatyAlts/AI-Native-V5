@@ -3,6 +3,7 @@ import { Link } from "@tanstack/react-router"
 import { ChevronDown, ChevronRight, TrendingUp, TriangleAlert } from "lucide-react"
 import { useCallback, useEffect, useState } from "react"
 import { useComisionLabel } from "../components/ComisionSelector"
+import { useStudentProfiles } from "../hooks/useStudentProfiles"
 import { useViewMode } from "../hooks/useViewMode"
 import {
   type CIIEvolutionUnidad,
@@ -22,7 +23,6 @@ import {
   studentShortLabel,
 } from "../utils/docenteLabels"
 import { helpContent } from "../utils/helpContent"
-import { useStudentProfiles } from "../hooks/useStudentProfiles"
 
 const LABEL_COLOR_VAR: Record<string, string> = {
   delegacion_pasiva: "var(--color-appropriation-delegacion)",

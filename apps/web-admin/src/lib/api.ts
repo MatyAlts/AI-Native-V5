@@ -725,8 +725,7 @@ export const byokApi = {
       method: "POST",
       body: JSON.stringify({ plaintext_value }),
     }),
-  revoke: (id: string) =>
-    request<void>(`/byok/keys/${id}/revoke`, { method: "POST" }),
+  revoke: (id: string) => request<void>(`/byok/keys/${id}/revoke`, { method: "POST" }),
   // El backend devuelve un single object (uso del mes actual o agregado mensual
   // si se pasa ?yyyymm=). NO es array. Si querés historial multi-mes hay que
   // hacer múltiples calls con yyyymm distinto (deuda pendiente v1.1).

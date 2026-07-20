@@ -59,9 +59,13 @@ export function UniversidadesPage(): ReactNode {
             onClick={() => setShowForm(!showForm)}
             className="press-shrink inline-flex items-center gap-1.5 rounded-md bg-accent-brand text-white px-4 py-2 text-sm font-medium hover:bg-accent-brand-deep transition-colors shadow-[0_1px_2px_0_rgba(24,95,165,0.25)]"
           >
-            {showForm ? "Cancelar" : (<>
-              <Plus className="h-3.5 w-3.5" /> Nueva universidad
-            </>)}
+            {showForm ? (
+              "Cancelar"
+            ) : (
+              <>
+                <Plus className="h-3.5 w-3.5" /> Nueva universidad
+              </>
+            )}
           </button>
         </div>
 
@@ -114,10 +118,16 @@ export function UniversidadesPage(): ReactNode {
                         {new Date(u.created_at).toLocaleDateString()}
                       </span>
                     </div>
-                    <h3 className="text-sm font-semibold text-ink leading-tight tracking-tight" title={u.nombre}>
+                    <h3
+                      className="text-sm font-semibold text-ink leading-tight tracking-tight"
+                      title={u.nombre}
+                    >
                       {u.nombre}
                     </h3>
-                    <div className="text-[11px] font-mono text-muted truncate" title={u.keycloak_realm}>
+                    <div
+                      className="text-[11px] font-mono text-muted truncate"
+                      title={u.keycloak_realm}
+                    >
                       realm: {u.keycloak_realm}
                     </div>
                   </div>
@@ -167,7 +177,10 @@ function UniversidadForm({
   }
 
   return (
-    <form onSubmit={submit} className="rounded-xl border border-border bg-surface p-6 space-y-4 shadow-[0_1px_2px_0_rgba(0,0,0,0.04)] animate-fade-in-up">
+    <form
+      onSubmit={submit}
+      className="rounded-xl border border-border bg-surface p-6 space-y-4 shadow-[0_1px_2px_0_rgba(0,0,0,0.04)] animate-fade-in-up"
+    >
       <div className="flex items-center gap-2 mb-2">
         <HelpButton
           size="sm"

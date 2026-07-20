@@ -26,9 +26,9 @@
  * ADR de respaldo: ADR-053.
  */
 
-import { useEffect, useMemo, useState } from "react"
 import { useNavigate } from "@tanstack/react-router"
 import { ArrowLeft, CheckCircle2, ChevronDown, ChevronUp, Loader2 } from "lucide-react"
+import { useEffect, useMemo, useState } from "react"
 import {
   type InstrumentoCatalogo,
   type InstrumentoCatalogoItem,
@@ -193,7 +193,9 @@ function CuestionarioIACard({
   }, [alreadyAnswered, onCompletedChange])
 
   if (!catalogo)
-    return <CardLoading title="Cuestionario sobre experiencia previa con IA" isExpanded={isExpanded} />
+    return (
+      <CardLoading title="Cuestionario sobre experiencia previa con IA" isExpanded={isExpanded} />
+    )
 
   return (
     <CardShell
@@ -421,7 +423,10 @@ function TransferenciaCard({
       <p className="text-xs text-muted mb-4">
         Grupo asignado: <code>{groupAssignment}</code>
         {!allAnswered && catalogo.problems.length > 0 && (
-          <> · Faltan {remaining} problema{remaining === 1 ? "" : "s"}.</>
+          <>
+            {" "}
+            · Faltan {remaining} problema{remaining === 1 ? "" : "s"}.
+          </>
         )}
       </p>
       <ul className="space-y-3">
@@ -587,10 +592,7 @@ function CardShell({
       >
         <div className="flex items-center gap-2.5 flex-1 min-w-0">
           {isComplete && (
-            <CheckCircle2
-              className="h-5 w-5 text-success flex-shrink-0"
-              aria-label="Completado"
-            />
+            <CheckCircle2 className="h-5 w-5 text-success flex-shrink-0" aria-label="Completado" />
           )}
           <h2 className="text-base font-semibold text-ink truncate">{title}</h2>
         </div>
@@ -615,9 +617,7 @@ function CardLoading({ title, isExpanded }: { title: string; isExpanded: boolean
         <h2 className="text-base font-semibold text-ink">{title}</h2>
         <Loader2 className="h-4 w-4 animate-spin text-muted" />
       </div>
-      {isExpanded && (
-        <p className="text-xs text-muted p-4">Cargando catalogo...</p>
-      )}
+      {isExpanded && <p className="text-xs text-muted p-4">Cargando catalogo...</p>}
     </section>
   )
 }

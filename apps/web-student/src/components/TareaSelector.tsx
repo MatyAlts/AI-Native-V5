@@ -262,9 +262,7 @@ export function TareaSelector({
               ? "Esta unidad todavía no tiene trabajos prácticos."
               : "Tu comision todavia no tiene TPs publicadas."}
           </p>
-          <p className="text-sm text-muted">
-            Tu docente las publica desde el panel de gestion.
-          </p>
+          <p className="text-sm text-muted">Tu docente las publica desde el panel de gestion.</p>
         </div>
       </div>
     )
@@ -285,9 +283,7 @@ export function TareaSelector({
         <p className="text-xs font-mono uppercase tracking-wider text-muted mb-2">
           Trabajos practicos
         </p>
-        <h2 className="text-2xl font-semibold text-ink mb-8">
-          Tu materia, esta semana.
-        </h2>
+        <h2 className="text-2xl font-semibold text-ink mb-8">Tu materia, esta semana.</h2>
 
         {zones.pendiente.length > 0 && (
           <ZonePendiente
@@ -299,10 +295,7 @@ export function TareaSelector({
         )}
 
         {zones.porCorregir.length > 0 && (
-          <ZonePorCorregir
-            tareas={zones.porCorregir}
-            entregasByTareaId={entregasByTareaId}
-          />
+          <ZonePorCorregir tareas={zones.porCorregir} entregasByTareaId={entregasByTareaId} />
         )}
 
         {zones.listo.length > 0 && (
@@ -367,9 +360,7 @@ function ZonePendiente({
   return (
     <section className="mb-10" data-testid="zone-pendiente">
       <div className="flex items-baseline justify-between mb-4">
-        <p className="text-xs font-mono uppercase tracking-wider text-body">
-          Pendiente
-        </p>
+        <p className="text-xs font-mono uppercase tracking-wider text-body">Pendiente</p>
         <span className="text-xs text-muted font-mono">
           {tareas.length} {tareas.length === 1 ? "TP" : "TPs"}
         </span>
@@ -431,9 +422,7 @@ function PendienteCard({
           <p className="text-xs font-mono text-muted mb-1">
             {tarea.codigo} (v{tarea.version})
           </p>
-          <h3 className="text-lg font-semibold text-ink">
-            {tarea.titulo}
-          </h3>
+          <h3 className="text-lg font-semibold text-ink">{tarea.titulo}</h3>
         </div>
       </header>
 
@@ -444,9 +433,7 @@ function PendienteCard({
           </p>
         ) : (
           <div className="flex items-center gap-2 flex-wrap" data-testid="trajectory-dots">
-            <span className="text-muted">
-              Tu trayectoria en TPs analogas:
-            </span>
+            <span className="text-muted">Tu trayectoria en TPs analogas:</span>
             <span className="inline-flex items-center gap-1.5">
               {trajectory.map((ep, idx) => (
                 <span
@@ -498,9 +485,7 @@ function ZonePorCorregir({
         <p className="text-xs font-mono uppercase tracking-wider text-accent-brand-deep">
           Por corregir
         </p>
-        <span className="text-xs text-muted">
-          esperando al docente
-        </span>
+        <span className="text-xs text-muted">esperando al docente</span>
       </div>
       <ul className="divide-y divide-slate-100">
         {tareas.map((t) => {
@@ -514,13 +499,9 @@ function ZonePorCorregir({
               >
                 <div className="flex-1 min-w-0">
                   <div className="flex items-center gap-2 mb-1 flex-wrap">
-                    <span className="text-xs font-mono text-muted">
-                      {t.codigo}
-                    </span>
+                    <span className="text-xs font-mono text-muted">{t.codigo}</span>
                     <span className="text-xs font-mono text-muted-soft">v{t.version}</span>
-                    <span className="text-sm font-medium text-ink truncate">
-                      {t.titulo}
-                    </span>
+                    <span className="text-sm font-medium text-ink truncate">{t.titulo}</span>
                   </div>
                   {entrega?.submitted_at && (
                     <p className="text-xs text-muted mt-1">
@@ -560,12 +541,8 @@ function ZoneListo({
   return (
     <section className="mb-10" data-testid="zone-listo">
       <div className="flex items-baseline gap-3 mb-3 border-b border-border-soft pb-1">
-        <p className="text-xs font-mono uppercase tracking-wider text-success">
-          Listo
-        </p>
-        <span className="text-xs text-muted">
-          corregidas por el docente
-        </span>
+        <p className="text-xs font-mono uppercase tracking-wider text-success">Listo</p>
+        <span className="text-xs text-muted">corregidas por el docente</span>
       </div>
       <ul className="divide-y divide-slate-100">
         {tareas.map((t) => {
@@ -579,13 +556,9 @@ function ZoneListo({
               >
                 <div className="flex-1 min-w-0">
                   <div className="flex items-center gap-2 mb-1 flex-wrap">
-                    <span className="text-xs font-mono text-muted">
-                      {t.codigo}
-                    </span>
+                    <span className="text-xs font-mono text-muted">{t.codigo}</span>
                     <span className="text-xs font-mono text-muted-soft">v{t.version}</span>
-                    <span className="text-sm font-medium text-ink truncate">
-                      {t.titulo}
-                    </span>
+                    <span className="text-sm font-medium text-ink truncate">{t.titulo}</span>
                     {entrega && <EntregaBadge estado={entrega.estado} />}
                   </div>
                 </div>
@@ -621,9 +594,7 @@ function ZoneVencidas({
   return (
     <section className="mb-6" data-testid="zone-vencidas">
       <div className="flex items-baseline gap-3 mb-3 border-b border-border-soft pb-1">
-        <p className="text-xs font-mono uppercase tracking-wider text-muted">
-          Vencidas
-        </p>
+        <p className="text-xs font-mono uppercase tracking-wider text-muted">Vencidas</p>
         <span className="text-xs text-muted-soft">acceso solo lectura</span>
       </div>
       <ul className="divide-y divide-slate-100">
@@ -640,8 +611,7 @@ function ZoneVencidas({
           // habilita ninguna via de re-entrega (la TP esta vencida).
           const entrega = entregasByTareaId[t.id]
           const puedeVerNota =
-            (entrega?.estado === "graded" || entrega?.estado === "returned") &&
-            onViewGrade != null
+            (entrega?.estado === "graded" || entrega?.estado === "returned") && onViewGrade != null
           return (
             <li key={t.id} className="py-2.5 text-xs text-muted">
               <div className="flex items-center gap-2">
@@ -684,9 +654,7 @@ function ZoneVencidas({
 
 // ─── Helpers ──────────────────────────────────────────────────────────
 
-function appropriationColor(
-  a: StudentEpisode["appropriation"] | null,
-): string {
+function appropriationColor(a: StudentEpisode["appropriation"] | null): string {
   switch (a) {
     case "apropiacion_reflexiva":
       return "var(--color-appropriation-reflexiva)"
@@ -710,9 +678,7 @@ function appropriationLabel(a: NonNullable<StudentEpisode["appropriation"]>): st
   }
 }
 
-function appropriationAriaLabel(
-  a: StudentEpisode["appropriation"] | null,
-): string {
+function appropriationAriaLabel(a: StudentEpisode["appropriation"] | null): string {
   if (!a) return "resultado pendiente"
   return appropriationLabel(a)
 }

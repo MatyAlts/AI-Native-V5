@@ -14,10 +14,7 @@ export const Route = createFileRoute("/entrenamiento-recalibracion")({
         helpContent={helpContent.interraterCoding}
       >
         <div className="max-w-4xl">
-          <InterraterTraining
-            getToken={getToken}
-            onPass={() => navigate({ to: "/interrater" })}
-          />
+          <InterraterTraining getToken={getToken} onPass={() => navigate({ to: "/interrater" })} />
         </div>
       </PageContainer>
     )

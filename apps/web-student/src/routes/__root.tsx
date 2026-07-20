@@ -1,8 +1,8 @@
 import { SignInButton, SignUpButton, UserButton, useAuth, useUser } from "@clerk/clerk-react"
 import { AuditFooter, HelpButton } from "@platform/ui"
 import { Outlet, createRootRouteWithContext } from "@tanstack/react-router"
-import { useCallback, useEffect, useState, type ReactNode } from "react"
-import { setClerkUserId, clearClerkUserId, DEV_NO_CLERK, DEV_STUDENT_UUID } from "../auth"
+import { type ReactNode, useCallback, useEffect, useState } from "react"
+import { DEV_NO_CLERK, DEV_STUDENT_UUID, clearClerkUserId, setClerkUserId } from "../auth"
 import { TenantSelector } from "../components/TenantSelector"
 import { helpContent } from "../utils/helpContent"
 
@@ -112,34 +112,40 @@ function useEnrollment(authUser: AuthUser | null, isDev: boolean) {
     }
   }, [authUser?.id, isDev])
 
-  const enroll = useCallback(async (code: string) => {
-    if (!authUser) return
-    setError(null)
+  const enroll = useCallback(
+    async (code: string) => {
+      if (!authUser) return
+      setError(null)
 
-    // El código se resuelve server-side: el backend busca la comisión por
-    // invite_code e inscribe al alumno. El frontend NUNCA lista los códigos.
-    const r = await fetch("/api/v1/comisiones/join", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ invite_code: code.trim().toUpperCase() }),
-    })
+      // El código se resuelve server-side: el backend busca la comisión por
+      // invite_code e inscribe al alumno. El frontend NUNCA lista los códigos.
+      const r = await fetch("/api/v1/comisiones/join", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ invite_code: code.trim().toUpperCase() }),
+      })
 
-    if (r.ok) {
-      const comision = await r.json()
-      localStorage.setItem(ENROLLED_COMISION_KEY, comision.id)
-      setState("enrolled")
-      window.location.reload()
-    } else if (r.status === 404) {
-      setError("Codigo invalido. Pedile el codigo correcto a tu docente.")
-    } else {
-      setError("No se pudo inscribir. Intenta de nuevo.")
-    }
-  }, [authUser?.id])
+      if (r.ok) {
+        const comision = await r.json()
+        localStorage.setItem(ENROLLED_COMISION_KEY, comision.id)
+        setState("enrolled")
+        window.location.reload()
+      } else if (r.status === 404) {
+        setError("Codigo invalido. Pedile el codigo correcto a tu docente.")
+      } else {
+        setError("No se pudo inscribir. Intenta de nuevo.")
+      }
+    },
+    [authUser?.id],
+  )
 
   return { state, error, enroll }
 }
 
-function InviteCodeScreen({ onSubmit, error }: { onSubmit: (code: string) => void; error: string | null }) {
+function InviteCodeScreen({
+  onSubmit,
+  error,
+}: { onSubmit: (code: string) => void; error: string | null }) {
   const [code, setCode] = useState("")
 
   return (
@@ -147,7 +153,9 @@ function InviteCodeScreen({ onSubmit, error }: { onSubmit: (code: string) => voi
       <div className="text-center space-y-6 max-w-sm">
         <div>
           <h2 className="text-2xl font-bold text-ink">Unirte a una comision</h2>
-          <p className="text-muted-soft mt-2">Ingresa el codigo que te dio tu docente para acceder a la materia.</p>
+          <p className="text-muted-soft mt-2">
+            Ingresa el codigo que te dio tu docente para acceder a la materia.
+          </p>
         </div>
         <div className="space-y-3">
           <input
@@ -241,7 +249,9 @@ function ClerkRootLayout() {
       ? {
           id: user.id,
           fullName:
-            user.fullName ?? [user.firstName, user.lastName].filter(Boolean).join(" ").trim() ?? null,
+            user.fullName ??
+            [user.firstName, user.lastName].filter(Boolean).join(" ").trim() ??
+            null,
           email: user.primaryEmailAddress?.emailAddress ?? null,
         }
       : null
@@ -261,7 +271,10 @@ function ClerkRootLayout() {
         </button>
       </SignInButton>
       <SignUpButton mode="modal">
-        <button type="button" className="text-sm font-medium bg-accent-brand text-white px-3 py-1.5 rounded-md hover:opacity-90">
+        <button
+          type="button"
+          className="text-sm font-medium bg-accent-brand text-white px-3 py-1.5 rounded-md hover:opacity-90"
+        >
           Registrarse
         </button>
       </SignUpButton>
@@ -274,9 +287,14 @@ function ClerkRootLayout() {
         <div className="flex-1 flex items-center justify-center">
           <div className="text-center space-y-4">
             <h2 className="text-2xl font-bold text-ink">Bienvenido a Plataforma N4</h2>
-            <p className="text-muted-soft">Inicia sesion para acceder a tus materias y tareas practicas.</p>
+            <p className="text-muted-soft">
+              Inicia sesion para acceder a tus materias y tareas practicas.
+            </p>
             <SignInButton mode="modal">
-              <button type="button" className="bg-accent-brand text-white px-6 py-2 rounded-md font-medium hover:opacity-90">
+              <button
+                type="button"
+                className="bg-accent-brand text-white px-6 py-2 rounded-md font-medium hover:opacity-90"
+              >
                 Iniciar sesion
               </button>
             </SignInButton>

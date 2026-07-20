@@ -69,9 +69,7 @@ export function NotesPanel({ episodeId, initialNotes, defaultOpen = true }: Note
       >
         <span className="text-sm font-medium">
           Mis notas{" "}
-          {notes.length > 0 && (
-            <span className="text-xs text-muted ml-1">({notes.length})</span>
-          )}
+          {notes.length > 0 && <span className="text-xs text-muted ml-1">({notes.length})</span>}
         </span>
         <span className="text-xs text-muted">{open ? "Ocultar" : "Mostrar"}</span>
       </button>
@@ -90,9 +88,7 @@ export function NotesPanel({ episodeId, initialNotes, defaultOpen = true }: Note
             className="w-full px-3 py-2 text-sm rounded border border-border bg-surface-alt resize-none focus:outline-none focus:border-accent-brand"
           />
           <div className="flex items-center justify-between gap-2">
-            <span
-              className={`text-xs ${tooLong ? "text-[var(--color-danger)]" : "text-muted"}`}
-            >
+            <span className={`text-xs ${tooLong ? "text-[var(--color-danger)]" : "text-muted"}`}>
               {trimmed.length}/{MAX_LEN}
             </span>
             <button
@@ -116,9 +112,7 @@ export function NotesPanel({ episodeId, initialNotes, defaultOpen = true }: Note
                   className="text-xs rounded bg-surface-alt border border-border-soft p-2"
                 >
                   <div className="text-muted-soft mb-1">{new Date(n.ts).toLocaleTimeString()}</div>
-                  <div className="whitespace-pre-wrap text-body">
-                    {n.contenido}
-                  </div>
+                  <div className="whitespace-pre-wrap text-body">{n.contenido}</div>
                 </div>
               ))}
             </div>

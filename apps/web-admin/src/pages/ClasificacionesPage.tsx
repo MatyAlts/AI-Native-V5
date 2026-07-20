@@ -403,7 +403,10 @@ function LegendDot({ color, label }: { color: string; label: string }): ReactNod
 
 // ── Componentes — nueva medición (modo sombra) ────────────────────────────
 
-const EJE_CONFIG: Record<Eje, { label: string; bg: string; border: string; text: string; dot: string }> = {
+const EJE_CONFIG: Record<
+  Eje,
+  { label: string; bg: string; border: string; text: string; dot: string }
+> = {
   reflexiva: {
     label: "Reflexiva",
     bg: "bg-success-soft",

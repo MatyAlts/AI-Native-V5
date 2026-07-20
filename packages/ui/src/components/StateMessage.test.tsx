@@ -24,9 +24,7 @@ describe("StateMessage", () => {
   })
 
   it("variant=error usa role=alert y aplica el token de color danger", () => {
-    render(
-      <StateMessage variant="error" title="No se pudo cargar" description="Reintenta luego" />,
-    )
+    render(<StateMessage variant="error" title="No se pudo cargar" description="Reintenta luego" />)
     const node = screen.getByRole("alert")
     expect(node).toHaveAttribute("data-variant", "error")
     expect(screen.getByText("No se pudo cargar")).toBeInTheDocument()

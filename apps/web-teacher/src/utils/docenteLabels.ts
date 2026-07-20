@@ -216,10 +216,7 @@ export function kappaToDocente(kappa: number): {
   }
 }
 
-export function studentShortLabel(
-  pseudonym: string,
-  profilesMap?: Map<string, string>,
-): string {
+export function studentShortLabel(pseudonym: string, profilesMap?: Map<string, string>): string {
   // Si el alumno ya se logueo con Clerk y auto-completo su perfil, mostramos
   // el nombre real (full_name). Caso contrario, fallback al pseudonym corto.
   const realName = profilesMap?.get(pseudonym)
@@ -325,7 +322,9 @@ export function explicarEstadoDocente(
     if ((c.ccd_orphan_ratio ?? 0) >= 0.5)
       acciones.push("Pedile que le cuente al tutor que espera lograr antes de ejecutar el codigo.")
     else if ((c.ccd_mean ?? 1) < 0.35)
-      acciones.push("Animalo a dialogar mas con el tutor mientras programa, para ordenar el razonamiento.")
+      acciones.push(
+        "Animalo a dialogar mas con el tutor mientras programa, para ordenar el razonamiento.",
+      )
   }
 
   // Poca profundización (estabilidad inter-iteración) → sostener una linea.

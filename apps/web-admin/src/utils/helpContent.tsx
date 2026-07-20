@@ -53,9 +53,9 @@ export const helpContent: HelpContentMap = {
     <div className="space-y-4 text-muted-soft">
       <p className="text-lg font-medium text-[var(--text-inverse)]">Pedagogía</p>
       <p>
-        Análisis pedagógico agregado sobre TODOS los episodios de un scope (una materia entera o
-        una comisión puntual). Se construye a partir de datos que ya existen — no requiere
-        codificación manual de docentes.
+        Análisis pedagógico agregado sobre TODOS los episodios de un scope (una materia entera o una
+        comisión puntual). Se construye a partir de datos que ya existen — no requiere codificación
+        manual de docentes.
       </p>
       <ul className="list-disc list-inside space-y-2 ml-4">
         <li>
@@ -66,9 +66,9 @@ export const helpContent: HelpContentMap = {
           longitudinal.
         </li>
         <li>
-          <strong>Trayectoria:</strong> para cada alumno con 3+ episodios, si su apropiación
-          mejora, se mantiene o empeora a lo largo del tiempo. Usa la misma operacionalización
-          longitudinal de la tesis (último tercio vs primero).
+          <strong>Trayectoria:</strong> para cada alumno con 3+ episodios, si su apropiación mejora,
+          se mantiene o empeora a lo largo del tiempo. Usa la misma operacionalización longitudinal
+          de la tesis (último tercio vs primero).
         </li>
         <li>
           <strong>Matriz alumno x perfil:</strong> cuántos episodios de cada perfil tuvo cada
@@ -330,8 +330,8 @@ export const helpContent: HelpContentMap = {
         </li>
         <li>
           <strong>Distribucion:</strong> Muestra cuantos episodios cayeron en cada categoria N4:
-          Delegacion Pasiva, Apropiacion Superficial, Apropiacion Reflexiva. Cuando hay episodios
-          de trabajo autonomo (sin tutor) aparece tambien el eje Autonomo (gris), ortogonal al
+          Delegacion Pasiva, Apropiacion Superficial, Apropiacion Reflexiva. Cuando hay episodios de
+          trabajo autonomo (sin tutor) aparece tambien el eje Autonomo (gris), ortogonal al
           continuo.
         </li>
         <li>
@@ -500,8 +500,8 @@ export const helpContent: HelpContentMap = {
       </p>
       <ul className="list-disc list-inside space-y-2 ml-4">
         <li>
-          <strong>Scope tenant:</strong> La key aplica a toda la universidad. Es el fallback
-          si no hay key de scope materia configurada.
+          <strong>Scope tenant:</strong> La key aplica a toda la universidad. Es el fallback si no
+          hay key de scope materia configurada.
         </li>
         <li>
           <strong>Scope materia:</strong> Sobrescribe el scope tenant para esa materia especifica.
@@ -513,8 +513,8 @@ export const helpContent: HelpContentMap = {
           automaticamente.
         </li>
         <li>
-          <strong>Revocar:</strong> Marca la key como inactiva. Irreversible. El resolver BYOK
-          cae al env_fallback si no hay otra key activa para ese scope.
+          <strong>Revocar:</strong> Marca la key como inactiva. Irreversible. El resolver BYOK cae
+          al env_fallback si no hay otra key activa para ese scope.
         </li>
         <li>
           <strong>Uso:</strong> Muestra tokens consumidos y costo estimado por periodo mensual.

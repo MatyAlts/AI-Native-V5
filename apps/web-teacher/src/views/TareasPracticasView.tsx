@@ -389,11 +389,7 @@ export function TareasPracticasView({ comisionId, getToken }: Props) {
 
         {/* Modal: composicion de ejercicios (ADR-047) */}
         {modal.kind === "composicion" && (
-          <ComposicionModal
-            tarea={modal.tarea}
-            getToken={getToken}
-            onClose={closeModal}
-          />
+          <ComposicionModal tarea={modal.tarea} getToken={getToken} onClose={closeModal} />
         )}
 
         {/* Modal: editar TP (draft solamente) */}
@@ -457,11 +453,7 @@ export function TareasPracticasView({ comisionId, getToken }: Props) {
             tarea={modal.tarea}
             onClose={closeModal}
             onSubmit={async (fechaFinIso) => {
-              await tareasPracticasApi.update(
-                modal.tarea.id,
-                { fecha_fin: fechaFinIso },
-                getToken,
-              )
+              await tareasPracticasApi.update(modal.tarea.id, { fecha_fin: fechaFinIso }, getToken)
               closeModal()
               await refreshList()
             }}
@@ -899,7 +891,9 @@ function TareaFormModal({
 
         <div className="grid grid-cols-2 gap-3">
           <div>
-            <label htmlFor="tp-codigo" className="block text-xs text-muted mb-1">Codigo</label>
+            <label htmlFor="tp-codigo" className="block text-xs text-muted mb-1">
+              Codigo
+            </label>
             <input
               id="tp-codigo"
               name="codigo"
@@ -912,7 +906,9 @@ function TareaFormModal({
             />
           </div>
           <div>
-            <label htmlFor="tp-peso" className="block text-xs text-muted mb-1">Peso (0-1)</label>
+            <label htmlFor="tp-peso" className="block text-xs text-muted mb-1">
+              Peso (0-1)
+            </label>
             <input
               id="tp-peso"
               name="peso"
@@ -927,7 +923,9 @@ function TareaFormModal({
         </div>
 
         <div>
-          <label htmlFor="tp-titulo" className="block text-xs text-muted mb-1">Titulo</label>
+          <label htmlFor="tp-titulo" className="block text-xs text-muted mb-1">
+            Titulo
+          </label>
           <input
             id="tp-titulo"
             name="titulo"
@@ -944,8 +942,8 @@ function TareaFormModal({
           <strong className="text-ink">Flujo recomendado:</strong>{" "}
           <span className="text-muted">
             componer la TP con ejercicios del banco. Después de guardar, abrí el modal
-            &quot;Composición&quot; desde la card para asociar ejercicios. Los ejercicios viven
-            en <code>/ejercicios</code> y son reusables entre TPs (ADR-047).
+            &quot;Composición&quot; desde la card para asociar ejercicios. Los ejercicios viven en{" "}
+            <code>/ejercicios</code> y son reusables entre TPs (ADR-047).
           </span>
         </div>
 
@@ -965,8 +963,8 @@ function TareaFormModal({
           />
           <p className="mt-1 text-xs text-muted leading-snug">
             Sólo si esta TP <em>no</em> va a usar ejercicios del banco. Si la componés con
-            ejercicios, el alumno verá el enunciado de cada ejercicio y este campo queda
-            ignorado en runtime (fallback histórico pre-ADR-047).
+            ejercicios, el alumno verá el enunciado de cada ejercicio y este campo queda ignorado en
+            runtime (fallback histórico pre-ADR-047).
           </p>
         </div>
 
@@ -991,7 +989,9 @@ function TareaFormModal({
 
         <div className="grid grid-cols-2 gap-3">
           <div>
-            <label htmlFor="tp-fecha-inicio" className="block text-xs text-muted mb-1">Fecha inicio</label>
+            <label htmlFor="tp-fecha-inicio" className="block text-xs text-muted mb-1">
+              Fecha inicio
+            </label>
             <input
               id="tp-fecha-inicio"
               name="fecha_inicio"
@@ -1003,7 +1003,9 @@ function TareaFormModal({
             />
           </div>
           <div>
-            <label htmlFor="tp-fecha-fin" className="block text-xs text-muted mb-1">Fecha fin</label>
+            <label htmlFor="tp-fecha-fin" className="block text-xs text-muted mb-1">
+              Fecha fin
+            </label>
             <input
               id="tp-fecha-fin"
               name="fecha_fin"
@@ -1017,7 +1019,9 @@ function TareaFormModal({
         </div>
 
         <div>
-          <label htmlFor="tp-rubrica" className="block text-xs text-muted mb-1">Rubrica (JSON, opcional)</label>
+          <label htmlFor="tp-rubrica" className="block text-xs text-muted mb-1">
+            Rubrica (JSON, opcional)
+          </label>
           <textarea
             id="tp-rubrica"
             name="rubrica"
@@ -1108,16 +1112,16 @@ function FechaFinModal({
     >
       <div className="space-y-4">
         <p className="text-sm text-muted leading-relaxed">
-          Solo se modifica la fecha de entrega. El enunciado, peso y rúbrica del TP publicado
-          siguen inmutables: para cambiarlos, creá una nueva versión.
+          Solo se modifica la fecha de entrega. El enunciado, peso y rúbrica del TP publicado siguen
+          inmutables: para cambiarlos, creá una nueva versión.
         </p>
 
         {willDrift && (
           <div className="rounded-lg border border-warning/30 bg-warning-soft p-3 text-sm">
             <p className="font-semibold text-warning">Este TP viene de una plantilla de catedra.</p>
             <p className="mt-1 text-warning/90">
-              Cambiar la fecha lo marca como drift y deja de recibir actualizaciones automaticas
-              del template.
+              Cambiar la fecha lo marca como drift y deja de recibir actualizaciones automaticas del
+              template.
             </p>
             <label className="mt-2 inline-flex items-center gap-2 text-xs text-warning">
               <input
@@ -1390,9 +1394,7 @@ function ComposicionModal({
           <>
             {pairs.length === 0 ? (
               <div className="rounded-lg border border-dashed border-border bg-surface p-6 text-center">
-                <p className="text-sm text-muted">
-                  Esta TP todavia no tiene ejercicios asociados.
-                </p>
+                <p className="text-sm text-muted">Esta TP todavia no tiene ejercicios asociados.</p>
               </div>
             ) : (
               <div className="border border-border rounded overflow-hidden">

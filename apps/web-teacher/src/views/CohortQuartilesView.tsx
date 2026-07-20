@@ -103,7 +103,8 @@ function MiniBoxplot({ data }: { data: CohortCIIQuartiles }) {
   const VISUAL_MIN = -1
   const VISUAL_MAX = 1
   const range = VISUAL_MAX - VISUAL_MIN
-  const pct = (v: number) => ((Math.max(VISUAL_MIN, Math.min(VISUAL_MAX, v)) - VISUAL_MIN) / range) * 100
+  const pct = (v: number) =>
+    ((Math.max(VISUAL_MIN, Math.min(VISUAL_MAX, v)) - VISUAL_MIN) / range) * 100
 
   return (
     <div className="w-full">
@@ -150,14 +151,8 @@ function MiniBoxplot({ data }: { data: CohortCIIQuartiles }) {
         />
 
         {/* Whiskers min/max */}
-        <div
-          className="absolute top-4 bottom-4 w-0.5 bg-muted"
-          style={{ left: `${pct(min)}%` }}
-        />
-        <div
-          className="absolute top-4 bottom-4 w-0.5 bg-muted"
-          style={{ left: `${pct(max)}%` }}
-        />
+        <div className="absolute top-4 bottom-4 w-0.5 bg-muted" style={{ left: `${pct(min)}%` }} />
+        <div className="absolute top-4 bottom-4 w-0.5 bg-muted" style={{ left: `${pct(max)}%` }} />
 
         {/* Línea base que conecta los whiskers */}
         <div
@@ -217,7 +212,9 @@ function QuartileBucketCard({
       {isDocente && (
         <div className="text-[11px] text-muted-soft mt-1 pt-2 border-t border-border">
           Valor de progreso:{" "}
-          <span className={`font-mono font-semibold ${slopeTone(value)}`}>{formatSlope(value)}</span>{" "}
+          <span className={`font-mono font-semibold ${slopeTone(value)}`}>
+            {formatSlope(value)}
+          </span>{" "}
           <span className="italic">({slopeBadge(value, isDocente)})</span>
         </div>
       )}
@@ -292,7 +289,9 @@ export function CohortQuartilesView({ getToken, initialComisionId }: Props) {
           </div>
         )}
 
-        {loading && <StateMessage variant="loading" title="Calculando cuartiles de la cohorte..." />}
+        {loading && (
+          <StateMessage variant="loading" title="Calculando cuartiles de la cohorte..." />
+        )}
 
         {error && (
           <StateMessage variant="error" title="Error consultando la cohorte" description={error} />
@@ -304,7 +303,9 @@ export function CohortQuartilesView({ getToken, initialComisionId }: Props) {
             {data.insufficient_data && (
               <div className="rounded-xl border border-warning/30 bg-warning-soft px-6 py-4 text-sm text-warning">
                 <div className="font-semibold mb-1">
-                  {isDocente ? "Datos insuficientes para mostrar la distribución" : "Insufficient data"}
+                  {isDocente
+                    ? "Datos insuficientes para mostrar la distribución"
+                    : "Insufficient data"}
                 </div>
                 <div>
                   {isDocente

@@ -1,12 +1,7 @@
 import { PageContainer } from "@platform/ui"
 import { useState } from "react"
 import { useViewMode } from "../hooks/useViewMode"
-import {
-  type RatingLabel,
-  type KappaRating,
-  type KappaResult,
-  computeKappa,
-} from "../lib/api"
+import { type KappaRating, type KappaResult, type RatingLabel, computeKappa } from "../lib/api"
 import {
   APPROPRIATION_DOCENTE,
   APPROPRIATION_INVESTIGADOR,
@@ -21,9 +16,14 @@ import { helpContent } from "../utils/helpContent"
 const PROTOCOLS = {
   ejes: ["delegacion_pasiva", "apropiacion_superficial", "apropiacion_reflexiva"],
   subgrupos: [
-    "autonomo_competente", "autonomo_trabado", "colaborador_reflexivo",
-    "colaborador_funcional", "escribe_sin_validar", "indeterminado",
-    "desenganchado", "dependiente",
+    "autonomo_competente",
+    "autonomo_trabado",
+    "colaborador_reflexivo",
+    "colaborador_funcional",
+    "escribe_sin_validar",
+    "indeterminado",
+    "desenganchado",
+    "dependiente",
   ],
   niveles: ["N1", "N2", "N3", "N4"],
 } as const satisfies Record<string, readonly RatingLabel[]>
@@ -202,21 +202,21 @@ export function KappaRatingView({ getToken, episodes, isTraining = true }: Props
             <div className="flex items-center gap-2 text-sm">
               <span className="text-muted">Protocolo de etiquetado:</span>
               {(Object.keys(PROTOCOLS) as ProtocolKey[]).map((p) => (
-                  <button
-                    key={p}
-                    type="button"
-                    onClick={() => {
-                      setProtocol(p)
-                      handleReset()
-                    }}
-                    className={`px-3 py-1 rounded border text-xs transition ${
-                      protocol === p
-                        ? "bg-accent-brand text-white border-accent-brand"
-                        : "border-border hover:bg-canvas"
-                    }`}
-                  >
-                    {PROTOCOL_LABELS[p]}
-                  </button>
+                <button
+                  key={p}
+                  type="button"
+                  onClick={() => {
+                    setProtocol(p)
+                    handleReset()
+                  }}
+                  className={`px-3 py-1 rounded border text-xs transition ${
+                    protocol === p
+                      ? "bg-accent-brand text-white border-accent-brand"
+                      : "border-border hover:bg-canvas"
+                  }`}
+                >
+                  {PROTOCOL_LABELS[p]}
+                </button>
               ))}
             </div>
 
