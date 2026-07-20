@@ -347,9 +347,8 @@ function CreateKeyModal({
             <select
               value={form.scope_type}
               onChange={(e) => {
-                const next = { ...form, scope_type: e.target.value as ByokKeyCreate["scope_type"] }
-                next.scope_id = undefined
-                setForm(next)
+                const { scope_id: _scope_id, ...rest } = form
+                setForm({ ...rest, scope_type: e.target.value as ByokKeyCreate["scope_type"] })
               }}
               className={inputClass}
             >
@@ -376,13 +375,12 @@ function CreateKeyModal({
               <select
                 value={form.scope_id ?? ""}
                 onChange={(e) => {
-                  const next = { ...form }
                   if (e.target.value) {
-                    next.scope_id = e.target.value
+                    setForm({ ...form, scope_id: e.target.value })
                   } else {
-                    next.scope_id = undefined
+                    const { scope_id: _scope_id, ...rest } = form
+                    setForm(rest)
                   }
-                  setForm(next)
                 }}
                 className={inputClass}
               >
@@ -425,13 +423,12 @@ function CreateKeyModal({
               min={0}
               value={form.monthly_budget_usd ?? ""}
               onChange={(e) => {
-                const next = { ...form }
                 if (e.target.value) {
-                  next.monthly_budget_usd = Number(e.target.value)
+                  setForm({ ...form, monthly_budget_usd: Number(e.target.value) })
                 } else {
-                  next.monthly_budget_usd = undefined
+                  const { monthly_budget_usd: _monthly_budget_usd, ...rest } = form
+                  setForm(rest)
                 }
-                setForm(next)
               }}
               placeholder="Sin limite"
               className={inputClass}

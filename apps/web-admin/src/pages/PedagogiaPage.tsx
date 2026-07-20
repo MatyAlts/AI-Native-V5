@@ -511,6 +511,7 @@ function LineChart({
       role="img"
       preserveAspectRatio="xMidYMid meet"
     >
+      <title>Evolución por número de episodio</title>
       {/* Gridlines + labels Y */}
       {yTicks.map((t) => (
         <g key={t.value}>
@@ -619,8 +620,12 @@ function KappaSection({ block }: { block: KappaBlock }): ReactNode {
               Entre docentes (techo de acuerdo)
             </p>
             <div className="grid gap-3 sm:grid-cols-2">
-              {block.pares_humano_humano.map((p, i) => (
-                <KappaStat key={i} pair={p} label={`${p.rater_a} vs ${p.rater_b}`} />
+              {block.pares_humano_humano.map((p) => (
+                <KappaStat
+                  key={`${p.rater_a}-${p.rater_b}`}
+                  pair={p}
+                  label={`${p.rater_a} vs ${p.rater_b}`}
+                />
               ))}
             </div>
           </div>
@@ -1019,6 +1024,7 @@ function Sparkline({ serie }: { serie: number[] }): ReactNode {
   const last = serie[serie.length - 1] ?? 0
   return (
     <svg width={W} height={H} viewBox={`0 0 ${W} ${H}`} className="overflow-visible">
+      <title>Tendencia reciente</title>
       {[0, 1, 2].map((g) => (
         <line
           key={g}
@@ -1041,6 +1047,7 @@ function Sparkline({ serie }: { serie: number[] }): ReactNode {
       )}
       {serie.map((v, i) => (
         <circle
+          // biome-ignore lint/suspicious/noArrayIndexKey: serie es una secuencia cronológica fija de valores ordinales (puede repetir valores), sin id propio y no reordenable.
           key={i}
           cx={xFor(i)}
           cy={yFor(v)}

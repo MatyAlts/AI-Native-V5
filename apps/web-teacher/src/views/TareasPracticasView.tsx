@@ -871,10 +871,11 @@ function TareaFormModal({
 
         {mode === "create" && templates.length > 0 && (
           <div>
-            <label className="block text-xs text-muted mb-1">
+            <label htmlFor="tp-template-select" className="block text-xs text-muted mb-1">
               Inspirar en una plantilla (opcional)
             </label>
             <select
+              id="tp-template-select"
               value={templateId ?? ""}
               onChange={(e) => handleSelectTemplate(e.target.value || null)}
               className="w-full border border-border rounded px-2 py-1 text-sm bg-white"
@@ -1330,7 +1331,8 @@ function ComposicionModal({
     const idx = sorted.findIndex((p) => p.id === pair.id)
     const swapIdx = direction === "up" ? idx - 1 : idx + 1
     if (swapIdx < 0 || swapIdx >= sorted.length) return
-    const other = sorted[swapIdx]!
+    const other = sorted[swapIdx]
+    if (!other) return
     setReordering(true)
     setError(null)
     try {

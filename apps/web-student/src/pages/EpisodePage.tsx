@@ -402,11 +402,11 @@ export function EpisodeView({ episodeId, onExit, ejercicioContext, getToken }: E
         // y de ahi salen tanto los tests como el codigo inicial. Para TPs
         // monoliticas ambos vienen en la propia TP (ya saneada por rol, A0.3).
         let resolvedTests: TestCasePublic[] = []
-        if (ejercicioContext) {
+        if (ejercicioOrden != null) {
           try {
             const tpEjs = await listEjerciciosTp(state.tarea_practica_id)
             if (cancelled) return
-            const match = tpEjs.find((te) => te.orden === ejercicioContext.ejercicioOrden)
+            const match = tpEjs.find((te) => te.orden === ejercicioOrden)
             resolvedTests = (match?.ejercicio?.test_cases ?? []).filter(
               (tc) => tc.is_public !== false,
             )
@@ -426,7 +426,7 @@ export function EpisodeView({ episodeId, onExit, ejercicioContext, getToken }: E
 
         if (state.last_code_snapshot) {
           setCode(state.last_code_snapshot)
-        } else if (!ejercicioContext) {
+        } else if (ejercicioOrden == null) {
           // TP monolitica: codigo inicial de la propia TP.
           const initialCode = resolveCodigoInicial(t)
           if (initialCode) setCode(initialCode)
@@ -1309,7 +1309,6 @@ export function EpisodeView({ episodeId, onExit, ejercicioContext, getToken }: E
 
             <button
               type="button"
-              autoFocus
               onClick={() => setTabExit(null)}
               className="mt-5 w-full rounded-md bg-accent-brand px-4 py-2.5 text-sm font-medium text-surface transition-colors hover:bg-accent-brand-deep focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent-brand"
             >

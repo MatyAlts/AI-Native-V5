@@ -319,13 +319,14 @@ export function ExerciseListView({
                   {canStart && (
                     <button
                       type="button"
-                      onClick={() =>
+                      onClick={() => {
+                        if (!entrega) return
                         onSelectEjercicio(
                           tarea,
                           { id: ejercicio.ejercicio_id, orden: ejercicio.orden },
-                          entrega!.id,
+                          entrega.id,
                         )
-                      }
+                      }}
                       data-testid={`ejercicio-start-${ejercicio.orden}`}
                       className="shrink-0 px-3 py-1.5 rounded text-xs font-medium text-white"
                       style={{ backgroundColor: "var(--color-accent-brand)" }}

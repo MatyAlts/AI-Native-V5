@@ -11,6 +11,7 @@ export function ViewModeToggle() {
     >
       <button
         type="button"
+        // biome-ignore lint/a11y/useSemanticElements: toggle pill custom-estilizado (no checkbox nativo); migrar a <input type="radio"> requiere rediseño visual fuera de alcance de este fix.
         role="radio"
         aria-checked={mode === "docente"}
         onClick={() => setMode("docente")}
@@ -24,6 +25,7 @@ export function ViewModeToggle() {
       </button>
       <button
         type="button"
+        // biome-ignore lint/a11y/useSemanticElements: toggle pill custom-estilizado (no checkbox nativo); migrar a <input type="radio"> requiere rediseño visual fuera de alcance de este fix.
         role="radio"
         aria-checked={mode === "investigador"}
         onClick={() => setMode("investigador")}

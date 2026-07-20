@@ -250,11 +250,7 @@ function lowVolumeNotice(data: CohortAdversarialEvents, isDocente: boolean): str
   // vale la pena informar al docente del volumen.
   if (!isDocente) return null
   const plural = data.n_events_total !== 1
-  return (
-    `Se detectaron ${data.n_events_total} intento${plural ? "s" : ""} en total. ` +
-    "Con tan pocos casos no se pueden sacar conclusiones de la comisión — " +
-    "miralos uno por uno abajo si querés conversar con esos estudiantes."
-  )
+  return `Se detectaron ${data.n_events_total} intento${plural ? "s" : ""} en total. Con tan pocos casos no se pueden sacar conclusiones de la comisión — miralos uno por uno abajo si querés conversar con esos estudiantes.`
 }
 
 type ActiveTab = "adversarial" | "integridad"
@@ -611,7 +607,7 @@ export function CohortAdversarialView({ getToken, initialComisionId }: Props) {
                                   </span>
                                   "
                                   {ev.matched_text.length > 200
-                                    ? ev.matched_text.slice(0, 200) + "…"
+                                    ? `${ev.matched_text.slice(0, 200)}…`
                                     : ev.matched_text}
                                   "
                                 </div>

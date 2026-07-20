@@ -8,83 +8,95 @@
 // You should NOT make any changes in this file as it will be overwritten.
 // Additionally, you should also exclude this file from your linter and/or formatter to prevent it from being checked or modified.
 
-import { Route as rootRouteImport } from "./routes/__root"
-import { Route as EpisodioIdRouteImport } from "./routes/episodio.$id"
-import { Route as IndexRouteImport } from "./routes/index"
-import { Route as InstrumentosRouteImport } from "./routes/instrumentos"
-import { Route as MateriaIdRouteImport } from "./routes/materia.$id"
-import { Route as ProgresoRouteImport } from "./routes/progreso"
-import { Route as ReflexionesRouteImport } from "./routes/reflexiones"
+import { Route as rootRouteImport } from './routes/__root'
+import { Route as ReflexionesRouteImport } from './routes/reflexiones'
+import { Route as ProgresoRouteImport } from './routes/progreso'
+import { Route as InstrumentosRouteImport } from './routes/instrumentos'
+import { Route as IndexRouteImport } from './routes/index'
+import { Route as MateriaIdRouteImport } from './routes/materia.$id'
+import { Route as EpisodioIdRouteImport } from './routes/episodio.$id'
 
 const ReflexionesRoute = ReflexionesRouteImport.update({
-  id: "/reflexiones",
-  path: "/reflexiones",
+  id: '/reflexiones',
+  path: '/reflexiones',
   getParentRoute: () => rootRouteImport,
 } as any)
 const ProgresoRoute = ProgresoRouteImport.update({
-  id: "/progreso",
-  path: "/progreso",
+  id: '/progreso',
+  path: '/progreso',
   getParentRoute: () => rootRouteImport,
 } as any)
 const InstrumentosRoute = InstrumentosRouteImport.update({
-  id: "/instrumentos",
-  path: "/instrumentos",
+  id: '/instrumentos',
+  path: '/instrumentos',
   getParentRoute: () => rootRouteImport,
 } as any)
 const IndexRoute = IndexRouteImport.update({
-  id: "/",
-  path: "/",
+  id: '/',
+  path: '/',
   getParentRoute: () => rootRouteImport,
 } as any)
 const MateriaIdRoute = MateriaIdRouteImport.update({
-  id: "/materia/$id",
-  path: "/materia/$id",
+  id: '/materia/$id',
+  path: '/materia/$id',
   getParentRoute: () => rootRouteImport,
 } as any)
 const EpisodioIdRoute = EpisodioIdRouteImport.update({
-  id: "/episodio/$id",
-  path: "/episodio/$id",
+  id: '/episodio/$id',
+  path: '/episodio/$id',
   getParentRoute: () => rootRouteImport,
 } as any)
 
 export interface FileRoutesByFullPath {
-  "/": typeof IndexRoute
-  "/instrumentos": typeof InstrumentosRoute
-  "/progreso": typeof ProgresoRoute
-  "/reflexiones": typeof ReflexionesRoute
-  "/episodio/$id": typeof EpisodioIdRoute
-  "/materia/$id": typeof MateriaIdRoute
+  '/': typeof IndexRoute
+  '/instrumentos': typeof InstrumentosRoute
+  '/progreso': typeof ProgresoRoute
+  '/reflexiones': typeof ReflexionesRoute
+  '/episodio/$id': typeof EpisodioIdRoute
+  '/materia/$id': typeof MateriaIdRoute
 }
 export interface FileRoutesByTo {
-  "/": typeof IndexRoute
-  "/instrumentos": typeof InstrumentosRoute
-  "/progreso": typeof ProgresoRoute
-  "/reflexiones": typeof ReflexionesRoute
-  "/episodio/$id": typeof EpisodioIdRoute
-  "/materia/$id": typeof MateriaIdRoute
+  '/': typeof IndexRoute
+  '/instrumentos': typeof InstrumentosRoute
+  '/progreso': typeof ProgresoRoute
+  '/reflexiones': typeof ReflexionesRoute
+  '/episodio/$id': typeof EpisodioIdRoute
+  '/materia/$id': typeof MateriaIdRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
-  "/": typeof IndexRoute
-  "/instrumentos": typeof InstrumentosRoute
-  "/progreso": typeof ProgresoRoute
-  "/reflexiones": typeof ReflexionesRoute
-  "/episodio/$id": typeof EpisodioIdRoute
-  "/materia/$id": typeof MateriaIdRoute
+  '/': typeof IndexRoute
+  '/instrumentos': typeof InstrumentosRoute
+  '/progreso': typeof ProgresoRoute
+  '/reflexiones': typeof ReflexionesRoute
+  '/episodio/$id': typeof EpisodioIdRoute
+  '/materia/$id': typeof MateriaIdRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
-  fullPaths: "/" | "/instrumentos" | "/progreso" | "/reflexiones" | "/episodio/$id" | "/materia/$id"
+  fullPaths:
+    | '/'
+    | '/instrumentos'
+    | '/progreso'
+    | '/reflexiones'
+    | '/episodio/$id'
+    | '/materia/$id'
   fileRoutesByTo: FileRoutesByTo
-  to: "/" | "/instrumentos" | "/progreso" | "/reflexiones" | "/episodio/$id" | "/materia/$id"
+  to:
+    | '/'
+    | '/instrumentos'
+    | '/progreso'
+    | '/reflexiones'
+    | '/episodio/$id'
+    | '/materia/$id'
   id:
-    | "__root__"
-    | "/"
-    | "/instrumentos"
-    | "/progreso"
-    | "/reflexiones"
-    | "/episodio/$id"
-    | "/materia/$id"
+    | '__root__'
+    | '/'
+    | '/instrumentos'
+    | '/progreso'
+    | '/reflexiones'
+    | '/episodio/$id'
+    | '/materia/$id'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
@@ -96,47 +108,47 @@ export interface RootRouteChildren {
   MateriaIdRoute: typeof MateriaIdRoute
 }
 
-declare module "@tanstack/react-router" {
+declare module '@tanstack/react-router' {
   interface FileRoutesByPath {
-    "/reflexiones": {
-      id: "/reflexiones"
-      path: "/reflexiones"
-      fullPath: "/reflexiones"
+    '/reflexiones': {
+      id: '/reflexiones'
+      path: '/reflexiones'
+      fullPath: '/reflexiones'
       preLoaderRoute: typeof ReflexionesRouteImport
       parentRoute: typeof rootRouteImport
     }
-    "/progreso": {
-      id: "/progreso"
-      path: "/progreso"
-      fullPath: "/progreso"
+    '/progreso': {
+      id: '/progreso'
+      path: '/progreso'
+      fullPath: '/progreso'
       preLoaderRoute: typeof ProgresoRouteImport
       parentRoute: typeof rootRouteImport
     }
-    "/instrumentos": {
-      id: "/instrumentos"
-      path: "/instrumentos"
-      fullPath: "/instrumentos"
+    '/instrumentos': {
+      id: '/instrumentos'
+      path: '/instrumentos'
+      fullPath: '/instrumentos'
       preLoaderRoute: typeof InstrumentosRouteImport
       parentRoute: typeof rootRouteImport
     }
-    "/": {
-      id: "/"
-      path: "/"
-      fullPath: "/"
+    '/': {
+      id: '/'
+      path: '/'
+      fullPath: '/'
       preLoaderRoute: typeof IndexRouteImport
       parentRoute: typeof rootRouteImport
     }
-    "/materia/$id": {
-      id: "/materia/$id"
-      path: "/materia/$id"
-      fullPath: "/materia/$id"
+    '/materia/$id': {
+      id: '/materia/$id'
+      path: '/materia/$id'
+      fullPath: '/materia/$id'
       preLoaderRoute: typeof MateriaIdRouteImport
       parentRoute: typeof rootRouteImport
     }
-    "/episodio/$id": {
-      id: "/episodio/$id"
-      path: "/episodio/$id"
-      fullPath: "/episodio/$id"
+    '/episodio/$id': {
+      id: '/episodio/$id'
+      path: '/episodio/$id'
+      fullPath: '/episodio/$id'
       preLoaderRoute: typeof EpisodioIdRouteImport
       parentRoute: typeof rootRouteImport
     }

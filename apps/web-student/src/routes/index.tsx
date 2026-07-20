@@ -214,17 +214,20 @@ function JoinMateriaControl({ label = "Unirse a otra materia" }: { label?: strin
 
       {open &&
         createPortal(
+          // biome-ignore lint/a11y/useSemanticElements: migrar a <dialog> nativo (showModal/::backdrop) es un cambio de comportamiento fuera de alcance de este fix; el overlay ya tiene role="dialog" + aria-modal + cierre por click/Escape.
           <div
             role="dialog"
             aria-modal="true"
             aria-label="Unirse a otra materia"
             className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4"
-            onClick={close}
+            onClick={(e) => {
+              if (e.target === e.currentTarget) close()
+            }}
+            onKeyDown={(e) => {
+              if (e.key === "Escape") close()
+            }}
           >
-            <div
-              className="w-full max-w-sm rounded-xl border border-border bg-surface p-6 shadow-lg"
-              onClick={(e) => e.stopPropagation()}
-            >
+            <div className="w-full max-w-sm rounded-xl border border-border bg-surface p-6 shadow-lg">
               <h2 className="text-lg font-semibold text-ink">Unirte a otra materia</h2>
               <p className="text-sm text-muted-soft mt-1 mb-4">
                 Ingresá el código que te dio tu docente para sumar otra materia.
@@ -232,7 +235,6 @@ function JoinMateriaControl({ label = "Unirse a otra materia" }: { label?: strin
               <input
                 type="text"
                 value={code}
-                autoFocus
                 onChange={(e) => setCode(e.target.value.toUpperCase())}
                 onKeyDown={(e) => {
                   if (e.key === "Enter" && code.length >= 3 && !submitting) submit()

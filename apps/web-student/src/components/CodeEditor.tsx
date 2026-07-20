@@ -300,7 +300,8 @@ export function CodeEditor({
       })
       // Ctrl+C → copy bloqueado
       editor.addCommand(ctrl | monaco.KeyCode.KeyC, () => {
-        const seleccion = editor.getModel()?.getValueInRange(editor.getSelection()!) ?? ""
+        const selection = editor.getSelection()
+        const seleccion = selection ? (editor.getModel()?.getValueInRange(selection) ?? "") : ""
         onCopyAttemptRef.current?.({
           seleccionChars: seleccion.length,
           metodo: "shortcut",
@@ -309,7 +310,8 @@ export function CodeEditor({
       })
       // Ctrl+X → cut bloqueado (es copy + delete, lo tratamos como copy)
       editor.addCommand(ctrl | monaco.KeyCode.KeyX, () => {
-        const seleccion = editor.getModel()?.getValueInRange(editor.getSelection()!) ?? ""
+        const selection = editor.getSelection()
+        const seleccion = selection ? (editor.getModel()?.getValueInRange(selection) ?? "") : ""
         onCopyAttemptRef.current?.({
           seleccionChars: seleccion.length,
           metodo: "shortcut",

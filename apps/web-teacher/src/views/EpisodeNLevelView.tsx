@@ -1,6 +1,6 @@
 import { Button, Input, Label, PageContainer } from "@platform/ui"
 import { Link } from "@tanstack/react-router"
-import { useEffect, useMemo, useState } from "react"
+import { useCallback, useEffect, useMemo, useState } from "react"
 import { Cell, Pie, PieChart, ResponsiveContainer, Tooltip } from "recharts"
 import { useViewMode } from "../hooks/useViewMode"
 import {
@@ -39,7 +39,7 @@ function resolveLevelColors(): Record<NLevel, string> {
   if (typeof window === "undefined") return fallback
   const root = window.getComputedStyle(document.documentElement)
   const out: Partial<Record<NLevel, string>> = {}
-  ;(Object.keys(LEVEL_TOKEN_VAR) as NLevel[]).forEach((lvl) => {
+  for (const lvl of Object.keys(LEVEL_TOKEN_VAR) as NLevel[]) {
     const raw = root.getPropertyValue(LEVEL_TOKEN_VAR[lvl]).trim()
     if (raw) {
       out[lvl] =
@@ -47,7 +47,7 @@ function resolveLevelColors(): Record<NLevel, string> {
     } else {
       out[lvl] = fallback[lvl]
     }
-  })
+  }
   return out as Record<NLevel, string>
 }
 
@@ -194,22 +194,25 @@ export function EpisodeNLevelView({ getToken, initialEpisodeId }: Props) {
   const [viewMode] = useViewMode()
   const isDocente = viewMode === "docente"
 
-  const loadEpisode = (episodeId: string) => {
-    setLoading(true)
-    setError(null)
-    setData(null)
-    setClassification(null)
-    Promise.all([
-      getEpisodeNLevelDistribution(episodeId, getToken),
-      getEpisodeClassification(episodeId, getToken).catch(() => null),
-    ])
-      .then(([dist, clf]) => {
-        setData(dist)
-        setClassification(clf)
-      })
-      .catch((e) => setError(String(e)))
-      .finally(() => setLoading(false))
-  }
+  const loadEpisode = useCallback(
+    (episodeId: string) => {
+      setLoading(true)
+      setError(null)
+      setData(null)
+      setClassification(null)
+      Promise.all([
+        getEpisodeNLevelDistribution(episodeId, getToken),
+        getEpisodeClassification(episodeId, getToken).catch(() => null),
+      ])
+        .then(([dist, clf]) => {
+          setData(dist)
+          setClassification(clf)
+        })
+        .catch((e) => setError(String(e)))
+        .finally(() => setLoading(false))
+    },
+    [getToken],
+  )
 
   const handleSearch = () => {
     if (!episodeIdInput.trim()) return
@@ -220,8 +223,7 @@ export function EpisodeNLevelView({ getToken, initialEpisodeId }: Props) {
     if (!initialEpisodeId) return
     setEpisodeIdInput(initialEpisodeId)
     loadEpisode(initialEpisodeId)
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [initialEpisodeId, getToken])
+  }, [initialEpisodeId, loadEpisode])
 
   const dom = data
     ? dominantLevel(data.distribution_seconds, isDocente ? NLEVEL_DOCENTE : NLEVEL_INVESTIGADOR)

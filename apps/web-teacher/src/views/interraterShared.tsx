@@ -113,6 +113,13 @@ function EventRow({ event }: { event: EnrichedEvent }) {
     <>
       <tr
         onClick={() => setOpen((v) => !v)}
+        onKeyDown={(e) => {
+          if (e.key === "Enter" || e.key === " ") {
+            e.preventDefault()
+            setOpen((v) => !v)
+          }
+        }}
+        tabIndex={0}
         className="cursor-pointer border-t border-border-soft hover:bg-surface-alt"
       >
         <td className="px-3 py-2 font-mono text-xs text-muted">{event.relTs}</td>

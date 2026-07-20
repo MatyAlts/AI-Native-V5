@@ -29,5 +29,16 @@
       "semicolons": "asNeeded",
       "trailingCommas": "all"
     }
+  },
+  "files": {
+    "ignore": [
+      "**/dist",
+      "**/node_modules",
+      "**/.turbo",
+      "**/.vite",
+      "**/coverage",
+      "**/vite.config.ts.timestamp-*.mjs",
+      "**/routeTree.gen.ts"
+    ]
   }
 }

@@ -24,6 +24,7 @@ export function TenantSelector() {
   )
   const [loading, setLoading] = useState(true)
 
+  // biome-ignore lint/correctness/useExhaustiveDependencies: fetch de universidades corre una sola vez al montar; agregar "selected" refetchearía en cada cambio manual de tenant (no es loop, pero cambia el comportamiento intencional de "una sola carga inicial").
   useEffect(() => {
     let cancelled = false
     fetch("/api/v1/universidades/mine?limit=100")
@@ -47,7 +48,6 @@ export function TenantSelector() {
     return () => {
       cancelled = true
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
   function handleChange(e: React.ChangeEvent<HTMLSelectElement>) {
@@ -65,10 +65,14 @@ export function TenantSelector() {
 
   return (
     <div className="flex items-center gap-2 px-3 py-1.5 rounded-md border border-border bg-surface">
-      <label className="text-[10px] font-semibold uppercase tracking-wider text-muted">
+      <label
+        htmlFor="tenant-selector"
+        className="text-[10px] font-semibold uppercase tracking-wider text-muted"
+      >
         Universidad activa
       </label>
       <select
+        id="tenant-selector"
         value={selected}
         onChange={handleChange}
         className="text-sm bg-surface text-ink border-none focus:outline-none focus:ring-0 cursor-pointer"

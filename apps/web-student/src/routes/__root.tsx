@@ -36,6 +36,7 @@ function useEnrollment(authUser: AuthUser | null, isDev: boolean) {
   const [state, setState] = useState<EnrollState>("loading")
   const [error, setError] = useState<string | null>(null)
 
+  // biome-ignore lint/correctness/useExhaustiveDependencies: `authUser` es un objeto literal recreado en cada render de ClerkRootLayout (no memoizado) — agregarlo crudo (o sus campos) refiraria este efecto en cada render y dispararia POST/GET repetidos (mismo patron de loop documentado en CLAUDE.md "Frontends React"). `authUser?.id` es el primitivo estable que representa "cambio real de usuario".
   useEffect(() => {
     if (!authUser) {
       clearClerkUserId()
@@ -112,6 +113,7 @@ function useEnrollment(authUser: AuthUser | null, isDev: boolean) {
     }
   }, [authUser?.id, isDev])
 
+  // biome-ignore lint/correctness/useExhaustiveDependencies: mismo motivo que el useEffect de arriba — `authUser` es un objeto no memoizado; `authUser?.id` alcanza para invalidar el callback cuando cambia el usuario real.
   const enroll = useCallback(
     async (code: string) => {
       if (!authUser) return

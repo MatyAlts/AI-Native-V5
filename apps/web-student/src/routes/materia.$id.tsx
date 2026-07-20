@@ -176,6 +176,10 @@ function MateriaPage() {
   ) {
     // NB-10: abortar si ya hay una apertura en curso (doble-click).
     if (openingRef.current) return
+    // Guard defensivo: esta función solo se invoca desde botones renderizados
+    // después del `if (!materia) return <MateriaNotFound />` de arriba, pero
+    // TS no propaga esa narrowing a esta closure.
+    if (!materia) return
     openingRef.current = true
     setView({
       kind: "opening",
@@ -198,7 +202,7 @@ function MateriaPage() {
       // (tutor_core.open_episode) tiene la red de seguridad real e idempotente;
       // este filtro evita el round-trip de apertura cuando ya es detectable acá.
       try {
-        const my = await listStudentEpisodes(materia!.comision_id)
+        const my = await listStudentEpisodes(materia.comision_id)
         const reanudables = my.episodes.filter(
           (e) => (e.estado === "paused" || e.estado === "open") && e.problema_id === tarea.id,
         )
@@ -233,14 +237,14 @@ function MateriaPage() {
       let cursoHash = "c".repeat(64)
       let classifierHash = "d".repeat(64)
       try {
-        const hashes = await fetchConfigHashes(materia!.comision_id)
+        const hashes = await fetchConfigHashes(materia.comision_id)
         cursoHash = hashes.curso_config_hash
         classifierHash = hashes.classifier_config_hash
       } catch (e) {
         console.warn("fetchConfigHashes fallo, usando fallback hardcoded:", e)
       }
       const res = await openEpisode({
-        comision_id: materia!.comision_id,
+        comision_id: materia.comision_id,
         problema_id: tarea.id,
         curso_config_hash: cursoHash,
         classifier_config_hash: classifierHash,

@@ -38,7 +38,7 @@ export function InstrumentosCohorteView({ comisionId, getToken }: Props) {
 
   const studentLink = useMemo(
     () => `${STUDENT_BASE}/instrumentos?comisionId=${comisionId}`,
-    [comisionId],
+    [comisionId, STUDENT_BASE],
   )
 
   useEffect(() => {

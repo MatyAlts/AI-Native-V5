@@ -262,11 +262,9 @@ export function StudentLongitudinalView({ getToken, initialComisionId, initialSt
 
         {data && (
           <div className="space-y-4">
-            {isDocente ? (
-              <DocenteSummary data={data} docenteSlope={docenteSlope!} />
-            ) : (
-              <InvestigadorSummary data={data} meanLabel={meanLabel!} />
-            )}
+            {isDocente
+              ? docenteSlope && <DocenteSummary data={data} docenteSlope={docenteSlope} />
+              : meanLabel && <InvestigadorSummary data={data} meanLabel={meanLabel} />}
 
             {alertsData && alertsData.alerts.length > 0 && (
               <div className="rounded-xl border border-warning/30 bg-warning-soft p-4 space-y-2">

@@ -1,5 +1,5 @@
 import { Button, Input, Label, PageContainer } from "@platform/ui"
-import { useEffect, useMemo, useState } from "react"
+import { useCallback, useEffect, useMemo, useState } from "react"
 import { type CTREvent, type EpisodeWithEvents, getEpisodeEvents } from "../lib/api"
 import {
   ALL_CATEGORIES,
@@ -83,27 +83,29 @@ export function EpisodeTimelineView({ getToken, initialEpisodeId }: Props) {
   const [diffASeq, setDiffASeq] = useState<number | null>(null)
   const [diffBSeq, setDiffBSeq] = useState<number | null>(null)
 
-  async function load(id: string) {
-    if (!id) return
-    setLoading(true)
-    setError(null)
-    setData(null)
-    setSelected(null)
-    try {
-      const res = await getEpisodeEvents(id, getToken)
-      setData(res)
-    } catch (e) {
-      setError(`No se pudo cargar el episodio: ${e instanceof Error ? e.message : String(e)}`)
-    } finally {
-      setLoading(false)
-    }
-  }
+  const load = useCallback(
+    async (id: string) => {
+      if (!id) return
+      setLoading(true)
+      setError(null)
+      setData(null)
+      setSelected(null)
+      try {
+        const res = await getEpisodeEvents(id, getToken)
+        setData(res)
+      } catch (e) {
+        setError(`No se pudo cargar el episodio: ${e instanceof Error ? e.message : String(e)}`)
+      } finally {
+        setLoading(false)
+      }
+    },
+    [getToken],
+  )
 
   // Auto-load si vino con initialEpisodeId
   useEffect(() => {
     if (initialEpisodeId) void load(initialEpisodeId)
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [initialEpisodeId])
+  }, [initialEpisodeId, load])
 
   const enriched: EnrichedEvent[] = useMemo(() => {
     if (!data) return []
@@ -420,6 +422,13 @@ export function EpisodeTimelineView({ getToken, initialEpisodeId }: Props) {
                         <tr
                           key={e.seq}
                           onClick={() => setSelected(e)}
+                          onKeyDown={(ev) => {
+                            if (ev.key === "Enter" || ev.key === " ") {
+                              ev.preventDefault()
+                              setSelected(e)
+                            }
+                          }}
+                          tabIndex={0}
                           className={`cursor-pointer border-t border-border-soft hover:bg-surface-alt ${
                             isSelected ? "bg-accent-brand/10" : ""
                           }`}

@@ -36,7 +36,7 @@ import {
   X,
   XCircle,
 } from "lucide-react"
-import { useCallback, useEffect, useMemo, useState } from "react"
+import { useCallback, useEffect, useId, useMemo, useState } from "react"
 import {
   type CriterioRubrica,
   type Dificultad,
@@ -736,23 +736,32 @@ function EjercicioFormModal({ initial, title, unidades, onClose, onSubmit }: For
         )}
 
         <FormSection title="Datos basicos">
-          <label className="block text-xs text-muted mb-1">Titulo</label>
+          <label htmlFor="ejercicio-titulo" className="block text-xs text-muted mb-1">
+            Titulo
+          </label>
           <input
+            id="ejercicio-titulo"
             type="text"
             value={draft.titulo}
             onChange={(e) => set("titulo", e.target.value)}
             className="w-full border border-border rounded px-2 py-1 text-sm mb-2"
             maxLength={200}
           />
-          <label className="block text-xs text-muted mb-1">Enunciado (markdown)</label>
+          <label htmlFor="ejercicio-enunciado" className="block text-xs text-muted mb-1">
+            Enunciado (markdown)
+          </label>
           <textarea
+            id="ejercicio-enunciado"
             value={draft.enunciado_md}
             onChange={(e) => set("enunciado_md", e.target.value)}
             className="w-full border border-border rounded px-2 py-1 text-sm font-mono mb-2"
             rows={6}
           />
-          <label className="block text-xs text-muted mb-1">Codigo inicial (opcional)</label>
+          <label htmlFor="ejercicio-codigo-inicial" className="block text-xs text-muted mb-1">
+            Codigo inicial (opcional)
+          </label>
           <textarea
+            id="ejercicio-codigo-inicial"
             value={draft.inicial_codigo ?? ""}
             onChange={(e) => set("inicial_codigo", e.target.value || null)}
             className="w-full border border-border rounded px-2 py-1 text-sm font-mono mb-2"
@@ -761,8 +770,11 @@ function EjercicioFormModal({ initial, title, unidades, onClose, onSubmit }: For
           />
           <div className="grid grid-cols-2 gap-2">
             <div>
-              <label className="block text-xs text-muted mb-1">Unidad tematica</label>
+              <label htmlFor="ejercicio-unidad-tematica" className="block text-xs text-muted mb-1">
+                Unidad tematica
+              </label>
               <select
+                id="ejercicio-unidad-tematica"
                 value={draft.unidad_tematica}
                 onChange={(e) => set("unidad_tematica", e.target.value as UnidadTematica)}
                 className="w-full border border-border rounded px-2 py-1 text-sm bg-white"
@@ -775,8 +787,11 @@ function EjercicioFormModal({ initial, title, unidades, onClose, onSubmit }: For
               </select>
             </div>
             <div>
-              <label className="block text-xs text-muted mb-1">Dificultad</label>
+              <label htmlFor="ejercicio-dificultad" className="block text-xs text-muted mb-1">
+                Dificultad
+              </label>
               <select
+                id="ejercicio-dificultad"
                 value={draft.dificultad ?? ""}
                 onChange={(e) => set("dificultad", (e.target.value || null) as Dificultad | null)}
                 className="w-full border border-border rounded px-2 py-1 text-sm bg-white"
@@ -892,6 +907,7 @@ interface JsonFieldProps {
 }
 
 function JsonField({ label, value, onChange, allowNull = false }: JsonFieldProps) {
+  const fieldId = useId()
   const [text, setText] = useState<string>(() => JSON.stringify(value, null, 2))
   const [err, setErr] = useState<string | null>(null)
 
@@ -917,8 +933,11 @@ function JsonField({ label, value, onChange, allowNull = false }: JsonFieldProps
 
   return (
     <div>
-      <label className="block text-xs text-muted mb-1">{label}</label>
+      <label htmlFor={fieldId} className="block text-xs text-muted mb-1">
+        {label}
+      </label>
       <textarea
+        id={fieldId}
         value={text}
         onChange={(e) => commit(e.target.value)}
         className={`w-full border rounded px-2 py-1 text-xs font-mono ${
@@ -1513,8 +1532,11 @@ function EjercicioAIWizard({ getToken, onClose, onGenerated, comisionMateriaId }
           <div className="text-red-600 bg-red-50 border border-red-200 rounded p-2">{error}</div>
         )}
         <div>
-          <label className="block text-xs text-muted mb-1">Materia (para BYOK + RAG)</label>
+          <label htmlFor="wizard-materia" className="block text-xs text-muted mb-1">
+            Materia (para BYOK + RAG)
+          </label>
           <select
+            id="wizard-materia"
             value={materiaId}
             onChange={(e) => setMateriaId(e.target.value)}
             className="w-full border border-border rounded px-2 py-1 text-sm bg-white"
@@ -1534,10 +1556,11 @@ function EjercicioAIWizard({ getToken, onClose, onGenerated, comisionMateriaId }
           )}
         </div>
         <div>
-          <label className="block text-xs text-muted mb-1">
+          <label htmlFor="wizard-descripcion" className="block text-xs text-muted mb-1">
             Descripcion del ejercicio (en lenguaje natural)
           </label>
           <textarea
+            id="wizard-descripcion"
             value={descripcionNl}
             onChange={(e) => setDescripcionNl(e.target.value)}
             rows={4}
@@ -1547,8 +1570,11 @@ function EjercicioAIWizard({ getToken, onClose, onGenerated, comisionMateriaId }
         </div>
         <div className="grid grid-cols-2 gap-2">
           <div>
-            <label className="block text-xs text-muted mb-1">Unidad tematica</label>
+            <label htmlFor="wizard-unidad" className="block text-xs text-muted mb-1">
+              Unidad tematica
+            </label>
             <select
+              id="wizard-unidad"
               value={unidad}
               onChange={(e) => setUnidad(e.target.value as UnidadTematica)}
               className="w-full border border-border rounded px-2 py-1 text-sm bg-white"
@@ -1561,8 +1587,11 @@ function EjercicioAIWizard({ getToken, onClose, onGenerated, comisionMateriaId }
             </select>
           </div>
           <div>
-            <label className="block text-xs text-muted mb-1">Dificultad (opcional)</label>
+            <label htmlFor="wizard-dificultad" className="block text-xs text-muted mb-1">
+              Dificultad (opcional)
+            </label>
             <select
+              id="wizard-dificultad"
               value={dificultad}
               onChange={(e) => setDificultad(e.target.value as Dificultad | "")}
               className="w-full border border-border rounded px-2 py-1 text-sm bg-white"
@@ -1575,8 +1604,11 @@ function EjercicioAIWizard({ getToken, onClose, onGenerated, comisionMateriaId }
           </div>
         </div>
         <div>
-          <label className="block text-xs text-muted mb-1">Contexto adicional (opcional)</label>
+          <label htmlFor="wizard-contexto" className="block text-xs text-muted mb-1">
+            Contexto adicional (opcional)
+          </label>
           <textarea
+            id="wizard-contexto"
             value={contexto}
             onChange={(e) => setContexto(e.target.value)}
             rows={2}
@@ -1740,8 +1772,11 @@ function ImportJsonModal({ materiaId, getToken, onClose, onImported }: ImportMod
         </details>
 
         <div>
-          <label className="block text-xs text-muted mb-1">Pega el JSON del ejercicio</label>
+          <label htmlFor="import-json-textarea" className="block text-xs text-muted mb-1">
+            Pega el JSON del ejercicio
+          </label>
           <textarea
+            id="import-json-textarea"
             value={jsonText}
             onChange={(e) => setJsonText(e.target.value)}
             rows={10}
@@ -1753,8 +1788,11 @@ function ImportJsonModal({ materiaId, getToken, onClose, onImported }: ImportMod
         </div>
 
         <div className="flex items-center gap-2">
-          <label className="text-xs text-muted">o subi un archivo:</label>
+          <label htmlFor="import-json-file" className="text-xs text-muted">
+            o subi un archivo:
+          </label>
           <input
+            id="import-json-file"
             type="file"
             accept=".json,application/json"
             onChange={(e) => {

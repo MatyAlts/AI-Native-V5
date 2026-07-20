@@ -634,7 +634,7 @@ function ZoneVencidas({
                   </button>
                 )}
               </div>
-              {lastResult && lastResult.appropriation && (
+              {lastResult?.appropriation && (
                 <p className="mt-1 text-muted flex items-center gap-1.5">
                   <span
                     aria-hidden="true"

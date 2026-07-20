@@ -1253,7 +1253,7 @@ function GradingFormView({
         console.error("[CorreccionesView] no se pudieron resolver los episodios:", e)
       })
   }, [
-    entrega.id,
+    entrega.ejercicio_estados,
     entrega.student_pseudonym,
     entrega.comision_id,
     entrega.tarea_practica_id,
