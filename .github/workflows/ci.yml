@@ -199,12 +199,37 @@ jobs:
     timeout-minutes: 30
     # NO BLOQUEANTE por ahora, a proposito. Al corregir el path (ver abajo) este
     # job pasa a ejecutar de verdad los 26 archivos de apps/*/tests/integration/,
-    # de los cuales 7 fallan por deuda VIEJA de fixtures (MagicMock sin AsyncMock
-    # en test_soft_delete.py y test_tareas_practicas_templates_crud.py —
-    # verificado 2026-07-20 que son byte-identicos desde antes de esta sesion).
-    # Se deja visible y no bloqueante hasta arreglar esas fixtures; sacar este
-    # flag apenas esten en verde. Preferimos un rojo honesto a un verde falso.
+    # de los cuales 4 fallan por deuda VIEJA de fixtures (`AttributeError:
+    # 'TareaPracticaTemplateService' object has no attribute 'tp_repo'` en
+    # test_tareas_practicas_templates_crud.py — divergencia ADR-016/ADR-042 que
+    # requiere decision humana, verificado 2026-07-20). Se deja visible y no
+    # bloqueante hasta resolver esa divergencia; sacar este flag apenas esten
+    # en verde. Preferimos un rojo honesto a un verde falso.
     continue-on-error: true
+    # Postgres real (no solo testcontainers): la mayoria de los 26 archivos
+    # levantan su propio Postgres via testcontainers, pero algunos tests de
+    # academic-service (ej. test_materias_mias.py) instancian la app real
+    # (`from academic_service.main import app`) sin overridear el enforcer de
+    # Casbin — `get_enforcer()` (apps/academic-service/src/academic_service/
+    # auth/casbin_setup.py:52) abre su PROPIA conexion sync (psycopg2) contra
+    # `settings.academic_db_url`, fuera del `get_db` que si se overridea en los
+    # tests. Sin un Postgres real en localhost:5432 eso revienta con
+    # `psycopg2.OperationalError: connection to server at "127.0.0.1", port
+    # 5432 failed: Connection refused` (verificado 2026-07-20 en el log de CI:
+    # 6 tests de test_materias_mias.py, ninguno relacionado a la divergencia
+    # ADR-016/042 de arriba).
+    services:
+      postgres:
+        image: pgvector/pgvector:pg16
+        env:
+          POSTGRES_PASSWORD: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
     steps:
       - uses: actions/checkout@v4
 
@@ -223,10 +248,41 @@ jobs:
       - name: Install deps
         run: uv sync --all-packages
 
+      - name: Init DBs
+        # Mismo patron que el job `migrations-dry-run`: crea las 4 bases
+        # logicas + sus usuarios owner (academic_user/ctr_user/classifier_user/
+        # content_user) + la funcion `apply_tenant_rls`. academic_user es
+        # ademas el usuario que usa `settings.academic_db_url` por default
+        # (sin override), que es justo la URL que `get_enforcer()` necesita
+        # resolver contra un Postgres real.
+        run: PGPASSWORD=postgres psql -h localhost -U postgres -f infrastructure/postgres/init-dbs.sql
+
+      - name: Alembic upgrade academic
+        # Crea, entre otras, la tabla `casbin_rule` que el adapter de
+        # `get_enforcer()` necesita para no explotar con Connection refused /
+        # UndefinedTable. Mismo comando que el job `migrations-dry-run`.
+        working-directory: apps/academic-service
+        env:
+          ACADEMIC_DB_URL: postgresql+asyncpg://academic_user:academic_pass@localhost:5432/academic_main
+        run: uv run alembic upgrade head
+
+      - name: Seed Casbin policies
+        # Sin esto la tabla `casbin_rule` migra vacia: el enforcer deniega TODO
+        # por default (deny-by-default) y los tests que esperan 200 en
+        # test_materias_mias.py fallarian con 403 en vez de Connection refused
+        # — un verde falso a medias. Mismo seed que usa `e2e-smoke.yml`.
+        env:
+          ACADEMIC_DB_URL: postgresql+asyncpg://academic_user:academic_pass@localhost:5432/academic_main
+        run: uv run python -m academic_service.seeds.casbin_policies
+
       - name: Pytest (integration)
         # PATH EXPLICITO, no `-m "integration"`: solo 4 de los 26 archivos de
         # integracion llevan ese marker, asi que el filtro seleccionaba CERO
         # tests y pytest salia con exit 0 — verde sin ejecutar nada.
+        # Sin override de ACADEMIC_DB_URL a proposito: el default de
+        # `settings.academic_db_url` (academic_user:academic_pass@127.0.0.1:
+        # 5432/academic_main) es exactamente lo que este job acaba de
+        # levantar arriba — mismo camino que toma `get_enforcer()` en runtime.
         run: uv run pytest apps/*/tests/integration -v
 
   test-rls:
@@ -267,6 +323,34 @@ jobs:
           psql -h localhost -U postgres -c "CREATE DATABASE ctr_store;"
           psql -h localhost -U postgres -c "CREATE ROLE app_runtime LOGIN PASSWORD 'app_runtime' NOSUPERUSER NOBYPASSRLS;"
           psql -h localhost -U postgres -d ctr_store -c "GRANT ALL ON SCHEMA public TO app_runtime;"
+
+      - name: Crear función apply_tenant_rls en ctr_store
+        # FALTABA: la migración inicial del ctr-service llama
+        # `SELECT apply_tenant_rls('<tabla>')` (ver
+        # apps/ctr-service/alembic/versions/20260720_0001_ctr_initial_schema.py:122),
+        # pero esa función no viene con Postgres — la crea
+        # infrastructure/postgres/init-dbs.sql al bootstrapear el contenedor
+        # dev (docker-entrypoint-initdb.d), que este job NO corre (crea
+        # ctr_store a mano arriba). Sin este step, `alembic upgrade head`
+        # explota con `UndefinedFunctionError: function apply_tenant_rls(unknown)
+        # does not exist`. Misma definición exacta que el bloque `\c ctr_store`
+        # de init-dbs.sql — mantenerlas sincronizadas si esa cambia.
+        env:
+          PGPASSWORD: postgres
+        run: |
+          psql -h localhost -U postgres -d ctr_store <<'SQL'
+          CREATE OR REPLACE FUNCTION apply_tenant_rls(table_name text)
+          RETURNS void AS $$
+          BEGIN
+              EXECUTE format('ALTER TABLE %I ENABLE ROW LEVEL SECURITY', table_name);
+              EXECUTE format('ALTER TABLE %I FORCE ROW LEVEL SECURITY', table_name);
+              EXECUTE format(
+                  'CREATE POLICY tenant_isolation ON %I USING (tenant_id = current_setting(''app.current_tenant'', true)::uuid)',
+                  table_name
+              );
+          END;
+          $$ LANGUAGE plpgsql;
+          SQL
 
       - name: Migrar ctr_store
         env:

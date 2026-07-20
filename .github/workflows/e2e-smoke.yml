@@ -84,7 +84,13 @@ jobs:
           CTR_DB_URL: postgresql+asyncpg://postgres:postgres@127.0.0.1:5432/ctr_store
           CLASSIFIER_DB_URL: postgresql+asyncpg://postgres:postgres@127.0.0.1:5432/classifier_db
           CONTENT_DB_URL: postgresql+asyncpg://postgres:postgres@127.0.0.1:5432/content_db
-        run: bash scripts/migrate-all.sh
+        # `uv run` es imprescindible: sin el, `scripts/migrate-all.sh` corre en
+        # un shell que NO tiene el venv de uv en el PATH, y el script invoca
+        # `alembic` a secas (no `uv run alembic`) — revienta con
+        # "alembic: command not found" (exit 127), verificado 2026-07-20 en
+        # el log de CI. Los demas steps de este workflow ya usan `uv run`
+        # para lo mismo (ver "Seed Casbin policies" / "Seed 3 comisiones").
+        run: uv run bash scripts/migrate-all.sh
 
       - name: Seed Casbin policies
         env:
@@ -112,6 +118,17 @@ jobs:
           # NOTA: BYOK_MASTER_KEY queda sin setear a proposito — el smoke
           # test_create_revoke_flow se skippea, los demas BYOK tests siguen
           # cubriendo el SET LOCAL bug (que es lo critico).
+          # FALTABA: sin esto el api-gateway arranca con `dev_trust_headers=False`
+          # (default seguro en apps/api-gateway/src/api_gateway/config.py:109) y
+          # rechaza con 401 {"detail":"Autenticación requerida"} los requests de
+          # la suite smoke, que autentican mandando X-User-Id/X-Tenant-Id por
+          # header en vez de un Bearer JWT (ver tests/e2e/smoke/conftest.py:6-13,
+          # que documenta explicitamente que la suite asume
+          # `dev_trust_headers=True`). Nombre de env var confirmado contra
+          # pydantic-settings: sin `env_prefix` en `Settings.model_config`, el
+          # field `dev_trust_headers` lee la env var `DEV_TRUST_HEADERS`
+          # (case-insensitive).
+          DEV_TRUST_HEADERS: "true"
         run: |
           mkdir -p /tmp/piloto-logs
           bash scripts/dev-start-all.sh
