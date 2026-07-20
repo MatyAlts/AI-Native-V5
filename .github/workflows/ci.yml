@@ -168,7 +168,17 @@ jobs:
         # classifier=85%. Gate is set at the global floor of 60% so CI is
         # actually enforced today; ratchet plan documented in BUGS-PILOTO.md
         # (GAP-9). If CI fails here, ADD TESTS — do NOT lower this number.
-        run: uv run pytest -m "not integration" --cov --cov-report=xml --cov-fail-under=60
+        # PATHS EXPLICITOS, no `-m "not integration"` a secas: pyproject.toml
+        # tiene `testpaths = ["tests"]`, que apunta SOLO a tests/e2e/smoke/.
+        # Sin los paths, este job colectaba 66 smoke tests y CERO de los 1364
+        # unitarios reales (verificado con --collect-only 2026-07-20).
+        # Mismos globs que `make test-fast`, que si funciona.
+        run: >-
+          uv run pytest
+          apps/*/tests/unit/
+          apps/academic-service/tests/integration/test_casbin_matrix.py
+          packages/*/tests/
+          -m "not integration" --cov --cov-report=xml --cov-fail-under=60
 
       - name: Upload coverage
         uses: codecov/codecov-action@v4
@@ -181,6 +191,14 @@ jobs:
     name: Integration tests (testcontainers)
     runs-on: ubuntu-latest
     timeout-minutes: 30
+    # NO BLOQUEANTE por ahora, a proposito. Al corregir el path (ver abajo) este
+    # job pasa a ejecutar de verdad los 26 archivos de apps/*/tests/integration/,
+    # de los cuales 7 fallan por deuda VIEJA de fixtures (MagicMock sin AsyncMock
+    # en test_soft_delete.py y test_tareas_practicas_templates_crud.py —
+    # verificado 2026-07-20 que son byte-identicos desde antes de esta sesion).
+    # Se deja visible y no bloqueante hasta arreglar esas fixtures; sacar este
+    # flag apenas esten en verde. Preferimos un rojo honesto a un verde falso.
+    continue-on-error: true
     steps:
       - uses: actions/checkout@v4
 
@@ -197,12 +215,27 @@ jobs:
         run: uv sync --all-packages
 
       - name: Pytest (integration)
-        run: uv run pytest -m "integration"
+        # PATH EXPLICITO, no `-m "integration"`: solo 4 de los 26 archivos de
+        # integracion llevan ese marker, asi que el filtro seleccionaba CERO
+        # tests y pytest salia con exit 0 — verde sin ejecutar nada.
+        run: uv run pytest apps/*/tests/integration -v
 
   test-rls:
     name: RLS isolation tests
     runs-on: ubuntu-latest
     timeout-minutes: 15
+    services:
+      postgres:
+        image: pgvector/pgvector:pg16
+        env:
+          POSTGRES_PASSWORD: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
     steps:
       - uses: actions/checkout@v4
 
@@ -215,8 +248,38 @@ jobs:
       - name: Install deps
         run: uv sync --all-packages
 
+      - name: Crear ctr_store y el usuario non-superuser
+        # CRITICO: los tests DEBEN correr con un usuario NOBYPASSRLS. Con
+        # `postgres` (superuser) las policies se bypassean y los 4 tests pasan
+        # sin verificar NADA — el propio Makefile:109 lo advierte.
+        env:
+          PGPASSWORD: postgres
+        run: |
+          psql -h localhost -U postgres -c "CREATE DATABASE ctr_store;"
+          psql -h localhost -U postgres -c "CREATE ROLE app_runtime LOGIN PASSWORD 'app_runtime' NOSUPERUSER NOBYPASSRLS;"
+          psql -h localhost -U postgres -d ctr_store -c "GRANT ALL ON SCHEMA public TO app_runtime;"
+
+      - name: Migrar ctr_store
+        env:
+          CTR_DB_URL: postgresql+asyncpg://postgres:postgres@localhost:5432/ctr_store
+          CTR_STORE_URL: postgresql+asyncpg://postgres:postgres@localhost:5432/ctr_store
+        run: cd apps/ctr-service && uv run alembic upgrade head
+
+      - name: Grants sobre las tablas migradas
+        env:
+          PGPASSWORD: postgres
+        run: |
+          psql -h localhost -U postgres -d ctr_store -c "GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA public TO app_runtime;"
+          psql -h localhost -U postgres -d ctr_store -c "GRANT USAGE ON ALL SEQUENCES IN SCHEMA public TO app_runtime;"
+
       - name: Run RLS tests
-        run: uv run pytest -m "integration" -k "rls or tenant"
+        # PATH EXPLICITO: `-m "integration" -k "rls or tenant"` seleccionaba CERO
+        # tests (esos archivos no llevan el marker) y salia con exit 0 — verde
+        # sin ejecutar nada. Sin la env var, ademas, los 4 tests se SKIPEAN en
+        # silencio. Este job no verificaba absolutamente nada.
+        env:
+          CTR_STORE_URL_FOR_RLS_TESTS: postgresql+asyncpg://app_runtime:app_runtime@localhost:5432/ctr_store
+        run: uv run pytest packages/platform-ops/tests/test_rls_postgres.py -v
 
   migrations-dry-run:
     name: Migrations dry-run

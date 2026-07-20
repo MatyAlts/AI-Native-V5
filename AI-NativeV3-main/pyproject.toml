@@ -183,8 +183,17 @@ markers = [
 
 [tool.coverage.run]
 branch = true
-source = ["src"]
-omit = ["tests/*", "**/migrations/*"]
+# `source = ["src"]` NO funcionaba: no existe ./src en la raiz del monorepo (los
+# fuentes viven en apps/*/src y packages/*/src). coverage no recolectaba NADA y
+# reportaba 0.00%, por lo que el gate `--cov-fail-under=60` del job test-unit de
+# CI fallaba SIEMPRE. Invisible hasta 2026-07-20 porque el CI nunca corrio.
+source = ["apps", "packages"]
+omit = [
+    "*/tests/*",
+    "**/migrations/*",
+    "*/alembic/*",
+    "*/conftest.py",
+]
 
 [tool.coverage.report]
 exclude_lines = [

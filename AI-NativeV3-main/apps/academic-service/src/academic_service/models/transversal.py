@@ -6,7 +6,7 @@ import uuid
 from datetime import datetime
 from typing import Any
 
-from sqlalchemy import DateTime, String
+from sqlalchemy import BigInteger, DateTime, String
 from sqlalchemy.dialects.postgresql import INET, JSONB
 from sqlalchemy.dialects.postgresql import UUID as PgUUID
 from sqlalchemy.orm import Mapped, mapped_column
@@ -28,7 +28,12 @@ class AuditLog(Base, TenantMixin):
 
     __tablename__ = "audit_log"
 
-    id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
+    # BigInteger EXPLICITO: la columna se creo como BIGINT en la migration
+    # inicial (20260420_0001:360) a proposito — audit_log es append-only y crece
+    # sin techo natural. Sin este tipo, SQLAlchemy 2.0 mapea `int` a Integer y
+    # el autogenerate propone `modify_type BIGINT -> Integer`, que ACHICA la
+    # columna a ~2.1e9 filas. La DB tiene razon; el modelo estaba desactualizado.
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
     user_id: Mapped[uuid.UUID] = mapped_column(PgUUID(as_uuid=True), index=True)
     action: Mapped[str] = mapped_column(String(100), nullable=False, index=True)
     # ej. "comision.create", "carrera.update"
@@ -78,7 +83,9 @@ class CasbinRule(Base):
 
     __tablename__ = "casbin_rules"
 
-    id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
+    # BigInteger EXPLICITO — mismo caso que AuditLog.id: la migration inicial
+    # (20260420_0001:381) la creo como BIGINT. Ver comentario de arriba.
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
     ptype: Mapped[str] = mapped_column(String(10), nullable=False)  # p, g, g2...
     v0: Mapped[str | None] = mapped_column(String(256), nullable=True, index=True)
     v1: Mapped[str | None] = mapped_column(String(256), nullable=True, index=True)

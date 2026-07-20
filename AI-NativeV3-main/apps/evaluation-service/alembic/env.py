@@ -61,6 +61,18 @@ def include_object(object_, name, type_, reflected, compare_to):  # type: ignore
     """Filtra autogenerate a tablas owned por evaluation-service."""
     if type_ == "table":
         return name in EVALUATION_OWNED_TABLES
+    # FKs que SALEN de una tabla owned hacia una tabla de academic-service.
+    # `entregas` referencia `comisiones` y `tareas_practicas`, que NO estan en
+    # el metadata de evaluation-service (solo conoce entregas/calificaciones).
+    # Sin este filtro, autogenerate no puede resolver el destino y propone
+    # `remove_fk` sobre constraints que existen y son correctos — verificado
+    # 2026-07-20: proponia dropear fk_entregas_comision_id_comisiones y
+    # fk_entregas_tarea_practica_id_tareas_practicas. No borra datos, pero deja
+    # `entregas` sin integridad referencial hacia academic.
+    if type_ == "foreign_key_constraint":
+        referred = {elem.column.table.name for elem in object_.elements}
+        if referred - EVALUATION_OWNED_TABLES:
+            return False
     # Para columnas/indices/constraints: solo si pertenecen a tabla owned.
     if hasattr(object_, "table") and object_.table is not None:
         return object_.table.name in EVALUATION_OWNED_TABLES
