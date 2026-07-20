@@ -13,6 +13,7 @@ Cubre:
 
 from __future__ import annotations
 
+import contextlib
 import logging
 from io import StringIO
 
@@ -127,10 +128,8 @@ def test_helper_no_loguea_plaintext_ni_master_key() -> None:
         # Forzar error de tampering
         tampered = bytearray(encrypted)
         tampered[-1] ^= 0xFF
-        try:
+        with contextlib.suppress(CryptoError):
             decrypt(bytes(tampered), master_key)
-        except CryptoError:
-            pass
 
         log_contents = sink.getvalue()
         assert b"SUPERSECRET" not in log_contents.encode()

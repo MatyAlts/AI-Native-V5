@@ -58,7 +58,7 @@ _REAL_CHAIN_FIXTURES = [
 
 def test_chain_hash_matches_real_db_event_seq0() -> None:
     """El primer evento del episodio (seq=0) usa GENESIS y produce el chain_hash de la DB."""
-    seq, self_hash, prev_chain_hash, expected_chain = _REAL_CHAIN_FIXTURES[0]
+    _seq, self_hash, prev_chain_hash, expected_chain = _REAL_CHAIN_FIXTURES[0]
     assert prev_chain_hash == GENESIS_HASH, "fixture inconsistente: seq=0 debe usar genesis"
     # Pasando explicito
     assert compute_chain_hash(self_hash, prev_chain_hash) == expected_chain

@@ -235,7 +235,8 @@ def test_reflexion_completada_no_afecta_clasificacion_ni_features() -> None:
         _ev(5, "episodio_cerrado", 12, {"reason": "completed"}),
     ]
     # Mismo episodio + reflexion appendeada DESPUES del cierre (seq=6).
-    events_with_reflection = base_events + [
+    events_with_reflection = [
+        *base_events,
         _ev(
             6,
             "reflexion_completada",
@@ -281,7 +282,8 @@ def test_tp_entregada_no_afecta_clasificacion_ni_features() -> None:
         _ev(3, "codigo_ejecutado", 4),
         _ev(4, "episodio_cerrado", 8, {"reason": "completed"}),
     ]
-    events_with_entrega = base_events + [
+    events_with_entrega = [
+        *base_events,
         _ev(
             5,
             "tp_entregada",

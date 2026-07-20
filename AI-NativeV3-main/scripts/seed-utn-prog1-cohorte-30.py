@@ -615,7 +615,7 @@ async def seed_episodes_y_eventos(
                     )
 
                     # Round-robin sobre los 4 TPs disponibles
-                    tp_id, tp_codigo, _ = TP_ROTATION[ep_idx % len(TP_ROTATION)]
+                    tp_id, _tp_codigo, _ = TP_ROTATION[ep_idx % len(TP_ROTATION)]
 
                     # Adverso solo en el primer episodio
                     include_adverso = is_adverso and ep_idx == 0
@@ -763,10 +763,10 @@ async def seed_classifications(
         async with maker() as session:
             await _set_tenant(session, TENANT_UTN)
 
-            for ref_idx, (
+            for _ref_idx, (
                 episode_id,
                 comision_id,
-                pseudo,
+                _pseudo,
                 classified_at,
                 appropriation,
                 _,

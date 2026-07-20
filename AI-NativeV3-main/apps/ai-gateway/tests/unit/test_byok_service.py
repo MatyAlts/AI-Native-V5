@@ -191,7 +191,7 @@ def _build_mock_session(rows_by_call: list[Any]) -> tuple[Any, Any]:
     async def _ctx():
         yield session_mock
 
-    sm_callable = MagicMock(side_effect=lambda: _ctx())
+    sm_callable = MagicMock(side_effect=_ctx)
     return sm_callable, session_mock
 
 
@@ -349,7 +349,7 @@ async def test_resolve_facultad_filtra_por_scope_id(monkeypatch) -> None:
     async def _ctx():
         yield session_mock
 
-    sm = MagicMock(side_effect=lambda: _ctx())
+    sm = MagicMock(side_effect=_ctx)
     monkeypatch.setattr(byok_module, "_get_sessionmaker", lambda: sm)
 
     # materia_id=None => la rama materia se saltea; el primer SELECT es facultad.
@@ -487,7 +487,7 @@ async def test_create_happy_path_persiste_key(monkeypatch) -> None:
     async def _ctx():
         yield session_mock
 
-    sm = MagicMock(side_effect=lambda: _ctx())
+    sm = MagicMock(side_effect=_ctx)
     monkeypatch.setattr(byok_module, "_get_sessionmaker", lambda: sm)
 
     tenant_id = uuid4()
@@ -541,7 +541,7 @@ async def test_create_segunda_key_activa_raise_conflict(monkeypatch) -> None:
     async def _ctx():
         yield session_mock
 
-    sm = MagicMock(side_effect=lambda: _ctx())
+    sm = MagicMock(side_effect=_ctx)
     monkeypatch.setattr(byok_module, "_get_sessionmaker", lambda: sm)
 
     with pytest.raises(BYOKConflictError, match="ya existe|Ya existe"):
@@ -578,7 +578,7 @@ async def test_create_integrity_error_otra_constraint_repropaga(monkeypatch) -> 
     async def _ctx():
         yield session_mock
 
-    sm = MagicMock(side_effect=lambda: _ctx())
+    sm = MagicMock(side_effect=_ctx)
     monkeypatch.setattr(byok_module, "_get_sessionmaker", lambda: sm)
 
     with pytest.raises(IntegrityError):
@@ -618,7 +618,7 @@ async def test_rotate_key_no_existe_devuelve_none(monkeypatch) -> None:
     async def _ctx():
         yield session_mock
 
-    sm = MagicMock(side_effect=lambda: _ctx())
+    sm = MagicMock(side_effect=_ctx)
     monkeypatch.setattr(byok_module, "_get_sessionmaker", lambda: sm)
 
     result = await rotate_byok_key(uuid4(), uuid4(), "sk-newvaluekey-xyz")
@@ -640,7 +640,7 @@ async def test_rotate_key_revocada_devuelve_none(monkeypatch) -> None:
     async def _ctx():
         yield session_mock
 
-    sm = MagicMock(side_effect=lambda: _ctx())
+    sm = MagicMock(side_effect=_ctx)
     monkeypatch.setattr(byok_module, "_get_sessionmaker", lambda: sm)
 
     result = await rotate_byok_key(tenant_id, revoked.id, "sk-rotatevalue-zzz")
@@ -662,7 +662,7 @@ async def test_rotate_tenant_distinto_devuelve_none(monkeypatch) -> None:
     async def _ctx():
         yield session_mock
 
-    sm = MagicMock(side_effect=lambda: _ctx())
+    sm = MagicMock(side_effect=_ctx)
     monkeypatch.setattr(byok_module, "_get_sessionmaker", lambda: sm)
 
     result = await rotate_byok_key(uuid4(), row.id, "sk-other-tenantattempt")
@@ -686,7 +686,7 @@ async def test_rotate_happy_path_actualiza_fingerprint(monkeypatch) -> None:
     async def _ctx():
         yield session_mock
 
-    sm = MagicMock(side_effect=lambda: _ctx())
+    sm = MagicMock(side_effect=_ctx)
     monkeypatch.setattr(byok_module, "_get_sessionmaker", lambda: sm)
 
     new_pt = "sk-newrotated-value-WXYZ"
@@ -715,7 +715,7 @@ async def test_revoke_no_existe_devuelve_none(monkeypatch) -> None:
     async def _ctx():
         yield session_mock
 
-    sm = MagicMock(side_effect=lambda: _ctx())
+    sm = MagicMock(side_effect=_ctx)
     monkeypatch.setattr(byok_module, "_get_sessionmaker", lambda: sm)
 
     result = await revoke_byok_key(uuid4(), uuid4())
@@ -738,7 +738,7 @@ async def test_revoke_setea_revoked_at(monkeypatch) -> None:
     async def _ctx():
         yield session_mock
 
-    sm = MagicMock(side_effect=lambda: _ctx())
+    sm = MagicMock(side_effect=_ctx)
     monkeypatch.setattr(byok_module, "_get_sessionmaker", lambda: sm)
 
     result = await revoke_byok_key(tenant_id, row.id)
@@ -764,7 +764,7 @@ async def test_revoke_idempotente(monkeypatch) -> None:
     async def _ctx():
         yield session_mock
 
-    sm = MagicMock(side_effect=lambda: _ctx())
+    sm = MagicMock(side_effect=_ctx)
     monkeypatch.setattr(byok_module, "_get_sessionmaker", lambda: sm)
 
     result = await revoke_byok_key(tenant_id, row.id)
@@ -786,7 +786,7 @@ async def test_revoke_cross_tenant_devuelve_none(monkeypatch) -> None:
     async def _ctx():
         yield session_mock
 
-    sm = MagicMock(side_effect=lambda: _ctx())
+    sm = MagicMock(side_effect=_ctx)
     monkeypatch.setattr(byok_module, "_get_sessionmaker", lambda: sm)
 
     result = await revoke_byok_key(uuid4(), row.id)
@@ -806,7 +806,7 @@ async def test_list_devuelve_lista_vacia_si_no_hay(monkeypatch) -> None:
     async def _ctx():
         yield session_mock
 
-    sm = MagicMock(side_effect=lambda: _ctx())
+    sm = MagicMock(side_effect=_ctx)
     monkeypatch.setattr(byok_module, "_get_sessionmaker", lambda: sm)
 
     result = await list_byok_keys(uuid4())
@@ -824,7 +824,7 @@ async def test_list_filtra_por_scope_type(monkeypatch) -> None:
     async def _ctx():
         yield session_mock
 
-    sm = MagicMock(side_effect=lambda: _ctx())
+    sm = MagicMock(side_effect=_ctx)
     monkeypatch.setattr(byok_module, "_get_sessionmaker", lambda: sm)
 
     result = await list_byok_keys(uuid4(), scope_type="materia", scope_id=row1.scope_id)
@@ -844,7 +844,7 @@ async def test_usage_no_existe_devuelve_zeros(monkeypatch) -> None:
     async def _ctx():
         yield session_mock
 
-    sm = MagicMock(side_effect=lambda: _ctx())
+    sm = MagicMock(side_effect=_ctx)
     monkeypatch.setattr(byok_module, "_get_sessionmaker", lambda: sm)
 
     key_id = uuid4()
@@ -867,7 +867,7 @@ async def test_usage_default_yyyymm_es_mes_actual(monkeypatch) -> None:
     async def _ctx():
         yield session_mock
 
-    sm = MagicMock(side_effect=lambda: _ctx())
+    sm = MagicMock(side_effect=_ctx)
     monkeypatch.setattr(byok_module, "_get_sessionmaker", lambda: sm)
 
     result = await get_byok_key_usage(uuid4(), uuid4())
@@ -897,7 +897,7 @@ async def test_usage_existente_devuelve_totales(monkeypatch) -> None:
     async def _ctx():
         yield session_mock
 
-    sm = MagicMock(side_effect=lambda: _ctx())
+    sm = MagicMock(side_effect=_ctx)
     monkeypatch.setattr(byok_module, "_get_sessionmaker", lambda: sm)
 
     result = await get_byok_key_usage(uuid4(), usage_row.key_id, yyyymm="202604")
@@ -985,7 +985,7 @@ async def test_increment_env_fallback_usage_inserta_sentinel_y_usage(
     async def _ctx():
         yield session_mock
 
-    sm = MagicMock(side_effect=lambda: _ctx())
+    sm = MagicMock(side_effect=_ctx)
     monkeypatch.setattr(byok_module, "_get_sessionmaker", lambda: sm)
 
     tenant_id = uuid4()
@@ -1024,7 +1024,7 @@ async def test_increment_env_fallback_usage_idempotente_misma_sentinel(
     async def _ctx():
         yield session_mock
 
-    sm = MagicMock(side_effect=lambda: _ctx())
+    sm = MagicMock(side_effect=_ctx)
     monkeypatch.setattr(byok_module, "_get_sessionmaker", lambda: sm)
 
     tenant = uuid4()
@@ -1046,7 +1046,7 @@ async def test_increment_env_fallback_usage_distinto_provider_distinto_id(
     async def _ctx():
         yield session_mock
 
-    sm = MagicMock(side_effect=lambda: _ctx())
+    sm = MagicMock(side_effect=_ctx)
     monkeypatch.setattr(byok_module, "_get_sessionmaker", lambda: sm)
 
     tenant = uuid4()

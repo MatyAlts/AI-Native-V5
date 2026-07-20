@@ -111,7 +111,7 @@ def test_mutated_payload_breaks_self_hash_consistency() -> None:
 def test_break_at_first_event_detected() -> None:
     """Tampering en el primer evento (vs GENESIS) detectado en index=0."""
     events = _build_chain(n=3)
-    event, self_h, chain_h = events[0]
+    event, self_h, _chain_h = events[0]
     mutated_chain = "f" * 64  # totally bogus chain_hash
     events[0] = (event, self_h, mutated_chain)
 

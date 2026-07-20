@@ -199,7 +199,7 @@ async def test_complete_provider_error_502(client: AsyncClient, monkeypatch) -> 
             raise RuntimeError("stream tambien")
             yield  # pragma: no cover (necesario para AsyncIterator)
 
-    monkeypatch.setattr("ai_gateway.routes.complete.get_provider", lambda: _BoomProvider())
+    monkeypatch.setattr("ai_gateway.routes.complete.get_provider", _BoomProvider)
     response = await client.post("/api/v1/complete", json=_basic_body(), headers=CALLER_HEADERS)
     assert response.status_code == 502
     assert "LLM provider error" in response.json()["detail"]
@@ -299,7 +299,7 @@ async def test_stream_provider_error_envia_event(client: AsyncClient, monkeypatc
             raise RuntimeError("stream blew up")
             yield  # pragma: no cover
 
-    monkeypatch.setattr("ai_gateway.routes.complete.get_provider", lambda: _BadStreamProvider())
+    monkeypatch.setattr("ai_gateway.routes.complete.get_provider", _BadStreamProvider)
 
     async with client.stream(
         "POST", "/api/v1/stream", json=_basic_body(), headers=CALLER_HEADERS

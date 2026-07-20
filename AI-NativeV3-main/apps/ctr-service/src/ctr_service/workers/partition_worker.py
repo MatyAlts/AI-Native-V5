@@ -17,6 +17,7 @@ por su ordinal (ctr-worker-0 toma p0, ctr-worker-1 toma p1, ...).
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import json
 import logging
 import signal
@@ -118,10 +119,8 @@ class PartitionWorker:
                     await asyncio.sleep(1)
         finally:
             xpending_task.cancel()
-            try:
+            with contextlib.suppress(asyncio.CancelledError, Exception):
                 await xpending_task
-            except (asyncio.CancelledError, Exception):
-                pass
 
         logger.info("Worker partition=%d terminado", self.cfg.partition)
 
@@ -494,11 +493,9 @@ async def run_worker(partition: int) -> None:
     # es aceptable en dev local. En Linux/macOS si registramos los handlers.
     loop = asyncio.get_running_loop()
     for sig in (signal.SIGTERM, signal.SIGINT):
-        try:
+        # Windows: signal handlers via asyncio no soportados. Skip.
+        with contextlib.suppress(NotImplementedError):
             loop.add_signal_handler(sig, worker.stop)
-        except NotImplementedError:
-            # Windows: signal handlers via asyncio no soportados. Skip.
-            pass
 
     try:
         await worker.run()

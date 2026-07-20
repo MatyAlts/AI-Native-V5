@@ -363,7 +363,7 @@ async def get_pedagogia(  # noqa: PLR0912, PLR0915
 
     from platform_ops import set_tenant_rls
     from platform_ops.kappa_analysis import KappaRating, compute_cohen_kappa
-    from platform_ops.longitudinal import ClassificationPoint as _CP
+    from platform_ops.longitudinal import ClassificationPoint as _ClassificationPoint
     from platform_ops.longitudinal import StudentTrajectory, summarize_cohort
     from sqlalchemy import bindparam, text
     from sqlalchemy.ext.asyncio import async_sessionmaker
@@ -547,7 +547,7 @@ async def get_pedagogia(  # noqa: PLR0912, PLR0915
     )
 
     # ── Bloques 2/3/5: agrupar puntos por estudiante ────────────────────
-    points_by_student: dict[str, list[_CP]] = defaultdict(list)
+    points_by_student: dict[str, list[_ClassificationPoint]] = defaultdict(list)
     coher_by_appr: dict[str, dict[str, list[float]]] = {
         a: {"ct": [], "ccd": [], "cii": []} for a in _ORDINAL
     }
@@ -558,7 +558,7 @@ async def get_pedagogia(  # noqa: PLR0912, PLR0915
         appr = r.appropriation
         if appr in _ORDINAL:
             points_by_student[student].append(
-                _CP(
+                _ClassificationPoint(
                     episode_id=UUID(str(r.episode_id)),
                     classified_at=r.classified_at,
                     appropriation=appr,

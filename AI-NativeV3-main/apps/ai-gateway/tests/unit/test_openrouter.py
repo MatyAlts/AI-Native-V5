@@ -239,7 +239,7 @@ async def test_resolve_keyless_fallback_usa_key_nativa_si_existe(
 
     monkeypatch.setattr(complete_module, "_make_provider", _fake_make)
 
-    provider, effective_model, resolved = await _resolve_provider_and_model(
+    _provider, effective_model, resolved = await _resolve_provider_and_model(
         tenant_id=uuid4(), model="google/gemini-2.5-flash", materia_id=None
     )
     assert effective_model == "gemini-2.5-flash"  # strippeado

@@ -222,9 +222,7 @@ def naming_consistency(code: str) -> float:
     styles: list[str] = []
     for node in ast.walk(tree):
         # Funciones
-        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)) or isinstance(
-            node, ast.ClassDef
-        ):
+        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
             style = _classify_identifier(node.name)
             if style:
                 styles.append(style)

@@ -162,9 +162,7 @@ def _was_abandoned_or_compromised(events: list[dict[str, Any]]) -> bool:
     if cerrado is None:
         return True
     payload = cerrado.get("payload") or {}
-    if payload.get("integrity_compromised") is True:
-        return True
-    return False
+    return payload.get("integrity_compromised") is True
 
 
 def _prompts_post_tests_count(events: list[dict[str, Any]]) -> int:

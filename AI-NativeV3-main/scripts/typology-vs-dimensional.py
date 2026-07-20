@@ -55,7 +55,9 @@ class ModelComparisonResult:
 
 
 def _ols_r_squared_adj(
-    X: np.ndarray, y: np.ndarray, add_intercept: bool = True
+    X: np.ndarray,  # noqa: N803 (X = matriz de features, notacion estandar sklearn-style)
+    y: np.ndarray,
+    add_intercept: bool = True,
 ) -> tuple[float, np.ndarray]:
     """OLS simple, devuelve (R²_adj, coeficientes).
 

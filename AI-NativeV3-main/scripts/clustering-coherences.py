@@ -51,7 +51,7 @@ class ClusteringResult:
     iterations: int
 
 
-def _kmeans_pp_init(X: np.ndarray, k: int, seed: int = 42) -> np.ndarray:
+def _kmeans_pp_init(X: np.ndarray, k: int, seed: int = 42) -> np.ndarray:  # noqa: N803 (X = matriz de features, notacion estandar sklearn-style)
     """k-means++ inicialización (Arthur & Vassilvitskii, 2007).
 
     Devuelve k × dim centros iniciales.
@@ -76,14 +76,18 @@ def _kmeans_pp_init(X: np.ndarray, k: int, seed: int = 42) -> np.ndarray:
 
 
 def kmeans(
-    X: np.ndarray, k: int, max_iter: int = 100, tol: float = 1e-4, seed: int = 42
+    X: np.ndarray,  # noqa: N803 (X = matriz de features, notacion estandar sklearn-style)
+    k: int,
+    max_iter: int = 100,
+    tol: float = 1e-4,
+    seed: int = 42,
 ) -> ClusteringResult:
     """k-means estándar.
 
     No usa sklearn — implementación pura numpy.
     """
     centers = _kmeans_pp_init(X, k, seed=seed)
-    for iteration in range(max_iter):
+    for _iteration in range(max_iter):
         # Asignar puntos al centro más cercano
         dists = np.sqrt(((X[:, None, :] - centers[None, :, :]) ** 2).sum(axis=2))
         labels = dists.argmin(axis=1)
@@ -109,7 +113,7 @@ def kmeans(
         cluster_labels=labels,
         cluster_centers=centers,
         inertia=inertia,
-        iterations=iteration + 1,
+        iterations=_iteration + 1,
     )
 
 
