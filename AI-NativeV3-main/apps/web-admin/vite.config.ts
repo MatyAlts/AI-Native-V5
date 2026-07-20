@@ -50,7 +50,7 @@ export default defineConfig({
             const tenantId =
               typeof clientTenant === "string" && clientTenant.length === 36
                 ? clientTenant
-                : "7a7a143c-31f8-461b-be08-d86ac36b41a3"
+                : "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa"
             proxyReq.setHeader("x-tenant-id", tenantId)
             proxyReq.setHeader("x-user-email", "admin@demo-uni.edu")
             proxyReq.setHeader("x-user-roles", "docente_admin,superadmin")
