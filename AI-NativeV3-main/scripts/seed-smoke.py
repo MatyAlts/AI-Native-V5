@@ -303,14 +303,22 @@ async def seed_academic(academic_url: str) -> None:
         async with maker() as session:
             await _set_tenant(session, TENANT_ID)
 
+            # `tenant_id` es NOT NULL desde la migration 20260514_0004
+            # (universidades_tenant_id). El seed no lo seteaba y el INSERT fallaba
+            # con NotNullViolationError, rompiendo `make test-smoke-local` desde
+            # 2026-05-14 — invisible porque ningun target ni job de CI lo corria.
+            # Convencion enforzada en UniversidadService.create(): 1 universidad =
+            # 1 tenant, con `tenant_id == id` (ver models/institucional.py:25-31).
             await session.execute(
                 text(
-                    "INSERT INTO universidades (id, nombre, codigo, dominio_email, keycloak_realm, config) "
-                    "VALUES (:id, :nombre, :codigo, :dominio, :realm, '{}'::jsonb) "
+                    "INSERT INTO universidades "
+                    "(id, tenant_id, nombre, codigo, dominio_email, keycloak_realm, config) "
+                    "VALUES (:id, :tenant_id, :nombre, :codigo, :dominio, :realm, '{}'::jsonb) "
                     "ON CONFLICT (id) DO NOTHING"
                 ),
                 {
                     "id": str(UNIVERSIDAD_ID),
+                    "tenant_id": str(UNIVERSIDAD_ID),
                     "nombre": "UTN smoke",
                     "codigo": "UTN-SMOKE",
                     "dominio": "utn.edu.ar",
@@ -445,13 +453,20 @@ async def seed_academic(academic_url: str) -> None:
                 (TEMPLATE_01_ID, "TP-01", "Recursion y complejidad temporal", 0.20),
                 (TEMPLATE_02_ID, "TP-02", "Listas enlazadas simples", 0.25),
             ):
+                # OJO: la columna es `consigna`, NO `enunciado`. El refactor
+                # 2026-05-12 ("la plantilla es un BRIEF pedagogico") renombro el
+                # campo SOLO en `tareas_practicas_templates`; la instancia
+                # `tareas_practicas` conserva `enunciado` (ver el INSERT de abajo).
+                # El seed quedo con el nombre viejo y rompia con
+                # UndefinedColumnError — invisible por 2 meses porque nada corria
+                # `make test-smoke-local`.
                 await session.execute(
                     text(
                         "INSERT INTO tareas_practicas_templates ("
                         "id, tenant_id, materia_id, periodo_id, codigo, titulo, "
-                        "enunciado, peso, estado, version, created_by"
+                        "consigna, peso, estado, version, created_by"
                         ") VALUES ("
-                        ":id, :t, :m, :p, :codigo, :titulo, :enunciado, :peso, "
+                        ":id, :t, :m, :p, :codigo, :titulo, :consigna, :peso, "
                         "'published', 1, :cb"
                         ") ON CONFLICT (id) DO NOTHING"
                     ),
@@ -462,7 +477,7 @@ async def seed_academic(academic_url: str) -> None:
                         "p": str(PERIODO_ID),
                         "codigo": codigo,
                         "titulo": titulo,
-                        "enunciado": f"# {titulo}\n\nEnunciado del TP para smoke E2E.\n",
+                        "consigna": f"# {titulo}\n\nEnunciado del TP para smoke E2E.\n",
                         "peso": peso,
                         "cb": str(DOCENTE_USER_ID),
                     },
