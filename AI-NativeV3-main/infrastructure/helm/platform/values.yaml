@@ -88,6 +88,8 @@ frontends:
     replicas: 2
   web-student:
     replicas: 3
+  web-landing:
+    replicas: 1
 
 # PostgreSQL (usar un operator real en producción, ej. CloudNativePG)
 postgres:

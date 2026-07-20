@@ -140,6 +140,7 @@ jobs:
       - run: pnpm --filter @platform/web-admin   build
       - run: pnpm --filter @platform/web-teacher build
       - run: pnpm --filter @platform/web-student build
+      - run: pnpm --filter @platform/web-landing build
 
   test-unit:
     name: Unit tests

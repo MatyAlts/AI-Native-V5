@@ -1,9 +1,9 @@
-# Multi-stage build de los 3 frontends + Nginx que los sirve.
+# Multi-stage build de los 4 frontends + Nginx que los sirve.
 #
-# Stage 1: instala pnpm + dependencies del monorepo, buildea los 3 frontends
-# Vite. Output: apps/web-{admin,teacher,student}/dist/.
+# Stage 1: instala pnpm + dependencies del monorepo, buildea los 4 frontends
+# Vite. Output: apps/web-{admin,teacher,student,landing}/dist/.
 #
-# Stage 2: nginx:alpine sirviendo los 3 dist/ en paths separados, con proxy
+# Stage 2: nginx:alpine sirviendo los 4 dist/ en paths separados, con proxy
 # /api/ -> api-gateway:8000.
 #
 # Build context: root del repo (..). El compose pasa context: ../ para que
@@ -34,6 +34,7 @@ COPY package.json pnpm-lock.yaml pnpm-workspace.yaml turbo.json ./
 COPY apps/web-admin/package.json   apps/web-admin/package.json
 COPY apps/web-teacher/package.json apps/web-teacher/package.json
 COPY apps/web-student/package.json apps/web-student/package.json
+COPY apps/web-landing/package.json apps/web-landing/package.json
 # Solo los 4 packages que SON Node (tienen package.json). Los otros
 # packages del workspace (observability, platform-ops, test-utils,
 # contracts/src/python) son Python puro y no tienen package.json.
@@ -50,7 +51,7 @@ RUN pnpm install --frozen-lockfile
 # 2026-06-16: el checkbox permite_pausa no aparecía en prod pese a estar en
 # main). Bumpear este valor rompe la cache desde acá y fuerza recompilar los 3
 # frontends con el código actual.
-ARG FRONTEND_CACHEBUST=20260621-4
+ARG FRONTEND_CACHEBUST=20260720-1
 RUN echo "frontend cachebust: $FRONTEND_CACHEBUST"
 
 # Ahora sí copia el código source de apps y packages necesarios.
@@ -58,11 +59,13 @@ COPY packages/ packages/
 COPY apps/web-admin/   apps/web-admin/
 COPY apps/web-teacher/ apps/web-teacher/
 COPY apps/web-student/ apps/web-student/
+COPY apps/web-landing/ apps/web-landing/
 
-# Build de los 3 frontends. Cada uno produce apps/<name>/dist/.
+# Build de los 4 frontends. Cada uno produce apps/<name>/dist/.
 RUN pnpm --filter @platform/web-admin   build \
  && pnpm --filter @platform/web-teacher build \
- && pnpm --filter @platform/web-student build
+ && pnpm --filter @platform/web-student build \
+ && pnpm --filter @platform/web-landing build
 
 # ─────────────────────────────────────────────────────────────────────
 # Stage 2: runtime nginx
@@ -74,7 +77,7 @@ FROM nginx:alpine
 # el `pnpm build` corría 87s pero el COPY del dist salía CACHED → servía el
 # bundle viejo). Re-declarar el ARG acá invalida el stage 2 y fuerza re-copiar
 # los `dist/` recién compilados. Bumpear el valor en un rebuild futuro.
-ARG FRONTEND_CACHEBUST=20260621-4
+ARG FRONTEND_CACHEBUST=20260720-1
 RUN echo "stage2 cachebust: $FRONTEND_CACHEBUST"
 
 # Quita config default y mete la nuestra.
@@ -85,10 +88,11 @@ COPY infrastructure/nginx-frontends.conf /etc/nginx/conf.d/frontends.conf
 # volumen/secret del orquestador) antes de exponer datos reales del piloto.
 COPY infrastructure/htpasswd /etc/nginx/.htpasswd
 
-# Copia los 3 builds a paths separados dentro de /usr/share/nginx/html.
+# Copia los 4 builds a paths separados dentro de /usr/share/nginx/html.
 COPY --from=builder /repo/apps/web-admin/dist/   /usr/share/nginx/html/admin/
 COPY --from=builder /repo/apps/web-teacher/dist/ /usr/share/nginx/html/teacher/
 COPY --from=builder /repo/apps/web-student/dist/ /usr/share/nginx/html/student/
+COPY --from=builder /repo/apps/web-landing/dist/ /usr/share/nginx/html/landing/
 
 
 # nginx:alpine ya tiene CMD por default: nginx -g 'daemon off;'.
