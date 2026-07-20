@@ -21,11 +21,6 @@ env:
   STORAGE: mock
   LLM_PROVIDER: mock
 
-# El monorepo vive en AI-NativeV3-main/; los workflows deben estar en .github/
-# de la RAIZ para que GitHub Actions los descubra. Ver comentario en ci.yml.
-defaults:
-  run:
-    working-directory: AI-NativeV3-main
 
 jobs:
   smoke:
@@ -64,8 +59,8 @@ jobs:
         uses: astral-sh/setup-uv@v3
         with:
           # enable-cache desactivado: setup-uv cachea contra `**/uv.lock` y ese
-          # archivo NO esta versionado (.gitignore:28). Con cache activada la
-          # action aborta con "No file matched to [**/uv.lock]" antes de instalar.
+          # archivo NO esta versionado (.gitignore). Con cache activada la action
+          # aborta con "No file matched to [**/uv.lock]" antes de instalar nada.
           # Si algun dia se versiona el lockfile, volver a poner `true`.
           enable-cache: false
 
@@ -111,11 +106,9 @@ jobs:
           CTR_DB_URL: postgresql+asyncpg://postgres:postgres@127.0.0.1:5432/ctr_store
           CLASSIFIER_DB_URL: postgresql+asyncpg://postgres:postgres@127.0.0.1:5432/classifier_db
           CONTENT_DB_URL: postgresql+asyncpg://postgres:postgres@127.0.0.1:5432/content_db
-          # `github.workspace` es la RAIZ del checkout, no el working-directory
-          # del job — por eso lleva el prefijo AI-NativeV3-main explicito.
           # Si apunta mal, governance/tutor no encuentran los prompts y devuelven
           # 500 al abrir el primer episodio (falla silenciosa hasta ese momento).
-          PROMPTS_REPO_PATH: ${{ github.workspace }}/AI-NativeV3-main/ai-native-prompts
+          PROMPTS_REPO_PATH: ${{ github.workspace }}/ai-native-prompts
           # NOTA: BYOK_MASTER_KEY queda sin setear a proposito — el smoke
           # test_create_revoke_flow se skippea, los demas BYOK tests siguen
           # cubriendo el SET LOCAL bug (que es lo critico).
@@ -154,7 +147,7 @@ jobs:
           # upload-artifact resuelve paths contra el workspace root, no contra
           # el working-directory del job.
           path: |
-            AI-NativeV3-main/.dev-logs/
+            .dev-logs/
             /tmp/piloto-logs/
           if-no-files-found: ignore
           retention-days: 7

@@ -130,6 +130,11 @@ echo "[export-rag] OK"
 echo "[export-rag] archivo: $OUTPUT (${final_size_kb} KB)"
 echo ""
 echo "Para llevar al VPS:"
+# OJO: el path del VPS depende de que ya se haya redeployado el repo colapsado.
+# Hasta ese momento el checkout remoto sigue teniendo el wrapper AI-NativeV3-main/.
+echo "  # si el VPS ya tiene el repo colapsado (sin wrapper):"
+echo "  scp $OUTPUT platform@<vps-host>:/opt/platform/platform/infrastructure/exports/"
+echo "  # si todavia no se redeployo:"
 echo "  scp $OUTPUT platform@<vps-host>:/opt/platform/platform/AI-NativeV3-main/infrastructure/exports/"
 echo ""
 echo "Despues, en el VPS:"

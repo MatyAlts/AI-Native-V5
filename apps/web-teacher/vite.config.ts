@@ -4,9 +4,9 @@ import { TanStackRouterVite } from "@tanstack/router-plugin/vite"
 import react from "@vitejs/plugin-react"
 import { defineConfig } from "vite"
 
-// File-based routing con TanStack Router (mismo pattern que web-teacher).
-// El plugin escanea `src/routes/` y genera `src/routeTree.gen.ts`
-// automaticamente al startup / build. MUST ir ANTES de react() segun docs.
+// ADR-022: file-based routing del web-teacher con TanStack Router.
+// El plugin escanea `src/routes/` y genera `src/routeTree.gen.ts` automáticamente.
+// MUST be loaded BEFORE react() según docs oficiales del plugin.
 // `test` es config de Vitest, no de Vite. Vitest la lee del mismo archivo
 // pero la firma de `defineConfig` de vite (con exactOptionalPropertyTypes)
 // la rechaza. Para evitar acoplar el typecheck al paquete `vitest/config`
@@ -21,6 +21,7 @@ const vitestConfig = {
 } as const
 
 export default defineConfig({
+  base: "/teacher/",
   plugins: [
     TanStackRouterVite({ target: "react", autoCodeSplitting: true }),
     react(),
@@ -44,10 +45,10 @@ export default defineConfig({
             const setDefault = (name: string, fallback: string) => {
               if (!proxyReq.getHeader(name)) proxyReq.setHeader(name, fallback)
             }
-            setDefault("x-user-id", "b1b1b1b1-0001-0001-0001-000000000001") // alumno01
+            setDefault("x-user-id", "11111111-1111-1111-1111-111111111111") // docente seed-3-comisiones
             // Tenant dinámico: si el cliente manda `x-selected-tenant`
             // (escrito por el TenantSelector via monkey-patch en main.tsx),
-            // usamos eso. Fallback a la Universidad Final E2E.
+            // usamos eso. Fallback al tenant de la Universidad Final E2E.
             const clientTenant = req.headers["x-selected-tenant"]
             const tenantFallback = "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa"
             const tenantId =
@@ -55,8 +56,8 @@ export default defineConfig({
                 ? clientTenant
                 : tenantFallback
             proxyReq.setHeader("x-tenant-id", tenantId)
-            setDefault("x-user-email", "alumno01@demo-uni.edu")
-            setDefault("x-user-roles", "estudiante,classifier_worker")
+            setDefault("x-user-email", "docente01@demo-uni.edu")
+            setDefault("x-user-roles", "docente")
           })
         },
       },
