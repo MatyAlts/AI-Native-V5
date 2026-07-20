@@ -15,6 +15,14 @@ env:
   NODE_VERSION: "20"
   PNPM_VERSION: "9.12"
 
+# El monorepo vive en AI-NativeV3-main/, pero los workflows deben estar en
+# .github/ de la RAIZ del repo para que GitHub Actions los descubra. Este
+# default hace que todo `run:` se ejecute dentro del monorepo.
+# OJO: no aplica a los `uses:` (actions) — esos llevan el path explicito.
+defaults:
+  run:
+    working-directory: AI-NativeV3-main
+
 jobs:
   lint-python:
     name: Lint Python
@@ -27,6 +35,7 @@ jobs:
         uses: astral-sh/setup-uv@v3
         with:
           enable-cache: true
+          cache-dependency-glob: "AI-NativeV3-main/uv.lock"
 
       - name: Setup Python
         run: uv python install ${{ env.PYTHON_VERSION }}
@@ -72,6 +81,7 @@ jobs:
         uses: astral-sh/setup-uv@v3
         with:
           enable-cache: true
+          cache-dependency-glob: "AI-NativeV3-main/uv.lock"
 
       - name: Setup Python
         run: uv python install ${{ env.PYTHON_VERSION }}
@@ -97,6 +107,7 @@ jobs:
         with:
           node-version: ${{ env.NODE_VERSION }}
           cache: pnpm
+          cache-dependency-path: AI-NativeV3-main/pnpm-lock.yaml
 
       - run: pnpm install --frozen-lockfile
 
@@ -122,6 +133,7 @@ jobs:
         with:
           node-version: ${{ env.NODE_VERSION }}
           cache: pnpm
+          cache-dependency-path: AI-NativeV3-main/pnpm-lock.yaml
 
       - run: pnpm install --frozen-lockfile
 
@@ -140,6 +152,7 @@ jobs:
         uses: astral-sh/setup-uv@v3
         with:
           enable-cache: true
+          cache-dependency-glob: "AI-NativeV3-main/uv.lock"
 
       - name: Setup Python
         run: uv python install ${{ env.PYTHON_VERSION }}
@@ -160,7 +173,7 @@ jobs:
         uses: codecov/codecov-action@v4
         if: always()
         with:
-          files: ./coverage.xml
+          files: ./AI-NativeV3-main/coverage.xml
           fail_ci_if_error: false
 
   test-integration:
@@ -174,6 +187,7 @@ jobs:
         uses: astral-sh/setup-uv@v3
         with:
           enable-cache: true
+          cache-dependency-glob: "AI-NativeV3-main/uv.lock"
 
       - name: Setup Python
         run: uv python install ${{ env.PYTHON_VERSION }}
@@ -235,7 +249,9 @@ jobs:
         run: PGPASSWORD=postgres psql -h localhost -U postgres -f infrastructure/postgres/init-dbs.sql
 
       - name: Alembic upgrade academic
-        working-directory: apps/academic-service
+        # working-directory a nivel step PISA el default del workflow y es
+        # relativo al workspace root — por eso lleva el prefijo completo.
+        working-directory: AI-NativeV3-main/apps/academic-service
         env:
           ACADEMIC_DB_URL: postgresql+asyncpg://academic_user:academic_pass@localhost:5432/academic_main
         run: uv run alembic upgrade head || echo "No migrations yet (expected in F0)"
@@ -270,7 +286,15 @@ jobs:
       - name: Build image
         uses: docker/build-push-action@v5
         with:
-          context: apps/${{ matrix.service }}
+          # El context DEBE ser la raiz del monorepo, no la carpeta del servicio:
+          # los Dockerfiles corren `uv sync --all-packages`, que necesita el
+          # uv.lock y packages/ del workspace completo. Con `context: apps/<svc>`
+          # esos archivos no estan en el contexto de build.
+          # Alineado con infrastructure/docker-compose.prod.yml (`context: ..`)
+          # y con EasyPanel (Ruta de compilacion=/AI-NativeV3-main +
+          # Archivo=apps/<svc>/Dockerfile), que son los que hoy buildean prod.
+          context: AI-NativeV3-main
+          file: AI-NativeV3-main/apps/${{ matrix.service }}/Dockerfile
           push: false
           tags: platform/${{ matrix.service }}:${{ github.sha }}
           cache-from: type=gha,scope=${{ matrix.service }}

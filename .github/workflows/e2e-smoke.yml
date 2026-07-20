@@ -21,6 +21,12 @@ env:
   STORAGE: mock
   LLM_PROVIDER: mock
 
+# El monorepo vive en AI-NativeV3-main/; los workflows deben estar en .github/
+# de la RAIZ para que GitHub Actions los descubra. Ver comentario en ci.yml.
+defaults:
+  run:
+    working-directory: AI-NativeV3-main
+
 jobs:
   smoke:
     name: Smoke E2E API
@@ -58,6 +64,7 @@ jobs:
         uses: astral-sh/setup-uv@v3
         with:
           enable-cache: true
+          cache-dependency-glob: "AI-NativeV3-main/uv.lock"
 
       - name: Setup Python
         run: uv python install ${{ env.PYTHON_VERSION }}
@@ -101,7 +108,11 @@ jobs:
           CTR_DB_URL: postgresql+asyncpg://postgres:postgres@127.0.0.1:5432/ctr_store
           CLASSIFIER_DB_URL: postgresql+asyncpg://postgres:postgres@127.0.0.1:5432/classifier_db
           CONTENT_DB_URL: postgresql+asyncpg://postgres:postgres@127.0.0.1:5432/content_db
-          PROMPTS_REPO_PATH: ${{ github.workspace }}/ai-native-prompts
+          # `github.workspace` es la RAIZ del checkout, no el working-directory
+          # del job — por eso lleva el prefijo AI-NativeV3-main explicito.
+          # Si apunta mal, governance/tutor no encuentran los prompts y devuelven
+          # 500 al abrir el primer episodio (falla silenciosa hasta ese momento).
+          PROMPTS_REPO_PATH: ${{ github.workspace }}/AI-NativeV3-main/ai-native-prompts
           # NOTA: BYOK_MASTER_KEY queda sin setear a proposito — el smoke
           # test_create_revoke_flow se skippea, los demas BYOK tests siguen
           # cubriendo el SET LOCAL bug (que es lo critico).
@@ -137,8 +148,10 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: piloto-logs
+          # upload-artifact resuelve paths contra el workspace root, no contra
+          # el working-directory del job.
           path: |
-            .dev-logs/
+            AI-NativeV3-main/.dev-logs/
             /tmp/piloto-logs/
           if-no-files-found: ignore
           retention-days: 7
