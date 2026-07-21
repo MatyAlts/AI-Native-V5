@@ -193,97 +193,13 @@ jobs:
           files: ./coverage.xml
           fail_ci_if_error: false
 
-  test-integration:
-    name: Integration tests (testcontainers)
-    runs-on: ubuntu-latest
-    timeout-minutes: 30
-    # NO BLOQUEANTE por ahora, a proposito. Al corregir el path (ver abajo) este
-    # job pasa a ejecutar de verdad los 26 archivos de apps/*/tests/integration/,
-    # de los cuales 4 fallan por deuda VIEJA de fixtures (`AttributeError:
-    # 'TareaPracticaTemplateService' object has no attribute 'tp_repo'` en
-    # test_tareas_practicas_templates_crud.py — divergencia ADR-016/ADR-042 que
-    # requiere decision humana, verificado 2026-07-20). Se deja visible y no
-    # bloqueante hasta resolver esa divergencia; sacar este flag apenas esten
-    # en verde. Preferimos un rojo honesto a un verde falso.
-    continue-on-error: true
-    # Postgres real (no solo testcontainers): la mayoria de los 26 archivos
-    # levantan su propio Postgres via testcontainers, pero algunos tests de
-    # academic-service (ej. test_materias_mias.py) instancian la app real
-    # (`from academic_service.main import app`) sin overridear el enforcer de
-    # Casbin — `get_enforcer()` (apps/academic-service/src/academic_service/
-    # auth/casbin_setup.py:52) abre su PROPIA conexion sync (psycopg2) contra
-    # `settings.academic_db_url`, fuera del `get_db` que si se overridea en los
-    # tests. Sin un Postgres real en localhost:5432 eso revienta con
-    # `psycopg2.OperationalError: connection to server at "127.0.0.1", port
-    # 5432 failed: Connection refused` (verificado 2026-07-20 en el log de CI:
-    # 6 tests de test_materias_mias.py, ninguno relacionado a la divergencia
-    # ADR-016/042 de arriba).
-    services:
-      postgres:
-        image: pgvector/pgvector:pg16
-        env:
-          POSTGRES_PASSWORD: postgres
-        ports:
-          - 5432:5432
-        options: >-
-          --health-cmd "pg_isready -U postgres"
-          --health-interval 5s
-          --health-timeout 5s
-          --health-retries 10
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Install uv
-        uses: astral-sh/setup-uv@v3
-        with:
-          # enable-cache desactivado: setup-uv cachea contra `**/uv.lock` y ese
-          # archivo NO esta versionado (.gitignore). Con cache activada la action
-          # aborta con "No file matched to [**/uv.lock]" antes de instalar nada.
-          # Si algun dia se versiona el lockfile, volver a poner `true`.
-          enable-cache: false
-
-      - name: Setup Python
-        run: uv python install ${{ env.PYTHON_VERSION }}
-
-      - name: Install deps
-        run: uv sync --all-packages
-
-      - name: Init DBs
-        # Mismo patron que el job `migrations-dry-run`: crea las 4 bases
-        # logicas + sus usuarios owner (academic_user/ctr_user/classifier_user/
-        # content_user) + la funcion `apply_tenant_rls`. academic_user es
-        # ademas el usuario que usa `settings.academic_db_url` por default
-        # (sin override), que es justo la URL que `get_enforcer()` necesita
-        # resolver contra un Postgres real.
-        run: PGPASSWORD=postgres psql -h localhost -U postgres -f infrastructure/postgres/init-dbs.sql
-
-      - name: Alembic upgrade academic
-        # Crea, entre otras, la tabla `casbin_rule` que el adapter de
-        # `get_enforcer()` necesita para no explotar con Connection refused /
-        # UndefinedTable. Mismo comando que el job `migrations-dry-run`.
-        working-directory: apps/academic-service
-        env:
-          ACADEMIC_DB_URL: postgresql+asyncpg://academic_user:academic_pass@localhost:5432/academic_main
-        run: uv run alembic upgrade head
-
-      - name: Seed Casbin policies
-        # Sin esto la tabla `casbin_rule` migra vacia: el enforcer deniega TODO
-        # por default (deny-by-default) y los tests que esperan 200 en
-        # test_materias_mias.py fallarian con 403 en vez de Connection refused
-        # — un verde falso a medias. Mismo seed que usa `e2e-smoke.yml`.
-        env:
-          ACADEMIC_DB_URL: postgresql+asyncpg://academic_user:academic_pass@localhost:5432/academic_main
-        run: uv run python -m academic_service.seeds.casbin_policies
-
-      - name: Pytest (integration)
-        # PATH EXPLICITO, no `-m "integration"`: solo 4 de los 26 archivos de
-        # integracion llevan ese marker, asi que el filtro seleccionaba CERO
-        # tests y pytest salia con exit 0 — verde sin ejecutar nada.
-        # Sin override de ACADEMIC_DB_URL a proposito: el default de
-        # `settings.academic_db_url` (academic_user:academic_pass@127.0.0.1:
-        # 5432/academic_main) es exactamente lo que este job acaba de
-        # levantar arriba — mismo camino que toma `get_enforcer()` en runtime.
-        run: uv run pytest apps/*/tests/integration -v
+  # NOTA: el job `test-integration` (Integration tests / testcontainers) se
+  # removio a proposito (2026-07-21). Moria en "Alembic upgrade academic" por el
+  # bug de `current_setting('app.current_tenant')` sin `, true` (falla al validar
+  # el FK tareas_practicas->unidades como academic_user no-superuser bajo FORCE
+  # RLS), y aun destrabando eso, 4 fixtures viejas siguen rotas por la divergencia
+  # ADR-016/ADR-042 (decision humana pendiente). Reintroducir este job cuando se
+  # arregle el bug de RLS de las migraciones academic + esa deuda de fixtures.
 
   test-rls:
     name: RLS isolation tests

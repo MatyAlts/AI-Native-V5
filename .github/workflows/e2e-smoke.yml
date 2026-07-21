@@ -71,11 +71,14 @@ jobs:
         run: uv sync --all-packages
 
       - name: Crear las 4 bases logicas
-        run: |
-          export PGPASSWORD=postgres
-          for db in academic_main ctr_store classifier_db content_db; do
-            psql -h 127.0.0.1 -U postgres -c "CREATE DATABASE ${db};" || true
-          done
+        # init-dbs.sql es la fuente de verdad del bootstrap (misma que dev): crea
+        # las 4 bases + extensiones pgvector + la funcion apply_tenant_rls. La
+        # PRIMERA migracion de academic (20260420_0001_initial_schema_with_rls.py)
+        # invoca apply_tenant_rls(...), y el loop anterior con CREATE DATABASE
+        # pelado NO la definia -> migrate-all.sh moria en la primera migracion con
+        # "function apply_tenant_rls(unknown) does not exist" (reproducido y
+        # verificado 2026-07-21). Correr init-dbs.sql destraba el step de migrations.
+        run: PGPASSWORD=postgres psql -h 127.0.0.1 -U postgres -f infrastructure/postgres/init-dbs.sql
 
       - name: Aplicar migrations en las 4 bases
         env:
