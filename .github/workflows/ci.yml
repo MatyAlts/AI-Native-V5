@@ -472,3 +472,7 @@ jobs:
           severity: "HIGH,CRITICAL"
           exit-code: "1"
           ignore-unfixed: true
+          # La dev key Ed25519 del integrity-attestation-service es publica y
+          # commiteada a proposito (ADR-021) — ver .trivyignore.yaml, que la
+          # ignora SOLO por su ruta (cualquier otra private key sigue fallando).
+          trivyignores: ".trivyignore.yaml"

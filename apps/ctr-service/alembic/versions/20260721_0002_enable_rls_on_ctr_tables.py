@@ -55,6 +55,15 @@ def upgrade() -> None:
         op.execute(f"ALTER TABLE {table} ENABLE ROW LEVEL SECURITY")
         op.execute(f"ALTER TABLE {table} FORCE ROW LEVEL SECURITY")
 
+        # La migración 0001 llamó apply_tenant_rls() que dejó una policy
+        # `tenant_isolation` con cast `::uuid`. Con el default vacío que
+        # seteamos abajo (paso 3), esa policy castea ''::uuid y REVIENTA la
+        # query entera ("invalid input syntax for type uuid"). Como las
+        # policies permissive se combinan con OR, coexistir con la de texto
+        # no alcanza: Postgres evalúa ambas y la de uuid tira el error. La
+        # dropeamos para quedarnos solo con la fail-safe basada en texto.
+        op.execute(f"DROP POLICY IF EXISTS tenant_isolation ON {table}")
+
         # Policy: solo ver filas donde tenant_id = current_setting app.current_tenant
         op.execute(f"""
             CREATE POLICY tenant_isolation_{table}
