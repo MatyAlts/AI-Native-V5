@@ -134,6 +134,12 @@ jobs:
           DEV_TRUST_HEADERS: "true"
         run: |
           mkdir -p /tmp/piloto-logs
+          # El integrity-attestation-service (:8012) appendea a `attestations/`
+          # (relativo al repo root, su CWD). Sin el dir, su health check
+          # `attestation_dir_writable` da error -> status='error' -> el smoke
+          # test_health_endpoint_responds_ready_or_degraded[integrity...] falla.
+          # Creamos el dir para que el servicio arranque healthy en CI.
+          mkdir -p attestations
           bash scripts/dev-start-all.sh
           echo "Esperando que los servicios respondan..."
           # OJO api-gateway: usamos /health/live (liveness), NO /health (readiness).

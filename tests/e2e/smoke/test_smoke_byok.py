@@ -43,12 +43,27 @@ def test_get_keys_no_500_with_superadmin(client: httpx.Client, auth_headers) -> 
 
 
 @pytest.mark.smoke
-def test_get_keys_403_for_non_admin(client: httpx.Client, auth_headers) -> None:
-    """Roles no admin no deben poder listar keys."""
-    resp = client.get("/api/v1/byok/keys", headers=auth_headers("docente"))
-    assert resp.status_code == 403, (
-        f"docente NO debe poder GET /api/v1/byok/keys. "
-        f"status={resp.status_code} body={resp.text[:200]}"
+def test_get_keys_read_scope(client: httpx.Client, auth_headers) -> None:
+    """Scope de LECTURA de keys (ADR-039).
+
+    Por diseño el READ es mas amplio que la mutacion: `_READ_ROLES` en
+    `ai_gateway/routes/byok.py` = {superadmin, docente_admin, docente} — el
+    docente PUEDE listar las keys de IA de su materia (para ver que proveedor
+    tiene configurado), pero las mutaciones (POST/rotate/revoke) siguen
+    exigiendo `_ADMIN_ROLES` (cubierto por `test_post_keys_403_for_non_admin`).
+    Un rol fuera de `_READ_ROLES` (estudiante) NO puede leer.
+    """
+    # docente: read permitido por diseño (ADR-039)
+    resp_docente = client.get("/api/v1/byok/keys", headers=auth_headers("docente"))
+    assert resp_docente.status_code == 200, (
+        f"docente SI debe poder GET /api/v1/byok/keys (ADR-039, _READ_ROLES). "
+        f"status={resp_docente.status_code} body={resp_docente.text[:200]}"
+    )
+    # estudiante: fuera de _READ_ROLES → 403
+    resp_estudiante = client.get("/api/v1/byok/keys", headers=auth_headers("estudiante"))
+    assert resp_estudiante.status_code == 403, (
+        f"estudiante NO debe poder GET /api/v1/byok/keys. "
+        f"status={resp_estudiante.status_code} body={resp_estudiante.text[:200]}"
     )
 
 

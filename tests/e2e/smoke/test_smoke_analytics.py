@@ -63,13 +63,19 @@ def test_kappa_endpoint_computes_valid_kappa(client: httpx.Client, auth_headers)
 
 
 @pytest.mark.smoke
-def test_kappa_requires_tenant_header(client: httpx.Client) -> None:
-    """Sin X-Tenant-Id → 401/403 (no debe procesar request).
+def test_kappa_requires_tenant_header(client: httpx.Client, auth_headers) -> None:
+    """analytics valida el X-Tenant-Id (Depends(get_tenant_id)).
 
-    Atrapa: si alguien quita el `Depends(get_tenant_id)` del endpoint, este
-    test falla. Sin enforce de headers se viola el invariante "api-gateway
-    es el único source of truth de identidad" — los headers internos los
-    inyecta el gateway autoritativamente.
+    Atrapa: si alguien quita el `Depends(get_tenant_id)` del endpoint, un tenant
+    invalido pasaria sin validar.
+
+    NOTA sobre el gateway: con `dev_trust_headers=True` el gateway inyecta un
+    fallback demo (demo_user_id/demo_tenant_id, config.py) cuando NO llegan
+    headers X-*, asi que mandar la request "pelada" NO la rechaza (queda con la
+    identidad demo). Para ejercitar el enforce real mandamos AMBOS headers (asi
+    el gateway los pasa tal cual, sin fallback) pero con un X-Tenant-Id
+    MALFORMADO: `get_tenant_id` (routes/analytics.py:35) hace 400 al castear a
+    UUID. Eso prueba que el endpoint valida la identidad autoritativa.
     """
     payload = {
         "ratings": [
@@ -80,11 +86,12 @@ def test_kappa_requires_tenant_header(client: httpx.Client) -> None:
             }
         ]
     }
-    resp = client.post("/api/v1/analytics/kappa", json=payload)
-    # El gateway en dev_trust_headers requiere X-Tenant-Id + X-User-Id, sin
-    # esos cae a 401. Sería diferente si jwt_validator estuviera activo.
-    assert resp.status_code in (401, 403, 422), (
-        f"sin headers de auth no debería procesar kappa. status={resp.status_code}"
+    headers = auth_headers("docente")
+    headers["X-Tenant-Id"] = "no-es-un-uuid"  # malformado a proposito
+    resp = client.post("/api/v1/analytics/kappa", json=payload, headers=headers)
+    assert resp.status_code in (400, 422), (
+        f"X-Tenant-Id malformado deberia ser rechazado por analytics. "
+        f"status={resp.status_code} body={resp.text[:200]}"
     )
 
 
