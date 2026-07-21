@@ -136,8 +136,16 @@ jobs:
           mkdir -p /tmp/piloto-logs
           bash scripts/dev-start-all.sh
           echo "Esperando que los servicios respondan..."
+          # OJO api-gateway: usamos /health/live (liveness), NO /health (readiness).
+          # /health del gateway trata `keycloak_jwks` como check CRITICO
+          # (routes/health.py:57) y devuelve 503 si Keycloak no responde. Este job
+          # corre a proposito SIN Keycloak (DEV_TRUST_HEADERS=true — la suite smoke
+          # autentica por headers X-*, no por JWT), asi que /health seria 503 eterno
+          # y el arranque nunca se daria por listo. /health/live es 200 con el
+          # proceso vivo, que es la condicion real que queremos gatear aca.
+          # Verificado 2026-07-21 reproduciendo el stack sin Keycloak.
           for i in $(seq 1 30); do
-            if curl -sf http://127.0.0.1:8000/health > /dev/null && \
+            if curl -sf http://127.0.0.1:8000/health/live > /dev/null && \
                curl -sf http://127.0.0.1:8002/health > /dev/null && \
                curl -sf http://127.0.0.1:8005/health > /dev/null && \
                curl -sf http://127.0.0.1:8007/health > /dev/null; then
