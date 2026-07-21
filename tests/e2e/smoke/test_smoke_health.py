@@ -33,6 +33,23 @@ def test_health_endpoint_responds_ready_or_degraded(port: int, name: str) -> Non
 
     body = resp.json()
     status = body.get("status")
+
+    # api-gateway en el entorno E2E corre SIN Keycloak a proposito
+    # (DEV_TRUST_HEADERS=true; la suite smoke autentica por headers X-*, no por
+    # JWT). Su readiness marca `keycloak_jwks` como check CRITICO
+    # (api_gateway/routes/health.py:57) -> status='error'. Eso es esperable aca.
+    # Aceptamos 'error' SOLO si el unico check que falla es keycloak_jwks;
+    # cualquier OTRA dep caida (DB, academic_service) sigue fallando el test.
+    if name == "api-gateway" and status == "error":
+        checks = body.get("checks", {})
+        failing = {k for k, v in checks.items() if not v.get("ok", True)}
+        if failing == {"keycloak_jwks"}:
+            print(
+                "\n[WARN] api-gateway 'error' solo por keycloak_jwks "
+                "(esperado: E2E corre sin Keycloak, dev_trust_headers)"
+            )
+            return
+
     if status not in ("ready", "degraded", "ok"):  # ok = ctr-service legacy
         pytest.fail(
             f"{name} respondió status={status!r} — esperado ready/degraded/ok. "
