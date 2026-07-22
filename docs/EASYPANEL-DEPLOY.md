@@ -30,7 +30,13 @@ Esto evita que al buildear `api-gateway` (o cualquier otro) se descarguen deps d
 ### Matrix de build (EasyPanel)
 Para cada servicio en EasyPanel (tipo **App > Dockerfile**):
 
-- **Build context**: raíz del repo (`/workspace/AI-Native-V5/AI-NativeV3-main` en local; en Git será la raíz del proyecto).
+- **Build context / Ruta de compilación**: `/` — la raíz del repo.
+  > ⚠️ **Cambio obligatorio al mergear el PR #33.** Hasta ese merge los servicios
+  > de EasyPanel apuntan a `/AI-NativeV3-main`, que era el wrapper del monorepo.
+  > El PR #33 colapsa ese wrapper a la raíz, así que ese directorio **deja de
+  > existir**. Hay que actualizar la Ruta de compilación de los **11 servicios +
+  > el de frontends** ANTES de deployar: el que quede apuntando a la ruta vieja
+  > falla el build.
 - **Dockerfile path**: `apps/<servicio>/Dockerfile`.
 - **Port interno**: el `SERVICE_PORT`/`ENTRYPOINT` de cada servicio.
 
