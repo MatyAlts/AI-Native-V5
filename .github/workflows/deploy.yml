@@ -33,7 +33,7 @@ jobs:
     timeout-minutes: 20
     environment: staging
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: Setup kubectl and helm
         uses: azure/setup-kubectl@v4
@@ -67,7 +67,7 @@ jobs:
     environment: production  # requiere approval manual
     needs: []
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: Require 24h in staging
         run: scripts/check-staging-stability.sh 24
