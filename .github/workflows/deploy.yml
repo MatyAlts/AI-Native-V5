@@ -1,0 +1,90 @@
+name: Deploy
+
+# Trigger `push: branches: [main]` desactivado a proposito (PR #33, 2026-07-22).
+#
+# Los workflows vivian en `AI-NativeV3-main/.github/` y GitHub solo descubre los
+# de la raiz — por eso este job nunca corrio. Al colapsar el wrapper pasa a ser
+# real, y dispararia `helm upgrade` contra un Kubernetes que este proyecto no
+# usa: el deploy es EasyPanel (ver docs/EASYPANEL-DEPLOY.md). Ademas no hay
+# ningun secret cargado en el repo, con lo cual `KUBECONFIG_STAGING` viene vacio
+# y el job falla seguro. Un job rojo permanente erosiona la confianza en el CI.
+#
+# El archivo NO se borra: los paths que referencia existen
+# (infrastructure/helm/platform/*, scripts/smoke-tests.sh,
+# scripts/check-staging-stability.sh). Es un camino de deploy completo que se
+# diseño y nunca se uso — queda disponible por `workflow_dispatch` si algun dia
+# se migra a K8s.
+on:
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: "Ambiente destino"
+        required: true
+        default: "staging"
+        type: choice
+        options:
+          - staging
+          - production
+
+jobs:
+  deploy-staging:
+    if: github.ref == 'refs/heads/main' && (github.event.inputs.environment == 'staging' || github.event_name == 'push')
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    environment: staging
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup kubectl and helm
+        uses: azure/setup-kubectl@v4
+      - uses: azure/setup-helm@v4
+
+      - name: Configure kubeconfig
+        run: echo "${{ secrets.KUBECONFIG_STAGING }}" | base64 -d > kubeconfig
+
+      - name: Helm upgrade
+        env:
+          KUBECONFIG: kubeconfig
+        run: |
+          helm upgrade --install platform infrastructure/helm/platform \
+            --namespace platform-staging \
+            --create-namespace \
+            --set image.tag=${{ github.sha }} \
+            --values infrastructure/helm/platform/values.staging.yaml \
+            --wait --timeout 10m
+
+      - name: Smoke tests
+        run: scripts/smoke-tests.sh https://staging.plataforma.ar
+
+      - name: Notify
+        if: failure()
+        run: echo "Deploy a staging falló — revisar"
+
+  deploy-production:
+    if: github.event.inputs.environment == 'production'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    environment: production  # requiere approval manual
+    needs: []
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Require 24h in staging
+        run: scripts/check-staging-stability.sh 24
+
+      - name: Setup tools
+        uses: azure/setup-helm@v4
+
+      - name: Configure kubeconfig
+        run: echo "${{ secrets.KUBECONFIG_PRODUCTION }}" | base64 -d > kubeconfig
+
+      - name: Helm upgrade blue-green
+        env:
+          KUBECONFIG: kubeconfig
+        run: |
+          # Ver ADR-015 para la estrategia
+          helm upgrade --install platform infrastructure/helm/platform \
+            --namespace platform-prod \
+            --set image.tag=${{ github.sha }} \
+            --values infrastructure/helm/platform/values.production.yaml \
+            --wait --timeout 20m

@@ -1,0 +1,1844 @@
+/**
+ * Vista del banco de Ejercicios reusables (ADR-047 + ADR-048).
+ *
+ * Biblioteca por tenant. Un Ejercicio es una entidad de primera clase
+ * con UUID propio y schema pedagogico PID-UTN. Puede referenciarse desde
+ * multiples TPs via la tabla intermedia tp_ejercicios.
+ *
+ * Permite:
+ *  - Listar ejercicios con filtros por unidad_tematica, dificultad, origen IA
+ *  - Crear ejercicio manual (form con secciones)
+ *  - Crear ejercicio asistido por IA (wizard standalone)
+ *  - Editar ejercicio existente
+ *  - Borrar (soft delete)
+ *
+ * Convenciones del repo:
+ *  - useCallback para fetchFns que van a deps de useEffect
+ *  - Texto en espanol SIN tildes (encoding cp1252 en Windows)
+ *  - ModalState discriminated union (mismo patron que TareasPracticasView)
+ *  - PageContainer + helpContent (key "ejercicios")
+ */
+import { Badge, EmptyHero, Input, Modal, PageContainer } from "@platform/ui"
+import {
+  AlertTriangle,
+  BookOpen,
+  CheckCircle2,
+  Eye,
+  EyeOff,
+  FlaskConical,
+  Pencil,
+  Play,
+  Plus,
+  Search,
+  Sparkles,
+  Trash2,
+  Upload,
+  X,
+  XCircle,
+} from "lucide-react"
+import { useCallback, useEffect, useId, useMemo, useState } from "react"
+import {
+  type CriterioRubrica,
+  type Dificultad,
+  type Ejercicio,
+  type EjercicioCreate,
+  type EjercicioGenerateRequest,
+  type Materia,
+  type RubricaEjercicio,
+  type TestCaseEjercicio,
+  type UnidadTematica,
+  comisionesApi,
+  createEjercicio,
+  deleteEjercicio,
+  generateEjercicioWithAI,
+  listEjercicios,
+  listMaterias,
+  updateEjercicio,
+} from "../lib/api"
+import { type TestCaseRunResult, isPyodideRuntimeReady, runTestCases } from "../lib/pyodideRunner"
+import { helpContent } from "../utils/helpContent"
+
+interface Props {
+  comisionId: string
+  getToken: () => Promise<string | null>
+}
+
+type ModalState =
+  | { kind: "closed" }
+  | { kind: "create"; initial?: EjercicioCreate }
+  | { kind: "confirm-edit"; ejercicio: Ejercicio }
+  | { kind: "edit"; ejercicio: Ejercicio }
+  | { kind: "view"; ejercicio: Ejercicio }
+  | { kind: "test-run"; ejercicio: Ejercicio }
+  | { kind: "ai-wizard" }
+  | { kind: "import" }
+  | { kind: "confirm-delete"; ejercicio: Ejercicio }
+
+// Unidades tematicas por materia. El backend acepta cualquiera (texto libre),
+// asi que esto es solo la lista sugerida/visible en los selectores.
+// - Prog 1: temas imperativos (secuenciales -> recursividad).
+// - Prog 2: temas de POO (introduccion -> bases de datos).
+// El selector se filtra por la materia activa (ver unidadKeysParaMateria);
+// UNIDAD_LABEL es la UNION global para que cualquier ejercicio muestre su label.
+const UNIDADES_PROG1 = [
+  "secuenciales",
+  "condicionales",
+  "repetitivas",
+  "mixtos",
+  "funciones",
+  "manejo_errores",
+  "manejo_archivos",
+  "estructura_datos",
+  "recursividad",
+]
+
+const UNIDADES_PROG2 = [
+  "poo",
+  "poo_avanzada",
+  "relaciones_uml",
+  "colecciones",
+  "herencia_polimorfismo",
+  "interfaces_excepciones",
+  "genericos",
+  "bases_datos",
+]
+
+const UNIDAD_LABEL: Record<string, string> = {
+  secuenciales: "Secuenciales",
+  condicionales: "Condicionales",
+  repetitivas: "Repetitivas",
+  mixtos: "Mixtos",
+  funciones: "Funciones",
+  manejo_errores: "Manejo de errores",
+  manejo_archivos: "Manejo de archivos",
+  estructura_datos: "Estructura de datos",
+  recursividad: "Recursividad",
+  poo: "Introduccion a POO",
+  poo_avanzada: "POO II",
+  relaciones_uml: "Relaciones UML",
+  colecciones: "Colecciones",
+  herencia_polimorfismo: "Herencia y Polimorfismo",
+  interfaces_excepciones: "Interfaces y Excepciones",
+  genericos: "Genericos",
+  bases_datos: "Bases de Datos",
+}
+
+// Orden pedagogico (no alfabetico). Prog 2 va despues de Prog 1.
+const UNIDAD_ORDER: Record<string, number> = Object.fromEntries(
+  [...UNIDADES_PROG1, ...UNIDADES_PROG2].map((k, i): [string, number] => [k, i]),
+)
+
+// Elige la lista de unidades segun la materia activa. Keyea por el nombre
+// ("Programacion 2" / "Programacion II" -> Prog 2; "...1" / "I" -> Prog 1).
+// Sin nombre resoluble -> union (no bloquea la carga).
+function unidadKeysParaMateria(nombre: string | null | undefined): string[] {
+  const n = (nombre ?? "").toLowerCase()
+  if (/\b(2|ii)\b/.test(n)) return UNIDADES_PROG2
+  if (/\b(1|i)\b/.test(n)) return UNIDADES_PROG1
+  return [...UNIDADES_PROG1, ...UNIDADES_PROG2]
+}
+
+function sortEjerciciosPorTema(ejs: Ejercicio[]): Ejercicio[] {
+  return [...ejs].sort(
+    (a, b) =>
+      (UNIDAD_ORDER[a.unidad_tematica] ?? 99) - (UNIDAD_ORDER[b.unidad_tematica] ?? 99) ||
+      a.titulo.localeCompare(b.titulo),
+  )
+}
+
+const DIFICULTAD_LABEL: Record<Dificultad, string> = {
+  basica: "Basica",
+  intermedia: "Intermedia",
+  avanzada: "Avanzada",
+}
+
+const DIFICULTAD_VARIANT: Record<Dificultad, "default" | "success" | "warning"> = {
+  basica: "success",
+  intermedia: "default",
+  avanzada: "warning",
+}
+
+function emptyEjercicio(unidad: UnidadTematica = "secuenciales"): EjercicioCreate {
+  return {
+    titulo: "",
+    enunciado_md: "",
+    inicial_codigo: null,
+    unidad_tematica: unidad,
+    dificultad: null,
+    prerequisitos: { sintacticos: [], conceptuales: [] },
+    test_cases: [],
+    rubrica: null,
+    tutor_rules: null,
+    banco_preguntas: null,
+    misconceptions: [],
+    respuesta_pista: [],
+    heuristica_cierre: null,
+    anti_patrones: [],
+    created_via_ai: false,
+  }
+}
+
+export function EjerciciosView({ comisionId, getToken }: Props) {
+  const [ejercicios, setEjercicios] = useState<Ejercicio[]>([])
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState<string | null>(null)
+  // Feedback de exito de las acciones (crear/editar/borrar/importar). El repo
+  // no tiene infra de toast en @platform/ui, asi que usamos un banner inline
+  // consistente con el banner de error de la vista (FR-8). Se limpia solo con
+  // la proxima accion o al cerrarlo a mano.
+  const [notice, setNotice] = useState<string | null>(null)
+  const [modal, setModal] = useState<ModalState>({ kind: "closed" })
+  const [filterUnidad, setFilterUnidad] = useState<UnidadTematica | "">("")
+  const [filterDificultad, setFilterDificultad] = useState<Dificultad | "">("")
+  const [filterIA, setFilterIA] = useState<"" | "true" | "false">("")
+  // Busqueda por texto (FR-4). Client-side sobre lo ya cargado: el backend no
+  // expone un query param de texto (solo filtros de igualdad exacta), asi que
+  // matcheamos titulo/enunciado/unidad en vivo. Ojo: fetchList trae hasta 100
+  // ejercicios sin paginar, asi que el filtro solo ve esa primera pagina.
+  const [search, setSearch] = useState("")
+  // El banco se filtra por la materia de la comisión activa (Prog 1, Prog 2…).
+  // null = todavía resolviendo o la comisión no es del docente.
+  const [materiaId, setMateriaId] = useState<string | null>(null)
+  const [materiaNombre, setMateriaNombre] = useState<string | null>(null)
+
+  useEffect(() => {
+    let cancelled = false
+    setMateriaId(null)
+    setMateriaNombre(null)
+    comisionesApi
+      .listMine()
+      .then((res) => {
+        if (cancelled) return
+        const c = res.items.find((x) => x.id === comisionId)
+        setMateriaId(c?.materia_id ?? null)
+        setMateriaNombre(c?.materia_nombre ?? null)
+      })
+      .catch(() => {
+        if (!cancelled) {
+          setMateriaId(null)
+          setMateriaNombre(null)
+        }
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [comisionId])
+
+  // Unidades tematicas visibles segun la materia de la comision activa.
+  const unidadesComision = unidadKeysParaMateria(materiaNombre)
+
+  const fetchList = useCallback(() => {
+    // Sin materia resuelta no listamos: evita mostrar el banco global de
+    // otra materia/docente mientras resolvemos la comisión activa.
+    if (!materiaId) {
+      setEjercicios([])
+      setLoading(false)
+      return
+    }
+    setLoading(true)
+    setError(null)
+    listEjercicios(
+      {
+        materia_id: materiaId,
+        ...(filterUnidad ? { unidad_tematica: filterUnidad } : {}),
+        ...(filterDificultad ? { dificultad: filterDificultad } : {}),
+        ...(filterIA ? { created_via_ai: filterIA === "true" } : {}),
+        limit: 100,
+      },
+      getToken,
+    )
+      .then((r) => setEjercicios(sortEjerciciosPorTema(r.data)))
+      .catch((e) => setError(String(e)))
+      .finally(() => setLoading(false))
+  }, [materiaId, filterUnidad, filterDificultad, filterIA, getToken])
+
+  useEffect(() => {
+    fetchList()
+  }, [fetchList])
+
+  // Ejercicios visibles tras aplicar la busqueda por texto (sobre la lista ya
+  // filtrada/ordenada por el server). Matchea titulo, enunciado y el label de
+  // la unidad tematica. Sin termino -> lista completa.
+  const visibles = useMemo(() => {
+    const q = search.trim().toLowerCase()
+    if (!q) return ejercicios
+    return ejercicios.filter(
+      (ej) =>
+        ej.titulo.toLowerCase().includes(q) ||
+        ej.enunciado_md.toLowerCase().includes(q) ||
+        (UNIDAD_LABEL[ej.unidad_tematica] ?? ej.unidad_tematica).toLowerCase().includes(q),
+    )
+  }, [ejercicios, search])
+
+  function closeModal() {
+    setModal({ kind: "closed" })
+  }
+
+  // Crear/editar propagan el error al FormModal (que ya lo muestra inline);
+  // en exito cierran el modal y dejan un banner de exito (FR-8).
+  async function handleCreate(body: EjercicioCreate): Promise<void> {
+    // Taggea el ejercicio con la materia de la comisión activa para que
+    // quede en el banco de esa materia (Prog 1, Prog 2…).
+    await createEjercicio({ ...body, materia_id: materiaId }, getToken)
+    closeModal()
+    setNotice(`Ejercicio "${body.titulo}" creado en el banco.`)
+    fetchList()
+  }
+
+  async function handleUpdate(id: string, body: EjercicioCreate): Promise<void> {
+    await updateEjercicio(id, body, getToken)
+    closeModal()
+    setNotice(`Ejercicio "${body.titulo}" actualizado.`)
+    fetchList()
+  }
+
+  async function handleDelete(ejercicio: Ejercicio): Promise<void> {
+    // El modal de borrado no tiene banner propio: el error va al banner de
+    // error de la vista y el exito al banner de exito.
+    try {
+      await deleteEjercicio(ejercicio.id, getToken)
+      closeModal()
+      setNotice(`Ejercicio "${ejercicio.titulo}" eliminado.`)
+      fetchList()
+    } catch (e) {
+      closeModal()
+      setError(`No se pudo eliminar el ejercicio: ${String(e)}`)
+    }
+  }
+
+  return (
+    <PageContainer
+      title="Banco de Ejercicios"
+      description="Ejercicios reusables del tenant. Cada uno tiene su contexto pedagogico (banco socratico, misconceptions, anti-patrones)."
+      helpContent={helpContent.ejercicios}
+    >
+      <div className="flex flex-wrap items-center justify-between gap-3 mb-4">
+        <div className="flex flex-wrap items-center gap-2">
+          <div className="relative w-64">
+            <Search className="pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2 w-4 h-4 text-muted" />
+            <Input
+              type="text"
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              placeholder="Buscar por titulo o enunciado..."
+              aria-label="Buscar ejercicios"
+              className="h-8 pl-8 pr-8"
+            />
+            {search && (
+              <button
+                type="button"
+                onClick={() => setSearch("")}
+                title="Limpiar busqueda"
+                aria-label="Limpiar busqueda"
+                className="absolute right-2 top-1/2 -translate-y-1/2 text-muted hover:text-ink"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            )}
+          </div>
+          <select
+            value={filterUnidad}
+            onChange={(e) => setFilterUnidad(e.target.value as UnidadTematica | "")}
+            className="border border-border rounded px-2 py-1 text-sm bg-white"
+          >
+            <option value="">Todas las unidades</option>
+            {unidadesComision.map((v) => (
+              <option key={v} value={v}>
+                {UNIDAD_LABEL[v] ?? v}
+              </option>
+            ))}
+          </select>
+          <select
+            value={filterDificultad}
+            onChange={(e) => setFilterDificultad(e.target.value as Dificultad | "")}
+            className="border border-border rounded px-2 py-1 text-sm bg-white"
+          >
+            <option value="">Todas las dificultades</option>
+            <option value="basica">Basica</option>
+            <option value="intermedia">Intermedia</option>
+            <option value="avanzada">Avanzada</option>
+          </select>
+          <select
+            value={filterIA}
+            onChange={(e) => setFilterIA(e.target.value as "" | "true" | "false")}
+            className="border border-border rounded px-2 py-1 text-sm bg-white"
+          >
+            <option value="">Todos los origenes</option>
+            <option value="true">Generados con IA</option>
+            <option value="false">Creados manualmente</option>
+          </select>
+        </div>
+        <div className="flex items-center gap-2">
+          <button
+            type="button"
+            onClick={() => setModal({ kind: "ai-wizard" })}
+            className="flex items-center gap-1.5 bg-accent-brand text-white rounded px-3 py-1.5 text-sm hover:opacity-90"
+          >
+            <Sparkles className="w-4 h-4" />
+            Crear con IA
+          </button>
+          <button
+            type="button"
+            onClick={() => setModal({ kind: "create" })}
+            className="flex items-center gap-1.5 border border-border rounded px-3 py-1.5 text-sm hover:bg-canvas"
+          >
+            <Plus className="w-4 h-4" />
+            Crear manual
+          </button>
+          <button
+            type="button"
+            onClick={() => setModal({ kind: "import" })}
+            className="flex items-center gap-1.5 border border-border rounded px-3 py-1.5 text-sm hover:bg-canvas"
+          >
+            <Upload className="w-4 h-4" />
+            Importar JSON
+          </button>
+        </div>
+      </div>
+
+      {notice && (
+        <div className="flex items-start gap-2 text-sm text-emerald-700 bg-emerald-50 border border-emerald-200 rounded p-3 mb-3">
+          <CheckCircle2 className="w-4 h-4 shrink-0 mt-0.5" />
+          <span className="flex-1">{notice}</span>
+          <button
+            type="button"
+            onClick={() => setNotice(null)}
+            title="Cerrar"
+            aria-label="Cerrar aviso"
+            className="text-emerald-600 hover:text-emerald-800"
+          >
+            <X className="w-4 h-4" />
+          </button>
+        </div>
+      )}
+
+      {loading && <div className="text-sm text-muted">Cargando ejercicios...</div>}
+      {error && (
+        <div className="text-sm text-red-600 bg-red-50 border border-red-200 rounded p-3 mb-3">
+          {error}
+        </div>
+      )}
+
+      {!loading && ejercicios.length === 0 && !error && (
+        <EmptyHero
+          icon={<BookOpen className="h-12 w-12" />}
+          title="El banco de ejercicios esta vacio"
+          description={
+            materiaId
+              ? "Todavia no hay ejercicios para esta materia. Crea el primero y quedara disponible para armar TPs."
+              : "Selecciona una comision para ver y cargar su banco de ejercicios."
+          }
+          {...(materiaId
+            ? {
+                primaryAction: {
+                  label: "Crear primer ejercicio",
+                  onClick: () => setModal({ kind: "create" }),
+                },
+              }
+            : {})}
+          hint="Tambien podes generarlo con IA o importar un JSON exportado por otra IA."
+        />
+      )}
+
+      {!loading && !error && ejercicios.length > 0 && visibles.length === 0 && (
+        <div className="text-sm text-muted bg-canvas border border-border rounded p-6 text-center">
+          Ningun ejercicio coincide con "{search.trim()}". Proba con otro termino o limpia la
+          busqueda.
+        </div>
+      )}
+
+      {!loading && visibles.length > 0 && (
+        <div className="border border-border rounded overflow-hidden bg-white">
+          <table className="w-full text-sm">
+            <thead className="bg-canvas border-b border-border">
+              <tr>
+                <th className="text-left px-3 py-2 font-medium">Titulo</th>
+                <th className="text-left px-3 py-2 font-medium">Unidad</th>
+                <th className="text-left px-3 py-2 font-medium">Dificultad</th>
+                <th className="text-left px-3 py-2 font-medium">Origen</th>
+                <th className="text-left px-3 py-2 font-medium">Creado</th>
+                <th className="text-right px-3 py-2 font-medium">Acciones</th>
+              </tr>
+            </thead>
+            <tbody>
+              {visibles.map((ej) => (
+                <tr key={ej.id} className="border-b border-border last:border-0 hover:bg-canvas">
+                  <td className="px-3 py-2">
+                    <button
+                      type="button"
+                      onClick={() => setModal({ kind: "view", ejercicio: ej })}
+                      className="text-left hover:text-accent-brand"
+                    >
+                      {ej.titulo}
+                    </button>
+                  </td>
+                  <td className="px-3 py-2 text-muted">{UNIDAD_LABEL[ej.unidad_tematica]}</td>
+                  <td className="px-3 py-2">
+                    {ej.dificultad ? (
+                      <Badge variant={DIFICULTAD_VARIANT[ej.dificultad]}>
+                        {DIFICULTAD_LABEL[ej.dificultad]}
+                      </Badge>
+                    ) : (
+                      <span className="text-muted">—</span>
+                    )}
+                  </td>
+                  <td className="px-3 py-2">
+                    {ej.created_via_ai ? (
+                      <span className="inline-flex items-center gap-1 text-accent-brand text-xs">
+                        <Sparkles className="w-3 h-3" />
+                        IA
+                      </span>
+                    ) : (
+                      <span className="text-muted text-xs">Manual</span>
+                    )}
+                  </td>
+                  <td className="px-3 py-2 text-muted text-xs">
+                    {new Date(ej.created_at).toLocaleDateString("es-AR")}
+                  </td>
+                  <td className="px-3 py-2 text-right">
+                    <div className="inline-flex items-center gap-1">
+                      <button
+                        type="button"
+                        onClick={() => setModal({ kind: "test-run", ejercicio: ej })}
+                        className="p-1 hover:bg-emerald-50 hover:text-emerald-700 rounded"
+                        title="Probar ejercicio (correr contra sus test cases)"
+                      >
+                        <Play className="w-4 h-4" />
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setModal({ kind: "confirm-edit", ejercicio: ej })}
+                        className="p-1 hover:bg-border rounded"
+                        title="Editar"
+                      >
+                        <Pencil className="w-4 h-4" />
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setModal({ kind: "confirm-delete", ejercicio: ej })}
+                        className="p-1 hover:bg-red-50 hover:text-red-600 rounded"
+                        title="Eliminar"
+                      >
+                        <Trash2 className="w-4 h-4" />
+                      </button>
+                    </div>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+
+      {(modal.kind === "create" || modal.kind === "edit") && (
+        <EjercicioFormModal
+          initial={modal.kind === "edit" ? toCreate(modal.ejercicio) : modal.initial}
+          title={modal.kind === "create" ? "Crear ejercicio" : "Editar ejercicio"}
+          unidades={unidadesComision}
+          onClose={closeModal}
+          onSubmit={(body) =>
+            modal.kind === "edit" ? handleUpdate(modal.ejercicio.id, body) : handleCreate(body)
+          }
+        />
+      )}
+
+      {modal.kind === "view" && (
+        <EjercicioViewModal ejercicio={modal.ejercicio} onClose={closeModal} />
+      )}
+
+      {modal.kind === "test-run" && (
+        <Modal
+          isOpen={true}
+          onClose={closeModal}
+          title={`Probar ejercicio: ${modal.ejercicio.titulo}`}
+          size="lg"
+        >
+          <ProbarEjercicioPanel
+            testCases={modal.ejercicio.test_cases}
+            initialCode={modal.ejercicio.inicial_codigo}
+            collapsible={false}
+          />
+          <div className="flex justify-end mt-4 pt-3 border-t border-border">
+            <button
+              type="button"
+              onClick={closeModal}
+              className="px-3 py-1.5 border border-border rounded text-sm hover:bg-canvas"
+            >
+              Cerrar
+            </button>
+          </div>
+        </Modal>
+      )}
+
+      {modal.kind === "ai-wizard" && (
+        <EjercicioAIWizard
+          getToken={getToken}
+          comisionMateriaId={materiaId ?? ""}
+          onClose={closeModal}
+          onGenerated={(borrador) => setModal({ kind: "create", initial: borrador })}
+        />
+      )}
+
+      {modal.kind === "import" && (
+        <ImportJsonModal
+          materiaId={materiaId}
+          getToken={getToken}
+          onClose={closeModal}
+          onImported={fetchList}
+        />
+      )}
+
+      {modal.kind === "confirm-edit" && (
+        <Modal isOpen={true} onClose={closeModal} title="Editar ejercicio en uso" size="sm">
+          <div className="flex gap-3">
+            <AlertTriangle className="w-5 h-5 text-warning shrink-0 mt-0.5" />
+            <div className="space-y-2 text-sm">
+              <p>
+                Vas a editar <strong>{modal.ejercicio.titulo}</strong>. Este ejercicio es reusable:
+                puede estar asignado a TPs y tener entregas de alumnos.
+              </p>
+              <p className="text-muted">
+                Los cambios se aplican sobre esta misma version (no se crea una copia), asi que
+                afectan a todas las TPs que lo referencian y al contexto de las entregas ya
+                trabajadas. Revisa el impacto antes de guardar.
+              </p>
+            </div>
+          </div>
+          <div className="flex justify-end gap-2 mt-4">
+            <button
+              type="button"
+              onClick={closeModal}
+              className="px-3 py-1.5 border border-border rounded text-sm hover:bg-canvas"
+            >
+              Cancelar
+            </button>
+            <button
+              type="button"
+              onClick={() => setModal({ kind: "edit", ejercicio: modal.ejercicio })}
+              className="px-3 py-1.5 bg-warning text-white rounded text-sm hover:opacity-90"
+            >
+              Editar de todos modos
+            </button>
+          </div>
+        </Modal>
+      )}
+
+      {modal.kind === "confirm-delete" && (
+        <Modal isOpen={true} onClose={closeModal} title="Eliminar ejercicio" size="sm">
+          <p className="text-sm">
+            Vas a eliminar el ejercicio <strong>{modal.ejercicio.titulo}</strong>. Los TPs que lo
+            referencian seguiran apuntando a esta version (soft delete).
+          </p>
+          <div className="flex justify-end gap-2 mt-4">
+            <button
+              type="button"
+              onClick={closeModal}
+              className="px-3 py-1.5 border border-border rounded text-sm hover:bg-canvas"
+            >
+              Cancelar
+            </button>
+            <button
+              type="button"
+              onClick={() => handleDelete(modal.ejercicio)}
+              className="px-3 py-1.5 bg-red-600 text-white rounded text-sm hover:opacity-90"
+            >
+              Eliminar
+            </button>
+          </div>
+        </Modal>
+      )}
+    </PageContainer>
+  )
+}
+
+function toCreate(ej: Ejercicio): EjercicioCreate {
+  return {
+    titulo: ej.titulo,
+    enunciado_md: ej.enunciado_md,
+    inicial_codigo: ej.inicial_codigo,
+    unidad_tematica: ej.unidad_tematica,
+    dificultad: ej.dificultad,
+    prerequisitos: ej.prerequisitos,
+    test_cases: ej.test_cases,
+    rubrica: ej.rubrica,
+    tutor_rules: ej.tutor_rules,
+    banco_preguntas: ej.banco_preguntas,
+    misconceptions: ej.misconceptions,
+    respuesta_pista: ej.respuesta_pista,
+    heuristica_cierre: ej.heuristica_cierre,
+    anti_patrones: ej.anti_patrones,
+    created_via_ai: ej.created_via_ai,
+  }
+}
+
+// ── Form modal ──────────────────────────────────────────────────────────
+
+interface FormModalProps {
+  initial?: EjercicioCreate | undefined
+  title: string
+  unidades: string[]
+  onClose: () => void
+  onSubmit: (body: EjercicioCreate) => Promise<void>
+}
+
+function EjercicioFormModal({ initial, title, unidades, onClose, onSubmit }: FormModalProps) {
+  const [draft, setDraft] = useState<EjercicioCreate>(
+    initial ?? emptyEjercicio((unidades[0] ?? "secuenciales") as UnidadTematica),
+  )
+  const [submitting, setSubmitting] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+
+  // Opciones del selector: las de la materia + la actual si el ejercicio ya
+  // tiene una fuera de esa lista (caso edit), para no perderla.
+  const opcionesUnidad = unidades.includes(draft.unidad_tematica)
+    ? unidades
+    : [draft.unidad_tematica, ...unidades]
+
+  function set<K extends keyof EjercicioCreate>(key: K, value: EjercicioCreate[K]) {
+    setDraft((d) => ({ ...d, [key]: value }))
+  }
+
+  async function handleSubmit() {
+    setError(null)
+    if (!draft.titulo.trim() || !draft.enunciado_md.trim()) {
+      setError("Titulo y enunciado son obligatorios")
+      return
+    }
+    const criterios = draft.rubrica?.criterios ?? []
+    for (const [i, c] of criterios.entries()) {
+      if (!c.nombre.trim() || !c.descripcion.trim()) {
+        setError(`Criterio ${i + 1} de la rubrica: nombre y descripcion no pueden estar vacios`)
+        return
+      }
+      const puntaje = Number(c.puntaje_max)
+      if (!Number.isFinite(puntaje) || puntaje <= 0) {
+        setError(`Criterio ${i + 1} de la rubrica: el puntaje maximo debe ser mayor a 0`)
+        return
+      }
+    }
+    setSubmitting(true)
+    try {
+      await onSubmit(draft)
+    } catch (e) {
+      setError(String(e))
+    } finally {
+      setSubmitting(false)
+    }
+  }
+
+  return (
+    <Modal isOpen={true} onClose={onClose} title={title} size="lg">
+      <div className="space-y-4">
+        {error && (
+          <div className="text-sm text-red-600 bg-red-50 border border-red-200 rounded p-2">
+            {error}
+          </div>
+        )}
+
+        <FormSection title="Datos basicos">
+          <label htmlFor="ejercicio-titulo" className="block text-xs text-muted mb-1">
+            Titulo
+          </label>
+          <input
+            id="ejercicio-titulo"
+            type="text"
+            value={draft.titulo}
+            onChange={(e) => set("titulo", e.target.value)}
+            className="w-full border border-border rounded px-2 py-1 text-sm mb-2"
+            maxLength={200}
+          />
+          <label htmlFor="ejercicio-enunciado" className="block text-xs text-muted mb-1">
+            Enunciado (markdown)
+          </label>
+          <textarea
+            id="ejercicio-enunciado"
+            value={draft.enunciado_md}
+            onChange={(e) => set("enunciado_md", e.target.value)}
+            className="w-full border border-border rounded px-2 py-1 text-sm font-mono mb-2"
+            rows={6}
+          />
+          <label htmlFor="ejercicio-codigo-inicial" className="block text-xs text-muted mb-1">
+            Codigo inicial (opcional)
+          </label>
+          <textarea
+            id="ejercicio-codigo-inicial"
+            value={draft.inicial_codigo ?? ""}
+            onChange={(e) => set("inicial_codigo", e.target.value || null)}
+            className="w-full border border-border rounded px-2 py-1 text-sm font-mono mb-2"
+            rows={4}
+            placeholder="# Scaffold opcional"
+          />
+          <div className="grid grid-cols-2 gap-2">
+            <div>
+              <label htmlFor="ejercicio-unidad-tematica" className="block text-xs text-muted mb-1">
+                Unidad tematica
+              </label>
+              <select
+                id="ejercicio-unidad-tematica"
+                value={draft.unidad_tematica}
+                onChange={(e) => set("unidad_tematica", e.target.value as UnidadTematica)}
+                className="w-full border border-border rounded px-2 py-1 text-sm bg-white"
+              >
+                {opcionesUnidad.map((v) => (
+                  <option key={v} value={v}>
+                    {UNIDAD_LABEL[v] ?? v}
+                  </option>
+                ))}
+              </select>
+            </div>
+            <div>
+              <label htmlFor="ejercicio-dificultad" className="block text-xs text-muted mb-1">
+                Dificultad
+              </label>
+              <select
+                id="ejercicio-dificultad"
+                value={draft.dificultad ?? ""}
+                onChange={(e) => set("dificultad", (e.target.value || null) as Dificultad | null)}
+                className="w-full border border-border rounded px-2 py-1 text-sm bg-white"
+              >
+                <option value="">Sin especificar</option>
+                <option value="basica">Basica</option>
+                <option value="intermedia">Intermedia</option>
+                <option value="avanzada">Avanzada</option>
+              </select>
+            </div>
+          </div>
+        </FormSection>
+
+        <FormSection title="Rubrica de correccion">
+          <RubricaCriteriosEditor
+            value={draft.rubrica ?? null}
+            onChange={(v) => set("rubrica", v)}
+          />
+        </FormSection>
+
+        <FormSection title="Tests y prerequisitos (JSON)">
+          <JsonField
+            label="test_cases (array)"
+            value={draft.test_cases ?? []}
+            onChange={(v) => set("test_cases", v)}
+          />
+          <StudentTestCasePreview testCases={draft.test_cases ?? []} />
+          <ProbarEjercicioPanel
+            testCases={draft.test_cases ?? []}
+            initialCode={draft.inicial_codigo ?? null}
+          />
+          <JsonField
+            label="prerequisitos ({sintacticos: [], conceptuales: []})"
+            value={draft.prerequisitos ?? { sintacticos: [], conceptuales: [] }}
+            onChange={(v) => set("prerequisitos", v)}
+          />
+        </FormSection>
+
+        <FormSection title="Pedagogia PID-UTN (JSON)">
+          <JsonField
+            label="tutor_rules"
+            value={draft.tutor_rules ?? null}
+            onChange={(v) => set("tutor_rules", v)}
+            allowNull
+          />
+          <JsonField
+            label="banco_preguntas (N1-N4)"
+            value={draft.banco_preguntas ?? null}
+            onChange={(v) => set("banco_preguntas", v)}
+            allowNull
+          />
+          <JsonField
+            label="misconceptions (array)"
+            value={draft.misconceptions ?? []}
+            onChange={(v) => set("misconceptions", v)}
+          />
+          <JsonField
+            label="respuesta_pista (array por nivel)"
+            value={draft.respuesta_pista ?? []}
+            onChange={(v) => set("respuesta_pista", v)}
+          />
+          <JsonField
+            label="heuristica_cierre"
+            value={draft.heuristica_cierre ?? null}
+            onChange={(v) => set("heuristica_cierre", v)}
+            allowNull
+          />
+          <JsonField
+            label="anti_patrones (array)"
+            value={draft.anti_patrones ?? []}
+            onChange={(v) => set("anti_patrones", v)}
+          />
+        </FormSection>
+
+        <div className="flex justify-end gap-2 pt-2 border-t border-border">
+          <button
+            type="button"
+            onClick={onClose}
+            className="px-3 py-1.5 border border-border rounded text-sm hover:bg-canvas"
+          >
+            Cancelar
+          </button>
+          <button
+            type="button"
+            onClick={handleSubmit}
+            disabled={submitting}
+            className="px-3 py-1.5 bg-accent-brand text-white rounded text-sm hover:opacity-90 disabled:opacity-50"
+          >
+            {submitting ? "Guardando..." : "Guardar"}
+          </button>
+        </div>
+      </div>
+    </Modal>
+  )
+}
+
+function FormSection({ title, children }: { title: string; children: React.ReactNode }) {
+  return (
+    <details className="border border-border rounded" open>
+      <summary className="cursor-pointer px-3 py-2 text-sm font-medium bg-canvas border-b border-border">
+        {title}
+      </summary>
+      <div className="p-3 space-y-2">{children}</div>
+    </details>
+  )
+}
+
+interface JsonFieldProps {
+  label: string
+  value: unknown
+  onChange: (v: never) => void
+  allowNull?: boolean
+}
+
+function JsonField({ label, value, onChange, allowNull = false }: JsonFieldProps) {
+  const fieldId = useId()
+  const [text, setText] = useState<string>(() => JSON.stringify(value, null, 2))
+  const [err, setErr] = useState<string | null>(null)
+
+  useEffect(() => {
+    setText(JSON.stringify(value, null, 2))
+  }, [value])
+
+  function commit(next: string) {
+    setText(next)
+    if (allowNull && next.trim() === "null") {
+      setErr(null)
+      onChange(null as never)
+      return
+    }
+    try {
+      const parsed = JSON.parse(next)
+      setErr(null)
+      onChange(parsed as never)
+    } catch (e) {
+      setErr(String(e))
+    }
+  }
+
+  return (
+    <div>
+      <label htmlFor={fieldId} className="block text-xs text-muted mb-1">
+        {label}
+      </label>
+      <textarea
+        id={fieldId}
+        value={text}
+        onChange={(e) => commit(e.target.value)}
+        className={`w-full border rounded px-2 py-1 text-xs font-mono ${
+          err ? "border-red-400" : "border-border"
+        }`}
+        rows={4}
+      />
+      {err && <div className="text-xs text-red-600 mt-1">{err}</div>}
+    </div>
+  )
+}
+
+// ── Preview "Vista del alumno" de los test cases (F12) ──────────────────
+//
+// Replica el saneo de A0.3 (`sanitize_ejercicio_for_student`): el alumno solo
+// recibe los test cases con `is_public === true` (con su `code`/`expected`,
+// que necesita para "probar codigo" honesto — F1); los `is_public=false`
+// nunca viajan al cliente. Este panel le muestra al docente exactamente que
+// test cases veria el estudiante, para que entienda que expone y que queda
+// oculto. Read-only: no edita el draft.
+
+function StudentTestCasePreview({ testCases }: { testCases: TestCaseEjercicio[] }) {
+  const [open, setOpen] = useState(false)
+  const publicos = testCases.filter((tc) => tc.is_public === true)
+  const ocultos = testCases.length - publicos.length
+
+  return (
+    <div className="mt-1">
+      <button
+        type="button"
+        onClick={() => setOpen((v) => !v)}
+        className="flex items-center gap-1.5 border border-border rounded px-2.5 py-1 text-xs hover:bg-canvas"
+        aria-expanded={open}
+      >
+        {open ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
+        {open ? "Ocultar vista del alumno" : "Vista del alumno"}
+      </button>
+
+      {open && (
+        <div className="mt-2 border border-border rounded bg-canvas p-3 space-y-2">
+          <p className="text-xs text-muted">
+            Asi ve el alumno los test cases al "probar codigo". Solo los publicos (
+            <code>is_public: true</code>) viajan al cliente; los ocultos nunca se exponen (mismo
+            saneo que aplica el backend, A0.3).
+          </p>
+
+          {publicos.length === 0 ? (
+            <div className="text-xs text-muted bg-white border border-border rounded p-3 text-center">
+              El alumno no veria ningun test case. Marca alguno con <code>is_public: true</code>{" "}
+              para que pueda probar su codigo.
+            </div>
+          ) : (
+            <ul className="space-y-2">
+              {publicos.map((tc, i) => (
+                <li
+                  key={tc.id || `tc-${i}`}
+                  className="border border-border rounded bg-white p-2 text-xs space-y-1"
+                >
+                  <div className="flex items-center gap-2">
+                    <span className="font-medium">{tc.name || `Test ${i + 1}`}</span>
+                    <Badge>{tc.type === "stdin_stdout" ? "stdin/stdout" : "pytest"}</Badge>
+                    <span className="text-muted-soft ml-auto">peso {tc.weight}</span>
+                  </div>
+                  {tc.code && (
+                    <div>
+                      <div className="text-[10px] text-muted uppercase tracking-wide">
+                        {tc.type === "stdin_stdout" ? "entrada" : "assert"}
+                      </div>
+                      <pre className="bg-canvas border border-border rounded p-1.5 font-mono whitespace-pre-wrap">
+                        {tc.code}
+                      </pre>
+                    </div>
+                  )}
+                  {tc.expected !== null && tc.expected !== "" && (
+                    <div>
+                      <div className="text-[10px] text-muted uppercase tracking-wide">
+                        salida esperada
+                      </div>
+                      <pre className="bg-canvas border border-border rounded p-1.5 font-mono whitespace-pre-wrap">
+                        {tc.expected}
+                      </pre>
+                    </div>
+                  )}
+                </li>
+              ))}
+            </ul>
+          )}
+
+          {ocultos > 0 && (
+            <p className="text-[11px] text-muted">
+              {ocultos} test{ocultos !== 1 ? "s" : ""} oculto{ocultos !== 1 ? "s" : ""} de control (
+              {ocultos !== 1 ? "no viajan" : "no viaja"} al alumno).
+            </p>
+          )}
+        </div>
+      )}
+    </div>
+  )
+}
+
+// ── "Probar ejercicio" (F1, lado docente) ───────────────────────────────
+//
+// Corre el codigo solucion (o un codigo de prueba) del docente contra TODOS los
+// test_cases del ejercicio con Pyodide, en el navegador. A diferencia de F12
+// (que muestra QUE ve el alumno), F1 CORRE el ejercicio para verificar que
+// funciona antes de asignarlo. El docente es staff: ve todos los casos
+// (publicos y ocultos) con su expected. NO emite eventos CTR (es un preview de
+// autoria; el CTR solo lo escribe el alumno dentro de un episodio).
+//
+// El harness Pyodide vive en lib/pyodideRunner.ts (replica minima del patron
+// del web-student/CodeEditor.tsx, sin importar de web-student).
+
+function statusLabel(status: TestCaseRunResult["status"]): string {
+  if (status === "pass") return "Pasa"
+  if (status === "fail") return "Falla"
+  return "Error"
+}
+
+function ResultRow({ r }: { r: TestCaseRunResult }) {
+  const Icon = r.status === "pass" ? CheckCircle2 : r.status === "fail" ? XCircle : AlertTriangle
+  const tone =
+    r.status === "pass"
+      ? "text-emerald-700 bg-emerald-50 border-emerald-200"
+      : r.status === "fail"
+        ? "text-red-700 bg-red-50 border-red-200"
+        : "text-amber-800 bg-amber-50 border-amber-200"
+
+  return (
+    <li className={`border rounded p-2 text-xs space-y-1.5 ${tone}`}>
+      <div className="flex items-center gap-2">
+        <Icon className="w-4 h-4 shrink-0" />
+        <span className="font-medium">{r.name || r.id}</span>
+        <Badge>{r.type === "stdin_stdout" ? "stdin/stdout" : "pytest"}</Badge>
+        <span className="ml-auto font-semibold">{statusLabel(r.status)}</span>
+        <span className="text-muted-soft">peso {r.weight}</span>
+      </div>
+
+      {r.input.trim() !== "" && (
+        <div>
+          <div className="text-[10px] uppercase tracking-wide opacity-70">
+            {r.type === "stdin_stdout" ? "entrada (stdin)" : "assert"}
+          </div>
+          <pre className="bg-white/70 border border-current/10 rounded p-1.5 font-mono whitespace-pre-wrap">
+            {r.input}
+          </pre>
+        </div>
+      )}
+
+      {/* Solo stdin_stdout tiene esperado vs obtenido; en pytest_assert el
+          resultado es pasa/falla del assert. */}
+      {r.type === "stdin_stdout" && (
+        <div className="grid grid-cols-2 gap-2">
+          <div>
+            <div className="text-[10px] uppercase tracking-wide opacity-70">esperado</div>
+            <pre className="bg-white/70 border border-current/10 rounded p-1.5 font-mono whitespace-pre-wrap">
+              {r.expected ?? ""}
+            </pre>
+          </div>
+          <div>
+            <div className="text-[10px] uppercase tracking-wide opacity-70">obtenido</div>
+            <pre className="bg-white/70 border border-current/10 rounded p-1.5 font-mono whitespace-pre-wrap">
+              {r.got}
+            </pre>
+          </div>
+        </div>
+      )}
+
+      {r.status === "error" && r.error && (
+        <div>
+          <div className="text-[10px] uppercase tracking-wide opacity-70">error</div>
+          <pre className="bg-white/70 border border-current/10 rounded p-1.5 font-mono whitespace-pre-wrap">
+            {r.error}
+          </pre>
+        </div>
+      )}
+
+      {/* En pytest_assert sin error, mostrar el stdout del programa si lo hubo. */}
+      {r.type === "pytest_assert" && r.status === "pass" && r.got.trim() !== "" && (
+        <div>
+          <div className="text-[10px] uppercase tracking-wide opacity-70">salida del programa</div>
+          <pre className="bg-white/70 border border-current/10 rounded p-1.5 font-mono whitespace-pre-wrap">
+            {r.got}
+          </pre>
+        </div>
+      )}
+    </li>
+  )
+}
+
+function ProbarEjercicioPanel({
+  testCases,
+  initialCode,
+  collapsible = true,
+}: {
+  testCases: TestCaseEjercicio[]
+  initialCode: string | null
+  collapsible?: boolean
+}) {
+  const [open, setOpen] = useState(!collapsible)
+  const [code, setCode] = useState(initialCode ?? "")
+  const [loading, setLoading] = useState(false)
+  const [running, setRunning] = useState(false)
+  const [runError, setRunError] = useState<string | null>(null)
+  const [results, setResults] = useState<TestCaseRunResult[] | null>(null)
+
+  async function handleRun() {
+    setRunError(null)
+    setResults(null)
+    setRunning(true)
+    // La primera corrida baja Pyodide del CDN (~6 MB): avisamos con "cargando".
+    if (!isPyodideRuntimeReady()) setLoading(true)
+    try {
+      const res = await runTestCases(code, testCases)
+      setResults(res)
+    } catch (e) {
+      setRunError(String(e))
+    } finally {
+      setLoading(false)
+      setRunning(false)
+    }
+  }
+
+  const passed = results?.filter((r) => r.status === "pass").length ?? 0
+  const totalWeight = results?.reduce((a, r) => a + (r.weight || 0), 0) ?? 0
+  const passedWeight =
+    results?.filter((r) => r.status === "pass").reduce((a, r) => a + (r.weight || 0), 0) ?? 0
+  const allPass = results !== null && results.length > 0 && passed === results.length
+
+  const body = (
+    <div
+      className={
+        collapsible ? "mt-2 border border-border rounded bg-canvas p-3 space-y-2" : "space-y-2"
+      }
+    >
+      <p className="text-xs text-muted">
+        Corre el codigo solucion contra los {testCases.length} test case
+        {testCases.length !== 1 ? "s" : ""} del ejercicio (publicos y ocultos) para verificar que
+        funciona antes de asignarlo. Se ejecuta en tu navegador con Pyodide; no queda registrado en
+        la trazabilidad del alumno.
+      </p>
+
+      {testCases.length === 0 ? (
+        <div className="text-xs text-muted bg-white border border-border rounded p-3 text-center">
+          Este ejercicio no tiene test cases. Agregá alguno en <code>test_cases</code> para poder
+          probarlo.
+        </div>
+      ) : (
+        <>
+          <div>
+            <label htmlFor="probar-solucion" className="block text-xs text-muted mb-1">
+              Codigo solucion (o de prueba)
+            </label>
+            <textarea
+              id="probar-solucion"
+              value={code}
+              onChange={(e) => setCode(e.target.value)}
+              className="w-full border border-border rounded px-2 py-1 text-xs font-mono bg-white"
+              rows={8}
+              spellCheck={false}
+              placeholder="# Pega aca la solucion del ejercicio (o un codigo de prueba) para correrlo contra los test cases"
+            />
+            <p className="text-[11px] text-muted mt-1">
+              Recorda: los asserts de tipo <code>pytest</code> referencian las clases/funciones de
+              este codigo directamente (mismo archivo, sin imports del alumno).
+            </p>
+          </div>
+
+          <button
+            type="button"
+            onClick={handleRun}
+            disabled={running}
+            className="inline-flex items-center gap-1.5 bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 text-white rounded px-3 py-1.5 text-sm font-medium"
+          >
+            <Play className="w-4 h-4" />
+            {loading
+              ? "Cargando Python..."
+              : running
+                ? "Ejecutando..."
+                : `Probar contra ${testCases.length} test case${testCases.length !== 1 ? "s" : ""}`}
+          </button>
+
+          {runError && (
+            <div className="text-xs text-red-600 bg-red-50 border border-red-200 rounded p-2 whitespace-pre-wrap">
+              {runError}
+            </div>
+          )}
+
+          {results && (
+            <div className="space-y-2">
+              <div
+                className={`flex items-center gap-2 text-sm rounded p-2 border ${
+                  allPass
+                    ? "text-emerald-700 bg-emerald-50 border-emerald-200"
+                    : "text-amber-800 bg-amber-50 border-amber-200"
+                }`}
+              >
+                {allPass ? (
+                  <CheckCircle2 className="w-4 h-4 shrink-0" />
+                ) : (
+                  <AlertTriangle className="w-4 h-4 shrink-0" />
+                )}
+                <span className="font-medium">
+                  {passed}/{results.length} test cases pasan
+                </span>
+                {totalWeight > 0 && (
+                  <span className="ml-auto text-xs">
+                    peso {passedWeight}/{totalWeight}
+                  </span>
+                )}
+              </div>
+              <ul className="space-y-2">
+                {results.map((r) => (
+                  <ResultRow key={r.id} r={r} />
+                ))}
+              </ul>
+            </div>
+          )}
+        </>
+      )}
+    </div>
+  )
+
+  if (!collapsible) return body
+
+  return (
+    <div className="mt-1">
+      <button
+        type="button"
+        onClick={() => setOpen((v) => !v)}
+        className="flex items-center gap-1.5 border border-border rounded px-2.5 py-1 text-xs hover:bg-canvas"
+        aria-expanded={open}
+      >
+        <FlaskConical className="w-3.5 h-3.5" />
+        {open ? "Ocultar probar ejercicio" : "Probar ejercicio"}
+      </button>
+      {open && body}
+    </div>
+  )
+}
+
+// ── Editor estructurado de rubrica (criterios) ──────────────────────────
+//
+// Reemplaza el JSON crudo del campo `rubrica`. Serializa al shape que acepta
+// el backend: { criterios: [{ nombre, descripcion, puntaje_max }, ...] }.
+// `puntaje_max` viaja como string (Decimal serializado, ver CriterioRubrica).
+// Sin criterios -> rubrica = null (el ejercicio no usa rubrica).
+
+function RubricaCriteriosEditor({
+  value,
+  onChange,
+}: {
+  value: RubricaEjercicio | null
+  onChange: (v: RubricaEjercicio | null) => void
+}) {
+  const criterios = value?.criterios ?? []
+
+  function update(next: CriterioRubrica[]) {
+    onChange(next.length > 0 ? { criterios: next } : null)
+  }
+
+  function addCriterio() {
+    update([...criterios, { nombre: "", descripcion: "", puntaje_max: "" }])
+  }
+
+  function removeCriterio(idx: number) {
+    update(criterios.filter((_, i) => i !== idx))
+  }
+
+  function setField(idx: number, key: keyof CriterioRubrica, val: string) {
+    update(criterios.map((c, i) => (i === idx ? { ...c, [key]: val } : c)))
+  }
+
+  return (
+    <div>
+      <p className="text-xs text-muted mb-2">
+        Criterios contra los que se corrige el ejercicio. Cada uno con un puntaje maximo mayor a 0.
+        Sin criterios, el ejercicio no usa rubrica.
+      </p>
+
+      {criterios.length === 0 ? (
+        <div className="text-xs text-muted bg-canvas border border-border rounded p-3 text-center mb-2">
+          No hay criterios todavia.
+        </div>
+      ) : (
+        <div className="space-y-2 mb-2">
+          {criterios.map((c, i) => {
+            const puntaje = Number(c.puntaje_max)
+            const puntajeInvalid =
+              c.puntaje_max.trim() !== "" && (!Number.isFinite(puntaje) || puntaje <= 0)
+            return (
+              <div
+                // biome-ignore lint/suspicious/noArrayIndexKey: criterios controlados sin estado interno; el orden lo fija el docente
+                key={i}
+                className="border border-border rounded p-2 bg-canvas flex items-start gap-2"
+              >
+                <div className="flex-1 space-y-2">
+                  <input
+                    type="text"
+                    value={c.nombre}
+                    onChange={(e) => setField(i, "nombre", e.target.value)}
+                    placeholder="Nombre (ej: Correctitud)"
+                    className="w-full border border-border rounded px-2 py-1 text-sm bg-white"
+                  />
+                  <textarea
+                    value={c.descripcion}
+                    onChange={(e) => setField(i, "descripcion", e.target.value)}
+                    placeholder="Que evalua este criterio"
+                    className="w-full border border-border rounded px-2 py-1 text-sm bg-white"
+                    rows={2}
+                  />
+                </div>
+                <div className="w-24 shrink-0">
+                  <input
+                    type="number"
+                    min={0}
+                    step="0.5"
+                    value={c.puntaje_max}
+                    onChange={(e) => setField(i, "puntaje_max", e.target.value)}
+                    placeholder="0"
+                    className={`w-full border rounded px-2 py-1 text-sm bg-white ${
+                      puntajeInvalid ? "border-red-400" : "border-border"
+                    }`}
+                  />
+                  <div className="text-[10px] text-muted mt-1 text-center">puntaje max</div>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => removeCriterio(i)}
+                  className="p-1 text-muted hover:bg-red-50 hover:text-red-600 rounded shrink-0"
+                  title="Quitar criterio"
+                >
+                  <Trash2 className="w-4 h-4" />
+                </button>
+              </div>
+            )
+          })}
+        </div>
+      )}
+
+      <button
+        type="button"
+        onClick={addCriterio}
+        className="flex items-center gap-1.5 border border-border rounded px-2.5 py-1 text-xs hover:bg-canvas"
+      >
+        <Plus className="w-3.5 h-3.5" />
+        Agregar criterio
+      </button>
+    </div>
+  )
+}
+
+// ── View modal (read-only) ─────────────────────────────────────────────
+
+function EjercicioViewModal({
+  ejercicio,
+  onClose,
+}: {
+  ejercicio: Ejercicio
+  onClose: () => void
+}) {
+  return (
+    <Modal isOpen={true} onClose={onClose} title={ejercicio.titulo} size="lg">
+      <div className="space-y-3 text-sm">
+        <div className="flex gap-2">
+          <Badge>{UNIDAD_LABEL[ejercicio.unidad_tematica]}</Badge>
+          {ejercicio.dificultad && (
+            <Badge variant={DIFICULTAD_VARIANT[ejercicio.dificultad]}>
+              {DIFICULTAD_LABEL[ejercicio.dificultad]}
+            </Badge>
+          )}
+          {ejercicio.created_via_ai && (
+            <Badge variant="default">
+              <Sparkles className="w-3 h-3 inline mr-1" />
+              IA
+            </Badge>
+          )}
+        </div>
+        <div>
+          <div className="text-xs text-muted mb-1">Enunciado</div>
+          <pre className="bg-canvas border border-border rounded p-2 text-xs whitespace-pre-wrap font-mono">
+            {ejercicio.enunciado_md}
+          </pre>
+        </div>
+        {ejercicio.inicial_codigo && (
+          <div>
+            <div className="text-xs text-muted mb-1">Codigo inicial</div>
+            <pre className="bg-canvas border border-border rounded p-2 text-xs font-mono">
+              {ejercicio.inicial_codigo}
+            </pre>
+          </div>
+        )}
+        <ReadOnlyJson label="test_cases" value={ejercicio.test_cases} />
+        <ReadOnlyJson label="rubrica" value={ejercicio.rubrica} />
+        <ReadOnlyJson label="tutor_rules" value={ejercicio.tutor_rules} />
+        <ReadOnlyJson label="banco_preguntas" value={ejercicio.banco_preguntas} />
+        <ReadOnlyJson label="misconceptions" value={ejercicio.misconceptions} />
+        <ReadOnlyJson label="respuesta_pista" value={ejercicio.respuesta_pista} />
+        <ReadOnlyJson label="heuristica_cierre" value={ejercicio.heuristica_cierre} />
+        <ReadOnlyJson label="anti_patrones" value={ejercicio.anti_patrones} />
+      </div>
+      <div className="flex justify-end mt-4 pt-3 border-t border-border">
+        <button
+          type="button"
+          onClick={onClose}
+          className="px-3 py-1.5 border border-border rounded text-sm hover:bg-canvas"
+        >
+          Cerrar
+        </button>
+      </div>
+    </Modal>
+  )
+}
+
+function ReadOnlyJson({ label, value }: { label: string; value: unknown }) {
+  if (value === null || value === undefined) return null
+  if (Array.isArray(value) && value.length === 0) return null
+  return (
+    <details className="border border-border rounded">
+      <summary className="cursor-pointer px-2 py-1 text-xs font-medium bg-canvas">{label}</summary>
+      <pre className="p-2 text-xs font-mono overflow-x-auto">{JSON.stringify(value, null, 2)}</pre>
+    </details>
+  )
+}
+
+// ── AI Wizard modal ────────────────────────────────────────────────────
+
+interface AIWizardProps {
+  getToken: () => Promise<string | null>
+  onClose: () => void
+  onGenerated: (borrador: EjercicioCreate) => void
+  // Materia de la comision activa: el wizard arranca con ella pre-seleccionada
+  // para que las unidades se filtren de entrada (Prog 1 vs Prog 2).
+  comisionMateriaId: string
+}
+
+function EjercicioAIWizard({ getToken, onClose, onGenerated, comisionMateriaId }: AIWizardProps) {
+  const [materias, setMaterias] = useState<Materia[]>([])
+  const [materiaId, setMateriaId] = useState<string>(comisionMateriaId)
+  const [descripcionNl, setDescripcionNl] = useState("")
+  const [unidad, setUnidad] = useState<UnidadTematica>("secuenciales")
+  const [dificultad, setDificultad] = useState<Dificultad | "">("")
+  const [contexto, setContexto] = useState("")
+  const [generating, setGenerating] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+
+  useEffect(() => {
+    listMaterias("", getToken)
+      .then(setMaterias)
+      .catch(() => setMaterias([]))
+  }, [getToken])
+
+  // Unidades segun la materia elegida en el wizard (sin materia -> union).
+  const unidadesWizard = unidadKeysParaMateria(materias.find((m) => m.id === materiaId)?.nombre)
+  // Si al cambiar de materia la unidad actual ya no aplica, elegir la primera.
+  useEffect(() => {
+    const keys = unidadKeysParaMateria(materias.find((m) => m.id === materiaId)?.nombre)
+    setUnidad((prev) =>
+      keys.includes(prev) ? prev : ((keys[0] ?? "secuenciales") as UnidadTematica),
+    )
+  }, [materiaId, materias])
+
+  async function handleGenerate() {
+    setError(null)
+    if (descripcionNl.trim().length < 10) {
+      setError("La descripcion debe tener al menos 10 caracteres")
+      return
+    }
+    setGenerating(true)
+    // materia_id es opcional: si esta vacio, el backend resuelve la primera
+    // del tenant (modo demo / piloto). Ver ADR-047.
+    const req: EjercicioGenerateRequest = {
+      ...(materiaId ? { materia_id: materiaId } : {}),
+      descripcion_nl: descripcionNl,
+      unidad_tematica: unidad,
+      ...(dificultad ? { dificultad } : {}),
+      ...(contexto ? { contexto } : {}),
+    }
+    try {
+      const resp = await generateEjercicioWithAI(req, getToken)
+      onGenerated(resp.borrador)
+    } catch (e) {
+      setError(String(e))
+    } finally {
+      setGenerating(false)
+    }
+  }
+
+  return (
+    <Modal isOpen={true} onClose={onClose} title="Generar ejercicio con IA" size="md">
+      <div className="space-y-3 text-sm">
+        {error && (
+          <div className="text-red-600 bg-red-50 border border-red-200 rounded p-2">{error}</div>
+        )}
+        <div>
+          <label htmlFor="wizard-materia" className="block text-xs text-muted mb-1">
+            Materia (para BYOK + RAG)
+          </label>
+          <select
+            id="wizard-materia"
+            value={materiaId}
+            onChange={(e) => setMateriaId(e.target.value)}
+            className="w-full border border-border rounded px-2 py-1 text-sm bg-white"
+          >
+            <option value="">Sin especificar (usa la primera del tenant)</option>
+            {materias.map((m) => (
+              <option key={m.id} value={m.id}>
+                {m.nombre}
+              </option>
+            ))}
+          </select>
+          {materias.length === 0 && (
+            <p className="text-xs text-muted mt-1">
+              No hay materias cargadas en este tenant. Dejala sin especificar y el backend elige la
+              primera disponible.
+            </p>
+          )}
+        </div>
+        <div>
+          <label htmlFor="wizard-descripcion" className="block text-xs text-muted mb-1">
+            Descripcion del ejercicio (en lenguaje natural)
+          </label>
+          <textarea
+            id="wizard-descripcion"
+            value={descripcionNl}
+            onChange={(e) => setDescripcionNl(e.target.value)}
+            rows={4}
+            className="w-full border border-border rounded px-2 py-1 text-sm"
+            placeholder="Ej: Quiero un ejercicio donde el alumno calcule el area de un circulo usando casting a float y la constante pi."
+          />
+        </div>
+        <div className="grid grid-cols-2 gap-2">
+          <div>
+            <label htmlFor="wizard-unidad" className="block text-xs text-muted mb-1">
+              Unidad tematica
+            </label>
+            <select
+              id="wizard-unidad"
+              value={unidad}
+              onChange={(e) => setUnidad(e.target.value as UnidadTematica)}
+              className="w-full border border-border rounded px-2 py-1 text-sm bg-white"
+            >
+              {unidadesWizard.map((v) => (
+                <option key={v} value={v}>
+                  {UNIDAD_LABEL[v] ?? v}
+                </option>
+              ))}
+            </select>
+          </div>
+          <div>
+            <label htmlFor="wizard-dificultad" className="block text-xs text-muted mb-1">
+              Dificultad (opcional)
+            </label>
+            <select
+              id="wizard-dificultad"
+              value={dificultad}
+              onChange={(e) => setDificultad(e.target.value as Dificultad | "")}
+              className="w-full border border-border rounded px-2 py-1 text-sm bg-white"
+            >
+              <option value="">Sin especificar</option>
+              <option value="basica">Basica</option>
+              <option value="intermedia">Intermedia</option>
+              <option value="avanzada">Avanzada</option>
+            </select>
+          </div>
+        </div>
+        <div>
+          <label htmlFor="wizard-contexto" className="block text-xs text-muted mb-1">
+            Contexto adicional (opcional)
+          </label>
+          <textarea
+            id="wizard-contexto"
+            value={contexto}
+            onChange={(e) => setContexto(e.target.value)}
+            rows={2}
+            className="w-full border border-border rounded px-2 py-1 text-sm"
+            placeholder="Ej: Es para el TP1 de Programacion I, primer ano TUPAD."
+          />
+        </div>
+        <div className="flex justify-end gap-2 pt-2 border-t border-border">
+          <button
+            type="button"
+            onClick={onClose}
+            className="px-3 py-1.5 border border-border rounded text-sm hover:bg-canvas"
+          >
+            Cancelar
+          </button>
+          <button
+            type="button"
+            onClick={handleGenerate}
+            disabled={generating}
+            className="flex items-center gap-1.5 px-3 py-1.5 bg-accent-brand text-white rounded text-sm hover:opacity-90 disabled:opacity-50"
+          >
+            <Sparkles className="w-4 h-4" />
+            {generating ? "Generando..." : "Generar borrador"}
+          </button>
+        </div>
+      </div>
+    </Modal>
+  )
+}
+
+// ── Import desde JSON ───────────────────────────────────────────────────
+//
+// El tutor genera un ejercicio con SU PROPIA IA (ChatGPT, Claude, etc.) usando
+// este prompt, y pega el JSON resultante. Se crea con el endpoint de create
+// existente (un ejercicio por JSON). El prompt vive acá para poder copiarlo
+// desde el modal.
+
+const MASTER_PROMPT = `Sos un asistente que genera ejercicios de programacion en Python para una plataforma de tutor socratico (UTN). A partir de la consigna que te doy al final, genera UN ejercicio como un UNICO objeto JSON valido, sin ningun texto antes ni despues del JSON (tiene que poder pegarse directo en la plataforma).
+
+REGLA CRITICA (un solo archivo): el alumno resuelve TODO en UN solo archivo. La(s) clase(s) o funcion(es) y su bloque de prueba if __name__ == "__main__": van juntas. NUNCA pidas varios archivos ni uses import de modulos del alumno. Los test_cases deben referenciar las clases/funciones directamente (estan definidas en el mismo archivo), sin "from ... import ...".
+
+Devolve EXACTAMENTE esta estructura, respetando los nombres de campo tal cual:
+
+{
+  "titulo": "string (1 a 200 caracteres)",
+  "enunciado_md": "string en markdown con la consigna completa",
+  "inicial_codigo": "string con codigo scaffold, o null si no aplica",
+  "unidad_tematica": "UNO de: secuenciales | condicionales | repetitivas | mixtos | funciones | manejo_errores | manejo_archivos | estructura_datos | recursividad | poo | poo_avanzada | relaciones_uml | colecciones | herencia_polimorfismo | interfaces_excepciones | genericos | bases_datos",
+  "dificultad": "basica | intermedia | avanzada (o null)",
+  "prerequisitos": { "sintacticos": ["..."], "conceptuales": ["..."] },
+  "test_cases": [
+    { "id": "t1", "name": "descripcion corta del test", "type": "pytest_assert", "code": "lineas de assert que referencian la clase/funcion directamente", "expected": null, "is_public": true, "weight": 1.0 }
+  ],
+  "rubrica": { "criterios": [ { "nombre": "...", "descripcion": "...", "puntaje_max": 5 } ] },
+  "tutor_rules": { "prohibido_dar_solucion": true, "forzar_pregunta_antes_de_hint": false, "nivel_socratico_minimo": 1, "instrucciones_adicionales": "reglas especificas de este ejercicio, o null" },
+  "banco_preguntas": {
+    "n1": [ { "texto": "pregunta socratica", "senal_comprension": "que respuesta indica que entendio", "senal_alerta": "que respuesta indica confusion" } ],
+    "n2": [], "n3": [], "n4": []
+  },
+  "misconceptions": [ { "descripcion": "error comun anticipado", "probabilidad_estimada": 0.6, "pregunta_diagnostica": "pregunta que lo hace visible" } ],
+  "respuesta_pista": [ { "nivel": 1, "pista": "anti-solucion, nunca el codigo entero" } ],
+  "heuristica_cierre": { "tests_min_pasados": 1, "heuristica": "cuando se puede dar por cerrado el ejercicio" },
+  "anti_patrones": [ { "patron": "que NO debe hacer el tutor", "descripcion": "por que", "mensaje_orientacion": "que hacer en su lugar" } ],
+  "created_via_ai": true
+}
+
+Reglas de contenido:
+- test_cases: usa "pytest_assert" para clases/funciones (code = los asserts); usa "stdin_stdout" para programas con input()/print (code = "", expected = la salida esperada exacta). is_public true = el alumno lo ve; false = test oculto de control. weight es un numero mayor o igual a 0.
+- banco_preguntas: N1 comprension del concepto, N2 aplicacion, N3 analisis/validacion, N4 sintesis. Cada pregunta es un objeto con texto + senal_comprension + senal_alerta (NUNCA strings sueltas).
+- rubrica: cada criterio con puntaje_max mayor a 0 (el campo se llama puntaje_max, NO peso).
+- No inventes misconceptions implausibles. Mejor pocas y buenas.
+
+CONSIGNA DEL EJERCICIO (reemplaza esta linea por lo que quieras que resuelva el alumno):
+[Describi aca el ejercicio: clase(s)/funcion(es), atributos, validaciones, metodos, lo que debe probar, etc.]`
+
+interface ImportModalProps {
+  materiaId: string | null
+  getToken: () => Promise<string | null>
+  onClose: () => void
+  onImported: () => void
+}
+
+function ImportJsonModal({ materiaId, getToken, onClose, onImported }: ImportModalProps) {
+  const [jsonText, setJsonText] = useState("")
+  const [error, setError] = useState<string | null>(null)
+  const [result, setResult] = useState<string | null>(null)
+  const [importing, setImporting] = useState(false)
+  const [copied, setCopied] = useState(false)
+
+  async function copyPrompt() {
+    try {
+      await navigator.clipboard.writeText(MASTER_PROMPT)
+      setCopied(true)
+      setTimeout(() => setCopied(false), 1500)
+    } catch {
+      setError("No se pudo copiar automaticamente; seleccionalo y copialo a mano.")
+    }
+  }
+
+  async function handleImport() {
+    setError(null)
+    setResult(null)
+    let parsed: unknown
+    try {
+      parsed = JSON.parse(jsonText)
+    } catch (e) {
+      setError(`El JSON no es valido: ${String(e)}`)
+      return
+    }
+    const items: EjercicioCreate[] = Array.isArray(parsed)
+      ? (parsed as EjercicioCreate[])
+      : [parsed as EjercicioCreate]
+    if (items.length === 0) {
+      setError("No encontre ningun ejercicio en el JSON.")
+      return
+    }
+    setImporting(true)
+    let ok = 0
+    const errs: string[] = []
+    for (const [i, item] of items.entries()) {
+      try {
+        await createEjercicio({ ...item, materia_id: materiaId }, getToken)
+        ok++
+      } catch (e) {
+        errs.push(`Ejercicio ${i + 1}: ${String(e)}`)
+      }
+    }
+    setImporting(false)
+    onImported()
+    if (errs.length === 0) {
+      setResult(`Listo: ${ok} ejercicio${ok !== 1 ? "s" : ""} importado${ok !== 1 ? "s" : ""}.`)
+      setJsonText("")
+    } else {
+      setResult(`Importados ${ok}. Con errores:\n${errs.join("\n")}`)
+    }
+  }
+
+  return (
+    <Modal isOpen={true} onClose={onClose} title="Importar ejercicio desde JSON" size="md">
+      <div className="space-y-3 text-sm">
+        <details className="border border-border rounded">
+          <summary className="cursor-pointer px-3 py-2 font-medium bg-canvas">
+            No tenes el JSON? Copia este prompt y pegalo en tu IA (ChatGPT, Claude, etc.)
+          </summary>
+          <div className="p-3 space-y-2">
+            <button
+              type="button"
+              onClick={copyPrompt}
+              className="flex items-center gap-1.5 border border-border rounded px-3 py-1 text-xs hover:bg-canvas"
+            >
+              {copied ? "Copiado!" : "Copiar prompt"}
+            </button>
+            <pre className="max-h-48 overflow-auto text-[11px] bg-canvas p-2 rounded border border-border whitespace-pre-wrap">
+              {MASTER_PROMPT}
+            </pre>
+            <p className="text-xs text-muted">
+              Pega el prompt en tu IA, agrega tu consigna al final, y trae aca el JSON que te
+              devuelva.
+            </p>
+          </div>
+        </details>
+
+        <div>
+          <label htmlFor="import-json-textarea" className="block text-xs text-muted mb-1">
+            Pega el JSON del ejercicio
+          </label>
+          <textarea
+            id="import-json-textarea"
+            value={jsonText}
+            onChange={(e) => setJsonText(e.target.value)}
+            rows={10}
+            className="w-full border border-border rounded px-2 py-1 font-mono text-xs"
+            placeholder={
+              '{ "titulo": "...", "enunciado_md": "...", "unidad_tematica": "...", ... }'
+            }
+          />
+        </div>
+
+        <div className="flex items-center gap-2">
+          <label htmlFor="import-json-file" className="text-xs text-muted">
+            o subi un archivo:
+          </label>
+          <input
+            id="import-json-file"
+            type="file"
+            accept=".json,application/json"
+            onChange={(e) => {
+              const f = e.target.files?.[0]
+              if (!f) return
+              f.text()
+                .then((t) => {
+                  setJsonText(t)
+                  setError(null)
+                })
+                .catch(() => setError("No se pudo leer el archivo."))
+            }}
+            className="text-xs"
+          />
+        </div>
+
+        {error && (
+          <div className="text-red-600 bg-red-50 border border-red-200 rounded p-2 whitespace-pre-wrap">
+            {error}
+          </div>
+        )}
+        {result && (
+          <div className="text-emerald-700 bg-emerald-50 border border-emerald-200 rounded p-2 whitespace-pre-wrap">
+            {result}
+          </div>
+        )}
+
+        <div className="flex justify-end gap-2 pt-2 border-t border-border">
+          <button
+            type="button"
+            onClick={onClose}
+            className="px-3 py-1.5 border border-border rounded hover:bg-canvas"
+          >
+            Cerrar
+          </button>
+          <button
+            type="button"
+            onClick={handleImport}
+            disabled={importing || !jsonText.trim() || !materiaId}
+            className="flex items-center gap-1.5 px-3 py-1.5 bg-accent-brand text-white rounded hover:opacity-90 disabled:opacity-50"
+          >
+            <Upload className="w-4 h-4" />
+            {importing ? "Importando..." : "Importar"}
+          </button>
+        </div>
+      </div>
+    </Modal>
+  )
+}

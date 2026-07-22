@@ -1,0 +1,12 @@
+# Trivy ignore file — hallazgos aceptados con justificación.
+#
+# Secret scanning: la clave privada Ed25519 de dev del integrity-attestation-service
+# es PÚBLICA y commiteada A PROPÓSITO (ADR-021). Es determinista (derivada de un
+# seed fijo, regenerable con dev-keys/regenerate.py), NO firma nada de valor y su
+# uso en producción está bloqueado por el fail-fast de startup cuando
+# ENVIRONMENT=production. Ver apps/integrity-attestation-service/dev-keys/README.md.
+# Se ignora SOLO esta ruta — cualquier otra private key en el repo sigue fallando el scan.
+secrets:
+  - id: private-key
+    paths:
+      - "apps/integrity-attestation-service/dev-keys/dev-private.pem"

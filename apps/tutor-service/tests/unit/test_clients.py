@@ -1,0 +1,452 @@
+"""Tests de los clients agrupados en apps/tutor-service/.../services/clients.py.
+
+Cubre las 4 clases: GovernanceClient, ContentClient, AIGatewayClient, CTRClient.
+NOTA (2026-07-20): `governance_client.py` y `content_client.py` fueron BORRADOS.
+Eran duplicados sin ningun import desde `src/` — solo los cargaban sus propios
+tests. De esa duplicacion salio un bug real: `content_client.RetrievalResult`
+tiene un campo `rerank_applied` que la de `clients.py` no tiene, y alguien copio
+un constructor de una a la otra -> TypeError en los guards de `retrieve()`.
+`test_governance_client.py` ademas ejercitaba `resolve_for_tenant`, un metodo
+inexistente en el cliente real: 8 asserts en verde sobre codigo que nunca corrio.
+Este archivo cubre `clients.py`, que es el unico que usa el runtime.
+"""
+
+from __future__ import annotations
+
+from uuid import uuid4
+
+import httpx
+import pytest
+import respx
+from tutor_service.services.clients import (
+    AIGatewayClient,
+    ContentClient,
+    CTRClient,
+    GovernanceClient,
+)
+
+GOV = "http://governance:8010"
+CONTENT = "http://content:8009"
+AI_GW = "http://ai-gateway:8011"
+CTR = "http://ctr:8007"
+
+
+# ---------- GovernanceClient ----------
+
+
+@pytest.mark.asyncio
+@respx.mock
+async def test_governance_get_prompt() -> None:
+    respx.get(f"{GOV}/api/v1/prompts/tutor/v1.0.0").mock(
+        return_value=httpx.Response(
+            200,
+            json={
+                "name": "tutor",
+                "version": "v1.0.0",
+                "content": "p",
+                "hash": "h",
+            },
+        )
+    )
+    client = GovernanceClient(GOV)
+    cfg = await client.get_prompt("tutor", "v1.0.0")
+    assert cfg.version == "v1.0.0"
+    assert cfg.hash == "h"
+
+
+@pytest.mark.asyncio
+@respx.mock
+async def test_governance_get_active_configs() -> None:
+    respx.get(f"{GOV}/api/v1/active_configs").mock(
+        return_value=httpx.Response(200, json={"active": {"default": {}}})
+    )
+    client = GovernanceClient(GOV)
+    out = await client.get_active_configs()
+    assert "active" in out
+
+
+@pytest.mark.asyncio
+@respx.mock
+async def test_governance_sends_internal_service_token_when_set() -> None:
+    """A0.1/A0.4: con token seteado, las llamadas a governance incluyen el
+    header X-Internal-Service-Token en TODOS los endpoints."""
+    captured: dict = {}
+
+    def cap(req: httpx.Request) -> httpx.Response:
+        captured.setdefault("headers", []).append(dict(req.headers))
+        return httpx.Response(
+            200,
+            json={"name": "tutor", "version": "v1.0.0", "content": "p", "hash": "h"},
+        )
+
+    respx.get(f"{GOV}/api/v1/prompts/tutor/v1.0.0").mock(side_effect=cap)
+    respx.get(f"{GOV}/api/v1/active_configs").mock(
+        side_effect=lambda req: (
+            captured.setdefault("headers", []).append(dict(req.headers))
+            or httpx.Response(200, json={"active": {"default": {}}})
+        )
+    )
+    client = GovernanceClient(GOV, internal_service_token="s3cr3t-shared")
+    await client.get_prompt("tutor", "v1.0.0")
+    await client.get_active_configs()
+
+    assert captured["headers"]  # se capturaron requests
+    for h in captured["headers"]:
+        assert h["x-internal-service-token"] == "s3cr3t-shared"
+
+
+@pytest.mark.asyncio
+@respx.mock
+async def test_governance_omits_internal_service_token_when_empty() -> None:
+    """Backward-compat: sin token, NO se manda el header (estado flag-OFF)."""
+    captured: dict = {}
+
+    def cap(req: httpx.Request) -> httpx.Response:
+        captured["headers"] = dict(req.headers)
+        return httpx.Response(
+            200,
+            json={"name": "tutor", "version": "v1.0.0", "content": "p", "hash": "h"},
+        )
+
+    respx.get(f"{GOV}/api/v1/prompts/tutor/v1.0.0").mock(side_effect=cap)
+    client = GovernanceClient(GOV)  # token vacio por default
+    await client.get_prompt("tutor", "v1.0.0")
+
+    assert "x-internal-service-token" not in captured["headers"]
+
+
+# ---------- ContentClient ----------
+
+
+@pytest.mark.asyncio
+@respx.mock
+async def test_content_retrieve_success() -> None:
+    respx.post(f"{CONTENT}/api/v1/retrieve").mock(
+        return_value=httpx.Response(
+            200,
+            json={
+                "chunks": [
+                    {
+                        "id": str(uuid4()),
+                        "contenido": "x",
+                        "material_nombre": "m",
+                        "score_rerank": 0.9,
+                    }
+                ],
+                "chunks_used_hash": "hh",
+                "latency_ms": 12.0,
+            },
+        )
+    )
+    client = ContentClient(CONTENT)
+    res = await client.retrieve(
+        query="q",
+        comision_id=uuid4(),
+        top_k=5,
+        tenant_id=uuid4(),
+        caller_id=uuid4(),
+    )
+    assert len(res.chunks) == 1
+    assert res.chunks_used_hash == "hh"
+
+
+@pytest.mark.asyncio
+@respx.mock
+async def test_content_retrieve_propagates_caller_id() -> None:
+    captured: dict = {}
+
+    def cap(req: httpx.Request) -> httpx.Response:
+        captured["headers"] = dict(req.headers)
+        return httpx.Response(
+            200,
+            json={
+                "chunks": [],
+                "chunks_used_hash": "h",
+                "latency_ms": 1.0,
+            },
+        )
+
+    respx.post(f"{CONTENT}/api/v1/retrieve").mock(side_effect=cap)
+
+    caller_id = uuid4()
+    tenant_id = uuid4()
+    client = ContentClient(CONTENT)
+    await client.retrieve(
+        query="q",
+        comision_id=uuid4(),
+        top_k=3,
+        tenant_id=tenant_id,
+        caller_id=caller_id,
+    )
+    assert captured["headers"]["x-user-id"] == str(caller_id)
+    assert captured["headers"]["x-tenant-id"] == str(tenant_id)
+
+
+# ---------- AIGatewayClient ----------
+
+
+@pytest.mark.asyncio
+@respx.mock
+async def test_ai_gateway_stream_yields_tokens() -> None:
+    # Backlog QA 2026-05-07: el endpoint emite `done` con provider+tokens
+    # cuando esta disponible (gap auditoria doctoral). Los probamos en
+    # otro test (`test_ai_gateway_stream_yields_usage_event`).
+    sse_body = (
+        b'data: {"type":"token","content":"hola "}\n\n'
+        b'data: {"type":"token","content":"mundo"}\n\n'
+        b'data: {"type":"done"}\n\n'
+    )
+    respx.post(f"{AI_GW}/api/v1/stream").mock(
+        return_value=httpx.Response(
+            200, content=sse_body, headers={"Content-Type": "text/event-stream"}
+        )
+    )
+    client = AIGatewayClient(AI_GW)
+    events: list[dict] = []
+    async for ev in client.stream(
+        messages=[{"role": "user", "content": "hi"}],
+        model="claude-mock",
+        tenant_id=uuid4(),
+    ):
+        events.append(ev)
+    # `done` sin provider/tokens no produce evento `usage` (compat con
+    # ai-gateway viejo).
+    assert events == [
+        {"type": "chunk", "content": "hola "},
+        {"type": "chunk", "content": "mundo"},
+    ]
+
+
+@pytest.mark.asyncio
+@respx.mock
+async def test_ai_gateway_stream_yields_usage_event() -> None:
+    """Backlog QA 2026-05-07: cuando el ai-gateway expone `provider`,
+    `tokens_input`, `tokens_output` en el `done` event SSE, el client los
+    proyecta como un dict {"type":"usage", ...} para que el tutor-service
+    los pueda persistir en el payload de `tutor_respondio` (auditoria
+    doctoral de costos de LLM cross-evento).
+    """
+    sse_body = (
+        b'data: {"type":"token","content":"foo"}\n\n'
+        b'data: {"type":"done","provider":"anthropic","tokens_input":42,'
+        b'"tokens_output":15,"estimated_cost_usd":0.0007}\n\n'
+    )
+    respx.post(f"{AI_GW}/api/v1/stream").mock(
+        return_value=httpx.Response(
+            200, content=sse_body, headers={"Content-Type": "text/event-stream"}
+        )
+    )
+    client = AIGatewayClient(AI_GW)
+    events: list[dict] = []
+    async for ev in client.stream(
+        messages=[{"role": "user", "content": "hi"}],
+        model="claude-sonnet-4-6",
+        tenant_id=uuid4(),
+    ):
+        events.append(ev)
+    assert events == [
+        {"type": "chunk", "content": "foo"},
+        {
+            "type": "usage",
+            "provider": "anthropic",
+            "tokens_input": 42,
+            "tokens_output": 15,
+            "cost_usd": 0.0007,
+        },
+    ]
+
+
+@pytest.mark.asyncio
+@respx.mock
+async def test_ai_gateway_sends_internal_service_token_when_set() -> None:
+    """A0.1/A0.4: con token seteado, la llamada al ai-gateway incluye el
+    header X-Internal-Service-Token sin alterar payload ni streaming."""
+    captured: dict = {}
+
+    def cap(req: httpx.Request) -> httpx.Response:
+        captured["headers"] = dict(req.headers)
+        return httpx.Response(
+            200,
+            content=b'data: {"type":"token","content":"ok"}\n\n',
+            headers={"Content-Type": "text/event-stream"},
+        )
+
+    respx.post(f"{AI_GW}/api/v1/stream").mock(side_effect=cap)
+    client = AIGatewayClient(AI_GW, internal_service_token="s3cr3t-shared")
+    out: list[dict] = []
+    async for c in client.stream(
+        messages=[{"role": "user", "content": "x"}],
+        model="m",
+        tenant_id=uuid4(),
+    ):
+        out.append(c)
+
+    assert captured["headers"]["x-internal-service-token"] == "s3cr3t-shared"
+    # payload/streaming intactos
+    assert out == [{"type": "chunk", "content": "ok"}]
+
+
+@pytest.mark.asyncio
+@respx.mock
+async def test_ai_gateway_omits_internal_service_token_when_empty() -> None:
+    """Backward-compat: sin token, NO se manda el header (estado flag-OFF)."""
+    captured: dict = {}
+
+    def cap(req: httpx.Request) -> httpx.Response:
+        captured["headers"] = dict(req.headers)
+        return httpx.Response(
+            200,
+            content=b'data: {"type":"token","content":"ok"}\n\n',
+            headers={"Content-Type": "text/event-stream"},
+        )
+
+    respx.post(f"{AI_GW}/api/v1/stream").mock(side_effect=cap)
+    client = AIGatewayClient(AI_GW)  # token vacio por default
+    async for _ in client.stream(
+        messages=[{"role": "user", "content": "x"}],
+        model="m",
+        tenant_id=uuid4(),
+    ):
+        pass
+
+    assert "x-internal-service-token" not in captured["headers"]
+
+
+@pytest.mark.asyncio
+@respx.mock
+async def test_ai_gateway_stream_raises_on_error_event() -> None:
+    sse_body = b'data: {"type":"error","message":"budget exceeded"}\n\n'
+    respx.post(f"{AI_GW}/api/v1/stream").mock(
+        return_value=httpx.Response(
+            200, content=sse_body, headers={"Content-Type": "text/event-stream"}
+        )
+    )
+    client = AIGatewayClient(AI_GW)
+    with pytest.raises(RuntimeError, match="budget exceeded"):
+        async for _ in client.stream(
+            messages=[{"role": "user", "content": "x"}],
+            model="m",
+            tenant_id=uuid4(),
+        ):
+            pass
+
+
+@pytest.mark.asyncio
+@respx.mock
+async def test_ai_gateway_stream_skips_invalid_lines() -> None:
+    sse_body = b'event: ping\n\ndata: not-json\n\ndata: {"type":"token","content":"ok"}\n\n'
+    respx.post(f"{AI_GW}/api/v1/stream").mock(
+        return_value=httpx.Response(
+            200, content=sse_body, headers={"Content-Type": "text/event-stream"}
+        )
+    )
+    client = AIGatewayClient(AI_GW)
+    out: list[dict] = []
+    async for c in client.stream(
+        messages=[{"role": "user", "content": "x"}],
+        model="m",
+        tenant_id=uuid4(),
+    ):
+        out.append(c)
+    assert out == [{"type": "chunk", "content": "ok"}]
+
+
+# ---------- CTRClient ----------
+
+
+@pytest.mark.asyncio
+@respx.mock
+async def test_ctr_publish_event_returns_message_id() -> None:
+    respx.post(f"{CTR}/api/v1/events").mock(
+        return_value=httpx.Response(200, json={"message_id": "1234-0"})
+    )
+    client = CTRClient(CTR)
+    mid = await client.publish_event(
+        event={"type": "x", "payload": {}},
+        tenant_id=uuid4(),
+        caller_id=uuid4(),
+    )
+    assert mid == "1234-0"
+
+
+@pytest.mark.asyncio
+@respx.mock
+async def test_ctr_get_episode_returns_data() -> None:
+    eid = uuid4()
+    respx.get(f"{CTR}/api/v1/episodes/{eid}").mock(
+        return_value=httpx.Response(
+            200,
+            json={
+                "id": str(eid),
+                "tenant_id": str(uuid4()),
+                "events": [],
+            },
+        )
+    )
+    client = CTRClient(CTR)
+    data = await client.get_episode(episode_id=eid, tenant_id=uuid4(), caller_id=uuid4())
+    assert data is not None
+    assert data["id"] == str(eid)
+
+
+@pytest.mark.asyncio
+@respx.mock
+async def test_ctr_get_episode_returns_none_on_404() -> None:
+    eid = uuid4()
+    respx.get(f"{CTR}/api/v1/episodes/{eid}").mock(return_value=httpx.Response(404))
+    client = CTRClient(CTR)
+    data = await client.get_episode(episode_id=eid, tenant_id=uuid4(), caller_id=uuid4())
+    assert data is None
+
+
+@pytest.mark.asyncio
+@respx.mock
+async def test_ctr_get_episode_raises_on_5xx() -> None:
+    eid = uuid4()
+    respx.get(f"{CTR}/api/v1/episodes/{eid}").mock(return_value=httpx.Response(500))
+    client = CTRClient(CTR)
+    with pytest.raises(httpx.HTTPStatusError):
+        await client.get_episode(episode_id=eid, tenant_id=uuid4(), caller_id=uuid4())
+
+
+# --- Guards defensivos de ContentClient.retrieve ---------------------------
+# Regresion: ambos guards construian `RetrievalResult(..., rerank_applied=False)`,
+# pero la dataclass de `clients.py` NO tiene ese campo (si lo tiene la de
+# `content_client.py` — la duplicacion documentada en el docstring de arriba).
+# Resultado: los dos caminos defensivos, escritos justamente para degradar sin
+# pegarle al content-service, tiraban TypeError en runtime. mypy lo reportaba
+# como `call-arg` pero el CI nunca corrio para verlo.
+
+
+@pytest.mark.asyncio
+async def test_retrieve_query_vacia_degrada_sin_pegar_al_content_service() -> None:
+    client = ContentClient(CONTENT)
+    result = await client.retrieve(
+        query="   ",
+        top_k=3,
+        tenant_id=uuid4(),
+        caller_id=uuid4(),
+        materia_id=uuid4(),
+    )
+    assert result.chunks == []
+    assert result.latency_ms == 0.0
+    # hash SHA-256 del string vacio (RN-026: lista vacia -> hash del vacio)
+    assert (
+        result.chunks_used_hash
+        == "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    )
+
+
+@pytest.mark.asyncio
+async def test_retrieve_sin_scope_degrada_sin_pegar_al_content_service() -> None:
+    client = ContentClient(CONTENT)
+    result = await client.retrieve(
+        query="recursion",
+        top_k=3,
+        tenant_id=uuid4(),
+        caller_id=uuid4(),
+        materia_id=None,
+        comision_id=None,
+    )
+    assert result.chunks == []
+    assert result.latency_ms == 0.0

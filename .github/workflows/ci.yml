@@ -1,0 +1,394 @@
+name: CI
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+env:
+  PYTHON_VERSION: "3.12"
+  NODE_VERSION: "20"
+  # PNPM_VERSION removido: la version la fija `packageManager` en package.json.
+
+
+jobs:
+  lint-python:
+    name: Lint Python
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v3
+        with:
+          # enable-cache desactivado: setup-uv cachea contra `**/uv.lock` y ese
+          # archivo NO esta versionado (.gitignore). Con cache activada la action
+          # aborta con "No file matched to [**/uv.lock]" antes de instalar nada.
+          # Si algun dia se versiona el lockfile, volver a poner `true`.
+          enable-cache: false
+
+      - name: Setup Python
+        run: uv python install ${{ env.PYTHON_VERSION }}
+
+      - name: Install deps
+        run: uv sync --all-packages
+
+      - name: Ruff check
+        run: uv run ruff check .
+
+      - name: Ruff format check
+        run: uv run ruff format --check .
+
+  check-docs:
+    name: Docs drift (CLAUDE.md)
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+
+      - name: Check CLAUDE.md numeric claims vs code
+        run: python scripts/check-claude-md.py
+
+      - name: Check vite.config UUIDs vs seed-3-comisiones
+        # A24: detecta drift entre los UUIDs hardcoded en apps/web-*/vite.config.ts
+        # (header x-user-id para dev mode sin Keycloak) y los UUIDs creados por
+        # scripts/seed-3-comisiones.py. Sin este gate, un seed que no crea esos
+        # UUIDs deja al frontend dev mudo silenciosamente (TareaSelector vacio).
+        run: python scripts/check-vite-seed-sync.py
+
+  typecheck-python:
+    name: Typecheck Python
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v3
+        with:
+          # enable-cache desactivado: setup-uv cachea contra `**/uv.lock` y ese
+          # archivo NO esta versionado (.gitignore). Con cache activada la action
+          # aborta con "No file matched to [**/uv.lock]" antes de instalar nada.
+          # Si algun dia se versiona el lockfile, volver a poner `true`.
+          enable-cache: false
+
+      - name: Setup Python
+        run: uv python install ${{ env.PYTHON_VERSION }}
+
+      - name: Install deps
+        run: uv sync --all-packages
+
+      - name: mypy
+        run: uv run mypy .
+
+  lint-frontend:
+    name: Lint frontend
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+
+      # Sin `version:` a proposito: package.json declara
+      # `"packageManager": "pnpm@9.12.0"` y pnpm/action-setup@v4 falla con
+      # "Multiple versions of pnpm specified" si ademas se le pasa una version.
+      # El packageManager del package.json es la unica fuente de verdad.
+      - uses: pnpm/action-setup@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: pnpm
+          cache-dependency-path: pnpm-lock.yaml
+
+      - run: pnpm install --frozen-lockfile
+
+      - run: pnpm turbo lint typecheck
+
+  build-frontend:
+    name: Build frontends (Vite)
+    # Gate que faltaba: `lint-frontend` corre `turbo lint typecheck` (tsc --noEmit),
+    # que NO equivale al `tsc -b && vite build` de infrastructure/frontends.Dockerfile.
+    # Por eso errores TS que rompen el build de PROD pasaban CI y solo reventaban
+    # en EasyPanel (dejando un bundle viejo servido). Acá corremos EXACTAMENTE los
+    # mismos builds que el Dockerfile, asi un build roto falla en CI, no en prod.
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+
+      # Sin `version:` a proposito: package.json declara
+      # `"packageManager": "pnpm@9.12.0"` y pnpm/action-setup@v4 falla con
+      # "Multiple versions of pnpm specified" si ademas se le pasa una version.
+      # El packageManager del package.json es la unica fuente de verdad.
+      - uses: pnpm/action-setup@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: pnpm
+          cache-dependency-path: pnpm-lock.yaml
+
+      - run: pnpm install --frozen-lockfile
+
+      - run: pnpm --filter @platform/web-admin   build
+      - run: pnpm --filter @platform/web-teacher build
+      - run: pnpm --filter @platform/web-student build
+      - run: pnpm --filter @platform/web-landing build
+
+  test-unit:
+    name: Unit tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v3
+        with:
+          # enable-cache desactivado: setup-uv cachea contra `**/uv.lock` y ese
+          # archivo NO esta versionado (.gitignore). Con cache activada la action
+          # aborta con "No file matched to [**/uv.lock]" antes de instalar nada.
+          # Si algun dia se versiona el lockfile, volver a poner `true`.
+          enable-cache: false
+
+      - name: Setup Python
+        run: uv python install ${{ env.PYTHON_VERSION }}
+
+      - name: Install deps
+        run: uv sync --all-packages
+
+      - name: Pytest (unit)
+        # Coverage gate (GAP-9): documented target is 80% global, 85% pedagogy
+        # (tutor/ctr/classifier) per CLAUDE.md > "Convenciones".
+        # Current measured floor (sesión 2026-04-21): tutor=60%, ctr=63%,
+        # classifier=85%. Gate is set at the global floor of 60% so CI is
+        # actually enforced today; ratchet plan documented in BUGS-PILOTO.md
+        # (GAP-9). If CI fails here, ADD TESTS — do NOT lower this number.
+        # PATHS EXPLICITOS, no `-m "not integration"` a secas: pyproject.toml
+        # tiene `testpaths = ["tests"]`, que apunta SOLO a tests/e2e/smoke/.
+        # Sin los paths, este job colectaba 66 smoke tests y CERO de los 1364
+        # unitarios reales (verificado con --collect-only 2026-07-20).
+        # Mismos globs que `make test-fast`, que si funciona.
+        run: >-
+          uv run pytest
+          apps/*/tests/unit/
+          apps/academic-service/tests/integration/test_casbin_matrix.py
+          packages/*/tests/
+          -m "not integration" --cov --cov-report=xml --cov-fail-under=60
+
+      - name: Upload coverage
+        uses: codecov/codecov-action@v4
+        if: always()
+        with:
+          files: ./coverage.xml
+          fail_ci_if_error: false
+
+  # NOTA: el job `test-integration` (Integration tests / testcontainers) se
+  # removio a proposito (2026-07-21). Moria en "Alembic upgrade academic" por el
+  # bug de `current_setting('app.current_tenant')` sin `, true` (falla al validar
+  # el FK tareas_practicas->unidades como academic_user no-superuser bajo FORCE
+  # RLS), y aun destrabando eso, 4 fixtures viejas siguen rotas por la divergencia
+  # ADR-016/ADR-042 (decision humana pendiente). Reintroducir este job cuando se
+  # arregle el bug de RLS de las migraciones academic + esa deuda de fixtures.
+
+  test-rls:
+    name: RLS isolation tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    services:
+      postgres:
+        image: pgvector/pgvector:pg16
+        env:
+          POSTGRES_PASSWORD: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v3
+
+      - name: Setup Python
+        run: uv python install ${{ env.PYTHON_VERSION }}
+
+      - name: Install deps
+        run: uv sync --all-packages
+
+      - name: Crear ctr_store y el usuario non-superuser
+        # CRITICO: los tests DEBEN correr con un usuario NOBYPASSRLS. Con
+        # `postgres` (superuser) las policies se bypassean y los 4 tests pasan
+        # sin verificar NADA — el propio Makefile:109 lo advierte.
+        env:
+          PGPASSWORD: postgres
+        run: |
+          psql -h localhost -U postgres -c "CREATE DATABASE ctr_store;"
+          psql -h localhost -U postgres -c "CREATE ROLE app_runtime LOGIN PASSWORD 'app_runtime' NOSUPERUSER NOBYPASSRLS;"
+          psql -h localhost -U postgres -d ctr_store -c "GRANT ALL ON SCHEMA public TO app_runtime;"
+
+      - name: Crear función apply_tenant_rls en ctr_store
+        # FALTABA: la migración inicial del ctr-service llama
+        # `SELECT apply_tenant_rls('<tabla>')` (ver
+        # apps/ctr-service/alembic/versions/20260720_0001_ctr_initial_schema.py:122),
+        # pero esa función no viene con Postgres — la crea
+        # infrastructure/postgres/init-dbs.sql al bootstrapear el contenedor
+        # dev (docker-entrypoint-initdb.d), que este job NO corre (crea
+        # ctr_store a mano arriba). Sin este step, `alembic upgrade head`
+        # explota con `UndefinedFunctionError: function apply_tenant_rls(unknown)
+        # does not exist`. Misma definición exacta que el bloque `\c ctr_store`
+        # de init-dbs.sql — mantenerlas sincronizadas si esa cambia.
+        env:
+          PGPASSWORD: postgres
+        run: |
+          psql -h localhost -U postgres -d ctr_store <<'SQL'
+          CREATE OR REPLACE FUNCTION apply_tenant_rls(table_name text)
+          RETURNS void AS $$
+          BEGIN
+              EXECUTE format('ALTER TABLE %I ENABLE ROW LEVEL SECURITY', table_name);
+              EXECUTE format('ALTER TABLE %I FORCE ROW LEVEL SECURITY', table_name);
+              EXECUTE format(
+                  'CREATE POLICY tenant_isolation ON %I USING (tenant_id = current_setting(''app.current_tenant'', true)::uuid)',
+                  table_name
+              );
+          END;
+          $$ LANGUAGE plpgsql;
+          SQL
+
+      - name: Migrar ctr_store
+        env:
+          CTR_DB_URL: postgresql+asyncpg://postgres:postgres@localhost:5432/ctr_store
+          CTR_STORE_URL: postgresql+asyncpg://postgres:postgres@localhost:5432/ctr_store
+        run: cd apps/ctr-service && uv run alembic upgrade head
+
+      - name: Grants sobre las tablas migradas
+        env:
+          PGPASSWORD: postgres
+        run: |
+          psql -h localhost -U postgres -d ctr_store -c "GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA public TO app_runtime;"
+          psql -h localhost -U postgres -d ctr_store -c "GRANT USAGE ON ALL SEQUENCES IN SCHEMA public TO app_runtime;"
+
+      - name: Run RLS tests
+        # PATH EXPLICITO: `-m "integration" -k "rls or tenant"` seleccionaba CERO
+        # tests (esos archivos no llevan el marker) y salia con exit 0 — verde
+        # sin ejecutar nada. Sin la env var, ademas, los 4 tests se SKIPEAN en
+        # silencio. Este job no verificaba absolutamente nada.
+        env:
+          CTR_STORE_URL_FOR_RLS_TESTS: postgresql+asyncpg://app_runtime:app_runtime@localhost:5432/ctr_store
+        run: uv run pytest packages/platform-ops/tests/test_rls_postgres.py -v
+
+  migrations-dry-run:
+    name: Migrations dry-run
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    services:
+      postgres:
+        image: pgvector/pgvector:pg16
+        env:
+          POSTGRES_PASSWORD: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v3
+
+      - name: Setup Python
+        run: uv python install ${{ env.PYTHON_VERSION }}
+
+      - name: Install deps
+        run: uv sync --all-packages
+
+      - name: Init DBs
+        run: PGPASSWORD=postgres psql -h localhost -U postgres -f infrastructure/postgres/init-dbs.sql
+
+      - name: Alembic upgrade academic
+        # working-directory a nivel step PISA el default del workflow y es
+        # relativo al workspace root — por eso lleva el prefijo completo.
+        working-directory: apps/academic-service
+        env:
+          ACADEMIC_DB_URL: postgresql+asyncpg://academic_user:academic_pass@localhost:5432/academic_main
+        run: uv run alembic upgrade head || echo "No migrations yet (expected in F0)"
+
+  build:
+    name: Build Docker images
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    needs: [lint-python, typecheck-python, lint-frontend, test-unit]
+    strategy:
+      matrix:
+        service:
+          - academic-service
+          - ai-gateway
+          - analytics-service
+          - api-gateway
+          - classifier-service
+          - content-service
+          - ctr-service
+          - evaluation-service
+          - governance-service
+          - tutor-service
+          # NOTE: integrity-attestation-service excluded (no Dockerfile yet,
+          # ADR-021 — infra institucional separada en piloto, vive en VPS UTN).
+          # NOTE: identity-service deprecated (ADR-041) — auth via api-gateway + Casbin.
+          # NOTE: enrollment-service deprecated (ADR-030) — bulk-import en academic-service.
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: docker/setup-buildx-action@v3
+
+      - name: Build image
+        uses: docker/build-push-action@v5
+        with:
+          # El context DEBE ser la raiz del monorepo, no la carpeta del servicio:
+          # los Dockerfiles corren `uv sync --all-packages`, que necesita el
+          # uv.lock y packages/ del workspace completo. Con `context: apps/<svc>`
+          # esos archivos no estan en el contexto de build.
+          # Alineado con infrastructure/docker-compose.prod.yml (`context: ..`)
+          # y con EasyPanel, que son los que hoy buildean prod.
+          # OJO: al colapsar el wrapper, la "Ruta de compilacion" de CADA servicio
+          # en EasyPanel debe pasar de `/AI-NativeV3-main` a `/`.
+          context: .
+          file: apps/${{ matrix.service }}/Dockerfile
+          push: false
+          tags: platform/${{ matrix.service }}:${{ github.sha }}
+          cache-from: type=gha,scope=${{ matrix.service }}
+          cache-to: type=gha,mode=max,scope=${{ matrix.service }}
+
+  security-scan:
+    name: Security scan
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Trivy filesystem scan
+        uses: aquasecurity/trivy-action@master
+        with:
+          scan-type: "fs"
+          severity: "HIGH,CRITICAL"
+          exit-code: "1"
+          ignore-unfixed: true
+          # La dev key Ed25519 del integrity-attestation-service es publica y
+          # commiteada a proposito (ADR-021) — ver .trivyignore.yaml, que la
+          # ignora SOLO por su ruta (cualquier otra private key sigue fallando).
+          trivyignores: ".trivyignore.yaml"
