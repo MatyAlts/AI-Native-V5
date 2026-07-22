@@ -37,7 +37,7 @@ jobs:
 
       - name: Setup kubectl and helm
         uses: azure/setup-kubectl@v4
-      - uses: azure/setup-helm@v4
+      - uses: azure/setup-helm@v5
 
       - name: Configure kubeconfig
         run: echo "${{ secrets.KUBECONFIG_STAGING }}" | base64 -d > kubeconfig
@@ -73,7 +73,7 @@ jobs:
         run: scripts/check-staging-stability.sh 24
 
       - name: Setup tools
-        uses: azure/setup-helm@v4
+        uses: azure/setup-helm@v5
 
       - name: Configure kubeconfig
         run: echo "${{ secrets.KUBECONFIG_PRODUCTION }}" | base64 -d > kubeconfig
