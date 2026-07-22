@@ -16,7 +16,7 @@
     "react-dom": "^19.0.0",
     "@platform/ui": "workspace:*",
     "framer-motion": "^11.11.0",
-    "lucide-react": "^0.460.0",
+    "lucide-react": "^1.25.0",
     "clsx": "^2.1.0"
   },
   "devDependencies": {
