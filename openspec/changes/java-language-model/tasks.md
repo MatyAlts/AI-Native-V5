@@ -1,0 +1,62 @@
+## 0. Antes de escribir código
+
+- [ ] 0.1 **Medir el daño potencial de la validación nueva.** Contra la base del piloto, contar cuántas TPs `published` violarían las reglas: pesos ≠ 1.0, sin ejercicios y sin `test_cases`, órdenes o ejercicios duplicados. Solo lectura. Si el número es alto, la regla de "no revalidar retroactivamente" pasa de deseable a obligatoria, y hay que avisarle al docente antes de que edite y re-publique una TP vieja.
+- [ ] 0.2 Confirmar en `packages/contracts` si `TpEjercicioCreate` se usa en algún caller fuera de `academic-service` antes de tocar la firma del validador.
+
+## 1. Contratos (`packages/contracts`)
+
+- [ ] 1.1 `TestCaseSchema.type`: agregar `junit_assert` al `Literal` (`academic/ejercicio.py:142`).
+- [ ] 1.2 `_EjercicioBase`: agregar `language: Literal["python", "java"] = "python"` (`academic/ejercicio.py:152`).
+- [ ] 1.3 `TpEjerciciosValidator`: agregar la regla de no-vacío. Ojo con `validate_set()`, que hoy retorna conforme ante lista vacía (`ejercicio.py:278-279`) — la regla correcta es "tiene ejercicios **o** `test_cases` propios", no "tiene ejercicios".
+- [ ] 1.4 `TpEjerciciosValidator`: método nuevo que reciba los lenguajes ya resueltos por el servicio y valide unicidad + coincidencia con el de la TP. **No** extender `TpEjercicioCreate` con `language` — es un campo derivado y el cliente podría mentir (D6).
+- [ ] 1.5 Tests unitarios del validador: los 3 casos que ya cubría + no-vacío + monolítica válida + mezcla de lenguajes + TP declarada en un lenguaje con ejercicio de otro.
+
+**Aceptación**: `uv run pytest packages/contracts/tests -v` en verde.
+
+## 2. Modelo y migración (`academic-service`)
+
+- [ ] 2.1 `Ejercicio.language` y `TareaPractica.language`: `String(20)`, `nullable=False`, `server_default="python"` (`models/operacional.py:408,214`). **Sin `CheckConstraint`** — D2.
+- [ ] 2.2 Migración `20260722_0001_ejercicio_tp_language.py`, `down_revision` apuntando al head vigente de academic (verificarlo, no asumirlo).
+- [ ] 2.3 **Migración idempotente desde el día uno**: chequear `information_schema.columns` antes de cada `ADD COLUMN`. No es paranoia — el PR #33 encontró una columna agregada a mano en prod salteándose Alembic, y no se sabe cuánta deriva más hay.
+- [ ] 2.4 Sin cambios de RLS: ambas tablas ya tienen policy activa; es `ADD COLUMN` sobre tabla existente (patrón de `20260615_0002_tarea_practica_permite_pausa`). Confirmar con `make check-rls`.
+- [ ] 2.5 `downgrade()` simétrico y guardado (dropear solo si existe).
+
+**Aceptación**: `alembic upgrade head` y `alembic downgrade -1` corren limpios contra base limpia **y** contra una copia del schema de prod. `alembic check` no propone drift nuevo.
+
+## 3. Schemas y endpoints (`academic-service`)
+
+- [ ] 3.1 `language` en los schemas de `Ejercicio` (create / update / out).
+- [ ] 3.2 `language` en los schemas de `TareaPractica`.
+- [ ] 3.3 `junit_assert` aplicado al `test_cases` de TP. Hoy es `list[dict[str, Any]]` suelto y no reusa `TestCaseSchema` (`schemas/tarea_practica.py`) — sin esto, las TPs monolíticas siguen aceptando cualquier `type` (D4). **No** unificar los dos caminos de tipado en esta change; es un refactor con radio propio.
+- [ ] 3.4 Filtro `?language=` en `GET /ejercicios` (`routes/ejercicios.py:57`) → `EjercicioService.list()` (`ejercicio_service.py:102-125`). El repositorio genérico lo resuelve sin cambios (`repositories/base.py:58-61`); es el mismo patrón que `materia_id`.
+
+**Aceptación**: `GET /ejercicios?language=java` filtra; sin el parámetro devuelve todo; compone con `dificultad` y `materia_id`.
+
+## 4. Validación de composición (`academic-service`)
+
+- [ ] 4.1 `TpEjercicioService.add_ejercicio()` (`tp_ejercicio_service.py:75-111`): bloquear lenguaje distinto. Ya carga el `Ejercicio` real vía `ejercicio_repo.get_or_404`, así que tiene el `language` sin queries extra.
+- [ ] 4.2 `TareaPracticaService.publish()` (`tarea_practica_service.py:216`): invocar el validador.
+- [ ] 4.3 🔴 **SELECT explícito de `TpEjercicio` por `tarea_practica_id`**, nunca `tp.tp_ejercicios`. `get_or_404()` no hace eager-load y el propio código de `new_version()` (`tarea_practica_service.py:324-328`) documenta que iterar esa relación lazy revienta con `MissingGreenlet` en el driver async. Un `if not tp.tp_ejercicios` parece natural y falla en runtime (D7).
+- [ ] 4.4 Errores 422 con mensaje accionable: qué regla se violó y con qué valores. Un "422 Unprocessable Entity" pelado le hace perder la tarde al docente.
+
+**Aceptación**: tests de integración cubriendo los 5 rechazos (pesos, orden duplicado, ejercicio duplicado, vacía, lenguajes mezclados) + los 3 caminos felices (TP compuesta válida, TP monolítica, ejercicio del mismo lenguaje). Incluir un test explícito del camino de carga que cubra 4.3.
+
+## 5. Verificación de que la tesis no se movió
+
+- [ ] 5.1 `uv run pytest apps/classifier-service/tests/unit/test_pipeline_reproducibility.py -v` en verde.
+- [ ] 5.2 Confirmar que `LABELER_VERSION` no cambió y que `classifier_config_hash` para un mismo `(tree_version, reference_profile)` es idéntico al anterior.
+- [ ] 5.3 Confirmar por grep que ningún archivo de `apps/classifier-service/src/` empezó a leer `language`. La invariante es que el clasificador no lo consuma — el día que lo haga deja de ser agnóstico y hay que auditar reproducibilidad de nuevo.
+
+## 6. Smoke y cierre
+
+- [ ] 6.1 Smoke test nuevo en `tests/e2e/smoke/`: crear ejercicio Java → crear TP Java → agregar el ejercicio → publicar → verificar 200. Y el camino negativo: agregar un ejercicio Python a esa TP → 422. Es lo que atrapa la clase de bug que escapa a los unit tests con DB mockeada.
+- [ ] 6.2 `make test-fast` y `make check-rls` en verde.
+- [ ] 6.3 Actualizar `CLAUDE.md` si el conteo de smoke tests cambió (lo verifica `scripts/check-claude-md.py` en CI).
+
+## Fuera de scope (a propósito)
+
+- UI del docente y del alumno → `java-authoring-experience`
+- Ejecución de Java → `java-execution-engine`
+- Segmentación por lenguaje en analytics → `multi-language-research-integrity`
+- Unificar el tipado de `test_cases` entre `Ejercicio` y `TareaPractica` → refactor aparte
+- Sacar el `|| echo 'WARN: alembic failed, continuing'` de los Dockerfiles → ticket propio, heredado de la revisión del PR #33
