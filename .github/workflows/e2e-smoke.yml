@@ -175,7 +175,7 @@ jobs:
 
       - name: Subir logs como artifact (si fallo)
         if: failure()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: piloto-logs
           # upload-artifact resuelve paths contra el workspace root, no contra
