@@ -27,10 +27,10 @@
 
 ## 3. Schemas y endpoints (`academic-service`)
 
-- [ ] 3.1 `language` en los schemas de `Ejercicio` (create / update / out).
-- [ ] 3.2 `language` en los schemas de `TareaPractica`.
-- [ ] 3.3 `junit_assert` aplicado al `test_cases` de TP. Hoy es `list[dict[str, Any]]` suelto y no reusa `TestCaseSchema` (`schemas/tarea_practica.py`) — sin esto, las TPs monolíticas siguen aceptando cualquier `type` (D4). **No** unificar los dos caminos de tipado en esta change; es un refactor con radio propio.
-- [ ] 3.4 Filtro `?language=` en `GET /ejercicios` (`routes/ejercicios.py:57`) → `EjercicioService.list()` (`ejercicio_service.py:102-125`). El repositorio genérico lo resuelve sin cambios (`repositories/base.py:58-61`); es el mismo patrón que `materia_id`.
+- [x] 3.1 `language` en los schemas de `Ejercicio` (create / update / out).
+- [x] 3.2 `language` en los schemas de `TareaPractica`.
+- [x] 3.3 `junit_assert` aplicado al `test_cases` de TP. Hoy es `list[dict[str, Any]]` suelto y no reusa `TestCaseSchema` (`schemas/tarea_practica.py`) — sin esto, las TPs monolíticas siguen aceptando cualquier `type` (D4). **No** unificar los dos caminos de tipado en esta change; es un refactor con radio propio.
+- [x] 3.4 Filtro `?language=` en `GET /ejercicios` (`routes/ejercicios.py:57`) → `EjercicioService.list()` (`ejercicio_service.py:102-125`). El repositorio genérico lo resuelve sin cambios (`repositories/base.py:58-61`); es el mismo patrón que `materia_id`.
 
 **Aceptación**: `GET /ejercicios?language=java` filtra; sin el parámetro devuelve todo; compone con `dificultad` y `materia_id`.
 
