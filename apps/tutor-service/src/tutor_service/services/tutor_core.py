@@ -21,6 +21,7 @@ from typing import Any, Literal, NoReturn
 from uuid import UUID, uuid4
 
 from fastapi import HTTPException, status
+from platform_contracts.academic.ejercicio import DEFAULT_LANGUAGE
 
 from tutor_service.config import settings
 from tutor_service.metrics import (
@@ -378,6 +379,7 @@ class TutorCore:
             "comision_id": str(comision_id),
             "curso_config_hash": curso_config_hash,
             "model": state.model,
+            "language": self._resolve_episode_language(contexto_data),
         }
         # ADR-049: vincular episodio con el Ejercicio reusable por UUID +
         # orden denormalizado. Consistencia: ambos None o ambos no-None.
@@ -405,6 +407,43 @@ class TutorCore:
         tutor_active_sessions_count.add(1)
 
         return episode_id
+
+    @staticmethod
+    def _resolve_episode_language(contexto_data: dict | None) -> str:
+        """Resuelve el lenguaje del episodio SIEMPRE server-side (D1).
+
+        multi-language-research-integrity (episode-language-provenance,
+        task 2.4/2.5): el lenguaje NUNCA se acepta de la request del
+        cliente — `OpenEpisodeRequest` (routes/episodes.py) deliberadamente
+        no declara un campo `language`, así que cualquier valor que un
+        cliente meta en el body del POST queda ignorado por Pydantic
+        (`extra="ignore"` default) antes de llegar siquiera acá. Este
+        método es la única fuente de verdad para el `language` que se
+        emite en el payload de `episodio_abierto`.
+
+        `contexto_data` es el MISMO dict ya resuelto en `open_episode` para
+        construir el contexto pedagógico del system message — sea el
+        Ejercicio del banco (ADR-047, `AcademicClient.get_ejercicio_by_id`,
+        que expone `language` vía `EjercicioRead`/`_EjercicioBase`) o la TP
+        monolítica (`AcademicClient.get_tarea_practica_full`, que expone
+        `language` vía `TareaPracticaOut`). Reusarlo evita un round-trip
+        nuevo al academic-service (design D1, riesgo "sobrecarga de una
+        consulta extra" ya mitigado).
+
+        Ambos caminos del academic-service ya declaran `language` con
+        default `DEFAULT_LANGUAGE` ("python") — verificado contra código
+        real (epic java-language-model, cerrado). Este método igual
+        defiende contra `contexto_data=None` (académic-service no
+        configurado, o ambas consultas fallaron fail-soft) devolviendo el
+        mismo default: los episodios sin contexto pedagógico resuelto se
+        interpretan como Python, igual que los episodios legacy pre-cambio
+        (ver spec episode-language-provenance).
+        """
+        if contexto_data is not None:
+            language = contexto_data.get("language")
+            if isinstance(language, str) and language:
+                return language
+        return DEFAULT_LANGUAGE
 
     # ── Interacción (streaming) ────────────────────────────────────────
 

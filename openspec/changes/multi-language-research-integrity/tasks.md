@@ -6,19 +6,19 @@
 
 ## 2. Lenguaje en el payload de apertura
 
-- [ ] 2.1 Agregar el campo de lenguaje a `EpisodioAbiertoPayload` con default, en `packages/contracts/src/platform_contracts/ctr/events.py:46-81`.
-- [ ] 2.2 Test que confirme que un evento histórico sin el campo sigue deserializando.
-- [ ] 2.3 Test golden de `self_hash`: un evento previo al cambio conserva su hash calculado contra el modelo viejo.
-- [ ] 2.4 Resolver el lenguaje en `tutor-service` al abrir el episodio, desde la respuesta de `AcademicClient` que ya se consulta para validar las 6 condiciones de apertura.
-- [ ] 2.5 Ignorar explícitamente cualquier lenguaje que venga en el cuerpo de la petición, con test que lo cubra.
-- [ ] 2.6 Test de que reabrir o reanudar un episodio no reescribe el lenguaje del evento de apertura original.
+- [x] 2.1 Agregar el campo de lenguaje a `EpisodioAbiertoPayload` con default, en `packages/contracts/src/platform_contracts/ctr/events.py:46-81`.
+- [x] 2.2 Test que confirme que un evento histórico sin el campo sigue deserializando.
+- [x] 2.3 Test golden de `self_hash`: un evento previo al cambio conserva su hash calculado contra el modelo viejo.
+- [x] 2.4 Resolver el lenguaje en `tutor-service` al abrir el episodio, desde la respuesta de `AcademicClient` que ya se consulta para validar las 6 condiciones de apertura. Implementado para ambos caminos (Ejercicio del banco vía `get_ejercicio_by_id` y TP monolítica vía `get_tarea_practica_full` — ambos exponen `language` desde epic `java-language-model`, cerrado y verificado contra código real).
+- [x] 2.5 Ignorar explícitamente cualquier lenguaje que venga en el cuerpo de la petición, con test que lo cubra.
+- [x] 2.6 Test de que reabrir o reanudar un episodio no reescribe el lenguaje del evento de apertura original.
 
 ## 3. Verificación de neutralidad sobre la tesis
 
-- [ ] 3.1 `uv run pytest apps/classifier-service/tests/unit/test_pipeline_reproducibility.py -v` en verde.
-- [ ] 3.2 Confirmar que `classifier_config_hash` no cambió para un mismo `(tree_version, reference_profile)`.
-- [ ] 3.3 Confirmar que `LABELER_VERSION` no cambió.
-- [ ] 3.4 Verificar la cadena criptográfica de un episodio anterior al cambio y confirmar que pasa sin discrepancias.
+- [x] 3.1 `uv run pytest apps/classifier-service/tests/unit/test_pipeline_reproducibility.py -v` en verde.
+- [x] 3.2 Confirmar que `classifier_config_hash` no cambió para un mismo `(tree_version, reference_profile)`.
+- [x] 3.3 Confirmar que `LABELER_VERSION` no cambió.
+- [x] 3.4 Verificar la cadena criptográfica de un episodio anterior al cambio y confirmar que pasa sin discrepancias.
 
 ## 4. Segmentación en analytics
 

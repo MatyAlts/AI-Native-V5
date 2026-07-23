@@ -150,6 +150,18 @@ class OpenEpisodeRequest(BaseModel):
     # `ejercicio_orden` denormalizado se resuelve internamente en el
     # tutor_core via la tabla intermedia tp_ejercicios.
     ejercicio_id: UUID | None = None
+    # multi-language-research-integrity (episode-language-provenance, D1):
+    # deliberadamente SIN campo `language`. El lenguaje del episodio es dato
+    # de procedencia para la tesis doctoral y se resuelve EXCLUSIVAMENTE
+    # server-side en `TutorCore._resolve_episode_language` desde el
+    # Ejercicio/TareaPractica — nunca del cliente. Si alguna vez agregás un
+    # campo `language` acá para "que el frontend lo mande", estás
+    # reintroduciendo el precedente peligroso que este mismo change señala
+    # (`edicion_codigo` hoy manda `language:"python"` hardcodeado desde
+    # `web-student/EpisodePage.tsx` — un dato que PARECE procedencia real y
+    # no lo es). No lo repitas acá. Cualquier `language` que un cliente
+    # meta en el body queda ignorado por Pydantic (`extra="ignore"`
+    # default) — test en test_episode_language_provenance.py.
 
 
 class OpenEpisodeResponse(BaseModel):

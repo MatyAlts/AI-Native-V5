@@ -74,6 +74,40 @@ class EpisodioAbiertoPayload(BaseModel):
             "None para TPs monolíticas."
         ),
     )
+    # multi-language-research-integrity (episode-language-provenance, D1/D2):
+    # lenguaje de programación del episodio, resuelto SIEMPRE server-side desde
+    # el Ejercicio/TareaPractica al momento de abrir — nunca aceptado del
+    # cliente (ver tutor_service.services.tutor_core.TutorCore.open_episode /
+    # _resolve_episode_language). Es un snapshot del momento de apertura, no
+    # una referencia viva: si el lenguaje del ejercicio cambia después, este
+    # valor NO se actualiza (trazabilidad = qué pasó, no qué pasa ahora).
+    #
+    # Campo opcional con default None por retrocompat (ADR append-only): los
+    # episodios anteriores a este cambio no lo tienen y se interpretan como
+    # "python" (único lenguaje soportado hasta ahora) — ver spec
+    # episode-language-provenance, requirement "Los episodios previos al
+    # cambio se interpretan como Python".
+    #
+    # `str | None` (no el `Literal["python","java"]` académico de
+    # `platform_contracts.academic.ejercicio.Language`): este payload es dato
+    # de procedencia forward-compatible para una tesis doctoral — un lenguaje
+    # futuro que el banco académico soporte no debe romper la deserialización
+    # de eventos CTR ya persistidos ni obligar a tocar este contrato de nuevo.
+    #
+    # Verificado (no afecta reproducibilidad): el event_labeler y el feature
+    # extractor del classifier-service consumen solo un set acotado y
+    # conocido de campos por event_type (ver CLAUDE.md, "Propiedades
+    # críticas") — `episodio_abierto` no aporta features al pipeline, así que
+    # este campo es inerte para clasificación (ver también
+    # apps/classifier-service/tests/unit/test_pipeline_reproducibility.py).
+    language: str | None = Field(
+        default=None,
+        description=(
+            "Lenguaje de programación del episodio (ej. 'python', 'java'), "
+            "resuelto server-side desde el Ejercicio/TareaPractica al abrir. "
+            "None en episodios legacy pre-cambio = interpretar como 'python'."
+        ),
+    )
 
 
 class EpisodioAbierto(CTRBaseEvent):

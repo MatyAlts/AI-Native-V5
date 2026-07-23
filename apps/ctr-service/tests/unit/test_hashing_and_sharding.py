@@ -99,6 +99,75 @@ def test_chain_hash_primer_evento_usa_genesis() -> None:
     assert c1 == c2
 
 
+# ── Golden hash: campo `language` en episodio_abierto ─────────────────
+#
+# multi-language-research-integrity (episode-language-provenance, task 2.3):
+# agregar `language: str | None = None` a `EpisodioAbiertoPayload`
+# (packages/contracts/.../ctr/events.py) NO afecta este módulo — el hashing
+# real de producción es dict-based (`compute_self_hash(event: dict)`, ver
+# `test_self_hash_excluye_campos_computados` arriba), no pasa por el modelo
+# Pydantic del contrato (el tutor-service construye el evento como dict
+# crudo en `TutorCore._build_event`, sin instanciar `EpisodioAbierto`). Por
+# eso un evento `episodio_abierto` histórico (persistido ANTES de este
+# cambio, sin la key "language" en su payload) recomputa exactamente el
+# mismo self_hash/chain_hash que tenía al escribirse — la cadena
+# append-only queda íntegra sin importar qué campos opcionales se agreguen
+# al contrato después.
+#
+# Valores golden calculados con el `compute_self_hash`/`compute_chain_hash`
+# vigente (2026-07-23, verificado contra HEAD ebdb7e7 — sin cambios en este
+# módulo respecto de antes de agregar `language` al contrato), sobre un
+# evento fijo que simula un `episodio_abierto` real pre-cambio.
+_GOLDEN_EPISODIO_ABIERTO_PRE_LANGUAGE: dict = {
+    "event_uuid": "11111111-1111-1111-1111-111111111111",
+    "episode_id": "22222222-2222-2222-2222-222222222222",
+    "tenant_id": "33333333-3333-3333-3333-333333333333",
+    "seq": 0,
+    "event_type": "episodio_abierto",
+    "ts": "2026-06-01T10:00:00Z",
+    "payload": {
+        "student_pseudonym": "44444444-4444-4444-4444-444444444444",
+        "problema_id": "55555555-5555-5555-5555-555555555555",
+        "comision_id": "66666666-6666-6666-6666-666666666666",
+        "curso_config_hash": "a" * 64,
+        "model": "claude-sonnet-4-6",
+    },
+    "prompt_system_hash": "b" * 64,
+    "prompt_system_version": "v1.0.0",
+    "classifier_config_hash": "c" * 64,
+}
+_GOLDEN_SELF_HASH = "370886887d07b4cdd6148665b3116d9b9fb3e53c5871e10509cdd3886310ef6e"
+_GOLDEN_CHAIN_HASH = "79b2af8674e0d0bf8156b3c95a841b4f2ad3f19f158521da45ff0c53036b826d"
+
+
+def test_golden_self_hash_episodio_abierto_historico_sin_language() -> None:
+    """Un episodio_abierto persistido antes del campo `language` conserva
+    su self_hash y chain_hash originales, calculados contra el payload
+    exactamente como se escribió (sin la key "language")."""
+    computed_self = compute_self_hash(_GOLDEN_EPISODIO_ABIERTO_PRE_LANGUAGE)
+    assert computed_self == _GOLDEN_SELF_HASH
+
+    computed_chain = compute_chain_hash(computed_self, None)
+    assert computed_chain == _GOLDEN_CHAIN_HASH
+
+
+def test_golden_self_hash_no_se_mueve_si_agrego_language_al_dict_persistido() -> None:
+    """Salvaguarda inversa: SI alguien migrara datos históricos para
+    agregarles `"language": null` explícito al payload persistido, el hash
+    SÍ cambiaría (evidencia de que canonicalize() incluye lo que reciba).
+    Este test documenta por qué NO se debe re-serializar/migrar payloads
+    históricos para "completar" el campo nuevo — se perdería el self_hash
+    original y rompería la cadena."""
+    mutated = {
+        **_GOLDEN_EPISODIO_ABIERTO_PRE_LANGUAGE,
+        "payload": {
+            **_GOLDEN_EPISODIO_ABIERTO_PRE_LANGUAGE["payload"],
+            "language": None,
+        },
+    }
+    assert compute_self_hash(mutated) != _GOLDEN_SELF_HASH
+
+
 def test_genesis_hash_formato() -> None:
     assert GENESIS_HASH == "0" * 64
 
