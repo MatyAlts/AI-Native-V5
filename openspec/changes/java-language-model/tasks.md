@@ -2,7 +2,7 @@
 
 - [x] 0.1 **Medir el daño potencial de la validación nueva.** Hecho el 2026-07-23 contra la base del piloto. Resultado: **169 de 169** asociaciones ejercicio–TP con peso `1.0000`; **25 de 27** TPs publicadas con suma de pesos ≠ 1.0; las 2 que cumplen lo hacen por tener un único ejercicio. Ningún cálculo de calificación consume el campo. **Consecuencia: la regla de pesos sale del scope** (D9). Con las reglas restantes, ninguna TP del piloto queda bloqueada.
 - [x] 0.2 Confirmar en `packages/contracts` si `TpEjercicioCreate` se usa en algún caller fuera de `academic-service` antes de tocar la firma del validador.
-- [ ] 0.3 Anotar como tickets propios los tres hallazgos fuera de scope del design: `peso_en_tp` decorativo, el "Peso: 100%" que ve el alumno hoy, y el valor por defecto del formulario que los origina.
+- [x] 0.3 Anotar como tickets propios los tres hallazgos fuera de scope del design: `peso_en_tp` decorativo, el "Peso: 100%" que ve el alumno hoy, y el valor por defecto del formulario que los origina.
 
 ## 1. Contratos (`packages/contracts`)
 
@@ -54,9 +54,9 @@
 
 ## 6. Smoke y cierre
 
-- [ ] 6.1 Smoke test nuevo en `tests/e2e/smoke/`: crear ejercicio Java → crear TP Java → agregar el ejercicio → publicar → verificar 200. Y el camino negativo: agregar un ejercicio Python a esa TP → 422. Es lo que atrapa la clase de bug que escapa a los unit tests con DB mockeada.
-- [ ] 6.2 `make test-fast` y `make check-rls` en verde.
-- [ ] 6.3 Actualizar `CLAUDE.md` si el conteo de smoke tests cambió (lo verifica `scripts/check-claude-md.py` en CI).
+- [x] 6.1 Smoke test nuevo en `tests/e2e/smoke/`: crear ejercicio Java → crear TP Java → agregar el ejercicio → publicar → verificar 200. Y el camino negativo: agregar un ejercicio Python a esa TP → 422. Es lo que atrapa la clase de bug que escapa a los unit tests con DB mockeada.
+- [x] 6.2 `make test-fast` y `make check-rls` en verde.
+- [x] 6.3 Actualizar `CLAUDE.md` si el conteo de smoke tests cambió (lo verifica `scripts/check-claude-md.py` en CI).
 
 ## Fuera de scope (a propósito)
 
