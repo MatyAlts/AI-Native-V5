@@ -36,11 +36,11 @@
 
 ## 4. Validación de composición (`academic-service`)
 
-- [ ] 4.1 `TpEjercicioService.add_ejercicio()` (`tp_ejercicio_service.py:75-111`): bloquear lenguaje distinto. **La línea `await self.ejercicio_repo.get_or_404(ejercicio_id)` ya carga el `Ejercicio` y descarta el resultado** — capturarlo da el `language` sin ninguna query nueva.
-- [ ] 4.2 `TareaPracticaService.publish()` (`tarea_practica_service.py:216`): invocar el validador.
-- [ ] 4.3 🟢 **No escribir el SELECT explícito: reusar `TpEjercicioService.list_by_tp()`** (`tp_ejercicio_service.py:56`). Ya hace `select(TpEjercicio).options(selectinload(TpEjercicio.ejercicio))` y devuelve tuplas `(par, ejercicio)` — carga los pares con su ejercicio embebido, que es exactamente lo que necesita la validación de pesos y de lenguaje.
-- [ ] 4.3b 🔴 Lo que sigue siendo trampa: **nunca iterar `tp.tp_ejercicios`**. `get_or_404()` no hace eager-load, y el propio código de `new_version()` (`tarea_practica_service.py:324-328`) documenta que esa relación lazy revienta con `MissingGreenlet` en el driver async. Un `if not tp.tp_ejercicios` parece lo natural y falla en runtime (D7).
-- [ ] 4.4 Errores 422 con mensaje accionable: qué regla se violó y con qué valores. Un "422 Unprocessable Entity" pelado le hace perder la tarde al docente.
+- [x] 4.1 `TpEjercicioService.add_ejercicio()` (`tp_ejercicio_service.py:75-111`): bloquear lenguaje distinto. **La línea `await self.ejercicio_repo.get_or_404(ejercicio_id)` ya carga el `Ejercicio` y descarta el resultado** — capturarlo da el `language` sin ninguna query nueva.
+- [x] 4.2 `TareaPracticaService.publish()` (`tarea_practica_service.py:216`): invocar el validador.
+- [x] 4.3 🟢 **No escribir el SELECT explícito: reusar `TpEjercicioService.list_by_tp()`** (`tp_ejercicio_service.py:56`). Ya hace `select(TpEjercicio).options(selectinload(TpEjercicio.ejercicio))` y devuelve tuplas `(par, ejercicio)` — carga los pares con su ejercicio embebido, que es exactamente lo que necesita la validación de pesos y de lenguaje.
+- [x] 4.3b 🔴 Lo que sigue siendo trampa: **nunca iterar `tp.tp_ejercicios`**. `get_or_404()` no hace eager-load, y el propio código de `new_version()` (`tarea_practica_service.py:324-328`) documenta que esa relación lazy revienta con `MissingGreenlet` en el driver async. Un `if not tp.tp_ejercicios` parece lo natural y falla en runtime (D7).
+- [x] 4.4 Errores 422 con mensaje accionable: qué regla se violó y con qué valores. Un "422 Unprocessable Entity" pelado le hace perder la tarde al docente.
 
 **Aceptación**: tests de integración cubriendo los 4 rechazos (orden duplicado, ejercicio duplicado, vacía, lenguajes mezclados) + los 4 caminos felices (TP compuesta válida, TP monolítica, TP de un solo ejercicio, ejercicio del mismo lenguaje) + el no-rechazo por pesos. Incluir un test que cubra el camino de carga de 4.3.
 
