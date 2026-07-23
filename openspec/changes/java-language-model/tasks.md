@@ -17,11 +17,11 @@
 
 ## 2. Modelo y migración (`academic-service`)
 
-- [ ] 2.1 `Ejercicio.language` y `TareaPractica.language`: `String(20)`, `nullable=False`, `server_default="python"` (`models/operacional.py:408,214`). **Sin `CheckConstraint`** — D2.
-- [ ] 2.2 Migración `20260722_0001_ejercicio_tp_language.py`, `down_revision` apuntando al head vigente de academic (verificarlo, no asumirlo).
-- [ ] 2.3 **Migración idempotente desde el día uno**: chequear `information_schema.columns` antes de cada `ADD COLUMN`. No es paranoia — el PR #33 encontró una columna agregada a mano en prod salteándose Alembic, y no se sabe cuánta deriva más hay.
-- [ ] 2.4 Sin cambios de RLS: ambas tablas ya tienen policy activa; es `ADD COLUMN` sobre tabla existente (patrón de `20260615_0002_tarea_practica_permite_pausa`). Confirmar con `make check-rls`.
-- [ ] 2.5 `downgrade()` simétrico y guardado (dropear solo si existe).
+- [x] 2.1 `Ejercicio.language` y `TareaPractica.language`: `String(20)`, `nullable=False`, `server_default="python"` (`models/operacional.py:408,214`). **Sin `CheckConstraint`** — D2.
+- [x] 2.2 Migración `20260722_0001_ejercicio_tp_language.py`, `down_revision` apuntando al head vigente de academic (verificarlo, no asumirlo).
+- [x] 2.3 **Migración idempotente desde el día uno**: chequear `information_schema.columns` antes de cada `ADD COLUMN`. No es paranoia — el PR #33 encontró una columna agregada a mano en prod salteándose Alembic, y no se sabe cuánta deriva más hay.
+- [x] 2.4 Sin cambios de RLS: ambas tablas ya tienen policy activa; es `ADD COLUMN` sobre tabla existente (patrón de `20260615_0002_tarea_practica_permite_pausa`). Confirmar con `make check-rls`.
+- [x] 2.5 `downgrade()` simétrico y guardado (dropear solo si existe).
 
 **Aceptación**: `alembic upgrade head` y `alembic downgrade -1` corren limpios contra base limpia **y** contra una copia del schema de prod. `alembic check` no propone drift nuevo.
 
