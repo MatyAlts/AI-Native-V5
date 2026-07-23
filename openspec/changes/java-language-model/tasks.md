@@ -1,15 +1,17 @@
 ## 0. Antes de escribir código
 
-- [ ] 0.1 **Medir el daño potencial de la validación nueva.** Contra la base del piloto, contar cuántas TPs `published` violarían las reglas: pesos ≠ 1.0, sin ejercicios y sin `test_cases`, órdenes o ejercicios duplicados. Solo lectura. Si el número es alto, la regla de "no revalidar retroactivamente" pasa de deseable a obligatoria, y hay que avisarle al docente antes de que edite y re-publique una TP vieja.
+- [x] 0.1 **Medir el daño potencial de la validación nueva.** Hecho el 2026-07-23 contra la base del piloto. Resultado: **169 de 169** asociaciones ejercicio–TP con peso `1.0000`; **25 de 27** TPs publicadas con suma de pesos ≠ 1.0; las 2 que cumplen lo hacen por tener un único ejercicio. Ningún cálculo de calificación consume el campo. **Consecuencia: la regla de pesos sale del scope** (D9). Con las reglas restantes, ninguna TP del piloto queda bloqueada.
 - [ ] 0.2 Confirmar en `packages/contracts` si `TpEjercicioCreate` se usa en algún caller fuera de `academic-service` antes de tocar la firma del validador.
+- [ ] 0.3 Anotar como tickets propios los tres hallazgos fuera de scope del design: `peso_en_tp` decorativo, el "Peso: 100%" que ve el alumno hoy, y el valor por defecto del formulario que los origina.
 
 ## 1. Contratos (`packages/contracts`)
 
 - [ ] 1.1 `TestCaseSchema.type`: agregar `junit_assert` al `Literal` (`academic/ejercicio.py:142`).
 - [ ] 1.2 `_EjercicioBase`: agregar `language: Literal["python", "java"] = "python"` (`academic/ejercicio.py:152`).
 - [ ] 1.3 `TpEjerciciosValidator`: agregar la regla de no-vacío. Ojo con `validate_set()`, que hoy retorna conforme ante lista vacía (`ejercicio.py:278-279`) — la regla correcta es "tiene ejercicios **o** `test_cases` propios", no "tiene ejercicios".
+- [ ] 1.3b **Retirar la regla de suma de pesos** del validador, o dejarla inaplicable desde el llamador. Ver 0.1 y D9: es incompatible con el 100% de los datos del piloto y guarda un campo que ninguna calificación consume. Documentar el porqué en el docstring del validador, para que nadie la reintroduzca creyendo que fue un olvido.
 - [ ] 1.4 `TpEjerciciosValidator`: método nuevo que reciba los lenguajes ya resueltos por el servicio y valide unicidad + coincidencia con el de la TP. **No** extender `TpEjercicioCreate` con `language` — es un campo derivado y el cliente podría mentir (D6).
-- [ ] 1.5 Tests unitarios del validador: los 3 casos que ya cubría + no-vacío + monolítica válida + mezcla de lenguajes + TP declarada en un lenguaje con ejercicio de otro.
+- [ ] 1.5 Tests unitarios del validador: orden duplicado + ejercicio duplicado + no-vacío + monolítica válida + TP de un solo ejercicio + mezcla de lenguajes + TP declarada en un lenguaje con ejercicio de otro. **Más un test explícito de que pesos que no suman 1.0 NO bloquean** — es la regla que se retiró, y un test que lo afirme evita que vuelva por descuido.
 
 **Aceptación**: `uv run pytest packages/contracts/tests -v` en verde.
 
@@ -40,7 +42,9 @@
 - [ ] 4.3b 🔴 Lo que sigue siendo trampa: **nunca iterar `tp.tp_ejercicios`**. `get_or_404()` no hace eager-load, y el propio código de `new_version()` (`tarea_practica_service.py:324-328`) documenta que esa relación lazy revienta con `MissingGreenlet` en el driver async. Un `if not tp.tp_ejercicios` parece lo natural y falla en runtime (D7).
 - [ ] 4.4 Errores 422 con mensaje accionable: qué regla se violó y con qué valores. Un "422 Unprocessable Entity" pelado le hace perder la tarde al docente.
 
-**Aceptación**: tests de integración cubriendo los 5 rechazos (pesos, orden duplicado, ejercicio duplicado, vacía, lenguajes mezclados) + los 3 caminos felices (TP compuesta válida, TP monolítica, ejercicio del mismo lenguaje). Incluir un test explícito del camino de carga que cubra 4.3.
+**Aceptación**: tests de integración cubriendo los 4 rechazos (orden duplicado, ejercicio duplicado, vacía, lenguajes mezclados) + los 4 caminos felices (TP compuesta válida, TP monolítica, TP de un solo ejercicio, ejercicio del mismo lenguaje) + el no-rechazo por pesos. Incluir un test que cubra el camino de carga de 4.3.
+
+**Verificación contra datos reales**: con las reglas finales, las 27 TPs publicadas del piloto deben poder republicarse. Es el criterio que la medición de 0.1 dejó establecido.
 
 ## 5. Verificación de que la tesis no se movió
 

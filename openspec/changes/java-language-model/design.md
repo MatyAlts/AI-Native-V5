@@ -83,11 +83,32 @@ El validador arranca retornando conforme si la lista de ejercicios está vacía.
 
 Y la regla correcta no es "tiene ejercicios" sino "tiene ejercicios **o** casos de prueba propios": una TP monolítica legítima no tiene asociaciones con el banco.
 
+### D9 — La regla de suma de pesos NO se adopta
+
+El validador existente exige que los pesos de los ejercicios sumen 1.0. Esa regla queda fuera.
+
+Medición contra la base del piloto, previa a escribir código:
+
+| Dato | Valor |
+|---|---|
+| Asociaciones ejercicio–TP con peso `1.0000` | **169 de 169** |
+| TPs publicadas cuya suma de pesos ≠ 1.0 | **25 de 27** |
+| TPs que cumplen la regla | 2 — ambas con **un único ejercicio**, o sea por accidente |
+| Cálculos de calificación que consumen el campo | **ninguno** |
+
+El origen del dato es el formulario del docente, que propone `1.0` y nadie modifica. No hay una convención de "pesos como unidades absolutas" pensada por alguien: hay un valor por defecto que quedó.
+
+Aplicar la regla habría impedido republicar prácticamente todas las TPs del piloto, para proteger la consistencia de un número que no participa de ningún cálculo.
+
+**Alternativa descartada — migrar los datos a fracciones (1/N)**: tocar 169 filas de producción del piloto en curso para satisfacer una regla que nadie usa. Riesgo sin beneficio.
+
+**Alternativa descartada — reescribir la regla como "pesos relativos, normalizados al calificar"**: es la lectura correcta de los datos y probablemente el diseño deseable. Pero exige implementar la ponderación en el servicio de evaluación, que hoy ignora el campo por completo. Es un cambio de producto, no de soporte multi-lenguaje.
+
 ## Risks / Trade-offs
 
 **Fallo del controlador asíncrono al validar** → D7: consulta explícita, con un test que cubra ese camino específico.
 
-**TPs publicadas que ya violan las reglas nuevas** → La validación corre al publicar, no retroactivamente. Pero si una TP publicada se edita y se vuelve a publicar, ahora falla. Hay que **medir cuántas hay antes de desplegar**; si son muchas, avisar al docente antes de que se encuentre con el rechazo.
+**TPs publicadas que ya violan las reglas nuevas** → **Medido el 2026-07-23, antes de escribir código.** Con la regla de pesos incluida, 25 de 27 TPs publicadas habrían quedado sin poder republicarse. Retirada esa regla (D9), ninguna TP del piloto viola las reglas restantes: todas tienen órdenes únicos, ejercicios sin repetir y contenido. El riesgo queda en cero, no mitigado sino eliminado.
 
 **El valor por omisión queda pegado al esquema** → Se puede quitar tras agregar la columna. Decisión: dejarlo. Que un ejercicio nuevo sin lenguaje explícito sea Python es razonable mientras Python sea el lenguaje principal del piloto.
 
@@ -106,6 +127,14 @@ Los pasos 1 a 3 son aditivos y no cambian ningún comportamiento existente. El p
 
 ## Open Questions
 
-**¿Cuántas TPs publicadas violarían las reglas nuevas?** Se responde con una consulta de solo lectura antes de escribir código. Si el número es alto, la decisión de no revalidar retroactivamente pasa de deseable a obligatoria, y conviene avisar antes de que un docente edite una TP vieja y se choque con el rechazo.
-
 **¿Conviene unificar el tipado de casos de prueba entre ejercicio y TP?** Fuera de alcance acá, pero la duplicación va a seguir costando cada vez que se agregue un tipo. Vale un refactor propio.
+
+## Hallazgos fuera de scope
+
+Descubiertos midiendo la base antes de escribir código. Ninguno es de soporte multi-lenguaje; los tres necesitan dueño.
+
+**1. `peso_en_tp` es decorativo.** Se guarda, se transporta, se muestra — y ningún cálculo lo consume. O se implementa la ponderación en la calificación, o se retira el campo. Tenerlo a medias es peor que cualquiera de las dos: sostiene la ilusión de que las notas se ponderan.
+
+**2. La vista del alumno muestra "Peso: 100%" en cada ejercicio.** El componente que lista los ejercicios de una TP renderiza el peso como porcentaje. Con todos los pesos en `1.0`, un TP de diez ejercicios muestra diez veces "Peso: 100%". Está en producción hoy. No rompe nada y le miente al alumno.
+
+**3. El formulario del docente propone `1.0` como peso por defecto.** Es la causa raíz de los otros dos. Cualquier decisión sobre el campo tiene que empezar por acá.

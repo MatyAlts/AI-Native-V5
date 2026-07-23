@@ -7,7 +7,9 @@ Esta change es la **fundación de datos** del soporte multi-lenguaje (Fase 2 Jav
 Dos hallazgos de la exploración justifican meter la validación de TP acá y no después:
 
 1. **El banco de ejercicios es reusable entre TPs** (`tp_ejercicios` N:M). Nada impide componer una TP con un ejercicio Python y uno Java. El editor no puede cargar dos runtimes — la mezcla rompe la experiencia del alumno, no es un detalle cosmético. Apenas exista el segundo ejercicio Java en el banco, el bug es inmediato.
-2. **`publish()` no valida nada** (`apps/academic-service/src/academic_service/services/tarea_practica_service.py:216`): solo verifica `estado == "draft"`. Se puede publicar una TP vacía o con pesos que no suman 1.0, y le llega así al alumno. Existe `TpEjerciciosValidator` (`packages/contracts/src/platform_contracts/academic/ejercicio.py:263`) escrito para eso y **nunca se invoca**. Es el mismo punto de código donde va la regla mono-lenguaje: hacerlos por separado es fabricar un conflicto.
+2. **`publish()` no valida nada** (`apps/academic-service/src/academic_service/services/tarea_practica_service.py:216`): solo verifica `estado == "draft"`. Se puede publicar una TP vacía y le llega así al alumno. Existe `TpEjerciciosValidator` (`packages/contracts/src/platform_contracts/academic/ejercicio.py:263`) escrito para eso y **nunca se invoca**. Es el mismo punto de código donde va la regla mono-lenguaje: hacerlos por separado es fabricar un conflicto.
+
+   **Pero no todas sus reglas se adoptan.** Medición previa contra la base del piloto: las 169 asociaciones ejercicio–TP tienen peso `1.0000`, ninguna calificación consume ese campo, y aplicar la regla de "los pesos suman 1.0" habría impedido republicar 25 de 27 TPs. Queda fuera de scope y documentado como hallazgo.
 
 ## What Changes
 
@@ -15,8 +17,8 @@ Dos hallazgos de la exploración justifican meter la validación de TP acá y no
 - **`language` en los contratos Pydantic**: `_EjercicioBase` (`ejercicio.py:152`) y el schema de `TareaPractica`.
 - **Nuevo tipo de test case `junit_assert`** en `TestCaseSchema.type` (`ejercicio.py:142`, hoy `Literal["stdin_stdout","pytest_assert"]`). **Y en el schema de TP**: `TareaPractica.test_cases` está tipado como `list[dict[str, Any]]` suelto (`apps/academic-service/src/academic_service/schemas/tarea_practica.py`) y no reusa `TestCaseSchema` — agregar el tipo solo en `ejercicio.py` no cubre las TPs monolíticas sin ejercicios de banco.
 - **Filtro `?language=` en `GET /ejercicios`** (`apps/academic-service/src/academic_service/routes/ejercicios.py:57`). Mecánicamente idéntico al filtro `materia_id` ya existente: entra por el dict `filters` y el repositorio genérico lo resuelve sin cambios (`repositories/base.py:58-61`).
-- **Validación de composición de TP, enganchada de verdad**:
-  - `TpEjerciciosValidator` invocado desde `publish()`.
+- **Validación de composición de TP, enganchada de verdad** — con las reglas que aplican a los datos reales, no todas las que el validador contempla:
+  - `TpEjerciciosValidator` invocado desde `publish()`, **sin la regla de suma de pesos** (ver arriba).
   - **Regla nueva mono-lenguaje**: todos los `Ejercicio` de una TP deben compartir `language`, y coincidir con el de la TP. El validador actual no puede hacerlo — solo ve `ejercicio_id/orden/peso_en_tp`, nunca el `Ejercicio` real.
   - **Regla nueva no-vacía**: `validate_set()` hace `if not self.tp_ejercicios: return self` — retorna OK ante lista vacía. Enchufarlo tal cual dejaría el bug de "TP vacía" igual de roto. Hace falta chequear que haya `tp_ejercicios` **o** `test_cases` propios.
   - **Validación temprana en `add_ejercicio`** (`tp_ejercicio_service.py:75-111`): bloquear la mezcla al agregar, no recién al publicar. Ese método ya carga el `Ejercicio` real, así que tiene el `language` a mano.
@@ -26,7 +28,7 @@ Dos hallazgos de la exploración justifican meter la validación de TP acá y no
 ### New Capabilities
 
 - `ejercicio-language`: el lenguaje de programación como atributo de primera clase del banco de ejercicios y de las TPs. Campo en modelo y contratos, migración con default retrocompatible, filtro por lenguaje en el listado del banco, y el tipo de test case `junit_assert` en ambos schemas (el tipado y el suelto).
-- `tp-composicion-validada`: `publish()` valida la composición de la TP antes de exponerla al alumno — pesos que suman 1.0, órdenes y ejercicios sin duplicar, TP no vacía, y un solo lenguaje por TP. Incluye la validación temprana en `add_ejercicio` para bloquear la mezcla en el momento de componer, no al publicar.
+- `tp-composicion-validada`: `publish()` valida la composición de la TP antes de exponerla al alumno — órdenes y ejercicios sin duplicar, TP no vacía, y un solo lenguaje por TP. Incluye la validación temprana en `add_ejercicio` para bloquear la mezcla en el momento de componer, no al publicar. **Excluye deliberadamente la regla de suma de pesos**, incompatible con el 100% de los datos del piloto y guardiana de un campo que ningún cálculo consume.
 
 ### Modified Capabilities
 
