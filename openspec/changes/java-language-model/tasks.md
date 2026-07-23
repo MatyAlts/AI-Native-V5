@@ -48,9 +48,9 @@
 
 ## 5. Verificación de que la tesis no se movió
 
-- [ ] 5.1 `uv run pytest apps/classifier-service/tests/unit/test_pipeline_reproducibility.py -v` en verde.
-- [ ] 5.2 Confirmar que `LABELER_VERSION` no cambió y que `classifier_config_hash` para un mismo `(tree_version, reference_profile)` es idéntico al anterior.
-- [ ] 5.3 Confirmar por grep que ningún archivo de `apps/classifier-service/src/` empezó a leer `language`. La invariante es que el clasificador no lo consuma — el día que lo haga deja de ser agnóstico y hay que auditar reproducibilidad de nuevo.
+- [x] 5.1 `uv run pytest apps/classifier-service/tests/unit/test_pipeline_reproducibility.py -v` en verde.
+- [x] 5.2 Confirmar que `LABELER_VERSION` no cambió y que `classifier_config_hash` para un mismo `(tree_version, reference_profile)` es idéntico al anterior.
+- [x] 5.3 Confirmar por grep que ningún archivo de `apps/classifier-service/src/` empezó a leer `language`. La invariante es que el clasificador no lo consuma — el día que lo haga deja de ser agnóstico y hay que auditar reproducibilidad de nuevo.
 
 ## 6. Smoke y cierre
 
