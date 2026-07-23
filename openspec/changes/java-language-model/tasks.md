@@ -1,17 +1,17 @@
 ## 0. Antes de escribir código
 
 - [x] 0.1 **Medir el daño potencial de la validación nueva.** Hecho el 2026-07-23 contra la base del piloto. Resultado: **169 de 169** asociaciones ejercicio–TP con peso `1.0000`; **25 de 27** TPs publicadas con suma de pesos ≠ 1.0; las 2 que cumplen lo hacen por tener un único ejercicio. Ningún cálculo de calificación consume el campo. **Consecuencia: la regla de pesos sale del scope** (D9). Con las reglas restantes, ninguna TP del piloto queda bloqueada.
-- [ ] 0.2 Confirmar en `packages/contracts` si `TpEjercicioCreate` se usa en algún caller fuera de `academic-service` antes de tocar la firma del validador.
+- [x] 0.2 Confirmar en `packages/contracts` si `TpEjercicioCreate` se usa en algún caller fuera de `academic-service` antes de tocar la firma del validador.
 - [ ] 0.3 Anotar como tickets propios los tres hallazgos fuera de scope del design: `peso_en_tp` decorativo, el "Peso: 100%" que ve el alumno hoy, y el valor por defecto del formulario que los origina.
 
 ## 1. Contratos (`packages/contracts`)
 
-- [ ] 1.1 `TestCaseSchema.type`: agregar `junit_assert` al `Literal` (`academic/ejercicio.py:142`).
-- [ ] 1.2 `_EjercicioBase`: agregar `language: Literal["python", "java"] = "python"` (`academic/ejercicio.py:152`).
-- [ ] 1.3 `TpEjerciciosValidator`: agregar la regla de no-vacío. Ojo con `validate_set()`, que hoy retorna conforme ante lista vacía (`ejercicio.py:278-279`) — la regla correcta es "tiene ejercicios **o** `test_cases` propios", no "tiene ejercicios".
-- [ ] 1.3b **Retirar la regla de suma de pesos** del validador, o dejarla inaplicable desde el llamador. Ver 0.1 y D9: es incompatible con el 100% de los datos del piloto y guarda un campo que ninguna calificación consume. Documentar el porqué en el docstring del validador, para que nadie la reintroduzca creyendo que fue un olvido.
-- [ ] 1.4 `TpEjerciciosValidator`: método nuevo que reciba los lenguajes ya resueltos por el servicio y valide unicidad + coincidencia con el de la TP. **No** extender `TpEjercicioCreate` con `language` — es un campo derivado y el cliente podría mentir (D6).
-- [ ] 1.5 Tests unitarios del validador: orden duplicado + ejercicio duplicado + no-vacío + monolítica válida + TP de un solo ejercicio + mezcla de lenguajes + TP declarada en un lenguaje con ejercicio de otro. **Más un test explícito de que pesos que no suman 1.0 NO bloquean** — es la regla que se retiró, y un test que lo afirme evita que vuelva por descuido.
+- [x] 1.1 `TestCaseSchema.type`: agregar `junit_assert` al `Literal` (`academic/ejercicio.py:142`).
+- [x] 1.2 `_EjercicioBase`: agregar `language: Literal["python", "java"] = "python"` (`academic/ejercicio.py:152`).
+- [x] 1.3 `TpEjerciciosValidator`: agregar la regla de no-vacío. Ojo con `validate_set()`, que hoy retorna conforme ante lista vacía (`ejercicio.py:278-279`) — la regla correcta es "tiene ejercicios **o** `test_cases` propios", no "tiene ejercicios".
+- [x] 1.3b **Retirar la regla de suma de pesos** del validador, o dejarla inaplicable desde el llamador. Ver 0.1 y D9: es incompatible con el 100% de los datos del piloto y guarda un campo que ninguna calificación consume. Documentar el porqué en el docstring del validador, para que nadie la reintroduzca creyendo que fue un olvido.
+- [x] 1.4 `TpEjerciciosValidator`: método nuevo que reciba los lenguajes ya resueltos por el servicio y valide unicidad + coincidencia con el de la TP. **No** extender `TpEjercicioCreate` con `language` — es un campo derivado y el cliente podría mentir (D6).
+- [x] 1.5 Tests unitarios del validador: orden duplicado + ejercicio duplicado + no-vacío + monolítica válida + TP de un solo ejercicio + mezcla de lenguajes + TP declarada en un lenguaje con ejercicio de otro. **Más un test explícito de que pesos que no suman 1.0 NO bloquean** — es la regla que se retiró, y un test que lo afirme evita que vuelva por descuido.
 
 **Aceptación**: `uv run pytest packages/contracts/tests -v` en verde.
 
