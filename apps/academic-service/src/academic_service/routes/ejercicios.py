@@ -26,6 +26,7 @@ from platform_contracts.academic.ejercicio import (
     EjercicioCreate,
     EjercicioRead,
     EjercicioUpdate,
+    Language,
 )
 from pydantic import BaseModel, Field
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -63,6 +64,7 @@ async def list_ejercicios(
     created_by: UUID | None = None,
     created_via_ai: bool | None = None,
     materia_id: UUID | None = None,
+    language: Language | None = None,
     user: User = Depends(require_permission("ejercicio", "read")),
     db: AsyncSession = Depends(get_db),
 ) -> ListResponse[EjercicioRead]:
@@ -74,6 +76,8 @@ async def list_ejercicios(
     - `dificultad`: filtra por dificultad declarada.
     - `created_by`: docente creador.
     - `created_via_ai`: filtra ejercicios generados con el wizard IA.
+    - `language`: filtra por lenguaje de programación. Omitirlo devuelve
+      ejercicios de todos los lenguajes (comportamiento previo intacto).
     """
     svc = EjercicioService(db)
     objs = await svc.list(
@@ -82,6 +86,7 @@ async def list_ejercicios(
         created_by=created_by,
         created_via_ai=created_via_ai,
         materia_id=materia_id,
+        language=language,
         limit=limit,
         cursor=cursor,
     )

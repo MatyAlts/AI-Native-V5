@@ -301,6 +301,10 @@ class TareaPracticaService:
                 "fecha_fin": overrides.get("fecha_fin", parent.fecha_fin),
                 "peso": overrides.get("peso", parent.peso),
                 "rubrica": overrides.get("rubrica", parent.rubrica),
+                # Sin esto, una version nueva de una TP Java nacia Python (el
+                # server_default de la columna), y con los ejercicios Java ya
+                # clonados abajo la TP quedaba mezclada e impublicable.
+                "language": overrides.get("language", parent.language),
                 "estado": "draft",
                 "version": parent.version + 1,
                 "parent_tarea_id": parent.id,
