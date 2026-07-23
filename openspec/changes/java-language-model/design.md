@@ -129,9 +129,21 @@ Los pasos 1 a 3 son aditivos y no cambian ningún comportamiento existente. El p
 
 **¿Conviene unificar el tipado de casos de prueba entre ejercicio y TP?** Fuera de alcance acá, pero la duplicación va a seguir costando cada vez que se agregue un tipo. Vale un refactor propio.
 
+## Corrección al registro (2026-07-23)
+
+Durante el paso 4 anoté que `TareaPracticaService.create()` no persiste `test_cases` y deduje que "las 27 TPs del piloto tienen los test cases vacíos porque nunca se guardaron". **El diagnóstico estaba mal encuadrado.**
+
+Los test cases que el docente carga y verifica viven en el **ejercicio**, no en la TP, y se persisten bien: `EjercicioService.create()` hace `data.model_dump()` y lo expande con `**payload`, así que guarda todos los campos del contrato automáticamente. Es también el motivo por el que `language` funcionó en los ejercicios sin tocar ese servicio.
+
+`TareaPractica.test_cases` es el camino **monolítico**, que ADR-047 dejó como legacy al sacar los ejercicios del JSONB de la TP. Que las 27 TPs lo tengan vacío es lo esperado: están compuestas de ejercicios del banco. No se perdió nada.
+
+Lo que sí sigue siendo cierto: `create()` de TP arma el dict a mano y no incluye `test_cases`, así que el camino monolítico requiere un PATCH posterior. Es una inconsistencia real pero de bajo impacto, no la pérdida de datos que describí.
+
 ## Hallazgos fuera de scope
 
 Descubiertos midiendo la base antes de escribir código. Ninguno es de soporte multi-lenguaje; los tres necesitan dueño.
+
+**0. `TareaPracticaService.create()` arma su dict a mano.** Es la raíz de los tres hallazgos de abajo y de la corrección anotada arriba: cada campo nuevo del modelo hay que acordarse de sumarlo a esa lista, y a la de `new_version()`. `EjercicioService.create()` resuelve lo mismo con `**data.model_dump()` y nunca se olvida de nada. Alinear los dos servicios evitaría toda esta clase de bug.
 
 **1. `peso_en_tp` es decorativo.** Se guarda, se transporta, se muestra — y ningún cálculo lo consume. O se implementa la ponderación en la calificación, o se retira el campo. Tenerlo a medias es peor que cualquiera de las dos: sostiene la ilusión de que las notas se ponderan.
 
