@@ -12,9 +12,15 @@ Reglas operativas:
   DB).
 - Un mismo `ejercicio_id` no puede aparecer dos veces en la misma TP
   (UNIQUE constraint en DB).
-- La suma de `peso_en_tp` debería ser 1.0 al publicar el TP — esa
-  validación NO se enforza acá (en draft se acepta cualquier suma); el
-  frontend o el endpoint `publish` deben validarlo cuando aplique.
+- Todos los ejercicios de una TP comparten `language`, y coincide con el
+  de la TP. Se bloquea al agregar (acá) y se re-verifica al publicar. El
+  editor del alumno carga un único runtime por episodio: una TP mixta no
+  es "inconsistente", es irresoluble.
+- La suma de `peso_en_tp` NO se valida, ni acá ni al publicar. Medición
+  sobre la base del piloto (2026-07-23): las 169 asociaciones tienen peso
+  1.0000, ninguna calificación consume el campo, y exigir suma 1.0 habría
+  impedido republicar 25 de las 27 TPs publicadas. Ver el docstring de
+  `TpEjerciciosValidator`.
 """
 
 from __future__ import annotations
@@ -26,7 +32,7 @@ from fastapi import HTTPException, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from academic_service.auth.dependencies import User
-from academic_service.models import AuditLog, Ejercicio, TpEjercicio
+from academic_service.models import AuditLog, Ejercicio, TareaPractica, TpEjercicio
 from academic_service.repositories import (
     EjercicioRepository,
     TareaPracticaRepository,
@@ -41,8 +47,12 @@ class TpEjercicioService:
         self.ejercicio_repo = EjercicioRepository(session)
         self.pair_repo = TpEjercicioRepository(session)
 
-    async def _assert_tp_draft(self, tarea_practica_id: UUID) -> None:
-        """Carga la TP y valida que esté en draft (única ventana mutable)."""
+    async def _assert_tp_draft(self, tarea_practica_id: UUID) -> TareaPractica:
+        """Carga la TP y valida que esté en draft (única ventana mutable).
+
+        Devuelve la TP para que el caller no tenga que volver a pedirla — la
+        validación de lenguaje necesita su `language`.
+        """
         tp = await self.tp_repo.get_or_404(tarea_practica_id)
         if tp.estado != "draft":
             raise HTTPException(
@@ -52,6 +62,7 @@ class TpEjercicioService:
                     f"TP en estado '{tp.estado}'; cree una nueva versión"
                 ),
             )
+        return tp
 
     async def list_by_tp(self, tarea_practica_id: UUID) -> list[tuple[TpEjercicio, Ejercicio]]:
         """Lista las asociaciones de una TP con su Ejercicio embebido.
@@ -80,10 +91,22 @@ class TpEjercicioService:
         peso_en_tp: Decimal,
         user: User,
     ) -> TpEjercicio:
-        await self._assert_tp_draft(tarea_practica_id)
+        tp = await self._assert_tp_draft(tarea_practica_id)
 
-        # Validar que el Ejercicio existe (y no esté soft-deleted)
-        await self.ejercicio_repo.get_or_404(ejercicio_id)
+        # Validar que el Ejercicio existe (y no esté soft-deleted). El objeto se
+        # captura porque su `language` alimenta la validación de abajo — antes se
+        # descartaba y esto era solo un chequeo de existencia.
+        ejercicio = await self.ejercicio_repo.get_or_404(ejercicio_id)
+
+        if ejercicio.language != tp.language:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail=(
+                    f"El ejercicio es de '{ejercicio.language}' pero la TP es de "
+                    f"'{tp.language}'. Una TP admite un solo lenguaje: el editor "
+                    f"del alumno carga un único entorno de ejecución por episodio."
+                ),
+            )
 
         pair = await self.pair_repo.create(
             tenant_id=user.tenant_id,
