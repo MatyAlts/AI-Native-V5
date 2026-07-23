@@ -238,6 +238,14 @@ class TareaPractica(Base, TenantMixin, TimestampMixin):
 
     rubrica: Mapped[dict[str, Any] | None] = mapped_column(JSONB, nullable=True)
 
+    # Lenguaje de la TP. Debe coincidir con el de todos sus ejercicios de banco
+    # (validado en publish() y al agregar cada ejercicio): el editor del alumno
+    # carga un unico runtime por episodio, asi que una TP mixta es irresoluble.
+    # Ver nota en `Ejercicio.language` sobre por que no lleva CheckConstraint.
+    language: Mapped[str] = mapped_column(
+        String(20), nullable=False, default="python", server_default="python"
+    )
+
     estado: Mapped[str] = mapped_column(String(20), nullable=False, default="draft")
     version: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
     parent_tarea_id: Mapped[uuid.UUID | None] = mapped_column(
@@ -449,6 +457,15 @@ class Ejercicio(Base, TenantMixin, TimestampMixin):
     unidad_tematica: Mapped[str] = mapped_column(String(30), nullable=False)
     # 'basica' | 'intermedia' | 'avanzada' | NULL
     dificultad: Mapped[str | None] = mapped_column(String(20), nullable=True)
+    # Lenguaje en que se resuelve. SIN CheckConstraint a proposito: el conjunto
+    # admitido vive en `platform_contracts.academic.Language` y agregar uno nuevo
+    # no deberia pedir una migracion. Mismo criterio que `unidad_tematica`, que
+    # perdio su CHECK en 20260611_0001 para volverse texto libre.
+    # El server_default preserva la semantica del banco historico, integramente
+    # Python, sin necesidad de backfill.
+    language: Mapped[str] = mapped_column(
+        String(20), nullable=False, default="python", server_default="python"
+    )
     prerequisitos: Mapped[dict[str, Any]] = mapped_column(
         JSONB, nullable=False, default=dict, server_default=sa.text("'{}'::jsonb")
     )
