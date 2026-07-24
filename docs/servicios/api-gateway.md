@@ -130,7 +130,7 @@ El api-gateway no implementa componentes de la tesis. Su existencia es una **pro
 
 **Known gaps**:
 - Los servicios periféricos (governance, ai-gateway, attestation) no están en `ROUTE_MAP` — son service-to-service por diseño. Si algún frontend los necesita, hoy no pueden via gateway.
-- `byok` endpoints del ai-gateway no están en `ROUTE_MAP` aún — la UI BYOK del web-admin (DEFERIDA) los necesitará.
+- ~~`byok` endpoints del ai-gateway no están en `ROUTE_MAP` aún — la UI BYOK del web-admin (DEFERIDA) los necesitará.~~ CERRADO: `/api/v1/byok` está en el `ROUTE_MAP` (`routes/proxy.py:85` → `ai_gateway_url`) y la UI existe (`apps/web-admin/src/pages/ByokPage.tsx`, capability `byok-management-ui`). El LLM proxy del ai-gateway sigue interno by-design.
 - SSE passthrough via `StreamingResponse` en una sola emisión — probable buffering (no verificado e2e).
 - Sin circuit breaker ni retry policies.
 - ~~`dev_trust_headers=True` como default es riesgoso si se mal-despliega.~~ CERRADO: el default es `False` (`config.py:109`). El costo se movió a dev local, donde hay que prenderlo a mano para que la suite smoke y los frontends sin Keycloak autentiquen por headers X-*.
