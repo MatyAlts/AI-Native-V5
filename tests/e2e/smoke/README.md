@@ -45,9 +45,18 @@ SMOKE_API_BASE_URL=http://staging-gateway:8000 make test-smoke
 
 ## Cómo se autentica el client (descubrimiento I.1)
 
-El api-gateway en dev mode tiene `dev_trust_headers=True` (config default).
-El middleware de auth (`apps/api-gateway/src/api_gateway/middleware/jwt_auth.py`)
-hace este flujo:
+La suite requiere el api-gateway arrancado con `DEV_TRUST_HEADERS=true`.
+**No es el default**: `apps/api-gateway/src/api_gateway/config.py` declara
+`dev_trust_headers: bool = False` por seguridad — a True habilita impersonación
+sin credenciales, y en PROD nunca debe ir prendido. Sin el flag, toda la suite
+falla con 401 `Autenticación requerida`.
+
+```bash
+DEV_TRUST_HEADERS=true uv run uvicorn api_gateway.main:app --host 127.0.0.1 --port 8000
+```
+
+Con el flag prendido, el middleware de auth
+(`apps/api-gateway/src/api_gateway/middleware/jwt_auth.py`) hace este flujo:
 
 1. Si la request trae `Authorization: Bearer ...`, intenta validarlo (con un
    JWTValidator si está configurado).

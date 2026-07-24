@@ -95,7 +95,7 @@ Las rutas ruteadas (map interno en `routes/proxy.py`):
 - `JWT_AUDIENCE` — default `"platform-backend"`.
 - `JWT_JWKS_URI` — ej. `http://keycloak:8080/realms/demo_uni/protocol/openid-connect/certs`.
 - `JWT_JWKS_CACHE_TTL` — default `300` segundos.
-- `DEV_TRUST_HEADERS` — **default `True`**. En prod tiene que ser `False`.
+- `DEV_TRUST_HEADERS` — **default `False`** (SAFETY: a `True` habilita impersonación sin credenciales). En dev local sin Keycloak hay que prenderlo explícito, o todo request sin Bearer da 401. En prod NUNCA debe ir a `True`.
 - `RATE_LIMIT_REDIS_URL` — default `redis://127.0.0.1:6379/4`.
 - `{SERVICE}_SERVICE_URL` — URLs de los 10 servicios downstream (todos con default `127.0.0.1:{puerto}` — regla de usar `127.0.0.1` explícito en Windows para evitar dual-stack IPv6, ver CLAUDE.md).
 
@@ -133,7 +133,7 @@ El api-gateway no implementa componentes de la tesis. Su existencia es una **pro
 - `byok` endpoints del ai-gateway no están en `ROUTE_MAP` aún — la UI BYOK del web-admin (DEFERIDA) los necesitará.
 - SSE passthrough via `StreamingResponse` en una sola emisión — probable buffering (no verificado e2e).
 - Sin circuit breaker ni retry policies.
-- `dev_trust_headers=True` como default es riesgoso si se mal-despliega.
+- ~~`dev_trust_headers=True` como default es riesgoso si se mal-despliega.~~ CERRADO: el default es `False` (`config.py:109`). El costo se movió a dev local, donde hay que prenderlo a mano para que la suite smoke y los frontends sin Keycloak autentiquen por headers X-*.
 
 **Fase de consolidación**:
 - F1 — passthrough inicial con JWT opcional (`docs/F1-STATE.md`).
