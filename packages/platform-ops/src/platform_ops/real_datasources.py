@@ -32,6 +32,8 @@ from uuid import UUID
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from platform_ops.language_segmentation import DEFAULT_LANGUAGE, resolve_episode_languages
+
 logger = logging.getLogger(__name__)
 
 
@@ -151,8 +153,25 @@ class RealLongitudinalDataSource:
         # Si se provee, las filas se anonimizan (útil para endpoint público)
         self.pseudonymize_fn = pseudonymize_fn
 
+    async def _filter_episode_ids_by_language(
+        self, episode_ids: list[UUID], language: str | None
+    ) -> list[UUID]:
+        """Restringe `episode_ids` a los que resuelven al `language` pedido.
+
+        `language=None` (sin filtro) devuelve `episode_ids` intacto — no
+        ejecuta query extra. El filtro se aplica ANTES de que el caller siga
+        armando su query de agregación (progresión, alertas, eventos
+        adversariales, etc.), para que la métrica se recalcule sobre el
+        subconjunto en vez de filtrarse después de agregar (multi-language-
+        research-integrity, sección 4.8).
+        """
+        if language is None or not episode_ids:
+            return episode_ids
+        resolved = await resolve_episode_languages(self.ctr, self.tenant_id, episode_ids)
+        return [eid for eid in episode_ids if resolved.get(eid, DEFAULT_LANGUAGE) == language]
+
     async def list_classifications_grouped_by_student(
-        self, comision_id: UUID
+        self, comision_id: UUID, language: str | None = None
     ) -> dict[str, list[dict]]:
         """Devuelve {student_pseudonym: [classification_dict, ...]}.
 
@@ -161,6 +180,11 @@ class RealLongitudinalDataSource:
         export académico (`academic_export.py`). En el flujo de UI interna
         (progression, adversarial-events) `pseudonymize_fn=None` y la key
         es el `str(student_pseudonym)` directo.
+
+        `language` (opcional, multi-language-research-integrity sección 4.8):
+        restringe la agregación a los episodios de ese lenguaje ANTES de
+        traer las clasificaciones — la ausencia del parámetro preserva el
+        comportamiento actual.
 
         La agrupación por estudiante se hace en Python en vez de SQL
         porque las dos tablas viven en DBs distintas (3-base pattern).
@@ -180,6 +204,13 @@ class RealLongitudinalDataSource:
         ep_to_student: dict[UUID, UUID] = {row.id: row.student_pseudonym for row in ep_result.all()}
         if not ep_to_student:
             return {}
+
+        episode_ids = await self._filter_episode_ids_by_language(
+            list(ep_to_student.keys()), language
+        )
+        if not episode_ids:
+            return {}
+        ep_to_student = {eid: ep_to_student[eid] for eid in episode_ids}
 
         # 2. Traer clasificaciones current de esos episodios
         cls_stmt = (
@@ -223,12 +254,16 @@ class RealLongitudinalDataSource:
         self,
         comision_id: UUID,
         limit_recent: int = 50,
+        language: str | None = None,
     ) -> list[dict]:
         """ADR-019: lista eventos `intento_adverso_detectado` de una comisión.
 
         Cross-DB CTR: cruza `Event` (event_type='intento_adverso_detectado')
         con `Episode` (para obtener `student_pseudonym` + `comision_id`).
         Devuelve lista plana de dicts; el caller agrega contadores.
+
+        `language` (opcional, multi-language-research-integrity sección 4.8):
+        restringe a los episodios de ese lenguaje ANTES de traer los eventos.
         """
         from ctr_service.models import Episode, Event
 
@@ -242,6 +277,13 @@ class RealLongitudinalDataSource:
         ep_to_student: dict[UUID, UUID] = {row.id: row.student_pseudonym for row in ep_result.all()}
         if not ep_to_student:
             return []
+
+        episode_ids = await self._filter_episode_ids_by_language(
+            list(ep_to_student.keys()), language
+        )
+        if not episode_ids:
+            return []
+        ep_to_student = {eid: ep_to_student[eid] for eid in episode_ids}
 
         # 2. Eventos adversos de esos episodios
         ev_stmt = (
@@ -471,6 +513,7 @@ class RealLongitudinalDataSource:
         student_pseudonym: UUID,
         comision_id: UUID,
         academic_session: AsyncSession,
+        language: str | None = None,
     ) -> list[dict]:
         """ADR-018: devuelve clasificaciones de UN estudiante en una comision,
         cada una con `template_id` resuelto vía academic_main.
@@ -478,6 +521,10 @@ class RealLongitudinalDataSource:
         Triple cross-DB: ctr (Episode) + classifier (Classification) +
         academic (TareaPractica.template_id). Cada query con su propia
         sesion (RLS aplicado por el caller).
+
+        `language` (opcional, multi-language-research-integrity sección 4.8):
+        restringe a los episodios de ese lenguaje ANTES de resolver templates
+        y traer clasificaciones.
 
         Devuelve lista plana de dicts; el caller agrupa por template_id
         via `compute_evolution_per_template`.
@@ -498,6 +545,13 @@ class RealLongitudinalDataSource:
         ep_to_problema: dict[UUID, UUID] = {row.id: row.problema_id for row in ep_result.all()}
         if not ep_to_problema:
             return []
+
+        episode_ids = await self._filter_episode_ids_by_language(
+            list(ep_to_problema.keys()), language
+        )
+        if not episode_ids:
+            return []
+        ep_to_problema = {eid: ep_to_problema[eid] for eid in episode_ids}
 
         # 2. Resolver problema_id → template_id + unidad_id via academic_main
         problema_ids = list(set(ep_to_problema.values()))

@@ -58,6 +58,11 @@ from platform_ops.kappa_analysis import (
     compute_cohen_kappa,
     format_report,
 )
+from platform_ops.language_segmentation import (
+    DEFAULT_LANGUAGE,
+    languages_present,
+    resolve_episode_languages,
+)
 from platform_ops.ldap_federation import (
     LDAPConfig,
     LDAPFederationError,
@@ -103,6 +108,7 @@ __all__ = [
     "APPROPRIATION_ORDINAL",
     "CATEGORIES",
     "CII_LONGITUDINAL_VERSION",
+    "DEFAULT_LANGUAGE",
     "MIN_EPISODES_FOR_LONGITUDINAL",
     "MIN_STUDENTS_FOR_QUARTILES",
     "ABComparisonReport",
@@ -163,7 +169,9 @@ __all__ = [
     "export_student_data",
     "format_report",
     "get_resolver",
+    "languages_present",
     "position_in_quartiles",
+    "resolve_episode_languages",
     "set_tenant_rls",
     "summarize_cohort",
 ]

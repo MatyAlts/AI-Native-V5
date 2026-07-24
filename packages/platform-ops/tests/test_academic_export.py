@@ -485,3 +485,119 @@ async def test_include_reflections_false_no_emite_audit_log(
     captured = capsys.readouterr()
     combined = captured.out + captured.err
     assert "reflections_exported_with_consent" not in combined
+
+
+# ── multi-language-research-integrity (sección 5): lenguaje por episodio ──
+
+
+def _build_mixed_language_cohort():
+    """Cohorte con episodios Java y Python sobre estudiantes DISTINTOS.
+
+    Clave para la prueba de anonimización: el mismo `java` lo comparten dos
+    estudiantes distintos (A y B) — el lenguaje no es una huella individual.
+    """
+    comision_id = uuid4()
+    student_a, student_b, student_c = uuid4(), uuid4(), uuid4()
+    ep_java_a, ep_java_b, ep_py_c, ep_default_a = uuid4(), uuid4(), uuid4(), uuid4()
+
+    now = datetime.now(UTC)
+    ts_open = (now - timedelta(days=3)).isoformat().replace("+00:00", "Z")
+    ts_close = (now - timedelta(days=3, minutes=-20)).isoformat().replace("+00:00", "Z")
+
+    def _events(lang_payload: dict) -> list[dict]:
+        return [
+            {"seq": 0, "event_type": "episodio_abierto", "ts": ts_open, "payload": lang_payload},
+            {"seq": 1, "event_type": "episodio_cerrado", "ts": ts_close, "payload": {}},
+        ]
+
+    episodes = [
+        {"id": str(ep_java_a), "comision_id": str(comision_id), "student_pseudonym": str(student_a)},
+        {"id": str(ep_java_b), "comision_id": str(comision_id), "student_pseudonym": str(student_b)},
+        {"id": str(ep_py_c), "comision_id": str(comision_id), "student_pseudonym": str(student_c)},
+        {
+            "id": str(ep_default_a),
+            "comision_id": str(comision_id),
+            "student_pseudonym": str(student_a),
+        },
+    ]
+    events_by_episode = {
+        str(ep_java_a): _events({"language": "java"}),
+        str(ep_java_b): _events({"language": "java"}),
+        str(ep_py_c): _events({}),  # campo ausente → default python
+        str(ep_default_a): _events({"language": "python"}),  # explícito
+    }
+
+    ds = FakeCohortDataSource(
+        episodes=episodes, events_by_episode=events_by_episode, classifications={}
+    )
+    ids = {
+        "java_a": ep_java_a,
+        "java_b": ep_java_b,
+        "py_c": ep_py_c,
+        "default_a": ep_default_a,
+    }
+    return ds, comision_id, ids
+
+
+async def test_5_1_lenguaje_por_episodio_desde_payload_apertura() -> None:
+    """5.1: cada episodio declara su lenguaje, tomado del payload de apertura;
+    el campo ausente cae a python (episodio legacy)."""
+    ds, comision_id, ids = _build_mixed_language_cohort()
+    exporter = AcademicExporter(ds, salt="mixed_lang_research_salt_2026")
+    dataset = await exporter.export_cohort(comision_id)
+
+    by_alias = {e.episode_alias: e for e in dataset.episodes}
+    lang_of = lambda ep_id: by_alias[exporter._pseudonymize(ep_id, prefix="e_")].language
+
+    assert lang_of(ids["java_a"]) == "java"
+    assert lang_of(ids["java_b"]) == "java"
+    assert lang_of(ids["py_c"]) == "python"  # ausente → default
+    assert lang_of(ids["default_a"]) == "python"  # explícito
+    # Y viaja en el dict serializable
+    ep_dict = dataset.to_dict()["episodes"][0]
+    assert "language" in ep_dict
+
+
+async def test_5_2_encabezado_declara_lenguajes_presentes() -> None:
+    """5.2: el encabezado del dataset declara los lenguajes presentes,
+    ordenados y sin duplicados — visible sin recorrer episodio por episodio."""
+    ds, comision_id, _ = _build_mixed_language_cohort()
+    exporter = AcademicExporter(ds, salt="mixed_lang_research_salt_2026")
+    dataset = await exporter.export_cohort(comision_id)
+
+    assert dataset.languages_present == ["java", "python"]
+    assert dataset.to_dict()["languages_present"] == ["java", "python"]
+
+
+async def test_5_3_lenguaje_no_debilita_la_anonimizacion() -> None:
+    """5.3: agregar el lenguaje NO debilita la anonimización vigente.
+
+    El lenguaje es un atributo GRUESO (baja cardinalidad, cerrado) y
+    COMPARTIDO entre estudiantes — no aporta a la reidentificación. Se prueba
+    que dos estudiantes distintos comparten el mismo lenguaje, que el campo no
+    introduce ningún UUID crudo, y que los `student_alias` siguen siendo el
+    hash salteado de siempre.
+    """
+    import json
+
+    ds, comision_id, ids = _build_mixed_language_cohort()
+    exporter = AcademicExporter(ds, salt="mixed_lang_research_salt_2026")
+    dataset = await exporter.export_cohort(comision_id)
+
+    by_alias = {e.episode_alias: e for e in dataset.episodes}
+    rec_a = by_alias[exporter._pseudonymize(ids["java_a"], prefix="e_")]
+    rec_b = by_alias[exporter._pseudonymize(ids["java_b"], prefix="e_")]
+
+    # Mismo lenguaje, estudiantes distintos → el lenguaje no es huella individual
+    assert rec_a.language == rec_b.language == "java"
+    assert rec_a.student_alias != rec_b.student_alias
+
+    # Baja cardinalidad y conjunto cerrado
+    assert set(dataset.languages_present) <= {"python", "java"}
+
+    # El campo nuevo no introduce PII: ni UUIDs crudos ni el salt en claro
+    serialized = json.dumps(dataset.to_dict(), ensure_ascii=False)
+    for ep in ds.episodes:
+        assert ep["student_pseudonym"] not in serialized
+        assert ep["id"] not in serialized
+    assert "mixed_lang_research_salt_2026" not in serialized

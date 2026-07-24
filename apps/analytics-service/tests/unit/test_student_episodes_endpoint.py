@@ -159,4 +159,5 @@ def test_alerts_response_shape_estable(client: TestClient) -> None:
         "alerts",
         "n_alerts",
         "highest_severity",
+        "languages_present",  # multi-language-research-integrity sección 4.6
     }

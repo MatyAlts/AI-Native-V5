@@ -136,7 +136,7 @@ Esta sección lista verdades del sistema HOY que no son obvias del código. Para
 
 ### Smoke E2E como red de seguridad
 
-Suite en `tests/e2e/smoke/` con 42 tests (verificado 2026-07-23: `grep "def test_" tests/e2e/smoke/test_*.py | wc -l`) contra el stack real (Postgres + Redis + 11 servicios). Corre con `make test-smoke` en <2s. **Cuando cierres un epic, agregale smoke tests acá ANTES de declararlo cerrado** — es lo que atrapa la clase de bugs que escapan a tests unit con DB mockeada (caso real: BYOK `SET LOCAL` con bind param que Postgres no acepta — pasó tests porque mockeaban DB, falló en runtime).
+Suite en `tests/e2e/smoke/` con 45 tests (verificado 2026-07-23: `grep "def test_" tests/e2e/smoke/test_*.py | wc -l`) contra el stack real (Postgres + Redis + 11 servicios). Corre con `make test-smoke` en <2s. **Cuando cierres un epic, agregale smoke tests acá ANTES de declararlo cerrado** — es lo que atrapa la clase de bugs que escapan a tests unit con DB mockeada (caso real: BYOK `SET LOCAL` con bind param que Postgres no acepta — pasó tests porque mockeaban DB, falló en runtime).
 
 ### Source of truth de UX/UI
 
@@ -194,7 +194,7 @@ Cosas que parecen gaps si no leés bien — están cerradas y verificadas:
 
 ## Dónde buscar contexto
 
-- `docs/adr/` — 57 ADRs (decisiones permanentes)
+- `docs/adr/` — 58 ADRs (decisiones permanentes)
 - `docs/SESSION-LOG.md` — bitácora narrativa
 - `docs/servicios/` — 1 .md por servicio
 - `DESIGN.md` — tokens Tailwind / paleta

@@ -61,6 +61,33 @@ def test_progression_endpoint_tenant_header_invalido_400(client: TestClient) -> 
     assert r.status_code == 400
 
 
+def test_progression_endpoint_declara_languages_present_siempre(client: TestClient) -> None:
+    """4.2: el campo está presente incluso en modo dev con cohorte vacía."""
+    comision_id = "bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb"
+    tenant_id = "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa"
+    r = client.get(
+        f"/api/v1/analytics/cohort/{comision_id}/progression",
+        headers={"X-Tenant-Id": tenant_id},
+    )
+    assert r.status_code == 200
+    assert r.json()["languages_present"] == []
+
+
+def test_progression_endpoint_acepta_filtro_de_lenguaje_sin_romper(client: TestClient) -> None:
+    """4.8: el query param `language` es aceptado — en modo dev (stub vacío)
+    el resultado sigue siendo la cohorte vacía de siempre (200, sin error)."""
+    comision_id = "bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb"
+    tenant_id = "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa"
+    r = client.get(
+        f"/api/v1/analytics/cohort/{comision_id}/progression?language=java",
+        headers={"X-Tenant-Id": tenant_id},
+    )
+    assert r.status_code == 200
+    data = r.json()
+    assert data["n_students"] == 0
+    assert data["languages_present"] == []
+
+
 def test_progression_endpoint_respeta_tenant_distinto(client: TestClient) -> None:
     """El tenant viene del header — distintos tenants reciben respuestas independientes
     (con stub ambos están vacíos, pero ambos pasan auth y devuelven 200)."""

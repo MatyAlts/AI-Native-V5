@@ -93,6 +93,7 @@ def test_modo_dev_devuelve_estructura_vacia_con_200(client: TestClient) -> None:
     assert data["evolution_per_template"] == []
     assert data["mean_slope"] is None
     assert data["sufficient_data"] is False
+    assert data["languages_present"] == []
 
 
 def test_response_shape_es_estable(client: TestClient) -> None:
@@ -112,7 +113,23 @@ def test_response_shape_es_estable(client: TestClient) -> None:
         "mean_slope",
         "sufficient_data",
         "labeler_version",
+        "languages_present",  # multi-language-research-integrity sección 4.4
     }
+
+
+# ── Segmentación por lenguaje (multi-language-research-integrity sección 4) ──
+
+
+def test_modo_dev_acepta_filtro_de_lenguaje_sin_romper(client: TestClient) -> None:
+    """4.10: el query param `language` es aceptado en modo dev sin cambiar
+    el comportamiento (sigue devolviendo la estructura vacía de siempre)."""
+    student = str(uuid4())
+    comision = str(uuid4())
+    r = client.get(f"{_url(student, comision)}&language=java", headers=_VALID_HEADERS)
+    assert r.status_code == 200
+    data = r.json()
+    assert data["n_episodes_total"] == 0
+    assert data["languages_present"] == []
 
 
 def test_propaga_student_y_comision_recibidos(client: TestClient) -> None:

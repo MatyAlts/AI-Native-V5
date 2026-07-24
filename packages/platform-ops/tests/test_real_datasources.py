@@ -72,6 +72,27 @@ async def classifier_session() -> AsyncSession:
     await engine.dispose()
 
 
+@pytest_asyncio.fixture
+async def academic_session() -> AsyncSession:
+    """Tabla mínima de `tareas_practicas` — mismo patrón que
+    `test_cohort_slopes_batch.py` (evita las FKs/server_default del modelo real)."""
+    from sqlalchemy import text
+
+    engine = create_async_engine("sqlite+aiosqlite:///:memory:")
+    async with engine.begin() as conn:
+        await conn.execute(
+            text(
+                "CREATE TABLE tareas_practicas ("
+                "id TEXT PRIMARY KEY, tenant_id TEXT NOT NULL, "
+                "template_id TEXT, unidad_id TEXT)"
+            )
+        )
+    async_session = async_sessionmaker(engine, expire_on_commit=False)
+    async with async_session() as session:
+        yield session
+    await engine.dispose()
+
+
 # ── Helpers para insertar data ────────────────────────────────────────
 
 
@@ -473,3 +494,250 @@ async def test_longitudinal_respeta_tenant_isolation(
     assert len(grouped_a) == 1
     assert str(student_a) in grouped_a
     assert str(student_b) not in grouped_a
+
+
+# ── Filtro por lenguaje (multi-language-research-integrity, sección 4.8) ──
+
+
+async def test_grouped_by_student_sin_language_preserva_comportamiento_actual(
+    ctr_session: AsyncSession, classifier_session: AsyncSession
+) -> None:
+    """4.10: `language=None` (default) da el mismo resultado que antes del cambio."""
+    comision_id = uuid4()
+    student = uuid4()
+    ep_id = await _add_episode(ctr_session, TENANT_A, comision_id, student)
+    await _add_event(ctr_session, TENANT_A, ep_id, 0, "episodio_abierto", {"language": "java"})
+    await _add_classification(classifier_session, TENANT_A, ep_id, comision_id, "apropiacion_reflexiva")
+
+    ds = RealLongitudinalDataSource(ctr_session, classifier_session, TENANT_A)
+    grouped = await ds.list_classifications_grouped_by_student(comision_id)
+    assert len(grouped[str(student)]) == 1
+
+
+async def test_grouped_by_student_filtra_por_lenguaje(
+    ctr_session: AsyncSession, classifier_session: AsyncSession
+) -> None:
+    """4.8: con `language='java'`, solo entran los episodios Java a la agregación."""
+    comision_id = uuid4()
+    student = uuid4()
+    ep_py = await _add_episode(ctr_session, TENANT_A, comision_id, student)
+    ep_java = await _add_episode(ctr_session, TENANT_A, comision_id, student)
+    await _add_event(ctr_session, TENANT_A, ep_py, 0, "episodio_abierto", {"language": "python"})
+    await _add_event(ctr_session, TENANT_A, ep_java, 0, "episodio_abierto", {"language": "java"})
+    await _add_classification(
+        classifier_session, TENANT_A, ep_py, comision_id, "delegacion_pasiva"
+    )
+    await _add_classification(
+        classifier_session, TENANT_A, ep_java, comision_id, "apropiacion_reflexiva"
+    )
+
+    ds = RealLongitudinalDataSource(ctr_session, classifier_session, TENANT_A)
+    grouped = await ds.list_classifications_grouped_by_student(comision_id, language="java")
+
+    points = grouped[str(student)]
+    assert len(points) == 1
+    assert points[0]["episode_id"] == ep_java
+
+
+async def test_grouped_by_student_filtro_sin_resultados_devuelve_dict_vacio(
+    ctr_session: AsyncSession, classifier_session: AsyncSession
+) -> None:
+    """4.9: cohorte 100% Python filtrada por `java` → dict vacío, NO se calculan
+    métricas sobre un conjunto vacío que no existe."""
+    comision_id = uuid4()
+    student = uuid4()
+    ep_id = await _add_episode(ctr_session, TENANT_A, comision_id, student)
+    await _add_event(ctr_session, TENANT_A, ep_id, 0, "episodio_abierto", {"language": "python"})
+    await _add_classification(classifier_session, TENANT_A, ep_id, comision_id, "apropiacion_reflexiva")
+
+    ds = RealLongitudinalDataSource(ctr_session, classifier_session, TENANT_A)
+    grouped = await ds.list_classifications_grouped_by_student(comision_id, language="java")
+
+    assert grouped == {}
+
+
+async def test_grouped_by_student_episodio_legacy_sin_language_es_python(
+    ctr_session: AsyncSession, classifier_session: AsyncSession
+) -> None:
+    """Episodio sin evento episodio_abierto (legacy, previo a la change) se
+    interpreta como python — pasa el filtro `language='python'`."""
+    comision_id = uuid4()
+    student = uuid4()
+    ep_id = await _add_episode(ctr_session, TENANT_A, comision_id, student)
+    # Sin evento episodio_abierto: episodio "legacy".
+    await _add_classification(classifier_session, TENANT_A, ep_id, comision_id, "apropiacion_reflexiva")
+
+    ds = RealLongitudinalDataSource(ctr_session, classifier_session, TENANT_A)
+    grouped = await ds.list_classifications_grouped_by_student(comision_id, language="python")
+
+    assert len(grouped[str(student)]) == 1
+
+
+async def test_adversarial_events_filtra_por_lenguaje(
+    ctr_session: AsyncSession, classifier_session: AsyncSession
+) -> None:
+    comision_id = uuid4()
+    student = uuid4()
+    ep_py = await _add_episode(ctr_session, TENANT_A, comision_id, student)
+    ep_java = await _add_episode(ctr_session, TENANT_A, comision_id, student)
+    await _add_event(ctr_session, TENANT_A, ep_py, 0, "episodio_abierto", {"language": "python"})
+    await _add_event(ctr_session, TENANT_A, ep_java, 0, "episodio_abierto", {"language": "java"})
+    await _add_event(
+        ctr_session,
+        TENANT_A,
+        ep_py,
+        1,
+        "intento_adverso_detectado",
+        {"category": "prompt_injection", "severity": 3},
+    )
+    await _add_event(
+        ctr_session,
+        TENANT_A,
+        ep_java,
+        1,
+        "intento_adverso_detectado",
+        {"category": "prompt_injection", "severity": 4},
+    )
+
+    ds = RealLongitudinalDataSource(ctr_session, classifier_session, TENANT_A)
+    events = await ds.list_adversarial_events_by_comision(comision_id, language="java")
+
+    assert len(events) == 1
+    assert events[0]["episode_id"] == str(ep_java)
+
+
+async def test_adversarial_events_filtro_sin_resultados_devuelve_lista_vacia(
+    ctr_session: AsyncSession, classifier_session: AsyncSession
+) -> None:
+    comision_id = uuid4()
+    student = uuid4()
+    ep_id = await _add_episode(ctr_session, TENANT_A, comision_id, student)
+    await _add_event(ctr_session, TENANT_A, ep_id, 0, "episodio_abierto", {"language": "python"})
+    await _add_event(
+        ctr_session,
+        TENANT_A,
+        ep_id,
+        1,
+        "intento_adverso_detectado",
+        {"category": "prompt_injection", "severity": 3},
+    )
+
+    ds = RealLongitudinalDataSource(ctr_session, classifier_session, TENANT_A)
+    events = await ds.list_adversarial_events_by_comision(comision_id, language="java")
+
+    assert events == []
+
+
+async def _add_tarea(
+    session: AsyncSession, tenant_id: UUID, problema_id: UUID, template_id: UUID | None = None
+) -> None:
+    from sqlalchemy import text
+
+    await session.execute(
+        text(
+            "INSERT INTO tareas_practicas (id, tenant_id, template_id, unidad_id) "
+            "VALUES (:id, :tenant_id, :template_id, NULL)"
+        ),
+        {
+            "id": str(problema_id),
+            "tenant_id": str(tenant_id),
+            "template_id": str(template_id) if template_id else None,
+        },
+    )
+    await session.commit()
+
+
+async def test_classifications_with_templates_filtra_por_lenguaje(
+    ctr_session: AsyncSession,
+    classifier_session: AsyncSession,
+    academic_session: AsyncSession,
+) -> None:
+    """4.4/4.8: `cii-evolution-longitudinal` recalcula sobre el subconjunto Java."""
+    comision_id = uuid4()
+    student = uuid4()
+    prob_py = uuid4()
+    prob_java = uuid4()
+    await _add_tarea(academic_session, TENANT_A, prob_py)
+    await _add_tarea(academic_session, TENANT_A, prob_java)
+
+    ep_py = await _add_episode(ctr_session, TENANT_A, comision_id, student, problema_id=prob_py)
+    ep_java = await _add_episode(
+        ctr_session, TENANT_A, comision_id, student, problema_id=prob_java
+    )
+    await _add_event(ctr_session, TENANT_A, ep_py, 0, "episodio_abierto", {"language": "python"})
+    await _add_event(ctr_session, TENANT_A, ep_java, 0, "episodio_abierto", {"language": "java"})
+    await _add_classification(classifier_session, TENANT_A, ep_py, comision_id, "delegacion_pasiva")
+    await _add_classification(
+        classifier_session, TENANT_A, ep_java, comision_id, "apropiacion_reflexiva"
+    )
+
+    ds = RealLongitudinalDataSource(ctr_session, classifier_session, TENANT_A)
+    result = await ds.list_classifications_with_templates_for_student(
+        student_pseudonym=student,
+        comision_id=comision_id,
+        academic_session=academic_session,
+        language="java",
+    )
+
+    assert len(result) == 1
+    assert result[0]["episode_id"] == ep_java
+
+
+async def test_classifications_with_templates_filtro_sin_resultados(
+    ctr_session: AsyncSession,
+    classifier_session: AsyncSession,
+    academic_session: AsyncSession,
+) -> None:
+    """4.9: estudiante 100% Python filtrado por `java` → lista vacía."""
+    comision_id = uuid4()
+    student = uuid4()
+    prob_py = uuid4()
+    await _add_tarea(academic_session, TENANT_A, prob_py)
+
+    ep_py = await _add_episode(ctr_session, TENANT_A, comision_id, student, problema_id=prob_py)
+    await _add_event(ctr_session, TENANT_A, ep_py, 0, "episodio_abierto", {"language": "python"})
+    await _add_classification(classifier_session, TENANT_A, ep_py, comision_id, "delegacion_pasiva")
+
+    ds = RealLongitudinalDataSource(ctr_session, classifier_session, TENANT_A)
+    result = await ds.list_classifications_with_templates_for_student(
+        student_pseudonym=student,
+        comision_id=comision_id,
+        academic_session=academic_session,
+        language="java",
+    )
+
+    assert result == []
+
+
+async def test_classifications_with_templates_sin_language_preserva_comportamiento(
+    ctr_session: AsyncSession,
+    classifier_session: AsyncSession,
+    academic_session: AsyncSession,
+) -> None:
+    """4.10: sin `language`, se agregan episodios de todos los lenguajes (BC)."""
+    comision_id = uuid4()
+    student = uuid4()
+    prob_py = uuid4()
+    prob_java = uuid4()
+    await _add_tarea(academic_session, TENANT_A, prob_py)
+    await _add_tarea(academic_session, TENANT_A, prob_java)
+
+    ep_py = await _add_episode(ctr_session, TENANT_A, comision_id, student, problema_id=prob_py)
+    ep_java = await _add_episode(
+        ctr_session, TENANT_A, comision_id, student, problema_id=prob_java
+    )
+    await _add_event(ctr_session, TENANT_A, ep_py, 0, "episodio_abierto", {"language": "python"})
+    await _add_event(ctr_session, TENANT_A, ep_java, 0, "episodio_abierto", {"language": "java"})
+    await _add_classification(classifier_session, TENANT_A, ep_py, comision_id, "delegacion_pasiva")
+    await _add_classification(
+        classifier_session, TENANT_A, ep_java, comision_id, "apropiacion_reflexiva"
+    )
+
+    ds = RealLongitudinalDataSource(ctr_session, classifier_session, TENANT_A)
+    result = await ds.list_classifications_with_templates_for_student(
+        student_pseudonym=student,
+        comision_id=comision_id,
+        academic_session=academic_session,
+    )
+
+    assert len(result) == 2

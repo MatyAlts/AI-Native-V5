@@ -127,7 +127,7 @@ def test_modo_dev_propaga_episode_id_recibido(client: TestClient) -> None:
 
 
 def test_response_shape_es_estable(client: TestClient) -> None:
-    """Sanity: el response model expone exactamente las 5 claves esperadas
+    """Sanity: el response model expone exactamente las claves esperadas
     para que consumers (dashboard docente G7) tengan contrato estable."""
     r = client.get(_url(str(uuid4())), headers=_VALID_HEADERS)
     assert r.status_code == 200
@@ -138,4 +138,25 @@ def test_response_shape_es_estable(client: TestClient) -> None:
         "distribution_seconds",
         "distribution_ratio",
         "total_events_per_level",
+        "languages_present",  # multi-language-research-integrity sección 4.7
     }
+
+
+# ── Segmentación por lenguaje (multi-language-research-integrity sección 4) ──
+
+
+def test_modo_dev_declara_languages_present_vacio(client: TestClient) -> None:
+    """4.2/4.7: la declaración está SIEMPRE presente, incluso sin datos (modo dev)."""
+    r = client.get(_url(str(uuid4())), headers=_VALID_HEADERS)
+    assert r.status_code == 200
+    assert r.json()["languages_present"] == []
+
+
+def test_modo_dev_acepta_filtro_de_lenguaje_sin_romper(client: TestClient) -> None:
+    """4.10: el query param `language` es aceptado en modo dev sin cambiar
+    el comportamiento (sigue devolviendo la distribución vacía de siempre)."""
+    r = client.get(f"{_url(str(uuid4()))}?language=java", headers=_VALID_HEADERS)
+    assert r.status_code == 200
+    data = r.json()
+    assert data["distribution_seconds"]["N1"] == 0.0
+    assert data["languages_present"] == []
