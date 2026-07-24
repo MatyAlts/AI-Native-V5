@@ -17,13 +17,21 @@ from governance_service.services.prompt_loader import (
 
 
 def _make_repo(tmp_path: Path, content: str, declared_hash: str | None = None) -> Path:
-    """Crea estructura mínima de repo de prompts."""
+    """Crea estructura mínima de repo de prompts.
+
+    `encoding="utf-8"` explícito: `PromptLoader.load()` lee con utf-8 fijo, y sin
+    declararlo acá `write_text` usa el default de la plataforma (cp1252 en
+    Windows). Un prompt con tildes se escribía en cp1252 y explotaba al leerse
+    como utf-8 — falla que sólo aparece fuera de Linux.
+    """
     prompt_dir = tmp_path / "prompts" / "tutor" / "v1.0.0"
     prompt_dir.mkdir(parents=True)
-    (prompt_dir / "system.md").write_text(content)
+    (prompt_dir / "system.md").write_text(content, encoding="utf-8")
 
     if declared_hash is not None:
-        (prompt_dir / "manifest.yaml").write_text(f"files:\n  system.md: {declared_hash}\n")
+        (prompt_dir / "manifest.yaml").write_text(
+            f"files:\n  system.md: {declared_hash}\n", encoding="utf-8"
+        )
 
     return tmp_path
 
@@ -94,7 +102,8 @@ def test_active_configs_con_manifest(tmp_path: Path) -> None:
         "    tutor: v1.0.0\n"
         "    classifier: v1.0.0\n"
         "  aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa:\n"
-        "    tutor: v1.1.0-utn\n"
+        "    tutor: v1.1.0-utn\n",
+        encoding="utf-8",
     )
     loader = PromptLoader(tmp_path)
     cfg = loader.active_configs()
