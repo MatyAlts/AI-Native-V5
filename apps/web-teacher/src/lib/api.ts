@@ -2045,6 +2045,45 @@ export interface EjercicioGenerateResponse {
   rag_chunks_hash: string | null
 }
 
+/**
+ * Normaliza el borrador que devuelve el LLM al shape que los editores esperan.
+ *
+ * El borrador viaja como `dict[str, Any]` desde el backend, asi que TypeScript
+ * NO valida nada acá: lo que el modelo escriba entra crudo a componentes
+ * tipados. Un tipo que no matchea no da un error de compilacion, da un
+ * TypeError en runtime que voltea la vista entera con "Something went wrong".
+ *
+ * Caso real (2026-07-27): `CriterioRubrica.puntaje_max` esta declarado `string`
+ * (Decimal serializado) y el editor de rubricas hace `.trim()`, pero el ejemplo
+ * que el propio wizard le pasa al modelo muestra `"puntaje_max": 5` — un
+ * NUMERO. El modelo obedecia el ejemplo y el render explotaba con
+ * `u.puntaje_max.trim is not a function`. El backend acepta ambos (el contrato
+ * es `Decimal`), asi que la unica capa rota era esta.
+ *
+ * Si se agregan campos numericos al schema del ADR-048, normalizarlos acá.
+ */
+function normalizeBorradorIA(borrador: EjercicioCreate): EjercicioCreate {
+  // El tipo declara `criterios: CriterioRubrica[]`, pero acá todavia no es
+  // cierto: es JSON crudo del modelo. Se lee como `unknown[]` a proposito.
+  const rubrica = borrador.rubrica as { criterios?: unknown[] } | null | undefined
+  if (!rubrica || !Array.isArray(rubrica.criterios)) return borrador
+
+  const criterios: CriterioRubrica[] = rubrica.criterios.map((c) => {
+    const criterio = c as Partial<CriterioRubrica> & { puntaje_max?: unknown }
+    const puntaje = criterio.puntaje_max
+    return {
+      ...criterio,
+      nombre: criterio.nombre ?? "",
+      descripcion: criterio.descripcion ?? "",
+      // El editor trata este campo como texto (es un <input> controlado).
+      // `null`/`undefined` caen a "" para no romper el input controlado.
+      puntaje_max: puntaje === null || puntaje === undefined ? "" : String(puntaje),
+    }
+  })
+
+  return { ...borrador, rubrica: { ...rubrica, criterios } }
+}
+
 export async function generateEjercicioWithAI(
   body: EjercicioGenerateRequest,
   getToken?: TokenGetter,
@@ -2055,7 +2094,8 @@ export async function generateEjercicioWithAI(
     body: JSON.stringify(body),
   })
   await throwIfNotOk(r)
-  return r.json()
+  const data = (await r.json()) as EjercicioGenerateResponse
+  return { ...data, borrador: normalizeBorradorIA(data.borrador) }
 }
 
 // ── Composición TP ↔ Ejercicio (tabla intermedia tp_ejercicios) ──────
