@@ -90,6 +90,18 @@ class Settings(BaseSettings):
     # Default Gemini (namespaced → OpenRouter con fallback keyless a Gemini nativo).
     # Override por env EJERCICIO_GENERATOR_DEFAULT_MODEL.
     ejercicio_generator_default_model: str = Field(default="google/gemini-2.0-flash")
+    # Techo de tokens de SALIDA de la generación. El valor viejo (8192) quedó
+    # corto cuando el ADR-048 engordó el schema pedagógico: un ejercicio
+    # completo lleva enunciado, banco socrático N1-N4, misconceptions con
+    # probabilidad, anti-patrones, tutor_rules, pistas por nivel, tests y
+    # rúbrica. A ~3,5 chars por token, 8192 topaba cerca de los 28.700
+    # caracteres y el JSON volvía **truncado a mitad de string** — el parser
+    # tiraba "Unterminated string" y el handler lo reportaba como "JSON
+    # inválido", que apuntaba al prompt en vez de al techo real.
+    # El ai-gateway NO capea este valor: lo pasa tal cual al provider
+    # (`max_output_tokens` en Gemini), así que este es el techo efectivo.
+    # Override por env EJERCICIO_GENERATOR_MAX_TOKENS.
+    ejercicio_generator_max_tokens: int = Field(default=32768, gt=0)
     # Presupuesto TOTAL de la generación IA contra el ai-gateway, reintentos
     # incluidos — no por intento. Con timeout por intento el peor caso era
     # `max_attempts × timeout + backoff` (3×90s = 271.5s), que ya excedía el
