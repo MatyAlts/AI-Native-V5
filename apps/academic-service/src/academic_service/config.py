@@ -90,10 +90,24 @@ class Settings(BaseSettings):
     # Default Gemini (namespaced → OpenRouter con fallback keyless a Gemini nativo).
     # Override por env EJERCICIO_GENERATOR_DEFAULT_MODEL.
     ejercicio_generator_default_model: str = Field(default="google/gemini-2.0-flash")
+    # Presupuesto TOTAL de la generación IA contra el ai-gateway, reintentos
+    # incluidos — no por intento. Con timeout por intento el peor caso era
+    # `max_attempts × timeout + backoff` (3×90s = 271.5s), que ya excedía el
+    # timeout del gateway: el gateway cortaba, el cliente veía un error opaco y
+    # el backend seguía generando contra un caller que ya no estaba.
+    #
+    # La cascada va de MÁS a MENOS hacia adentro. Este es el número más chico:
+    #
+    #   cliente 300s  >  api-gateway 270s  >  este presupuesto 240s
+    #
+    # Al mover cualquiera de los tres, mover los tres.
+    # Override por env EJERCICIO_GENERATOR_BUDGET_SECONDS.
+    ejercicio_generator_budget_seconds: float = Field(default=240.0, gt=0)
     # P-9 / A2.4: límite de generaciones IA (TP/ejercicio) concurrentes. Cada
-    # generación pega al LLM hasta 3×90s; sin tope, N docentes disparando el
-    # wizard a la vez saturan al ai-gateway y (por el patrón viejo) agotaban el
-    # pool de Postgres. Semáforo compartido por ambos endpoints /generate.
+    # generación pega al LLM hasta agotar el presupuesto de arriba; sin tope, N
+    # docentes disparando el wizard a la vez saturan al ai-gateway y (por el
+    # patrón viejo) agotaban el pool de Postgres. Semáforo compartido por ambos
+    # endpoints /generate.
     # Override por env AI_GENERATION_MAX_CONCURRENCY.
     ai_generation_max_concurrency: int = Field(default=4, ge=1)
 

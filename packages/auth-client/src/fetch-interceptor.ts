@@ -57,8 +57,22 @@ export interface ApiFetchInterceptorOptions {
   /**
    * Timeout de request con AbortController (P-12). Default 25000ms. `<= 0`
    * deshabilita el timeout. Nunca aplica a requests SSE.
+   *
+   * Acepta una **funcion** `(url) => ms` para politicas por ruta: hay
+   * endpoints legitimamente largos que no son SSE y por lo tanto no entran por
+   * la exencion de `isSSE` — el wizard IA de ejercicios
+   * (`POST /api/v1/ejercicios/generate`) genera un borrador completo con una
+   * sola llamada al LLM y puede tardar minutos. Con el default de 25s el
+   * cliente cortaba una request que el backend todavia estaba sirviendo.
+   *
+   * La regla al elegir valores: **el timeout del cliente tiene que ser mayor
+   * que el de toda capa interna** (api-gateway, y el backend contra el
+   * ai-gateway). Si el cliente corta primero, el usuario ve un timeout opaco
+   * en vez del error real de la capa que fallo.
+   *
+   * La `url` que recibe es la ya reescrita al `apiBase` (la que se va a pedir).
    */
-  requestTimeoutMs?: number
+  requestTimeoutMs?: number | ((url: string) => number)
 }
 
 const DEFAULT_TOKEN_WAIT_MS = 1500
@@ -127,6 +141,25 @@ function isSSE(headers: Headers): boolean {
 }
 
 /**
+ * Resuelve el timeout efectivo de una request. Con un numero es constante; con
+ * una funcion se evalua por ruta.
+ *
+ * Si el callback tira o devuelve algo que no es un numero finito, cae al
+ * default en vez de propagar: esto corre dentro del monkey-patch de
+ * `window.fetch`, asi que un error acá romperia TODAS las requests de la app,
+ * no solo la que configuro mal el timeout.
+ */
+function resolveTimeoutMs(option: number | ((url: string) => number), url: string): number {
+  if (typeof option === "number") return option
+  try {
+    const value = option(url)
+    return Number.isFinite(value) ? value : DEFAULT_REQUEST_TIMEOUT_MS
+  } catch {
+    return DEFAULT_REQUEST_TIMEOUT_MS
+  }
+}
+
+/**
  * Instala el interceptor sobre `window.fetch`. Idempotente por llamada: cada
  * install parte del `fetch` vigente y devuelve un `restore()` que lo revierte
  * (util para tests / HMR). En produccion se llama una sola vez al bootear.
@@ -167,7 +200,10 @@ export function installApiFetchInterceptor(options: ApiFetchInterceptorOptions =
 
     // P-12: timeout con AbortController. SSE queda exento (cortaria el stream
     // del tutor). Respeta un signal provisto por el caller (lo encadena).
-    const applyTimeout = requestTimeoutMs > 0 && !isSSE(headers)
+    // El timeout puede depender de la ruta (ver `requestTimeoutMs`): se
+    // resuelve por request contra la URL ya reescrita.
+    const effectiveTimeoutMs = resolveTimeoutMs(requestTimeoutMs, targetUrl)
+    const applyTimeout = effectiveTimeoutMs > 0 && !isSSE(headers)
     if (!applyTimeout) return originalFetch(targetUrl, { ...init, headers })
 
     const controller = new AbortController()
@@ -183,7 +219,7 @@ export function installApiFetchInterceptor(options: ApiFetchInterceptorOptions =
     const timer = setTimeout(() => {
       timedOut = true
       controller.abort()
-    }, requestTimeoutMs)
+    }, effectiveTimeoutMs)
 
     try {
       return await originalFetch(targetUrl, { ...init, headers, signal: controller.signal })
@@ -191,7 +227,7 @@ export function installApiFetchInterceptor(options: ApiFetchInterceptorOptions =
       // Distingue el abort por timeout (nuestro) de un abort del caller, para
       // devolver un error claro en vez de un AbortError opaco.
       if (timedOut && !(userSignal?.aborted ?? false)) {
-        throw new Error(`Request timeout tras ${requestTimeoutMs}ms: ${targetUrl}`)
+        throw new Error(`Request timeout tras ${effectiveTimeoutMs}ms: ${targetUrl}`)
       }
       throw err
     } finally {

@@ -282,16 +282,45 @@ async def generate_ejercicio(  # noqa: PLR0912, PLR0915
     # / JSON malformado. Subimos max_attempts 2→3 y agregamos backoff para no
     # machacar al gateway si está saturado. Logueamos tipo de exception para
     # diagnosticar si el patrón vuelve.
-    ai = AIGatewayClient(settings.ai_gateway_url, timeout=90.0)
     max_attempts = 3
     parsed: dict[str, Any] = {}
     result = None
     t0 = time.perf_counter()
 
+    # Presupuesto TOTAL, repartido entre los intentos (ver
+    # `ejercicio_generator_budget_seconds`). Antes cada intento tenía 90s
+    # propios: el peor caso (3 intentos + backoff) daba 271.5s contra un
+    # gateway que corta antes — el caller ya se había ido y el backend seguía
+    # generando. Cuenta desde acá, espera del semáforo incluida, porque el
+    # gateway y el cliente ya están contando: el tiempo encolado también corre.
+    budget_seconds = settings.ejercicio_generator_budget_seconds
+
+    def remaining_seconds() -> float:
+        return budget_seconds - (time.perf_counter() - t0)
+
     # Sin sesión DB abierta acá (P-9): la conexión ya volvió al pool. El semáforo
     # limita cuántas generaciones IA corren a la vez (no cuántas conexiones DB).
     async with get_generation_semaphore():
         for attempt in range(max_attempts):
+            # Lo que quede del presupuesto es el timeout de ESTE intento. El
+            # client se instancia por intento a proposito: `AIGatewayClient`
+            # abre su `httpx.AsyncClient` dentro de cada `complete()`, asi que
+            # reconstruirlo no agrega costo de conexion.
+            attempt_timeout = remaining_seconds()
+            if attempt_timeout <= 0:
+                logger.error(
+                    "ejercicio_generator_budget_exhausted attempt=%d budget_s=%.1f",
+                    attempt,
+                    budget_seconds,
+                )
+                raise HTTPException(
+                    status_code=status.HTTP_504_GATEWAY_TIMEOUT,
+                    detail=(
+                        "La generacion supero el tiempo maximo. Reintenta con una "
+                        "descripcion mas corta o un modelo mas rapido."
+                    ),
+                )
+            ai = AIGatewayClient(settings.ai_gateway_url, timeout=attempt_timeout)
             try:
                 result = await ai.complete(
                     messages=messages,
@@ -310,8 +339,11 @@ async def generate_ejercicio(  # noqa: PLR0912, PLR0915
                     type(exc).__name__,
                     str(exc)[:200],
                 )
-                if attempt < max_attempts - 1:
-                    await asyncio.sleep(0.5 * (2**attempt))  # 0.5s, 1.0s
+                # El backoff sale del mismo presupuesto: si no queda tiempo
+                # para dormir Y reintentar, no se reintenta.
+                backoff_s = 0.5 * (2**attempt)  # 0.5s, 1.0s
+                if attempt < max_attempts - 1 and remaining_seconds() > backoff_s:
+                    await asyncio.sleep(backoff_s)
                     continue
                 raise HTTPException(
                     status_code=status.HTTP_502_BAD_GATEWAY,
@@ -335,14 +367,14 @@ async def generate_ejercicio(  # noqa: PLR0912, PLR0915
                     str(exc),
                     raw_content[:300],
                 )
-                if attempt < max_attempts - 1:
+                if attempt < max_attempts - 1 and remaining_seconds() > 0:
                     continue
                 raise HTTPException(
                     status_code=status.HTTP_502_BAD_GATEWAY,
                     detail="LLM devolvió JSON inválido (revisar prompt o modelo)",
                 ) from exc
 
-            if "error" in parsed and attempt < max_attempts - 1:
+            if "error" in parsed and attempt < max_attempts - 1 and remaining_seconds() > 0:
                 logger.warning(
                     "ejercicio_generator_llm_returned_error attempt=%d: %s",
                     attempt,
