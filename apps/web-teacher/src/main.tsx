@@ -15,6 +15,23 @@ const CLERK_PUBLISHABLE_KEY = import.meta.env.VITE_CLERK_PUBLISHABLE_KEY as stri
 // el proxy de Vite y el backend corre con dev_trust_headers.
 const DEV_NO_CLERK = !CLERK_PUBLISHABLE_KEY
 
+// Timeouts del cliente. El default de 25s (P-12) existe para que un backend
+// colgado no cuelgue la UI, pero hay endpoints legitimamente largos: el wizard
+// IA de ejercicios genera un borrador completo (ADR-048) con UNA llamada al
+// LLM, sin streaming, y puede tardar minutos. No entra por la exencion de SSE,
+// asi que con 25s el cliente cortaba una request que el backend seguia
+// sirviendo y el docente veia "Request timeout tras 25000ms".
+//
+// La cascada tiene que ir de MAS a MENOS hacia adentro — si una capa externa
+// corta antes que una interna, el error que ve el usuario es opaco:
+//
+//   cliente 300s  >  api-gateway 270s  >  academic-service -> ai-gateway 240s
+//
+// Al tocar cualquiera de estos, mover los tres.
+const DEFAULT_TIMEOUT_MS = 25_000
+const LONG_RUNNING_TIMEOUT_MS = 300_000
+const LONG_RUNNING_PATHS = ["/api/v1/ejercicios/generate"]
+
 // Interceptor de fetch compartido (P-18/P-13/P-12). Antes, el patch
 // best-effort dejaba salir el request SIN Bearer cuando la sesion de Clerk aun
 // no estaba lista -> caia a dev_trust y usaba el user_id por defecto del nginx
@@ -28,6 +45,10 @@ installApiFetchInterceptor({
   dynamicHeaders: () => ({
     "x-selected-tenant": window.localStorage.getItem(SELECTED_TENANT_STORAGE_KEY),
   }),
+  requestTimeoutMs: (url) =>
+    LONG_RUNNING_PATHS.some((path) => url.includes(path))
+      ? LONG_RUNNING_TIMEOUT_MS
+      : DEFAULT_TIMEOUT_MS,
 })
 
 const queryClient = new QueryClient({

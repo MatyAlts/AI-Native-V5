@@ -73,6 +73,15 @@ class Settings(BaseSettings):
     proxy_max_keepalive_connections: int = 100
     proxy_max_connections: int = 200
 
+    # Override para rutas legitimamente largas (ver LONG_RUNNING_ROUTES en
+    # routes/proxy.py). El default de 120s cubre todo endpoint normal y no se
+    # sube global a proposito: un servicio colgado retendria una conexion del
+    # pool durante todo ese tiempo. El wizard IA de ejercicios genera un
+    # borrador completo con UNA llamada al LLM y puede tardar minutos.
+    # Tiene que quedar POR ENCIMA del timeout del backend contra el ai-gateway
+    # (240s) y POR DEBAJO del timeout del cliente (300s).
+    proxy_long_running_timeout_seconds: float = 270.0
+
     # Rate limiting (Redis-backed, por principal+path — middleware preexistente)
     rate_limit_redis_url: str = "redis://127.0.0.1:6379/4"
 
