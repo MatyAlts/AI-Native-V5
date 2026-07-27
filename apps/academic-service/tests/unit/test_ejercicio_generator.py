@@ -21,6 +21,7 @@ from uuid import uuid4
 
 import pytest
 from academic_service.auth.dependencies import User
+from academic_service.config import settings
 from academic_service.routes.ejercicios import (
     EjercicioGenerateRequest,
     generate_ejercicio,
@@ -187,4 +188,94 @@ async def test_sesion_db_cerrada_durante_llamada_llm() -> None:
 
     assert seen_open_during_llm == [False], (
         "la sesión DB seguía abierta durante la llamada al LLM (regresión P-9)"
+    )
+
+
+# ── Truncamiento por techo de tokens de salida ───────────────────────
+#
+# Incidente 2026-07-27 en prod: el wizard devolvía 502 con
+# "LLM devolvió JSON inválido", que apuntaba al prompt. El JSON estaba bien
+# formado — venía CORTADO a mitad de string porque el modelo agotaba el
+# `max_tokens` (8192, ~28.700 chars). El log mostraba los 3 intentos fallando
+# en el mismo punto (~26.5k-29.2k chars): determinista, reintentar no servía.
+
+
+def _truncated_complete_result(output_tokens: int) -> CompleteResult:
+    """Respuesta cortada a mitad de string, con el presupuesto agotado."""
+    return CompleteResult(
+        content='{"titulo": "Sistema de Control de Inventario", "enunciado_md": "Una ferrete',
+        model="google/gemini-2.5-flash-lite",
+        provider="google",
+        feature="ejercicio_generator",
+        input_tokens=90,
+        output_tokens=output_tokens,
+        cost_usd=0.01,
+        cache_hit=False,
+    )
+
+
+def _run_generate_with(fake_ai):
+    """Arma el contexto de patches comun y devuelve la corutina del handler."""
+    fake_governance = MagicMock()
+    fake_governance.get_prompt = AsyncMock(return_value=_good_prompt())
+    return (
+        _patch_tenant_session(_mock_db_returning(MagicMock())),
+        _patch_rag(),
+        patch(
+            "academic_service.services.ai_clients.GovernanceClient",
+            return_value=fake_governance,
+        ),
+        patch(
+            "academic_service.services.ai_clients.AIGatewayClient",
+            return_value=fake_ai,
+        ),
+    )
+
+
+async def test_respuesta_truncada_falla_en_un_solo_intento() -> None:
+    """Truncamiento = determinista: NO se reintenta (no quema 3 llamadas al LLM)."""
+    cap = settings.ejercicio_generator_max_tokens
+    fake_ai = MagicMock()
+    fake_ai.complete = AsyncMock(return_value=_truncated_complete_result(cap))
+
+    patches = _run_generate_with(fake_ai)
+    with patches[0], patches[1], patches[2], patches[3], pytest.raises(HTTPException) as exc_info:
+        await generate_ejercicio(req=_good_request(), user=_user())
+
+    assert exc_info.value.status_code == 502
+    assert fake_ai.complete.await_count == 1, (
+        "el truncamiento se detecta al primer intento: reintentar falla igual"
+    )
+    # El mensaje tiene que apuntar al techo de tokens, NO al prompt.
+    detail = exc_info.value.detail
+    assert "limite de tokens" in detail
+    assert str(cap) in detail
+
+
+async def test_json_invalido_sin_truncar_si_reintenta() -> None:
+    """Control: JSON malformado con presupuesto de sobra SI agota los 3 intentos."""
+    fake_ai = MagicMock()
+    # output_tokens muy por debajo del cap => no es truncamiento, es basura.
+    fake_ai.complete = AsyncMock(return_value=_truncated_complete_result(42))
+
+    patches = _run_generate_with(fake_ai)
+    with patches[0], patches[1], patches[2], patches[3], pytest.raises(HTTPException) as exc_info:
+        await generate_ejercicio(req=_good_request(), user=_user())
+
+    assert exc_info.value.status_code == 502
+    assert fake_ai.complete.await_count == 3, "sin truncamiento el retry sigue vivo"
+
+
+async def test_max_tokens_sale_de_settings_y_no_esta_hardcodeado() -> None:
+    """Anti-regresión: el 8192 hardcodeado fue la causa raíz del incidente."""
+    fake_ai = MagicMock()
+    fake_ai.complete = AsyncMock(return_value=_good_complete_result(_GOOD_BORRADOR))
+
+    patches = _run_generate_with(fake_ai)
+    with patches[0], patches[1], patches[2], patches[3]:
+        await generate_ejercicio(req=_good_request(), user=_user())
+
+    assert (
+        fake_ai.complete.await_args.kwargs["max_tokens"]
+        == settings.ejercicio_generator_max_tokens
     )

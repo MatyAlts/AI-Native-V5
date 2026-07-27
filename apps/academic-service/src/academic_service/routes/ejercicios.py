@@ -294,6 +294,7 @@ async def generate_ejercicio(  # noqa: PLR0912, PLR0915
     # generando. Cuenta desde acá, espera del semáforo incluida, porque el
     # gateway y el cliente ya están contando: el tiempo encolado también corre.
     budget_seconds = settings.ejercicio_generator_budget_seconds
+    max_output_tokens = settings.ejercicio_generator_max_tokens
 
     def remaining_seconds() -> float:
         return budget_seconds - (time.perf_counter() - t0)
@@ -329,7 +330,7 @@ async def generate_ejercicio(  # noqa: PLR0912, PLR0915
                     tenant_id=user.tenant_id,
                     materia_id=materia_id_resolved,
                     temperature=0.7,
-                    max_tokens=8192,
+                    max_tokens=max_output_tokens,
                     response_format={"type": "json_object"},
                 )
             except httpx.HTTPError as exc:
@@ -360,13 +361,34 @@ async def generate_ejercicio(  # noqa: PLR0912, PLR0915
             try:
                 parsed = json.loads(raw_content)
             except json.JSONDecodeError as exc:
+                # Distinguir JSON *malformado* de JSON *truncado*. Si el modelo
+                # agotó el techo de salida, la respuesta viene cortada a mitad
+                # de string y el JSON nunca va a parsear — reintentar es
+                # determinista: falla igual las 3 veces, quemando llamadas al
+                # LLM y minutos del presupuesto para terminar en el mismo 502.
+                # Se corta en el primer intento con un mensaje que apunta al
+                # techo real y no al prompt.
+                truncated = result.output_tokens >= max_output_tokens
                 logger.error(
-                    "ejercicio_generator_invalid_json provider=%s model=%s error=%s raw_start=%r",
+                    "ejercicio_generator_invalid_json provider=%s model=%s "
+                    "truncated=%s output_tokens=%d/%d error=%s raw_start=%r",
                     result.provider,
                     result.model,
+                    truncated,
+                    result.output_tokens,
+                    max_output_tokens,
                     str(exc),
                     raw_content[:300],
                 )
+                if truncated:
+                    raise HTTPException(
+                        status_code=status.HTTP_502_BAD_GATEWAY,
+                        detail=(
+                            f"La respuesta del modelo se corto por limite de tokens "
+                            f"({result.output_tokens}/{max_output_tokens}). Subi "
+                            f"EJERCICIO_GENERATOR_MAX_TOKENS o pedi un ejercicio mas acotado."
+                        ),
+                    ) from exc
                 if attempt < max_attempts - 1 and remaining_seconds() > 0:
                     continue
                 raise HTTPException(
