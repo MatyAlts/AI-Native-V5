@@ -276,6 +276,5 @@ async def test_max_tokens_sale_de_settings_y_no_esta_hardcodeado() -> None:
         await generate_ejercicio(req=_good_request(), user=_user())
 
     assert (
-        fake_ai.complete.await_args.kwargs["max_tokens"]
-        == settings.ejercicio_generator_max_tokens
+        fake_ai.complete.await_args.kwargs["max_tokens"] == settings.ejercicio_generator_max_tokens
     )
