@@ -98,8 +98,12 @@ class Settings(BaseSettings):
     # caracteres y el JSON volvía **truncado a mitad de string** — el parser
     # tiraba "Unterminated string" y el handler lo reportaba como "JSON
     # inválido", que apuntaba al prompt en vez de al techo real.
-    # El ai-gateway NO capea este valor: lo pasa tal cual al provider
-    # (`max_output_tokens` en Gemini), así que este es el techo efectivo.
+    # ⚠️ ACOTADO POR EL CONTRATO DEL AI-GATEWAY: `CompleteRequest.max_tokens`
+    # valida `le=65536` (`apps/ai-gateway/.../routes/complete.py`). Pasarse de
+    # ese techo NO da un error del modelo — da un **422 del ai-gateway** antes
+    # de llegar al provider, y el caller lo ve como 502 tras agotar los
+    # reintentos. Si hace falta subir esto, hay que subir ANTES el `le` de allá
+    # y deployar el ai-gateway PRIMERO.
     # Override por env EJERCICIO_GENERATOR_MAX_TOKENS.
     ejercicio_generator_max_tokens: int = Field(default=32768, gt=0)
     # Presupuesto TOTAL de la generación IA contra el ai-gateway, reintentos

@@ -145,9 +145,25 @@ async def test_complete_temperature_fuera_de_rango_422(
 
 
 async def test_complete_max_tokens_excedido_422(client: AsyncClient) -> None:
-    body = _basic_body(max_tokens=20000)  # le=8192
+    body = _basic_body(max_tokens=70000)  # le=65536
     response = await client.post("/api/v1/complete", json=body, headers=CALLER_HEADERS)
     assert response.status_code == 422
+
+
+async def test_complete_acepta_max_tokens_del_generador_de_ejercicios(
+    client: AsyncClient,
+) -> None:
+    """El techo viejo (8192) rechazaba con 422 lo que el wizard IA necesita.
+
+    Incidente 2026-07-27: un ejercicio completo del ADR-048 no entra en 8192
+    tokens y volvia truncado. Al subir el pedido a 32768, el ai-gateway lo
+    rechazaba con 422 ANTES de llegar al provider, y el academic-service lo
+    reportaba como 502 tras agotar los 3 reintentos. Este test ancla el
+    contrato: 32768 tiene que ser aceptado.
+    """
+    body = _basic_body(max_tokens=32768)
+    response = await client.post("/api/v1/complete", json=body, headers=CALLER_HEADERS)
+    assert response.status_code == 200
 
 
 async def test_complete_acepta_materia_id_opcional(client: AsyncClient) -> None:
