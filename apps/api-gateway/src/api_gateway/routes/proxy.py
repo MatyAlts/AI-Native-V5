@@ -104,6 +104,32 @@ def resolve_target(path: str) -> str | None:
     return None
 
 
+# Rutas que superan el timeout del client compartido (120s) por diseño, no por
+# falla. El wizard IA de ejercicios (ADR-047/048) genera un borrador completo
+# —enunciado, banco socrático N1-N4, misconceptions, anti-patrones, tests,
+# rúbrica— con UNA sola llamada al LLM y sin streaming, así que la request queda
+# abierta minutos. El default NO se sube global: cada request colgada retendría
+# una conexión del pool ese tiempo, que es justamente lo que el timeout evita.
+#
+# La cascada va de MÁS a MENOS hacia adentro; si una capa externa corta antes
+# que una interna, el cliente recibe un timeout opaco en vez del error real:
+#
+#   cliente 300s  >  gateway 270s (acá)  >  academic-service → ai-gateway 240s
+#
+# Al mover cualquiera de los tres, mover los tres.
+LONG_RUNNING_ROUTES: dict[str, float] = {
+    "/api/v1/ejercicios/generate": settings.proxy_long_running_timeout_seconds,
+}
+
+
+def resolve_timeout(path: str) -> float:
+    """Timeout (segundos) a aplicar en el request al servicio destino."""
+    for prefix, timeout in LONG_RUNNING_ROUTES.items():
+        if path.startswith(prefix):
+            return timeout
+    return settings.proxy_client_timeout_seconds
+
+
 # Content-types que se reenvían chunk-a-chunk (SSE / streaming) en vez de
 # bufferearse punta a punta. El tutor socrático (POST
 # /api/v1/episodes/{id}/message) responde `text/event-stream`; sin forwarding
@@ -179,6 +205,11 @@ async def proxy(full_path: str, request: Request) -> StreamingResponse:
         params=tuple(request.query_params.multi_items()),
         headers=headers,
         content=body,
+        # El timeout va por request (httpx lo lleva en `request.extensions`),
+        # NO en el client compartido: así el default de 120s sigue intacto para
+        # todo el resto y sólo las rutas de LONG_RUNNING_ROUTES esperan de más.
+        # `send()` no acepta `timeout` en httpx — tiene que ir acá.
+        timeout=resolve_timeout(path),
     )
     # `stream=True` devuelve los headers apenas llegan, sin leer el body:
     # así se decide bufferear vs reenviar chunk-a-chunk mirando el
