@@ -35,7 +35,7 @@ members = [
 # Typecheck Python y Docs drift morian a los 11s sin ejecutar nada).
 # `uv sync` instala el grupo `dev` por default, asi que no hace falta flag extra.
 dev = [
-    "ruff>=0.15.12,<0.16",
+    "ruff>=0.15.12,<0.17",
     # `<2` a proposito: mypy 2.x endurece reglas y encuentra 29 errores nuevos
     # sobre este codigo (verificado 2026-07-20 con 2.3.0). Sin el pin, el CI
     # correria una version distinta a la verificada en local y fallaria por
