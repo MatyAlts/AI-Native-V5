@@ -83,6 +83,14 @@ class Settings(BaseSettings):
     # Antes era "mistral-small-latest" (sin key de Mistral configurada → 502).
     # Override por env TP_GENERATOR_DEFAULT_MODEL.
     tp_generator_default_model: str = Field(default="google/gemini-2.0-flash")
+    # Techo de tokens de SALIDA de la generación de TPs. Mismo problema y mismo
+    # fix que `ejercicio_generator_max_tokens` (ver el comentario largo más
+    # abajo): estaba hardcodeado en 8192 dentro de `routes/tareas_practicas.py`,
+    # así que una TP con schema grande truncaba el JSON a mitad de string y el
+    # error salía como "JSON inválido", culpando al prompt en vez del techo.
+    # Rige el mismo tope del contrato del ai-gateway (`le=65536`).
+    # Override por env TP_GENERATOR_MAX_TOKENS.
+    tp_generator_max_tokens: int = Field(default=32768, gt=0)
     # ADR-047 + ADR-048: wizard IA standalone para generar Ejercicios
     # reusables del banco. Devuelve borrador con todos los campos
     # pedagógicos (banco N1-N4, misconceptions, tutor_rules, etc.).
