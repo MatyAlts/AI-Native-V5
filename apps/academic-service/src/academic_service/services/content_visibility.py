@@ -30,8 +30,24 @@ from academic_service.schemas.tarea_practica import TareaPracticaOut
 # tests ocultos al system message del LLM (ADR-048/049), por eso necesita el
 # objeto entero aunque no sea docente ni alumno de la comisión. El resto de los
 # roles (estudiante) recibe la vista saneada.
+#
+# `execution_service` (ADR-059, epic java-execution-engine): mismo caso que
+# `tutor_service`. Necesita los test cases OCULTOS para ejecutarlos server-side
+# — que es justamente la propiedad que la ejecución en el navegador no podía
+# dar. La diferencia con el alumno es de dirección: el execution-service los
+# ejecuta pero NUNCA los devuelve en su respuesta, y hay un test dedicado que lo
+# verifica (tarea 3.5 de la change). Agregar un rol acá es una decisión de
+# seguridad: el que entra ve las soluciones de todo el banco.
 FULL_CONTENT_ROLES: frozenset[str] = frozenset(
-    {"docente", "docente_admin", "superadmin", "jtp", "auxiliar", "tutor_service"}
+    {
+        "docente",
+        "docente_admin",
+        "superadmin",
+        "jtp",
+        "auxiliar",
+        "tutor_service",
+        "execution_service",
+    }
 )
 
 

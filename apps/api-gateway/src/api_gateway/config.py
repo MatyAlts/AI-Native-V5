@@ -62,6 +62,9 @@ class Settings(BaseSettings):
     content_service_url: str = "http://127.0.0.1:8009"
     governance_service_url: str = "http://127.0.0.1:8010"
     ai_gateway_url: str = "http://127.0.0.1:8011"
+    # 8012 = integrity-attestation-service (ADR-021), fuera del ROUTE_MAP:
+    # vive en infra institucional separada y no se expone a frontends.
+    execution_service_url: str = "http://127.0.0.1:8013"
 
     # HTTP client compartido del proxy (P-3). Un solo `httpx.AsyncClient` de
     # larga vida (creado en el lifespan) reusa la connection pool entre TODAS

@@ -20,6 +20,8 @@ members = [
     "apps/governance-service",
     "apps/ai-gateway",
     "apps/integrity-attestation-service",
+    # ADR-059 (epic java-execution-engine): ejecucion server-side de Java.
+    "apps/execution-service",
     "packages/contracts",
     "packages/test-utils",
     "packages/observability",
