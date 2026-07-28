@@ -1967,7 +1967,13 @@ class TutorCore:
         enunciado = ejercicio.get("enunciado_md") or ejercicio.get("enunciado") or ""
         parts.append(f"\n\n[{kind}{orden_label}]\n**{titulo}**\n\n{enunciado}")
         if ejercicio.get("inicial_codigo"):
-            parts.append(f"\n\nCódigo inicial:\n```python\n{ejercicio['inicial_codigo']}\n```")
+            # El fence lleva el lenguaje del ejercicio, no uno fijo: rotular
+            # código Java como `python` le da al modelo una señal falsa sobre la
+            # sintaxis que está leyendo. Es el único fence hardcodeado del
+            # builder — el código que el alumno escribe en vivo ya usa uno
+            # genérico sin etiqueta.
+            language = ejercicio.get("language") or DEFAULT_LANGUAGE
+            parts.append(f"\n\nCódigo inicial:\n```{language}\n{ejercicio['inicial_codigo']}\n```")
 
         # Bloque 2 — reglas operativas del tutor para este ejercicio (F2). Antes
         # solo se inyectaba `instrucciones_adicionales`; ahora también las flags
