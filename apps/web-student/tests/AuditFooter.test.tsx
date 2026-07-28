@@ -1,3 +1,4 @@
+import { AuditFooter } from "@platform/ui"
 /**
  * Tests del AuditFooter (shape alumno, brief D1).
  *
@@ -10,7 +11,6 @@
  */
 import { render, screen, waitFor } from "@testing-library/react"
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest"
-import { AuditFooter } from "@platform/ui"
 import { setupFetchMock } from "./_mocks"
 
 beforeEach(() => {
@@ -30,9 +30,7 @@ describe("AuditFooter", () => {
     // de patch version para que el bump del prompt no rompa este test.
     expect(footer).toHaveTextContent(/prompt: tutor\/v1\./i)
     expect(screen.getByTestId("audit-classifier-hash")).toHaveTextContent("pendiente")
-    expect(screen.getByTestId("audit-chain-label")).toHaveTextContent(
-      /sin verificacion previa/i,
-    )
+    expect(screen.getByTestId("audit-chain-label")).toHaveTextContent(/sin verificacion previa/i)
   })
 
   test("trunca el classifier hash a primer-4 + ultimos-4", () => {
@@ -59,9 +57,7 @@ describe("AuditFooter", () => {
     render(<AuditFooter episodeId="ep-1" />)
 
     await waitFor(() => {
-      expect(screen.getByTestId("audit-chain-label")).toHaveTextContent(
-        /470 eventos verificados/i,
-      )
+      expect(screen.getByTestId("audit-chain-label")).toHaveTextContent(/470 eventos verificados/i)
     })
   })
 

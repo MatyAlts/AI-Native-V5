@@ -53,8 +53,8 @@
 - [ ] 6.1 Rama de ejecución que llama al servicio en lugar de cargar el entorno local, reemplazando el estado de "no disponible".
 - [ ] 6.2 Consulta de estado con indicación de espera propia, que explique que se está compilando y ejecutando en el servidor. La espera ocurre en cada ejecución, no solo la primera.
 - [ ] 6.3 Impedir una segunda solicitud mientras hay una en curso.
-- [ ] 6.4 Módulo nuevo de análisis de errores de Java, para compilación y para excepciones en ejecución. No es una extensión del existente: ese usa expresiones regulares del formato de traza del otro lenguaje y no coincide con ninguno de los dos formatos de Java.
-- [ ] 6.5 Señalar la línea en el editor cuando el error lo permita, sin señalar ninguna arbitraria cuando no.
+- [x] 6.4 Módulo nuevo de análisis de errores de Java. `lib/javaError.ts`, hermano de `pyodideError.ts`. Reconoce los **dos** formatos: `javac` (`Main.java:5: error: ';' expected` con su cursor `^` y el conteo, que se descartan) y excepción en ejecución con traza. Traduce las 8 excepciones que un alumno de primer año se come seguido (división por cero, índice fuera de rango, `NullPointerException`, `InputMismatchException`…) conservando el detalle original. 11 tests sobre salidas reales de javac y de la JVM.
+- [x] 6.5 Señalar la línea cuando el error lo permita. `extractJavaErrorLineNumber` toma el **primer** frame de la traza (donde revienta, no quien llamó) y **descarta los internos de la JVM**: la notación de módulo `java.base/...` lleva una barra que el patrón no cruza, así que un `NullPointerException` marca la línea 12 del alumno y no la 233 de `Objects.java`, un archivo del JDK que no puede ver ni editar. Devuelve `null` sin frame reconocible: **no se inventa una línea**, porque un marcador equivocado manda a buscar el error donde no está. Falta cablearlo a los markers de Monaco.
 - [ ] 6.6 Mensaje distinguible ante indisponibilidad del entorno, separado de un error del código del alumno.
 - [ ] 6.7 Verificar que el camino del lenguaje ya soportado queda intacto: carga del entorno local, ejecución, casos de prueba, historial de corridas y marcadores de error.
 

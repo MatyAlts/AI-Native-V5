@@ -27,8 +27,8 @@ vi.mock("@tanstack/react-router", async (importOriginal) => {
   }
 })
 
-import { HomeContent } from "../src/routes/index"
 import type { MateriaInscripta } from "../src/lib/api"
+import { HomeContent } from "../src/routes/index"
 
 function makeMateria(overrides: Partial<MateriaInscripta> = {}): MateriaInscripta {
   return {
@@ -86,9 +86,7 @@ describe("HomeContent", () => {
 
   it("renderiza 1 MateriaCard cuando hay 1 materia inscripta", () => {
     const materia = makeMateria()
-    render(
-      <HomeContent isLoading={false} error={null} materias={[materia]} onEnter={() => {}} />,
-    )
+    render(<HomeContent isLoading={false} error={null} materias={[materia]} onEnter={() => {}} />)
     const cards = screen.getAllByTestId("materia-card")
     expect(cards).toHaveLength(1)
     expect(screen.getByText("Programacion 2")).toBeInTheDocument()
@@ -103,9 +101,7 @@ describe("HomeContent", () => {
         nombre: `Materia ${i}`,
       }),
     )
-    render(
-      <HomeContent isLoading={false} error={null} materias={materias} onEnter={() => {}} />,
-    )
+    render(<HomeContent isLoading={false} error={null} materias={materias} onEnter={() => {}} />)
     expect(screen.getByTestId("home-densa-list")).toBeInTheDocument()
     const items = screen.getAllByTestId("materia-list-item")
     expect(items).toHaveLength(6)

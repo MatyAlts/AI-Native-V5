@@ -11,7 +11,7 @@ import { extractPyodideErrorLine } from "../src/lib/pyodideError"
 describe("extractPyodideErrorLine", () => {
   it("extrae solo la última línea de excepción de un MemoryError con traceback completo", () => {
     const raw = [
-      'Traceback (most recent call last):',
+      "Traceback (most recent call last):",
       '  File "<exec>", line 1, in <module>',
       '  File "<exec>", line 12, in __tutor_run_student_code',
       '  File "/lib/python312.zip/_pyodide/_base.py", line 573, in eval_code',
@@ -48,12 +48,12 @@ describe("extractPyodideErrorLine", () => {
   })
 
   it("reconoce KeyboardInterrupt y Warning como headers de excepción", () => {
-    expect(
-      extractPyodideErrorLine("Traceback...\n  frame\nKeyboardInterrupt: abortado"),
-    ).toBe("KeyboardInterrupt: abortado")
-    expect(
-      extractPyodideErrorLine("  frame\nDeprecationWarning: vieja API"),
-    ).toBe("DeprecationWarning: vieja API")
+    expect(extractPyodideErrorLine("Traceback...\n  frame\nKeyboardInterrupt: abortado")).toBe(
+      "KeyboardInterrupt: abortado",
+    )
+    expect(extractPyodideErrorLine("  frame\nDeprecationWarning: vieja API")).toBe(
+      "DeprecationWarning: vieja API",
+    )
   })
 
   it("fallback: última línea no vacía cuando no hay header de excepción (nunca el traceback entero)", () => {
