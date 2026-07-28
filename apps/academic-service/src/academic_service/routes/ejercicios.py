@@ -287,16 +287,46 @@ async def generate_ejercicio(  # noqa: PLR0912, PLR0915
     # / JSON malformado. Subimos max_attempts 2→3 y agregamos backoff para no
     # machacar al gateway si está saturado. Logueamos tipo de exception para
     # diagnosticar si el patrón vuelve.
-    ai = AIGatewayClient(settings.ai_gateway_url, timeout=90.0)
     max_attempts = 3
     parsed: dict[str, Any] = {}
     result = None
     t0 = time.perf_counter()
 
+    # Presupuesto TOTAL, repartido entre los intentos (ver
+    # `ejercicio_generator_budget_seconds`). Antes cada intento tenía 90s
+    # propios: el peor caso (3 intentos + backoff) daba 271.5s contra un
+    # gateway que corta antes — el caller ya se había ido y el backend seguía
+    # generando. Cuenta desde acá, espera del semáforo incluida, porque el
+    # gateway y el cliente ya están contando: el tiempo encolado también corre.
+    budget_seconds = settings.ejercicio_generator_budget_seconds
+    max_output_tokens = settings.ejercicio_generator_max_tokens
+
+    def remaining_seconds() -> float:
+        return budget_seconds - (time.perf_counter() - t0)
+
     # Sin sesión DB abierta acá (P-9): la conexión ya volvió al pool. El semáforo
     # limita cuántas generaciones IA corren a la vez (no cuántas conexiones DB).
     async with get_generation_semaphore():
         for attempt in range(max_attempts):
+            # Lo que quede del presupuesto es el timeout de ESTE intento. El
+            # client se instancia por intento a proposito: `AIGatewayClient`
+            # abre su `httpx.AsyncClient` dentro de cada `complete()`, asi que
+            # reconstruirlo no agrega costo de conexion.
+            attempt_timeout = remaining_seconds()
+            if attempt_timeout <= 0:
+                logger.error(
+                    "ejercicio_generator_budget_exhausted attempt=%d budget_s=%.1f",
+                    attempt,
+                    budget_seconds,
+                )
+                raise HTTPException(
+                    status_code=status.HTTP_504_GATEWAY_TIMEOUT,
+                    detail=(
+                        "La generacion supero el tiempo maximo. Reintenta con una "
+                        "descripcion mas corta o un modelo mas rapido."
+                    ),
+                )
+            ai = AIGatewayClient(settings.ai_gateway_url, timeout=attempt_timeout)
             try:
                 result = await ai.complete(
                     messages=messages,
@@ -305,7 +335,7 @@ async def generate_ejercicio(  # noqa: PLR0912, PLR0915
                     tenant_id=user.tenant_id,
                     materia_id=materia_id_resolved,
                     temperature=0.7,
-                    max_tokens=8192,
+                    max_tokens=max_output_tokens,
                     response_format={"type": "json_object"},
                 )
             except httpx.HTTPError as exc:
@@ -315,8 +345,11 @@ async def generate_ejercicio(  # noqa: PLR0912, PLR0915
                     type(exc).__name__,
                     str(exc)[:200],
                 )
-                if attempt < max_attempts - 1:
-                    await asyncio.sleep(0.5 * (2**attempt))  # 0.5s, 1.0s
+                # El backoff sale del mismo presupuesto: si no queda tiempo
+                # para dormir Y reintentar, no se reintenta.
+                backoff_s = 0.5 * (2**attempt)  # 0.5s, 1.0s
+                if attempt < max_attempts - 1 and remaining_seconds() > backoff_s:
+                    await asyncio.sleep(backoff_s)
                     continue
                 raise HTTPException(
                     status_code=status.HTTP_502_BAD_GATEWAY,
@@ -333,21 +366,42 @@ async def generate_ejercicio(  # noqa: PLR0912, PLR0915
             try:
                 parsed = json.loads(raw_content)
             except json.JSONDecodeError as exc:
+                # Distinguir JSON *malformado* de JSON *truncado*. Si el modelo
+                # agotó el techo de salida, la respuesta viene cortada a mitad
+                # de string y el JSON nunca va a parsear — reintentar es
+                # determinista: falla igual las 3 veces, quemando llamadas al
+                # LLM y minutos del presupuesto para terminar en el mismo 502.
+                # Se corta en el primer intento con un mensaje que apunta al
+                # techo real y no al prompt.
+                truncated = result.output_tokens >= max_output_tokens
                 logger.error(
-                    "ejercicio_generator_invalid_json provider=%s model=%s error=%s raw_start=%r",
+                    "ejercicio_generator_invalid_json provider=%s model=%s "
+                    "truncated=%s output_tokens=%d/%d error=%s raw_start=%r",
                     result.provider,
                     result.model,
+                    truncated,
+                    result.output_tokens,
+                    max_output_tokens,
                     str(exc),
                     raw_content[:300],
                 )
-                if attempt < max_attempts - 1:
+                if truncated:
+                    raise HTTPException(
+                        status_code=status.HTTP_502_BAD_GATEWAY,
+                        detail=(
+                            f"La respuesta del modelo se corto por limite de tokens "
+                            f"({result.output_tokens}/{max_output_tokens}). Subi "
+                            f"EJERCICIO_GENERATOR_MAX_TOKENS o pedi un ejercicio mas acotado."
+                        ),
+                    ) from exc
+                if attempt < max_attempts - 1 and remaining_seconds() > 0:
                     continue
                 raise HTTPException(
                     status_code=status.HTTP_502_BAD_GATEWAY,
                     detail="LLM devolvió JSON inválido (revisar prompt o modelo)",
                 ) from exc
 
-            if "error" in parsed and attempt < max_attempts - 1:
+            if "error" in parsed and attempt < max_attempts - 1 and remaining_seconds() > 0:
                 logger.warning(
                     "ejercicio_generator_llm_returned_error attempt=%d: %s",
                     attempt,

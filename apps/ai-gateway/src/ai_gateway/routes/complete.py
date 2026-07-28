@@ -202,7 +202,16 @@ class CompleteRequest(BaseModel):
     model: str
     feature: str  # "tutor" | "classifier" | "evaluation" | "tp_generator" | ...
     temperature: float = Field(default=0.7, ge=0.0, le=2.0)
-    max_tokens: int = Field(default=1024, ge=1, le=8192)
+    # El techo de 8192 databa de cuando los modelos disponibles no daban mas.
+    # Los actuales (Gemini 2.x/2.5) admiten 64k de salida, y el generador de
+    # ejercicios los necesita: un ejercicio completo del ADR-048 (enunciado +
+    # banco socratico N1-N4 + misconceptions + anti-patrones + tests + rubrica)
+    # supera los 8192 y volvia TRUNCADO a mitad de string, con el parser
+    # reportando "JSON invalido" (incidente 2026-07-27).
+    # Subirlo es backward-compatible: valida un rango MAS amplio, ningun caller
+    # que mandaba <= 8192 cambia de comportamiento. El gasto real sigue acotado
+    # por el budget por tenant del ai-gateway, no por este techo.
+    max_tokens: int = Field(default=1024, ge=1, le=65536)
     # Sec 6 epic ai-native-completion-and-byok / ADR-040: opcional. Cuando esta
     # presente, el resolver BYOK busca key con scope=materia primero. Si esta
     # ausente, fallback a scope=tenant (metrica `byok_key_resolution_total`

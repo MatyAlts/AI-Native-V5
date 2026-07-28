@@ -700,13 +700,17 @@ function EjercicioFormModal({ initial, title, unidades, onClose, onSubmit }: For
 
   async function handleSubmit() {
     setError(null)
-    if (!draft.titulo.trim() || !draft.enunciado_md.trim()) {
+    // `String(x ?? "")` en vez de `x.trim()` directo: a este editor llegan
+    // objetos que TypeScript nunca valido (borrador del wizard IA, JSON pegado
+    // en "Importar"). Un campo omitido o numerico tiraba TypeError y el submit
+    // moria con "Something went wrong" en vez de mostrar el error de validacion.
+    if (!String(draft.titulo ?? "").trim() || !String(draft.enunciado_md ?? "").trim()) {
       setError("Titulo y enunciado son obligatorios")
       return
     }
     const criterios = draft.rubrica?.criterios ?? []
     for (const [i, c] of criterios.entries()) {
-      if (!c.nombre.trim() || !c.descripcion.trim()) {
+      if (!String(c.nombre ?? "").trim() || !String(c.descripcion ?? "").trim()) {
         setError(`Criterio ${i + 1} de la rubrica: nombre y descripcion no pueden estar vacios`)
         return
       }
@@ -1324,9 +1328,17 @@ function RubricaCriteriosEditor({
       ) : (
         <div className="space-y-2 mb-2">
           {criterios.map((c, i) => {
-            const puntaje = Number(c.puntaje_max)
+            // `puntaje_max` esta tipado `string`, pero a este editor llegan
+            // objetos que TypeScript nunca valido: el borrador del wizard IA
+            // (`dict[str, Any]` desde el backend) y el JSON que el docente
+            // pega en "Importar". Un numero ahi tiraba
+            // `puntaje_max.trim is not a function` y volteaba la vista entera.
+            // `String(...)` normaliza sin cambiar el comportamiento del caso
+            // normal, donde ya es texto.
+            const puntajeRaw = String(c.puntaje_max ?? "")
+            const puntaje = Number(puntajeRaw)
             const puntajeInvalid =
-              c.puntaje_max.trim() !== "" && (!Number.isFinite(puntaje) || puntaje <= 0)
+              puntajeRaw.trim() !== "" && (!Number.isFinite(puntaje) || puntaje <= 0)
             return (
               <div
                 // biome-ignore lint/suspicious/noArrayIndexKey: criterios controlados sin estado interno; el orden lo fija el docente
@@ -1354,7 +1366,7 @@ function RubricaCriteriosEditor({
                     type="number"
                     min={0}
                     step="0.5"
-                    value={c.puntaje_max}
+                    value={puntajeRaw}
                     onChange={(e) => setField(i, "puntaje_max", e.target.value)}
                     placeholder="0"
                     className={`w-full border rounded px-2 py-1 text-sm bg-white ${

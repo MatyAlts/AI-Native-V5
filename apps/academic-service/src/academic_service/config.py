@@ -90,10 +90,40 @@ class Settings(BaseSettings):
     # Default Gemini (namespaced → OpenRouter con fallback keyless a Gemini nativo).
     # Override por env EJERCICIO_GENERATOR_DEFAULT_MODEL.
     ejercicio_generator_default_model: str = Field(default="google/gemini-2.0-flash")
+    # Techo de tokens de SALIDA de la generación. El valor viejo (8192) quedó
+    # corto cuando el ADR-048 engordó el schema pedagógico: un ejercicio
+    # completo lleva enunciado, banco socrático N1-N4, misconceptions con
+    # probabilidad, anti-patrones, tutor_rules, pistas por nivel, tests y
+    # rúbrica. A ~3,5 chars por token, 8192 topaba cerca de los 28.700
+    # caracteres y el JSON volvía **truncado a mitad de string** — el parser
+    # tiraba "Unterminated string" y el handler lo reportaba como "JSON
+    # inválido", que apuntaba al prompt en vez de al techo real.
+    # ⚠️ ACOTADO POR EL CONTRATO DEL AI-GATEWAY: `CompleteRequest.max_tokens`
+    # valida `le=65536` (`apps/ai-gateway/.../routes/complete.py`). Pasarse de
+    # ese techo NO da un error del modelo — da un **422 del ai-gateway** antes
+    # de llegar al provider, y el caller lo ve como 502 tras agotar los
+    # reintentos. Si hace falta subir esto, hay que subir ANTES el `le` de allá
+    # y deployar el ai-gateway PRIMERO.
+    # Override por env EJERCICIO_GENERATOR_MAX_TOKENS.
+    ejercicio_generator_max_tokens: int = Field(default=32768, gt=0)
+    # Presupuesto TOTAL de la generación IA contra el ai-gateway, reintentos
+    # incluidos — no por intento. Con timeout por intento el peor caso era
+    # `max_attempts × timeout + backoff` (3×90s = 271.5s), que ya excedía el
+    # timeout del gateway: el gateway cortaba, el cliente veía un error opaco y
+    # el backend seguía generando contra un caller que ya no estaba.
+    #
+    # La cascada va de MÁS a MENOS hacia adentro. Este es el número más chico:
+    #
+    #   cliente 300s  >  api-gateway 270s  >  este presupuesto 240s
+    #
+    # Al mover cualquiera de los tres, mover los tres.
+    # Override por env EJERCICIO_GENERATOR_BUDGET_SECONDS.
+    ejercicio_generator_budget_seconds: float = Field(default=240.0, gt=0)
     # P-9 / A2.4: límite de generaciones IA (TP/ejercicio) concurrentes. Cada
-    # generación pega al LLM hasta 3×90s; sin tope, N docentes disparando el
-    # wizard a la vez saturan al ai-gateway y (por el patrón viejo) agotaban el
-    # pool de Postgres. Semáforo compartido por ambos endpoints /generate.
+    # generación pega al LLM hasta agotar el presupuesto de arriba; sin tope, N
+    # docentes disparando el wizard a la vez saturan al ai-gateway y (por el
+    # patrón viejo) agotaban el pool de Postgres. Semáforo compartido por ambos
+    # endpoints /generate.
     # Override por env AI_GENERATION_MAX_CONCURRENCY.
     ai_generation_max_concurrency: int = Field(default=4, ge=1)
 
