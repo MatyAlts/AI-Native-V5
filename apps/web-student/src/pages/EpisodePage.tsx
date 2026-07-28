@@ -43,7 +43,11 @@ import { useMediaQuery } from "../hooks/useMediaQuery"
 import {
   type AvailableTarea,
   type Classification,
+  DEFAULT_LANGUAGE,
   EpisodeStateError,
+  LANGUAGE_LABELS,
+  LANGUAGE_PLACEHOLDER,
+  type Language,
   type TestCasePublic,
   classifyEpisode,
   closeEpisode,
@@ -118,11 +122,32 @@ export function EpisodeView({ episodeId, onExit, ejercicioContext, getToken }: E
   // Default neutro: si el ejercicio trae `inicial_codigo` se usa eso (ver
   // resolveCodigoInicial); este fallback NO debe sugerir una consigna concreta
   // (antes mostraba `def factorial` para TODOS los ejercicios — NEW-002 QA).
-  const [code, setCode] = useState<string>("# Escribí tu código Python acá\n")
+  // Arranca en el lenguaje por omision y se corrige abajo cuando se resuelve el
+  // del ejercicio: un comentario `#` en un ejercicio Java no compila, y el
+  // alumno abriria el editor con el archivo ya roto.
+  const [code, setCode] = useState<string>(LANGUAGE_PLACEHOLDER[DEFAULT_LANGUAGE])
+  // Si el alumno todavia no escribio nada y el ejercicio no trae scaffold, el
+  // placeholder tiene que seguir al lenguaje. `usedPlaceholderRef` evita pisar
+  // codigo real: solo se reemplaza lo que seguimos considerando andamio.
+  const usedPlaceholderRef = useRef(true)
+
+  /** Fija el lenguaje y, si el buffer sigue siendo el andamio por omision,
+   * lo reemplaza por el del lenguaje resuelto. Nunca pisa codigo real: el
+   * snapshot del alumno y el `inicial_codigo` del ejercicio bajan el flag. */
+  const applyLanguage = useCallback((lang: Language) => {
+    setLanguage(lang)
+    if (usedPlaceholderRef.current) setCode(LANGUAGE_PLACEHOLDER[lang])
+  }, [])
   // F1: test cases PUBLICOS resueltos en la hidratacion (del ejercicio del
   // banco si es multi-ejercicio, o de la TP monolitica). Solo publicos — el
   // backend sanea por rol (A0.3). Se pasan al CodeEditor para "Probar".
   const [testCases, setTestCases] = useState<TestCasePublic[]>([])
+  // Lenguaje del episodio. Sale del ejercicio del banco si la TP es
+  // multi-ejercicio, y de la TP si es monolitica — el backend garantiza que
+  // coinciden (una TP admite un solo lenguaje, validado al agregar y al
+  // publicar). Alimenta el modo de Monaco, el badge, los rotulos accesibles y
+  // el payload del evento CTR de edicion.
+  const [language, setLanguage] = useState<Language>(DEFAULT_LANGUAGE)
   const [messages, setMessages] = useState<Message[]>([])
   // Indicador de ACTIVIDAD en curso (no es la clasificacion final del classifier,
   // que se deriva post-cierre — ADR-020). Refleja el CANAL de actividad que el
@@ -396,6 +421,9 @@ export function EpisodeView({ episodeId, onExit, ejercicioContext, getToken }: E
           return
         }
         setTarea(t)
+        // Lenguaje a nivel TP. Si la TP es multi-ejercicio se refina abajo con
+        // el del ejercicio concreto, que es el que el alumno tiene delante.
+        applyLanguage(t.language ?? DEFAULT_LANGUAGE)
 
         // F1 + codigo inicial (ADR-047). Para TPs multi-ejercicio el ejercicio
         // y sus test cases PUBLICOS viven en el banco; los traemos una sola vez
@@ -410,11 +438,16 @@ export function EpisodeView({ episodeId, onExit, ejercicioContext, getToken }: E
             resolvedTests = (match?.ejercicio?.test_cases ?? []).filter(
               (tc) => tc.is_public !== false,
             )
+            const ejLanguage = match?.ejercicio?.language
+            if (ejLanguage) applyLanguage(ejLanguage)
             // Codigo inicial del ejercicio del banco (solo si no hay snapshot ni
             // codigo inicial a nivel TP — mismo fallback que antes).
             if (!state.last_code_snapshot && !resolveCodigoInicial(t)) {
               const ejInicial = match?.ejercicio?.inicial_codigo ?? null
-              if (ejInicial) setCode(ejInicial)
+              if (ejInicial) {
+                usedPlaceholderRef.current = false
+                setCode(ejInicial)
+              }
             }
           } catch {
             // best-effort: sin tests / sin codigo inicial del banco → default.
@@ -425,11 +458,15 @@ export function EpisodeView({ episodeId, onExit, ejercicioContext, getToken }: E
         setTestCases(resolvedTests)
 
         if (state.last_code_snapshot) {
+          usedPlaceholderRef.current = false
           setCode(state.last_code_snapshot)
         } else if (ejercicioOrden == null) {
           // TP monolitica: codigo inicial de la propia TP.
           const initialCode = resolveCodigoInicial(t)
-          if (initialCode) setCode(initialCode)
+          if (initialCode) {
+            usedPlaceholderRef.current = false
+            setCode(initialCode)
+          }
         }
         setMessages(
           state.messages.map((m) => ({
@@ -461,7 +498,7 @@ export function EpisodeView({ episodeId, onExit, ejercicioContext, getToken }: E
     return () => {
       cancelled = true
     }
-  }, [episodeId, onExit, ejercicioOrden])
+  }, [episodeId, onExit, ejercicioOrden, applyLanguage])
 
   // UI-8: enviar un mensaje al tutor. Si el stream falla (LLM saturado, red,
   // sesion pausada), NO cerramos el episodio ni ofrecemos salir — un error
@@ -752,11 +789,12 @@ export function EpisodeView({ episodeId, onExit, ejercicioContext, getToken }: E
         label="Editor de código"
         icon={<Code2 className="h-3.5 w-3.5" />}
         colorVar="var(--color-level-n3)"
-        badge="Python"
+        badge={LANGUAGE_LABELS[language]}
       />
       <CodeEditor
         initialCode={code}
         testCases={testCases}
+        language={language}
         isMaximized={editorMaximized}
         // ED-1: el boton maximizar solo tiene sentido en desktop (el PanelGroup
         // no existe en mobile — ahi el alumno enfoca el editor con las tabs).
@@ -796,7 +834,7 @@ export function EpisodeView({ episodeId, onExit, ejercicioContext, getToken }: E
           void emitEdicionCodigo(episodeId, {
             snapshot,
             diff_chars: Math.abs(diffChars),
-            language: "python",
+            language,
             origin,
           }).catch((e) => {
             console.warn("emit edicion_codigo failed:", e)

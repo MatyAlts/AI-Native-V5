@@ -26,6 +26,7 @@ import {
   Eye,
   EyeOff,
   FlaskConical,
+  MinusCircle,
   Pencil,
   Play,
   Plus,
@@ -39,10 +40,13 @@ import {
 import { useCallback, useEffect, useId, useMemo, useState } from "react"
 import {
   type CriterioRubrica,
+  DEFAULT_LANGUAGE,
   type Dificultad,
   type Ejercicio,
   type EjercicioCreate,
   type EjercicioGenerateRequest,
+  LANGUAGE_LABELS,
+  type Language,
   type Materia,
   type RubricaEjercicio,
   type TestCaseEjercicio,
@@ -156,6 +160,36 @@ const DIFICULTAD_VARIANT: Record<Dificultad, "default" | "success" | "warning"> 
   basica: "success",
   intermedia: "default",
   avanzada: "warning",
+}
+
+type TestCaseType = TestCaseEjercicio["type"]
+
+/**
+ * Rotulos de los tipos de caso de prueba.
+ *
+ * Son `Record` completos y no ternarios a proposito. El binario anterior
+ * (`type === "stdin_stdout" ? "stdin/stdout" : "pytest"`) rotulaba `junit_assert`
+ * como "pytest" sin fallar en ningun lado. Con un Record, agregar un tipo al
+ * contrato rompe la compilacion hasta que se le de nombre acá.
+ */
+const TEST_CASE_TYPE_LABEL: Record<TestCaseType, string> = {
+  stdin_stdout: "stdin/stdout",
+  pytest_assert: "pytest",
+  junit_assert: "junit",
+}
+
+/** Como se llama el campo `code` segun el tipo, en el preview del formulario. */
+const TEST_CASE_CODE_LABEL: Record<TestCaseType, string> = {
+  stdin_stdout: "entrada",
+  pytest_assert: "assert",
+  junit_assert: "assert",
+}
+
+/** Idem, en la tabla de resultados de una corrida. */
+const TEST_CASE_CODE_LABEL_RESULTADO: Record<TestCaseType, string> = {
+  stdin_stdout: "entrada (stdin)",
+  pytest_assert: "assert",
+  junit_assert: "assert",
 }
 
 function emptyEjercicio(unidad: UnidadTematica = "secuenciales"): EjercicioCreate {
@@ -454,6 +488,7 @@ export function EjerciciosView({ comisionId, getToken }: Props) {
               <tr>
                 <th className="text-left px-3 py-2 font-medium">Titulo</th>
                 <th className="text-left px-3 py-2 font-medium">Unidad</th>
+                <th className="text-left px-3 py-2 font-medium">Lenguaje</th>
                 <th className="text-left px-3 py-2 font-medium">Dificultad</th>
                 <th className="text-left px-3 py-2 font-medium">Origen</th>
                 <th className="text-left px-3 py-2 font-medium">Creado</th>
@@ -473,6 +508,9 @@ export function EjerciciosView({ comisionId, getToken }: Props) {
                     </button>
                   </td>
                   <td className="px-3 py-2 text-muted">{UNIDAD_LABEL[ej.unidad_tematica]}</td>
+                  <td className="px-3 py-2">
+                    <Badge>{LANGUAGE_LABELS[ej.language ?? DEFAULT_LANGUAGE]}</Badge>
+                  </td>
                   <td className="px-3 py-2">
                     {ej.dificultad ? (
                       <Badge variant={DIFICULTAD_VARIANT[ej.dificultad]}>
@@ -772,7 +810,7 @@ function EjercicioFormModal({ initial, title, unidades, onClose, onSubmit }: For
             rows={4}
             placeholder="# Scaffold opcional"
           />
-          <div className="grid grid-cols-2 gap-2">
+          <div className="grid grid-cols-3 gap-2">
             <div>
               <label htmlFor="ejercicio-unidad-tematica" className="block text-xs text-muted mb-1">
                 Unidad tematica
@@ -806,7 +844,33 @@ function EjercicioFormModal({ initial, title, unidades, onClose, onSubmit }: For
                 <option value="avanzada">Avanzada</option>
               </select>
             </div>
+            <div>
+              <label htmlFor="ejercicio-language" className="block text-xs text-muted mb-1">
+                Lenguaje
+              </label>
+              <select
+                id="ejercicio-language"
+                value={draft.language ?? DEFAULT_LANGUAGE}
+                onChange={(e) => set("language", e.target.value as Language)}
+                className="w-full border border-border rounded px-2 py-1 text-sm bg-white"
+              >
+                {(Object.keys(LANGUAGE_LABELS) as Language[]).map((lang) => (
+                  <option key={lang} value={lang}>
+                    {LANGUAGE_LABELS[lang]}
+                  </option>
+                ))}
+              </select>
+            </div>
           </div>
+          {/* Honestidad tecnica explicita: el docente se entera de la limitacion
+              al crear, no recien cuando intenta probar y no pasa nada. */}
+          {(draft.language ?? DEFAULT_LANGUAGE) !== DEFAULT_LANGUAGE && (
+            <p className="mt-2 text-xs text-muted" data-testid="aviso-sin-runtime">
+              Los casos de prueba de {LANGUAGE_LABELS[draft.language ?? DEFAULT_LANGUAGE]} todavia
+              no se pueden verificar desde el panel de prueba: no hay entorno de ejecucion. El
+              ejercicio se crea y el tutor lo acompaña igual.
+            </p>
+          )}
         </FormSection>
 
         <FormSection title="Rubrica de correccion">
@@ -1002,13 +1066,13 @@ function StudentTestCasePreview({ testCases }: { testCases: TestCaseEjercicio[] 
                 >
                   <div className="flex items-center gap-2">
                     <span className="font-medium">{tc.name || `Test ${i + 1}`}</span>
-                    <Badge>{tc.type === "stdin_stdout" ? "stdin/stdout" : "pytest"}</Badge>
+                    <Badge>{TEST_CASE_TYPE_LABEL[tc.type]}</Badge>
                     <span className="text-muted-soft ml-auto">peso {tc.weight}</span>
                   </div>
                   {tc.code && (
                     <div>
                       <div className="text-[10px] text-muted uppercase tracking-wide">
-                        {tc.type === "stdin_stdout" ? "entrada" : "assert"}
+                        {TEST_CASE_CODE_LABEL[tc.type]}
                       </div>
                       <pre className="bg-canvas border border-border rounded p-1.5 font-mono whitespace-pre-wrap">
                         {tc.code}
@@ -1054,35 +1118,50 @@ function StudentTestCasePreview({ testCases }: { testCases: TestCaseEjercicio[] 
 // El harness Pyodide vive en lib/pyodideRunner.ts (replica minima del patron
 // del web-student/CodeEditor.tsx, sin importar de web-student).
 
-function statusLabel(status: TestCaseRunResult["status"]): string {
-  if (status === "pass") return "Pasa"
-  if (status === "fail") return "Falla"
-  return "Error"
+type RunStatus = TestCaseRunResult["status"]
+
+/** `skipped` NO es "Error": el caso no fallo, no se corrio. Confundirlos le
+ * haria creer al docente que su ejercicio tiene un problema. */
+const STATUS_LABEL: Record<RunStatus, string> = {
+  pass: "Pasa",
+  fail: "Falla",
+  error: "Error",
+  skipped: "No ejecutado",
+}
+
+const STATUS_ICON: Record<RunStatus, typeof CheckCircle2> = {
+  pass: CheckCircle2,
+  fail: XCircle,
+  error: AlertTriangle,
+  skipped: MinusCircle,
+}
+
+/** Tono neutro para `skipped`: no hay veredicto, asi que no hay semaforo. */
+const STATUS_TONE: Record<RunStatus, string> = {
+  pass: "text-emerald-700 bg-emerald-50 border-emerald-200",
+  fail: "text-red-700 bg-red-50 border-red-200",
+  error: "text-amber-800 bg-amber-50 border-amber-200",
+  skipped: "text-muted bg-canvas border-border",
 }
 
 function ResultRow({ r }: { r: TestCaseRunResult }) {
-  const Icon = r.status === "pass" ? CheckCircle2 : r.status === "fail" ? XCircle : AlertTriangle
-  const tone =
-    r.status === "pass"
-      ? "text-emerald-700 bg-emerald-50 border-emerald-200"
-      : r.status === "fail"
-        ? "text-red-700 bg-red-50 border-red-200"
-        : "text-amber-800 bg-amber-50 border-amber-200"
+  const Icon = STATUS_ICON[r.status]
+  const tone = STATUS_TONE[r.status]
 
   return (
     <li className={`border rounded p-2 text-xs space-y-1.5 ${tone}`}>
       <div className="flex items-center gap-2">
         <Icon className="w-4 h-4 shrink-0" />
         <span className="font-medium">{r.name || r.id}</span>
-        <Badge>{r.type === "stdin_stdout" ? "stdin/stdout" : "pytest"}</Badge>
-        <span className="ml-auto font-semibold">{statusLabel(r.status)}</span>
+        <Badge>{TEST_CASE_TYPE_LABEL[r.type]}</Badge>
+        <span className="ml-auto font-semibold">{STATUS_LABEL[r.status]}</span>
         <span className="text-muted-soft">peso {r.weight}</span>
       </div>
 
       {r.input.trim() !== "" && (
         <div>
           <div className="text-[10px] uppercase tracking-wide opacity-70">
-            {r.type === "stdin_stdout" ? "entrada (stdin)" : "assert"}
+            {TEST_CASE_CODE_LABEL_RESULTADO[r.type]}
           </div>
           <pre className="bg-white/70 border border-current/10 rounded p-1.5 font-mono whitespace-pre-wrap">
             {r.input}
@@ -1109,7 +1188,7 @@ function ResultRow({ r }: { r: TestCaseRunResult }) {
         </div>
       )}
 
-      {r.status === "error" && r.error && (
+      {(r.status === "error" || r.status === "skipped") && r.error && (
         <div>
           <div className="text-[10px] uppercase tracking-wide opacity-70">error</div>
           <pre className="bg-white/70 border border-current/10 rounded p-1.5 font-mono whitespace-pre-wrap">
@@ -1168,7 +1247,11 @@ function ProbarEjercicioPanel({
   const totalWeight = results?.reduce((a, r) => a + (r.weight || 0), 0) ?? 0
   const passedWeight =
     results?.filter((r) => r.status === "pass").reduce((a, r) => a + (r.weight || 0), 0) ?? 0
-  const allPass = results !== null && results.length > 0 && passed === results.length
+  // Los casos no ejecutados se cuentan aparte: sumarlos al denominador de "pasan"
+  // sugiere que fallaron, y restarlos en silencio esconde que no se verificaron.
+  const skipped = results?.filter((r) => r.status === "skipped").length ?? 0
+  const ejecutados = (results?.length ?? 0) - skipped
+  const allPass = results !== null && ejecutados > 0 && passed === ejecutados && skipped === 0
 
   const body = (
     <div
@@ -1244,7 +1327,8 @@ function ProbarEjercicioPanel({
                   <AlertTriangle className="w-4 h-4 shrink-0" />
                 )}
                 <span className="font-medium">
-                  {passed}/{results.length} test cases pasan
+                  {passed}/{ejecutados} test cases pasan
+                  {skipped > 0 && ` · ${skipped} sin ejecutar (falta el entorno del lenguaje)`}
                 </span>
                 {totalWeight > 0 && (
                   <span className="ml-auto text-xs">
@@ -1415,6 +1499,7 @@ function EjercicioViewModal({
       <div className="space-y-3 text-sm">
         <div className="flex gap-2">
           <Badge>{UNIDAD_LABEL[ejercicio.unidad_tematica]}</Badge>
+          <Badge>{LANGUAGE_LABELS[ejercicio.language ?? DEFAULT_LANGUAGE]}</Badge>
           {ejercicio.dificultad && (
             <Badge variant={DIFICULTAD_VARIANT[ejercicio.dificultad]}>
               {DIFICULTAD_LABEL[ejercicio.dificultad]}

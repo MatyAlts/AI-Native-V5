@@ -37,7 +37,9 @@ import {
 import { useCallback, useEffect, useState } from "react"
 import { useComisionLabel } from "../components/ComisionSelector"
 import {
+  DEFAULT_LANGUAGE,
   type Ejercicio,
+  LANGUAGE_LABELS,
   type TareaEstado,
   type TareaPractica,
   type TareaPracticaTemplate,
@@ -1219,6 +1221,14 @@ function ComposicionModal({
 
   const editable = tarea.estado === "draft"
 
+  // Una TP admite un solo lenguaje, y el que manda es el de la TP: el backend
+  // compara `ejercicio.language != tp.language` al agregar y devuelve 422. El
+  // bloqueo de acá evita que el docente arme la seleccion entera y se entere
+  // recien al confirmar. No es redundancia: el backend protege la integridad,
+  // el cliente protege el tiempo del docente.
+  const tpLanguage = tarea.language ?? DEFAULT_LANGUAGE
+  const tpLanguageLabel = LANGUAGE_LABELS[tpLanguage]
+
   const fetchPairs = useCallback(async () => {
     setLoading(true)
     setError(null)
@@ -1485,26 +1495,58 @@ function ComposicionModal({
                   />
                 </div>
 
+                {/* El motivo se dice antes de que el docente choque contra un
+                    checkbox deshabilitado, no despues. */}
+                {visibles.some((ej) => (ej.language ?? DEFAULT_LANGUAGE) !== tpLanguage) && (
+                  <p
+                    id="tp-comp-lenguaje-aviso"
+                    className="text-xs text-muted"
+                    data-testid="tp-comp-lenguaje-aviso"
+                  >
+                    Esta TP es de <strong className="font-medium">{tpLanguageLabel}</strong>. Los
+                    ejercicios de otro lenguaje aparecen deshabilitados: una tarea practica admite
+                    un solo lenguaje, porque el editor del alumno carga un unico entorno por
+                    episodio.
+                  </p>
+                )}
+
                 {/* Lista con multiseleccion */}
                 {visibles.length > 0 ? (
                   <div className="max-h-48 overflow-y-auto rounded border border-border-soft divide-y divide-border-soft">
                     {visibles.map((ej) => {
                       const checked = selectedIds.has(ej.id)
+                      const ejLanguage = ej.language ?? DEFAULT_LANGUAGE
+                      const bloqueado = ejLanguage !== tpLanguage
+                      const motivo = bloqueado
+                        ? `Esta TP es de ${tpLanguageLabel} y el ejercicio es de ${LANGUAGE_LABELS[ejLanguage]}. Una tarea practica admite un solo lenguaje.`
+                        : undefined
                       return (
                         <label
                           key={ej.id}
-                          className={`flex items-center gap-2 px-2 py-1.5 text-sm cursor-pointer transition-colors ${
-                            checked ? "bg-accent-brand-soft" : "hover:bg-surface-alt"
+                          title={motivo}
+                          className={`flex items-center gap-2 px-2 py-1.5 text-sm transition-colors ${
+                            bloqueado
+                              ? "opacity-50 cursor-not-allowed"
+                              : checked
+                                ? "bg-accent-brand-soft cursor-pointer"
+                                : "hover:bg-surface-alt cursor-pointer"
                           }`}
                         >
                           <input
                             type="checkbox"
                             checked={checked}
+                            disabled={bloqueado}
+                            aria-describedby={bloqueado ? "tp-comp-lenguaje-aviso" : undefined}
                             onChange={() => toggleSelected(ej.id)}
                           />
                           <span className="min-w-0 flex-1 truncate text-ink" title={ej.titulo}>
                             {ej.titulo}
                           </span>
+                          {bloqueado && (
+                            <span className="shrink-0 text-[10px] uppercase tracking-wide text-muted">
+                              {LANGUAGE_LABELS[ejLanguage]}
+                            </span>
+                          )}
                           <span className="shrink-0 text-[10px] uppercase tracking-wide text-muted-soft">
                             {ej.unidad_tematica}
                           </span>

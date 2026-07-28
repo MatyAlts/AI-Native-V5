@@ -20,17 +20,35 @@
  * /api/v1/analytics/student/{id}/episodes filtra por student_pseudonym
  * desde headers — el backend NO expone otros estudiantes).
  */
-import { StateMessage } from "@platform/ui"
+import { Badge, StateMessage } from "@platform/ui"
 import { useEffect, useMemo, useState } from "react"
 import {
   type AvailableTarea,
+  DEFAULT_LANGUAGE,
   type Entrega,
   type EntregaEstado,
+  LANGUAGE_LABELS,
   type StudentEpisode,
   entregasApi,
   listStudentEpisodes,
   tareasPracticasApi,
 } from "../lib/api"
+
+/**
+ * Badge de lenguaje de una TP.
+ *
+ * Variante neutra a proposito: el sistema reserva el color para lo que tiene
+ * carga semantica (niveles N1-N4, apropiacion, severidad). Un lenguaje de
+ * programacion es metadata, no una escala — darle hue le robaria contraste al
+ * vocabulario que si significa algo (DESIGN.md, The One-Accent Rule).
+ *
+ * Se muestra SIEMPRE, no solo cuando difiere del default: si la ausencia de
+ * badge significara Python, un lector de pantalla no anunciaria nada y el
+ * alumno tendria que inferir el lenguaje de un silencio.
+ */
+function LanguageBadge({ tarea }: { tarea: AvailableTarea }) {
+  return <Badge>{LANGUAGE_LABELS[tarea.language ?? DEFAULT_LANGUAGE]}</Badge>
+}
 
 export interface TareaSelectorProps {
   comisionId: string
@@ -419,9 +437,12 @@ function PendienteCard({
     >
       <header className="flex items-start gap-3 mb-3">
         <div className="flex-1 min-w-0">
-          <p className="text-xs font-mono text-muted mb-1">
-            {tarea.codigo} (v{tarea.version})
-          </p>
+          <div className="mb-1 flex items-center gap-2">
+            <p className="text-xs font-mono text-muted">
+              {tarea.codigo} (v{tarea.version})
+            </p>
+            <LanguageBadge tarea={tarea} />
+          </div>
           <h3 className="text-lg font-semibold text-ink">{tarea.titulo}</h3>
         </div>
       </header>
@@ -501,6 +522,7 @@ function ZonePorCorregir({
                   <div className="flex items-center gap-2 mb-1 flex-wrap">
                     <span className="text-xs font-mono text-muted">{t.codigo}</span>
                     <span className="text-xs font-mono text-muted-soft">v{t.version}</span>
+                    <LanguageBadge tarea={t} />
                     <span className="text-sm font-medium text-ink truncate">{t.titulo}</span>
                   </div>
                   {entrega?.submitted_at && (
@@ -558,6 +580,7 @@ function ZoneListo({
                   <div className="flex items-center gap-2 mb-1 flex-wrap">
                     <span className="text-xs font-mono text-muted">{t.codigo}</span>
                     <span className="text-xs font-mono text-muted-soft">v{t.version}</span>
+                    <LanguageBadge tarea={t} />
                     <span className="text-sm font-medium text-ink truncate">{t.titulo}</span>
                     {entrega && <EntregaBadge estado={entrega.estado} />}
                   </div>
@@ -617,6 +640,7 @@ function ZoneVencidas({
               <div className="flex items-center gap-2">
                 <span className="font-mono">{t.codigo}</span>
                 <span className="text-muted-soft">v{t.version}</span>
+                <LanguageBadge tarea={t} />
                 <span className="text-body truncate">{t.titulo}</span>
                 {entrega && (
                   <span className="ml-1 shrink-0">

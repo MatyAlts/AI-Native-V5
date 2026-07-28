@@ -23,7 +23,13 @@ import type * as Monaco from "monaco-editor"
 import type { editor as MonacoEditor } from "monaco-editor"
 import { type ReactNode, useEffect, useRef, useState } from "react"
 import { Group, Panel, Separator } from "react-resizable-panels"
-import type { TestCasePublic } from "../lib/api"
+import {
+  DEFAULT_LANGUAGE,
+  LANGUAGE_LABELS,
+  LANGUAGE_PLACEHOLDER,
+  type Language,
+  type TestCasePublic,
+} from "../lib/api"
 import { extractPyodideErrorLine, extractPyodideErrorLineNumber } from "../lib/pyodideError"
 
 type PyodideAPI = {
@@ -111,8 +117,20 @@ export interface CodeEditorProps {
   onToggleMaximize?: (() => void) | undefined
   /** ED-1: estado actual de maximizacion (para el icono del boton). */
   isMaximized?: boolean
-  language?: "python" // en F6+ extendible a más lenguajes
+  /** Lenguaje del ejercicio. Determina el modo de Monaco, el rotulo accesible
+   * de los controles y si hay runtime para ejecutar. */
+  language?: Language
 }
+
+/**
+ * Lenguajes con entorno de ejecucion en el navegador.
+ *
+ * Java no esta acá a proposito: el editor lo colorea y el tutor lo acompaña,
+ * pero no hay runtime hasta `java-execution-engine`. La ausencia se comunica
+ * de forma explicita (controles deshabilitados + motivo), nunca con un boton
+ * que al accionarse no hace nada.
+ */
+const LANGUAGES_CON_RUNTIME: readonly Language[] = ["python"]
 
 const EDIT_DEBOUNCE_MS = 1000
 
@@ -157,7 +175,9 @@ interface TestCaseResult {
 }
 
 export function CodeEditor({
-  initialCode = "# Escribí tu código Python acá\n",
+  // Sin `initialCode` el buffer arranca en el andamio del lenguaje por omision.
+  // El caller (EpisodePage) normalmente pasa uno ya resuelto por lenguaje.
+  initialCode = LANGUAGE_PLACEHOLDER[DEFAULT_LANGUAGE],
   onCodeExecuted,
   onEditDebounced,
   onPasteAttempt,
@@ -166,8 +186,14 @@ export function CodeEditor({
   onTestsRun,
   onToggleMaximize,
   isMaximized = false,
-  language = "python",
+  language = DEFAULT_LANGUAGE,
 }: CodeEditorProps): ReactNode {
+  // Un solo lugar decide si hay entorno de ejecucion. Todo lo que dependa de
+  // eso (carga de Pyodide, estado de los controles, rotulos accesibles) sale
+  // de acá, para que no vuelva a pasar que el efecto salga temprano y el boton
+  // quede habilitado igual.
+  const hasRuntime = LANGUAGES_CON_RUNTIME.includes(language)
+  const languageLabel = LANGUAGE_LABELS[language]
   const editorContainerRef = useRef<HTMLDivElement>(null)
   const editorRef = useRef<MonacoEditor.IStandaloneCodeEditor | null>(null)
   // ED-4: guardamos el modulo monaco para poder pintar markers de error en la
@@ -437,9 +463,9 @@ export function CodeEditor({
     return () => window.clearInterval(t)
   }, [loading])
 
-  // 2. Cargar Pyodide en background (solo Python)
+  // 2. Cargar Pyodide en background (solo lenguajes con runtime)
   useEffect(() => {
-    if (language !== "python") {
+    if (!hasRuntime) {
       setLoading(false)
       return
     }
@@ -699,7 +725,7 @@ def __tutor_run_tests(student_code, cases_json):
     return () => {
       cancelled = true
     }
-  }, [language])
+  }, [hasRuntime])
 
   // ED-4: pintar / limpiar markers de error en la linea exacta del editor.
   function clearErrorMarkers() {
@@ -744,6 +770,16 @@ def __tutor_run_tests(student_code, cases_json):
   }
 
   const runCode = async () => {
+    // El boton esta deshabilitado sin runtime, pero el atajo de teclado no pasa
+    // por el boton: sin esto, Ctrl+Enter en un ejercicio Java volveria a ser un
+    // no-op silencioso, que es justo lo que esta change elimina.
+    if (!hasRuntime) {
+      setError(
+        `No hay entorno de ejecucion de ${languageLabel} todavia. Podes seguir escribiendo codigo y consultando al tutor: tus ediciones se registran igual.`,
+      )
+      setOutputTab("consola")
+      return
+    }
     if (!pyodideRef.current || running || testing) return
     setRunning(true)
     setOutput("")
@@ -790,6 +826,11 @@ def __tutor_run_tests(student_code, cases_json):
   // que el caller emita `tests_ejecutados`. Aislado de la terminal interactiva:
   // el runner Python captura su propia stdout.
   const runTests = async () => {
+    if (!hasRuntime) {
+      setError(`No hay entorno de ejecucion de ${languageLabel} todavia.`)
+      setOutputTab("consola")
+      return
+    }
     if (!pyodideRef.current || running || testing || !hasTests) return
     setTesting(true)
     setOutputTab("pruebas")
@@ -947,14 +988,30 @@ def __tutor_run_tests(student_code, cases_json):
 
           <span className="mx-0.5 hidden h-5 w-px bg-border-soft sm:block" aria-hidden="true" />
 
+          {/* Ejecucion no disponible: se dice, no se insinua. Un control que al
+              accionarse no produce ningun efecto es peor que uno deshabilitado
+              con motivo. */}
+          {!hasRuntime && (
+            <span className="text-xs text-muted" data-testid="sin-runtime-aviso">
+              Ejecutar {languageLabel} todavia no esta disponible. El tutor si.
+            </span>
+          )}
+
           {/* F1: Probar mi codigo contra los test cases publicos */}
           {hasTests && (
             <button
               type="button"
               onClick={runTests}
-              disabled={loading || running || testing}
+              disabled={!hasRuntime || loading || running || testing}
               data-testid="run-tests-button"
-              aria-label="Probar mi codigo contra los tests del ejercicio"
+              title={
+                hasRuntime ? undefined : `No hay entorno de ejecucion de ${languageLabel} todavia`
+              }
+              aria-label={
+                hasRuntime
+                  ? "Probar mi codigo contra los tests del ejercicio"
+                  : `Probar no disponible: no hay entorno de ejecucion de ${languageLabel} todavia`
+              }
               className="inline-flex items-center gap-1.5 rounded-md border border-accent-brand/40 bg-accent-brand/5 px-3 py-1.5 text-sm font-medium text-accent-brand transition-colors hover:bg-accent-brand/10 disabled:opacity-50 disabled:cursor-not-allowed focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent-brand/40"
             >
               {testing ? (
@@ -970,9 +1027,18 @@ def __tutor_run_tests(student_code, cases_json):
           <button
             type="button"
             onClick={runCode}
-            disabled={loading || running || testing}
+            disabled={!hasRuntime || loading || running || testing}
             aria-keyshortcuts="Control+Enter Meta+Enter"
-            aria-label={running ? "Ejecutando codigo" : "Ejecutar codigo Python"}
+            title={
+              hasRuntime ? undefined : `No hay entorno de ejecucion de ${languageLabel} todavia`
+            }
+            aria-label={
+              !hasRuntime
+                ? `Ejecutar no disponible: no hay entorno de ejecucion de ${languageLabel} todavia`
+                : running
+                  ? `Ejecutando codigo ${languageLabel}`
+                  : `Ejecutar codigo ${languageLabel}`
+            }
             className="inline-flex items-center gap-2 px-4 py-2 text-sm font-semibold rounded-md bg-emerald-600 hover:bg-emerald-700 disabled:bg-border-strong disabled:cursor-not-allowed text-white shadow-sm transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500 focus-visible:ring-offset-1"
           >
             {/* Icono Play SVG inline (evita dep extra para este botón). */}
@@ -1136,7 +1202,14 @@ def __tutor_run_tests(student_code, cases_json):
           {/* Cuerpo del panel */}
           <div className="flex-1 min-h-0 overflow-auto">
             {outputTab === "consola" ? (
-              <div className="p-4 font-mono text-sm leading-relaxed text-surface">
+              // `status` + `aria-live` para que un error de ejecucion (o el aviso
+              // de que el lenguaje no tiene runtime) se anuncie solo. Antes habia
+              // que navegar hasta acá para enterarse de que algo fallo.
+              <output
+                aria-live="polite"
+                aria-atomic="false"
+                className="block p-4 font-mono text-sm leading-relaxed text-surface"
+              >
                 {viewingRun && (
                   <div className="mb-2 flex items-center gap-2 text-[11px] text-muted">
                     <span>Viendo la corrida {viewingRun.id} (historial).</span>
@@ -1155,12 +1228,14 @@ def __tutor_run_tests(student_code, cases_json):
                 )}
                 {!consoleOutput && !consoleError && !running && (
                   <span className="text-muted">
-                    {loading
-                      ? `Cargando runtime Python en el navegador (primera vez ~6 MB)... (${loadSeconds}s)`
-                      : `Ejecutá tu código (${shortcutLabel}) para ver el output acá.`}
+                    {!hasRuntime
+                      ? `Todavía no hay entorno de ejecución de ${languageLabel}. Podés escribir código y trabajarlo con el tutor: tus ediciones se registran igual.`
+                      : loading
+                        ? `Cargando runtime Python en el navegador (primera vez ~6 MB)... (${loadSeconds}s)`
+                        : `Ejecutá tu código (${shortcutLabel}) para ver el output acá.`}
                   </span>
                 )}
-              </div>
+              </output>
             ) : (
               <TestResultsView results={testResults} testing={testing} />
             )}

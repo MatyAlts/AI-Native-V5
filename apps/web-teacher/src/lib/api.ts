@@ -452,6 +452,9 @@ export interface TareaPractica {
   peso: string // decimal serializado como string
   rubrica: Record<string, unknown> | null
   estado: TareaEstado
+  /** Lenguaje de la TP. Todos sus ejercicios de banco deben coincidir: el
+   * backend rechaza la mezcla al agregar (422) y al publicar. */
+  language?: Language
   version: number
   parent_tarea_id: string | null
   template_id: string | null
@@ -1891,10 +1894,39 @@ export interface RubricaEjercicio {
   criterios: CriterioRubrica[]
 }
 
+/**
+ * Lenguaje en que se resuelve un ejercicio o una TP.
+ *
+ * Espeja `Language` de `platform_contracts.academic.ejercicio`. El backend lo
+ * persiste como texto libre a proposito (sin CHECK en la DB): agregar un
+ * lenguaje no deberia pedir una migracion. La union de acá es el contrato de
+ * la UI, no el de la base.
+ */
+export type Language = "python" | "java"
+
+/** Lo que el backend asume cuando una fila no declara lenguaje. */
+export const DEFAULT_LANGUAGE: Language = "python"
+
+/** Etiqueta legible de cada lenguaje. Sin color asociado a proposito: el
+ * sistema reserva el color para lo que tiene carga semantica (severidad,
+ * niveles N1-N4, apropiacion). Ver DESIGN.md, The One-Accent Rule. */
+export const LANGUAGE_LABELS: Record<Language, string> = {
+  python: "Python",
+  java: "Java",
+}
+
+/**
+ * Tipo de caso de prueba.
+ *
+ *  - `stdin_stdout`: agnostico del lenguaje.
+ *  - `pytest_assert` / `junit_assert`: los asserts de cada lenguaje. El tipo NO
+ *    se valida contra el `language` del ejercicio — el contrato del test case
+ *    es autosuficiente y la coherencia es responsabilidad del servicio.
+ */
 export interface TestCaseEjercicio {
   id: string
   name: string
-  type: "stdin_stdout" | "pytest_assert"
+  type: "stdin_stdout" | "pytest_assert" | "junit_assert"
   code: string
   expected: string | null
   is_public: boolean
@@ -1910,6 +1942,10 @@ export interface Ejercicio {
   materia_id: string | null
   unidad_tematica: UnidadTematica
   dificultad: Dificultad | null
+  /** Lenguaje del ejercicio. Opcional en el tipo por fixtures y endpoints que
+   * no lo populan; el backend lo garantiza NOT NULL. Resolver con
+   * `?? DEFAULT_LANGUAGE`, nunca asumir Python en el sitio de uso. */
+  language?: Language
   prerequisitos: Prerequisitos
   test_cases: TestCaseEjercicio[]
   rubrica: RubricaEjercicio | null
@@ -1932,6 +1968,9 @@ export interface EjercicioCreate {
   materia_id?: string | null
   unidad_tematica: UnidadTematica
   dificultad?: Dificultad | null
+  /** Omitirlo deja que el backend aplique su default. Un docente que nunca toca
+   * el selector conserva exactamente el flujo previo a esta change. */
+  language?: Language
   prerequisitos?: Prerequisitos
   test_cases?: TestCaseEjercicio[]
   rubrica?: RubricaEjercicio | null

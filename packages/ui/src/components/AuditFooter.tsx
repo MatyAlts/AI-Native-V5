@@ -11,8 +11,8 @@
  *  - prompt_version es el VIGENTE en runtime para el tutor-service. La
  *    fuente declarativa esta en `ai-native-prompts/manifest.yaml`
  *    (expuesta via GET /api/v1/active_configs); por ahora es hardcoded
- *    `tutor/v1.0.0` con TODO de conectarlo cuando ese endpoint este en
- *    el ROUTE_MAP del api-gateway.
+ *    aca con TODO de conectarlo cuando ese endpoint este en el ROUTE_MAP
+ *    del api-gateway.
  *  - classifier_config_hash truncado primer-4 + ultimos-4. Si hay
  *    classification reciente en sessionStorage, lo usa; sino "pendiente".
  *  - n_eventos cadena: poll cada 30s al verify del episodio activo. Sin
@@ -26,7 +26,13 @@ import { useEffect, useState } from "react"
 const LS_AUDIT_HASH_KEY = "audit-classifier-hash"
 const LS_AUDIT_CHAIN_KEY = "audit-chain-state"
 
-const PROMPT_VERSION = "tutor/v1.2.0"
+// ⚠️ Al bumpear el prompt del tutor, esto se mueve en el MISMO commit que
+// `ai-native-prompts/manifest.yaml` y `tutor-service/config.py`. Si divergen,
+// el pie de auditoria le informa al usuario una version que no es la que la
+// trazabilidad esta registrando.
+const PROMPT_VERSION = "tutor/v1.3.0"
+// NO es el prompt: es el etiquetador N1-N4 (ADR-020). Se bumpea por sus propias
+// reglas y cambiarlo re-etiqueta historicos. No tocar en bumps de prompt.
 const LABELER_VERSION = "1.2.0"
 
 interface ChainState {
