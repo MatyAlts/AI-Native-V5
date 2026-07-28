@@ -41,12 +41,12 @@
 
 ## 5. Trazabilidad
 
-- [ ] 5.1 Emitir el evento de ejecución con el motor real, en lugar del valor fijo actual.
+- [x] 5.1 Emitir el evento con el motor real. `build_payload` declara `execution_engine`. Además `tests_hidden` **deja de ser 0**: el contrato lo declaraba «siempre 0 en piloto-1 — reservado para piloto-2 cuando se implemente sandbox-service», y este es ese servicio. Por primera vez el conteo de ocultos ejecutados es real. Falta cablearlo al POST del tutor-service.
 - [x] 5.2 🔴 Distinguir "los casos corrieron y fallaron" de "los casos no pudieron correr". Implementado como `RunOutcome.INFRASTRUCTURE_FAILURE`, un estado propio. `RunResult.failed` devuelve **0** ante fallo de infra y `cases` queda vacío: no se inventan casos que nunca se ejecutaron. Falta cablearlo al evento CTR (5.1). Distinguir Sin esto, una caída del sandbox se registra como el alumno fallando todos los casos, y el clasificador usa ese conteo para separar dos niveles de apropiación: un problema de red degradaría la clasificación pedagógica de un episodio real de la tesis.
-- [x] 5.3 Test de que un fallo de infraestructura no produce casos fallidos. `test_fallo_de_infraestructura_no_produce_casos_fallidos`, con el porqué escrito en el docstring para que nadie lo borre por parecer redundante: sin él, un problema de red degradaría la clasificación pedagógica de un episodio real del piloto. 12 tests en verde.
-- [ ] 5.4 Clave de idempotencia en el registro de ejecución de casos. Hoy ese endpoint no la usa aunque otros eventos del tutor sí; con ejecución en servidor, perder un evento significa que la corrida se pagó y para el clasificador nunca existió.
-- [ ] 5.5 Test de que un reintento no agrega un segundo evento a la cadena.
-- [ ] 5.6 Verificar que el hash de configuración del clasificador y la versión del etiquetador no cambiaron.
+- [x] 5.3 🔴 Test de que un fallo de infraestructura no produce casos fallidos — **y que además NO emite evento**. Hallazgo no anticipado por la change: no alcanza con reportar 0 fallidos. El etiquetador hace `failed > 0 -> N3` y `failed == 0 + tutor lejano -> N4`, así que emitir con `failed = 0` por caída del sandbox etiquetaría el episodio como **apropiación reflexiva**, el nivel más alto del modelo. No degrada la clasificación: la infla. Se resuelve no emitiendo — el evento se llama `tests_ejecutados`, y si no se ejecutaron, no hay evento. Test de que un fallo de infraestructura no produce casos fallidos. `test_fallo_de_infraestructura_no_produce_casos_fallidos`, con el porqué escrito en el docstring para que nadie lo borre por parecer redundante: sin él, un problema de red degradaría la clasificación pedagógica de un episodio real del piloto. 12 tests en verde.
+- [x] 5.4 Clave de idempotencia derivada del `execution_id` con UUID v5 (determinista). El mismo id produce siempre la misma clave, así que un reintento del emisor no agrega un segundo evento a la cadena.
+- [x] 5.5 Test de estabilidad de la clave de idempotencia, y de que dos ejecuciones distintas no colisionan.
+- [x] 5.6 Verificar que el hash del clasificador y la versión del etiquetador no cambiaron. `LABELER_VERSION` sigue en 1.2.0 y los 159 tests del classifier pasan, incluidos los 13 de reproducibilidad bit-a-bit. `execution_engine` es un campo que el labeler **no consulta** — inerte para clasificación por la regla verificada del repo, así que no requiere bump.
 
 ## 6. Editor del alumno
 
