@@ -29,7 +29,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 DEFAULT_LANGUAGE = "python"
 
-__all__ = ["DEFAULT_LANGUAGE", "resolve_episode_languages", "languages_present"]
+__all__ = ["DEFAULT_LANGUAGE", "languages_present", "resolve_episode_languages"]
 
 
 async def resolve_episode_languages(

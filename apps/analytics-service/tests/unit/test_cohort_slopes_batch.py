@@ -97,7 +97,8 @@ async def _add_open_event(
     session: AsyncSession, *, episode_id: UUID, payload: dict | None = None
 ) -> None:
     from ctr_service.models import Event
-    from sqlalchemy import func, select as _select
+    from sqlalchemy import func
+    from sqlalchemy import select as _select
 
     max_id_result = await session.execute(_select(func.max(Event.id)))
     max_id = max_id_result.scalar() or 0
@@ -336,7 +337,10 @@ async def test_batch_filtra_por_lenguaje(
     await _add_open_event(ctr_session, episode_id=ep_py, payload={"language": "python"})
     await _add_open_event(ctr_session, episode_id=ep_java, payload={"language": "java"})
     await _add_classification(
-        classifier_session, episode_id=ep_py, appropriation="delegacion_pasiva", classified_at=base_ts
+        classifier_session,
+        episode_id=ep_py,
+        appropriation="delegacion_pasiva",
+        classified_at=base_ts,
     )
     await _add_classification(
         classifier_session,

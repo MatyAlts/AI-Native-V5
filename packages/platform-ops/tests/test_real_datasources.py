@@ -507,7 +507,9 @@ async def test_grouped_by_student_sin_language_preserva_comportamiento_actual(
     student = uuid4()
     ep_id = await _add_episode(ctr_session, TENANT_A, comision_id, student)
     await _add_event(ctr_session, TENANT_A, ep_id, 0, "episodio_abierto", {"language": "java"})
-    await _add_classification(classifier_session, TENANT_A, ep_id, comision_id, "apropiacion_reflexiva")
+    await _add_classification(
+        classifier_session, TENANT_A, ep_id, comision_id, "apropiacion_reflexiva"
+    )
 
     ds = RealLongitudinalDataSource(ctr_session, classifier_session, TENANT_A)
     grouped = await ds.list_classifications_grouped_by_student(comision_id)
@@ -524,9 +526,7 @@ async def test_grouped_by_student_filtra_por_lenguaje(
     ep_java = await _add_episode(ctr_session, TENANT_A, comision_id, student)
     await _add_event(ctr_session, TENANT_A, ep_py, 0, "episodio_abierto", {"language": "python"})
     await _add_event(ctr_session, TENANT_A, ep_java, 0, "episodio_abierto", {"language": "java"})
-    await _add_classification(
-        classifier_session, TENANT_A, ep_py, comision_id, "delegacion_pasiva"
-    )
+    await _add_classification(classifier_session, TENANT_A, ep_py, comision_id, "delegacion_pasiva")
     await _add_classification(
         classifier_session, TENANT_A, ep_java, comision_id, "apropiacion_reflexiva"
     )
@@ -548,7 +548,9 @@ async def test_grouped_by_student_filtro_sin_resultados_devuelve_dict_vacio(
     student = uuid4()
     ep_id = await _add_episode(ctr_session, TENANT_A, comision_id, student)
     await _add_event(ctr_session, TENANT_A, ep_id, 0, "episodio_abierto", {"language": "python"})
-    await _add_classification(classifier_session, TENANT_A, ep_id, comision_id, "apropiacion_reflexiva")
+    await _add_classification(
+        classifier_session, TENANT_A, ep_id, comision_id, "apropiacion_reflexiva"
+    )
 
     ds = RealLongitudinalDataSource(ctr_session, classifier_session, TENANT_A)
     grouped = await ds.list_classifications_grouped_by_student(comision_id, language="java")
@@ -565,7 +567,9 @@ async def test_grouped_by_student_episodio_legacy_sin_language_es_python(
     student = uuid4()
     ep_id = await _add_episode(ctr_session, TENANT_A, comision_id, student)
     # Sin evento episodio_abierto: episodio "legacy".
-    await _add_classification(classifier_session, TENANT_A, ep_id, comision_id, "apropiacion_reflexiva")
+    await _add_classification(
+        classifier_session, TENANT_A, ep_id, comision_id, "apropiacion_reflexiva"
+    )
 
     ds = RealLongitudinalDataSource(ctr_session, classifier_session, TENANT_A)
     grouped = await ds.list_classifications_grouped_by_student(comision_id, language="python")
@@ -661,9 +665,7 @@ async def test_classifications_with_templates_filtra_por_lenguaje(
     await _add_tarea(academic_session, TENANT_A, prob_java)
 
     ep_py = await _add_episode(ctr_session, TENANT_A, comision_id, student, problema_id=prob_py)
-    ep_java = await _add_episode(
-        ctr_session, TENANT_A, comision_id, student, problema_id=prob_java
-    )
+    ep_java = await _add_episode(ctr_session, TENANT_A, comision_id, student, problema_id=prob_java)
     await _add_event(ctr_session, TENANT_A, ep_py, 0, "episodio_abierto", {"language": "python"})
     await _add_event(ctr_session, TENANT_A, ep_java, 0, "episodio_abierto", {"language": "java"})
     await _add_classification(classifier_session, TENANT_A, ep_py, comision_id, "delegacion_pasiva")
@@ -723,9 +725,7 @@ async def test_classifications_with_templates_sin_language_preserva_comportamien
     await _add_tarea(academic_session, TENANT_A, prob_java)
 
     ep_py = await _add_episode(ctr_session, TENANT_A, comision_id, student, problema_id=prob_py)
-    ep_java = await _add_episode(
-        ctr_session, TENANT_A, comision_id, student, problema_id=prob_java
-    )
+    ep_java = await _add_episode(ctr_session, TENANT_A, comision_id, student, problema_id=prob_java)
     await _add_event(ctr_session, TENANT_A, ep_py, 0, "episodio_abierto", {"language": "python"})
     await _add_event(ctr_session, TENANT_A, ep_java, 0, "episodio_abierto", {"language": "java"})
     await _add_classification(classifier_session, TENANT_A, ep_py, comision_id, "delegacion_pasiva")

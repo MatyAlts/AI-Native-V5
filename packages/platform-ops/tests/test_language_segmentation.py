@@ -80,8 +80,8 @@ async def _add_open_event(
     seq: int = 0,
     event_type: str = "episodio_abierto",
 ) -> None:
-    from sqlalchemy import func
     from ctr_service.models import Event
+    from sqlalchemy import func
 
     max_id_result = await session.execute(select(func.max(Event.id)))
     max_id = max_id_result.scalar() or 0

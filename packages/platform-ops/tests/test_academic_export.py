@@ -511,8 +511,16 @@ def _build_mixed_language_cohort():
         ]
 
     episodes = [
-        {"id": str(ep_java_a), "comision_id": str(comision_id), "student_pseudonym": str(student_a)},
-        {"id": str(ep_java_b), "comision_id": str(comision_id), "student_pseudonym": str(student_b)},
+        {
+            "id": str(ep_java_a),
+            "comision_id": str(comision_id),
+            "student_pseudonym": str(student_a),
+        },
+        {
+            "id": str(ep_java_b),
+            "comision_id": str(comision_id),
+            "student_pseudonym": str(student_b),
+        },
         {"id": str(ep_py_c), "comision_id": str(comision_id), "student_pseudonym": str(student_c)},
         {
             "id": str(ep_default_a),
@@ -547,7 +555,9 @@ async def test_5_1_lenguaje_por_episodio_desde_payload_apertura() -> None:
     dataset = await exporter.export_cohort(comision_id)
 
     by_alias = {e.episode_alias: e for e in dataset.episodes}
-    lang_of = lambda ep_id: by_alias[exporter._pseudonymize(ep_id, prefix="e_")].language
+
+    def lang_of(ep_id):
+        return by_alias[exporter._pseudonymize(ep_id, prefix="e_")].language
 
     assert lang_of(ids["java_a"]) == "java"
     assert lang_of(ids["java_b"]) == "java"

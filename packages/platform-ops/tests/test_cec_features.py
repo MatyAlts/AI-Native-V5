@@ -217,7 +217,7 @@ def test_constantes_vigentes() -> None:
 def test_solo_python_esta_soportado_hoy() -> None:
     # CEC calibrado solo para Python. Si se recalibra para otro lenguaje, este
     # test se actualiza coordinadamente (mismo criterio que test_constantes).
-    assert SUPPORTED_LANGUAGES == frozenset({"python"})
+    assert frozenset({"python"}) == SUPPORTED_LANGUAGES
 
 
 def test_java_devuelve_no_aplicable_sin_ninguna_puntuacion() -> None:

@@ -840,7 +840,11 @@ async def get_cohort_progression(
     languages_present: list[str] = []
 
     if _real_data_source_enabled():
-        from platform_ops import RealLongitudinalDataSource, resolve_episode_languages, set_tenant_rls
+        from platform_ops import (
+            RealLongitudinalDataSource,
+            resolve_episode_languages,
+            set_tenant_rls,
+        )
         from sqlalchemy.ext.asyncio import async_sessionmaker
 
         ctr_engine = get_ctr_engine()
@@ -1873,7 +1877,9 @@ async def get_cohort_adversarial_events(
 
     if not _real_data_source_enabled():
         empty = aggregate_adversarial_events([])
-        return CohortAdversarialEventsOut(comision_id=str(comision_id), languages_present=[], **empty)
+        return CohortAdversarialEventsOut(
+            comision_id=str(comision_id), languages_present=[], **empty
+        )
 
     from platform_ops import RealLongitudinalDataSource, resolve_episode_languages, set_tenant_rls
     from sqlalchemy.ext.asyncio import async_sessionmaker
