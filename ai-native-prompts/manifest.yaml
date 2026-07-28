@@ -17,6 +17,17 @@
 #   1. Este archivo (declarativo, expuesto via /active_configs).
 #   2. apps/tutor-service/src/tutor_service/config.py:default_prompt_version (efectivo).
 #
+# Activacion tutor v1.3.0 (epic java-authoring-experience, 2026-07-28):
+#   - Delta respecto de v1.2.0: DOS ejemplos que nombraban Python, generalizados.
+#     El metodo (4 movimientos socraticos, 9 principios, restricciones) es identico.
+#   - Revision coautoral con Ana Garis: OK.
+#   - PRIMERA version del tutor con `manifest.yaml` propio desde v1.0.1: declara
+#     el sha256 de `system.md` y el PromptLoader lo verifica fail-loud. v1.1.0 y
+#     v1.2.0 no tenian, y por eso v1.2.0 se pudo editar in-place dos dias despues
+#     de activarse (commit 0d69d17) sin que nada fallara.
+#   - No afecta classifier_config_hash: es prompt de runtime, no etiquetador.
+#   - v1.2.0 y anteriores siguen en disco para reproducibilidad historica.
+#
 # Activacion v1.0.1 (ADR-009 + bump documental G12, 2026-04-29):
 #   - Cuenta de guardarrailes corregida 4/10 -> 3/10 (HTML comment del prompt).
 #   - Texto del prompt entregado al modelo IDENTICO a v1.0.0 (HTML comment es invisible).
@@ -24,8 +35,15 @@
 #   - v1.0.0 sigue accesible en disco para reproducibilidad historica del piloto.
 active:
   default:
-    tutor: v1.2.0
+    tutor: v1.3.0
     classifier: v1.0.0
     reflection: v1.0.0
     tp_generator: v1.0.0
     ejercicio_generator: v1.0.0
+    # Variantes por lenguaje de los generadores (epic java-authoring-experience).
+    # La familia base NO lleva sufijo y sigue siendo la del lenguaje por omision,
+    # asi que el camino preexistente queda intacto. La resolucion vive en
+    # `academic-service/services/prompt_variants.py`: python -> "<base>",
+    # cualquier otro -> "<base>_<lenguaje>".
+    tp_generator_java: v1.0.0
+    ejercicio_generator_java: v1.0.0

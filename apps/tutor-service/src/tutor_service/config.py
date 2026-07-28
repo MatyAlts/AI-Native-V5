@@ -61,13 +61,19 @@ class Settings(BaseSettings):
     evaluation_service_url: str = "http://127.0.0.1:8004"
 
     # Prompt y modelo default (override por tenant vía active_configs)
-    # v1.1.0 activado 2026-05-06 (epic tutor-context-rag-rubrica): agrega
-    # instrucciones para uso del contexto RAG y rubrica de evaluacion. El
-    # tutor ahora usa la rubrica como mapa privado de navegacion pedagogica
-    # (orienta preguntas socraticas sin revelar criterios ni puntajes).
-    # ai-native-prompts/manifest.yaml expone esta version via /active_configs.
+    # v1.3.0 activado 2026-07-28 (epic java-authoring-experience): generaliza los
+    # DOS ejemplos del prompt que nombraban Python, para que el tutor no
+    # ejemplifique en un unico lenguaje. El metodo — los 4 movimientos
+    # socraticos, los 9 principios y las restricciones — es identico a v1.2.0.
+    # Revision coautoral con Ana Garis: OK.
+    # ⚠️ Este valor es el EFECTIVO: el tutor-service NO lee el manifest en
+    # runtime. `ai-native-prompts/manifest.yaml` es el declarativo que se expone
+    # via /active_configs. Si divergen, las interfaces informan una version y la
+    # trazabilidad registra otra — se mueven SIEMPRE en el mismo commit.
+    # v1.1.0 (2026-05-06, epic tutor-context-rag-rubrica) sumo el uso del
+    # contexto RAG y la rubrica como mapa privado de navegacion pedagogica.
     default_prompt_name: str = "tutor"
-    default_prompt_version: str = "v1.2.0"
+    default_prompt_version: str = "v1.3.0"
     # Cambiado 2026-05-19: default a gpt-4o-mini para usar copilot-api proxy
     # (Mistral free tier saturado, ver SESSION-LOG). Restaurar a
     # mistral-small-latest si se vuelve a usar la BYOK key de Mistral.

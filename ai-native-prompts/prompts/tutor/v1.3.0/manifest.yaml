@@ -1,0 +1,22 @@
+# Manifest del prompt tutor v1.3.0 (bump MINOR: generalizacion de lenguaje).
+# El governance-service verifica fail-loud que sha256(system.md) == hash declarado.
+# Si el archivo se modifica sin re-firmar este manifest, el servicio falla al cargar.
+#
+# Este manifest existe justamente porque v1.2.0 NO tenia uno: el PromptLoader
+# solo verifica el hash `if manifest_path.exists()`, asi que v1.2.0 se pudo
+# editar in-place dos dias despues de activarse sin que nada fallara, y la
+# etiqueta "v1.2.0" dejo de designar un texto unico.
+version: v1.3.0
+parent_version: v1.2.0
+bump_kind: minor_generalizacion_lenguaje
+files:
+  system.md: 4d53e6aa249783c367deeb299f15fb505755d82cf3555598866f11e6b17df81a
+notas:
+  - Delta respecto de v1.2.0, en el cuerpo del prompt, son DOS ejemplos que nombraban Python.
+  - Elenchos - "los strings en Python son inmutables" -> "los strings son inmutables". El ejemplo era correcto en ambos lenguajes; estaba mal etiquetado, no mal razonado.
+  - No inventar (GC1) - "la API estandar de Python" -> "la biblioteca estandar del lenguaje del ejercicio".
+  - Metodo INTACTO - los 4 movimientos socraticos (ironia, mayeutica, elenchos, aporia), los 9 principios y las restricciones de lo que el tutor no hace son identicos a v1.2.0.
+  - Header y footer actualizados - v1.2.0 se autodeclaraba "DRAFT, no activo en manifest" mientras corria en produccion desde el 2026-05-20.
+  - Revision coautoral con Ana Garis - OK.
+  - No afecta classifier_config_hash - es prompt de runtime, no etiquetador (ADR-020).
+  - v1.2.0 y anteriores siguen en disco para reproducibilidad historica del piloto.

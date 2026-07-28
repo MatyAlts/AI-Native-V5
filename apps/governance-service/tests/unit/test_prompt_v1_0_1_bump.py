@@ -112,25 +112,33 @@ def test_v101_corrige_cuenta_de_guardarrailes(loader: PromptLoader) -> None:
     )
 
 
-def test_manifest_global_activa_v101_para_tutor_default(loader: PromptLoader) -> None:
-    """ADR-009 + G12 activacion (2026-04-29): el manifest global del repo declara
-    v1.0.1 como version activa para el `tutor` en el tenant `default`.
+# Version activa del prompt del tutor. Al bumpear, cambiar SOLO acá — el nombre
+# del test NO lleva la version a proposito: antes se llamaba `..._activa_v101_...`
+# mientras asserteaba v1.2.0, y el nombre quedo mintiendo dos bumps seguidos.
+ACTIVE_TUTOR_VERSION = "v1.3.0"
+
+
+def test_manifest_global_activa_la_version_vigente_del_tutor(loader: PromptLoader) -> None:
+    """El manifest global del repo declara la version activa del `tutor` para el
+    tenant `default`. Hoy: v1.3.0 (epic java-authoring-experience, 2026-07-28).
 
     Si este test falla:
       - Se borro/movio `ai-native-prompts/manifest.yaml`, o
       - El parser de `active_configs()` cambio incompatiblemente, o
-      - Alguien revirtio la activacion sin actualizar el manifest.
+      - Alguien bumpeo un lado sin el otro.
 
     Verificar tambien que `apps/tutor-service/src/tutor_service/config.py:default_prompt_version`
-    siga alineado en `v1.0.1` — los DOS lados deben coincidir.
+    siga alineado — los DOS lados deben coincidir, porque el tutor-service NO lee
+    el manifest en runtime.
     """
     cfg = loader.active_configs()
     active = cfg.get("active", {})
     default = active.get("default", {})
-    assert default.get("tutor") == "v1.2.0", (
-        f"manifest.yaml global debe declarar tutor=v1.2.0 para default (version "
-        f"activa vigente, la que usan los alumnos); obtenido: {default.get('tutor')!r}. "
-        f"Alinear tambien tutor-service/config.py:default_prompt_version."
+    assert default.get("tutor") == ACTIVE_TUTOR_VERSION, (
+        f"manifest.yaml global debe declarar tutor={ACTIVE_TUTOR_VERSION} para default "
+        f"(version activa vigente, la que usan los alumnos); obtenido: "
+        f"{default.get('tutor')!r}. Alinear tambien "
+        f"tutor-service/config.py:default_prompt_version."
     )
     # Sanity: classifier sigue en v1.0.0 (no hubo bump del classifier prompt).
     assert default.get("classifier") == "v1.0.0", (
