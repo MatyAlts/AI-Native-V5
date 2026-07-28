@@ -23,23 +23,26 @@ El formulario de creación y edición de ejercicios SHALL permitir seleccionar e
 
 ### Requirement: La composición de una tarea práctica impide mezclar lenguajes
 
-Al componer una TP seleccionando ejercicios del banco, la interfaz SHALL impedir seleccionar ejercicios de un lenguaje distinto al ya elegido. El impedimento SHALL ocurrir en el momento de la selección, no al confirmar ni al publicar.
+Al componer una TP seleccionando ejercicios del banco, la interfaz SHALL impedir seleccionar ejercicios de un lenguaje distinto al de la tarea práctica. El impedimento SHALL ocurrir en el momento de la selección, no al confirmar ni al publicar.
+
+El lenguaje de referencia es **el que declara la tarea práctica**, no el del primer ejercicio seleccionado: una TP tiene lenguaje desde que se crea, y es contra ese valor que el servidor valida cada incorporación. No existe un estado intermedio "sin lenguaje elegido".
 
 #### Scenario: Bloquear la selección de otro lenguaje
 
-- **WHEN** un docente selecciona un ejercicio Java y luego intenta seleccionar uno Python en la misma TP
-- **THEN** la interfaz impide la segunda selección
+- **WHEN** un docente compone una tarea práctica de un lenguaje e intenta seleccionar un ejercicio de otro
+- **THEN** la interfaz impide la selección
 - **AND** explica que una tarea práctica admite un solo lenguaje
 
-#### Scenario: Selección libre mientras no haya lenguaje elegido
+#### Scenario: El motivo se anuncia antes del intento
 
-- **WHEN** un docente abre la composición sin ningún ejercicio seleccionado
-- **THEN** puede seleccionar un ejercicio de cualquier lenguaje
+- **WHEN** la biblioteca ofrece ejercicios de un lenguaje distinto al de la tarea práctica
+- **THEN** la interfaz explica la restricción junto al listado
+- **AND** el docente no necesita chocar contra un control deshabilitado para entenderla
 
-#### Scenario: Liberar el bloqueo al deseleccionar todo
+#### Scenario: Selección libre dentro del lenguaje de la tarea
 
-- **WHEN** un docente deselecciona todos los ejercicios de una composición en curso
-- **THEN** vuelve a poder elegir cualquier lenguaje
+- **WHEN** un docente compone una tarea práctica
+- **THEN** puede seleccionar cualquier ejercicio del lenguaje que la tarea declara, sin restricción adicional
 
 ### Requirement: El alumno ve el lenguaje antes y durante el episodio
 
