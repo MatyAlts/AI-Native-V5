@@ -26,6 +26,7 @@ from academic_service.routes.ejercicios import (
     EjercicioGenerateRequest,
     generate_ejercicio,
 )
+from academic_service.routes.tareas_practicas import RagContext
 from academic_service.services.ai_clients import CompleteResult, PromptConfig
 from fastapi import HTTPException
 
@@ -62,11 +63,11 @@ def _patch_tenant_session(db: object, tracker: dict | None = None):
     return patch("academic_service.db.tenant_session", fake_ts)
 
 
-def _patch_rag():
-    """RAG deshabilitado: sin contexto, 0 chunks, hash None."""
+def _patch_rag(rag: RagContext | None = None):
+    """RAG deshabilitado por default: sin contexto, 0 chunks, hash None."""
     return patch(
         "academic_service.routes.tareas_practicas._retrieve_rag_context",
-        new=AsyncMock(return_value=("", 0, None)),
+        new=AsyncMock(return_value=rag or RagContext(context="", n_chunks=0, chunks_hash=None)),
     )
 
 
@@ -264,6 +265,79 @@ async def test_json_invalido_sin_truncar_si_reintenta() -> None:
 
     assert exc_info.value.status_code == 502
     assert fake_ai.complete.await_count == 3, "sin truncamiento el retry sigue vivo"
+
+
+async def test_rag_no_semantico_deja_rastro_en_el_log(caplog) -> None:
+    """Incidente 2026-07-27: dos prompts distintos → el mismo ejercicio.
+
+    El `chunks_used_hash` venía idéntico y no había forma de distinguir un
+    índice con vectores mock (ranking = ruido determinista, mismos chunks para
+    cualquier query) de "hay menos material que top_k". Ahora queda en el log.
+    """
+    fake_ai = MagicMock()
+    fake_ai.complete = AsyncMock(return_value=_good_complete_result(_GOOD_BORRADOR))
+    rag_mock = RagContext(
+        context="material",
+        n_chunks=5,
+        chunks_hash="324de3bd",
+        is_semantic=False,
+        embedder_model="mock-deterministic",
+        chunk_names=("apunte-u1.pdf",),
+    )
+
+    fake_governance = MagicMock()
+    fake_governance.get_prompt = AsyncMock(return_value=_good_prompt())
+
+    with (
+        _patch_tenant_session(_mock_db_returning(MagicMock())),
+        _patch_rag(rag_mock),
+        patch(
+            "academic_service.services.ai_clients.GovernanceClient",
+            return_value=fake_governance,
+        ),
+        patch(
+            "academic_service.services.ai_clients.AIGatewayClient",
+            return_value=fake_ai,
+        ),
+        caplog.at_level("WARNING"),
+    ):
+        await generate_ejercicio(req=_good_request(), user=_user())
+
+    assert "rag_no_semantico_en_generacion" in caplog.text
+    assert "mock-deterministic" in caplog.text
+
+
+async def test_rag_semantico_no_ensucia_el_log(caplog) -> None:
+    """Control: con retrieval real no se emite el warning."""
+    fake_ai = MagicMock()
+    fake_ai.complete = AsyncMock(return_value=_good_complete_result(_GOOD_BORRADOR))
+    rag_mock = RagContext(
+        context="material",
+        n_chunks=5,
+        chunks_hash="abc123",
+        is_semantic=True,
+        embedder_model="gemini-embedding-001",
+    )
+
+    fake_governance = MagicMock()
+    fake_governance.get_prompt = AsyncMock(return_value=_good_prompt())
+
+    with (
+        _patch_tenant_session(_mock_db_returning(MagicMock())),
+        _patch_rag(rag_mock),
+        patch(
+            "academic_service.services.ai_clients.GovernanceClient",
+            return_value=fake_governance,
+        ),
+        patch(
+            "academic_service.services.ai_clients.AIGatewayClient",
+            return_value=fake_ai,
+        ),
+        caplog.at_level("WARNING"),
+    ):
+        await generate_ejercicio(req=_good_request(), user=_user())
+
+    assert "rag_no_semantico_en_generacion" not in caplog.text
 
 
 async def test_max_tokens_sale_de_settings_y_no_esta_hardcodeado() -> None:

@@ -142,6 +142,8 @@ class RetrievalService:
             latency_ms=(time.perf_counter() - start) * 1000,
             rerank_applied=not isinstance(reranker.__class__.__name__, str)
             or reranker.model_name != "identity",
+            is_semantic_embedding=embedder.is_semantic,
+            embedder_model=embedder.model_name,
         )
 
 

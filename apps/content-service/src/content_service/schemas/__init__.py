@@ -124,6 +124,15 @@ class RetrievalResponse(BaseModel):
     chunks_used_hash: str  # sha256 de los IDs de chunks devueltos, para CTR
     latency_ms: float
     rerank_applied: bool
+    # Modo del pipeline, para que el CALLER pueda distinguir un retrieval real
+    # de uno con vectores mock (hash). `RetrievalTestResponse` ya lo exponía,
+    # pero solo al endpoint de prueba del docente: los consumidores reales
+    # (tutor, generador de ejercicios) lo recibían y no tenían forma de saber
+    # si los chunks eran relevantes o ruido determinista.
+    # Default `True` para no romper callers viejos que construyen la respuesta
+    # sin el campo; el service siempre lo setea explícito.
+    is_semantic_embedding: bool = True
+    embedder_model: str = ""
 
 
 # ── Ingestion ─────────────────────────────────────────────────────────

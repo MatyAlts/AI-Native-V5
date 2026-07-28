@@ -250,12 +250,27 @@ async def generate_ejercicio(  # noqa: PLR0912, PLR0915
         ) from exc
 
     # 3. RAG opcional sobre material de cátedra
-    rag_context, rag_chunks_used, rag_chunks_hash = await _retrieve_rag_context(
+    rag = await _retrieve_rag_context(
         req.descripcion_nl,
         materia_id_resolved,
         user.tenant_id,
         req.comision_id,
     )
+    rag_context, rag_chunks_used, rag_chunks_hash = rag.context, rag.n_chunks, rag.chunks_hash
+
+    # Diagnóstico del incidente 2026-07-27 (dos prompts distintos → mismo
+    # ejercicio): si el índice usa vectores mock, el ranking es ruido
+    # determinista y devuelve SIEMPRE los mismos chunks. Se avisa fuerte porque
+    # desde el log de la generación era indistinguible de "hay poco material".
+    if rag.n_chunks > 0 and not rag.is_semantic:
+        logger.warning(
+            "rag_no_semantico_en_generacion embedder=%s chunks=%d hash=%s — "
+            "el ranking NO refleja relevancia: el top-k es el mismo para cualquier "
+            "descripción, y el ejercicio generado queda anclado al mismo material",
+            rag.embedder_model,
+            rag.n_chunks,
+            rag_chunks_hash,
+        )
 
     # 4. Construir user message
     user_message_parts: list[str] = [
@@ -447,6 +462,14 @@ async def generate_ejercicio(  # noqa: PLR0912, PLR0915
             cache_hit=result.cache_hit,
             rag_chunks_used=rag_chunks_used,
             rag_chunks_hash=rag_chunks_hash,
+            # Modo del retrieval. Con `rag_is_semantic=false` el top-k es ruido
+            # determinista: mismos chunks para cualquier descripción, y el
+            # ejercicio queda anclado al mismo material. `rag_chunk_names`
+            # permite ver a mano si el material recuperado tiene algo que ver
+            # con lo pedido, sin abrir la base.
+            rag_is_semantic=rag.is_semantic,
+            rag_embedder=rag.embedder_model,
+            rag_chunk_names=list(rag.chunk_names),
         )
     except ImportError:
         logger.info(

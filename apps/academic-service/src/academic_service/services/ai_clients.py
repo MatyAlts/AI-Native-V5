@@ -75,6 +75,15 @@ class RetrievedChunk:
 class RetrievalResult:
     chunks: list[RetrievedChunk]
     chunks_used_hash: str
+    # Modo del pipeline RAG. `is_semantic_embedding=False` ⇒ el índice usa
+    # vectores mock (hash SHA-512): el ranking NO refleja relevancia semántica,
+    # asi que el top-k es ruido determinista y devuelve los MISMOS chunks para
+    # cualquier query. Sin esto en el log era imposible distinguir "el RAG no
+    # discrimina" de "hay poco material" (incidente 2026-07-27: dos prompts
+    # distintos generaban el mismo ejercicio, con `chunks_used_hash` identico).
+    # Default `True` = comportamiento previo si el content-service es viejo.
+    is_semantic_embedding: bool = True
+    embedder_model: str = ""
 
 
 class ContentClient:
@@ -126,6 +135,8 @@ class ContentClient:
         return RetrievalResult(
             chunks=chunks,
             chunks_used_hash=data.get("chunks_used_hash", ""),
+            is_semantic_embedding=bool(data.get("is_semantic_embedding", True)),
+            embedder_model=str(data.get("embedder_model", "")),
         )
 
 

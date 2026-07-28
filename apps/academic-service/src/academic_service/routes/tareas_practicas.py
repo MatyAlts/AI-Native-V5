@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+from dataclasses import dataclass
 from typing import Any, Literal
 from uuid import UUID
 
@@ -186,13 +187,35 @@ async def new_version_tarea_practica(
 # ── TP-gen IA (Sec 11 epic ai-native-completion / ADR-036) ─────────────
 
 
+@dataclass(frozen=True)
+class RagContext:
+    """Contexto RAG resuelto + metadata del pipeline, para poder auditarlo.
+
+    Antes esto era una tupla `(texto, n_chunks, hash)`. Se amplió porque con
+    esos tres datos era imposible diagnosticar el incidente del 2026-07-27:
+    dos prompts distintos generaban el mismo ejercicio y el `chunks_used_hash`
+    venía idéntico, sin forma de saber si el retrieval no discriminaba (índice
+    con vectores mock) o si simplemente había ≤ top_k chunks cargados.
+    """
+
+    context: str
+    n_chunks: int
+    chunks_hash: str | None
+    is_semantic: bool = True
+    embedder_model: str = ""
+    chunk_names: tuple[str, ...] = ()
+
+
+_RAG_EMPTY = RagContext(context="", n_chunks=0, chunks_hash=None)
+
+
 async def _retrieve_rag_context(
     descripcion_nl: str,
     materia_id: UUID,
     tenant_id: UUID,
     comision_id: UUID | None = None,
-) -> tuple[str, int, str | None]:
-    """Consulta RAG al content-service. Devuelve (context_text, n_chunks, hash).
+) -> RagContext:
+    """Consulta RAG al content-service.
 
     Usa materia_id como scope principal (el material pertenece a la materia).
     """
@@ -209,7 +232,7 @@ async def _retrieve_rag_context(
             top_k=5,
         )
         if not retrieval.chunks:
-            return "", 0, None
+            return _RAG_EMPTY
         chunks_text = "\n---\n".join(
             f"[{c.material_nombre}]\n{c.contenido}" for c in retrieval.chunks
         )
@@ -217,10 +240,17 @@ async def _retrieve_rag_context(
             "\n\nMaterial de referencia de la catedra (usa este contenido "
             "como base para el ejercicio):\n\n" + chunks_text
         )
-        return context, len(retrieval.chunks), retrieval.chunks_used_hash
+        return RagContext(
+            context=context,
+            n_chunks=len(retrieval.chunks),
+            chunks_hash=retrieval.chunks_used_hash,
+            is_semantic=retrieval.is_semantic_embedding,
+            embedder_model=retrieval.embedder_model,
+            chunk_names=tuple(c.material_nombre for c in retrieval.chunks),
+        )
     except Exception as exc:
         logger.warning("rag_retrieval_failed_for_tp_gen: %s (continuing without RAG)", exc)
-        return "", 0, None
+        return _RAG_EMPTY
 
 
 class TPGenerateRequest(BaseModel):
@@ -343,12 +373,13 @@ async def generate_tarea_practica(  # noqa: PLR0912, PLR0915
         ) from exc
 
     # 2b. RAG: buscar materiales relevantes con materia_id como scope principal
-    rag_context, rag_chunks_used, rag_chunks_hash = await _retrieve_rag_context(
+    rag = await _retrieve_rag_context(
         req.descripcion_nl,
         req.materia_id,
         user.tenant_id,
         req.comision_id,
     )
+    rag_context, rag_chunks_used, rag_chunks_hash = rag.context, rag.n_chunks, rag.chunks_hash
 
     # 3. Construir mensajes para LLM. La consigna de plantilla (leída en el paso 1
     # dentro de la sesión corta) suma contexto pedagógico: define el QUÉ, mientras
