@@ -1,10 +1,9 @@
-"""SPIKE — ejecucion de Java en un contenedor Docker plano, sin Judge0.
+"""Ejecucion de Java en un contenedor Docker efimero, sin privilegios (ADR-060).
 
-**Esto es un spike, no una decision tomada.** Existe para medir si el camino
-"Docker directo" es viable y con que numeros, antes de enmendar el ADR-059 (que
-Cortez firmo eligiendo Judge0 gestionado).
+Motor de ejecucion del servicio. Reemplaza a Judge0, que quedo superado por el
+ADR-060 tras medir el spike.
 
-## Por que se explora
+## Por que se cambio
 
 Judge0 resulto tener dos costos que el ADR no anticipo del todo:
 
@@ -18,13 +17,13 @@ v2 y **no necesita privilegios**. El aislamiento pasa a ser el de Docker — el
 mismo que la plataforma ya usa para sus 12 servicios — en vez de una superficie
 nueva.
 
-## Lo que este spike NO resuelve
+## Lo que este modulo NO resuelve
 
 **Quien puede invocar `docker run`.** Si el execution-service monta
 `/var/run/docker.sock`, eso equivale a root en el host y seria peor que el
 problema original. Las salidas son un socket-proxy que solo permita `run` sobre
-una imagen fija, o correr esta pieza fuera de contenedor. Se decide si el spike
-prospera.
+una imagen fija, o correr esta pieza fuera de contenedor. Es el gate del ADR-060:
+hasta que este resuelto, la ejecucion NO se habilita en produccion.
 
 ## Controles aplicados
 
@@ -48,9 +47,9 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from execution_service.config import settings
+from execution_service.services.sandbox_types import SandboxResult, SandboxStatus
 
-# Imagen con JDK. Pineada por digest en produccion; para el spike alcanza el tag.
-JAVA_IMAGE = "eclipse-temurin:21-jdk"
+# La imagen sale de config: en produccion se pinea por digest (control C1).
 
 # Usuario sin privilegios dentro del contenedor. 65534 = nobody.
 CONTAINER_USER = "65534:65534"
@@ -89,7 +88,7 @@ def _docker_args(workdir: Path) -> list[str]:
         f"{workdir}:/src:ro",
         "-w",
         "/work",
-        JAVA_IMAGE,
+        settings.java_image,
         "sh",
         "-c",
         # Se compila y ejecuta en /work (tmpfs). El exit code 101 se reserva
@@ -138,3 +137,64 @@ async def run_java(source_code: str, stdin: str = "") -> DockerRunResult:
         )
     finally:
         shutil.rmtree(tmpdir, ignore_errors=True)
+
+
+def to_sandbox_result(run: DockerRunResult, expected_output: str | None) -> SandboxResult:
+    """Traduce la corrida cruda al tipo comun del servicio.
+
+    La comparacion contra `expected_output` se hace acá y no en el contenedor: el
+    contenedor solo ejecuta, la evaluacion es nuestra. Judge0 lo hacia adentro;
+    hacerlo afuera es mas simple de auditar.
+    """
+    if run.timed_out:
+        return SandboxResult(
+            status=SandboxStatus.TIME_LIMIT_EXCEEDED,
+            stdout=run.stdout,
+            stderr=run.stderr,
+            compile_output="",
+            time_seconds=settings.execution_wall_time_limit_seconds,
+            memory_kb=None,
+        )
+
+    if run.compile_failed:
+        return SandboxResult(
+            status=SandboxStatus.COMPILATION_ERROR,
+            stdout="",
+            stderr="",
+            # javac escribe a stdout por como se arma el comando.
+            compile_output=run.stdout or run.stderr,
+            time_seconds=None,
+            memory_kb=None,
+        )
+
+    if run.exit_code != 0:
+        # El programa compilo pero termino mal: excepcion, exit() distinto de 0,
+        # o lo mato el limite de memoria.
+        return SandboxResult(
+            status=SandboxStatus.RUNTIME_ERROR_NZEC,
+            stdout=run.stdout,
+            stderr=run.stderr,
+            compile_output="",
+            time_seconds=None,
+            memory_kb=None,
+        )
+
+    # Corrio bien. Si el caso declara salida esperada, se compara normalizando
+    # espacios de los bordes — mismo criterio que el runner de Pyodide.
+    if expected_output is not None:
+        ok = run.stdout.strip() == expected_output.strip()
+        status = SandboxStatus.ACCEPTED if ok else SandboxStatus.WRONG_ANSWER
+    else:
+        # Sin `expected` no hay nada que comparar: que haya terminado con exito
+        # es el criterio (caso `junit_assert`, donde el assert que falla hace
+        # que el programa termine con codigo distinto de cero).
+        status = SandboxStatus.ACCEPTED
+
+    return SandboxResult(
+        status=status,
+        stdout=run.stdout,
+        stderr=run.stderr,
+        compile_output="",
+        time_seconds=None,
+        memory_kb=None,
+    )

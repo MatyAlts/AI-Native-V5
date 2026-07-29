@@ -23,15 +23,14 @@ class Settings(BaseSettings):
     otel_endpoint: str = "http://127.0.0.1:4317"
     sentry_dsn: str = ""
 
-    # ── Sandbox (ADR-059) ────────────────────────────────────────────────────
-    # La direccion va por env A PROPOSITO: la decision de infraestructura
-    # (gestionado vs servidor propio) NO debe bloquear el desarrollo, y migrar
-    # de uno a otro no tiene que tocar codigo. Ver D2/D3 del ADR-059.
-    judge0_base_url: str = Field(default="http://127.0.0.1:2358")
-    # Token de la API del proveedor gestionado. NUNCA en disco ni en logs
-    # (control C3 del ADR-059). Vacio => se asume Judge0 local sin auth.
-    judge0_auth_token: str = Field(default="")
-    judge0_timeout_seconds: float = Field(default=20.0, gt=0)
+    # ── Sandbox (ADR-060) ────────────────────────────────────────────────────
+    # El motor es un contenedor Docker efimero SIN privilegios. Judge0 quedo
+    # superado por el ADR-060: exigia contenedor privilegiado y cgroups v1, que
+    # es lo que obligaba a sacarlo del VPS y pagar cloud.
+    #
+    # Imagen con JDK. En produccion se pinea por DIGEST, no por tag: un tag
+    # mutable permite que cambie el JDK bajo los pies (control C1).
+    java_image: str = Field(default="eclipse-temurin:21-jdk")
 
     # ── Limites POR CORRIDA ──────────────────────────────────────────────────
     # Explicitos, sin depender de los defaults del sandbox (tarea 3.3): los

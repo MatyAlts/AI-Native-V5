@@ -24,8 +24,8 @@ from uuid import uuid4
 import pytest
 from execution_service.services.academic_client import Ejercicio, TestCase
 from execution_service.services.executor import to_client_payload
-from execution_service.services.judge0_client import Judge0Result, Judge0Status
 from execution_service.services.result_mapper import RunOutcome, RunResult, map_case
+from execution_service.services.sandbox_types import SandboxResult, SandboxStatus
 
 # Marcadores que NO deben aparecer nunca en el payload. Son los datos que
 # permitirian resolver el ejercicio sin pensarlo.
@@ -63,10 +63,10 @@ def _ejercicio() -> Ejercicio:
     )
 
 
-def _run(ej: Ejercicio, *, oculto_status: Judge0Status) -> RunResult:
+def _run(ej: Ejercicio, *, oculto_status: SandboxStatus) -> RunResult:
     cases = []
     for tc in ej.test_cases:
-        status = Judge0Status.ACCEPTED if tc.is_public else oculto_status
+        status = SandboxStatus.ACCEPTED if tc.is_public else oculto_status
         cases.append(
             map_case(
                 case_id=tc.id,
@@ -75,7 +75,7 @@ def _run(ej: Ejercicio, *, oculto_status: Judge0Status) -> RunResult:
                 stdin=tc.code,
                 expected=tc.expected,
                 weight=tc.weight,
-                result=Judge0Result(
+                result=SandboxResult(
                     status=status,
                     stdout=SECRETO_EXPECTED if not tc.is_public else "10",
                     stderr="",
@@ -90,9 +90,9 @@ def _run(ej: Ejercicio, *, oculto_status: Judge0Status) -> RunResult:
 
 @pytest.mark.parametrize(
     "oculto_status",
-    [Judge0Status.ACCEPTED, Judge0Status.WRONG_ANSWER, Judge0Status.RUNTIME_ERROR_NZEC],
+    [SandboxStatus.ACCEPTED, SandboxStatus.WRONG_ANSWER, SandboxStatus.RUNTIME_ERROR_NZEC],
 )
-def test_el_payload_no_contiene_datos_del_caso_oculto(oculto_status: Judge0Status) -> None:
+def test_el_payload_no_contiene_datos_del_caso_oculto(oculto_status: SandboxStatus) -> None:
     """Pase, falle o explote, el caso oculto nunca revela su contenido."""
     ej = _ejercicio()
     payload = to_client_payload(_run(ej, oculto_status=oculto_status), ej)
@@ -117,7 +117,7 @@ def test_el_alumno_igual_sabe_cuantos_ocultos_hay_y_si_paso() -> None:
     entiende por que su nota no es la que espera.
     """
     ej = _ejercicio()
-    payload = to_client_payload(_run(ej, oculto_status=Judge0Status.WRONG_ANSWER), ej)
+    payload = to_client_payload(_run(ej, oculto_status=SandboxStatus.WRONG_ANSWER), ej)
 
     ocultos = [c for c in payload["cases"] if not c["is_public"]]
     assert len(ocultos) == 1
@@ -133,7 +133,7 @@ def test_el_caso_publico_conserva_todos_sus_datos() -> None:
     borrando datos de mas y rompio el feedback del alumno.
     """
     ej = _ejercicio()
-    payload = to_client_payload(_run(ej, oculto_status=Judge0Status.ACCEPTED), ej)
+    payload = to_client_payload(_run(ej, oculto_status=SandboxStatus.ACCEPTED), ej)
 
     publico = next(c for c in payload["cases"] if c["is_public"])
     assert publico["name"] == "caso visible"

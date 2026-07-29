@@ -20,7 +20,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from enum import StrEnum
 
-from execution_service.services.judge0_client import Judge0Result, Judge0Status
+from execution_service.services.sandbox_types import SandboxResult, SandboxStatus
 
 
 class CaseStatus(StrEnum):
@@ -88,29 +88,29 @@ class RunResult:
         return sum(1 for c in self.cases if c.status is CaseStatus.FAIL)
 
 
-_STATUS_MAP: dict[Judge0Status, CaseStatus] = {
-    Judge0Status.ACCEPTED: CaseStatus.PASS,
-    Judge0Status.WRONG_ANSWER: CaseStatus.FAIL,
-    Judge0Status.TIME_LIMIT_EXCEEDED: CaseStatus.ERROR,
-    Judge0Status.COMPILATION_ERROR: CaseStatus.ERROR,
-    Judge0Status.RUNTIME_ERROR_SIGSEGV: CaseStatus.ERROR,
-    Judge0Status.RUNTIME_ERROR_SIGXFSZ: CaseStatus.ERROR,
-    Judge0Status.RUNTIME_ERROR_SIGFPE: CaseStatus.ERROR,
-    Judge0Status.RUNTIME_ERROR_SIGABRT: CaseStatus.ERROR,
-    Judge0Status.RUNTIME_ERROR_NZEC: CaseStatus.ERROR,
-    Judge0Status.RUNTIME_ERROR_OTHER: CaseStatus.ERROR,
+_STATUS_MAP: dict[SandboxStatus, CaseStatus] = {
+    SandboxStatus.ACCEPTED: CaseStatus.PASS,
+    SandboxStatus.WRONG_ANSWER: CaseStatus.FAIL,
+    SandboxStatus.TIME_LIMIT_EXCEEDED: CaseStatus.ERROR,
+    SandboxStatus.COMPILATION_ERROR: CaseStatus.ERROR,
+    SandboxStatus.RUNTIME_ERROR_SIGSEGV: CaseStatus.ERROR,
+    SandboxStatus.RUNTIME_ERROR_SIGXFSZ: CaseStatus.ERROR,
+    SandboxStatus.RUNTIME_ERROR_SIGFPE: CaseStatus.ERROR,
+    SandboxStatus.RUNTIME_ERROR_SIGABRT: CaseStatus.ERROR,
+    SandboxStatus.RUNTIME_ERROR_NZEC: CaseStatus.ERROR,
+    SandboxStatus.RUNTIME_ERROR_OTHER: CaseStatus.ERROR,
 }
 
-_ERROR_MESSAGE: dict[Judge0Status, str] = {
-    Judge0Status.TIME_LIMIT_EXCEEDED: (
+_ERROR_MESSAGE: dict[SandboxStatus, str] = {
+    SandboxStatus.TIME_LIMIT_EXCEEDED: (
         "La ejecucion supero el tiempo limite y fue interrumpida (posible bucle infinito)."
     ),
-    Judge0Status.RUNTIME_ERROR_SIGSEGV: "Violacion de segmento durante la ejecucion.",
-    Judge0Status.RUNTIME_ERROR_SIGXFSZ: "El programa intento escribir un archivo demasiado grande.",
-    Judge0Status.RUNTIME_ERROR_SIGFPE: "Error aritmetico (por ejemplo, division por cero).",
-    Judge0Status.RUNTIME_ERROR_SIGABRT: "El programa aborto durante la ejecucion.",
-    Judge0Status.RUNTIME_ERROR_NZEC: "El programa termino con codigo de salida distinto de cero.",
-    Judge0Status.RUNTIME_ERROR_OTHER: "Error durante la ejecucion.",
+    SandboxStatus.RUNTIME_ERROR_SIGSEGV: "Violacion de segmento durante la ejecucion.",
+    SandboxStatus.RUNTIME_ERROR_SIGXFSZ: "El programa intento escribir un archivo demasiado grande.",
+    SandboxStatus.RUNTIME_ERROR_SIGFPE: "Error aritmetico (por ejemplo, division por cero).",
+    SandboxStatus.RUNTIME_ERROR_SIGABRT: "El programa aborto durante la ejecucion.",
+    SandboxStatus.RUNTIME_ERROR_NZEC: "El programa termino con codigo de salida distinto de cero.",
+    SandboxStatus.RUNTIME_ERROR_OTHER: "Error durante la ejecucion.",
 }
 
 
@@ -122,13 +122,13 @@ def map_case(
     stdin: str,
     expected: str | None,
     weight: float,
-    result: Judge0Result,
+    result: SandboxResult,
 ) -> CaseResult:
     """Traduce UN caso ejecutado al formato del sistema."""
     status = _STATUS_MAP.get(result.status, CaseStatus.ERROR)
 
     error: str | None = None
-    if result.status is Judge0Status.COMPILATION_ERROR:
+    if result.status is SandboxStatus.COMPILATION_ERROR:
         error = result.compile_output.strip() or "Error de compilacion."
     elif status is CaseStatus.ERROR:
         error = _ERROR_MESSAGE.get(result.status, "Error durante la ejecucion.")

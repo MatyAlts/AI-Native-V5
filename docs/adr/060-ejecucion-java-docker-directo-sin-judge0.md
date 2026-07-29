@@ -1,7 +1,8 @@
 # ADR-060 — Ejecución de Java en contenedor Docker sin privilegios, reemplazando Judge0
 
-- **Estado**: **PROPUESTO — requiere revisión y firma de Alberto Cortez**
+- **Estado**: **Aceptado**
 - **Fecha**: 2026-07-29
+- **Firmado por**: Alberto Cortez, 2026-07-29 — revisó las mediciones del spike y aprobó el cambio de motor. El ADR-059 queda **superado en su elección de motor**; sus controles obligatorios siguen vigentes, re-expresados en la sección correspondiente de este documento.
 - **Deciders**: Alberto Cortez (decisión de seguridad y su defensa académica). Juani Sarmiento (spike, medición e implementación). Matías Torres Altamirano (infraestructura).
 - **Tags**: seguridad, aislamiento, ejecucion-codigo, java, docker, piloto-2
 - **Reemplaza**: [ADR-059](059-aislamiento-ejecucion-java-judge0-gestionado.md) en su elección de motor. Mantiene intactos sus controles obligatorios, que se re-expresan para el motor nuevo.

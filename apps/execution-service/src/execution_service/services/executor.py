@@ -20,7 +20,7 @@ from __future__ import annotations
 from typing import Any
 
 from execution_service.services.academic_client import Ejercicio, TestCase
-from execution_service.services.judge0_client import Judge0Client, Judge0UnavailableError
+from execution_service.services.docker_runner import run_java, to_sandbox_result
 from execution_service.services.result_mapper import (
     CaseResult,
     CaseStatus,
@@ -29,9 +29,12 @@ from execution_service.services.result_mapper import (
     infrastructure_failure,
     map_case,
 )
+from execution_service.services.sandbox_types import SandboxUnavailableError
 
-# Judge0 language ids. Java 62 = OpenJDK 13.0.1, el id estable del catalogo.
-LANGUAGE_IDS: dict[str, int] = {"java": 62}
+# Lenguajes que este servicio sabe ejecutar server-side. Python NO esta acá:
+# sigue corriendo en el navegador con Pyodide (ADR-033), que es instantaneo y
+# gratis. Agregar un lenguaje es una imagen y un comando en `docker_runner`.
+LENGUAJES_SOPORTADOS: frozenset[str] = frozenset({"java"})
 
 # Rotulo generico de un caso oculto. El numero es su posicion entre los ocultos,
 # no su id ni su nombre real: el alumno puede contar cuantos hay sin saber que
@@ -43,15 +46,13 @@ async def run_cases(
     *,
     source_code: str,
     ejercicio: Ejercicio,
-    client: Judge0Client | None = None,
 ) -> RunResult:
     """Corre el codigo contra todos los casos del ejercicio.
 
     Un fallo del sandbox devuelve `INFRASTRUCTURE_FAILURE` con la lista de casos
     VACIA — nunca casos fallidos (D4). Es la propiedad que protege el corpus.
     """
-    language_id = LANGUAGE_IDS.get(ejercicio.language)
-    if language_id is None:
+    if ejercicio.language not in LENGUAJES_SOPORTADOS:
         # Un lenguaje sin runtime no es un fallo de infraestructura ni del
         # alumno: no hay donde ejecutarlo. Todos los casos quedan `skipped`.
         return RunResult(
@@ -59,30 +60,25 @@ async def run_cases(
             cases=[_skipped(tc, i) for i, tc in enumerate(ejercicio.test_cases)],
         )
 
-    judge0 = client or Judge0Client()
     cases: list[CaseResult] = []
 
     try:
         for tc in ejercicio.test_cases:
-            token = await judge0.submit(
-                source_code=source_code,
-                language_id=language_id,
-                stdin=tc.code if tc.type == "stdin_stdout" else "",
-                expected_output=tc.expected,
-            )
-            result = await judge0.get_result(token)
+            stdin = tc.code if tc.type == "stdin_stdout" else ""
+            crudo = await run_java(source_code, stdin)
+            result = to_sandbox_result(crudo, tc.expected)
             cases.append(
                 map_case(
                     case_id=tc.id,
                     name=tc.name,
                     case_type=tc.type,
-                    stdin=tc.code if tc.type == "stdin_stdout" else "",
+                    stdin=stdin,
                     expected=tc.expected,
                     weight=tc.weight,
                     result=result,
                 )
             )
-    except Judge0UnavailableError as exc:
+    except (SandboxUnavailableError, OSError) as exc:
         # Se descarta lo parcial a proposito: media corrida no es un resultado.
         return infrastructure_failure(str(exc))
 

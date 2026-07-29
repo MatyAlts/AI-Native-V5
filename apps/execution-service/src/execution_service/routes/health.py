@@ -4,24 +4,24 @@
 - /health/ready → 200 si las dependencias criticas responden; 503 si no
 - /health       → alias de readiness por compatibilidad
 
-Criticos: `redis` y `judge0`.
+Criticos: `redis` y `docker`.
 
 `redis` es critico porque las cuotas de ejecucion **fallan cerradas** (D5 del
 design): sin contador no se ejecuta nada, asi que un Redis caido deja al
 servicio incapaz de cumplir su funcion. Es lo contrario del criterio del resto
 del sistema, donde el rate-limit degrada abierto a proposito.
 
-`judge0` es critico por razones obvias, pero su caida NO bloquea el episodio del
-alumno: el editor degrada al estado explicito de "ejecucion no disponible" y el
-tutor sigue funcionando (ADR-059, consecuencias).
+`docker` es critico porque es el motor de ejecucion (ADR-060). Su caida NO
+bloquea el episodio del alumno: el editor degrada al estado explicito de
+"ejecucion no disponible" y el tutor sigue funcionando.
 """
 
 from __future__ import annotations
 
+import asyncio
 import logging
 import time
 
-import httpx
 from fastapi import APIRouter, Response, status
 from platform_observability.health import (
     CheckResult,
@@ -39,29 +39,34 @@ logger = logging.getLogger(__name__)
 VERSION = "0.1.0"
 
 
-async def _check_judge0() -> CheckResult:
-    """Pega al endpoint de estado del sandbox.
+async def _check_docker() -> CheckResult:
+    """Verifica que el daemon de Docker responde.
 
-    Se usa `/about`, que no consume cuota del proveedor gestionado ni encola
-    una ejecucion — a diferencia de mandar un submission de prueba.
+    Se usa `docker version`, que consulta al daemon sin lanzar ningun
+    contenedor — a diferencia de correr una ejecucion de prueba, que gastaria
+    CPU en cada health check.
     """
     start = time.perf_counter()
-    headers = {}
-    if settings.judge0_auth_token:
-        headers["X-Auth-Token"] = settings.judge0_auth_token
     try:
-        async with httpx.AsyncClient(timeout=5.0) as client:
-            resp = await client.get(
-                f"{settings.judge0_base_url.rstrip('/')}/about", headers=headers
-            )
+        proc = await asyncio.create_subprocess_exec(
+            "docker",
+            "version",
+            "--format",
+            "{{.Server.Version}}",
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE,
+        )
+        _out, err = await asyncio.wait_for(proc.communicate(), timeout=5.0)
         latency = int((time.perf_counter() - start) * 1000)
-        if resp.status_code != 200:
+        if proc.returncode != 0:
             return CheckResult(
-                ok=False, latency_ms=latency, error=f"judge0 respondio {resp.status_code}"
+                ok=False,
+                latency_ms=latency,
+                error=err.decode(errors="replace").strip()[:120] or "docker no respondio",
             )
         return CheckResult(ok=True, latency_ms=latency)
-    except (httpx.HTTPError, OSError) as exc:
-        logger.warning("check_judge0_failed", exc_info=exc)
+    except (TimeoutError, OSError) as exc:
+        logger.warning("check_docker_failed", exc_info=exc)
         return CheckResult(
             ok=False,
             latency_ms=int((time.perf_counter() - start) * 1000),
@@ -74,13 +79,13 @@ async def _check_judge0() -> CheckResult:
 async def ready(response: Response) -> HealthResponse:
     checks = {
         "redis": await check_redis(settings.redis_url),
-        "judge0": await _check_judge0(),
+        "docker": await _check_docker(),
     }
     health, http_code = assemble_readiness(
         service=settings.service_name,
         version=VERSION,
         checks=checks,
-        critical={"redis", "judge0"},
+        critical={"redis", "docker"},
     )
     response.status_code = http_code
     return health

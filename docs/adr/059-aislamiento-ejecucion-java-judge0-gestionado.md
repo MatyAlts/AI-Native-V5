@@ -1,6 +1,6 @@
 # ADR-059 — Aislamiento para ejecución server-side de Java: Judge0 gestionado, con kernel compartido declarado
 
-- **Estado**: **Aceptado**
+- **Estado**: **Superado por [ADR-060](060-ejecucion-java-docker-directo-sin-judge0.md)** (2026-07-29) en su elección de motor. Los controles obligatorios de este ADR siguen vigentes, re-expresados allá para Docker. Se conserva porque documenta el análisis de aislamiento que sostiene la decisión, y porque Judge0 sigue siendo el plan B.
 - **Fecha**: 2026-07-28
 - **Firmado por**: Alberto Cortez, 2026-07-28 — leyó el documento y aprobó la decisión de aislamiento. Con esto queda levantado el gate que bloqueaba la change `java-execution-engine`.
 - **Deciders**: Alberto Cortez (director de tesis — decisión de seguridad y su defensa académica). Juani Sarmiento (planteo técnico e implementación). Matías Torres Altamirano (infraestructura).

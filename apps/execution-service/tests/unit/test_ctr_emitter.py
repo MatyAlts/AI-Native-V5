@@ -15,16 +15,16 @@ from execution_service.services.ctr_emitter import (
     idempotency_key,
     should_emit,
 )
-from execution_service.services.judge0_client import Judge0Result, Judge0Status
 from execution_service.services.result_mapper import (
     RunOutcome,
     RunResult,
     infrastructure_failure,
     map_case,
 )
+from execution_service.services.sandbox_types import SandboxResult, SandboxStatus
 
 
-def _caso(case_id: str, status: Judge0Status):
+def _caso(case_id: str, status: SandboxStatus):
     return map_case(
         case_id=case_id,
         name=f"caso {case_id}",
@@ -32,7 +32,7 @@ def _caso(case_id: str, status: Judge0Status):
         stdin="",
         expected="ok",
         weight=1.0,
-        result=Judge0Result(
+        result=SandboxResult(
             status=status,
             stdout="ok",
             stderr="",
@@ -72,7 +72,7 @@ def test_un_fallo_de_infraestructura_no_emite_evento() -> None:
 def test_una_corrida_real_si_emite() -> None:
     run = RunResult(
         outcome=RunOutcome.COMPLETED,
-        cases=[_caso("t1", Judge0Status.ACCEPTED)],
+        cases=[_caso("t1", SandboxStatus.ACCEPTED)],
     )
     assert should_emit(run) is True
 
@@ -81,7 +81,7 @@ def test_una_corrida_con_fallos_tambien_emite() -> None:
     """Fallar tests es informacion pedagogica valida: se registra."""
     run = RunResult(
         outcome=RunOutcome.COMPLETED,
-        cases=[_caso("t1", Judge0Status.WRONG_ANSWER)],
+        cases=[_caso("t1", SandboxStatus.WRONG_ANSWER)],
     )
     assert should_emit(run) is True
 
@@ -98,9 +98,9 @@ def test_los_ocultos_ejecutados_se_cuentan_de_verdad() -> None:
     run = RunResult(
         outcome=RunOutcome.COMPLETED,
         cases=[
-            _caso("publico", Judge0Status.ACCEPTED),
-            _caso("oculto-1", Judge0Status.ACCEPTED),
-            _caso("oculto-2", Judge0Status.WRONG_ANSWER),
+            _caso("publico", SandboxStatus.ACCEPTED),
+            _caso("oculto-1", SandboxStatus.ACCEPTED),
+            _caso("oculto-2", SandboxStatus.WRONG_ANSWER),
         ],
     )
     payload = build_payload(
@@ -119,7 +119,7 @@ def test_los_ocultos_ejecutados_se_cuentan_de_verdad() -> None:
 
 def test_el_payload_declara_el_motor_real() -> None:
     """Tarea 5.1 — el evento deja de declarar un entorno fijo."""
-    run = RunResult(outcome=RunOutcome.COMPLETED, cases=[_caso("t1", Judge0Status.ACCEPTED)])
+    run = RunResult(outcome=RunOutcome.COMPLETED, cases=[_caso("t1", SandboxStatus.ACCEPTED)])
     payload = build_payload(run, hidden_case_ids=set(), ejecucion_ms=500, engine="judge0")
     assert payload["execution_engine"] == "judge0"
 

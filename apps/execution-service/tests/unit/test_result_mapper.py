@@ -8,7 +8,6 @@ la tesis. Ver D4 del design de `java-execution-engine`.
 from __future__ import annotations
 
 import pytest
-from execution_service.services.judge0_client import Judge0Result, Judge0Status
 from execution_service.services.result_mapper import (
     CaseStatus,
     RunOutcome,
@@ -16,12 +15,13 @@ from execution_service.services.result_mapper import (
     infrastructure_failure,
     map_case,
 )
+from execution_service.services.sandbox_types import SandboxResult, SandboxStatus
 
 
 def _result(
-    status: Judge0Status, *, stdout: str = "", stderr: str = "", compile_output: str = ""
-) -> Judge0Result:
-    return Judge0Result(
+    status: SandboxStatus, *, stdout: str = "", stderr: str = "", compile_output: str = ""
+) -> SandboxResult:
+    return SandboxResult(
         status=status,
         stdout=stdout,
         stderr=stderr,
@@ -31,7 +31,7 @@ def _result(
     )
 
 
-def _case(result: Judge0Result):
+def _case(result: SandboxResult):
     return map_case(
         case_id="t1",
         name="caso basico",
@@ -44,11 +44,11 @@ def _case(result: Judge0Result):
 
 
 def test_accepted_es_pass() -> None:
-    assert _case(_result(Judge0Status.ACCEPTED, stdout="Hola\n")).status is CaseStatus.PASS
+    assert _case(_result(SandboxStatus.ACCEPTED, stdout="Hola\n")).status is CaseStatus.PASS
 
 
 def test_wrong_answer_es_fail() -> None:
-    caso = _case(_result(Judge0Status.WRONG_ANSWER, stdout="Chau\n"))
+    caso = _case(_result(SandboxStatus.WRONG_ANSWER, stdout="Chau\n"))
     assert caso.status is CaseStatus.FAIL
     assert caso.got == "Chau\n"
     # Un fail NO lleva mensaje de error: el alumno fallo el caso, no hubo fallo.
@@ -56,7 +56,7 @@ def test_wrong_answer_es_fail() -> None:
 
 
 def test_error_de_compilacion_lleva_el_mensaje_del_compilador() -> None:
-    caso = _case(_result(Judge0Status.COMPILATION_ERROR, compile_output="error: ';' expected\n"))
+    caso = _case(_result(SandboxStatus.COMPILATION_ERROR, compile_output="error: ';' expected\n"))
     assert caso.status is CaseStatus.ERROR
     assert caso.error is not None
     assert "';' expected" in caso.error
@@ -64,7 +64,7 @@ def test_error_de_compilacion_lleva_el_mensaje_del_compilador() -> None:
 
 def test_timeout_explica_el_bucle_infinito() -> None:
     """El alumno tiene que entender QUE paso, no ver un codigo de estado."""
-    caso = _case(_result(Judge0Status.TIME_LIMIT_EXCEEDED))
+    caso = _case(_result(SandboxStatus.TIME_LIMIT_EXCEEDED))
     assert caso.status is CaseStatus.ERROR
     assert caso.error is not None
     assert "tiempo limite" in caso.error
@@ -74,13 +74,13 @@ def test_timeout_explica_el_bucle_infinito() -> None:
 @pytest.mark.parametrize(
     "status",
     [
-        Judge0Status.RUNTIME_ERROR_SIGSEGV,
-        Judge0Status.RUNTIME_ERROR_SIGFPE,
-        Judge0Status.RUNTIME_ERROR_NZEC,
-        Judge0Status.RUNTIME_ERROR_OTHER,
+        SandboxStatus.RUNTIME_ERROR_SIGSEGV,
+        SandboxStatus.RUNTIME_ERROR_SIGFPE,
+        SandboxStatus.RUNTIME_ERROR_NZEC,
+        SandboxStatus.RUNTIME_ERROR_OTHER,
     ],
 )
-def test_errores_de_runtime_son_error_y_nunca_fail(status: Judge0Status) -> None:
+def test_errores_de_runtime_son_error_y_nunca_fail(status: SandboxStatus) -> None:
     """Un crash NO es "el alumno fallo el caso".
 
     Si se mapeara a `fail`, el conteo de fallidos que consume el clasificador
@@ -95,7 +95,7 @@ def test_status_desconocido_degrada_a_error_no_a_pass() -> None:
     Si Judge0 agrega un status nuevo, preferimos marcar error antes que dar por
     bueno un caso que no sabemos si paso.
     """
-    assert _case(_result(Judge0Status.INTERNAL_ERROR)).status is CaseStatus.ERROR
+    assert _case(_result(SandboxStatus.INTERNAL_ERROR)).status is CaseStatus.ERROR
 
 
 # ── El test que protege el corpus ──────────────────────────────────────────
@@ -122,9 +122,9 @@ def test_fallo_de_infraestructura_no_produce_casos_fallidos() -> None:
 def test_una_corrida_real_con_fallos_si_los_cuenta() -> None:
     """El contraste del anterior: cuando SI corrieron, el conteo es real."""
     cases = [
-        _case(_result(Judge0Status.ACCEPTED, stdout="Hola\n")),
-        _case(_result(Judge0Status.WRONG_ANSWER, stdout="Chau\n")),
-        _case(_result(Judge0Status.WRONG_ANSWER, stdout="")),
+        _case(_result(SandboxStatus.ACCEPTED, stdout="Hola\n")),
+        _case(_result(SandboxStatus.WRONG_ANSWER, stdout="Chau\n")),
+        _case(_result(SandboxStatus.WRONG_ANSWER, stdout="")),
     ]
     run = RunResult(outcome=RunOutcome.COMPLETED, cases=cases)
 
@@ -141,7 +141,7 @@ def test_los_casos_skipped_no_entran_en_el_total() -> None:
     from execution_service.services.result_mapper import CaseResult
 
     cases = [
-        _case(_result(Judge0Status.ACCEPTED, stdout="Hola\n")),
+        _case(_result(SandboxStatus.ACCEPTED, stdout="Hola\n")),
         CaseResult(
             id="t2",
             name="caso sin runtime",
