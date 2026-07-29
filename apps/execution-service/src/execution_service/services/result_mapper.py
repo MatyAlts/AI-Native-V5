@@ -1,7 +1,8 @@
 """Traduccion del resultado del sandbox al formato de casos del sistema (D3).
 
-Existe separado del cliente a proposito: el dia que se cambie de sandbox, se
-reescribe `judge0_client` y esto queda igual.
+Existe separado del motor a proposito: cuando se cambio de Judge0 a Docker
+(ADR-060) se reescribio el runner y este modulo no se toco. Es la prueba de que
+la separacion valia la pena.
 
 **Por que importa que la forma sea identica a la de Pyodide**: la vista de
 resultados del editor se reusa sin cambios, y —mas importante— el evento de

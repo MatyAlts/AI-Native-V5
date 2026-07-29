@@ -20,7 +20,7 @@ from __future__ import annotations
 from typing import Any
 
 from execution_service.services.academic_client import Ejercicio, TestCase
-from execution_service.services.docker_runner import run_java, to_sandbox_result
+from execution_service.services.docker_runner import to_sandbox_result
 from execution_service.services.result_mapper import (
     CaseResult,
     CaseStatus,
@@ -29,6 +29,7 @@ from execution_service.services.result_mapper import (
     infrastructure_failure,
     map_case,
 )
+from execution_service.services.runner_client import RunnerClient
 from execution_service.services.sandbox_types import SandboxUnavailableError
 
 # Lenguajes que este servicio sabe ejecutar server-side. Python NO esta acá:
@@ -61,11 +62,12 @@ async def run_cases(
         )
 
     cases: list[CaseResult] = []
+    runner = RunnerClient()
 
     try:
         for tc in ejercicio.test_cases:
             stdin = tc.code if tc.type == "stdin_stdout" else ""
-            crudo = await run_java(source_code, stdin)
+            crudo = await runner.run_java(source_code, stdin)
             result = to_sandbox_result(crudo, tc.expected)
             cases.append(
                 map_case(

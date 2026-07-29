@@ -1,0 +1,39 @@
+# Runner: UNICO componente con acceso al socket de Docker (ADR-060, gate D3).
+#
+# Se despliega con `/var/run/docker.sock` montado. El `execution-service` NO
+# lleva el socket: le habla a este por HTTP.
+#
+#   docker run -v /var/run/docker.sock:/var/run/docker.sock \
+#              -e RUNNER_TOKEN=<secreto> ...
+#
+# El runner NO debe ser alcanzable desde fuera de la red interna: su unico
+# cliente legitimo es el execution-service.
+
+FROM python:3.12-slim AS builder
+
+ENV UV_COMPILE_BYTECODE=1 UV_LINK_MODE=copy
+RUN --mount=from=ghcr.io/astral-sh/uv:latest,source=/uv,target=/bin/uv \
+    --mount=type=cache,target=/root/.cache/uv \
+    --mount=type=bind,source=pyproject.toml,target=pyproject.toml \
+    uv sync --no-install-project --no-dev
+
+COPY . /app
+WORKDIR /app
+RUN --mount=from=ghcr.io/astral-sh/uv:latest,source=/uv,target=/bin/uv \
+    --mount=type=cache,target=/root/.cache/uv \
+    uv sync --all-packages --no-dev
+
+FROM python:3.12-slim
+
+# El cliente de Docker: el runner invoca `docker run`, no habla el protocolo.
+RUN apt-get update && apt-get install -y --no-install-recommends docker.io \
+    && rm -rf /var/lib/apt/lists/*
+
+COPY --from=builder /app /app
+WORKDIR /app
+
+ENV PATH="/app/.venv/bin:$PATH" \
+    PYTHONUNBUFFERED=1 \
+    PYTHONDONTWRITEBYTECODE=1
+
+ENTRYPOINT ["/app/.venv/bin/python", "-m", "uvicorn", "execution_service.runner_main:app", "--host", "0.0.0.0", "--port", "8015"]

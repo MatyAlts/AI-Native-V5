@@ -32,6 +32,18 @@ class Settings(BaseSettings):
     # mutable permite que cambie el JDK bajo los pies (control C1).
     java_image: str = Field(default="eclipse-temurin:21-jdk")
 
+    # ── Runner (gate D3 del ADR-060) ─────────────────────────────────────────
+    # Este servicio NO monta `/var/run/docker.sock`: ese socket es equivalente a
+    # root en el host, y con el se puede crear un contenedor privilegiado que
+    # monte `/`. El acceso a Docker vive en un proceso aparte —el runner— que
+    # solo acepta `{source_code, stdin}` y arma el comando el mismo.
+    #
+    # Un socket-proxy NO resuelve esto: filtra por ruta, no por payload, y
+    # permitir `POST /containers/create` es permitir crear uno privilegiado.
+    runner_url: str = Field(default="http://127.0.0.1:8015")
+    # Secreto compartido con el runner. Vacio => sin verificacion (solo dev).
+    runner_token: str = Field(default="")
+
     # ── Limites POR CORRIDA ──────────────────────────────────────────────────
     # Explicitos, sin depender de los defaults del sandbox (tarea 3.3): los
     # defaults de Judge0 son generosos y cambian entre versiones. Es la primera

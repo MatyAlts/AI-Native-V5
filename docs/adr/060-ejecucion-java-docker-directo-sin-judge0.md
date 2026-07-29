@@ -81,12 +81,26 @@ El formato del error de compilación es además el que `web-student/src/lib/java
 
 Si el `execution-service` monta `/var/run/docker.sock`, quien comprometa ese servicio tiene **control total del host** — sería peor que el problema original. La contención del contenedor no importa si el proceso que lo lanza puede lanzar cualquier otro.
 
-Dos salidas, a decidir en la implementación:
+**RESUELTO el 2026-07-29.** La solución que este ADR proponía originalmente —un socket-proxy restringido— **no sirve**, y conviene dejar escrito por qué para que nadie la reintente:
 
-1. **Socket-proxy restringido** (ej. `tecnativa/docker-socket-proxy` o equivalente) que solo permita `POST /containers/create` + `start` sobre **una imagen fija**, sin `--privileged` ni montajes arbitrarios.
-2. **El invocador vive fuera de contenedor**, como servicio del host con un usuario dedicado en el grupo `docker`.
+> Para lanzar una ejecución hay que permitir `POST /containers/create`. Ese endpoint acepta en su **cuerpo** `Privileged: true` y `Binds: ["/:/host"]`. Los proxies de socket conocidos filtran por **ruta**, no por payload. Permitir crear contenedores es, por lo tanto, permitir crear uno privilegiado con el disco del host montado. El proxy da una sensación de control que no existe.
 
-Mientras esto no esté resuelto, la ejecución de Java **no se habilita en producción**. Es el equivalente al gate que el ADR-059 puso sobre sí mismo.
+La solución adoptada es **no exponer la API de Docker en ninguna forma**:
+
+- Un proceso aparte, el **runner** (`execution_service/runner_main.py`), es el único con `/var/run/docker.sock` montado. Expone **un solo endpoint** que acepta únicamente `{source_code, stdin}` y construye el comando él mismo, con imagen, límites y banderas fijos en su código. El caller no puede influir en ningún parámetro del contenedor.
+- El `execution-service` **no monta el socket**. Habla con el runner por HTTP, autenticado con un secreto compartido (`RUNNER_TOKEN`, comparado en tiempo constante).
+
+Con esto, comprometer el `execution-service` permite como máximo **pedir que se ejecute un Java** — que es exactamente lo que ya puede hacer cualquier alumno autenticado.
+
+El runner es deliberadamente mínimo (un endpoint, sin base de datos, sin Redis, sin clientes HTTP salientes) para que su superficie se audite de una sentada. El `execution-service`, en cambio, tiene auth, cuotas, Redis y un cliente hacia el academic-service: mucha más superficie para confiarle el socket.
+
+**Verificado el 2026-07-29** con los dos procesos separados: el runner devuelve 401 sin token y con token inválido, 200 con el correcto; y la ejecución completa funciona de punta a punta a través de él.
+
+### Evolución preferible: Docker rootless
+
+Si la infraestructura lo permite, **Docker rootless** (o Podman) es mejor que esta partición: con el daemon corriendo como usuario sin privilegios, el socket deja de ser root-equivalente y el runner podría eliminarse, volviendo el `execution-service` a invocar Docker directo. Se verifica con `docker info | grep -i rootless`.
+
+Al 2026-07-29 la máquina de desarrollo corre Docker como root (`Security Options` no lista `rootless`), por eso existe el runner. **Conviene evaluar rootless en el VPS antes de desplegar**: si está disponible, esta pieza sobra.
 
 ## Controles obligatorios
 
@@ -139,12 +153,14 @@ Vale registrar lo último: elegir Docker directo **no cierra la puerta a gVisor*
 
 Antes de habilitar en producción:
 
-- [ ] D3 resuelto: acceso al daemon de Docker restringido (socket-proxy o invocador fuera de contenedor)
-- [ ] Imagen pineada por digest (C1)
-- [ ] Red bloqueada, comprobada con un ejercicio que intente salir (C2) — *ya verificado en el spike*
-- [ ] Contenedor sin capabilities ni escalada de privilegios (C6)
-- [ ] Usuario no-root (C7)
+- [x] D3 resuelto: el socket vive solo en el runner, que no acepta parámetros de contenedor del caller
+- [ ] Imagen pineada por digest (C1) — hoy sale de `JAVA_IMAGE` por env, con tag
+- [x] Red bloqueada, comprobada con un ejercicio que intente salir (C2)
+- [x] Contenedor sin capabilities ni escalada de privilegios (C6)
+- [x] Usuario no-root (C7)
 - [ ] Prueba de carga sobre el hardware real de producción, no sobre la máquina de desarrollo
+- [ ] Evaluar Docker rootless en el VPS: si está disponible, el runner se elimina
+- [ ] `RUNNER_TOKEN` configurado y el runner NO alcanzable desde fuera de la red interna
 - [ ] Habilitación progresiva: una comisión antes que todas
 
 ## Referencias

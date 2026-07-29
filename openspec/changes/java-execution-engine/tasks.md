@@ -19,7 +19,7 @@
 - [x] 2.2 Puerto **8013** (el que ADR-033 ya había reservado para el sandbox-service; verificado libre) y entrada `/api/v1/executions` en el `ROUTE_MAP` + `execution_service_url` en el config del gateway. Los 27 tests de `test_route_map_integrity.py` pasan con la entrada nueva.
 - [x] 2.3 `judge0_base_url` + `judge0_auth_token` por env. Migrar de gestionado a self-hosted no toca código (D2/D3 del ADR-059). Los límites por corrida también son explícitos y no heredan los defaults del sandbox, que son generosos y cambian entre versiones.
 - [x] 2.4 `require_gateway_signature` con default **False**, mismo patrón y mismo default que el resto de los servicios. Con el flag ON exige HMAC del gateway antes de confiar en los headers X-*.
-- [x] 2.5 `Dockerfile` alineado con los existentes (builder uv + runtime slim). **Sin migraciones en el arranque**: este servicio no tiene base propia (el estado vive en Redis y el resultado se persiste vía CTR), y el comentario deja explícito que si alguna vez la tuviera, no se repite el patrón de arrancar igual ante migración fallida. Registrado en el workspace de `uv`.
+- [x] 2.5 `Dockerfile` alineado con los existentes, **más `Dockerfile.runner`** para el componente que sí monta el socket de Docker (ADR-060 D3). (builder uv + runtime slim). **Sin migraciones en el arranque**: este servicio no tiene base propia (el estado vive en Redis y el resultado se persiste vía CTR), y el comentario deja explícito que si alguna vez la tuviera, no se repite el patrón de arrancar igual ante migración fallida. Registrado en el workspace de `uv`.
 
 ## 3. Ejecución
 
@@ -70,7 +70,7 @@
 - [ ] 8.1 Smoke test del ciclo completo: alumno abre episodio Java, escribe, ejecuta, corre casos de prueba, ve resultados, cierra.
 - [ ] 8.2 Smoke test del camino de fallo: sandbox no disponible, verificar que el registro lo distingue de casos fallidos.
 - [ ] 8.3 Prueba de carga contra la concurrencia real esperada, no contra un caso cómodo. El escenario a medir es la clase entera ejecutando junta.
-- [ ] 8.4 Verificar los controles de seguridad del ADR sobre el despliegue real: versión del sandbox, red deshabilitada, credenciales cambiadas. Verificados, no asumidos.
+- [ ] 8.4 🟡 PARCIAL — Verificar los controles del ADR sobre el despliegue real. **Verificado en local**: red deshabilitada (un Java que intenta salir a internet falla), `--cap-drop=ALL`, `no-new-privileges`, usuario no-root, y el runner rechazando 401 sin token / con token inválido. **Falta sobre el despliegue real**: imagen pineada por digest en vez de tag, `RUNNER_TOKEN` configurado, y que el runner no sea alcanzable desde fuera de la red interna.
 - [x] 8.5 Confirmar que el sandbox no alcanza las bases ni la red interna. **Verificado**: `--network=none` lo garantiza por construcción, no por configuración de firewall. El spike corrió un programa Java que intenta abrir `http://example.com` y **falla**. Es el control C2/C4 del ADR-060, comprobado y no asumido.
 - [ ] 8.6 `make test-fast` y la batería de aislamiento por inquilino en verde.
 - [x] 8.7 Actualizar `CLAUDE.md`. Servicio en la tabla de puertos (**8013**), conteo 11 → 12 servicios, y un párrafo en «Arquitectura en dos planos» con las dos propiedades que no se tocan sin leer el ADR: cuotas que **fallan cerradas** y **fallo de infra que no emite evento CTR**. El validador `check-claude-md.py` detectó dos drifts que eran míos —206 → 207 policies Casbin y 58 → 59 ADRs— y ahora pasa en verde.
