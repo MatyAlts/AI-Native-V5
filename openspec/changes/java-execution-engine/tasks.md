@@ -50,13 +50,13 @@
 
 ## 6. Editor del alumno
 
-- [ ] 6.1 Rama de ejecución que llama al servicio en lugar de cargar el entorno local, reemplazando el estado de "no disponible".
-- [ ] 6.2 Consulta de estado con indicación de espera propia, que explique que se está compilando y ejecutando en el servidor. La espera ocurre en cada ejecución, no solo la primera.
-- [ ] 6.3 Impedir una segunda solicitud mientras hay una en curso.
+- [x] 6.1 Rama de ejecución que llama al servicio. El modelo pasa de «hay runtime o no» a **local (Pyodide) vs remoto (execution-service)**: Python no se toca y Java va al servidor. Pyodide **ya no se carga** para lenguajes remotos — son ~6 MB que el alumno de Java no necesita. Verificado en navegador: el alumno escribió Java, apretó Ejecutar y vio «Hola Mundo».
+- [x] 6.2 Consulta de estado con espera propia. `lib/runRemote.ts` hace el polling y avisa los cambios de estado, así el texto pasa de «En cola en el servidor…» a «Compilando y ejecutando Java en el servidor…». El panel vacío además anticipa que **tarda unos segundos cada vez**, no solo la primera.
+- [x] 6.3 Candado contra doble envío. En remoto importa más que en local: cada corrida consume cuota y dinero, y el alumno que no ve respuesta inmediata tiende a apretar de nuevo.
 - [x] 6.4 Módulo nuevo de análisis de errores de Java. `lib/javaError.ts`, hermano de `pyodideError.ts`. Reconoce los **dos** formatos: `javac` (`Main.java:5: error: ';' expected` con su cursor `^` y el conteo, que se descartan) y excepción en ejecución con traza. Traduce las 8 excepciones que un alumno de primer año se come seguido (división por cero, índice fuera de rango, `NullPointerException`, `InputMismatchException`…) conservando el detalle original. 11 tests sobre salidas reales de javac y de la JVM.
 - [x] 6.5 Señalar la línea cuando el error lo permita. `extractJavaErrorLineNumber` toma el **primer** frame de la traza (donde revienta, no quien llamó) y **descarta los internos de la JVM**: la notación de módulo `java.base/...` lleva una barra que el patrón no cruza, así que un `NullPointerException` marca la línea 12 del alumno y no la 233 de `Objects.java`, un archivo del JDK que no puede ver ni editar. Devuelve `null` sin frame reconocible: **no se inventa una línea**, porque un marcador equivocado manda a buscar el error donde no está. Falta cablearlo a los markers de Monaco.
-- [ ] 6.6 Mensaje distinguible ante indisponibilidad del entorno, separado de un error del código del alumno.
-- [ ] 6.7 Verificar que el camino del lenguaje ya soportado queda intacto: carga del entorno local, ejecución, casos de prueba, historial de corridas y marcadores de error.
+- [x] 6.6 Mensaje distinguible ante indisponibilidad. Tres caminos separados: cuota agotada (429, es información del alumno), servicio caído (503, incluye el fallo CERRADO del contador) y `infrastructure_failure` en el resultado. Los tres dicen explícitamente que **no es un error suyo** y que puede seguir con el tutor.
+- [x] 6.7 Verificar que Python queda intacto. Verificado en navegador con un episodio Python real: badge Python, Pyodide carga, botón habilitado, panel sin la mención al servidor, cero errores de consola.
 
 ## 7. Panel de prueba del docente
 

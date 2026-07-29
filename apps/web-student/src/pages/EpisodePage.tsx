@@ -148,6 +148,13 @@ export function EpisodeView({ episodeId, onExit, ejercicioContext, getToken }: E
   // publicar). Alimenta el modo de Monaco, el badge, los rotulos accesibles y
   // el payload del evento CTR de edicion.
   const [language, setLanguage] = useState<Language>(DEFAULT_LANGUAGE)
+  // UUID del Ejercicio del banco. Lo necesita la ejecucion server-side: el
+  // execution-service lee su definicion completa para inyectar los casos
+  // ocultos. Arranca del contexto de navegacion y se re-resuelve en la
+  // hidratacion, porque al recargar la pagina ese contexto se pierde.
+  const [ejercicioId, setEjercicioId] = useState<string | null>(
+    ejercicioContext?.ejercicioId ?? null,
+  )
   const [messages, setMessages] = useState<Message[]>([])
   // Indicador de ACTIVIDAD en curso (no es la clasificacion final del classifier,
   // que se deriva post-cierre — ADR-020). Refleja el CANAL de actividad que el
@@ -424,22 +431,31 @@ export function EpisodeView({ episodeId, onExit, ejercicioContext, getToken }: E
         // Lenguaje a nivel TP. Si la TP es multi-ejercicio se refina abajo con
         // el del ejercicio concreto, que es el que el alumno tiene delante.
         applyLanguage(t.language ?? DEFAULT_LANGUAGE)
+        // El ejercicio del episodio sale del ESTADO, no del contexto de
+        // navegacion: el contexto se pierde al recargar la pagina y el estado
+        // no. Sin esto, un F5 dejaba la ejecucion server-side sin el id del
+        // ejercicio y el boton volvia a "no disponible".
+        if (state.ejercicio_id) setEjercicioId(state.ejercicio_id)
 
         // F1 + codigo inicial (ADR-047). Para TPs multi-ejercicio el ejercicio
         // y sus test cases PUBLICOS viven en el banco; los traemos una sola vez
         // y de ahi salen tanto los tests como el codigo inicial. Para TPs
         // monoliticas ambos vienen en la propia TP (ya saneada por rol, A0.3).
         let resolvedTests: TestCasePublic[] = []
-        if (ejercicioOrden != null) {
+        // El orden sale del contexto de navegacion, y si no vino (F5, link
+        // directo) del propio estado del episodio, que lo persiste.
+        const ordenEfectivo = ejercicioOrden ?? state.ejercicio_orden ?? null
+        if (ordenEfectivo != null) {
           try {
             const tpEjs = await listEjerciciosTp(state.tarea_practica_id)
             if (cancelled) return
-            const match = tpEjs.find((te) => te.orden === ejercicioOrden)
+            const match = tpEjs.find((te) => te.orden === ordenEfectivo)
             resolvedTests = (match?.ejercicio?.test_cases ?? []).filter(
               (tc) => tc.is_public !== false,
             )
             const ejLanguage = match?.ejercicio?.language
             if (ejLanguage) applyLanguage(ejLanguage)
+            if (match?.ejercicio?.id) setEjercicioId(match.ejercicio.id)
             // Codigo inicial del ejercicio del banco (solo si no hay snapshot ni
             // codigo inicial a nivel TP — mismo fallback que antes).
             if (!state.last_code_snapshot && !resolveCodigoInicial(t)) {
@@ -460,7 +476,7 @@ export function EpisodeView({ episodeId, onExit, ejercicioContext, getToken }: E
         if (state.last_code_snapshot) {
           usedPlaceholderRef.current = false
           setCode(state.last_code_snapshot)
-        } else if (ejercicioOrden == null) {
+        } else if (ordenEfectivo == null) {
           // TP monolitica: codigo inicial de la propia TP.
           const initialCode = resolveCodigoInicial(t)
           if (initialCode) {
@@ -795,6 +811,8 @@ export function EpisodeView({ episodeId, onExit, ejercicioContext, getToken }: E
         initialCode={code}
         testCases={testCases}
         language={language}
+        ejercicioId={ejercicioId ?? undefined}
+        getToken={getToken}
         isMaximized={editorMaximized}
         // ED-1: el boton maximizar solo tiene sentido en desktop (el PanelGroup
         // no existe en mobile — ahi el alumno enfoca el editor con las tabs).

@@ -56,7 +56,7 @@ export interface Classification {
   subgrupo?: Subgrupo | null
 }
 
-type TokenGetter = () => Promise<string | null>
+export type TokenGetter = () => Promise<string | null>
 
 async function authHeaders(getToken?: TokenGetter): Promise<Record<string, string>> {
   const headers: Record<string, string> = { "Content-Type": "application/json" }
@@ -377,6 +377,102 @@ export async function emitTestsEjecutados(
   })
   if (!r.ok) throw new Error(`emit tests_ejecutados failed: ${r.status}`)
   return (await r.json()) as { status: string; seq: string }
+}
+
+// ── Ejecución server-side (ADR-059, epic java-execution-engine) ───────
+
+/** Estado de una corrida en el execution-service. */
+export type ExecutionState = "queued" | "running" | "done"
+
+/**
+ * Resultado de la CORRIDA, distinto del resultado de los casos.
+ *
+ * `infrastructure_failure` existe para que una caída del sandbox NO se lea como
+ * el alumno fallando los tests. La UI lo muestra distinto y el backend además
+ * no emite evento de trazabilidad en ese caso.
+ */
+export type ExecutionOutcome = "completed" | "compilation_error" | "infrastructure_failure"
+
+/** Un caso de prueba ejecutado. Misma forma que produce el runner de Pyodide,
+ * para que la vista de resultados se reuse sin cambios.
+ *
+ * En los casos OCULTOS el backend manda `input`, `expected`, `got` y `error` en
+ * `null` a propósito: el alumno ve que existen y si los pasó, no qué evalúan. */
+export interface ExecutionCase {
+  id: string
+  name: string
+  type: string
+  status: "pass" | "fail" | "error" | "skipped"
+  is_public: boolean
+  input: string | null
+  expected: string | null
+  got: string | null
+  error: string | null
+  weight: number
+}
+
+export interface ExecutionResult {
+  outcome: ExecutionOutcome
+  total: number
+  passed: number
+  failed: number
+  cases: ExecutionCase[]
+  compile_output: string
+}
+
+export interface ExecutionStatus {
+  execution_id: string
+  state: ExecutionState
+  result: ExecutionResult | null
+}
+
+/** Error de cuota agotada: el alumno se pasó del límite de ejecuciones. */
+export class ExecutionQuotaError extends Error {}
+
+/** El servicio de ejecución no está disponible.
+ *
+ * Incluye el caso de cuota que falla CERRADA (503): si el contador no responde
+ * no se ejecuta, porque cada corrida cuesta CPU y dinero. No es culpa del
+ * alumno y el mensaje se lo dice. */
+export class ExecutionUnavailableError extends Error {}
+
+/**
+ * Pide una ejecución. Responde de inmediato con un identificador — compilar y
+ * arrancar una JVM no es instantáneo, así que el resultado se consulta aparte.
+ */
+export async function requestExecution(
+  payload: { ejercicio_id: string; source_code: string },
+  getToken?: TokenGetter,
+): Promise<{ execution_id: string; quota_remaining: number }> {
+  const r = await fetch("/api/v1/executions", {
+    method: "POST",
+    headers: await authHeaders(getToken),
+    body: JSON.stringify(payload),
+  })
+  if (r.status === 429) {
+    const body = (await r.json().catch(() => ({}))) as { detail?: string }
+    throw new ExecutionQuotaError(body.detail ?? "Alcanzaste el limite de ejecuciones.")
+  }
+  if (r.status === 503) {
+    const body = (await r.json().catch(() => ({}))) as { detail?: string }
+    throw new ExecutionUnavailableError(
+      body.detail ?? "El servicio de ejecucion no esta disponible.",
+    )
+  }
+  if (!r.ok) throw new ExecutionUnavailableError(`No se pudo pedir la ejecucion (${r.status})`)
+  return (await r.json()) as { execution_id: string; quota_remaining: number }
+}
+
+/** Consulta el estado de una ejecución. */
+export async function getExecution(
+  executionId: string,
+  getToken?: TokenGetter,
+): Promise<ExecutionStatus> {
+  const r = await fetch(`/api/v1/executions/${executionId}`, {
+    headers: await authHeaders(getToken),
+  })
+  if (!r.ok) throw new ExecutionUnavailableError(`No se pudo consultar la ejecucion (${r.status})`)
+  return (await r.json()) as ExecutionStatus
 }
 
 export type EdicionCodigoOrigin = "student_typed" | "copied_from_tutor" | "pasted_external"
