@@ -196,7 +196,7 @@ Cosas que parecen gaps si no leés bien — están cerradas y verificadas:
 
 ## Dónde buscar contexto
 
-- `docs/adr/` — 59 ADRs (decisiones permanentes)
+- `docs/adr/` — 60 ADRs (decisiones permanentes)
 - `docs/SESSION-LOG.md` — bitácora narrativa
 - `docs/servicios/` — 1 .md por servicio
 - `DESIGN.md` — tokens Tailwind / paleta
