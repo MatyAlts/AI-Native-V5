@@ -33,8 +33,7 @@ ALUMNO_DEMO = "b1b1b1b1-0001-0001-0001-000000000001"
 EXECUTION_URL = "http://127.0.0.1:8013"
 
 JAVA_OK = (
-    "public class Main { public static void main(String[] a){ "
-    'System.out.println("Hola Mundo"); } }'
+    'public class Main { public static void main(String[] a){ System.out.println("Hola Mundo"); } }'
 )
 JAVA_NO_COMPILA = (
     'public class Main { public static void main(String[] a){ System.out.println("x") } }'
