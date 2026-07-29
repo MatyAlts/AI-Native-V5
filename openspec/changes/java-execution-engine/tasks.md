@@ -73,7 +73,7 @@
 - [ ] 8.4 Verificar los controles de seguridad del ADR sobre el despliegue real: versión del sandbox, red deshabilitada, credenciales cambiadas. Verificados, no asumidos.
 - [ ] 8.5 Confirmar que el sandbox no alcanza ninguna base de datos de la plataforma ni la red interna.
 - [ ] 8.6 `make test-fast` y la batería de aislamiento por inquilino en verde.
-- [ ] 8.7 Actualizar `CLAUDE.md` con el servicio nuevo, su puerto y su entrada en el mapa de rutas, y el conteo de smoke tests si cambió.
+- [x] 8.7 Actualizar `CLAUDE.md`. Servicio en la tabla de puertos (**8013**), conteo 11 → 12 servicios, y un párrafo en «Arquitectura en dos planos» con las dos propiedades que no se tocan sin leer el ADR: cuotas que **fallan cerradas** y **fallo de infra que no emite evento CTR**. El validador `check-claude-md.py` detectó dos drifts que eran míos —206 → 207 policies Casbin y 58 → 59 ADRs— y ahora pasa en verde.
 
 ## 9. Puesta en producción
 
