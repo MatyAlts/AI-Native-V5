@@ -57,6 +57,30 @@ class Settings(BaseSettings):
     # Se fija acá, del lado del servidor — el cliente no lo elige.
     execution_enable_network: bool = Field(default=False)
 
+    # ── Habilitacion progresiva y apagado (tareas 9.2 y 9.3) ─────────────────
+    # Lista de comisiones habilitadas, separadas por coma. VACIA = habilitado
+    # para todas. Sirve para la puesta en produccion: se prende para UNA comision
+    # antes que para todas, y si algo sale mal se saca esa sola sin tocar al
+    # resto del piloto.
+    execution_enabled_comisiones: str = Field(default="")
+    # Interruptor general. En `false` el servicio responde 503 a toda ejecucion y
+    # el editor vuelve solo al estado "ejecucion no disponible" — sin desplegar
+    # nada y sin romper los episodios en curso, porque ejecutar es un agregado y
+    # no un bloqueante. Es el procedimiento de apagado.
+    execution_enabled: bool = Field(default=True)
+
+    def comision_habilitada(self, comision_id: str | None) -> bool:
+        """True si esa comision puede ejecutar.
+
+        Sin lista configurada, todas pueden. Con lista, solo las que estan.
+        """
+        if not self.execution_enabled:
+            return False
+        permitidas = {c.strip() for c in self.execution_enabled_comisiones.split(",") if c.strip()}
+        if not permitidas:
+            return True
+        return bool(comision_id) and comision_id in permitidas
+
     # ── Cuotas por alumno (D5 del design) ────────────────────────────────────
     # FALLAN CERRADAS, al reves que el resto de los limites del sistema. Si el
     # contador no responde, se rechaza: la consecuencia acá es costo real sin

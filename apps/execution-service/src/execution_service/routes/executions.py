@@ -18,7 +18,8 @@ from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, status
 from pydantic import BaseModel, Field
 
 from execution_service.auth import User, require_role
-from execution_service.services import execution_store
+from execution_service.config import settings
+from execution_service.services import execution_store, metrics
 from execution_service.services.academic_client import (
     AcademicClient,
     AcademicUnavailableError,
@@ -38,6 +39,9 @@ _ROLES = ("estudiante", "docente", "docente_admin", "jtp", "auxiliar", "superadm
 class ExecutionRequest(BaseModel):
     ejercicio_id: UUID
     source_code: str = Field(min_length=1, max_length=100_000)
+    # Para la habilitacion progresiva (9.3). Opcional: sin lista configurada el
+    # servicio esta habilitado para todas y este campo no se mira.
+    comision_id: UUID | None = None
 
 
 class ExecutionAccepted(BaseModel):
@@ -52,6 +56,11 @@ async def _run_and_store(execution_id: UUID, *, req: ExecutionRequest, user: Use
     Es una tarea de fondo: si explota, nadie la ve. Cualquier fallo se guarda
     como resultado de infraestructura para que el cliente lo lea en el GET.
     """
+    import time as _time
+
+    started = _time.perf_counter()
+    metrics.record_started()
+    outcome = "infrastructure_failure"
     try:
         await execution_store.put(
             execution_id,
@@ -62,6 +71,7 @@ async def _run_and_store(execution_id: UUID, *, req: ExecutionRequest, user: Use
         ejercicio = await AcademicClient().get_ejercicio(req.ejercicio_id, user.tenant_id)
         run = await run_cases(source_code=req.source_code, ejercicio=ejercicio)
         payload = to_client_payload(run, ejercicio)
+        outcome = run.outcome.value
     except AcademicUnavailableError as exc:
         logger.warning("execution_academic_unavailable id=%s: %s", execution_id, exc)
         payload = {
@@ -84,6 +94,8 @@ async def _run_and_store(execution_id: UUID, *, req: ExecutionRequest, user: Use
             "compile_output": "",
         }
 
+    metrics.record_finished(outcome=outcome, duration_seconds=_time.perf_counter() - started)
+
     try:
         await execution_store.put(
             execution_id,
@@ -103,6 +115,17 @@ async def request_execution(
     user: User = Depends(require_role(*_ROLES)),
 ) -> ExecutionAccepted:
     """Encola una ejecucion y responde de inmediato con su identificador."""
+    # Habilitacion progresiva / apagado (9.2 y 9.3). Va ANTES que la cuota: si
+    # el lenguaje no esta habilitado para esta comision, no se consume nada.
+    if not settings.comision_habilitada(str(req.comision_id) if req.comision_id else None):
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail=(
+                "La ejecucion de codigo no esta habilitada para esta comision todavia. "
+                "Podes seguir escribiendo codigo y consultando al tutor."
+            ),
+        )
+
     # Cuota PRIMERO: si no hay, no se toca el sandbox ni se lee el ejercicio.
     try:
         decision = await check_and_consume(tenant_id=user.tenant_id, user_id=user.id)
@@ -110,6 +133,7 @@ async def request_execution(
         # Fallo CERRADO (D5). 503 y no 429: no es que el alumno se paso, es que
         # no podemos garantizar el techo de costo.
         logger.error("quota_unavailable user=%s: %s", user.id, exc)
+        metrics.record_quota_rejection(reason="counter_unavailable")
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
             detail=(
@@ -119,6 +143,7 @@ async def request_execution(
         ) from exc
 
     if not decision.allowed:
+        metrics.record_quota_rejection(reason="limit_reached")
         raise HTTPException(status_code=status.HTTP_429_TOO_MANY_REQUESTS, detail=decision.reason)
 
     execution_id = uuid4()

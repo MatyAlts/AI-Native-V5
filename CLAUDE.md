@@ -13,7 +13,7 @@ Monorepo de la plataforma AI-Native N4 — **tesis doctoral (UTN) de Alberto Ale
 
 ## Stack y layout
 
-Monorepo híbrido **Python (uv) + TypeScript (pnpm + turbo)**. 12 servicios Python activos (FastAPI + SQLAlchemy 2.0 + Alembic + structlog + OTel), 3 frontends (React 19 + Vite 6 + TanStack Router/Query + Tailwind 4 + Keycloak-js; web-student suma Monaco/Pyodide). `conftest.py` raíz agrega `src/` de cada paquete al `sys.path`.
+Monorepo híbrido **Python (uv) + TypeScript (pnpm + turbo)**. 13 servicios Python activos (FastAPI + SQLAlchemy 2.0 + Alembic + structlog + OTel), 3 frontends (React 19 + Vite 6 + TanStack Router/Query + Tailwind 4 + Keycloak-js; web-student suma Monaco/Pyodide). `conftest.py` raíz agrega `src/` de cada paquete al `sys.path`.
 
 ### Puertos clave (dev)
 
@@ -22,7 +22,8 @@ Monorepo híbrido **Python (uv) + TypeScript (pnpm + turbo)**. 12 servicios Pyth
 | 8000 | api-gateway (único punto de entrada externa) |
 | 8002–8011 | servicios internos (academic, evaluation, analytics, tutor, ctr, classifier, content, governance, ai-gateway) |
 | 8012 | integrity-attestation-service (ADR-021, infra institucional separada en piloto) |
-| 8013 | execution-service (ADR-059, ejecución server-side de Java en sandbox) |
+| 8013 | execution-service (ADR-060, ejecución server-side de Java) |
+| 8015 | execution-runner (ADR-060 D3, **único** con acceso al socket de Docker) |
 | 5173/5174/5175 | web-admin / web-teacher / web-student |
 
 Servicios deprecated preservados en disco con README: `identity-service` (~~8001~~, ADR-041) y `enrollment-service` (~~8003~~, ADR-030).
@@ -61,7 +62,7 @@ Transversales:
 
 - `api-gateway`: único punto de auth — emite JWT RS256 e inyecta autoritativamente los headers `X-Tenant-Id`, `X-User-Id`, `X-User-Roles` (plural) a los servicios internos. **Solo expone los prefijos listados en `ROUTE_MAP`** (`apps/api-gateway/src/api_gateway/routes/proxy.py:30` — declaración del dict; verificado 2026-05-09): cuando agregues un servicio nuevo o un endpoint público para frontends, registralo ahí — sin entrada en el ROUTE_MAP el endpoint queda **inalcanzable desde frontend** (accesible solo service-to-service). Servicios con exposición **parcial** vía aliases públicos: `ctr-service` expone solo `/api/v1/audit/*` (ADR-031, alias D.4 a `verify_episode_chain` + `get_episode`) — los eventos write/read genéricos siguen internos; `ai-gateway` expone solo `/api/v1/byok/*` (ADRs 038/039, BYOK keys CRUD) — el LLM proxy sigue interno. Servicios **completamente excluidos** del ROUTE_MAP (by-design): `governance-service` (prompts versionados internos) y `integrity-attestation-service` (infra institucional separada en piloto).
 - `ai-gateway`: LLM proxy con budget por tenant, cache, fallback. **Todo LLM/embedding pasa por `ai-gateway`** — ningún servicio llama proveedores directo.
-- `execution-service` (:8013, ADR-059): ejecuta código de alumnos server-side en un sandbox aislado. Expuesto en el ROUTE_MAP bajo `/api/v1/executions` — lo consumen el editor del alumno y el panel de prueba del docente. **El navegador NUNCA habla con el sandbox**: solo con este servicio, que es quien inyecta los casos de prueba ocultos (con un service-account propio en `FULL_CONTENT_ROLES`) y aplica las cuotas. Dos propiedades que no se tocan sin leer el ADR: las **cuotas fallan CERRADAS** (al revés que el resto de los límites del sistema — sin contador no se ejecuta, porque cada corrida cuesta CPU y dinero), y un **fallo de infraestructura NO emite evento CTR** (el labeler lee `failed == 0` como "pasó todo" y etiquetaría N4 un episodio donde el sandbox se cayó). El sandbox **no vive en el VPS de producción**: `isolate` exige contenedor privilegiado y no puede compartir host con las bases de datos de estudiantes.
+- `execution-service` (:8013, **ADR-060**): ejecuta código de alumnos server-side en contenedores Docker efímeros **sin privilegios** (`--network=none`, `--cap-drop=ALL`, `no-new-privileges`, usuario no-root, read-only). Reemplazó a Judge0, que exigía contenedor privilegiado y cgroups v1. **No monta el socket de Docker**: se lo pide al `execution-runner` (:8015), el único componente que lo tiene, y que solo acepta `{source_code, stdin}` — un socket-proxy NO sirve para esto, porque permitir `POST /containers/create` es permitir crear uno privilegiado con `/` montado. Expuesto en el ROUTE_MAP bajo `/api/v1/executions` — lo consumen el editor del alumno y el panel de prueba del docente. **El navegador NUNCA habla con el sandbox**: solo con este servicio, que es quien inyecta los casos de prueba ocultos (con un service-account propio en `FULL_CONTENT_ROLES`) y aplica las cuotas. Dos propiedades que no se tocan sin leer el ADR: las **cuotas fallan CERRADAS** (al revés que el resto de los límites del sistema — sin contador no se ejecuta, porque cada corrida cuesta CPU y dinero), y un **fallo de infraestructura NO emite evento CTR** (el labeler lee `failed == 0` como "pasó todo" y etiquetaría N4 un episodio donde el sandbox se cayó). El sandbox **no vive en el VPS de producción**: `isolate` exige contenedor privilegiado y no puede compartir host con las bases de datos de estudiantes.
 
 **Cuatro bases lógicas separadas**: `academic_main`, `ctr_store`, `classifier_db`, `content_db`. ADR-003 original mencionaba `identity_store` pero quedó sin uso — pseudonimización vive en `packages/platform-ops/privacy.py` rotando `student_pseudonym` en `academic_main.episodes`. No hacer joins cross-base — los servicios se comunican por eventos o HTTP.
 
@@ -138,7 +139,7 @@ Esta sección lista verdades del sistema HOY que no son obvias del código. Para
 
 ### Smoke E2E como red de seguridad
 
-Suite en `tests/e2e/smoke/` con 50 tests (verificado 2026-07-28: `grep -c "def test_" tests/e2e/smoke/test_*.py`; 85 casos con los parametrizados) contra el stack real (Postgres + Redis + 11 servicios). Corre con `make test-smoke` en <4s. En local, el `integrity-attestation-service` (:8012) vive en la infra institucional y no está levantado: exportar `SMOKE_SKIP_ATTESTATION_CHECK=1` para saltear su pre-condición. **Cuando cierres un epic, agregale smoke tests acá ANTES de declararlo cerrado** — es lo que atrapa la clase de bugs que escapan a tests unit con DB mockeada (caso real: BYOK `SET LOCAL` con bind param que Postgres no acepta — pasó tests porque mockeaban DB, falló en runtime).
+Suite en `tests/e2e/smoke/` con 56 tests (verificado 2026-07-29: `grep -c "def test_" tests/e2e/smoke/test_*.py`; 91 casos con los parametrizados) contra el stack real (Postgres + Redis + 11 servicios). Corre con `make test-smoke` en <4s. En local, el `integrity-attestation-service` (:8012) vive en la infra institucional y no está levantado: exportar `SMOKE_SKIP_ATTESTATION_CHECK=1` para saltear su pre-condición. **Cuando cierres un epic, agregale smoke tests acá ANTES de declararlo cerrado** — es lo que atrapa la clase de bugs que escapan a tests unit con DB mockeada (caso real: BYOK `SET LOCAL` con bind param que Postgres no acepta — pasó tests porque mockeaban DB, falló en runtime).
 
 ### Source of truth de UX/UI
 

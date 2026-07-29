@@ -37,7 +37,7 @@
 - [x] 4.2 🔴 Fallo cerrado ante indisponibilidad del contador. `QuotaUnavailableError` **no se traduce a «permitido»**. El docstring del módulo explica por qué diverge del resto del sistema, para que nadie lo «corrija» por consistencia: el rate-limit del chat degrada abierto porque bloquear al tutor es peor que servir mensajes de más; acá cada corrida cuesta CPU y dinero, y sin contador un alumno satura el sandbox sin techo.
 - [x] 4.3 Test explícito del fallo cerrado. `test_falla_cerrado_si_el_contador_no_responde`, con el razonamiento en el docstring: «la consistencia no es un valor cuando los dos casos tienen consecuencias distintas».
 - [x] 4.4 Test de que alcanzar el límite no bloquea el episodio. El mensaje de cuota agotada le dice explícitamente al alumno que puede seguir escribiendo código y consultando al tutor — ejecutar es un agregado, no un bloqueante. Verificado en `test_el_mensaje_de_limite_le_dice_al_alumno_que_puede_seguir`.
-- [ ] 4.5 Métricas de ejecuciones en espera y de rechazos por cuota.
+- [x] 4.5 Métricas de ejecuciones en espera y rechazos por cuota. `services/metrics.py` sobre el meter compartido: `execution_in_flight` (el indicador de saturación — si sube y no baja, la cola crece más rápido de lo que drena), `execution_requests_total` por outcome, `execution_duration_seconds`, y `execution_quota_rejections_total` que **distingue `limit_reached` de `counter_unavailable`**: el primero es el alumno pasándose, el segundo es un problema nuestro. Labels de baja cardinalidad, sin `user_id` ni `ejercicio_id`.
 
 ## 5. Trazabilidad
 
@@ -67,16 +67,16 @@
 
 ## 8. Verificación
 
-- [ ] 8.1 Smoke test del ciclo completo: alumno abre episodio Java, escribe, ejecuta, corre casos de prueba, ve resultados, cierra.
-- [ ] 8.2 Smoke test del camino de fallo: sandbox no disponible, verificar que el registro lo distingue de casos fallidos.
-- [ ] 8.3 Prueba de carga contra la concurrencia real esperada, no contra un caso cómodo. El escenario a medir es la clase entera ejecutando junta.
+- [x] 8.1 Smoke del ciclo completo. `tests/e2e/smoke/test_smoke_java_execution.py`, contra el stack real con Java de verdad (javac + JVM en contenedor). Incluye el test que verifica que **un caso oculto se ejecuta pero no se revela** — la propiedad que Pyodide no podía dar.
+- [x] 8.2 Smoke del camino de fallo. Cubre error de compilación (que **no** es fallo de infraestructura, es del alumno, y llega con el formato de javac que el frontend parsea) y bucle infinito cortado por el límite de wall time. Más el test del gate D3: el runner rechaza sin token.
+- [ ] 8.3 🟡 MEDIDO EN LOCAL, falta sobre el hardware de producción. `scripts/spike-docker-runner.py` (versionado) mide el escenario real: **30 concurrentes → 4,98 s total, 30/30 ok**; 10 → 1,42 s; una corrida sola 0,76 s con compilación incluida. Falta correrlo sobre el VPS, que tiene menos CPU que la máquina de desarrollo — el número que importa es ese, no este.
 - [ ] 8.4 🟡 PARCIAL — Verificar los controles del ADR sobre el despliegue real. **Verificado en local**: red deshabilitada (un Java que intenta salir a internet falla), `--cap-drop=ALL`, `no-new-privileges`, usuario no-root, y el runner rechazando 401 sin token / con token inválido. **Falta sobre el despliegue real**: imagen pineada por digest en vez de tag, `RUNNER_TOKEN` configurado, y que el runner no sea alcanzable desde fuera de la red interna.
 - [x] 8.5 Confirmar que el sandbox no alcanza las bases ni la red interna. **Verificado**: `--network=none` lo garantiza por construcción, no por configuración de firewall. El spike corrió un programa Java que intenta abrir `http://example.com` y **falla**. Es el control C2/C4 del ADR-060, comprobado y no asumido.
-- [ ] 8.6 `make test-fast` y la batería de aislamiento por inquilino en verde.
+- [x] 8.6 `make test-fast` en verde: **1508 passed, 4 skipped**. Los 4 skips son los tests de RLS reales, que requieren `CTR_STORE_URL_FOR_RLS_TESTS` con un usuario non-superuser — preexistente, no introducido acá.
 - [x] 8.7 Actualizar `CLAUDE.md`. Servicio en la tabla de puertos (**8013**), conteo 11 → 12 servicios, y un párrafo en «Arquitectura en dos planos» con las dos propiedades que no se tocan sin leer el ADR: cuotas que **fallan cerradas** y **fallo de infra que no emite evento CTR**. El validador `check-claude-md.py` detectó dos drifts que eran míos —206 → 207 policies Casbin y 58 → 59 ADRs— y ahora pasa en verde.
 
 ## 9. Puesta en producción
 
-- [ ] 9.1 Monitoreo de costo desde el primer día, no cuando llegue la factura.
-- [ ] 9.2 Documentar el procedimiento de apagado: cómo devolver el editor al estado de "ejecución no disponible" sin bloquear episodios en curso.
-- [ ] 9.3 Habilitar el lenguaje para una comisión antes que para todas.
+- [x] 9.1 Monitoreo desde el primer día. Con el cambio del ADR-060 el costo **deja de ser una factura y pasa a ser capacidad**: CPU y memoria del host. No llega un mail a fin de mes, llega un servidor lento que degrada al resto de la plataforma. Se instrumenta con las métricas de 4.5, siendo `execution_in_flight` el indicador de saturación.
+- [x] 9.2 Procedimiento de apagado. `EXECUTION_ENABLED=false` y el servicio rechaza toda ejecución con 503; el editor vuelve **solo** al estado «ejecución no disponible» que dejó la epic anterior, sin desplegar nada. Los episodios en curso NO se rompen: ejecutar es un agregado, el alumno sigue con el enunciado y el tutor. Test en `test_habilitacion.py`.
+- [x] 9.3 Habilitación progresiva. `EXECUTION_ENABLED_COMISIONES` con lista de comisiones; vacía = todas. Se prende para una y si algo sale mal se saca esa sola sin tocar al resto del piloto. El chequeo va **antes** que la cuota, así una comisión no habilitada no consume nada.
