@@ -50,7 +50,7 @@ start_ctr_worker() {
   echo "$!:ctr-worker-${partition}:worker" >> .dev-logs/pids.txt
 }
 
-# 11 servicios HTTP (identity-service deprecated por ADR-041; enrollment-service por ADR-030)
+# 12 servicios HTTP (identity-service deprecated por ADR-041; enrollment-service por ADR-030)
 start_svc api_gateway.main                    8000 api-gateway
 start_svc academic_service.main               8002 academic-service
 start_svc evaluation_service.main             8004 evaluation-service
@@ -62,6 +62,12 @@ start_svc content_service.main                8009 content-service
 start_svc governance_service.main             8010 governance-service
 start_svc ai_gateway.main                     8011 ai-gateway
 start_svc integrity_attestation_service.main  8012 integrity-attestation-service
+# ADR-059: ejecucion server-side de Java. Habla con Judge0, que NO vive acá
+# (D2 del ADR: el contenedor privilegiado no comparte host con las bases de
+# datos de estudiantes). En local, `scripts/judge0-fake.py` alcanza para
+# desarrollar — ver su docstring, `isolate` exige cgroups v1 y las distros
+# modernas traen v2, asi que Judge0 real no levanta en cualquier maquina.
+start_svc execution_service.main              8013 execution-service
 
 # 8 CTR partition workers (single-writer por particion, ADR-010)
 for p in 0 1 2 3 4 5 6 7; do
@@ -69,4 +75,8 @@ for p in 0 1 2 3 4 5 6 7; do
 done
 
 echo ""
-echo "Started 11 HTTP services + 8 CTR workers. Logs in .dev-logs/. PIDs in .dev-logs/pids.txt."
+echo "Started 12 HTTP services + 8 CTR workers. Logs in .dev-logs/. PIDs in .dev-logs/pids.txt."
+echo "Sandbox: el execution-service (:8013) espera Judge0 en JUDGE0_BASE_URL"
+echo "         (default :2358). Sin el, su /health/ready da 503 y las ejecuciones"
+echo "         devuelven infrastructure_failure — el resto del stack no se entera."
+echo "         Local: uv run uvicorn judge0_fake:app --port 2358  (ver scripts/judge0-fake.py)"
