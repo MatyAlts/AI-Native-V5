@@ -60,9 +60,10 @@
 
 ## 7. Panel de prueba del docente
 
-- [ ] 7.1 Rama de ejecución en el runner propio del docente, que es una implementación separada de la del editor del alumno por decisión explícita del proyecto.
-- [ ] 7.2 Verificar que un ejercicio Java se puede probar contra todos sus casos, incluidos los ocultos.
-- [ ] 7.3 Comportamiento definido ante sandbox caído. Es distinto del caso del alumno: el docente está creando contenido, y publicar un ejercicio que no se pudo verificar es una decisión con consecuencias.
+- [x] 7.1 Rama de ejecución en el runner del docente. Sigue siendo una implementación separada de la del alumno (non-goal explícito no unificarlas): el docente tiene su propio cliente en `web-teacher/lib/api.ts`. Los textos del panel dejan de mentir — decían «se ejecuta en tu navegador con Pyodide» y «asserts de tipo pytest» para un ejercicio Java.
+- [x] 7.2 Verificar un ejercicio Java contra TODOS sus casos, ocultos incluidos. Verificado en navegador: el caso `junit` **se ejecuta y pasa**, donde antes decía «No ejecutado». El servicio inyecta los ocultos server-side, así que el docente los verifica sin que viajen al navegador.
+- [x] 7.3 Comportamiento ante sandbox caído, distinto del caso del alumno. El alumno pierde una corrida; el docente puede terminar **asignando un ejercicio que nunca se verificó**. Se muestra un aviso propio que dice las tres cosas: no es su código, los casos quedaron **sin verificar**, y asignarlo ahora es hacerlo a ciegas.
+- [x] 7.4 🟡 DECISIÓN no anticipada — el panel dentro del FORMULARIO se queda en ejecución local, a propósito. Prueba el **borrador**, que puede tener test cases o código sin guardar; la ejecución server-side lee el ejercicio **guardado**, así que correría una versión distinta de la que el docente tiene delante: un verde acá y un rojo después, sin explicación. Para verificar de verdad se guarda y se usa el botón «Probar» del listado.
 
 ## 8. Verificación
 

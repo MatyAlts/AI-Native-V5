@@ -57,6 +57,7 @@ import {
   generateEjercicioWithAI,
   listEjercicios,
   listMaterias,
+  runRemoteTestCases,
   updateEjercicio,
 } from "../lib/api"
 import { type TestCaseRunResult, isPyodideRuntimeReady, runTestCases } from "../lib/pyodideRunner"
@@ -595,6 +596,8 @@ export function EjerciciosView({ comisionId, getToken }: Props) {
             testCases={modal.ejercicio.test_cases}
             initialCode={modal.ejercicio.inicial_codigo}
             collapsible={false}
+            ejercicioId={modal.ejercicio.id}
+            language={modal.ejercicio.language ?? DEFAULT_LANGUAGE}
           />
           <div className="flex justify-end mt-4 pt-3 border-t border-border">
             <button
@@ -887,9 +890,16 @@ function EjercicioFormModal({ initial, title, unidades, onClose, onSubmit }: For
             onChange={(v) => set("test_cases", v)}
           />
           <StudentTestCasePreview testCases={draft.test_cases ?? []} />
+          {/* SIN `ejercicioId` a proposito: este panel prueba el BORRADOR, que
+              puede tener test cases o codigo todavia sin guardar. La ejecucion
+              server-side lee el ejercicio GUARDADO, asi que correria una version
+              distinta de la que el docente tiene delante — un verde acá y un
+              rojo despues, sin explicacion. Para verificar de verdad, se guarda
+              y se usa el boton "Probar" del listado. */}
           <ProbarEjercicioPanel
             testCases={draft.test_cases ?? []}
             initialCode={draft.inicial_codigo ?? null}
+            language={draft.language ?? DEFAULT_LANGUAGE}
           />
           <JsonField
             label="prerequisitos ({sintacticos: [], conceptuales: []})"
@@ -1214,22 +1224,68 @@ function ProbarEjercicioPanel({
   testCases,
   initialCode,
   collapsible = true,
+  ejercicioId,
+  language,
 }: {
   testCases: TestCaseEjercicio[]
   initialCode: string | null
   collapsible?: boolean
+  /** Necesario para la ejecucion server-side: el servicio lee la definicion
+   * completa del ejercicio, incluidos los casos OCULTOS. */
+  ejercicioId?: string | undefined
+  language?: Language | undefined
 }) {
   const [open, setOpen] = useState(!collapsible)
   const [code, setCode] = useState(initialCode ?? "")
   const [loading, setLoading] = useState(false)
   const [running, setRunning] = useState(false)
   const [runError, setRunError] = useState<string | null>(null)
+  const [sandboxCaido, setSandboxCaido] = useState(false)
   const [results, setResults] = useState<TestCaseRunResult[] | null>(null)
+
+  const lang = language ?? DEFAULT_LANGUAGE
+  // Ejecucion server-side: mismo criterio que el editor del alumno. Sin
+  // `ejercicioId` no se puede, porque el servicio necesita la definicion.
+  const esRemoto = lang !== DEFAULT_LANGUAGE && Boolean(ejercicioId)
 
   async function handleRun() {
     setRunError(null)
+    setSandboxCaido(false)
     setResults(null)
     setRunning(true)
+
+    if (esRemoto && ejercicioId) {
+      try {
+        const remoto = await runRemoteTestCases(ejercicioId, code)
+        if (remoto.outcome === "infrastructure_failure") {
+          // 7.3 — Para el docente esto NO es lo mismo que para el alumno. El
+          // alumno pierde una corrida; el docente puede terminar publicando un
+          // ejercicio que nunca se verifico. Se dice fuerte y claro.
+          setSandboxCaido(true)
+        } else {
+          setResults(
+            remoto.cases.map((c) => ({
+              id: c.id,
+              name: c.name,
+              type: c.type as TestCaseRunResult["type"],
+              status: c.status,
+              input: c.input ?? "",
+              expected: c.expected,
+              got: c.got ?? "",
+              error: c.error,
+              weight: c.weight,
+            })),
+          )
+        }
+      } catch (e) {
+        setSandboxCaido(true)
+        setRunError(e instanceof Error ? e.message : String(e))
+      } finally {
+        setRunning(false)
+      }
+      return
+    }
+
     // La primera corrida baja Pyodide del CDN (~6 MB): avisamos con "cargando".
     if (!isPyodideRuntimeReady()) setLoading(true)
     try {
@@ -1262,8 +1318,11 @@ function ProbarEjercicioPanel({
       <p className="text-xs text-muted">
         Corre el codigo solucion contra los {testCases.length} test case
         {testCases.length !== 1 ? "s" : ""} del ejercicio (publicos y ocultos) para verificar que
-        funciona antes de asignarlo. Se ejecuta en tu navegador con Pyodide; no queda registrado en
-        la trazabilidad del alumno.
+        funciona antes de asignarlo.{" "}
+        {esRemoto
+          ? `Se compila y ejecuta en el servidor, asi que tarda unos segundos.`
+          : "Se ejecuta en tu navegador con Pyodide."}{" "}
+        No queda registrado en la trazabilidad del alumno.
       </p>
 
       {testCases.length === 0 ? (
@@ -1287,8 +1346,9 @@ function ProbarEjercicioPanel({
               placeholder="# Pega aca la solucion del ejercicio (o un codigo de prueba) para correrlo contra los test cases"
             />
             <p className="text-[11px] text-muted mt-1">
-              Recorda: los asserts de tipo <code>pytest</code> referencian las clases/funciones de
-              este codigo directamente (mismo archivo, sin imports del alumno).
+              Recorda: los asserts de tipo <code>{esRemoto ? "junit" : "pytest"}</code> referencian
+              las clases/funciones de este codigo directamente (mismo archivo, sin imports del
+              alumno).
             </p>
           </div>
 
@@ -1306,7 +1366,24 @@ function ProbarEjercicioPanel({
                 : `Probar contra ${testCases.length} test case${testCases.length !== 1 ? "s" : ""}`}
           </button>
 
-          {runError && (
+          {/* 7.3 — El sandbox caido pesa distinto para el docente que para el
+              alumno: el alumno pierde una corrida, el docente puede terminar
+              asignando un ejercicio que NUNCA se verifico. Se dice explicito y
+              se separa del error de su propio codigo. */}
+          {sandboxCaido && (
+            <div className="text-xs text-amber-800 bg-amber-50 border border-amber-200 rounded p-2 space-y-1">
+              <p className="font-medium">
+                No se pudo verificar el ejercicio: el servicio de ejecucion no respondio.
+              </p>
+              <p>
+                No es un problema de tu codigo. Los casos de prueba quedaron{" "}
+                <strong>sin verificar</strong> — si asignas el ejercicio ahora, lo haces sin saber
+                si funcionan. Volve a intentar en un momento.
+              </p>
+            </div>
+          )}
+
+          {runError && !sandboxCaido && (
             <div className="text-xs text-red-600 bg-red-50 border border-red-200 rounded p-2 whitespace-pre-wrap">
               {runError}
             </div>
