@@ -79,14 +79,39 @@ class RunResult:
 
     @property
     def failed(self) -> int:
-        """Casos que corrieron y no pasaron.
+        """Casos que corrieron y NO pasaron. Incluye los `error`.
 
-        NO incluye `skipped` ni cuenta nada cuando la corrida fallo por
-        infraestructura: es el numero que el clasificador consume.
+        `error` cuenta como fallo porque el contrato del CTR es BINARIO: el
+        payload de `tests_ejecutados` sólo tiene `total`, `passed` y `failed`,
+        sin lugar para un tercer estado. El emisor de Pyodide ya lo resuelve
+        asi (`failed = total - passed`), y la regla del labeler
+        (`failed > 0 => N3`) se escribio contra esa semantica. Este servicio
+        introdujo `CaseStatus.ERROR` y lo dejaba caer de los DOS conteos, con
+        lo cual un codigo que no compila emitia `failed=0` y el labeler lo
+        etiquetaba N4 — la misma inflacion que `ctr_emitter` evita para el
+        fallo de infraestructura, entrando por al lado.
+
+        La diferencia con el fallo de infraestructura NO es un detalle: ahi
+        falla el SISTEMA y por eso no se emite evento (no se ejecuto nada).
+        Aca falla el CODIGO DEL ALUMNO, que es informacion pedagogica
+        legitima: se emite, y cuenta como fallo.
+
+        Se define por NEGACION (todo lo que corrio y no es `pass`) y no
+        enumerando `FAIL | ERROR` a proposito: enumerar es como nacio el bug
+        — un estado nuevo en `CaseStatus` se colaba sin contarse en ningun
+        lado. Asi, cualquier estado futuro cae del lado conservador (N3) en
+        vez de inflar hacia N4, que es la direccion peligrosa para el corpus.
+
+        Invariante que sostiene: en una corrida COMPLETED,
+        `passed + failed == total`.
         """
         if self.outcome is RunOutcome.INFRASTRUCTURE_FAILURE:
             return 0
-        return sum(1 for c in self.cases if c.status is CaseStatus.FAIL)
+        return sum(
+            1
+            for c in self.cases
+            if c.status is not CaseStatus.PASS and c.status is not CaseStatus.SKIPPED
+        )
 
 
 _STATUS_MAP: dict[SandboxStatus, CaseStatus] = {

@@ -13,18 +13,22 @@ razona el problema bien y lo resuelve para UN camino:
 
 Cierra ese camino no emitiendo evento ante `INFRASTRUCTURE_FAILURE`. Correcto.
 
-Pero `failed == 0` tiene OTRA puerta de entrada, y esa quedo abierta:
-`RunResult.failed` cuenta unicamente `CaseStatus.FAIL`. Un caso en
+Pero `failed == 0` tiene OTRA puerta de entrada, y estuvo abierta hasta el
+2026-07-30: `RunResult.failed` contaba unicamente `CaseStatus.FAIL`. Un caso en
 `CaseStatus.ERROR` — que es donde `result_mapper` manda al error de
-compilacion, al timeout y a todos los crashes de runtime — no suma a `failed`
+compilacion, al timeout y a todos los crashes de runtime — no sumaba a `failed`
 y tampoco a `passed`. Y `run_cases` devuelve esas corridas con outcome
 `COMPLETED`, asi que `should_emit()` da True.
 
-Resultado: el codigo del alumno no compila, se emite `tests_ejecutados` con
-`test_count_failed = 0`, y el etiquetador lo lee como que paso todo. Codigo que
-ni compila queda registrado en el corpus de la tesis como el nivel mas alto de
-apropiacion. Es exactamente la inflacion que el modulo dice evitar, por la
+Resultado: el codigo del alumno no compilaba, se emitia `tests_ejecutados` con
+`test_count_failed = 0`, y el etiquetador lo leia como que paso todo. Codigo que
+ni compila quedaba registrado en el corpus de la tesis como el nivel mas alto de
+apropiacion. Era exactamente la inflacion que el modulo dice evitar, por la
 puerta de al lado.
+
+CERRADO contando `error` como fallo — el contrato del CTR es binario y el
+emisor de Pyodide ya lo resolvia asi. El razonamiento completo esta en el
+docstring de `RunResult.failed`. Estos tests quedan como anti-regresion.
 
 El test que lo prueba de punta a punta es
 `test_una_corrida_sin_un_solo_caso_aprobado_no_puede_ser_n4`: corre el
@@ -62,24 +66,15 @@ STATUS_DEL_ALUMNO_QUE_NO_SON_FAIL = [
     pytest.param(SandboxStatus.RUNTIME_ERROR_NZEC, id="excepcion-en-runtime"),
 ]
 
-# El defecto esta ABIERTO: los dos tests de abajo describen la conducta correcta
-# y hoy no se cumple. Van en xfail para que la rama no quede con rojos que se
-# confundan con una regresion real — pero `strict=True` a proposito: el dia que
-# alguien arregle el defecto, estos tests pasan, el xfail estricto los convierte
-# en FALLO, y quien lo arreglo se entera de que tiene que venir a sacar el
-# marcador. Un xfail no estricto se volveria mentira silenciosa.
+# DEFECTO CERRADO (2026-07-30). Los tests de abajo estaban en `xfail(strict=True)`
+# describiendo la conducta correcta mientras `RunResult.failed` contaba solo
+# `CaseStatus.FAIL` y una corrida que no compilaba emitia `failed=0` -> N4.
 #
-# Al sacar el marcador, borrar tambien esta constante y el comentario.
-DEFECTO_ABIERTO = pytest.mark.xfail(
-    strict=True,
-    reason=(
-        "DEFECTO ABIERTO — `RunResult.failed` cuenta solo CaseStatus.FAIL, asi que "
-        "una corrida donde todos los casos dieron ERROR (no compila / timeout / "
-        "crash) emite `test_count_failed=0` y el labeler la etiqueta N4. Ver el "
-        "docstring de este modulo y el informe 2026-07-30-analisis-pr-57-java-execution.md. "
-        "El arreglo es una decision pedagogica pendiente (3 opciones, ninguna obvia)."
-    ),
-)
+# El marcador se saco al arreglarlo: `failed` ahora cuenta todo lo que corrio y
+# no paso, definido por negacion. El razonamiento completo esta en el docstring
+# de `RunResult.failed`. El xfail estricto hizo exactamente lo que prometia —
+# al arreglar el defecto los tests pasaron y el XPASS aviso que habia que venir
+# a sacar el marcador.
 
 
 def _sandbox(status: SandboxStatus, *, stdout: str = "") -> SandboxResult:
@@ -126,7 +121,6 @@ def _payload_de(run: RunResult) -> dict[str, object]:
 # ── El test que protege el corpus ────────────────────────────────────────────
 
 
-@DEFECTO_ABIERTO
 @pytest.mark.parametrize("status", STATUS_DEL_ALUMNO_QUE_NO_SON_FAIL)
 def test_una_corrida_sin_un_solo_caso_aprobado_no_puede_ser_n4(status: SandboxStatus) -> None:
     """**No borrar sin leer el docstring del modulo.**
@@ -164,15 +158,15 @@ def test_una_corrida_sin_un_solo_caso_aprobado_no_puede_ser_n4(status: SandboxSt
 # ── La causa, aislada del labeler ────────────────────────────────────────────
 
 
-@DEFECTO_ABIERTO
 @pytest.mark.parametrize("status", STATUS_DEL_ALUMNO_QUE_NO_SON_FAIL)
 def test_los_conteos_de_una_corrida_completada_cierran(status: SandboxStatus) -> None:
     """`passed + failed` tiene que dar `total` en una corrida que SI corrio.
 
     Es la misma propiedad que el test anterior, sin depender del classifier.
     Cualquier consumidor del payload —el labeler, el panel del docente, una
-    query de la tesis— asume que los tres numeros cierran. Hoy un caso en
-    ERROR se evapora: no suma a `passed` ni a `failed`, pero si a `total`.
+    query de la tesis— asume que los tres numeros cierran. Antes del arreglo un
+    caso en ERROR se evaporaba: no sumaba a `passed` ni a `failed`, pero si a
+    `total`.
 
     `INFRASTRUCTURE_FAILURE` queda fuera a proposito: ahi los tres son 0 por
     diseno (D4) y la propiedad se cumple trivialmente.
