@@ -30,6 +30,20 @@ export S3_ACCESS_KEY="${S3_ACCESS_KEY:-minioadmin}"
 export S3_SECRET_KEY="${S3_SECRET_KEY:-minioadmin}"
 export S3_BUCKET_MATERIALS="${S3_BUCKET_MATERIALS:-materials}"
 
+# Imagen del sandbox de Java (ADR-060). Se baja ACA, antes de arrancar nada.
+#
+# `docker_runner.py` aplica el wall-time limit (10s por default) sobre el
+# `docker run` ENTERO, y si la imagen no esta local ese `docker run` incluye
+# bajar ~450MB. O sea: la primera corrida de Java de una maquina limpia se come
+# la descarga adentro del presupuesto de ejecucion del alumno y muere por
+# timeout — indistinguible de un bucle infinito.
+#
+# Best-effort a proposito: sin Docker vivo el resto del stack arranca igual
+# (las corridas dan `infrastructure_failure`, que es el camino ya cubierto).
+JAVA_IMAGE="${JAVA_IMAGE:-eclipse-temurin:21-jdk}"
+echo "[pull] ${JAVA_IMAGE} (sandbox de Java — evita que la descarga entre en el timeout)"
+docker pull "${JAVA_IMAGE}" || echo "[warn] no se pudo bajar ${JAVA_IMAGE}; las corridas de Java van a fallar"
+
 start_svc() {
   local module="$1"
   local port="$2"

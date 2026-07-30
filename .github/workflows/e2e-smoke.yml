@@ -133,6 +133,16 @@ jobs:
           # (case-insensitive).
           DEV_TRUST_HEADERS: "true"
         run: |
+          # Imagen del sandbox de Java (ADR-060), ANTES de arrancar servicios.
+          # `docker_runner.py` aplica el wall-time limit (10s) sobre el
+          # `docker run` entero, y sin la imagen local ese `docker run` incluye
+          # bajar ~450MB. Sin este pull, el PRIMER test que ejecuta Java se come
+          # la descarga adentro del presupuesto y muere por timeout: el runner
+          # de GitHub arranca siempre limpio, asi que fallaba en cada corrida.
+          # Reproducido en el run 30554835857 (2026-07-30): ese primer test tardo
+          # 16s y fallo `assert 1 == 2`; los siguientes, mismo codigo, ~2s y verdes.
+          # `dev-start-all.sh` hace el mismo pull para el dev loop local.
+          docker pull eclipse-temurin:21-jdk
           mkdir -p /tmp/piloto-logs
           # El integrity-attestation-service (:8012) appendea a `attestations/`
           # (relativo al repo root, su CWD). Sin el dir, su health check

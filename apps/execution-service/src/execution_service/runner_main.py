@@ -28,8 +28,11 @@ por ruta y no por cuerpo del pedido.
 
 from __future__ import annotations
 
+import asyncio
+import contextlib
 import logging
 import secrets
+from collections.abc import AsyncIterator
 
 from fastapi import FastAPI, Header, HTTPException, status
 from pydantic import BaseModel, Field
@@ -39,10 +42,76 @@ from execution_service.services.docker_runner import run_java
 
 logger = logging.getLogger(__name__)
 
+# Techo del `docker pull` de arranque. Generoso a proposito: bajar el JDK son
+# ~450MB y esto NO esta en el camino de ninguna ejecucion de alumno.
+_WARMUP_PULL_TIMEOUT_SECONDS = 600.0
+
+
+async def _warmup_image() -> None:
+    """Baja la imagen del sandbox al arrancar, para que no la baje una corrida.
+
+    `docker_runner.py` aplica el wall-time limit (10s) sobre el `docker run`
+    ENTERO. Si la imagen no esta local, ese `docker run` incluye la descarga, y
+    la primera corrida de Java tras cada deploy muere por timeout — que ademas
+    es indistinguible de un bucle infinito del alumno.
+
+    **Best-effort y en segundo plano**: no bloquea el arranque ni tumba el
+    proceso si falla. Sin Docker vivo el runner igual levanta y las corridas dan
+    `infrastructure_failure`, que es el camino ya cubierto.
+
+    Deja una ventana residual: si un alumno ejecuta mientras la descarga sigue
+    en curso, se sigue comiendo el timeout. Cerrarla del todo pide separar el
+    presupuesto de preparacion del contenedor del de ejecucion del codigo, que
+    es un cambio de comportamiento del sandbox y va aparte.
+    """
+    imagen = settings.java_image
+    try:
+        proc = await asyncio.create_subprocess_exec(
+            "docker",
+            "pull",
+            imagen,
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE,
+        )
+        try:
+            _out, err = await asyncio.wait_for(
+                proc.communicate(), timeout=_WARMUP_PULL_TIMEOUT_SECONDS
+            )
+        except TimeoutError:
+            proc.kill()
+            await proc.wait()
+            logger.warning("warmup_pull_timeout image=%s", imagen)
+            return
+        if proc.returncode == 0:
+            logger.info("warmup_pull_ok image=%s", imagen)
+        else:
+            logger.warning(
+                "warmup_pull_fallo image=%s rc=%s err=%s",
+                imagen,
+                proc.returncode,
+                err.decode("utf-8", errors="replace").strip()[:500],
+            )
+    except OSError as exc:
+        # Sin cliente de Docker en el PATH. No es fatal para el proceso.
+        logger.warning("warmup_pull_sin_docker image=%s err=%s", imagen, exc)
+
+
+@contextlib.asynccontextmanager
+async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
+    tarea = asyncio.create_task(_warmup_image())
+    try:
+        yield
+    finally:
+        tarea.cancel()
+        with contextlib.suppress(asyncio.CancelledError):
+            await tarea
+
+
 app = FastAPI(
     title="execution-runner",
     description="Ejecuta codigo en contenedores efimeros. Unico componente con acceso a Docker.",
     version="0.1.0",
+    lifespan=lifespan,
 )
 
 
