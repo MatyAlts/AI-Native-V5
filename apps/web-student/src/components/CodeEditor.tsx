@@ -864,7 +864,7 @@ def __tutor_run_tests(student_code, cases_json):
     setViewingRunId(null)
     setOutputTab("consola")
     clearErrorMarkers()
-    setRemoteWait(`Enviando al servidor...`)
+    setRemoteWait("Enviando al servidor...")
     const started = performance.now()
 
     let result: ExecutionResult
