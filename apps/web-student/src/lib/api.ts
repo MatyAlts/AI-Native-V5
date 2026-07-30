@@ -475,7 +475,20 @@ export async function getExecution(
   return (await r.json()) as ExecutionStatus
 }
 
-export type EdicionCodigoOrigin = "student_typed" | "copied_from_tutor" | "pasted_external"
+/**
+ * Procedencia de una edicion del editor. Espeja el `Literal` de
+ * `EdicionCodigoPayload.origin` en `packages/contracts` — si agregas un valor
+ * aca, agregalo alla o el backend rechaza el evento.
+ *
+ * `snippet_expanded` = ceremonia expandida por el editor (ver
+ * `lib/javaSnippets.ts`). No es tipeo del alumno, pero tampoco interaccion con
+ * IA: el labeler NO le aplica override a N4.
+ */
+export type EdicionCodigoOrigin =
+  | "student_typed"
+  | "copied_from_tutor"
+  | "pasted_external"
+  | "snippet_expanded"
 
 /** Emite un evento edicion_codigo al CTR. Disparado por el editor con
  * debouncing (1s) — el snapshot es el estado actual del buffer y diff_chars

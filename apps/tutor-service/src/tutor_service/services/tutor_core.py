@@ -1165,7 +1165,10 @@ class TutorCore:
         diff_chars: int,
         language: str,
         user_id: UUID,
-        origin: (Literal["student_typed", "copied_from_tutor", "pasted_external"] | None) = None,
+        origin: (
+            Literal["student_typed", "copied_from_tutor", "pasted_external", "snippet_expanded"]
+            | None
+        ) = None,
     ) -> int:
         """Publica un evento edicion_codigo al CTR.
 
@@ -1187,7 +1190,11 @@ class TutorCore:
                 "student_typed" cuando el alumno tipeó directo en Monaco;
                 "pasted_external" cuando vino de paste del clipboard;
                 "copied_from_tutor" cuando el frontend insertó código
-                tomado del chat del tutor (botón "Insertar código").
+                tomado del chat del tutor (botón "Insertar código");
+                "snippet_expanded" cuando el alumno expandió un snippet de
+                ceremonia del editor (System.out.println, getters/setters —
+                ver web-student/src/lib/javaSnippets.ts). No lleva override a
+                N4: no es tipeo, pero tampoco es interacción con IA.
 
         Returns:
             El seq asignado al evento (útil para debugging del cliente).

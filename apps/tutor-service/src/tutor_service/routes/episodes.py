@@ -613,9 +613,16 @@ class EdicionCodigoRequest(BaseModel):
     interpretables por el clasificador.
 
     F6: el campo opcional `origin` permite distinguir tipeo directo
-    ("student_typed"), copia desde el chat del tutor ("copied_from_tutor")
-    o paste externo ("pasted_external"). Es evidencia directa de
+    ("student_typed"), copia desde el chat del tutor ("copied_from_tutor"),
+    paste externo ("pasted_external") o expansión de un snippet de ceremonia
+    del editor ("snippet_expanded"). Es evidencia directa de
     delegación/apropiación que no depende solo de inferencia temporal.
+
+    ⚠️ Este Literal ESPEJA `EdicionCodigoPayload.origin` de
+    `packages/contracts` — es el schema de entrada del endpoint, así que un
+    valor que falte acá se rechaza con 422 ANTES de llegar al contrato, aunque
+    el contrato ya lo acepte. Agregar un valor obliga a tocar los dos, más la
+    firma de `tutor_core.record_edicion_codigo`.
     """
 
     snapshot: str = Field(
@@ -627,7 +634,9 @@ class EdicionCodigoRequest(BaseModel):
         ..., ge=0, description="Cantidad de caracteres cambiados desde evento anterior"
     )
     language: str = Field(default="python", min_length=1, max_length=32)
-    origin: Literal["student_typed", "copied_from_tutor", "pasted_external"] | None = Field(
+    origin: (
+        Literal["student_typed", "copied_from_tutor", "pasted_external", "snippet_expanded"] | None
+    ) = Field(
         default=None,
         description=(
             "Procedencia del cambio. None = legacy/desconocido. "

@@ -321,7 +321,9 @@ class EdicionCodigoPayload(BaseModel):
     snapshot: str  # código completo en el momento del evento
     diff_chars: int  # cantidad de caracteres cambiados desde evento anterior
     language: str
-    origin: Literal["student_typed", "copied_from_tutor", "pasted_external"] | None = Field(
+    origin: (
+        Literal["student_typed", "copied_from_tutor", "pasted_external", "snippet_expanded"] | None
+    ) = Field(
         default=None,
         description=(
             "Procedencia del cambio en el editor. None = legacy/desconocido. "
@@ -329,9 +331,16 @@ class EdicionCodigoPayload(BaseModel):
             "copied_from_tutor está declarado en el contract pero requiere "
             "una afordancia de UI (botón 'Insertar código del tutor') aún "
             "no incorporada al editor del estudiante (ver G11). El "
-            "event_labeler (ADR-020) reconoce los tres valores y aplica "
-            "override a N4 para los dos no-typed (copied_from_tutor + "
-            "pasted_external)."
+            "event_labeler (ADR-020) reconoce los valores y aplica "
+            "override a N4 para los dos que provienen de una interacción "
+            "IA/externa (copied_from_tutor + pasted_external). "
+            "snippet_expanded marca ceremonia expandida por el editor "
+            "(System.out.println, getters/setters, imports — ver "
+            "web-student/src/lib/javaSnippets.ts): NO es elaboración tipeada "
+            "pero tampoco es interacción con IA, así que NO lleva override a "
+            "N4 — inflaría la métrica de dependencia del tutor cada vez que "
+            "alguien escribe `sout`. Cae a N2 como student_typed; la "
+            "distinción queda en el payload para el análisis posterior."
         ),
     )
 

@@ -13,7 +13,9 @@ dato "al lado" del clasificador oficial. Ver `docs/NUEVA-MEDICION-SUBGRUPOS.md`.
 
 Corrige la inversión del motor viejo (alumnos autónomos sin tutor marcados como
 `delegacion_pasiva`). Umbrales calibrados sobre datos reales de prod (2026-06-10):
-`edicion_codigo.origin` ∈ {student_typed, pasted_external} (no existe copied_from_tutor),
+`edicion_codigo.origin` ∈ {student_typed, pasted_external} (no existe copied_from_tutor;
+`snippet_expanded` se agregó después y NO cuenta como pegada — un snippet de ceremonia
+del editor no es delegación, así que no baja la autonomía),
 `anotacion_creada` = 0, `resolvió` = última ejecución limpia (stdout sin stderr),
 sin `tests_ejecutados`/`tp_entregada` en el CTR.
 """
