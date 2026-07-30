@@ -855,12 +855,9 @@ async def get_cohort_progression(
             await set_tenant_rls(ctr_s, tenant_id)
             await set_tenant_rls(cls_s, tenant_id)
             ds = RealLongitudinalDataSource(ctr_s, cls_s, tenant_id)
-            # build_trajectories acepta cualquier objeto con
-            # `list_classifications_grouped_by_student` (duck-typed); el
-            # protocol _DataSource es interno al paquete platform-ops.
-            trajectories = await build_trajectories(  # type: ignore[arg-type]
-                ds, comision_id, language=language
-            )
+            # `_DataSource` es un Protocol structural: alcanza con exponer
+            # `list_classifications_grouped_by_student`, sin heredar de nada.
+            trajectories = await build_trajectories(ds, comision_id, language=language)
 
             # Declaración (sección 4.2): se resuelve sobre el episode set
             # QUE EFECTIVAMENTE compone el resultado (post-filtro), no sobre
@@ -873,10 +870,12 @@ async def get_cohort_progression(
     else:
         # Stub para dev
         class _LongitudinalAdapter:
-            async def list_classifications_grouped_by_student(self, comision_id, language=None):
+            async def list_classifications_grouped_by_student(
+                self, comision_id: UUID, language: str | None = None
+            ) -> dict[str, list[dict]]:
                 return {}
 
-        trajectories = await build_trajectories(  # type: ignore[arg-type]
+        trajectories = await build_trajectories(
             _LongitudinalAdapter(), comision_id, language=language
         )
 
@@ -1006,7 +1005,10 @@ async def get_n_level_distribution(
             .order_by(Event.seq.asc())
         )
         result = await ctr_s.execute(stmt)
-        events = [
+        # Anotado explícito: sin esto mypy infiere el value type como la unión
+        # `dict[str, Any] | int | str` y `payload.get(...)` más abajo pasa a ser
+        # un error sobre las ramas `int` y `str`.
+        events: list[dict[str, Any]] = [
             {
                 "seq": ev.seq,
                 "event_type": ev.event_type,
@@ -1446,7 +1448,7 @@ async def get_cohort_cii_quartiles(
         await set_tenant_rls(ctr_s, tenant_id)
         await set_tenant_rls(cls_s, tenant_id)
         ds = RealLongitudinalDataSource(ctr_s, cls_s, tenant_id)
-        trajectories = await build_trajectories(ds, comision_id)  # type: ignore[arg-type]
+        trajectories = await build_trajectories(ds, comision_id)
 
     student_slopes: list[float] = []
     for t in trajectories:

@@ -24,7 +24,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from datetime import datetime
-from typing import Literal
+from typing import Literal, Protocol
 from uuid import UUID
 
 AppropriationValue = Literal[
@@ -163,15 +163,29 @@ class CohortProgression:
         return (self.mejorando - self.empeorando) / self.n_students_with_enough_data
 
 
-class _DataSource:
-    """Interface mínima."""
+class _DataSource(Protocol):
+    """Interface mínima — `Protocol`, no clase base.
+
+    Es structural a propósito: ningún data source real hereda de esta clase. El
+    `RealLongitudinalDataSource` de producción y los adapters de los tests son
+    todos duck-typed, así que declararla como clase común obligaba a un
+    `# type: ignore[arg-type]` en cada call site aguas arriba.
+
+    Declara `language` porque `build_trajectories` lo reenvía cuando viene
+    seteado. Los data sources anteriores a `multi-language-research-integrity`
+    no conocen el kwarg y siguen funcionando en runtime mientras nadie pida
+    filtro — ese soporte es deliberado pero NO se puede expresar en un Protocol,
+    y por eso no está declarado acá. Cubierto por
+    `packages/platform-ops/tests/test_longitudinal_language_kwarg.py`.
+    """
 
     async def list_classifications_grouped_by_student(
         self,
         comision_id: UUID,
+        language: str | None = None,
     ) -> dict[str, list[dict]]:
         """Devuelve {student_pseudonym: [classification_dict, ...]} ordenados por classified_at."""
-        raise NotImplementedError
+        ...
 
 
 async def build_trajectories(
