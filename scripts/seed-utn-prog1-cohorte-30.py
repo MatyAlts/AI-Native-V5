@@ -60,6 +60,7 @@ import os
 import sys
 from datetime import UTC, date, datetime, timedelta
 from pathlib import Path
+from urllib.parse import urlsplit
 from uuid import UUID
 
 ROOT = Path(__file__).parent.parent
@@ -822,6 +823,89 @@ async def seed_classifications(
 
 
 # ---------------------------------------------------------------------
+# Guarda de destino
+# ---------------------------------------------------------------------
+#
+# Este seed inserta 30 alumnos SINTETICOS con `INSERT` directo, salteando la
+# validacion del endpoint. Contra la base del piloto quedarian mezclados con
+# los alumnos reales, y la cadena SHA-256 los avalaria igual: firmar un evento
+# prueba que nadie lo altero despues, no que sea legitimo.
+#
+# El riesgo no es teorico. El destino sale de tres env vars, y `ACADEMIC_DB_URL`
+# apuntada a mano es el workaround DOCUMENTADO en CLAUDE.md para poder correr
+# `make migrate`. O sea: la variable que decide adonde escribe este seed suele
+# estar ya exportada por un motivo que no tiene nada que ver.
+#
+# Por eso la guarda es por HOST y no por nombre de base: las bases del VPS se
+# llaman igual que las locales.
+
+# Sin `0.0.0.0`: como destino de cliente no tiene sentido, y dejarlo afuera
+# hace la guarda mas cerrada, que es el default correcto aca.
+_HOSTS_LOCALES = frozenset({"localhost", "127.0.0.1", "::1"})
+
+# Valor deliberadamente incomodo: un `=1` se tipea de memoria y sin pensar,
+# esto no.
+_OVERRIDE_ENV = "SEED_ALLOW_REMOTE"
+_OVERRIDE_VALOR = "si-se-lo-que-hago"
+
+
+def host_de(url: str) -> str | None:
+    """Host de una URL SQLAlchemy. `None` si no se puede determinar.
+
+    `urlsplit` maneja bien el `+asyncpg` del scheme. Un host indeterminado se
+    trata como REMOTO: ante la duda, no escribimos.
+    """
+    try:
+        return urlsplit(url).hostname
+    except ValueError:
+        return None
+
+
+def assert_destino_local(urls: dict[str, str]) -> None:
+    """Aborta si alguna URL no apunta a un host local.
+
+    Se puede saltear con `SEED_ALLOW_REMOTE=si-se-lo-que-hago`, que existe para
+    un staging propio — no para produccion.
+    """
+    remotos = {
+        nombre: (host_de(url) or "<indeterminado>")
+        for nombre, url in urls.items()
+        if host_de(url) not in _HOSTS_LOCALES
+    }
+
+    if not remotos:
+        return
+
+    if os.environ.get(_OVERRIDE_ENV) == _OVERRIDE_VALOR:
+        print("!" * 60)
+        print(f"AVISO: {_OVERRIDE_ENV} activo — sembrando contra un host REMOTO:")
+        for nombre, host in sorted(remotos.items()):
+            print(f"  - {nombre} -> {host}")
+        print("Se van a insertar 30 alumnos SINTETICOS en ese destino.")
+        print("!" * 60)
+        return
+
+    print("=" * 60, file=sys.stderr)
+    print("ABORTADO: este seed solo corre contra una base LOCAL.", file=sys.stderr)
+    print("", file=sys.stderr)
+    print("Apunta a un host que no es local:", file=sys.stderr)
+    for nombre, host in sorted(remotos.items()):
+        print(f"  - {nombre} -> {host}", file=sys.stderr)
+    print("", file=sys.stderr)
+    print(
+        "Inserta 30 alumnos sinteticos (pseudonyms c1c1c1c1-...). En la base\n"
+        "del piloto quedan mezclados con los alumnos reales.\n"
+        "\n"
+        "Suele pasar por tener ACADEMIC_DB_URL exportada de correr migraciones.\n"
+        "Revisala antes de insistir:  echo $ACADEMIC_DB_URL\n"
+        "\n"
+        f"Si el destino es un staging propio:  {_OVERRIDE_ENV}={_OVERRIDE_VALOR}",
+        file=sys.stderr,
+    )
+    print("=" * 60, file=sys.stderr)
+    raise SystemExit(1)
+
+
 # Main
 # ---------------------------------------------------------------------
 
@@ -838,6 +922,14 @@ async def main() -> None:
     classifier_url = os.environ.get(
         "CLASSIFIER_DB_URL",
         "postgresql+asyncpg://postgres:postgres@localhost:5432/classifier_db",
+    )
+
+    assert_destino_local(
+        {
+            "ACADEMIC_DB_URL": academic_url,
+            "CTR_STORE_URL": ctr_url,
+            "CLASSIFIER_DB_URL": classifier_url,
+        }
     )
 
     print("=" * 60)
