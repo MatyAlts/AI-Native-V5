@@ -1320,7 +1320,7 @@ function ProbarEjercicioPanel({
         {testCases.length !== 1 ? "s" : ""} del ejercicio (publicos y ocultos) para verificar que
         funciona antes de asignarlo.{" "}
         {esRemoto
-          ? `Se compila y ejecuta en el servidor, asi que tarda unos segundos.`
+          ? "Se compila y ejecuta en el servidor, asi que tarda unos segundos."
           : "Se ejecuta en tu navegador con Pyodide."}{" "}
         No queda registrado en la trazabilidad del alumno.
       </p>
