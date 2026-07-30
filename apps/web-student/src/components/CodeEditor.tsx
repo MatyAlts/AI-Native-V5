@@ -35,6 +35,7 @@ import {
   type TokenGetter,
 } from "../lib/api"
 import { parseJavaError } from "../lib/javaError"
+import { registerJavaSnippets } from "../lib/javaSnippets"
 import { extractPyodideErrorLine, extractPyodideErrorLineNumber } from "../lib/pyodideError"
 import { runRemote } from "../lib/runRemote"
 
@@ -81,14 +82,15 @@ export interface CodeEditorProps {
   /** Callback de edición con debouncing de 1s. Recibe el snapshot actual
    * del buffer, `diffChars` = delta de caracteres respecto a la última
    * emisión (positivo si agregó, negativo si borró), y `origin` (F6) que
-   * indica si los cambios desde la última emisión vinieron de tipeo
-   * directo o de un paste del clipboard. Pensado para alimentar el evento
-   * CTR `edicion_codigo` sin saturar al backend con cada tecla.
+   * indica de dónde vinieron los cambios desde la última emisión: tipeo
+   * directo, paste del clipboard, o expansión de un snippet de ceremonia
+   * del editor. Pensado para alimentar el evento CTR `edicion_codigo` sin
+   * saturar al backend con cada tecla.
    */
   onEditDebounced?: (
     snapshot: string,
     diffChars: number,
-    origin: "student_typed" | "pasted_external",
+    origin: "student_typed" | "pasted_external" | "snippet_expanded",
   ) => void
   /** Disparado cuando el alumno intenta pegar. La accion fue bloqueada
    * por el editor — solo registrar en CTR + mostrar feedback. */
@@ -294,6 +296,11 @@ export function CodeEditor({
   // "pasted_external"; sino default a "student_typed". Una vez emitido el
   // evento, reseteamos para no contaminar la siguiente ventana.
   const pasteSinceLastFlushRef = useRef<boolean>(false)
+  // Mismo mecanismo que el paste, para las expansiones de snippets de
+  // ceremonia. Sin esto una expansión de 8 líneas entra al CTR como
+  // `student_typed` — mentira invisible: el evento se ve igual y un diff
+  // grande no llama la atención.
+  const snippetSinceLastFlushRef = useRef<boolean>(false)
   const onEditDebouncedRef = useRef<typeof onEditDebounced>(onEditDebounced)
   useEffect(() => {
     onEditDebouncedRef.current = onEditDebounced
@@ -451,10 +458,17 @@ export function CodeEditor({
           // tecla → undo dentro del debounce), no disparamos.
           if (snapshot === lastFiredSnapshotRef.current) return
           lastFiredSnapshotRef.current = snapshot
-          const origin: "pasted_external" | "student_typed" = pasteSinceLastFlushRef.current
-            ? "pasted_external"
-            : "student_typed"
+          // Precedencia: paste > snippet > tipeo. Si en la misma ventana de
+          // debounce hubo las dos cosas gana el paste, que es la señal más
+          // fuerte (es la única que lleva override a N4 en el labeler).
+          const origin: "pasted_external" | "snippet_expanded" | "student_typed" =
+            pasteSinceLastFlushRef.current
+              ? "pasted_external"
+              : snippetSinceLastFlushRef.current
+                ? "snippet_expanded"
+                : "student_typed"
           pasteSinceLastFlushRef.current = false
+          snippetSinceLastFlushRef.current = false
           cb(snapshot, diffChars, origin)
         }, EDIT_DEBOUNCE_MS)
       })
@@ -475,6 +489,28 @@ export function CodeEditor({
       editorRef.current?.dispose?.()
     }
   }, [language])
+
+  // Snippets de ceremonia para Java (System.out.println, getters/setters,
+  // import del Scanner). Effect propio con deps vacías a propósito: el
+  // proveedor se registra a nivel del *lenguaje* en Monaco, no del editor, así
+  // que sobrevive los re-montajes del effect de arriba sin duplicarse. Monaco
+  // solo lo consulta sobre modelos Java, por eso no hace falta gatearlo por
+  // `language`.
+  useEffect(() => {
+    let disposable: { dispose: () => void } | null = null
+    let cancelled = false
+    ;(async () => {
+      const monaco = await import(/* @vite-ignore */ "monaco-editor")
+      if (cancelled) return
+      disposable = registerJavaSnippets(monaco, () => {
+        snippetSinceLastFlushRef.current = true
+      })
+    })()
+    return () => {
+      cancelled = true
+      disposable?.dispose()
+    }
+  }, [])
 
   // ED-3: aplicar el tamano de fuente al editor + persistir. updateOptions no
   // re-crea el editor (preserva cursor/undo/buffer).
