@@ -1455,6 +1455,7 @@ class TutorCore:
         tests_hidden: int,
         ejecucion_ms: int,
         chunks_used_hash: str | None = None,
+        emisor_interno: bool = False,
     ) -> int:
         """Publica un evento `tests_ejecutados` al CTR con los conteos del cliente.
 
@@ -1472,7 +1473,12 @@ class TutorCore:
             user_id: estudiante autenticado (su autoria — no service account).
             test_count_total/passed/failed: agregados de la corrida.
             tests_publicos: count de tests con is_public=true ejecutados.
-            tests_hidden: siempre 0 en piloto-1 (declarado en ADR-033).
+            tests_hidden: casos ocultos ejecutados. 0 obligatorio desde el
+                cliente; real cuando `emisor_interno` es True.
+            emisor_interno: la llamada viene del execution-service, verificada
+                por secreto compartido (NO por presencia de header — el gateway
+                no lo filtra). Default False = fail-closed: un caller que no
+                prueba ser interno queda con la regla vieja.
             ejecucion_ms: duracion total de la corrida en ms.
             chunks_used_hash: opcional — propagado del ultimo prompt_enviado del
                 episodio para correlacionar con el contexto RAG vigente.
@@ -1489,10 +1495,28 @@ class TutorCore:
                 f"Conteos inconsistentes: passed={test_count_passed} + "
                 f"failed={test_count_failed} != total={test_count_total}"
             )
-        if tests_hidden != 0:
+        # Los casos ocultos solo pueden venir de una corrida SERVER-SIDE.
+        #
+        # El guard sigue existiendo porque protege el camino de Pyodide: el
+        # navegador nunca recibe los casos `is_public=false` (el academic-service
+        # los filtra por rol), asi que un `tests_hidden > 0` desde el browser es
+        # un cliente mintiendo sobre lo que ejecuto. Borrarlo abriria esa puerta.
+        #
+        # Lo que cambia es que ahora existe un emisor legitimo con ocultos: el
+        # execution-service (ADR-060), que los corre en el sandbox precisamente
+        # porque el alumno no los ve. Ejecutar un caso oculto sin revelarlo es LA
+        # capacidad que justifica el reemplazo de Pyodide — y era justo la que
+        # hacia que el evento nunca se emitiera.
+        #
+        # `emisor_interno` NO puede decidirse por presencia de un header: el
+        # api-gateway no filtra `X-Internal-Service-Token` (cero referencias), asi
+        # que un browser puede mandarlo forjado. Lo decide el caller comparando
+        # contra el secreto configurado. Ver `_es_emisor_interno` en la ruta.
+        if tests_hidden != 0 and not emisor_interno:
             raise ValueError(
-                f"tests_hidden debe ser 0 en piloto-1 (recibido {tests_hidden}). "
-                "El client-side NO ejecuta tests is_public=false."
+                f"tests_hidden debe ser 0 desde el cliente (recibido {tests_hidden}). "
+                "El client-side NO ejecuta tests is_public=false; solo el "
+                "execution-service puede reportar ocultos."
             )
 
         payload: dict[str, Any] = {

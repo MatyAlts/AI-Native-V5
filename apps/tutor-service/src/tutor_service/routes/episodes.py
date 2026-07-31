@@ -13,6 +13,7 @@ POST /api/v1/episodes/{id}/run-tests     ADR-033/034: emite TestsEjecutados (con
 from __future__ import annotations
 
 import json
+import secrets
 from collections.abc import Awaitable, Callable
 from datetime import datetime
 from typing import Any, Literal
@@ -1023,6 +1024,28 @@ class RunTestsRequest(BaseModel):
     )
 
 
+def _es_emisor_interno(token: str | None) -> bool:
+    """True si la llamada viene de un servicio interno, probado por secreto.
+
+    NO alcanza con que el header ESTE presente: el api-gateway no filtra
+    `X-Internal-Service-Token` (no lo menciona en ningun lado), asi que un
+    navegador puede mandarlo forjado y llega igual. Lo que prueba procedencia es
+    conocer el valor, que nunca sale del servidor.
+
+    Falla CERRADO: sin secreto configurado no hay forma de verificar a nadie, asi
+    que nadie es interno. En dev eso significa que el execution-service no puede
+    reportar ocultos hasta que se comparta el token — preferible a que un browser
+    pueda hacerlo por default.
+
+    `compare_digest` y no `==`: comparar secretos con `==` corta en el primer
+    byte distinto y filtra el token por temporizacion.
+    """
+    esperado = settings.internal_service_token
+    if not esperado or not token:
+        return False
+    return secrets.compare_digest(token, esperado)
+
+
 @router.post(
     "/{episode_id}/run-tests",
     status_code=status.HTTP_202_ACCEPTED,
@@ -1030,6 +1053,7 @@ class RunTestsRequest(BaseModel):
 async def emit_tests_ejecutados(
     episode_id: UUID,
     req: RunTestsRequest,
+    x_internal_service_token: str | None = Header(default=None),
     user: User = Depends(require_role("estudiante", "docente", "docente_admin", "superadmin")),
 ) -> dict[str, str]:
     """Emite tests_ejecutados al CTR con conteos del cliente Pyodide.
@@ -1054,6 +1078,7 @@ async def emit_tests_ejecutados(
             tests_hidden=req.tests_hidden,
             ejecucion_ms=req.ejecucion_ms,
             chunks_used_hash=req.chunks_used_hash,
+            emisor_interno=_es_emisor_interno(x_internal_service_token),
         )
     except ValueError as e:
         msg = str(e)
