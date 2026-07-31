@@ -1,0 +1,44 @@
+# Normalizacion de finales de linea.
+#
+# Por que existe: los prompts del tutor estan versionados con un hash-lock que
+# se calcula sobre el contenido del archivo. En un checkout Windows, git
+# convierte LF a CRLF y el hash deja de coincidir — el test falla con un
+# "el prompt fue modificado" que no es cierto. Le paso a Neyen revisando el
+# PR #57 y le costo un rato descartar que fuera un problema real.
+#
+# `* text=auto` deja que git normalice a LF en el repo. Los archivos cuyo
+# contenido entra en un hash se fijan a LF explicitamente: ahi no alcanza con
+# "auto", queremos la garantia.
+* text=auto
+
+# Prompts versionados: su contenido entra en el hash-lock del manifest.
+*.md text eol=lf
+ai-native-prompts/**/*.md text eol=lf
+
+# Codigo y config: LF siempre, para que el hash de cualquier artefacto
+# reproducible no dependa del sistema operativo de quien clono.
+*.py    text eol=lf
+*.ts    text eol=lf
+*.tsx   text eol=lf
+*.js    text eol=lf
+*.jsx   text eol=lf
+*.json  text eol=lf
+*.yaml  text eol=lf
+*.yml   text eol=lf
+*.toml  text eol=lf
+*.sh    text eol=lf
+*.sql   text eol=lf
+Makefile text eol=lf
+Dockerfile* text eol=lf
+
+# Binarios: que git no los toque.
+*.png   binary
+*.jpg   binary
+*.jpeg  binary
+*.gif   binary
+*.ico   binary
+*.pdf   binary
+*.docx  binary
+*.xlsx  binary
+*.woff  binary
+*.woff2 binary

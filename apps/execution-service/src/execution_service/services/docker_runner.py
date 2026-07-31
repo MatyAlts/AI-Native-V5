@@ -88,6 +88,14 @@ CONTAINER_USER = "65534:65534"
 # dentro del runner, que es el unico componente con acceso al socket de Docker
 # (ADR-060 D3). Es el unico punto por el que pasan todas las corridas — un
 # limite en el servicio no se sostendria con mas de una replica.
+#
+# ⚠️ El semaforo es POR PROCESO. Hoy se sostiene porque el runner corre con un
+# solo worker (`Dockerfile.runner` no pasa `--workers`, y uvicorn default es 1).
+# El dia que alguien agregue `--workers N`, el techo real pasa a ser 8*N sin que
+# nadie toque el 8 — y el sandbox vuelve al precipicio medido. Si hace falta
+# escalar el runner, el techo tiene que salir del proceso (Redis) o el numero
+# tiene que dividirse por la cantidad de workers. `verificar_configuracion_segura`
+# no lo puede detectar: el proceso no sabe cuantos hermanos tiene.
 _semaforo: asyncio.Semaphore | None = None
 
 
@@ -118,7 +126,11 @@ def _docker_args(workdir: Path) -> list[str]:
         # C2 del ADR-059: el codigo del alumno NO tiene salida de red.
         "--network=none",
         f"--memory={settings.execution_memory_limit_kb}k",
-        f"--cpus={settings.execution_cpu_time_limit_seconds / 5:.2f}",
+        # CPUs por contenedor, explicito. NO derivado del limite de tiempo: eso
+        # acoplaba dos cosas independientes y hacia que subir el timeout
+        # multiplicara el consumo de CPU en silencio, tirando abajo el techo de
+        # concurrencia. Ver el comentario en `config.execution_cpu_shares`.
+        f"--cpus={settings.execution_cpu_shares:.2f}",
         f"--pids-limit={settings.execution_max_processes}",
         "--read-only",
         # Escribible pero acotado: javac necesita escribir los .class. `mode=1777`

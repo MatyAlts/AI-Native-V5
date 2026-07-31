@@ -59,9 +59,20 @@ class Settings(BaseSettings):
     # subirlo sin medir sobre el hardware real es como se llega al precipicio.
     execution_max_concurrent_runs: int = Field(default=8, gt=0)
     execution_max_processes: int = Field(default=60, gt=0)
-    # Control C2 del ADR-059: el codigo del alumno NO tiene salida de red.
-    # Se fija acá, del lado del servidor — el cliente no lo elige.
-    execution_enable_network: bool = Field(default=False)
+    # CPUs por contenedor. ANTES se derivaba de `execution_cpu_time_limit_seconds
+    # / 5`, que daba 1.00 de casualidad con el default y era una trampa: subir el
+    # limite de tiempo a 10s "para dar mas aire" repartia 2 CPUs por contenedor,
+    # y con `execution_max_concurrent_runs=8` eso son 16 CPUs pedidas sobre las 4
+    # del VPS. El techo de concurrencia medido se evaporaba sin que nadie tocara
+    # el techo. Son dos limites independientes y ahora se declaran por separado.
+    execution_cpu_shares: float = Field(default=1.0, gt=0)
+    #
+    # NO hay `execution_enable_network`. Existia como bool y **no la leia nadie**:
+    # el control C2 (`--network=none`) esta fijo en `docker_runner._docker_args`.
+    # Estaba bien que fuera inmutable —el codigo del alumno no debe poder salir a
+    # la red bajo ninguna configuracion— pero la config mentia: cualquiera que
+    # auditara creia que se prendia con un flag. Se saca para que el unico lugar
+    # donde vive el control sea el lugar donde se aplica.
 
     # ── Habilitacion progresiva y apagado (tareas 9.2 y 9.3) ─────────────────
     # Lista de comisiones habilitadas, separadas por coma. VACIA = habilitado

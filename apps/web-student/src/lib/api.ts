@@ -441,7 +441,7 @@ export class ExecutionUnavailableError extends Error {}
  * arrancar una JVM no es instantáneo, así que el resultado se consulta aparte.
  */
 export async function requestExecution(
-  payload: { ejercicio_id: string; source_code: string },
+  payload: { ejercicio_id: string; source_code: string; episode_id?: string },
   getToken?: TokenGetter,
 ): Promise<{ execution_id: string; quota_remaining: number }> {
   const r = await fetch("/api/v1/executions", {

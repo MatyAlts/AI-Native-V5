@@ -33,6 +33,16 @@ const POLL_TIMEOUT_MS = 90_000
 export interface RunRemoteOptions {
   ejercicioId: string
   sourceCode: string
+  /** Episodio al que pertenece la corrida.
+   *
+   * Es lo que le permite al execution-service emitir `tests_ejecutados` al CTR.
+   * Sin esto el evento NO se emite y el episodio queda sin la señal que el
+   * labeler usa para separar N3 de N4 — que es como Java estuvo generando
+   * episodios no comparables con los de Python.
+   *
+   * Opcional porque el panel del docente prueba ejercicios fuera de todo
+   * episodio, y esa corrida no es actividad de ningún alumno. */
+  episodeId?: string | undefined
   // `| undefined` explicito: el repo usa `exactOptionalPropertyTypes`.
   getToken?: TokenGetter | undefined
   /** Se llama cuando la corrida pasa de encolada a ejecutandose, para que la UI
@@ -54,7 +64,11 @@ const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms))
  */
 export async function runRemote(opts: RunRemoteOptions): Promise<ExecutionResult> {
   const { execution_id } = await requestExecution(
-    { ejercicio_id: opts.ejercicioId, source_code: opts.sourceCode },
+    {
+      ejercicio_id: opts.ejercicioId,
+      source_code: opts.sourceCode,
+      ...(opts.episodeId ? { episode_id: opts.episodeId } : {}),
+    },
     opts.getToken,
   )
 

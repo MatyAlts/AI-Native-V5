@@ -132,6 +132,10 @@ export interface CodeEditorProps {
    * servicio lee su definicion completa (con los casos ocultos) para correrlos.
    * Sin esto, un lenguaje remoto no puede ejecutarse. */
   ejercicioId?: string | undefined
+  /** Episodio de la corrida. Viaja al execution-service para que pueda
+   * emitir `tests_ejecutados` al CTR: sin esto el evento no se emite y el
+   * episodio queda sin la señal que el labeler usa para N3/N4. */
+  episodeId?: string | undefined
   /** Para autenticar contra el execution-service. */
   getToken?: TokenGetter | undefined
 }
@@ -209,6 +213,7 @@ export function CodeEditor({
   isMaximized = false,
   language = DEFAULT_LANGUAGE,
   ejercicioId,
+  episodeId,
   getToken,
 }: CodeEditorProps): ReactNode {
   // Un solo lugar decide POR DONDE se ejecuta. Todo lo que dependa de eso
@@ -872,6 +877,7 @@ def __tutor_run_tests(student_code, cases_json):
       result = await runRemote({
         ejercicioId,
         sourceCode: code,
+        ...(episodeId ? { episodeId } : {}),
         getToken,
         onStateChange: (state) => {
           setRemoteWait(
@@ -999,6 +1005,73 @@ def __tutor_run_tests(student_code, cases_json):
     }
   }
 
+  /** "Probar" para lenguajes remotos: los casos los corre el execution-service.
+   *
+   * NO llama a `onTestsRun`, y eso es a proposito: el evento `tests_ejecutados`
+   * lo emite el BACKEND (ver `tutor_client.py` del execution-service). Si lo
+   * emitieran los dos, cada corrida de Java dejaria el evento duplicado en la
+   * cadena del CTR.
+   *
+   * El reparto queda asi:
+   *   - Python (Pyodide, local): emite el frontend — el backend no ve la corrida.
+   *   - Java (remoto): emite el backend — es quien corrio los casos y el unico
+   *     que sabe cuales eran ocultos.
+   */
+  const runTestsRemoto = async () => {
+    if (!ejercicioId) return
+    setTesting(true)
+    setOutputTab("pruebas")
+    clearErrorMarkers()
+    setError(null)
+    try {
+      const result = await runRemote({
+        ejercicioId,
+        sourceCode: code,
+        getToken,
+        ...(episodeId ? { episodeId } : {}),
+        onStateChange: (state) => {
+          setRemoteWait(
+            state === "queued"
+              ? "En cola en el servidor..."
+              : "Compilando y corriendo las pruebas en el servidor...",
+          )
+        },
+      })
+      setTestResults(
+        result.cases.map((c) => ({
+          id: c.id,
+          name: c.name,
+          // El backend tipa `type` como string libre; el panel solo entiende
+          // estos dos. `pytest_assert` no aplica a Java, asi que el fallback
+          // razonable es el otro.
+          type: c.type === "pytest_assert" ? ("pytest_assert" as const) : ("stdin_stdout" as const),
+          // Solo `pass` es aprobado. `error` (no compila, timeout, crash) NO es
+          // aprobado — el mismo criterio que `RunResult.failed` aplica del lado
+          // del servidor.
+          passed: c.status === "pass",
+          expected: c.expected ?? null,
+          actual: c.got ?? "",
+          stdin: c.input ?? "",
+          error: c.error ?? null,
+        })),
+      )
+      // Un error de compilacion no produce casos: sin esto el alumno ve el panel
+      // de pruebas vacio y sin explicacion.
+      if (result.compile_output && result.cases.length === 0) {
+        setError(result.compile_output)
+        setOutputTab("consola")
+      }
+    } catch (e) {
+      // Distinguir "no hay entorno / te pasaste de cuota" de "tu codigo falla"
+      // es justo lo que la tarea 6.6 pide no confundir.
+      setError(e instanceof Error ? e.message : "No se pudieron correr las pruebas.")
+      setOutputTab("consola")
+    } finally {
+      setRemoteWait(null)
+      setTesting(false)
+    }
+  }
+
   // F1: corre el codigo del alumno contra los test cases PUBLICOS. NO emite
   // codigo_ejecutado (eso es "Ejecutar"); notifica conteos via onTestsRun para
   // que el caller emita `tests_ejecutados`. Aislado de la terminal interactiva:
@@ -1009,7 +1082,15 @@ def __tutor_run_tests(student_code, cases_json):
       setOutputTab("consola")
       return
     }
-    if (!pyodideRef.current || running || testing || !hasTests) return
+    if (running || testing || !hasTests) return
+    // Lenguaje remoto: los casos los corre el servidor. Antes esta funcion era
+    // Pyodide-only y salia en silencio — el boton quedaba habilitado (hasRuntime
+    // es true para Java) y no pasaba absolutamente nada al apretarlo.
+    if (isRemoto) {
+      await runTestsRemoto()
+      return
+    }
+    if (!pyodideRef.current) return
     setTesting(true)
     setOutputTab("pruebas")
     clearErrorMarkers()

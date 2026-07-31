@@ -812,6 +812,9 @@ export function EpisodeView({ episodeId, onExit, ejercicioContext, getToken }: E
         testCases={testCases}
         language={language}
         ejercicioId={ejercicioId ?? undefined}
+        // Sin esto el execution-service no sabe a que cadena adjuntar
+        // `tests_ejecutados`, y Java sigue sin emitirlo (ver `tutor_client.py`).
+        episodeId={episodeId}
         getToken={getToken}
         isMaximized={editorMaximized}
         // ED-1: el boton maximizar solo tiene sentido en desktop (el PanelGroup
