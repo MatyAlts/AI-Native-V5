@@ -980,13 +980,23 @@ async def emit_pega_intentada(
 
 
 class RunTestsRequest(BaseModel):
-    """Conteos de la corrida de tests Pyodide (ADR-033/034, Sec 9 epic).
+    """Conteos de la corrida de tests (ADR-033/034 Sec 9; ADR-060 server-side).
 
     El cliente NO manda la lista detallada de tests ni el codigo del alumno —
     solo conteos agregados. Defensa de privacidad + cardinalidad del CTR.
-    Tests `is_public=false` quedan opacos al cliente (filtrados en el
-    endpoint de `tareas-practicas/{id}/test-cases?include_hidden=false`),
-    asi que `tests_hidden` debe llegar 0 en piloto-1.
+
+    `tests_hidden` YA NO se capea a 0. El `le=0` original describia el mundo en
+    que la unica ejecucion era client-side: los tests `is_public=false` quedan
+    opacos al navegador, asi que un cliente Pyodide no podia haber corrido
+    ninguno. Con el `execution-service` (ADR-060) los ocultos SI se ejecutan —
+    server-side, que es justamente donde el alumno no los ve — y el conteo real
+    es por primera vez distinto de cero.
+
+    Ese `le=0` era un bloqueo silencioso del cableo: `ctr_emitter.build_payload`
+    del execution-service ya producia el conteo real, y este endpoint lo habria
+    rechazado con 422 en cuanto un ejercicio tuviera un caso oculto. Es la misma
+    forma que el techo de `max_tokens` del ai-gateway — el schema de entrada
+    corta antes de que el contrato importe.
     """
 
     test_count_total: int = Field(ge=0)
@@ -995,11 +1005,22 @@ class RunTestsRequest(BaseModel):
     tests_publicos: int = Field(ge=0)
     tests_hidden: int = Field(
         ge=0,
-        le=0,
-        description="Siempre 0 en piloto-1 — los tests hidden no se ejecutan client-side.",
+        description=(
+            "Casos ocultos ejecutados. 0 desde el cliente Pyodide (no los ve); "
+            "real desde el execution-service, que corre server-side."
+        ),
     )
     ejecucion_ms: int = Field(ge=0, le=10 * 60 * 1000)  # cap a 10min
     chunks_used_hash: str | None = Field(default=None, min_length=64, max_length=64)
+    execution_engine: str | None = Field(
+        default=None,
+        max_length=32,
+        description=(
+            "Motor que corrio los casos ('pyodide', 'docker-java'). Informativo: "
+            "el classifier NO lo consulta, asi que es inerte para la clasificacion "
+            "y no obliga a bumpear LABELER_VERSION."
+        ),
+    )
 
 
 @router.post(

@@ -23,11 +23,14 @@ from execution_service.services import execution_store, metrics
 from execution_service.services.academic_client import (
     AcademicClient,
     AcademicUnavailableError,
+    Ejercicio,
 )
+from execution_service.services.ctr_emitter import build_payload, should_emit
 from execution_service.services.execution_store import ExecutionState
 from execution_service.services.executor import run_cases, to_client_payload
 from execution_service.services.quotas import QuotaUnavailableError, check_and_consume
-from execution_service.services.result_mapper import infrastructure_failure
+from execution_service.services.result_mapper import RunResult, infrastructure_failure
+from execution_service.services.tutor_client import TutorClient
 
 router = APIRouter(prefix="/api/v1/executions", tags=["executions"])
 
@@ -42,6 +45,14 @@ class ExecutionRequest(BaseModel):
     # Para la habilitacion progresiva (9.3). Opcional: sin lista configurada el
     # servicio esta habilitado para todas y este campo no se mira.
     comision_id: UUID | None = None
+    # Episodio al que pertenece la corrida (tarea 5.1). Sin esto no hay a que
+    # cadena adjuntar `tests_ejecutados`, y era la razon de fondo por la que el
+    # emisor nunca se cableo: `ctr_emitter` armaba el payload y no habia destino.
+    #
+    # Opcional a proposito: el panel del docente prueba ejercicios FUERA de un
+    # episodio, y esa corrida no es actividad de ningun alumno — no debe generar
+    # evento. `None` => no se emite.
+    episode_id: UUID | None = None
 
 
 class ExecutionAccepted(BaseModel):
@@ -61,6 +72,11 @@ async def _run_and_store(execution_id: UUID, *, req: ExecutionRequest, user: Use
     started = _time.perf_counter()
     metrics.record_started()
     outcome = "infrastructure_failure"
+    # Solo quedan no-None si la corrida llego a ejecutarse de verdad. Es la
+    # condicion para emitir: sin `ejercicio` no se sabe que casos eran ocultos,
+    # y sin `run` no hay conteos.
+    run: RunResult | None = None
+    ejercicio: Ejercicio | None = None
     try:
         await execution_store.put(
             execution_id,
@@ -94,7 +110,34 @@ async def _run_and_store(execution_id: UUID, *, req: ExecutionRequest, user: Use
             "compile_output": "",
         }
 
+    ejecucion_ms = int((_time.perf_counter() - started) * 1000)
     metrics.record_finished(outcome=outcome, duration_seconds=_time.perf_counter() - started)
+
+    # Tarea 5.1 — el evento de trazabilidad. Va DESPUES de medir y ANTES de
+    # guardar el resultado: emitir es lo unico que el alumno no ve, asi que si
+    # falla no puede retrasarle la respuesta ni tumbar la corrida.
+    #
+    # `should_emit` es el guard anti-inflacion: ante fallo de infraestructura NO
+    # se emite, porque el labeler lee `failed == 0` como "paso todo" y etiquetaria
+    # N4 un episodio donde se cayo el sandbox. Ver `ctr_emitter`.
+    if (
+        req.episode_id is not None
+        and run is not None
+        and ejercicio is not None
+        and should_emit(run)
+    ):
+        await TutorClient().emit_tests_ejecutados(
+            episode_id=req.episode_id,
+            execution_id=execution_id,
+            user_id=user.id,
+            tenant_id=user.tenant_id,
+            payload=build_payload(
+                run,
+                hidden_case_ids={c.id for c in ejercicio.hidden_cases},
+                ejecucion_ms=ejecucion_ms,
+                engine="docker-java",
+            ),
+        )
 
     try:
         await execution_store.put(

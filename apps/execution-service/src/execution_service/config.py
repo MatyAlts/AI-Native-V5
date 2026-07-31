@@ -107,6 +107,9 @@ class Settings(BaseSettings):
     # el endpoint publico (tarea 3.4) — por eso pega al academic-service
     # directo y no via gateway.
     academic_service_url: str = Field(default="http://127.0.0.1:8002")
+    # Destino de `tests_ejecutados` (tarea 5.1). El CTR se escribe SOLO desde
+    # el tutor-service; este servicio no habla con el ctr-service directo.
+    tutor_service_url: str = Field(default="http://127.0.0.1:8006")
 
 
 @lru_cache
