@@ -1,0 +1,143 @@
+#!/usr/bin/env bash
+# Verifica sobre el DESPLIEGUE REAL los controles que el ADR-060 exige antes de
+# produccion (tareas 8.3 y 8.4 de `java-execution-engine`).
+#
+# Por que existe: los controles del ADR estan verificados en LOCAL. El ADR-059
+# ya dejo la leccion —"un ADR de seguridad se valida solo si se prueba"— cuando
+# dio por sentado que Judge0 levantaba y resulto que exige cgroups v1. Contra un
+# doble local, "sin red" y "sin privilegios" no significan nada: el doble no
+# aisla, no cuesta plata y no tiene una red que deshabilitar.
+#
+# NO modifica nada. Solo lee y reporta.
+#
+#   Uso:  bash scripts/verificar-despliegue-ejecucion.sh
+#
+# Correr EN el host donde vive el execution-runner.
+
+set -uo pipefail
+
+ok=0
+fallos=0
+avisos=0
+
+titulo() { printf '\n\033[1m== %s ==\033[0m\n' "$1"; }
+pasa()   { printf '  \033[0;32m[OK]\033[0m    %s\n' "$1"; ok=$((ok + 1)); }
+falla()  { printf '  \033[0;31m[FALLA]\033[0m %s\n' "$1"; fallos=$((fallos + 1)); }
+avisa()  { printf '  \033[0;33m[AVISO]\033[0m %s\n' "$1"; avisos=$((avisos + 1)); }
+dato()   { printf '          %s\n' "$1"; }
+
+RUNNER_PORT="${RUNNER_PORT:-8015}"
+IMAGEN="${EXECUTION_IMAGE:-eclipse-temurin:21-jdk}"
+
+# ── 0. Rootless: si esta, el runner sobra ────────────────────────────────────
+# ADR-060 (Alternativas): "Conviene evaluar rootless en el VPS antes de
+# desplegar: si esta disponible, esta pieza sobra". Con el daemon como usuario
+# sin privilegios el socket deja de ser root-equivalente y el execution-service
+# puede invocar Docker directo.
+titulo "0. Docker rootless (decide si el runner hace falta)"
+if docker info 2>/dev/null | grep -qi rootless; then
+    avisa "Docker corre ROOTLESS — el execution-runner probablemente sobra."
+    dato "El socket deja de ser root-equivalente. Ver ADR-060, seccion Alternativas."
+else
+    pasa "Docker corre como root: el runner (D3) es necesario, como asume el ADR."
+fi
+
+# ── 1. Hardware, para leer la prueba de carga ────────────────────────────────
+titulo "1. Hardware del host (contexto para la tarea 8.3)"
+dato "CPUs:   $(nproc 2>/dev/null || echo '?')"
+dato "RAM:    $(free -h 2>/dev/null | awk '/^Mem:/{print $2" total, "$7" disponible"}' || echo '?')"
+dato "La medicion local fue 30 concurrentes -> 4,98 s sobre una maquina de"
+dato "desarrollo. Si este host tiene menos CPU, el numero que vale es el de aca."
+
+# ── 2. El runner NO puede ser alcanzable desde afuera ────────────────────────
+# Es el control mas importante de 8.4. El runner es el UNICO con acceso al
+# socket de Docker, y permitir `POST /containers/create` es permitir crear un
+# contenedor privilegiado con `/` montado (ADR-060 D3). Si escucha en 0.0.0.0,
+# no es "una vulnerabilidad": es acceso al host.
+titulo "2. El runner no escucha hacia afuera (8.4 — el control critico)"
+listen="$(ss -tlnp 2>/dev/null | grep ":${RUNNER_PORT}" || true)"
+if [ -z "$listen" ]; then
+    avisa "Nada escuchando en :${RUNNER_PORT} en este host."
+    dato "Si el runner corre en un contenedor, correr este script adentro."
+elif echo "$listen" | grep -qE '0\.0\.0\.0:'"${RUNNER_PORT}"'|\*:'"${RUNNER_PORT}"; then
+    falla "El runner escucha en 0.0.0.0:${RUNNER_PORT} — alcanzable desde afuera."
+    dato "$listen"
+    dato "Bindear a 127.0.0.1 o a la red interna. Es el punto D3 del ADR-060."
+else
+    pasa "El runner no escucha en 0.0.0.0."
+    dato "$listen"
+fi
+
+# ── 3. RUNNER_TOKEN configurado ──────────────────────────────────────────────
+titulo "3. RUNNER_TOKEN configurado (8.4)"
+if [ -n "${RUNNER_TOKEN:-}" ]; then
+    pasa "RUNNER_TOKEN presente en el entorno (largo: ${#RUNNER_TOKEN})."
+    [ "${#RUNNER_TOKEN}" -lt 32 ] && avisa "Menos de 32 chars — conviene uno mas largo."
+else
+    avisa "RUNNER_TOKEN no esta en ESTE shell."
+    dato "No prueba que falte: puede estar solo en el entorno del contenedor."
+    dato "Verificar ahi:  docker exec <runner> printenv RUNNER_TOKEN"
+fi
+
+# Se prueba con un body VALIDO y un token INVALIDO. Con el token configurado la
+# respuesta tiene que ser 401 y no se ejecuta nada, asi que no hay efecto. Si
+# llega a ejecutar, eso mismo ES el hallazgo: el token no se esta exigiendo.
+#
+# Un body vacio no sirve para esto: FastAPI valida `RunRequest` ANTES de correr
+# el handler, entonces devuelve 422 sin llegar nunca al chequeo de token. Con
+# `runner_token` vacio (modo dev) `_check_token` ademas sale temprano, asi que
+# un 422 no distingue "no exige token" de "body invalido".
+if [ -n "$listen" ]; then
+    code="$(curl -s -o /dev/null -w '%{http_code}' --max-time 20 \
+        -X POST "http://127.0.0.1:${RUNNER_PORT}/run" \
+        -H 'Content-Type: application/json' \
+        -H 'X-Runner-Token: token-invalido-de-verificacion' \
+        -d '{"source_code":"public class Main{public static void main(String[] a){}}","stdin":""}' \
+        2>/dev/null || echo 000)"
+    case "$code" in
+        401|403) pasa "POST /run con token invalido devuelve ${code}: el token se exige." ;;
+        000)     avisa "No se pudo consultar /run (sin curl, o el runner no responde)." ;;
+        200)     falla "POST /run EJECUTO con un token invalido: RUNNER_TOKEN no configurado." ;;
+        422)     falla "422 con body valido — el contrato de /run cambio; revisar el script." ;;
+        *)       falla "POST /run con token invalido devuelve ${code} — deberia ser 401." ;;
+    esac
+fi
+
+# ── 4. Imagen pineada por digest ─────────────────────────────────────────────
+# Un tag es mutable: `21-jdk` de hoy no es el de manana. Para un sandbox que
+# ejecuta codigo de terceros, el digest es lo que hace reproducible QUE se corrio.
+titulo "4. Imagen del sandbox pineada por digest (8.4)"
+if printf '%s' "$IMAGEN" | grep -q '@sha256:'; then
+    pasa "EXECUTION_IMAGE pineada por digest."
+    dato "$IMAGEN"
+else
+    falla "La imagen usa un TAG mutable, no un digest: ${IMAGEN}"
+    dato "Un tag puede cambiar debajo tuyo. Obtener el digest con:"
+    dato "  docker inspect --format='{{index .RepoDigests 0}}' ${IMAGEN}"
+    if command -v docker >/dev/null 2>&1; then
+        d="$(docker inspect --format='{{index .RepoDigests 0}}' "$IMAGEN" 2>/dev/null || true)"
+        [ -n "$d" ] && dato "Digest actual en este host: $d"
+    fi
+fi
+
+# ── 5. La imagen tiene que estar bajada ──────────────────────────────────────
+# Si no esta, el `docker pull` (~450MB) entra en el presupuesto de 10s de la
+# corrida del alumno y se come su timeout. Es lo que rompia el smoke en CI.
+titulo "5. Imagen ya presente en el host (evita comerse el timeout del alumno)"
+if docker image inspect "$IMAGEN" >/dev/null 2>&1; then
+    pasa "La imagen esta local: ninguna corrida paga la descarga."
+else
+    falla "La imagen NO esta bajada — la primera corrida se come el pull en su timeout."
+    dato "docker pull ${IMAGEN}"
+fi
+
+# ── Resumen ─────────────────────────────────────────────────────────────────
+printf '\n\033[1m== Resumen ==\033[0m\n'
+printf '  %s ok · %s fallas · %s avisos\n' "$ok" "$fallos" "$avisos"
+if [ "$fallos" -gt 0 ]; then
+    printf '\n  \033[0;31mNO cerrar 8.4 con fallas abiertas.\033[0m\n'
+    printf '  Es lo que decide si el runner queda expuesto.\n\n'
+    exit 1
+fi
+printf '\n  Sin fallas. Falta la carga (8.3) sobre ESTE hardware:\n'
+printf '    uv run python scripts/spike-docker-runner.py\n\n'
