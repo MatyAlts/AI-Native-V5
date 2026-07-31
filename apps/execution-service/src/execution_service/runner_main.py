@@ -21,9 +21,13 @@ por ruta y no por cuerpo del pedido.
   - Este proceso: con `/var/run/docker.sock` montado.
   - `execution-service`: **SIN** el socket, hablando acá por `RUNNER_URL`.
   - Red: el runner NO debe ser alcanzable desde afuera de la red interna. Su
-    unico cliente legitimo es el execution-service.
-  - `RUNNER_TOKEN` compartido entre ambos. Sin token configurado el runner
-    acepta cualquier llamada — aceptable en desarrollo local, NO en produccion.
+    unico cliente legitimo es el execution-service. Es lo unico de los tres
+    controles que el codigo no puede garantizar solo — se verifica sobre el
+    despliegue con `scripts/verificar-despliegue-ejecucion.sh`.
+  - `RUNNER_TOKEN` compartido entre ambos, e imagen pineada por digest. Fuera de
+    desarrollo los dos son OBLIGATORIOS: sin ellos el proceso **no arranca**
+    (ver `verificar_configuracion_segura`). Antes fallaban abiertos, que es
+    justo el modo de falla que el ADR-060 no puede permitirse.
 """
 
 from __future__ import annotations
@@ -96,8 +100,79 @@ async def _warmup_image() -> None:
         logger.warning("warmup_pull_sin_docker image=%s err=%s", imagen, exc)
 
 
+class ArranqueInseguroError(RuntimeError):
+    """El runner no arranca con una configuracion que el ADR-060 prohibe."""
+
+
+def _es_produccion() -> bool:
+    return settings.environment.strip().lower() not in {"development", "dev", "test", "testing"}
+
+
+def verificar_configuracion_segura() -> list[str]:
+    """Controles del ADR-060 que en produccion se EXIGEN, no se recuerdan.
+
+    Devuelve la lista de problemas. Vacia = configuracion aceptable.
+
+    Estos dos controles (tarea 8.4) estaban fallando ABIERTOS: sin
+    `RUNNER_TOKEN` el runner atendia a cualquiera, y con la imagen por tag
+    corria lo que hubiera del otro lado del tag ese dia. Un control que se
+    cumple solo si alguien se acordo de configurarlo no es un control — el
+    ADR-059 ya dejo esa leccion cuando dio por sentado que Judge0 levantaba.
+
+    Se verifica al arrancar y no por request: si esta mal, no hay que atender
+    ni una sola corrida.
+    """
+    problemas: list[str] = []
+
+    # C3 — El token es la unica barrera real. El runner es el UNICO componente
+    # con acceso al socket de Docker: permitir `POST /containers/create` es
+    # permitir crear un contenedor privilegiado con `/` montado (ADR-060 D3).
+    # Que ademas no sea alcanzable desde afuera es defensa en profundidad, pero
+    # esto es el candado.
+    if not settings.runner_token:
+        problemas.append(
+            "RUNNER_TOKEN vacio: el runner atenderia /run a cualquiera que lo alcance, "
+            "y es el unico proceso con acceso al socket de Docker (ADR-060 D3)."
+        )
+    elif len(settings.runner_token) < 32:
+        problemas.append(
+            f"RUNNER_TOKEN de {len(settings.runner_token)} chars: usar >=32 "
+            "(`openssl rand -base64 32`)."
+        )
+
+    # C1 — Un tag es mutable: `21-jdk` de hoy no es el de manana. Para un
+    # sandbox que ejecuta codigo de terceros, el digest es lo que hace
+    # reproducible QUE se corrio — y es parte de la defensa de la tesis, no
+    # solo higiene operativa.
+    if "@sha256:" not in settings.java_image:
+        problemas.append(
+            f"JAVA_IMAGE por tag mutable ({settings.java_image}): pinear por digest. "
+            "Obtenerlo con `docker inspect --format='{{index .RepoDigests 0}}' <imagen>`."
+        )
+
+    return problemas
+
+
 @contextlib.asynccontextmanager
 async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
+    problemas = verificar_configuracion_segura()
+    if problemas:
+        detalle = "\n".join(f"  - {p}" for p in problemas)
+        if _es_produccion():
+            # Fallar CERRADO, igual que las cuotas: sin la garantia, no se
+            # atiende. Arrancar igual seria exactamente el modo de falla que
+            # este chequeo existe para impedir.
+            raise ArranqueInseguroError(
+                f"El runner no arranca en '{settings.environment}' con esta configuracion:\n"
+                f"{detalle}\n"
+                "Son controles obligatorios del ADR-060 (tarea 8.4)."
+            )
+        logger.warning(
+            "runner_configuracion_insegura entorno=%s (tolerado fuera de produccion):\n%s",
+            settings.environment,
+            detalle,
+        )
+
     tarea = asyncio.create_task(_warmup_image())
     try:
         yield
@@ -128,8 +203,16 @@ class RunRequest(BaseModel):
 
 def _check_token(token: str | None) -> None:
     if not settings.runner_token:
-        # Sin token configurado no se exige nada. Es el modo de desarrollo
-        # local; en produccion el token va siempre y el runner no se expone.
+        # En produccion esto es inalcanzable: `verificar_configuracion_segura`
+        # impide arrancar sin token. Se chequea igual — es el unico proceso con
+        # el socket de Docker, y un fail-open aca es acceso al host. Defensa en
+        # profundidad barata contra un arranque que esquive el lifespan.
+        if _es_produccion():
+            raise HTTPException(
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                detail="Runner mal configurado: sin RUNNER_TOKEN",
+            )
+        # Fuera de produccion no se exige nada: es el modo de desarrollo local.
         return
     # Comparacion en tiempo constante: comparar con `!=` filtra el token por
     # temporizacion.
