@@ -18,7 +18,7 @@
     "@platform/auth-client": "workspace:*",
     "@platform/contracts": "workspace:*",
     "@platform/ui": "workspace:*",
-    "@tanstack/react-query": "^5.60.0",
+    "@tanstack/react-query": "^5.101.4",
     "@tanstack/react-router": "^1.90.0",
     "@tanstack/react-table": "^8.20.0",
     "clsx": "^2.1.0",
