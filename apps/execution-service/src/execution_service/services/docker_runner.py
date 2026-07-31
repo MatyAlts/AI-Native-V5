@@ -41,6 +41,7 @@ Todos desde el arranque, no agregados despues:
 from __future__ import annotations
 
 import asyncio
+import logging
 import shutil
 import tempfile
 from dataclasses import dataclass
@@ -49,10 +50,53 @@ from pathlib import Path
 from execution_service.config import settings
 from execution_service.services.sandbox_types import SandboxResult, SandboxStatus
 
+logger = logging.getLogger(__name__)
+
 # La imagen sale de config: en produccion se pinea por digest (control C1).
 
 # Usuario sin privilegios dentro del contenedor. 65534 = nobody.
 CONTAINER_USER = "65534:65534"
+
+# ── Techo de corridas simultaneas ────────────────────────────────────────────
+#
+# Sin esto, N alumnos apretando "Ejecutar" a la vez lanzan N contenedores a la
+# vez. Compilar Java es CPU-bound, asi que se pelean por los cores del host y
+# cada corrida tarda mas — hasta pasarse del wall-time y morir por timeout.
+#
+# Medido sobre 4 CPUs (el hardware del VPS), con la imagen ya bajada:
+#
+#     30 concurrentes -> 8,3 s, 30/30 ok   (83% del presupuesto de 10 s)
+#     40 concurrentes -> 28 de 40 MUEREN por timeout
+#     60 concurrentes -> mueren las 60
+#
+# No degrada suave: se cae de golpe entre 30 y 40.
+#
+# Y el modo de falla es peor que "lento". Un timeout por contencion del host es
+# INDISTINGUIBLE de un bucle infinito del alumno: los dos devuelven
+# `timed_out=True` -> `CaseStatus.ERROR` -> cuenta como fallo -> N3. O sea que
+# bajo carga, alumnos que escribieron codigo correcto quedan registrados en el
+# corpus como que fallaron, por culpa del servidor. Es el mismo problema que
+# `ctr_emitter` evita para el fallo de infraestructura, deflactando en vez de
+# inflar — y tampoco se nota, porque el evento se ve igual que uno legitimo.
+#
+# Con el techo puesto, el excedente ESPERA en vez de morir. Esperar unos
+# segundos es honesto; fallar y quedar mal anotado en el corpus, no. El endpoint
+# ya es asincrono con consulta de estado (D2), asi que la espera no congela nada
+# del lado del alumno.
+#
+# El techo vive ACA y no en el execution-service a proposito: este modulo corre
+# dentro del runner, que es el unico componente con acceso al socket de Docker
+# (ADR-060 D3). Es el unico punto por el que pasan todas las corridas — un
+# limite en el servicio no se sostendria con mas de una replica.
+_semaforo: asyncio.Semaphore | None = None
+
+
+def _obtener_semaforo() -> asyncio.Semaphore:
+    """Semaforo perezoso: se crea en el loop que corre, no al importar."""
+    global _semaforo
+    if _semaforo is None:
+        _semaforo = asyncio.Semaphore(settings.execution_max_concurrent_runs)
+    return _semaforo
 
 
 @dataclass(frozen=True)
@@ -98,7 +142,24 @@ def _docker_args(workdir: Path) -> list[str]:
 
 
 async def run_java(source_code: str, stdin: str = "") -> DockerRunResult:
-    """Compila y ejecuta un archivo Java unico en un contenedor aislado."""
+    """Compila y ejecuta un archivo Java unico en un contenedor aislado.
+
+    Espera turno si ya hay `execution_max_concurrent_runs` corridas en vuelo.
+    La espera NO consume el wall-time del alumno: el cronometro arranca recien
+    cuando se lanza el contenedor. Es la diferencia entre encolar y fallar.
+    """
+    semaforo = _obtener_semaforo()
+    if semaforo.locked():
+        logger.info(
+            "sandbox_saturado techo=%s — la corrida espera turno",
+            settings.execution_max_concurrent_runs,
+        )
+    async with semaforo:
+        return await _run_java_sin_techo(source_code, stdin)
+
+
+async def _run_java_sin_techo(source_code: str, stdin: str = "") -> DockerRunResult:
+    """El cuerpo real. Separado para que el wall-time NO cuente la espera."""
     tmpdir = Path(tempfile.mkdtemp(prefix="exec-"))
     try:
         (tmpdir / "Main.java").write_text(source_code, encoding="utf-8")

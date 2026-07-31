@@ -52,6 +52,12 @@ class Settings(BaseSettings):
     execution_cpu_time_limit_seconds: float = Field(default=5.0, gt=0)
     execution_wall_time_limit_seconds: float = Field(default=10.0, gt=0)
     execution_memory_limit_kb: int = Field(default=256_000, gt=0)
+    # Techo de corridas simultaneas en el runner. Compilar Java es CPU-bound:
+    # pasado el techo, las corridas se pelean por los cores y mueren por
+    # wall-time en vez de tardar mas. Ver el razonamiento y las mediciones en
+    # `services/docker_runner.py`. Default conservador para el VPS de 4 CPUs;
+    # subirlo sin medir sobre el hardware real es como se llega al precipicio.
+    execution_max_concurrent_runs: int = Field(default=8, gt=0)
     execution_max_processes: int = Field(default=60, gt=0)
     # Control C2 del ADR-059: el codigo del alumno NO tiene salida de red.
     # Se fija acá, del lado del servidor — el cliente no lo elige.
