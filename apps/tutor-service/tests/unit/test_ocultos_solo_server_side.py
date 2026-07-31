@@ -25,9 +25,20 @@ nunca se ejecuto. De ahi que este test parametrice EL CASO CON OCULTOS.
 
 from __future__ import annotations
 
+from uuid import UUID, uuid4
+
+import fakeredis.aioredis
 import pytest
 from tutor_service.config import settings
 from tutor_service.routes.episodes import _es_emisor_interno
+from tutor_service.services.session import SessionManager
+from tutor_service.services.tutor_core import TutorCore
+
+from .test_episode_events import (
+    FakeAIGatewayClient,
+    FakeContentClient,
+    FakeGovernanceClient,
+)
 
 TOKEN = "secreto-interno-de-32-chars-o-mas-xxxx"
 
@@ -76,33 +87,143 @@ def test_sin_secreto_configurado_nadie_es_interno() -> None:
 # ── La regla de negocio ─────────────────────────────────────────────────────
 
 
-def _validar(tests_hidden: int, *, emisor_interno: bool) -> None:
-    """Replica el guard de `tutor_core.emit_tests_ejecutados`.
+# ── La regla de negocio, contra el METODO REAL ──────────────────────────────
+#
+# La primera version de estos tests REPLICABA el guard en un helper local. Eso
+# los dejaba verdes aunque alguien cambiara `tutor_core`: era el mismo hueco
+# entre capas que produjo el bug, con un test adentro. Ahora llaman a
+# `emit_tests_ejecutados` de verdad, con dobles para Redis y el CTR — el molde
+# es `test_episode_events.py`, que hace lo mismo con el endpoint hermano.
 
-    Se prueba la REGLA, no el metodo entero: el metodo necesita Redis, el CTR y
-    una sesion viva. Lo que este test protege es la condicion, que es donde
-    vivio el bug las dos veces.
+
+class FakeCTRClient:
+    def __init__(self) -> None:
+        self.published_events: list[dict] = []
+
+    async def publish_event(self, event: dict, tenant_id: UUID, caller_id: UUID) -> str:
+        self.published_events.append(event)
+        return f"fake-{len(self.published_events)}"
+
+
+@pytest.fixture
+async def redis_client():
+    client = fakeredis.aioredis.FakeRedis(decode_responses=True)
+    yield client
+    await client.aclose()
+
+
+@pytest.fixture
+def fake_ctr() -> FakeCTRClient:
+    return FakeCTRClient()
+
+
+@pytest.fixture
+def tutor(redis_client, fake_ctr) -> TutorCore:
+    return TutorCore(
+        governance=FakeGovernanceClient(),
+        content=FakeContentClient(),
+        ai_gateway=FakeAIGatewayClient(),
+        ctr=fake_ctr,
+        sessions=SessionManager(redis_client),
+    )
+
+
+async def _episodio(tutor: TutorCore) -> UUID:
+    return await tutor.open_episode(
+        tenant_id=uuid4(),
+        comision_id=uuid4(),
+        student_pseudonym=uuid4(),
+        problema_id=uuid4(),
+        curso_config_hash="c" * 64,
+        classifier_config_hash="b" * 64,
+    )
+
+
+@pytest.mark.parametrize("ocultos", [1, 2, 5])
+async def test_el_execution_service_puede_reportar_ocultos(
+    tutor: TutorCore, fake_ctr: FakeCTRClient, ocultos: int
+) -> None:
+    """EL caso que estaba roto. Es la razon de ser del ADR-060.
+
+    Llega hasta el evento publicado en el CTR: no alcanza con que no explote,
+    hay que ver el conteo real de ocultos del otro lado.
     """
-    if tests_hidden != 0 and not emisor_interno:
-        raise ValueError(f"tests_hidden debe ser 0 desde el cliente (recibido {tests_hidden})")
+    episode_id = await _episodio(tutor)
+    seq = await tutor.emit_tests_ejecutados(
+        episode_id=episode_id,
+        user_id=uuid4(),
+        test_count_total=ocultos + 2,
+        test_count_passed=2,
+        test_count_failed=ocultos,
+        tests_publicos=2,
+        tests_hidden=ocultos,
+        ejecucion_ms=900,
+        emisor_interno=True,
+    )
+    assert seq == 1
+    ev = fake_ctr.published_events[-1]
+    assert ev["event_type"] == "tests_ejecutados"
+    assert ev["payload"]["tests_hidden"] == ocultos
 
 
 @pytest.mark.parametrize("ocultos", [1, 2, 5])
-def test_el_execution_service_puede_reportar_ocultos(ocultos: int) -> None:
-    """EL caso que estaba roto. Es la razon de ser del ADR-060."""
-    _validar(ocultos, emisor_interno=True)
-
-
-@pytest.mark.parametrize("ocultos", [1, 2, 5])
-def test_el_navegador_no_puede_reportar_ocultos(ocultos: int) -> None:
+async def test_el_navegador_no_puede_reportar_ocultos(
+    tutor: TutorCore, fake_ctr: FakeCTRClient, ocultos: int
+) -> None:
     """El guard que NO hay que borrar: Pyodide no recibe los casos
     `is_public=false`, asi que un `tests_hidden > 0` desde el browser es un
     cliente mintiendo sobre lo que ejecuto."""
+    episode_id = await _episodio(tutor)
     with pytest.raises(ValueError, match="desde el cliente"):
-        _validar(ocultos, emisor_interno=False)
+        await tutor.emit_tests_ejecutados(
+            episode_id=episode_id,
+            user_id=uuid4(),
+            test_count_total=ocultos + 2,
+            test_count_passed=2,
+            test_count_failed=ocultos,
+            tests_publicos=2,
+            tests_hidden=ocultos,
+            ejecucion_ms=900,
+        )
+    # Y no dejo rastro en la cadena: solo esta `episodio_abierto`.
+    assert all(e["event_type"] != "tests_ejecutados" for e in fake_ctr.published_events)
 
 
-def test_sin_ocultos_ambos_emisores_pasan() -> None:
-    """El camino de Pyodide sigue intacto — es el que corre en produccion hoy."""
-    _validar(0, emisor_interno=False)
-    _validar(0, emisor_interno=True)
+async def test_sin_ocultos_el_camino_de_pyodide_sigue_intacto(
+    tutor: TutorCore, fake_ctr: FakeCTRClient
+) -> None:
+    """Es el que corre en produccion hoy. `emisor_interno` default False."""
+    episode_id = await _episodio(tutor)
+    seq = await tutor.emit_tests_ejecutados(
+        episode_id=episode_id,
+        user_id=uuid4(),
+        test_count_total=2,
+        test_count_passed=1,
+        test_count_failed=1,
+        tests_publicos=2,
+        tests_hidden=0,
+        ejecucion_ms=500,
+    )
+    assert seq == 1
+    assert fake_ctr.published_events[-1]["payload"]["tests_hidden"] == 0
+
+
+async def test_el_default_de_emisor_interno_es_cerrado(tutor: TutorCore) -> None:
+    """Un caller que no dice nada NO es interno.
+
+    Si el default fuera True, cualquier caller viejo que no conozca el
+    parametro podria reportar ocultos sin probar procedencia.
+    """
+    episode_id = await _episodio(tutor)
+    with pytest.raises(ValueError, match="desde el cliente"):
+        await tutor.emit_tests_ejecutados(
+            episode_id=episode_id,
+            user_id=uuid4(),
+            test_count_total=3,
+            test_count_passed=1,
+            test_count_failed=2,
+            tests_publicos=2,
+            tests_hidden=1,
+            ejecucion_ms=900,
+            # sin `emisor_interno` a proposito
+        )

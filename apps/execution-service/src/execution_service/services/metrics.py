@@ -56,6 +56,29 @@ executions_in_flight = _meter.create_up_down_counter(
 )
 
 
+# Eventos `tests_ejecutados` que NO llegaron al CTR.
+#
+# Existe porque el fallo es mudo por diseno: emitir falla SOFT (el alumno ya vio
+# su resultado y la cuota ya se consumio), asi que sin metrica la unica senal es
+# una linea de log que nadie mira. Y el modo de falla mas probable no es una
+# caida: es `INTERNAL_SERVICE_TOKEN` distinto entre este servicio y el
+# tutor-service, que hace rebotar con 422 SOLO los ejercicios con casos
+# ocultos — o sea, en silencio y justo en los que mas importan para la tesis.
+#
+# Un evento perdido es un episodio que para el clasificador se ejecuto de menos.
+# Si este contador sube, el corpus se esta degradando ahora mismo.
+ctr_emissions_failed_total = _meter.create_counter(
+    "execution_ctr_emissions_failed_total",
+    description="Eventos tests_ejecutados que no llegaron al CTR, por motivo",
+    unit="1",
+)
+
+
+def record_ctr_emission_failed(*, reason: str) -> None:
+    """`reason`: `rejected_422`, `rejected_409`, `unreachable`, `rejected_other`."""
+    ctr_emissions_failed_total.add(1, {"reason": reason})
+
+
 def record_started() -> None:
     executions_in_flight.add(1)
 

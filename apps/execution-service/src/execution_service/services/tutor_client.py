@@ -41,6 +41,7 @@ from uuid import UUID
 import httpx
 
 from execution_service.config import settings
+from execution_service.services import metrics
 from execution_service.services.ctr_emitter import idempotency_key
 
 logger = logging.getLogger(__name__)
@@ -89,6 +90,7 @@ class TutorClient:
                     ),
                 )
         except (httpx.HTTPError, OSError) as exc:
+            metrics.record_ctr_emission_failed(reason="unreachable")
             logger.error(
                 "tests_ejecutados_no_emitido episodio=%s ejecucion=%s error=%s "
                 "— el episodio queda sin el evento que el labeler usa para N3/N4",
@@ -104,9 +106,29 @@ class TutorClient:
             )
             return True
 
+        if resp.status_code == 422:
+            # Casi siempre es UNA sola causa: `INTERNAL_SERVICE_TOKEN` distinto
+            # entre este servicio y el tutor-service. Rebota solo los ejercicios
+            # con casos ocultos, que es el modo de falla mas caro — silencioso y
+            # justo en los que sostienen el claim del ADR-060.
+            metrics.record_ctr_emission_failed(reason="rejected_422")
+            logger.error(
+                "tests_ejecutados_rechazado_422 episodio=%s ejecucion=%s body=%s "
+                "— si menciona tests_hidden, INTERNAL_SERVICE_TOKEN no coincide "
+                "con el del tutor-service. El corpus esta perdiendo eventos.",
+                episode_id,
+                execution_id,
+                resp.text[:200],
+            )
+            return False
+
         # 409 = episodio cerrado o expirado. Es esperable (el alumno cerro la
         # pestana antes de que terminara la corrida) y no amerita el mismo ruido.
-        nivel = logger.info if resp.status_code == 409 else logger.error
+        es_esperable = resp.status_code == 409
+        metrics.record_ctr_emission_failed(
+            reason="rejected_409" if es_esperable else "rejected_other"
+        )
+        nivel = logger.info if es_esperable else logger.error
         nivel(
             "tests_ejecutados_rechazado episodio=%s ejecucion=%s status=%s body=%s",
             episode_id,
