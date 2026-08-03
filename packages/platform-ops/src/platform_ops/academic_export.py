@@ -36,6 +36,8 @@ from datetime import UTC, datetime, timedelta
 from typing import Any
 from uuid import UUID
 
+from platform_ops.language_segmentation import DEFAULT_LANGUAGE, languages_present
+
 logger = logging.getLogger(__name__)
 
 
@@ -51,6 +53,12 @@ class EpisodeRecord:
     duration_seconds: float | None
     total_events: int
     classifier_config_hash: str
+
+    # multi-language-research-integrity (5.1): lenguaje de procedencia del
+    # episodio. Snapshot del payload del evento `episodio_abierto` (no de la
+    # `TareaPractica` viva — misma decisión de trazabilidad que analytics).
+    # Un investigador segmenta Python vs Java sin acceso al sistema.
+    language: str = DEFAULT_LANGUAGE
 
     # Etiqueta N4 + 5 coherencias (lo que importa para el análisis)
     appropriation: str | None = None
@@ -91,6 +99,10 @@ class CohortDataset:
     total_students: int
     episodes: list[EpisodeRecord] = field(default_factory=list)
     distribution_summary: dict[str, int] = field(default_factory=dict)
+    # multi-language-research-integrity (5.2): lenguajes presentes en el
+    # conjunto, declarados en el encabezado. Un investigador ve la mezcla
+    # sin recorrer episodio por episodio (mismo criterio que analytics).
+    languages_present: list[str] = field(default_factory=list)
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -101,6 +113,7 @@ class CohortDataset:
             "salt_hash": self.salt_hash,
             "total_episodes": self.total_episodes,
             "total_students": self.total_students,
+            "languages_present": self.languages_present,
             "distribution_summary": self.distribution_summary,
             "episodes": [
                 {
@@ -112,6 +125,7 @@ class CohortDataset:
                     "duration_seconds": e.duration_seconds,
                     "total_events": e.total_events,
                     "classifier_config_hash": e.classifier_config_hash,
+                    "language": e.language,
                     "appropriation": e.appropriation,
                     "coherences": {
                         "ct_summary": e.ct_summary,
@@ -227,6 +241,7 @@ class AcademicExporter:
 
             opened_at = None
             closed_at = None
+            language = DEFAULT_LANGUAGE
 
             for ev in events:
                 et = ev["event_type"]
@@ -275,6 +290,10 @@ class AcademicExporter:
                     )
                 elif et == "episodio_abierto":
                     opened_at = ev["ts"]
+                    # 5.1: lenguaje de procedencia — snapshot del payload de
+                    # apertura. `or DEFAULT_LANGUAGE` cubre tanto el campo
+                    # ausente (episodios legacy) como un `language: null` explícito.
+                    language = (ev.get("payload") or {}).get("language") or DEFAULT_LANGUAGE
                 elif et == "episodio_cerrado":
                     closed_at = ev["ts"]
 
@@ -313,6 +332,7 @@ class AcademicExporter:
                 duration_seconds=duration,
                 total_events=len(events),
                 classifier_config_hash=(classification or {}).get("classifier_config_hash", ""),
+                language=language,
                 appropriation=appropriation,
                 ct_summary=(classification or {}).get("ct_summary"),
                 ccd_mean=(classification or {}).get("ccd_mean"),
@@ -368,4 +388,5 @@ class AcademicExporter:
             total_students=len(students_seen),
             episodes=records,
             distribution_summary=distribution,
+            languages_present=languages_present(r.language for r in records),
         )

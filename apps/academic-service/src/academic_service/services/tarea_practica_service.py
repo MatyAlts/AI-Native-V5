@@ -23,10 +23,17 @@ re-instancia al versionar el template. `new_version` hereda tanto el
 
 from __future__ import annotations
 
-from typing import Any
+from typing import Any, cast
 from uuid import UUID, uuid4
 
 from fastapi import HTTPException, status
+from platform_contracts.academic import (
+    Language,
+    TpEjercicioCreate,
+    TpEjerciciosValidator,
+    validar_lenguaje_unico,
+    validar_tp_no_vacia,
+)
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -84,6 +91,7 @@ class TareaPracticaService:
                 "fecha_fin": data.fecha_fin,
                 "peso": data.peso,
                 "rubrica": data.rubrica,
+                "language": data.language,
                 "estado": "draft",
                 "version": 1,
                 "parent_tarea_id": None,
@@ -213,6 +221,48 @@ class TareaPracticaService:
         await self.session.flush()
         return obj
 
+    async def _validar_composicion(self, obj: TareaPractica) -> None:
+        """Red final antes de exponer la TP al alumno.
+
+        Hasta esta change `publish()` no validaba nada mas que el estado, asi que
+        se podia publicar una TP vacia y le llegaba asi al alumno. El
+        `TpEjerciciosValidator` existia desde ADR-047 y nunca se invocaba.
+
+        Los ejercicios se resuelven con `TpEjercicioService.list_by_tp`, que hace
+        `selectinload` del `Ejercicio`. NO iterar `obj.tp_ejercicios`:
+        `get_or_404` no hace eager-load y esa relacion lazy dispara
+        `MissingGreenlet` en el driver async — el mismo motivo por el que
+        `new_version()` resuelve con un SELECT explicito.
+        """
+        from academic_service.services.tp_ejercicio_service import TpEjercicioService
+
+        pares = await TpEjercicioService(self.session).list_by_tp(obj.id)
+
+        try:
+            validar_tp_no_vacia(
+                cantidad_ejercicios=len(pares),
+                cantidad_test_cases=len(obj.test_cases or []),
+            )
+            TpEjerciciosValidator(
+                tp_ejercicios=[
+                    TpEjercicioCreate(
+                        ejercicio_id=par.ejercicio_id,
+                        orden=par.orden,
+                        peso_en_tp=par.peso_en_tp,
+                    )
+                    for par, _ in pares
+                ]
+            )
+            validar_lenguaje_unico(
+                language_tp=cast(Language, obj.language),
+                languages_ejercicios=[cast(Language, ej.language) for _, ej in pares],
+            )
+        except ValueError as exc:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail=f"No se puede publicar la TP: {exc}",
+            ) from exc
+
     async def publish(self, tarea_id: UUID, user: User) -> TareaPractica:
         obj = await self.repo.get_or_404(tarea_id)
         if obj.estado == "published":
@@ -225,6 +275,8 @@ class TareaPracticaService:
                     "cree una nueva versión"
                 ),
             )
+
+        await self._validar_composicion(obj)
 
         obj.estado = "published"
 
@@ -301,6 +353,10 @@ class TareaPracticaService:
                 "fecha_fin": overrides.get("fecha_fin", parent.fecha_fin),
                 "peso": overrides.get("peso", parent.peso),
                 "rubrica": overrides.get("rubrica", parent.rubrica),
+                # Sin esto, una version nueva de una TP Java nacia Python (el
+                # server_default de la columna), y con los ejercicios Java ya
+                # clonados abajo la TP quedaba mezclada e impublicable.
+                "language": overrides.get("language", parent.language),
                 "estado": "draft",
                 "version": parent.version + 1,
                 "parent_tarea_id": parent.id,

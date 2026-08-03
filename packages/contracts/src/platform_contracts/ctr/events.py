@@ -74,6 +74,40 @@ class EpisodioAbiertoPayload(BaseModel):
             "None para TPs monolíticas."
         ),
     )
+    # multi-language-research-integrity (episode-language-provenance, D1/D2):
+    # lenguaje de programación del episodio, resuelto SIEMPRE server-side desde
+    # el Ejercicio/TareaPractica al momento de abrir — nunca aceptado del
+    # cliente (ver tutor_service.services.tutor_core.TutorCore.open_episode /
+    # _resolve_episode_language). Es un snapshot del momento de apertura, no
+    # una referencia viva: si el lenguaje del ejercicio cambia después, este
+    # valor NO se actualiza (trazabilidad = qué pasó, no qué pasa ahora).
+    #
+    # Campo opcional con default None por retrocompat (ADR append-only): los
+    # episodios anteriores a este cambio no lo tienen y se interpretan como
+    # "python" (único lenguaje soportado hasta ahora) — ver spec
+    # episode-language-provenance, requirement "Los episodios previos al
+    # cambio se interpretan como Python".
+    #
+    # `str | None` (no el `Literal["python","java"]` académico de
+    # `platform_contracts.academic.ejercicio.Language`): este payload es dato
+    # de procedencia forward-compatible para una tesis doctoral — un lenguaje
+    # futuro que el banco académico soporte no debe romper la deserialización
+    # de eventos CTR ya persistidos ni obligar a tocar este contrato de nuevo.
+    #
+    # Verificado (no afecta reproducibilidad): el event_labeler y el feature
+    # extractor del classifier-service consumen solo un set acotado y
+    # conocido de campos por event_type (ver CLAUDE.md, "Propiedades
+    # críticas") — `episodio_abierto` no aporta features al pipeline, así que
+    # este campo es inerte para clasificación (ver también
+    # apps/classifier-service/tests/unit/test_pipeline_reproducibility.py).
+    language: str | None = Field(
+        default=None,
+        description=(
+            "Lenguaje de programación del episodio (ej. 'python', 'java'), "
+            "resuelto server-side desde el Ejercicio/TareaPractica al abrir. "
+            "None en episodios legacy pre-cambio = interpretar como 'python'."
+        ),
+    )
 
 
 class EpisodioAbierto(CTRBaseEvent):
@@ -287,7 +321,9 @@ class EdicionCodigoPayload(BaseModel):
     snapshot: str  # código completo en el momento del evento
     diff_chars: int  # cantidad de caracteres cambiados desde evento anterior
     language: str
-    origin: Literal["student_typed", "copied_from_tutor", "pasted_external"] | None = Field(
+    origin: (
+        Literal["student_typed", "copied_from_tutor", "pasted_external", "snippet_expanded"] | None
+    ) = Field(
         default=None,
         description=(
             "Procedencia del cambio en el editor. None = legacy/desconocido. "
@@ -295,9 +331,16 @@ class EdicionCodigoPayload(BaseModel):
             "copied_from_tutor está declarado en el contract pero requiere "
             "una afordancia de UI (botón 'Insertar código del tutor') aún "
             "no incorporada al editor del estudiante (ver G11). El "
-            "event_labeler (ADR-020) reconoce los tres valores y aplica "
-            "override a N4 para los dos no-typed (copied_from_tutor + "
-            "pasted_external)."
+            "event_labeler (ADR-020) reconoce los valores y aplica "
+            "override a N4 para los dos que provienen de una interacción "
+            "IA/externa (copied_from_tutor + pasted_external). "
+            "snippet_expanded marca ceremonia expandida por el editor "
+            "(System.out.println, getters/setters, imports — ver "
+            "web-student/src/lib/javaSnippets.ts): NO es elaboración tipeada "
+            "pero tampoco es interacción con IA, así que NO lleva override a "
+            "N4 — inflaría la métrica de dependencia del tutor cada vez que "
+            "alguien escribe `sout`. Cae a N2 como student_typed; la "
+            "distinción queda en el payload para el análisis posterior."
         ),
     )
 

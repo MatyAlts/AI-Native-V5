@@ -318,6 +318,83 @@ def test_tp_entregada_no_afecta_clasificacion_ni_features() -> None:
     assert r_sin.cii_evolution == r_con.cii_evolution
 
 
+# ── Anti-regresion: `language` en episodio_abierto NO entra al classifier ──
+# multi-language-research-integrity (episode-language-provenance, tasks 3.1/3.2/3.3)
+
+
+def test_language_en_episodio_abierto_no_afecta_clasificacion_ni_features() -> None:
+    """Episodio con/sin `language` en el payload de `episodio_abierto`
+    produce clasificacion y features identicas.
+
+    Invariante doctoral: el classifier es agnostico al lenguaje (cero
+    cambios en el pipeline activo, ver design.md de
+    multi-language-research-integrity). Si este test falla, alguien empezo
+    a leer `payload.language` de `episodio_abierto` en
+    event_labeler.py/ct.py/ccd.py/cii.py y rompio la propiedad de que el
+    clasificador no distingue Python de Java.
+    """
+    base_events = [
+        _ev(0, "episodio_abierto", 0),
+        _ev(
+            1,
+            "prompt_enviado",
+            1,
+            {"content": "qué es recursión", "prompt_kind": "solicitud_directa"},
+        ),
+        _ev(2, "tutor_respondio", 2, {"content": "..."}),
+        _ev(3, "codigo_ejecutado", 4),
+        _ev(4, "anotacion_creada", 5, {"content": "ya entendí"}),
+        _ev(5, "episodio_cerrado", 12, {"reason": "completed"}),
+    ]
+    events_con_language = [
+        _ev(
+            0,
+            "episodio_abierto",
+            0,
+            {
+                "student_pseudonym": "00000000-0000-0000-0000-000000000001",
+                "problema_id": "00000000-0000-0000-0000-000000000002",
+                "comision_id": "00000000-0000-0000-0000-000000000003",
+                "curso_config_hash": "a" * 64,
+                "language": "java",
+            },
+        ),
+        *base_events[1:],
+    ]
+
+    r_sin = classify_episode_from_events(base_events)
+    r_con = classify_episode_from_events(events_con_language)
+
+    assert r_sin.appropriation == r_con.appropriation
+    assert r_sin.reason == r_con.reason
+    assert r_sin.ct_summary == r_con.ct_summary
+    assert r_sin.ccd_mean == r_con.ccd_mean
+    assert r_sin.ccd_orphan_ratio == r_con.ccd_orphan_ratio
+    assert r_sin.cii_stability == r_con.cii_stability
+    assert r_sin.cii_evolution == r_con.cii_evolution
+
+
+def test_language_no_afecta_classifier_config_hash() -> None:
+    """`classifier_config_hash` se calcula solo de `(profile, version)` — el
+    lenguaje del episodio no es un input de esa funcion, asi que no puede
+    afectarlo (tasks 3.2: mismo hash para mismo tree_version +
+    reference_profile, sin importar el lenguaje de los episodios que se
+    clasifiquen con esa config)."""
+    h1 = compute_classifier_config_hash(DEFAULT_REFERENCE_PROFILE, "v1.0.0")
+    h2 = compute_classifier_config_hash(DEFAULT_REFERENCE_PROFILE, "v1.0.0")
+    assert h1 == h2
+
+
+def test_language_no_esta_en_labeler_version_fields() -> None:
+    """`LABELER_VERSION` es una constante de modulo, no una funcion de los
+    eventos — agregar `language` al payload de `episodio_abierto` no la
+    toca (task 3.3, verificacion directa por import, no solo por
+    inspeccion)."""
+    from classifier_service.services.event_labeler import LABELER_VERSION
+
+    assert LABELER_VERSION == "1.2.0"
+
+
 def test_reflexion_completada_es_meta_en_event_labeler() -> None:
     """label_event('reflexion_completada', ...) devuelve 'meta'.
 

@@ -106,6 +106,7 @@ class EjercicioService:
         created_by: UUID | None = None,
         created_via_ai: bool | None = None,
         materia_id: UUID | None = None,
+        language: str | None = None,
         limit: int = 50,
         cursor: UUID | None = None,
     ) -> list[Ejercicio]:
@@ -120,6 +121,10 @@ class EjercicioService:
             # Banco por materia (Prog 1, Prog 2, …): la vista del docente se
             # filtra por la materia de su comisión activa.
             filters["materia_id"] = materia_id
+        if language:
+            # Sin el filtro se devuelven todos los lenguajes: el banco historico
+            # es integramente Python y no hay que romper a los callers previos.
+            filters["language"] = language
         if created_via_ai is not None:
             filters["created_via_ai"] = created_via_ai
         return await self.repo.list(limit=limit, cursor=cursor, filters=filters)

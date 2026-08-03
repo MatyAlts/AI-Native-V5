@@ -106,7 +106,7 @@ export interface ExportJobStatus {
   error: string | null
 }
 
-type TokenGetter = () => Promise<string | null>
+export type TokenGetter = () => Promise<string | null>
 
 async function authHeaders(getToken?: TokenGetter): Promise<Record<string, string>> {
   const headers: Record<string, string> = { "Content-Type": "application/json" }
@@ -452,6 +452,9 @@ export interface TareaPractica {
   peso: string // decimal serializado como string
   rubrica: Record<string, unknown> | null
   estado: TareaEstado
+  /** Lenguaje de la TP. Todos sus ejercicios de banco deben coincidir: el
+   * backend rechaza la mezcla al agregar (422) y al publicar. */
+  language?: Language
   version: number
   parent_tarea_id: string | null
   template_id: string | null
@@ -1891,10 +1894,125 @@ export interface RubricaEjercicio {
   criterios: CriterioRubrica[]
 }
 
+/**
+ * Lenguaje en que se resuelve un ejercicio o una TP.
+ *
+ * Espeja `Language` de `platform_contracts.academic.ejercicio`. El backend lo
+ * persiste como texto libre a proposito (sin CHECK en la DB): agregar un
+ * lenguaje no deberia pedir una migracion. La union de acá es el contrato de
+ * la UI, no el de la base.
+ */
+
+// ── Ejecución server-side (ADR-059, epic java-execution-engine) ───────
+//
+// El docente usa el MISMO servicio que el alumno, pero con una diferencia que
+// importa: acá se ejecutan TAMBIÉN los casos ocultos, porque el docente está
+// verificando su propio ejercicio antes de asignarlo. El servicio los inyecta
+// server-side; ni el docente ni el alumno los reciben en la respuesta.
+
+export interface ExecutionCaseResult {
+  id: string
+  name: string
+  type: string
+  status: "pass" | "fail" | "error" | "skipped"
+  is_public: boolean
+  input: string | null
+  expected: string | null
+  got: string | null
+  error: string | null
+  weight: number
+}
+
+export interface ExecutionRunResult {
+  outcome: "completed" | "compilation_error" | "infrastructure_failure"
+  total: number
+  passed: number
+  failed: number
+  cases: ExecutionCaseResult[]
+  compile_output: string
+}
+
+/** El servicio de ejecución no está disponible. Para el DOCENTE esto pesa
+ * distinto que para el alumno: está creando contenido, y publicar un ejercicio
+ * que no se pudo verificar es una decisión con consecuencias. */
+export class ExecutionUnavailableError extends Error {}
+
+export async function requestExecution(
+  payload: { ejercicio_id: string; source_code: string },
+  getToken?: TokenGetter,
+): Promise<{ execution_id: string }> {
+  const r = await fetch("/api/v1/executions", {
+    method: "POST",
+    headers: await authHeaders(getToken),
+    body: JSON.stringify(payload),
+  })
+  if (!r.ok) {
+    const body = (await r.json().catch(() => ({}))) as { detail?: string }
+    throw new ExecutionUnavailableError(
+      body.detail ?? `No se pudo pedir la ejecucion (${r.status})`,
+    )
+  }
+  return (await r.json()) as { execution_id: string }
+}
+
+export async function getExecution(
+  executionId: string,
+  getToken?: TokenGetter,
+): Promise<{ state: string; result: ExecutionRunResult | null }> {
+  const r = await fetch(`/api/v1/executions/${executionId}`, {
+    headers: await authHeaders(getToken),
+  })
+  if (!r.ok) throw new ExecutionUnavailableError(`No se pudo consultar la ejecucion (${r.status})`)
+  return (await r.json()) as { state: string; result: ExecutionRunResult | null }
+}
+
+/** Pide una ejecución y espera el resultado. */
+export async function runRemoteTestCases(
+  ejercicioId: string,
+  sourceCode: string,
+  getToken?: TokenGetter,
+): Promise<ExecutionRunResult> {
+  const { execution_id } = await requestExecution(
+    { ejercicio_id: ejercicioId, source_code: sourceCode },
+    getToken,
+  )
+  const deadline = Date.now() + 90_000
+  while (Date.now() < deadline) {
+    const status = await getExecution(execution_id, getToken)
+    if (status.state === "done") {
+      if (!status.result) throw new ExecutionUnavailableError("La ejecucion termino sin resultado")
+      return status.result
+    }
+    await new Promise((resolve) => setTimeout(resolve, 700))
+  }
+  throw new ExecutionUnavailableError("La ejecucion tardo mas de lo esperado")
+}
+
+export type Language = "python" | "java"
+
+/** Lo que el backend asume cuando una fila no declara lenguaje. */
+export const DEFAULT_LANGUAGE: Language = "python"
+
+/** Etiqueta legible de cada lenguaje. Sin color asociado a proposito: el
+ * sistema reserva el color para lo que tiene carga semantica (severidad,
+ * niveles N1-N4, apropiacion). Ver DESIGN.md, The One-Accent Rule. */
+export const LANGUAGE_LABELS: Record<Language, string> = {
+  python: "Python",
+  java: "Java",
+}
+
+/**
+ * Tipo de caso de prueba.
+ *
+ *  - `stdin_stdout`: agnostico del lenguaje.
+ *  - `pytest_assert` / `junit_assert`: los asserts de cada lenguaje. El tipo NO
+ *    se valida contra el `language` del ejercicio — el contrato del test case
+ *    es autosuficiente y la coherencia es responsabilidad del servicio.
+ */
 export interface TestCaseEjercicio {
   id: string
   name: string
-  type: "stdin_stdout" | "pytest_assert"
+  type: "stdin_stdout" | "pytest_assert" | "junit_assert"
   code: string
   expected: string | null
   is_public: boolean
@@ -1910,6 +2028,10 @@ export interface Ejercicio {
   materia_id: string | null
   unidad_tematica: UnidadTematica
   dificultad: Dificultad | null
+  /** Lenguaje del ejercicio. Opcional en el tipo por fixtures y endpoints que
+   * no lo populan; el backend lo garantiza NOT NULL. Resolver con
+   * `?? DEFAULT_LANGUAGE`, nunca asumir Python en el sitio de uso. */
+  language?: Language
   prerequisitos: Prerequisitos
   test_cases: TestCaseEjercicio[]
   rubrica: RubricaEjercicio | null
@@ -1932,6 +2054,9 @@ export interface EjercicioCreate {
   materia_id?: string | null
   unidad_tematica: UnidadTematica
   dificultad?: Dificultad | null
+  /** Omitirlo deja que el backend aplique su default. Un docente que nunca toca
+   * el selector conserva exactamente el flujo previo a esta change. */
+  language?: Language
   prerequisitos?: Prerequisitos
   test_cases?: TestCaseEjercicio[]
   rubrica?: RubricaEjercicio | null

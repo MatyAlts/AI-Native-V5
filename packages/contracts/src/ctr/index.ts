@@ -127,10 +127,21 @@ export type IntentoAdversoDetectado = z.infer<typeof IntentoAdversoDetectado>
 //   - `copied_from_tutor` → DECLARADO en el contract pero NO emitido todavía:
 //       requiere una afordancia de UI ("Insertar código del tutor") que no está
 //       en `apps/web-student/src/components/CodeEditor.tsx`. Tracked como G11.
+//   - `snippet_expanded`  → emitido por web-student al expandir un snippet de
+//       ceremonia del editor (System.out.println, getters/setters, import del
+//       Scanner). Ver `apps/web-student/src/lib/javaSnippets.ts`.
 //
-// El event_labeler (ADR-020) reconoce los tres valores y aplica override a N4
-// para los dos no-typed.
-export const EdicionCodigoOrigin = z.enum(["student_typed", "copied_from_tutor", "pasted_external"])
+// El event_labeler (ADR-020) aplica override a N4 SOLO a los dos que provienen
+// de una interacción IA/externa (`copied_from_tutor`, `pasted_external`).
+// `snippet_expanded` NO lleva override: no es tipeo del alumno, pero tampoco es
+// interacción con IA — mandarlo a N4 inflaría la métrica de dependencia del
+// tutor cada vez que alguien expande `sout`.
+export const EdicionCodigoOrigin = z.enum([
+  "student_typed",
+  "copied_from_tutor",
+  "pasted_external",
+  "snippet_expanded",
+])
 export type EdicionCodigoOrigin = z.infer<typeof EdicionCodigoOrigin>
 
 export const EdicionCodigo = CTRBase.extend({

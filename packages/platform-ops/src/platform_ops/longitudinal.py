@@ -24,7 +24,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from datetime import datetime
-from typing import Literal
+from typing import Literal, Protocol
 from uuid import UUID
 
 AppropriationValue = Literal[
@@ -163,23 +163,50 @@ class CohortProgression:
         return (self.mejorando - self.empeorando) / self.n_students_with_enough_data
 
 
-class _DataSource:
-    """Interface mínima."""
+class _DataSource(Protocol):
+    """Interface mínima — `Protocol`, no clase base.
+
+    Es structural a propósito: ningún data source real hereda de esta clase. El
+    `RealLongitudinalDataSource` de producción y los adapters de los tests son
+    todos duck-typed, así que declararla como clase común obligaba a un
+    `# type: ignore[arg-type]` en cada call site aguas arriba.
+
+    Declara `language` porque `build_trajectories` lo reenvía cuando viene
+    seteado. Los data sources anteriores a `multi-language-research-integrity`
+    no conocen el kwarg y siguen funcionando en runtime mientras nadie pida
+    filtro — ese soporte es deliberado pero NO se puede expresar en un Protocol,
+    y por eso no está declarado acá. Cubierto por
+    `packages/platform-ops/tests/test_longitudinal_language_kwarg.py`.
+    """
 
     async def list_classifications_grouped_by_student(
         self,
         comision_id: UUID,
+        language: str | None = None,
     ) -> dict[str, list[dict]]:
         """Devuelve {student_pseudonym: [classification_dict, ...]} ordenados por classified_at."""
-        raise NotImplementedError
+        ...
 
 
 async def build_trajectories(
     data_source: _DataSource,
     comision_id: UUID,
+    language: str | None = None,
 ) -> list[StudentTrajectory]:
-    """Construye trayectorias de todos los estudiantes de una comisión."""
-    grouped = await data_source.list_classifications_grouped_by_student(comision_id)
+    """Construye trayectorias de todos los estudiantes de una comisión.
+
+    `language` (opcional, multi-language-research-integrity sección 4.8):
+    reenviado al data source SOLO si viene seteado — así los data sources
+    (mocks de test incluidos) que no conocen el kwarg `language` siguen
+    funcionando sin filtro, preservando el comportamiento actual (sección
+    4.10) sin tener que actualizar cada duck-typed implementation.
+    """
+    if language is not None:
+        grouped = await data_source.list_classifications_grouped_by_student(
+            comision_id, language=language
+        )
+    else:
+        grouped = await data_source.list_classifications_grouped_by_student(comision_id)
     trajectories: list[StudentTrajectory] = []
 
     for student_pseudonym, raw_list in grouped.items():

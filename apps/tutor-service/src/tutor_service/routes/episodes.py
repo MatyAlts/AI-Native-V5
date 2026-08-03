@@ -13,6 +13,7 @@ POST /api/v1/episodes/{id}/run-tests     ADR-033/034: emite TestsEjecutados (con
 from __future__ import annotations
 
 import json
+import secrets
 from collections.abc import Awaitable, Callable
 from datetime import datetime
 from typing import Any, Literal
@@ -150,6 +151,18 @@ class OpenEpisodeRequest(BaseModel):
     # `ejercicio_orden` denormalizado se resuelve internamente en el
     # tutor_core via la tabla intermedia tp_ejercicios.
     ejercicio_id: UUID | None = None
+    # multi-language-research-integrity (episode-language-provenance, D1):
+    # deliberadamente SIN campo `language`. El lenguaje del episodio es dato
+    # de procedencia para la tesis doctoral y se resuelve EXCLUSIVAMENTE
+    # server-side en `TutorCore._resolve_episode_language` desde el
+    # Ejercicio/TareaPractica — nunca del cliente. Si alguna vez agregás un
+    # campo `language` acá para "que el frontend lo mande", estás
+    # reintroduciendo el precedente peligroso que este mismo change señala
+    # (`edicion_codigo` hoy manda `language:"python"` hardcodeado desde
+    # `web-student/EpisodePage.tsx` — un dato que PARECE procedencia real y
+    # no lo es). No lo repitas acá. Cualquier `language` que un cliente
+    # meta en el body queda ignorado por Pydantic (`extra="ignore"`
+    # default) — test en test_episode_language_provenance.py.
 
 
 class OpenEpisodeResponse(BaseModel):
@@ -601,9 +614,16 @@ class EdicionCodigoRequest(BaseModel):
     interpretables por el clasificador.
 
     F6: el campo opcional `origin` permite distinguir tipeo directo
-    ("student_typed"), copia desde el chat del tutor ("copied_from_tutor")
-    o paste externo ("pasted_external"). Es evidencia directa de
+    ("student_typed"), copia desde el chat del tutor ("copied_from_tutor"),
+    paste externo ("pasted_external") o expansión de un snippet de ceremonia
+    del editor ("snippet_expanded"). Es evidencia directa de
     delegación/apropiación que no depende solo de inferencia temporal.
+
+    ⚠️ Este Literal ESPEJA `EdicionCodigoPayload.origin` de
+    `packages/contracts` — es el schema de entrada del endpoint, así que un
+    valor que falte acá se rechaza con 422 ANTES de llegar al contrato, aunque
+    el contrato ya lo acepte. Agregar un valor obliga a tocar los dos, más la
+    firma de `tutor_core.record_edicion_codigo`.
     """
 
     snapshot: str = Field(
@@ -615,7 +635,9 @@ class EdicionCodigoRequest(BaseModel):
         ..., ge=0, description="Cantidad de caracteres cambiados desde evento anterior"
     )
     language: str = Field(default="python", min_length=1, max_length=32)
-    origin: Literal["student_typed", "copied_from_tutor", "pasted_external"] | None = Field(
+    origin: (
+        Literal["student_typed", "copied_from_tutor", "pasted_external", "snippet_expanded"] | None
+    ) = Field(
         default=None,
         description=(
             "Procedencia del cambio. None = legacy/desconocido. "
@@ -959,13 +981,23 @@ async def emit_pega_intentada(
 
 
 class RunTestsRequest(BaseModel):
-    """Conteos de la corrida de tests Pyodide (ADR-033/034, Sec 9 epic).
+    """Conteos de la corrida de tests (ADR-033/034 Sec 9; ADR-060 server-side).
 
     El cliente NO manda la lista detallada de tests ni el codigo del alumno —
     solo conteos agregados. Defensa de privacidad + cardinalidad del CTR.
-    Tests `is_public=false` quedan opacos al cliente (filtrados en el
-    endpoint de `tareas-practicas/{id}/test-cases?include_hidden=false`),
-    asi que `tests_hidden` debe llegar 0 en piloto-1.
+
+    `tests_hidden` YA NO se capea a 0. El `le=0` original describia el mundo en
+    que la unica ejecucion era client-side: los tests `is_public=false` quedan
+    opacos al navegador, asi que un cliente Pyodide no podia haber corrido
+    ninguno. Con el `execution-service` (ADR-060) los ocultos SI se ejecutan —
+    server-side, que es justamente donde el alumno no los ve — y el conteo real
+    es por primera vez distinto de cero.
+
+    Ese `le=0` era un bloqueo silencioso del cableo: `ctr_emitter.build_payload`
+    del execution-service ya producia el conteo real, y este endpoint lo habria
+    rechazado con 422 en cuanto un ejercicio tuviera un caso oculto. Es la misma
+    forma que el techo de `max_tokens` del ai-gateway — el schema de entrada
+    corta antes de que el contrato importe.
     """
 
     test_count_total: int = Field(ge=0)
@@ -974,11 +1006,44 @@ class RunTestsRequest(BaseModel):
     tests_publicos: int = Field(ge=0)
     tests_hidden: int = Field(
         ge=0,
-        le=0,
-        description="Siempre 0 en piloto-1 — los tests hidden no se ejecutan client-side.",
+        description=(
+            "Casos ocultos ejecutados. 0 desde el cliente Pyodide (no los ve); "
+            "real desde el execution-service, que corre server-side."
+        ),
     )
     ejecucion_ms: int = Field(ge=0, le=10 * 60 * 1000)  # cap a 10min
     chunks_used_hash: str | None = Field(default=None, min_length=64, max_length=64)
+    execution_engine: str | None = Field(
+        default=None,
+        max_length=32,
+        description=(
+            "Motor que corrio los casos ('pyodide', 'docker-java'). Informativo: "
+            "el classifier NO lo consulta, asi que es inerte para la clasificacion "
+            "y no obliga a bumpear LABELER_VERSION."
+        ),
+    )
+
+
+def _es_emisor_interno(token: str | None) -> bool:
+    """True si la llamada viene de un servicio interno, probado por secreto.
+
+    NO alcanza con que el header ESTE presente: el api-gateway no filtra
+    `X-Internal-Service-Token` (no lo menciona en ningun lado), asi que un
+    navegador puede mandarlo forjado y llega igual. Lo que prueba procedencia es
+    conocer el valor, que nunca sale del servidor.
+
+    Falla CERRADO: sin secreto configurado no hay forma de verificar a nadie, asi
+    que nadie es interno. En dev eso significa que el execution-service no puede
+    reportar ocultos hasta que se comparta el token — preferible a que un browser
+    pueda hacerlo por default.
+
+    `compare_digest` y no `==`: comparar secretos con `==` corta en el primer
+    byte distinto y filtra el token por temporizacion.
+    """
+    esperado = settings.internal_service_token
+    if not esperado or not token:
+        return False
+    return secrets.compare_digest(token, esperado)
 
 
 @router.post(
@@ -988,6 +1053,7 @@ class RunTestsRequest(BaseModel):
 async def emit_tests_ejecutados(
     episode_id: UUID,
     req: RunTestsRequest,
+    x_internal_service_token: str | None = Header(default=None),
     user: User = Depends(require_role("estudiante", "docente", "docente_admin", "superadmin")),
 ) -> dict[str, str]:
     """Emite tests_ejecutados al CTR con conteos del cliente Pyodide.
@@ -1012,6 +1078,7 @@ async def emit_tests_ejecutados(
             tests_hidden=req.tests_hidden,
             ejecucion_ms=req.ejecucion_ms,
             chunks_used_hash=req.chunks_used_hash,
+            emisor_interno=_es_emisor_interno(x_internal_service_token),
         )
     except ValueError as e:
         msg = str(e)

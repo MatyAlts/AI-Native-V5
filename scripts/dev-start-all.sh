@@ -30,6 +30,20 @@ export S3_ACCESS_KEY="${S3_ACCESS_KEY:-minioadmin}"
 export S3_SECRET_KEY="${S3_SECRET_KEY:-minioadmin}"
 export S3_BUCKET_MATERIALS="${S3_BUCKET_MATERIALS:-materials}"
 
+# Imagen del sandbox de Java (ADR-060). Se baja ACA, antes de arrancar nada.
+#
+# `docker_runner.py` aplica el wall-time limit (10s por default) sobre el
+# `docker run` ENTERO, y si la imagen no esta local ese `docker run` incluye
+# bajar ~450MB. O sea: la primera corrida de Java de una maquina limpia se come
+# la descarga adentro del presupuesto de ejecucion del alumno y muere por
+# timeout — indistinguible de un bucle infinito.
+#
+# Best-effort a proposito: sin Docker vivo el resto del stack arranca igual
+# (las corridas dan `infrastructure_failure`, que es el camino ya cubierto).
+JAVA_IMAGE="${JAVA_IMAGE:-eclipse-temurin:21-jdk}"
+echo "[pull] ${JAVA_IMAGE} (sandbox de Java — evita que la descarga entre en el timeout)"
+docker pull "${JAVA_IMAGE}" || echo "[warn] no se pudo bajar ${JAVA_IMAGE}; las corridas de Java van a fallar"
+
 start_svc() {
   local module="$1"
   local port="$2"
@@ -50,7 +64,7 @@ start_ctr_worker() {
   echo "$!:ctr-worker-${partition}:worker" >> .dev-logs/pids.txt
 }
 
-# 11 servicios HTTP (identity-service deprecated por ADR-041; enrollment-service por ADR-030)
+# 13 servicios HTTP (identity-service deprecated por ADR-041; enrollment-service por ADR-030)
 start_svc api_gateway.main                    8000 api-gateway
 start_svc academic_service.main               8002 academic-service
 start_svc evaluation_service.main             8004 evaluation-service
@@ -62,6 +76,13 @@ start_svc content_service.main                8009 content-service
 start_svc governance_service.main             8010 governance-service
 start_svc ai_gateway.main                     8011 ai-gateway
 start_svc integrity_attestation_service.main  8012 integrity-attestation-service
+# ADR-060: ejecucion server-side de Java en contenedores Docker efimeros. Este
+# servicio NO monta el socket de Docker: le pide las corridas al runner.
+start_svc execution_service.main              8013 execution-service
+# Runner (ADR-060 D3): UNICO con acceso al socket de Docker. El
+# execution-service NO lo monta — le habla por HTTP. Un socket-proxy no sirve:
+# permitir POST /containers/create es permitir crear uno privilegiado.
+start_svc execution_service.runner_main       8015 execution-runner
 
 # 8 CTR partition workers (single-writer por particion, ADR-010)
 for p in 0 1 2 3 4 5 6 7; do
@@ -69,4 +90,9 @@ for p in 0 1 2 3 4 5 6 7; do
 done
 
 echo ""
-echo "Started 11 HTTP services + 8 CTR workers. Logs in .dev-logs/. PIDs in .dev-logs/pids.txt."
+echo "Started 13 HTTP services + 8 CTR workers. Logs in .dev-logs/. PIDs in .dev-logs/pids.txt."
+echo "Ejecucion (ADR-060): el runner (:8015) es el unico con acceso a Docker."
+echo "         El execution-service (:8013) le habla por RUNNER_URL. En produccion"
+echo "         va con RUNNER_TOKEN y el runner NO se expone fuera de la red interna."
+echo "         Sin Docker vivo, /health/ready da 503 y las corridas devuelven"
+echo "         infrastructure_failure — el resto del stack no se entera."

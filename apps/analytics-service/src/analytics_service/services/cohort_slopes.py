@@ -34,6 +34,7 @@ async def batch_classifications_with_templates_by_student(
     academic_session: AsyncSession,
     comision_id: UUID,
     tenant_id: UUID,
+    language: str | None = None,
 ) -> dict[UUID, list[dict[str, Any]]]:
     """Devuelve {student_pseudonym: [classification_dict, ...]} para la cohorte.
 
@@ -43,11 +44,18 @@ async def batch_classifications_with_templates_by_student(
     appropriation}`. Los estudiantes sin clasificaciones current simplemente no
     aparecen en el dict (el caller trata la ausencia como lista vacía → slope
     None), consistente con la función per-alumno.
+
+    `language` (opcional, multi-language-research-integrity sección 4.8):
+    restringe la cohorte a los episodios de ese lenguaje ANTES de resolver
+    templates y traer clasificaciones — recalcula sobre el subconjunto en vez
+    de filtrar después de agregar. Ausencia del parámetro preserva el
+    comportamiento actual.
     """
     # Late imports (mismo patrón que real_datasources.py) para evitar ciclos.
     from academic_service.models.operacional import TareaPractica
     from classifier_service.models import Classification
     from ctr_service.models import Episode
+    from platform_ops import DEFAULT_LANGUAGE, resolve_episode_languages
 
     # 1. Todos los episodios de la comisión → episode_id → (student, problema).
     ep_stmt = (
@@ -63,6 +71,18 @@ async def batch_classifications_with_templates_by_student(
         ep_to_problema[row.id] = row.problema_id
     if not ep_to_student:
         return {}
+
+    if language is not None:
+        resolved = await resolve_episode_languages(
+            ctr_session, tenant_id, list(ep_to_student.keys())
+        )
+        matching_ids = [
+            eid for eid in ep_to_student if resolved.get(eid, DEFAULT_LANGUAGE) == language
+        ]
+        if not matching_ids:
+            return {}
+        ep_to_student = {eid: ep_to_student[eid] for eid in matching_ids}
+        ep_to_problema = {eid: ep_to_problema[eid] for eid in matching_ids}
 
     # 2. Resolver problema_id → template_id + unidad_id (academic_main).
     problema_ids = list({pid for pid in ep_to_problema.values() if pid is not None})

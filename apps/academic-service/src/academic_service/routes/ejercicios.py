@@ -23,9 +23,11 @@ from uuid import UUID
 import httpx
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from platform_contracts.academic.ejercicio import (
+    DEFAULT_LANGUAGE,
     EjercicioCreate,
     EjercicioRead,
     EjercicioUpdate,
+    Language,
 )
 from pydantic import BaseModel, Field
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -37,6 +39,7 @@ from academic_service.services.content_visibility import (
     sanitize_ejercicio_for_student,
 )
 from academic_service.services.ejercicio_service import EjercicioService
+from academic_service.services.prompt_variants import resolve_prompt_name
 
 logger = logging.getLogger(__name__)
 
@@ -63,6 +66,7 @@ async def list_ejercicios(
     created_by: UUID | None = None,
     created_via_ai: bool | None = None,
     materia_id: UUID | None = None,
+    language: Language | None = None,
     user: User = Depends(require_permission("ejercicio", "read")),
     db: AsyncSession = Depends(get_db),
 ) -> ListResponse[EjercicioRead]:
@@ -74,6 +78,8 @@ async def list_ejercicios(
     - `dificultad`: filtra por dificultad declarada.
     - `created_by`: docente creador.
     - `created_via_ai`: filtra ejercicios generados con el wizard IA.
+    - `language`: filtra por lenguaje de programación. Omitirlo devuelve
+      ejercicios de todos los lenguajes (comportamiento previo intacto).
     """
     svc = EjercicioService(db)
     objs = await svc.list(
@@ -82,6 +88,7 @@ async def list_ejercicios(
         created_by=created_by,
         created_via_ai=created_via_ai,
         materia_id=materia_id,
+        language=language,
         limit=limit,
         cursor=cursor,
     )
@@ -154,6 +161,11 @@ class EjercicioGenerateRequest(BaseModel):
     dificultad: Literal["basica", "intermedia", "avanzada"] | None = None
     contexto: str | None = Field(default=None, max_length=2000)
     comision_id: UUID | None = None
+    # Lenguaje del ejercicio a generar. Decide QUE variante de prompt se usa
+    # (ver `services/prompt_variants.py`) y viaja al borrador para que el
+    # Ejercicio se cree en el lenguaje correcto. Omitirlo conserva exactamente
+    # el comportamiento previo a la change `java-authoring-experience`.
+    language: Language = DEFAULT_LANGUAGE
 
 
 class EjercicioGenerateResponse(BaseModel):
@@ -235,18 +247,29 @@ async def generate_ejercicio(  # noqa: PLR0912, PLR0915
                 )
             materia_id_resolved = materia.id
 
-    # 2. Resolver prompt activo
+    # 2. Resolver prompt activo — la familia depende del lenguaje pedido. Para
+    #    el lenguaje por omision el nombre no cambia, asi que el camino
+    #    preexistente queda idéntico (ver `services/prompt_variants.py`).
     governance = GovernanceClient(settings.governance_service_url)
-    prompt_version_full = f"ejercicio_generator/{settings.ejercicio_generator_prompt_version}"
+    prompt_name = resolve_prompt_name("ejercicio_generator", req.language)
+    prompt_version_full = f"{prompt_name}/{settings.ejercicio_generator_prompt_version}"
     try:
         prompt_cfg = await governance.get_prompt(
-            "ejercicio_generator", settings.ejercicio_generator_prompt_version
+            prompt_name, settings.ejercicio_generator_prompt_version
         )
     except Exception as exc:
-        logger.error("ejercicio_generator_prompt_fetch_failed: %s", exc)
+        logger.error(
+            "ejercicio_generator_prompt_fetch_failed prompt=%s language=%s: %s",
+            prompt_name,
+            req.language,
+            exc,
+        )
         raise HTTPException(
             status_code=status.HTTP_502_BAD_GATEWAY,
-            detail="No se pudo resolver el prompt activo del ejercicio_generator",
+            detail=(
+                f"No se pudo resolver el prompt activo del generador de ejercicios "
+                f"para el lenguaje '{req.language}'"
+            ),
         ) from exc
 
     # 3. RAG opcional sobre material de cátedra
@@ -423,6 +446,11 @@ async def generate_ejercicio(  # noqa: PLR0912, PLR0915
     parsed["unidad_tematica"] = req.unidad_tematica
     if req.dificultad:
         parsed["dificultad"] = req.dificultad
+    # El lenguaje lo fija el docente, NO el modelo: si el LLM devolviera otro
+    # valor (o ninguno), el Ejercicio se crearia en un lenguaje distinto al que
+    # se pidio y el borrador quedaria rotulado mal. Mismo criterio que
+    # `unidad_tematica`.
+    parsed["language"] = req.language
 
     # 7. Marcar created_via_ai para trazabilidad académica
     parsed["created_via_ai"] = True
@@ -438,6 +466,7 @@ async def generate_ejercicio(  # noqa: PLR0912, PLR0915
             materia_id=str(materia_id_resolved),
             unidad_tematica=req.unidad_tematica,
             dificultad=req.dificultad,
+            language=req.language,
             prompt_version=prompt_version_full,
             tokens_input=result.input_tokens,
             tokens_output=result.output_tokens,

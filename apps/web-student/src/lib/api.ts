@@ -56,7 +56,7 @@ export interface Classification {
   subgrupo?: Subgrupo | null
 }
 
-type TokenGetter = () => Promise<string | null>
+export type TokenGetter = () => Promise<string | null>
 
 async function authHeaders(getToken?: TokenGetter): Promise<Record<string, string>> {
   const headers: Record<string, string> = { "Content-Type": "application/json" }
@@ -379,7 +379,116 @@ export async function emitTestsEjecutados(
   return (await r.json()) as { status: string; seq: string }
 }
 
-export type EdicionCodigoOrigin = "student_typed" | "copied_from_tutor" | "pasted_external"
+// ── Ejecución server-side (ADR-059, epic java-execution-engine) ───────
+
+/** Estado de una corrida en el execution-service. */
+export type ExecutionState = "queued" | "running" | "done"
+
+/**
+ * Resultado de la CORRIDA, distinto del resultado de los casos.
+ *
+ * `infrastructure_failure` existe para que una caída del sandbox NO se lea como
+ * el alumno fallando los tests. La UI lo muestra distinto y el backend además
+ * no emite evento de trazabilidad en ese caso.
+ */
+export type ExecutionOutcome = "completed" | "compilation_error" | "infrastructure_failure"
+
+/** Un caso de prueba ejecutado. Misma forma que produce el runner de Pyodide,
+ * para que la vista de resultados se reuse sin cambios.
+ *
+ * En los casos OCULTOS el backend manda `input`, `expected`, `got` y `error` en
+ * `null` a propósito: el alumno ve que existen y si los pasó, no qué evalúan. */
+export interface ExecutionCase {
+  id: string
+  name: string
+  type: string
+  status: "pass" | "fail" | "error" | "skipped"
+  is_public: boolean
+  input: string | null
+  expected: string | null
+  got: string | null
+  error: string | null
+  weight: number
+}
+
+export interface ExecutionResult {
+  outcome: ExecutionOutcome
+  total: number
+  passed: number
+  failed: number
+  cases: ExecutionCase[]
+  compile_output: string
+}
+
+export interface ExecutionStatus {
+  execution_id: string
+  state: ExecutionState
+  result: ExecutionResult | null
+}
+
+/** Error de cuota agotada: el alumno se pasó del límite de ejecuciones. */
+export class ExecutionQuotaError extends Error {}
+
+/** El servicio de ejecución no está disponible.
+ *
+ * Incluye el caso de cuota que falla CERRADA (503): si el contador no responde
+ * no se ejecuta, porque cada corrida cuesta CPU y dinero. No es culpa del
+ * alumno y el mensaje se lo dice. */
+export class ExecutionUnavailableError extends Error {}
+
+/**
+ * Pide una ejecución. Responde de inmediato con un identificador — compilar y
+ * arrancar una JVM no es instantáneo, así que el resultado se consulta aparte.
+ */
+export async function requestExecution(
+  payload: { ejercicio_id: string; source_code: string; episode_id?: string },
+  getToken?: TokenGetter,
+): Promise<{ execution_id: string; quota_remaining: number }> {
+  const r = await fetch("/api/v1/executions", {
+    method: "POST",
+    headers: await authHeaders(getToken),
+    body: JSON.stringify(payload),
+  })
+  if (r.status === 429) {
+    const body = (await r.json().catch(() => ({}))) as { detail?: string }
+    throw new ExecutionQuotaError(body.detail ?? "Alcanzaste el limite de ejecuciones.")
+  }
+  if (r.status === 503) {
+    const body = (await r.json().catch(() => ({}))) as { detail?: string }
+    throw new ExecutionUnavailableError(
+      body.detail ?? "El servicio de ejecucion no esta disponible.",
+    )
+  }
+  if (!r.ok) throw new ExecutionUnavailableError(`No se pudo pedir la ejecucion (${r.status})`)
+  return (await r.json()) as { execution_id: string; quota_remaining: number }
+}
+
+/** Consulta el estado de una ejecución. */
+export async function getExecution(
+  executionId: string,
+  getToken?: TokenGetter,
+): Promise<ExecutionStatus> {
+  const r = await fetch(`/api/v1/executions/${executionId}`, {
+    headers: await authHeaders(getToken),
+  })
+  if (!r.ok) throw new ExecutionUnavailableError(`No se pudo consultar la ejecucion (${r.status})`)
+  return (await r.json()) as ExecutionStatus
+}
+
+/**
+ * Procedencia de una edicion del editor. Espeja el `Literal` de
+ * `EdicionCodigoPayload.origin` en `packages/contracts` — si agregas un valor
+ * aca, agregalo alla o el backend rechaza el evento.
+ *
+ * `snippet_expanded` = ceremonia expandida por el editor (ver
+ * `lib/javaSnippets.ts`). No es tipeo del alumno, pero tampoco interaccion con
+ * IA: el labeler NO le aplica override a N4.
+ */
+export type EdicionCodigoOrigin =
+  | "student_typed"
+  | "copied_from_tutor"
+  | "pasted_external"
+  | "snippet_expanded"
 
 /** Emite un evento edicion_codigo al CTR. Disparado por el editor con
  * debouncing (1s) — el snapshot es el estado actual del buffer y diff_chars
@@ -564,15 +673,52 @@ export async function submitReflection(
  *    `expected` la salida esperada (se compara stdout, trim a ambos lados).
  *  - `pytest_assert`: `code` es un snippet de asercion que corre contra los
  *    nombres definidos por el alumno; pasa si no levanta excepcion.
+ *  - `junit_assert`: el equivalente de Java. No hay runtime que lo ejecute
+ *    todavia (`java-execution-engine`), asi que el editor lo reporta como no
+ *    ejecutable en vez de correrlo contra el runner de Python.
  */
 export interface TestCasePublic {
   id?: string
   name?: string
-  type?: "stdin_stdout" | "pytest_assert"
+  type?: "stdin_stdout" | "pytest_assert" | "junit_assert"
   code?: string
   expected?: string | null
   is_public?: boolean
   weight?: number
+}
+
+/**
+ * Lenguaje en que se resuelve un ejercicio o una TP.
+ *
+ * Espeja `Language` de `platform_contracts.academic.ejercicio`. El backend lo
+ * persiste como texto libre a proposito (sin CHECK en la DB): agregar un
+ * lenguaje no deberia pedir una migracion. La union de acá es el contrato de
+ * la UI, no el de la base.
+ */
+export type Language = "python" | "java"
+
+/** Lo que el backend asume cuando una fila no declara lenguaje. */
+export const DEFAULT_LANGUAGE: Language = "python"
+
+/** Etiqueta legible de cada lenguaje. Sin color asociado a proposito: el
+ * sistema reserva el color para lo que tiene carga semantica (severidad,
+ * niveles N1-N4, apropiacion). Ver DESIGN.md, The One-Accent Rule. */
+export const LANGUAGE_LABELS: Record<Language, string> = {
+  python: "Python",
+  java: "Java",
+}
+
+/**
+ * Buffer inicial cuando el ejercicio no trae `inicial_codigo` ni hay snapshot.
+ *
+ * Es un andamio neutro, NO una consigna: no debe sugerir un enfoque concreto
+ * (antes mostraba `def factorial` para TODOS los ejercicios — NEW-002 QA). Pero
+ * tampoco puede estar fijo en un lenguaje: un comentario `#` en un ejercicio
+ * Java es sintaxis invalida, y el alumno arranca con el archivo roto.
+ */
+export const LANGUAGE_PLACEHOLDER: Record<Language, string> = {
+  python: "# Escribí tu código Python acá\n",
+  java: "public class Main {\n    public static void main(String[] args) {\n        // Escribí tu código Java acá\n    }\n}\n",
 }
 
 /**
@@ -601,6 +747,11 @@ export interface AvailableTarea {
   /** El docente decide si el alumno puede pausar/retomar episodios de esta TP.
    * Opcional para backwards-compat: undefined se trata como permitido (true). */
   permite_pausa?: boolean
+  /** Lenguaje de la TP. El backend lo garantiza NOT NULL, pero va opcional por
+   * el mismo motivo que sus vecinos: fixtures y endpoints viejos que no lo
+   * populan. Resolver siempre con `?? DEFAULT_LANGUAGE`, nunca asumir Python
+   * en el sitio de uso. */
+  language?: Language
   /** Test cases PUBLICOS de la TP monolitica (A0.3, F1). El backend ya filtra
    * los ocultos via `sanitize_tarea_practica_for_student`. Opcional: solo lo
    * populan los endpoints que devuelven la TP saneada (get/list). Para TPs
@@ -923,6 +1074,9 @@ export interface Ejercicio {
   inicial_codigo: string | null
   unidad_tematica: string
   dificultad: "basica" | "intermedia" | "avanzada" | null
+  /** Lenguaje del ejercicio. Sobrevive el saneado para alumno: el sanitizer usa
+   * `model_copy(update=...)` y no lista este campo. Ver `content_visibility.py`. */
+  language?: Language
   /** Solo los PUBLICOS al alumno (backend `sanitize_ejercicio_for_student`). */
   test_cases: TestCasePublic[]
 }

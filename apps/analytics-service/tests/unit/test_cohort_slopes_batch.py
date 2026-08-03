@@ -93,6 +93,37 @@ async def academic_session() -> AsyncSession:
     await engine.dispose()
 
 
+async def _add_open_event(
+    session: AsyncSession, *, episode_id: UUID, payload: dict | None = None
+) -> None:
+    from ctr_service.models import Event
+    from sqlalchemy import func
+    from sqlalchemy import select as _select
+
+    max_id_result = await session.execute(_select(func.max(Event.id)))
+    max_id = max_id_result.scalar() or 0
+
+    session.add(
+        Event(
+            id=max_id + 1,
+            event_uuid=uuid4(),
+            episode_id=episode_id,
+            tenant_id=TENANT,
+            seq=0,
+            event_type="episodio_abierto",
+            ts=datetime.now(UTC),
+            payload=payload or {},
+            self_hash="a" * 64,
+            chain_hash="b" * 64,
+            prev_chain_hash="0" * 64,
+            prompt_system_hash="p" * 64,
+            prompt_system_version="v1.0.0",
+            classifier_config_hash="c" * 64,
+        )
+    )
+    await session.commit()
+
+
 async def _add_episode(session: AsyncSession, *, student: UUID, problema_id: UUID) -> UUID:
     from ctr_service.models import Episode
 
@@ -278,4 +309,87 @@ async def test_batch_cohorte_vacia_devuelve_dict_vacio(
         comision_id=COMISION,
         tenant_id=TENANT,
     )
+    assert grouped == {}
+
+
+# ── Filtro por lenguaje (multi-language-research-integrity sección 4.8) ──
+
+
+@pytest.mark.asyncio
+async def test_batch_filtra_por_lenguaje(
+    ctr_session: AsyncSession,
+    classifier_session: AsyncSession,
+    academic_session: AsyncSession,
+) -> None:
+    from analytics_service.services.cohort_slopes import (
+        batch_classifications_with_templates_by_student,
+    )
+
+    base_ts = datetime(2026, 1, 1, tzinfo=UTC)
+    student = uuid4()
+    prob_py = uuid4()
+    prob_java = uuid4()
+    await _add_tarea(academic_session, problema_id=prob_py, template_id=None)
+    await _add_tarea(academic_session, problema_id=prob_java, template_id=None)
+
+    ep_py = await _add_episode(ctr_session, student=student, problema_id=prob_py)
+    ep_java = await _add_episode(ctr_session, student=student, problema_id=prob_java)
+    await _add_open_event(ctr_session, episode_id=ep_py, payload={"language": "python"})
+    await _add_open_event(ctr_session, episode_id=ep_java, payload={"language": "java"})
+    await _add_classification(
+        classifier_session,
+        episode_id=ep_py,
+        appropriation="delegacion_pasiva",
+        classified_at=base_ts,
+    )
+    await _add_classification(
+        classifier_session,
+        episode_id=ep_java,
+        appropriation="apropiacion_reflexiva",
+        classified_at=base_ts,
+    )
+
+    grouped = await batch_classifications_with_templates_by_student(
+        ctr_session=ctr_session,
+        classifier_session=classifier_session,
+        academic_session=academic_session,
+        comision_id=COMISION,
+        tenant_id=TENANT,
+        language="java",
+    )
+
+    assert len(grouped[student]) == 1
+    assert grouped[student][0]["episode_id"] == ep_java
+
+
+@pytest.mark.asyncio
+async def test_batch_filtro_sin_resultados_devuelve_dict_vacio(
+    ctr_session: AsyncSession,
+    classifier_session: AsyncSession,
+    academic_session: AsyncSession,
+) -> None:
+    """4.9: cohorte 100% Python filtrada por `java` → dict vacío."""
+    from analytics_service.services.cohort_slopes import (
+        batch_classifications_with_templates_by_student,
+    )
+
+    base_ts = datetime(2026, 1, 1, tzinfo=UTC)
+    student = uuid4()
+    prob = uuid4()
+    await _add_tarea(academic_session, problema_id=prob, template_id=None)
+    ep = await _add_episode(ctr_session, student=student, problema_id=prob)
+    await _add_open_event(ctr_session, episode_id=ep, payload={"language": "python"})
+    await _add_classification(
+        classifier_session, episode_id=ep, appropriation="delegacion_pasiva", classified_at=base_ts
+    )
+
+    grouped = await batch_classifications_with_templates_by_student(
+        ctr_session=ctr_session,
+        classifier_session=classifier_session,
+        academic_session=academic_session,
+        comision_id=COMISION,
+        tenant_id=TENANT,
+        language="java",
+    )
+
     assert grouped == {}

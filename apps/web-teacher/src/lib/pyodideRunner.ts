@@ -51,19 +51,26 @@ declare global {
 export interface TestCaseLike {
   id: string
   name: string
-  type: "stdin_stdout" | "pytest_assert"
+  type: "stdin_stdout" | "pytest_assert" | "junit_assert"
   code: string
   expected: string | null
   is_public: boolean
   weight: number
 }
 
-export type TestCaseStatus = "pass" | "fail" | "error"
+/**
+ * `skipped`: el caso no se corrio porque este runner es de Python y el tipo del
+ * caso pertenece a otro lenguaje. Es un estado explicito y no un `fail`: un
+ * caso que no se ejecuto no reprobo. Sin este estado, un `junit_assert` caia en
+ * la rama de `stdin_stdout` y se comparaba su codigo de asserts contra el stdout
+ * del programa, produciendo verdes y rojos que no significaban nada.
+ */
+export type TestCaseStatus = "pass" | "fail" | "error" | "skipped"
 
 export interface TestCaseRunResult {
   id: string
   name: string
-  type: "stdin_stdout" | "pytest_assert"
+  type: "stdin_stdout" | "pytest_assert" | "junit_assert"
   status: TestCaseStatus
   /** entrada del caso: stdin (stdin_stdout) o los asserts (pytest_assert). */
   input: string
@@ -247,6 +254,23 @@ export async function runTestCases(
   const py = await loadPyodideRuntime()
   const results: TestCaseRunResult[] = []
   for (const tc of testCases) {
+    // Este runner es Pyodide. Un caso de otro lenguaje NO se ejecuta ni se
+    // aproxima: se declara no ejecutado. Correrlo por la rama de stdin_stdout
+    // daria un veredicto que el docente leeria como valido.
+    if (tc.type === "junit_assert") {
+      results.push({
+        id: tc.id,
+        name: tc.name,
+        type: tc.type,
+        status: "skipped",
+        input: tc.code,
+        expected: tc.expected,
+        got: "",
+        error: "No hay entorno de ejecucion de Java todavia: este caso no se corrio.",
+        weight: tc.weight,
+      })
+      continue
+    }
     py.globals.set("__pr_solution", solutionCode)
     py.globals.set("__pr_test", tc.type === "pytest_assert" ? tc.code : "")
     py.globals.set("__pr_stdin", tc.type === "stdin_stdout" ? tc.code : "")

@@ -156,6 +156,83 @@ def test_kappa_user_header_invalido_400(client: TestClient) -> None:
     assert r.status_code == 400
 
 
+# ── Segmentación por lenguaje (multi-language-research-integrity sección 4) ──
+
+
+def test_kappa_declara_languages_present_siempre(client: TestClient) -> None:
+    """4.2/4.3: la declaración de lenguajes está SIEMPRE, sin pedir el filtro.
+
+    En modo dev/test (sin CTR_STORE_URL) episode_id sintéticos ("ep1", etc.)
+    no resuelven contra ninguna DB real → caen al default `python`."""
+    ratings = [
+        _rating("ep1", "apropiacion_reflexiva", "apropiacion_reflexiva"),
+        _rating("ep2", "delegacion_pasiva", "delegacion_pasiva"),
+    ]
+    r = client.post("/api/v1/analytics/kappa", json={"ratings": ratings}, headers=_KAPPA_HEADERS)
+    assert r.status_code == 200
+    data = r.json()
+    assert data["languages_present"] == ["python"]
+    assert data["insufficient_data"] is False
+
+
+def test_kappa_filtro_sin_param_preserva_comportamiento_actual(client: TestClient) -> None:
+    """4.10: sin `language`, el resultado es idéntico al comportamiento previo."""
+    ratings = [
+        _rating("ep1", "apropiacion_reflexiva", "apropiacion_reflexiva"),
+        _rating("ep2", "apropiacion_reflexiva", "apropiacion_superficial"),
+        _rating("ep3", "apropiacion_superficial", "apropiacion_superficial"),
+        _rating("ep4", "delegacion_pasiva", "delegacion_pasiva"),
+    ]
+    r = client.post("/api/v1/analytics/kappa", json={"ratings": ratings}, headers=_KAPPA_HEADERS)
+    assert r.status_code == 200
+    data = r.json()
+    assert 0 < data["kappa"] < 1.0
+    assert data["observed_agreement"] == 0.75
+    assert data["n_episodes"] == 4
+
+
+def test_kappa_filtro_python_incluye_todo_en_modo_dev(client: TestClient) -> None:
+    """4.8: con `language=python` (default de todos en modo dev) el resultado
+    agrega los mismos ratings que sin filtro."""
+    ratings = [
+        _rating("ep1", "apropiacion_reflexiva", "apropiacion_reflexiva"),
+        _rating("ep2", "delegacion_pasiva", "delegacion_pasiva"),
+    ]
+    r = client.post(
+        "/api/v1/analytics/kappa?language=python",
+        json={"ratings": ratings},
+        headers=_KAPPA_HEADERS,
+    )
+    assert r.status_code == 200
+    data = r.json()
+    assert data["n_episodes"] == 2
+    assert data["languages_present"] == ["python"]
+    assert data["insufficient_data"] is False
+
+
+def test_kappa_filtro_sin_resultados_devuelve_ausencia_de_datos(client: TestClient) -> None:
+    """4.9: filtrar por `java` sobre ratings que resuelven a `python` (modo dev,
+    default) → ausencia de datos, NO kappa calculado sobre conjunto vacío."""
+    ratings = [
+        _rating("ep1", "apropiacion_reflexiva", "apropiacion_reflexiva"),
+        _rating("ep2", "delegacion_pasiva", "delegacion_pasiva"),
+    ]
+    r = client.post(
+        "/api/v1/analytics/kappa?language=java",
+        json={"ratings": ratings},
+        headers=_KAPPA_HEADERS,
+    )
+    assert r.status_code == 200
+    data = r.json()
+    assert data["insufficient_data"] is True
+    assert data["kappa"] is None
+    assert data["n_episodes"] == 0
+    assert data["languages_present"] == []
+    # No fabrica matriz de confusión ni acuerdo sobre el conjunto vacío
+    assert data["confusion_matrix"] == {}
+    assert data["per_class_agreement"] == {}
+
+
 def test_kappa_emite_audit_log_estructurado(
     client: TestClient, caplog: pytest.LogCaptureFixture
 ) -> None:

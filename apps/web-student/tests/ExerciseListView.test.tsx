@@ -172,8 +172,20 @@ describe("ExerciseListView", () => {
     it("muestra barra de progreso con 1/2 completados", async () => {
       const entrega = makeEntrega({
         ejercicio_estados: [
-          { ejercicio_id: null, orden: 1, completado: true, episode_id: "ep-1", completado_at: "2026-05-06T11:00:00Z" },
-          { ejercicio_id: null, orden: 2, completado: false, episode_id: null, completado_at: null },
+          {
+            ejercicio_id: null,
+            orden: 1,
+            completado: true,
+            episode_id: "ep-1",
+            completado_at: "2026-05-06T11:00:00Z",
+          },
+          {
+            ejercicio_id: null,
+            orden: 2,
+            completado: false,
+            episode_id: null,
+            completado_at: null,
+          },
         ],
       })
       setupFetchMock({
@@ -296,8 +308,20 @@ describe("ExerciseListView", () => {
     it("muestra el boton cuando todos los ejercicios estan completados y estado=draft", async () => {
       const entrega = makeEntrega({
         ejercicio_estados: [
-          { ejercicio_id: null, orden: 1, completado: true, episode_id: "ep-1", completado_at: "2026-05-06T11:00:00Z" },
-          { ejercicio_id: null, orden: 2, completado: true, episode_id: "ep-2", completado_at: "2026-05-06T11:30:00Z" },
+          {
+            ejercicio_id: null,
+            orden: 1,
+            completado: true,
+            episode_id: "ep-1",
+            completado_at: "2026-05-06T11:00:00Z",
+          },
+          {
+            ejercicio_id: null,
+            orden: 2,
+            completado: true,
+            episode_id: "ep-2",
+            completado_at: "2026-05-06T11:30:00Z",
+          },
         ],
       })
       setupFetchMock({
@@ -347,8 +371,20 @@ describe("ExerciseListView", () => {
       const entrega = makeEntrega({
         estado: "graded",
         ejercicio_estados: [
-          { ejercicio_id: null, orden: 1, completado: true, episode_id: "ep-1", completado_at: "2026-05-06T11:00:00Z" },
-          { ejercicio_id: null, orden: 2, completado: true, episode_id: "ep-2", completado_at: "2026-05-06T11:30:00Z" },
+          {
+            ejercicio_id: null,
+            orden: 1,
+            completado: true,
+            episode_id: "ep-1",
+            completado_at: "2026-05-06T11:00:00Z",
+          },
+          {
+            ejercicio_id: null,
+            orden: 2,
+            completado: true,
+            episode_id: "ep-2",
+            completado_at: "2026-05-06T11:30:00Z",
+          },
         ],
       })
       setupFetchMock({

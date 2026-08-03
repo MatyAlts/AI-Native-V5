@@ -126,3 +126,65 @@ def test_empty_chain_is_valid() -> None:
     valid, failing_index = verify_chain_integrity([])
     assert valid is True
     assert failing_index is None
+
+
+# ── multi-language-research-integrity (episode-language-provenance) ───────
+# Task 3.4: verificar la cadena criptográfica de un episodio ANTERIOR al
+# cambio (episodio_abierto sin la key "language") y confirmar que pasa sin
+# discrepancias. Golden hashes calculados con el `compute_self_hash`/
+# `compute_chain_hash` vigente (2026-07-23, HEAD ebdb7e7) — mismo fixture
+# que `test_hashing_and_sharding.py::_GOLDEN_EPISODIO_ABIERTO_PRE_LANGUAGE`,
+# valores idénticos porque es el mismo módulo de hashing.
+_GOLDEN_EPISODIO_ABIERTO: dict = {
+    "event_uuid": "11111111-1111-1111-1111-111111111111",
+    "episode_id": "22222222-2222-2222-2222-222222222222",
+    "tenant_id": "33333333-3333-3333-3333-333333333333",
+    "seq": 0,
+    "event_type": "episodio_abierto",
+    "ts": "2026-06-01T10:00:00Z",
+    "payload": {
+        "student_pseudonym": "44444444-4444-4444-4444-444444444444",
+        "problema_id": "55555555-5555-5555-5555-555555555555",
+        "comision_id": "66666666-6666-6666-6666-666666666666",
+        "curso_config_hash": "a" * 64,
+        "model": "claude-sonnet-4-6",
+    },
+    "prompt_system_hash": "b" * 64,
+    "prompt_system_version": "v1.0.0",
+    "classifier_config_hash": "c" * 64,
+}
+_GOLDEN_PROMPT_ENVIADO: dict = {
+    "event_uuid": "77777777-7777-7777-7777-777777777777",
+    "episode_id": "22222222-2222-2222-2222-222222222222",
+    "tenant_id": "33333333-3333-3333-3333-333333333333",
+    "seq": 1,
+    "event_type": "prompt_enviado",
+    "ts": "2026-06-01T10:01:00Z",
+    "payload": {
+        "content": "como resuelvo esto",
+        "prompt_kind": "solicitud_directa",
+        "chunks_used_hash": None,
+    },
+    "prompt_system_hash": "b" * 64,
+    "prompt_system_version": "v1.0.0",
+    "classifier_config_hash": "c" * 64,
+}
+_GOLDEN_SELF_0 = "370886887d07b4cdd6148665b3116d9b9fb3e53c5871e10509cdd3886310ef6e"
+_GOLDEN_CHAIN_0 = "79b2af8674e0d0bf8156b3c95a841b4f2ad3f19f158521da45ff0c53036b826d"
+_GOLDEN_SELF_1 = "c77e2b43da809b39fc3f3d69abbe435ed3d61c802d8e392e1d6215c8ed0799ec"
+_GOLDEN_CHAIN_1 = "de48d7e7e56a9112ab23725fd90fdd2a14e62b46c9d10285ed86ba061af8ecbf"
+
+
+def test_episodio_historico_sin_language_verifica_sin_discrepancias() -> None:
+    """Cadena de un episodio pre-cambio (episodio_abierto sin `language`)
+    verifica valid=True contra sus hashes originales, sin recomputar nada
+    distinto por la existencia del nuevo campo opcional en el contrato."""
+    events = [
+        (_GOLDEN_EPISODIO_ABIERTO, _GOLDEN_SELF_0, _GOLDEN_CHAIN_0),
+        (_GOLDEN_PROMPT_ENVIADO, _GOLDEN_SELF_1, _GOLDEN_CHAIN_1),
+    ]
+
+    valid, failing_index = verify_chain_integrity(events)
+
+    assert valid is True
+    assert failing_index is None

@@ -23,8 +23,21 @@ import type * as Monaco from "monaco-editor"
 import type { editor as MonacoEditor } from "monaco-editor"
 import { type ReactNode, useEffect, useRef, useState } from "react"
 import { Group, Panel, Separator } from "react-resizable-panels"
-import type { TestCasePublic } from "../lib/api"
+import {
+  DEFAULT_LANGUAGE,
+  ExecutionQuotaError,
+  type ExecutionResult,
+  ExecutionUnavailableError,
+  LANGUAGE_LABELS,
+  LANGUAGE_PLACEHOLDER,
+  type Language,
+  type TestCasePublic,
+  type TokenGetter,
+} from "../lib/api"
+import { parseJavaError } from "../lib/javaError"
+import { registerJavaSnippets } from "../lib/javaSnippets"
 import { extractPyodideErrorLine, extractPyodideErrorLineNumber } from "../lib/pyodideError"
+import { runRemote } from "../lib/runRemote"
 
 type PyodideAPI = {
   runPythonAsync(code: string): Promise<unknown>
@@ -69,14 +82,15 @@ export interface CodeEditorProps {
   /** Callback de edición con debouncing de 1s. Recibe el snapshot actual
    * del buffer, `diffChars` = delta de caracteres respecto a la última
    * emisión (positivo si agregó, negativo si borró), y `origin` (F6) que
-   * indica si los cambios desde la última emisión vinieron de tipeo
-   * directo o de un paste del clipboard. Pensado para alimentar el evento
-   * CTR `edicion_codigo` sin saturar al backend con cada tecla.
+   * indica de dónde vinieron los cambios desde la última emisión: tipeo
+   * directo, paste del clipboard, o expansión de un snippet de ceremonia
+   * del editor. Pensado para alimentar el evento CTR `edicion_codigo` sin
+   * saturar al backend con cada tecla.
    */
   onEditDebounced?: (
     snapshot: string,
     diffChars: number,
-    origin: "student_typed" | "pasted_external",
+    origin: "student_typed" | "pasted_external" | "snippet_expanded",
   ) => void
   /** Disparado cuando el alumno intenta pegar. La accion fue bloqueada
    * por el editor — solo registrar en CTR + mostrar feedback. */
@@ -111,8 +125,37 @@ export interface CodeEditorProps {
   onToggleMaximize?: (() => void) | undefined
   /** ED-1: estado actual de maximizacion (para el icono del boton). */
   isMaximized?: boolean
-  language?: "python" // en F6+ extendible a más lenguajes
+  /** Lenguaje del ejercicio. Determina el modo de Monaco, el rotulo accesible
+   * de los controles y por donde se ejecuta (navegador o servidor). */
+  language?: Language
+  /** UUID del Ejercicio del banco. Necesario para la ejecucion server-side: el
+   * servicio lee su definicion completa (con los casos ocultos) para correrlos.
+   * Sin esto, un lenguaje remoto no puede ejecutarse. */
+  ejercicioId?: string | undefined
+  /** Episodio de la corrida. Viaja al execution-service para que pueda
+   * emitir `tests_ejecutados` al CTR: sin esto el evento no se emite y el
+   * episodio queda sin la señal que el labeler usa para N3/N4. */
+  episodeId?: string | undefined
+  /** Para autenticar contra el execution-service. */
+  getToken?: TokenGetter | undefined
 }
+
+/**
+ * Lenguajes que corren EN EL NAVEGADOR (Pyodide). Instantaneos y gratis.
+ *
+ * Python sigue acá y no se toca: no hay razon para mandarlo al servidor.
+ */
+const LANGUAGES_RUNTIME_LOCAL: readonly Language[] = ["python"]
+
+/**
+ * Lenguajes que corren EN EL SERVIDOR (ADR-059).
+ *
+ * No hay forma de correr una JVM en el navegador, asi que Java pasa por el
+ * execution-service. Diferencia que el alumno percibe: la espera ocurre en
+ * CADA corrida, no solo la primera — por eso el indicador de espera es propio
+ * y explica que se esta compilando en el servidor.
+ */
+const LANGUAGES_RUNTIME_REMOTO: readonly Language[] = ["java"]
 
 const EDIT_DEBOUNCE_MS = 1000
 
@@ -157,7 +200,9 @@ interface TestCaseResult {
 }
 
 export function CodeEditor({
-  initialCode = "# Escribí tu código Python acá\n",
+  // Sin `initialCode` el buffer arranca en el andamio del lenguaje por omision.
+  // El caller (EpisodePage) normalmente pasa uno ya resuelto por lenguaje.
+  initialCode = LANGUAGE_PLACEHOLDER[DEFAULT_LANGUAGE],
   onCodeExecuted,
   onEditDebounced,
   onPasteAttempt,
@@ -166,8 +211,25 @@ export function CodeEditor({
   onTestsRun,
   onToggleMaximize,
   isMaximized = false,
-  language = "python",
+  language = DEFAULT_LANGUAGE,
+  ejercicioId,
+  episodeId,
+  getToken,
 }: CodeEditorProps): ReactNode {
+  // Un solo lugar decide POR DONDE se ejecuta. Todo lo que dependa de eso
+  // (carga de Pyodide, estado de los controles, rotulos accesibles) sale de
+  // acá, para que no vuelva a pasar que el efecto salga temprano y el boton
+  // quede habilitado igual.
+  const isLocal = LANGUAGES_RUNTIME_LOCAL.includes(language)
+  // Un lenguaje remoto sin `ejercicioId` NO es ejecutable: el servicio necesita
+  // la definicion del ejercicio para inyectar los casos ocultos.
+  const isRemoto = LANGUAGES_RUNTIME_REMOTO.includes(language) && Boolean(ejercicioId)
+  const hasRuntime = isLocal || isRemoto
+  const languageLabel = LANGUAGE_LABELS[language]
+  // Texto de espera de la corrida remota. La espera pasa en CADA corrida, no
+  // solo la primera: el alumno tiene que saber que se esta compilando en el
+  // servidor y no que se colgo.
+  const [remoteWait, setRemoteWait] = useState<string | null>(null)
   const editorContainerRef = useRef<HTMLDivElement>(null)
   const editorRef = useRef<MonacoEditor.IStandaloneCodeEditor | null>(null)
   // ED-4: guardamos el modulo monaco para poder pintar markers de error en la
@@ -239,6 +301,11 @@ export function CodeEditor({
   // "pasted_external"; sino default a "student_typed". Una vez emitido el
   // evento, reseteamos para no contaminar la siguiente ventana.
   const pasteSinceLastFlushRef = useRef<boolean>(false)
+  // Mismo mecanismo que el paste, para las expansiones de snippets de
+  // ceremonia. Sin esto una expansión de 8 líneas entra al CTR como
+  // `student_typed` — mentira invisible: el evento se ve igual y un diff
+  // grande no llama la atención.
+  const snippetSinceLastFlushRef = useRef<boolean>(false)
   const onEditDebouncedRef = useRef<typeof onEditDebounced>(onEditDebounced)
   useEffect(() => {
     onEditDebouncedRef.current = onEditDebounced
@@ -396,10 +463,17 @@ export function CodeEditor({
           // tecla → undo dentro del debounce), no disparamos.
           if (snapshot === lastFiredSnapshotRef.current) return
           lastFiredSnapshotRef.current = snapshot
-          const origin: "pasted_external" | "student_typed" = pasteSinceLastFlushRef.current
-            ? "pasted_external"
-            : "student_typed"
+          // Precedencia: paste > snippet > tipeo. Si en la misma ventana de
+          // debounce hubo las dos cosas gana el paste, que es la señal más
+          // fuerte (es la única que lleva override a N4 en el labeler).
+          const origin: "pasted_external" | "snippet_expanded" | "student_typed" =
+            pasteSinceLastFlushRef.current
+              ? "pasted_external"
+              : snippetSinceLastFlushRef.current
+                ? "snippet_expanded"
+                : "student_typed"
           pasteSinceLastFlushRef.current = false
+          snippetSinceLastFlushRef.current = false
           cb(snapshot, diffChars, origin)
         }, EDIT_DEBOUNCE_MS)
       })
@@ -421,6 +495,28 @@ export function CodeEditor({
     }
   }, [language])
 
+  // Snippets de ceremonia para Java (System.out.println, getters/setters,
+  // import del Scanner). Effect propio con deps vacías a propósito: el
+  // proveedor se registra a nivel del *lenguaje* en Monaco, no del editor, así
+  // que sobrevive los re-montajes del effect de arriba sin duplicarse. Monaco
+  // solo lo consulta sobre modelos Java, por eso no hace falta gatearlo por
+  // `language`.
+  useEffect(() => {
+    let disposable: { dispose: () => void } | null = null
+    let cancelled = false
+    ;(async () => {
+      const monaco = await import(/* @vite-ignore */ "monaco-editor")
+      if (cancelled) return
+      disposable = registerJavaSnippets(monaco, () => {
+        snippetSinceLastFlushRef.current = true
+      })
+    })()
+    return () => {
+      cancelled = true
+      disposable?.dispose()
+    }
+  }, [])
+
   // ED-3: aplicar el tamano de fuente al editor + persistir. updateOptions no
   // re-crea el editor (preserva cursor/undo/buffer).
   useEffect(() => {
@@ -437,9 +533,10 @@ export function CodeEditor({
     return () => window.clearInterval(t)
   }, [loading])
 
-  // 2. Cargar Pyodide en background (solo Python)
+  // 2. Cargar Pyodide en background — SOLO para lenguajes que corren local.
+  //    Un lenguaje remoto no necesita los ~6 MB de Pyodide en el navegador.
   useEffect(() => {
-    if (language !== "python") {
+    if (!isLocal) {
       setLoading(false)
       return
     }
@@ -699,7 +796,7 @@ def __tutor_run_tests(student_code, cases_json):
     return () => {
       cancelled = true
     }
-  }, [language])
+  }, [isLocal])
 
   // ED-4: pintar / limpiar markers de error en la linea exacta del editor.
   function clearErrorMarkers() {
@@ -708,12 +805,19 @@ def __tutor_run_tests(student_code, cases_json):
       monacoRef.current.editor.setModelMarkers(model, "pyodide-run", [])
     }
   }
-  function setErrorMarker(rawError: string, message: string) {
+  /**
+   * Marca UNA linea del editor. Compartida por el camino local y el remoto: la
+   * diferencia entre ambos es de donde sale el numero de linea, no como se
+   * pinta.
+   *
+   * Si la linea no existe en el buffer (por ejemplo, el alumno borro codigo
+   * despues de la corrida) se limpia en vez de marcar cualquier cosa.
+   */
+  function setErrorMarkerAtLine(line: number, message: string) {
     const model = editorRef.current?.getModel()
     const monaco = monacoRef.current
     if (!model || !monaco) return
-    const line = extractPyodideErrorLineNumber(rawError)
-    if (line == null || line > model.getLineCount()) {
+    if (line < 1 || line > model.getLineCount()) {
       monaco.editor.setModelMarkers(model, "pyodide-run", [])
       return
     }
@@ -727,6 +831,15 @@ def __tutor_run_tests(student_code, cases_json):
         severity: monaco.MarkerSeverity.Error,
       },
     ])
+  }
+
+  function setErrorMarker(rawError: string, message: string) {
+    const line = extractPyodideErrorLineNumber(rawError)
+    if (line == null) {
+      clearErrorMarkers()
+      return
+    }
+    setErrorMarkerAtLine(line, message)
   }
 
   // ED-7: registra la corrida en el historial (cap MAX_RUN_HISTORY).
@@ -743,8 +856,115 @@ def __tutor_run_tests(student_code, cases_json):
     setRunHistory((prev) => [entry, ...prev].slice(0, MAX_RUN_HISTORY))
   }
 
+  /**
+   * Corrida server-side (tarea 6.1). El resultado tiene la MISMA forma que el
+   * de Pyodide, asi que la vista de resultados y el evento CTR no cambian.
+   */
+  const runCodeRemoto = async () => {
+    if (!ejercicioId) return
+    setRunning(true)
+    setOutput("")
+    outputBufferRef.current = ""
+    setError(null)
+    setViewingRunId(null)
+    setOutputTab("consola")
+    clearErrorMarkers()
+    setRemoteWait("Enviando al servidor...")
+    const started = performance.now()
+
+    let result: ExecutionResult
+    try {
+      result = await runRemote({
+        ejercicioId,
+        sourceCode: code,
+        ...(episodeId ? { episodeId } : {}),
+        getToken,
+        onStateChange: (state) => {
+          setRemoteWait(
+            state === "queued"
+              ? "En cola en el servidor..."
+              : `Compilando y ejecutando ${languageLabel} en el servidor...`,
+          )
+        },
+      })
+    } catch (e) {
+      // Tarea 6.6: "no hay entorno" NO se confunde con "tu codigo falla". El
+      // alumno tiene que poder distinguir si el problema es suyo o nuestro.
+      const esNuestro = e instanceof ExecutionUnavailableError || e instanceof ExecutionQuotaError
+      const msg = esNuestro
+        ? (e as Error).message
+        : `No se pudo ejecutar: ${e instanceof Error ? e.message : String(e)}`
+      setError(msg)
+      setRunning(false)
+      setRemoteWait(null)
+      return
+    } finally {
+      setRemoteWait(null)
+    }
+
+    const elapsed = performance.now() - started
+
+    if (result.outcome === "infrastructure_failure") {
+      // Fallo NUESTRO. No se emite `codigo_ejecutado` ni se cuenta como corrida
+      // del alumno: la trazabilidad no debe registrar como actividad pedagogica
+      // algo que no llego a ejecutarse.
+      setError(
+        "El servicio de ejecucion no pudo correr tu codigo. No es un error tuyo: " +
+          "volve a intentar en un momento. Podes seguir con el tutor mientras tanto.",
+      )
+      setRunning(false)
+      return
+    }
+
+    // Salida y error del primer caso: es lo que el alumno esperaba ver al
+    // apretar "Ejecutar" (a diferencia de "Probar", que lista todos).
+    const primero = result.cases[0]
+    const salida = primero?.got ?? ""
+    outputBufferRef.current = salida
+    setOutput(salida)
+
+    const javaErr =
+      result.outcome === "compilation_error"
+        ? parseJavaError(result.compile_output, "")
+        : parseJavaError("", primero?.error ?? "")
+
+    if (javaErr) {
+      setError(javaErr.message)
+      // Tarea 6.5: se marca la linea SOLO si el error la trae. Un marcador en
+      // la linea equivocada manda al alumno a buscar donde no esta.
+      if (javaErr.line !== null) setErrorMarkerAtLine(javaErr.line, javaErr.message)
+    }
+
+    pushRunHistory(!javaErr, elapsed, salida, javaErr?.message ?? null)
+    onCodeExecuted?.({
+      code,
+      output: salida,
+      error: javaErr?.message ?? null,
+      durationMs: elapsed,
+    })
+    setRunning(false)
+  }
+
   const runCode = async () => {
-    if (!pyodideRef.current || running || testing) return
+    // El boton esta deshabilitado sin runtime, pero el atajo de teclado no pasa
+    // por el boton: sin esto, Ctrl+Enter en un ejercicio Java volveria a ser un
+    // no-op silencioso, que es justo lo que esta change elimina.
+    if (!hasRuntime) {
+      setError(
+        `No hay entorno de ejecucion de ${languageLabel} todavia. Podes seguir escribiendo codigo y consultando al tutor: tus ediciones se registran igual.`,
+      )
+      setOutputTab("consola")
+      return
+    }
+    // Candado contra doble envio (tarea 6.3). En remoto importa mas que en
+    // local: cada corrida consume cuota y dinero, y el alumno que no ve
+    // respuesta inmediata tiende a apretar de nuevo.
+    if (running || testing) return
+    if (isRemoto) {
+      await runCodeRemoto()
+      return
+    }
+    if (!pyodideRef.current) return
     setRunning(true)
     setOutput("")
     outputBufferRef.current = ""
@@ -785,12 +1005,92 @@ def __tutor_run_tests(student_code, cases_json):
     }
   }
 
+  /** "Probar" para lenguajes remotos: los casos los corre el execution-service.
+   *
+   * NO llama a `onTestsRun`, y eso es a proposito: el evento `tests_ejecutados`
+   * lo emite el BACKEND (ver `tutor_client.py` del execution-service). Si lo
+   * emitieran los dos, cada corrida de Java dejaria el evento duplicado en la
+   * cadena del CTR.
+   *
+   * El reparto queda asi:
+   *   - Python (Pyodide, local): emite el frontend — el backend no ve la corrida.
+   *   - Java (remoto): emite el backend — es quien corrio los casos y el unico
+   *     que sabe cuales eran ocultos.
+   */
+  const runTestsRemoto = async () => {
+    if (!ejercicioId) return
+    setTesting(true)
+    setOutputTab("pruebas")
+    clearErrorMarkers()
+    setError(null)
+    try {
+      const result = await runRemote({
+        ejercicioId,
+        sourceCode: code,
+        getToken,
+        ...(episodeId ? { episodeId } : {}),
+        onStateChange: (state) => {
+          setRemoteWait(
+            state === "queued"
+              ? "En cola en el servidor..."
+              : "Compilando y corriendo las pruebas en el servidor...",
+          )
+        },
+      })
+      setTestResults(
+        result.cases.map((c) => ({
+          id: c.id,
+          name: c.name,
+          // El backend tipa `type` como string libre; el panel solo entiende
+          // estos dos. `pytest_assert` no aplica a Java, asi que el fallback
+          // razonable es el otro.
+          type: c.type === "pytest_assert" ? ("pytest_assert" as const) : ("stdin_stdout" as const),
+          // Solo `pass` es aprobado. `error` (no compila, timeout, crash) NO es
+          // aprobado — el mismo criterio que `RunResult.failed` aplica del lado
+          // del servidor.
+          passed: c.status === "pass",
+          expected: c.expected ?? null,
+          actual: c.got ?? "",
+          stdin: c.input ?? "",
+          error: c.error ?? null,
+        })),
+      )
+      // Un error de compilacion no produce casos: sin esto el alumno ve el panel
+      // de pruebas vacio y sin explicacion.
+      if (result.compile_output && result.cases.length === 0) {
+        setError(result.compile_output)
+        setOutputTab("consola")
+      }
+    } catch (e) {
+      // Distinguir "no hay entorno / te pasaste de cuota" de "tu codigo falla"
+      // es justo lo que la tarea 6.6 pide no confundir.
+      setError(e instanceof Error ? e.message : "No se pudieron correr las pruebas.")
+      setOutputTab("consola")
+    } finally {
+      setRemoteWait(null)
+      setTesting(false)
+    }
+  }
+
   // F1: corre el codigo del alumno contra los test cases PUBLICOS. NO emite
   // codigo_ejecutado (eso es "Ejecutar"); notifica conteos via onTestsRun para
   // que el caller emita `tests_ejecutados`. Aislado de la terminal interactiva:
   // el runner Python captura su propia stdout.
   const runTests = async () => {
-    if (!pyodideRef.current || running || testing || !hasTests) return
+    if (!hasRuntime) {
+      setError(`No hay entorno de ejecucion de ${languageLabel} todavia.`)
+      setOutputTab("consola")
+      return
+    }
+    if (running || testing || !hasTests) return
+    // Lenguaje remoto: los casos los corre el servidor. Antes esta funcion era
+    // Pyodide-only y salia en silencio — el boton quedaba habilitado (hasRuntime
+    // es true para Java) y no pasaba absolutamente nada al apretarlo.
+    if (isRemoto) {
+      await runTestsRemoto()
+      return
+    }
+    if (!pyodideRef.current) return
     setTesting(true)
     setOutputTab("pruebas")
     clearErrorMarkers()
@@ -947,14 +1247,30 @@ def __tutor_run_tests(student_code, cases_json):
 
           <span className="mx-0.5 hidden h-5 w-px bg-border-soft sm:block" aria-hidden="true" />
 
+          {/* Ejecucion no disponible: se dice, no se insinua. Un control que al
+              accionarse no produce ningun efecto es peor que uno deshabilitado
+              con motivo. */}
+          {!hasRuntime && (
+            <span className="text-xs text-muted" data-testid="sin-runtime-aviso">
+              Ejecutar {languageLabel} todavia no esta disponible. El tutor si.
+            </span>
+          )}
+
           {/* F1: Probar mi codigo contra los test cases publicos */}
           {hasTests && (
             <button
               type="button"
               onClick={runTests}
-              disabled={loading || running || testing}
+              disabled={!hasRuntime || loading || running || testing}
               data-testid="run-tests-button"
-              aria-label="Probar mi codigo contra los tests del ejercicio"
+              title={
+                hasRuntime ? undefined : `No hay entorno de ejecucion de ${languageLabel} todavia`
+              }
+              aria-label={
+                hasRuntime
+                  ? "Probar mi codigo contra los tests del ejercicio"
+                  : `Probar no disponible: no hay entorno de ejecucion de ${languageLabel} todavia`
+              }
               className="inline-flex items-center gap-1.5 rounded-md border border-accent-brand/40 bg-accent-brand/5 px-3 py-1.5 text-sm font-medium text-accent-brand transition-colors hover:bg-accent-brand/10 disabled:opacity-50 disabled:cursor-not-allowed focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent-brand/40"
             >
               {testing ? (
@@ -970,9 +1286,18 @@ def __tutor_run_tests(student_code, cases_json):
           <button
             type="button"
             onClick={runCode}
-            disabled={loading || running || testing}
+            disabled={!hasRuntime || loading || running || testing}
             aria-keyshortcuts="Control+Enter Meta+Enter"
-            aria-label={running ? "Ejecutando codigo" : "Ejecutar codigo Python"}
+            title={
+              hasRuntime ? undefined : `No hay entorno de ejecucion de ${languageLabel} todavia`
+            }
+            aria-label={
+              !hasRuntime
+                ? `Ejecutar no disponible: no hay entorno de ejecucion de ${languageLabel} todavia`
+                : running
+                  ? `Ejecutando codigo ${languageLabel}`
+                  : `Ejecutar codigo ${languageLabel}`
+            }
             className="inline-flex items-center gap-2 px-4 py-2 text-sm font-semibold rounded-md bg-emerald-600 hover:bg-emerald-700 disabled:bg-border-strong disabled:cursor-not-allowed text-white shadow-sm transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500 focus-visible:ring-offset-1"
           >
             {/* Icono Play SVG inline (evita dep extra para este botón). */}
@@ -1136,7 +1461,14 @@ def __tutor_run_tests(student_code, cases_json):
           {/* Cuerpo del panel */}
           <div className="flex-1 min-h-0 overflow-auto">
             {outputTab === "consola" ? (
-              <div className="p-4 font-mono text-sm leading-relaxed text-surface">
+              // `status` + `aria-live` para que un error de ejecucion (o el aviso
+              // de que el lenguaje no tiene runtime) se anuncie solo. Antes habia
+              // que navegar hasta acá para enterarse de que algo fallo.
+              <output
+                aria-live="polite"
+                aria-atomic="false"
+                className="block p-4 font-mono text-sm leading-relaxed text-surface"
+              >
                 {viewingRun && (
                   <div className="mb-2 flex items-center gap-2 text-[11px] text-muted">
                     <span>Viendo la corrida {viewingRun.id} (historial).</span>
@@ -1149,18 +1481,30 @@ def __tutor_run_tests(student_code, cases_json):
                     </button>
                   </div>
                 )}
+                {/* Espera de la corrida remota. La local no lo necesita: es
+                    instantanea salvo la carga inicial de Pyodide. */}
+                {remoteWait && (
+                  <div className="flex items-center gap-2 text-muted">
+                    <span className="inline-block h-3 w-3 shrink-0 rounded-full border-2 border-muted/30 border-t-muted motion-safe:animate-spin" />
+                    <span>{remoteWait}</span>
+                  </div>
+                )}
                 {consoleOutput && <pre className="whitespace-pre-wrap">{consoleOutput}</pre>}
                 {consoleError && (
                   <pre className="whitespace-pre-wrap text-danger">{consoleError}</pre>
                 )}
                 {!consoleOutput && !consoleError && !running && (
                   <span className="text-muted">
-                    {loading
-                      ? `Cargando runtime Python en el navegador (primera vez ~6 MB)... (${loadSeconds}s)`
-                      : `Ejecutá tu código (${shortcutLabel}) para ver el output acá.`}
+                    {!hasRuntime
+                      ? `Todavía no hay entorno de ejecución de ${languageLabel}. Podés escribir código y trabajarlo con el tutor: tus ediciones se registran igual.`
+                      : loading
+                        ? `Cargando runtime Python en el navegador (primera vez ~6 MB)... (${loadSeconds}s)`
+                        : isRemoto
+                          ? `Ejecutá tu código (${shortcutLabel}). Se compila y corre en el servidor, así que tarda unos segundos cada vez.`
+                          : `Ejecutá tu código (${shortcutLabel}) para ver el output acá.`}
                   </span>
                 )}
-              </div>
+              </output>
             ) : (
               <TestResultsView results={testResults} testing={testing} />
             )}

@@ -86,6 +86,13 @@ ROUTE_MAP: dict[str, str] = {
     # tp-entregas-correccion: entregas + calificaciones via evaluation-service (puerto 8004)
     "/api/v1/entregas": settings.evaluation_service_url,
     "/api/v1/calificaciones": settings.evaluation_service_url,
+    # ADR-059 (epic java-execution-engine): ejecucion server-side de Java via
+    # execution-service (puerto 8013, reservado desde ADR-033). Lo consumen el
+    # editor del alumno (web-student) y el panel de prueba del docente
+    # (web-teacher) para pedir una ejecucion y consultar su resultado.
+    # El navegador NUNCA habla con el sandbox: solo con este servicio, que es
+    # quien inyecta los casos ocultos y aplica las cuotas.
+    "/api/v1/executions": settings.execution_service_url,
     # `/api/v1/active_configs` (governance-service) NO se expone a propósito.
     # governance-service es interno by-design (prompts versionados; ver CLAUDE.md
     # "governance-service NO expuesto en ROUTE_MAP"). El manifest declarativo de

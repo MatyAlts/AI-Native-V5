@@ -68,4 +68,25 @@ def test_response_shape_es_estable(client: TestClient) -> None:
         "counts_by_student",
         "top_students_by_n_events",
         "recent_events",
+        "languages_present",  # multi-language-research-integrity sección 4.5
     }
+
+
+# ── Segmentación por lenguaje (multi-language-research-integrity sección 4) ──
+
+
+def test_modo_dev_declara_languages_present_vacio(client: TestClient) -> None:
+    """4.2/4.5: la declaración está SIEMPRE presente, incluso sin datos (modo dev)."""
+    r = client.get(_url(str(uuid4())), headers=_VALID_HEADERS)
+    assert r.status_code == 200
+    assert r.json()["languages_present"] == []
+
+
+def test_modo_dev_acepta_filtro_de_lenguaje_sin_romper(client: TestClient) -> None:
+    """4.10: el query param `language` es aceptado en modo dev sin cambiar
+    el comportamiento (sigue devolviendo la estructura vacía de siempre)."""
+    r = client.get(f"{_url(str(uuid4()))}?language=java", headers=_VALID_HEADERS)
+    assert r.status_code == 200
+    data = r.json()
+    assert data["n_events_total"] == 0
+    assert data["languages_present"] == []

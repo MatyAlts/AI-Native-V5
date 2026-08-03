@@ -3,11 +3,16 @@
 La suite asume el stack already-up (12 servicios + infra docker + DB seedeada).
 NO levanta containers ni servicios — falla fast si algo no responde.
 
-Auth: el api-gateway corre con `dev_trust_headers=True` (default en dev). Sin
-JWT validator activo, basta con mandar `X-User-Id` + `X-Tenant-Id` (+ opcional
-`X-User-Email`, `X-User-Roles`). El gateway pasa el request al servicio
-downstream con esos headers tal cual. Los frontends del repo usan exactamente
-este patrón en sus `vite.config.ts`.
+Auth: la suite REQUIERE que el api-gateway corra con `DEV_TRUST_HEADERS=true`.
+**No es el default** — `api_gateway/config.py` declara `dev_trust_headers: bool
+= False` por seguridad (a True habilitaría impersonación sin credenciales, y en
+PROD nunca debe ir prendido). Hay que setearlo explícito al arrancar el gateway;
+sin eso TODA la suite falla con 401 "Autenticación requerida".
+
+Con el flag prendido y sin JWT validator activo, basta con mandar `X-User-Id` +
+`X-Tenant-Id` (+ opcional `X-User-Email`, `X-User-Roles`). El gateway pasa el
+request al servicio downstream con esos headers tal cual. Los frontends del repo
+usan exactamente este patrón en sus `vite.config.ts`.
 
 Si en algún momento el JWT validator se activa (env `jwt_issuer` no vacío),
 estas fixtures van a fallar con 401 — habría que generar un Bearer firmado.

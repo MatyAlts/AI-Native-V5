@@ -12,7 +12,7 @@ from __future__ import annotations
 
 from datetime import UTC, datetime, timedelta
 from decimal import Decimal
-from unittest.mock import AsyncMock, MagicMock
+from unittest.mock import AsyncMock, MagicMock, patch
 from uuid import UUID, uuid4
 
 import pytest
@@ -23,6 +23,7 @@ from academic_service.schemas.tarea_practica import (
     TareaPracticaUpdate,
 )
 from academic_service.services.tarea_practica_service import TareaPracticaService
+from academic_service.services.tp_ejercicio_service import TpEjercicioService
 from fastapi import HTTPException
 from pydantic import ValidationError
 
@@ -79,6 +80,12 @@ def _fake_tarea(
     t.has_drift = kw.get("has_drift", False)
     t.created_by = kw.get("created_by", uuid4())
     t.deleted_at = kw.get("deleted_at")
+    # `publish()` valida composición: una TP sin ejercicios de banco y sin test
+    # cases propios es "vacía" y no se publica. El default la deja como TP
+    # monolítica válida — sin esto, MagicMock(spec=...) devolvería un mock cuyo
+    # `len()` es 0 y toda TP fake resultaría vacía.
+    t.test_cases = kw.get("test_cases", [{"id": "tc1", "name": "caso", "type": "stdin_stdout"}])
+    t.language = kw.get("language", "python")
     return t
 
 
@@ -418,6 +425,116 @@ async def test_publish_draft_to_published_happy_path(
 
     actions = _audit_actions(mock_session)
     assert actions == ["tarea_practica.publish"]
+
+
+async def test_publish_rechaza_tp_vacia(
+    mock_session, user_docente_admin_a: User, tenant_a_id: UUID
+) -> None:
+    """Una TP sin ejercicios de banco y sin test cases propios no llega al alumno.
+
+    Hasta esta change `publish()` solo miraba el estado, asi que una TP vacia se
+    publicaba y el alumno abria un episodio sin nada que resolver.
+    """
+    svc = TareaPracticaService(mock_session)
+
+    obj = _fake_tarea(uuid4(), tenant_a_id, uuid4(), estado="draft", test_cases=[])
+    svc.repo.get_or_404 = AsyncMock(return_value=obj)
+
+    with pytest.raises(HTTPException) as exc:
+        await svc.publish(obj.id, user_docente_admin_a)
+
+    assert exc.value.status_code == 422
+    assert "vacia" in exc.value.detail
+    assert obj.estado == "draft"
+    assert _audit_actions(mock_session) == []
+
+
+async def test_publish_acepta_tp_monolitica_con_test_cases(
+    mock_session, user_docente_admin_a: User, tenant_a_id: UUID
+) -> None:
+    """Sin ejercicios de banco pero con test cases propios es válida.
+
+    La regla es "tiene ejercicios O test cases", no "tiene ejercicios".
+    """
+    svc = TareaPracticaService(mock_session)
+
+    obj = _fake_tarea(
+        uuid4(),
+        tenant_a_id,
+        uuid4(),
+        estado="draft",
+        test_cases=[{"id": "tc1", "name": "caso", "type": "stdin_stdout"}],
+    )
+    svc.repo.get_or_404 = AsyncMock(return_value=obj)
+
+    result = await svc.publish(obj.id, user_docente_admin_a)
+
+    assert result.estado == "published"
+    assert _audit_actions(mock_session) == ["tarea_practica.publish"]
+
+
+async def test_publish_rechaza_lenguajes_mezclados(
+    mock_session, user_docente_admin_a: User, tenant_a_id: UUID
+) -> None:
+    """El editor del alumno carga un unico runtime: una TP mixta es irresoluble."""
+    svc = TareaPracticaService(mock_session)
+
+    obj = _fake_tarea(uuid4(), tenant_a_id, uuid4(), estado="draft", language="python")
+    svc.repo.get_or_404 = AsyncMock(return_value=obj)
+
+    def _par(orden: int, lang: str):
+        par = MagicMock()
+        par.ejercicio_id = uuid4()
+        par.orden = orden
+        par.peso_en_tp = Decimal("1.0")
+        ej = MagicMock()
+        ej.language = lang
+        return (par, ej)
+
+    with (
+        patch.object(
+            TpEjercicioService,
+            "list_by_tp",
+            AsyncMock(return_value=[_par(1, "python"), _par(2, "java")]),
+        ),
+        pytest.raises(HTTPException) as exc,
+    ):
+        await svc.publish(obj.id, user_docente_admin_a)
+
+    assert exc.value.status_code == 422
+    assert "un solo lenguaje" in exc.value.detail
+    assert obj.estado == "draft"
+
+
+async def test_publish_no_exige_que_los_pesos_sumen_uno(
+    mock_session, user_docente_admin_a: User, tenant_a_id: UUID
+) -> None:
+    """Anti-regresion. Las 169 asociaciones del piloto tienen peso 1.0000 cada
+    una, asi que toda TP de mas de un ejercicio suma > 1.0. Exigir suma 1.0
+    habria impedido republicar 25 de las 27 TPs publicadas.
+    """
+    svc = TareaPracticaService(mock_session)
+
+    obj = _fake_tarea(uuid4(), tenant_a_id, uuid4(), estado="draft", language="python")
+    svc.repo.get_or_404 = AsyncMock(return_value=obj)
+
+    def _par(orden: int):
+        par = MagicMock()
+        par.ejercicio_id = uuid4()
+        par.orden = orden
+        par.peso_en_tp = Decimal("1.0")
+        ej = MagicMock()
+        ej.language = "python"
+        return (par, ej)
+
+    with patch.object(
+        TpEjercicioService,
+        "list_by_tp",
+        AsyncMock(return_value=[_par(1), _par(2), _par(3)]),  # suma 3.0
+    ):
+        result = await svc.publish(obj.id, user_docente_admin_a)
+
+    assert result.estado == "published"
 
 
 async def test_publish_already_published_es_idempotente(

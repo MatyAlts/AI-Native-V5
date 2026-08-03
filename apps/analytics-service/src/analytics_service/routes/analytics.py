@@ -250,23 +250,71 @@ class KappaRequest(BaseModel):
 
 
 class KappaResponse(BaseModel):
-    kappa: float
+    kappa: float | None
     n_episodes: int
-    observed_agreement: float
-    expected_agreement: float
+    observed_agreement: float | None
+    expected_agreement: float | None
     interpretation: str
     per_class_agreement: dict[str, float]
     confusion_matrix: dict[str, dict[str, int]]
     # Estadisticos adicionales para defensa ante la paradoja de prevalencia.
-    ac1: float
+    ac1: float | None
     ac1_interpretation: str
-    kappa_se: float
-    kappa_ci_95: tuple[float, float]
+    kappa_se: float | None
+    kappa_ci_95: tuple[float, float] | None
+    # multi-language-research-integrity sección 4: declaración SIEMPRE presente
+    # (no depende del filtro) + filtro opcional por lenguaje.
+    languages_present: list[str] = Field(default_factory=list)
+    insufficient_data: bool = False
+
+
+async def _resolve_kappa_languages(
+    ratings_in: list[KappaRatingIn],
+    tenant_id: UUID,
+) -> dict[str, str]:
+    """Resuelve `{episode_id_str: language}` para los ratings de un request de kappa.
+
+    `episode_id` en `KappaRatingIn` es un string libre (no siempre un UUID
+    real — los tests unit usan ids sintéticos tipo "ep1"). Los que no parsean
+    como UUID, o que no tienen evento `episodio_abierto` resuelto, o cuando
+    la DB real no está configurada (modo dev), caen al default `python`
+    (`resolve_episode_languages` / `DEFAULT_LANGUAGE`).
+    """
+    from platform_ops import DEFAULT_LANGUAGE
+
+    episode_uuids: dict[str, UUID] = {}
+    for r in ratings_in:
+        try:
+            episode_uuids[r.episode_id] = UUID(r.episode_id)
+        except ValueError:
+            continue
+
+    from analytics_service.services.export import _real_data_source_enabled
+
+    resolved: dict[UUID, str] = {}
+    if episode_uuids and _real_data_source_enabled():
+        from platform_ops import resolve_episode_languages, set_tenant_rls
+        from sqlalchemy.ext.asyncio import async_sessionmaker
+
+        ctr_engine = get_ctr_engine()
+        async with async_sessionmaker(ctr_engine, expire_on_commit=False)() as ctr_s:
+            await set_tenant_rls(ctr_s, tenant_id)
+            resolved = await resolve_episode_languages(
+                ctr_s, tenant_id, list(episode_uuids.values())
+            )
+
+    return {
+        r.episode_id: resolved.get(episode_uuids[r.episode_id], DEFAULT_LANGUAGE)
+        if r.episode_id in episode_uuids
+        else DEFAULT_LANGUAGE
+        for r in ratings_in
+    }
 
 
 @router.post("/kappa", response_model=KappaResponse)
 async def compute_kappa(
     req: KappaRequest,
+    language: str | None = None,
     tenant_id: UUID = Depends(get_tenant_id),
     user_id: UUID = Depends(get_user_id),
 ) -> KappaResponse:
@@ -279,14 +327,47 @@ async def compute_kappa(
 
     Este endpoint es clave para el capítulo de validación empírica
     de la tesis.
+
+    `language` (opcional, multi-language-research-integrity sección 4.8):
+    restringe el cálculo a los ratings cuyo episodio resuelve a ese lenguaje.
+    La declaración `languages_present` es SIEMPRE parte de la respuesta,
+    con o sin filtro (sección 4.2/4.3 — declaración obligatoria).
     """
+    lang_by_episode = await _resolve_kappa_languages(req.ratings, tenant_id)
+
+    ratings_in = req.ratings
+    if language is not None:
+        ratings_in = [r for r in ratings_in if lang_by_episode[r.episode_id] == language]
+
+    languages_present = sorted({lang_by_episode[r.episode_id] for r in ratings_in})
+
+    if not ratings_in:
+        # 4.9: filtro sin resultados → ausencia de datos, NO kappa=0.0 (que
+        # se leería como "perfecto desacuerdo" y sería una métrica fabricada
+        # sobre un conjunto vacío).
+        return KappaResponse(
+            kappa=None,
+            n_episodes=0,
+            observed_agreement=None,
+            expected_agreement=None,
+            interpretation="insuficiente",
+            per_class_agreement={},
+            confusion_matrix={},
+            ac1=None,
+            ac1_interpretation="insuficiente",
+            kappa_se=None,
+            kappa_ci_95=None,
+            languages_present=languages_present,
+            insufficient_data=True,
+        )
+
     ratings = [
         KappaRating(
             episode_id=r.episode_id,
             rater_a=r.rater_a,
             rater_b=r.rater_b,
         )
-        for r in req.ratings
+        for r in ratings_in
     ]
     # Derivar las categorias presentes en los ratings (soporta los 3 protocolos:
     # 4 ejes canonicos (3 del continuo + autonomo ortogonal) / 10 subgrupos / N1-N4).
@@ -310,6 +391,8 @@ async def compute_kappa(
         ac1_interpretation=result.ac1_interpretation,
         kappa_se=result.kappa_se,
         kappa_ci_95=result.kappa_ci_95,
+        languages_present=languages_present,
+        insufficient_data=False,
     )
 
     logger.info(
@@ -325,7 +408,7 @@ async def compute_kappa(
     # dashboard 5 (κ rolling). UpDownCounter — para "set value" emitimos
     # delta vs valor previo, simulado con add(value) que en práctica refleja
     # acumulado. En el período del piloto basta para visualización.
-    if req.cohort_id is not None:
+    if req.cohort_id is not None and response.kappa is not None:
         cohort_label = {"window": "7d", "cohort": str(req.cohort_id)}
         classifier_kappa_rolling.add(response.kappa, cohort_label)
         classifier_kappa_rolling_last_update_unix_seconds.add(
@@ -684,6 +767,9 @@ class CohortProgressionOut(BaseModel):
     insuficiente: int
     net_progression_ratio: float
     trajectories: list[StudentTrajectoryOut]
+    # multi-language-research-integrity sección 4.2: declaración SIEMPRE
+    # presente (no depende del filtro `language`).
+    languages_present: list[str] = Field(default_factory=list)
 
 
 # ── Cache TTL en proceso para progression ─────────────────────────────
@@ -694,10 +780,10 @@ class CohortProgressionOut(BaseModel):
 # acá solo para esto sería sumar dependencia + modo de falla. Si se escala a
 # múltiples réplicas, migrar a un cache compartido (Redis).
 _PROGRESSION_CACHE_TTL_SEC = 60.0
-_progression_cache: dict[tuple[str, str], tuple[float, CohortProgressionOut]] = {}
+_progression_cache: dict[tuple[str, str, str], tuple[float, CohortProgressionOut]] = {}
 
 
-def _progression_cache_get(key: tuple[str, str]) -> CohortProgressionOut | None:
+def _progression_cache_get(key: tuple[str, str, str]) -> CohortProgressionOut | None:
     entry = _progression_cache.get(key)
     if entry is None:
         return None
@@ -708,7 +794,7 @@ def _progression_cache_get(key: tuple[str, str]) -> CohortProgressionOut | None:
     return value
 
 
-def _progression_cache_set(key: tuple[str, str], value: CohortProgressionOut) -> None:
+def _progression_cache_set(key: tuple[str, str, str], value: CohortProgressionOut) -> None:
     _progression_cache[key] = (time.monotonic(), value)
 
 
@@ -718,6 +804,7 @@ def _progression_cache_set(key: tuple[str, str], value: CohortProgressionOut) ->
 )
 async def get_cohort_progression(
     comision_id: UUID,
+    language: str | None = None,
     tenant_id: UUID = Depends(get_tenant_id),
     _comision_access: None = Depends(require_comision_access),
 ) -> CohortProgressionOut:
@@ -731,10 +818,15 @@ async def get_cohort_progression(
     F8: si las env vars `CTR_STORE_URL` + `CLASSIFIER_DB_URL` están
     configuradas, usa el adaptador real con RLS por tenant. Si no, cae a
     un stub vacío (modo dev).
+
+    `language` (opcional, multi-language-research-integrity sección 4.8):
+    restringe la cohorte a los episodios de ese lenguaje ANTES de construir
+    las trayectorias — el resumen se recalcula sobre el subconjunto. Su
+    ausencia preserva el comportamiento actual (sección 4.10).
     """
-    # Cache TTL por (tenant, comision). El guard de acceso ya corrió arriba
-    # (Depends), así que un hit no saltea autorización.
-    cache_key = (str(tenant_id), str(comision_id))
+    # Cache TTL por (tenant, comision, language). El guard de acceso ya corrió
+    # arriba (Depends), así que un hit no saltea autorización.
+    cache_key = (str(tenant_id), str(comision_id), language or "")
     cached = _progression_cache_get(cache_key)
     if cached is not None:
         return cached
@@ -745,8 +837,14 @@ async def get_cohort_progression(
         _real_data_source_enabled,
     )
 
+    languages_present: list[str] = []
+
     if _real_data_source_enabled():
-        from platform_ops import RealLongitudinalDataSource, set_tenant_rls
+        from platform_ops import (
+            RealLongitudinalDataSource,
+            resolve_episode_languages,
+            set_tenant_rls,
+        )
         from sqlalchemy.ext.asyncio import async_sessionmaker
 
         ctr_engine = get_ctr_engine()
@@ -757,17 +855,29 @@ async def get_cohort_progression(
             await set_tenant_rls(ctr_s, tenant_id)
             await set_tenant_rls(cls_s, tenant_id)
             ds = RealLongitudinalDataSource(ctr_s, cls_s, tenant_id)
-            # build_trajectories acepta cualquier objeto con
-            # `list_classifications_grouped_by_student` (duck-typed); el
-            # protocol _DataSource es interno al paquete platform-ops.
-            trajectories = await build_trajectories(ds, comision_id)  # type: ignore[arg-type]
+            # `_DataSource` es un Protocol structural: alcanza con exponer
+            # `list_classifications_grouped_by_student`, sin heredar de nada.
+            trajectories = await build_trajectories(ds, comision_id, language=language)
+
+            # Declaración (sección 4.2): se resuelve sobre el episode set
+            # QUE EFECTIVAMENTE compone el resultado (post-filtro), no sobre
+            # toda la comisión — así una cohorte 100% python filtrada a java
+            # declara `[]`, no `["python"]`.
+            result_episode_ids = [p.episode_id for t in trajectories for p in t.points]
+            if result_episode_ids:
+                lang_map = await resolve_episode_languages(ctr_s, tenant_id, result_episode_ids)
+                languages_present = sorted(set(lang_map.values()))
     else:
         # Stub para dev
         class _LongitudinalAdapter:
-            async def list_classifications_grouped_by_student(self, comision_id):
+            async def list_classifications_grouped_by_student(
+                self, comision_id: UUID, language: str | None = None
+            ) -> dict[str, list[dict]]:
                 return {}
 
-        trajectories = await build_trajectories(_LongitudinalAdapter(), comision_id)  # type: ignore[arg-type]
+        trajectories = await build_trajectories(
+            _LongitudinalAdapter(), comision_id, language=language
+        )
 
     summary = summarize_cohort(comision_id, trajectories)
 
@@ -780,6 +890,7 @@ async def get_cohort_progression(
         empeorando=summary.empeorando,
         insuficiente=summary.insuficiente,
         net_progression_ratio=summary.net_progression_ratio,
+        languages_present=languages_present,
         trajectories=[
             StudentTrajectoryOut(
                 student_pseudonym=t.student_pseudonym,
@@ -821,6 +932,10 @@ class NLevelDistributionOut(BaseModel):
     distribution_seconds: dict[str, float]
     distribution_ratio: dict[str, float]
     total_events_per_level: dict[str, int]
+    # multi-language-research-integrity sección 4.7: declaración SIEMPRE
+    # presente (no depende del filtro `language`). Único episodio → a lo sumo
+    # 1 elemento; `[]` cuando no hay datos (modo dev, o filtro sin match).
+    languages_present: list[str] = Field(default_factory=list)
 
 
 @router.get(
@@ -829,6 +944,7 @@ class NLevelDistributionOut(BaseModel):
 )
 async def get_n_level_distribution(
     episode_id: UUID,
+    language: str | None = None,
     tenant_id: UUID = Depends(get_tenant_id),
     user_id: UUID = Depends(get_user_id),
 ) -> NLevelDistributionOut:
@@ -844,6 +960,12 @@ async def get_n_level_distribution(
 
     Modo real: lee eventos del CTR con RLS por tenant; 404 si el episodio
     no existe o no tiene eventos en este tenant.
+
+    `language` (opcional, multi-language-research-integrity sección 4.8):
+    como este endpoint es per-episodio, el filtro no "recorta" una cohorte —
+    valida que el lenguaje del episodio coincida. Si no coincide, devuelve
+    la distribución vacía (200, ausencia de datos — sección 4.9), NO un 404
+    (el episodio existe, simplemente no matchea el filtro pedido).
     """
     # El sys.path.insert que habia aca era un no-op: `uv sync --all-packages`
     # instala classifier-service como editable, asi que apps/classifier-service/src
@@ -863,12 +985,12 @@ async def get_n_level_distribution(
     if not _real_data_source_enabled():
         # Modo dev: distribución vacía. El labeler_version igual viaja.
         empty = n_level_distribution([])
-        return NLevelDistributionOut(episode_id=str(episode_id), **empty)
+        return NLevelDistributionOut(episode_id=str(episode_id), languages_present=[], **empty)
 
     # Modo real: lectura del CTR con RLS por tenant.
     # Late import del modelo Event (evita ciclos en testing).
     from ctr_service.models import Event
-    from platform_ops import set_tenant_rls
+    from platform_ops import DEFAULT_LANGUAGE, set_tenant_rls
     from sqlalchemy import select
     from sqlalchemy.ext.asyncio import async_sessionmaker
 
@@ -883,7 +1005,10 @@ async def get_n_level_distribution(
             .order_by(Event.seq.asc())
         )
         result = await ctr_s.execute(stmt)
-        events = [
+        # Anotado explícito: sin esto mypy infiere el value type como la unión
+        # `dict[str, Any] | int | str` y `payload.get(...)` más abajo pasa a ser
+        # un error sobre las ramas `int` y `str`.
+        events: list[dict[str, Any]] = [
             {
                 "seq": ev.seq,
                 "event_type": ev.event_type,
@@ -899,6 +1024,21 @@ async def get_n_level_distribution(
             detail=f"Episode {episode_id} no encontrado o sin eventos en este tenant",
         )
 
+    # Lenguaje del episodio: mismo criterio que `resolve_episode_languages`
+    # (payload del evento episodio_abierto, seq=0), pero sin query extra —
+    # `events` ya trae todos los eventos del episodio incluido ese.
+    resolved_language = DEFAULT_LANGUAGE
+    for ev in events:
+        if ev["event_type"] == "episodio_abierto":
+            resolved_language = (ev["payload"] or {}).get("language") or DEFAULT_LANGUAGE
+            break
+
+    if language is not None and resolved_language != language:
+        # 4.9: filtro sin resultados → distribución vacía (ausencia de datos),
+        # NO un 404 (el episodio SÍ existe, no matchea el filtro).
+        empty = n_level_distribution([])
+        return NLevelDistributionOut(episode_id=str(episode_id), languages_present=[], **empty)
+
     distribution = n_level_distribution(events)
     logger.info(
         "n_level_distribution_computed tenant_id=%s user_id=%s episode_id=%s "
@@ -909,7 +1049,9 @@ async def get_n_level_distribution(
         sum(distribution["total_events_per_level"].values()),
         distribution["labeler_version"],
     )
-    return NLevelDistributionOut(episode_id=str(episode_id), **distribution)
+    return NLevelDistributionOut(
+        episode_id=str(episode_id), languages_present=[resolved_language], **distribution
+    )
 
 
 # ── CII evolution longitudinal por estudiante (ADR-018) ──────────────
@@ -964,6 +1106,9 @@ class CIIEvolutionLongitudinalOut(BaseModel):
     mean_slope: float | None
     sufficient_data: bool
     labeler_version: str
+    # multi-language-research-integrity sección 4.4: declaración SIEMPRE
+    # presente (no depende del filtro `language`).
+    languages_present: list[str] = Field(default_factory=list)
 
 
 @router.get(
@@ -973,6 +1118,7 @@ class CIIEvolutionLongitudinalOut(BaseModel):
 async def get_cii_evolution_longitudinal(
     student_pseudonym: UUID,
     comision_id: UUID,
+    language: str | None = None,
     tenant_id: UUID = Depends(get_tenant_id),
     user_id: UUID = Depends(get_user_id),
     _access: None = Depends(require_student_progress_access),
@@ -991,6 +1137,10 @@ async def get_cii_evolution_longitudinal(
     tenant. La query está limitada a la comisión para acotar el scope —
     para análisis cross-comisión hay que llamar el endpoint N veces, una
     por comisión del estudiante.
+
+    `language` (opcional, multi-language-research-integrity sección 4.8):
+    restringe los episodios del estudiante a ese lenguaje ANTES de agrupar
+    por template/unidad y calcular slopes — recalcula sobre el subconjunto.
     """
     from platform_ops import compute_cii_evolution_longitudinal
 
@@ -1002,11 +1152,12 @@ async def get_cii_evolution_longitudinal(
         return CIIEvolutionLongitudinalOut(
             student_pseudonym=str(student_pseudonym),
             comision_id=str(comision_id),
+            languages_present=[],
             **empty,
         )
 
     # Modo real: 3 sesiones (ctr + classifier + academic) con RLS
-    from platform_ops import RealLongitudinalDataSource, set_tenant_rls
+    from platform_ops import RealLongitudinalDataSource, resolve_episode_languages, set_tenant_rls
     from sqlalchemy.ext.asyncio import async_sessionmaker
 
     ctr_engine = get_ctr_engine()
@@ -1025,7 +1176,16 @@ async def get_cii_evolution_longitudinal(
             student_pseudonym=student_pseudonym,
             comision_id=comision_id,
             academic_session=acad_s,
+            language=language,
         )
+
+        # Declaración (sección 4.4): sobre el episode set que efectivamente
+        # compone el resultado (post-filtro).
+        languages_present: list[str] = []
+        result_episode_ids = [c["episode_id"] for c in classifications]
+        if result_episode_ids:
+            lang_map = await resolve_episode_languages(ctr_s, tenant_id, result_episode_ids)
+            languages_present = sorted(set(lang_map.values()))
 
         # Resolver unidad_id → nombre para los grupos de unidad.
         # Recopilar los unidad_ids no-None de las classifications.
@@ -1057,6 +1217,7 @@ async def get_cii_evolution_longitudinal(
     return CIIEvolutionLongitudinalOut(
         student_pseudonym=str(student_pseudonym),
         comision_id=str(comision_id),
+        languages_present=languages_present,
         **distribution,
     )
 
@@ -1287,7 +1448,7 @@ async def get_cohort_cii_quartiles(
         await set_tenant_rls(ctr_s, tenant_id)
         await set_tenant_rls(cls_s, tenant_id)
         ds = RealLongitudinalDataSource(ctr_s, cls_s, tenant_id)
-        trajectories = await build_trajectories(ds, comision_id)  # type: ignore[arg-type]
+        trajectories = await build_trajectories(ds, comision_id)
 
     student_slopes: list[float] = []
     for t in trajectories:
@@ -1331,6 +1492,9 @@ class StudentAlertsOut(BaseModel):
     alerts: list[StudentAlertOut]
     n_alerts: int
     highest_severity: Literal["low", "medium", "high"] | None
+    # multi-language-research-integrity sección 4.6: declaración SIEMPRE
+    # presente (no depende del filtro `language`).
+    languages_present: list[str] = Field(default_factory=list)
 
 
 @router.get(
@@ -1340,6 +1504,7 @@ class StudentAlertsOut(BaseModel):
 async def get_student_alerts(
     student_pseudonym: UUID,
     comision_id: UUID,
+    language: str | None = None,
     tenant_id: UUID = Depends(get_tenant_id),
     user_id: UUID = Depends(get_user_id),
     _access: None = Depends(require_student_progress_access),
@@ -1349,6 +1514,10 @@ async def get_student_alerts(
     Compara `mean_slope` del estudiante con la distribución agregada de la
     cohorte y emite alertas si está >1σ debajo de la media o en Q1.
     Modo dev devuelve estructura vacía sin alertas.
+
+    `language` (opcional, multi-language-research-integrity sección 4.8):
+    restringe la cohorte (estudiante target + resto) a episodios de ese
+    lenguaje ANTES de recalcular slopes y cuartiles.
     """
     from platform_ops import compute_alerts_payload, compute_cohort_quartiles_payload
 
@@ -1360,11 +1529,13 @@ async def get_student_alerts(
         return StudentAlertsOut(
             student_pseudonym=str(student_pseudonym),
             comision_id=str(comision_id),
+            languages_present=[],
             **empty_alerts,
         )
 
     from platform_ops import (
         compute_cii_evolution_longitudinal,
+        resolve_episode_languages,
         set_tenant_rls,
     )
     from sqlalchemy.ext.asyncio import async_sessionmaker
@@ -1378,6 +1549,7 @@ async def get_student_alerts(
     acad_engine = get_academic_engine()
     student_slope: float | None = None
     cohort_slopes: list[float] = []
+    languages_present: list[str] = []
     async with (
         async_sessionmaker(ctr_engine, expire_on_commit=False)() as ctr_s,
         async_sessionmaker(cls_engine, expire_on_commit=False)() as cls_s,
@@ -1396,7 +1568,15 @@ async def get_student_alerts(
             academic_session=acad_s,
             comision_id=comision_id,
             tenant_id=tenant_id,
+            language=language,
         )
+
+        # Declaración (sección 4.6): sobre el episode set de la cohorte que
+        # efectivamente compone el resultado (post-filtro).
+        result_episode_ids = [c["episode_id"] for cls_list in grouped.values() for c in cls_list]
+        if result_episode_ids:
+            lang_map = await resolve_episode_languages(ctr_s, tenant_id, result_episode_ids)
+            languages_present = sorted(set(lang_map.values()))
 
         # 1. Slope del estudiante target (lista vacía si no tiene clasificaciones).
         student_evolution = compute_cii_evolution_longitudinal(grouped.get(student_pseudonym, []))
@@ -1423,6 +1603,7 @@ async def get_student_alerts(
     )
     return StudentAlertsOut(
         student_pseudonym=str(student_pseudonym),
+        languages_present=languages_present,
         comision_id=str(comision_id),
         **alerts_payload,
     )
@@ -1655,6 +1836,9 @@ class CohortAdversarialEventsOut(BaseModel):
     counts_by_student: dict[str, int]
     top_students_by_n_events: list[AdversarialTopStudentOut]
     recent_events: list[AdversarialRecentEventOut]
+    # multi-language-research-integrity sección 4.5: declaración SIEMPRE
+    # presente (no depende del filtro `language`).
+    languages_present: list[str] = Field(default_factory=list)
 
 
 @router.get(
@@ -1666,6 +1850,7 @@ async def get_cohort_adversarial_events(
     facultad_id: UUID | None = None,
     materia_id: UUID | None = None,
     periodo_id: UUID | None = None,
+    language: str | None = None,
     tenant_id: UUID = Depends(get_tenant_id),
     user_id: UUID = Depends(get_user_id),
     _comision_access: None = Depends(require_comision_access),
@@ -1683,6 +1868,10 @@ async def get_cohort_adversarial_events(
     canónico hoy ignora los filtros — la cohort {comision_id} ya define el
     scope. El endpoint cross-cohort que SÍ los aplica es
     `GET /api/v1/analytics/governance/events`.
+
+    `language` (opcional, multi-language-research-integrity sección 4.8):
+    restringe los eventos a episodios de ese lenguaje ANTES de agregar —
+    su ausencia preserva el comportamiento actual (sección 4.10).
     """
     from platform_ops import aggregate_adversarial_events
 
@@ -1690,9 +1879,11 @@ async def get_cohort_adversarial_events(
 
     if not _real_data_source_enabled():
         empty = aggregate_adversarial_events([])
-        return CohortAdversarialEventsOut(comision_id=str(comision_id), **empty)
+        return CohortAdversarialEventsOut(
+            comision_id=str(comision_id), languages_present=[], **empty
+        )
 
-    from platform_ops import RealLongitudinalDataSource, set_tenant_rls
+    from platform_ops import RealLongitudinalDataSource, resolve_episode_languages, set_tenant_rls
     from sqlalchemy.ext.asyncio import async_sessionmaker
 
     ctr_engine = get_ctr_engine()
@@ -1704,7 +1895,15 @@ async def get_cohort_adversarial_events(
         await set_tenant_rls(ctr_s, tenant_id)
         await set_tenant_rls(cls_s, tenant_id)
         ds = RealLongitudinalDataSource(ctr_s, cls_s, tenant_id)
-        events = await ds.list_adversarial_events_by_comision(comision_id)
+        events = await ds.list_adversarial_events_by_comision(comision_id, language=language)
+
+        # Declaración (sección 4.5): sobre el episode set que efectivamente
+        # compone el resultado (post-filtro).
+        languages_present: list[str] = []
+        result_episode_ids = [UUID(ev["episode_id"]) for ev in events]
+        if result_episode_ids:
+            lang_map = await resolve_episode_languages(ctr_s, tenant_id, result_episode_ids)
+            languages_present = sorted(set(lang_map.values()))
 
     aggregated = aggregate_adversarial_events(events)
     logger.info(
@@ -1716,7 +1915,9 @@ async def get_cohort_adversarial_events(
         aggregated["n_events_total"],
         len(aggregated["counts_by_category"]),
     )
-    return CohortAdversarialEventsOut(comision_id=str(comision_id), **aggregated)
+    return CohortAdversarialEventsOut(
+        comision_id=str(comision_id), languages_present=languages_present, **aggregated
+    )
 
 
 # ── Integridad del episodio (foco + clipboard) ─────────────────────────

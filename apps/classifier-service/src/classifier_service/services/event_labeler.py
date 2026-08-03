@@ -108,6 +108,18 @@ EVENT_N_LEVEL_BASE: dict[str, NLevel] = {
     "tests_ejecutados": "N3",
 }
 
+# Solo los origins que provienen de una interaccion IA/externa. `student_typed`
+# y `snippet_expanded` quedan afuera a proposito: N4 en este modelo es
+# "interaccion con IA" (ver docstring del modulo), y un snippet del editor
+# (System.out.println, getters/setters — ver web-student/src/lib/javaSnippets.ts)
+# no es IA. Incluirlo aca inflaria la metrica de dependencia del tutor cada vez
+# que un alumno expande `sout`, que es peor que subestimarla porque no se nota.
+#
+# Agregar `snippet_expanded` al contrato NO cambio el etiquetado de ningun
+# evento existente ni futuro: cae al fallback N2 igual que `student_typed`, este
+# set quedo intacto y ninguna constante de override se movio. Por eso NO
+# corresponde bumpear LABELER_VERSION (ADR-020). Si algun dia se decide que la
+# ceremonia expandida merece nivel propio, ESO si es un bump + ADR.
 _EDICION_CODIGO_N4_ORIGINS = {"copied_from_tutor", "pasted_external"}
 
 

@@ -512,7 +512,7 @@ docker exec platform-prod-redis redis-cli -a $REDIS_PASSWORD XLEN ctr.p0
 |---|---|---|
 | Servicios Python | en host (`uv run`) | en containers (`build .`) |
 | Passwords | hardcoded `admin/admin`, `postgres/postgres` | env vars desde `.env.prod` |
-| `DEV_TRUST_HEADERS` | `true` (default) | **forzado `false`** |
+| `DEV_TRUST_HEADERS` | `true`, seteado A MANO (el default del código es `false`) | **forzado `false`** |
 | `CORS_ORIGINS` | `["*"]` | lista explícita |
 | Bind ports | `0.0.0.0:*` (todos expuestos) | solo api-gateway + Grafana + Keycloak admin |
 | Redis | sin auth | con `requirepass` |

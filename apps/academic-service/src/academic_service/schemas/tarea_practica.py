@@ -14,7 +14,33 @@ from decimal import Decimal
 from typing import Any, Literal
 from uuid import UUID
 
+from platform_contracts.academic import DEFAULT_LANGUAGE, Language
 from pydantic import BaseModel, ConfigDict, Field, model_validator
+
+# Tipos de test case admitidos. Espeja el `Literal` de
+# `platform_contracts.academic.TestCaseSchema.type`, que es el contrato tipado
+# del ejercicio. Acá se replica a mano porque `TareaPractica.test_cases` sigue
+# siendo `list[dict[str, Any]]` suelto y NO reusa `TestCaseSchema` — unificar los
+# dos caminos de tipado es un refactor con radio propio, fuera de esta change.
+_TEST_CASE_TYPES = frozenset({"stdin_stdout", "pytest_assert", "junit_assert"})
+
+
+def _validar_tipos_de_test_case(test_cases: list[dict[str, Any]]) -> None:
+    """Rechaza tipos de test case desconocidos.
+
+    Se aplica SOLO en los schemas de escritura (Create/Update), nunca en el de
+    lectura. `TareaPracticaOut` hereda de `TareaPracticaBase`, asi que un
+    validator puesto ahi correria tambien al serializar desde la DB: una TP
+    historica con un `type` inesperado pasaria de leerse bien a devolver 500.
+    Validar la entrada no puede romper la salida.
+    """
+    for i, tc in enumerate(test_cases):
+        tipo = tc.get("type")
+        if tipo is not None and tipo not in _TEST_CASE_TYPES:
+            admitidos = ", ".join(sorted(_TEST_CASE_TYPES))
+            raise ValueError(
+                f"test_cases[{i}].type = '{tipo}' no es un tipo valido (admitidos: {admitidos})"
+            )
 
 
 class TareaPracticaBase(BaseModel):
@@ -32,6 +58,10 @@ class TareaPracticaBase(BaseModel):
     # El docente decide si el alumno puede pausar/retomar episodios de esta TP
     # (botón "Seguir después"). True por default (retrocompat ADR-025/055).
     permite_pausa: bool = True
+    # Lenguaje de la TP. Debe coincidir con el de todos sus ejercicios de banco
+    # (se valida al agregar cada uno y al publicar). El default preserva la
+    # semántica de las 31 TPs existentes, todas Python.
+    language: Language = DEFAULT_LANGUAGE
 
     @model_validator(mode="after")
     def check_dates(self) -> TareaPracticaBase:
@@ -54,6 +84,11 @@ class TareaPracticaCreate(TareaPracticaBase):
     # referenciamos para auditoría. NO copia campos — el TP es independiente.
     template_id: UUID | None = None
 
+    @model_validator(mode="after")
+    def check_test_case_types(self) -> TareaPracticaCreate:
+        _validar_tipos_de_test_case(self.test_cases)
+        return self
+
 
 class TareaPracticaUpdate(BaseModel):
     titulo: str | None = Field(default=None, min_length=2, max_length=200)
@@ -68,6 +103,13 @@ class TareaPracticaUpdate(BaseModel):
     unidad_id: UUID | None = None
     # Editable incluso en TPs published (decisión operativa, no contenido).
     permite_pausa: bool | None = None
+    language: Language | None = None
+
+    @model_validator(mode="after")
+    def check_test_case_types(self) -> TareaPracticaUpdate:
+        if self.test_cases is not None:
+            _validar_tipos_de_test_case(self.test_cases)
+        return self
 
 
 class TareaPracticaOut(TareaPracticaBase):

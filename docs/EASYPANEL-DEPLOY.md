@@ -34,7 +34,7 @@ Para cada servicio en EasyPanel (tipo **App > Dockerfile**):
   > ⚠️ **Cambio obligatorio al mergear el PR #33.** Hasta ese merge los servicios
   > de EasyPanel apuntan a `/AI-NativeV3-main`, que era el wrapper del monorepo.
   > El PR #33 colapsa ese wrapper a la raíz, así que ese directorio **deja de
-  > existir**. Hay que actualizar la Ruta de compilación de los **11 servicios +
+  > existir**. Hay que actualizar la Ruta de compilación de los **13 servicios +
   > el de frontends** ANTES de deployar: el que quede apuntando a la ruta vieja
   > falla el build.
 - **Dockerfile path**: `apps/<servicio>/Dockerfile`.
@@ -52,6 +52,38 @@ Para cada servicio en EasyPanel (tipo **App > Dockerfile**):
 | content-service | `apps/content-service/Dockerfile` | 8009 |
 | governance-service | `apps/governance-service/Dockerfile` | 8010 |
 | ai-gateway | `apps/ai-gateway/Dockerfile` | 8011 |
+| **execution-service** | `apps/execution-service/Dockerfile` | 8013 |
+| **execution-runner** | `apps/execution-service/Dockerfile.runner` | 8015 |
+
+### Ejecución server-side (ADR-060) — los dos servicios nuevos
+
+`execution-service` y `execution-runner` **no existían antes**: hay que crearlos,
+no redeployarlos. De a uno por vez — el VPS tiene la RAM justa.
+
+**Variables obligatorias.** Las tres primeras son las que hacen que el runner ni
+arranque si faltan; la cuarta falla en silencio, que es peor:
+
+| Variable | Dónde | Por qué |
+|---|---|---|
+| `RUNNER_TOKEN` | ambos, **mismo valor** | Secreto compartido. Sin él el runner **no arranca** fuera de dev. `openssl rand -base64 32` |
+| `JAVA_IMAGE` | ambos | Pineada por **digest**, no por tag. Con tag mutable el runner **no arranca**. `docker inspect --format='{{index .RepoDigests 0}}' <imagen>` |
+| `RUNNER_URL` | execution-service | Apunta al runner por la red interna |
+| **`INTERNAL_SERVICE_TOKEN`** | execution-service y **tutor-service**, **mismo valor** | ⚠️ Si no coincide, los ejercicios **con casos ocultos** pierden su `tests_ejecutados`: el tutor los rechaza con 422 y la emisión falla soft. **No se cae nada** — queda un agujero en el corpus, justo en los ejercicios que sostienen el claim del ADR-060. Vigilar `execution_ctr_emissions_failed_total`. |
+| `EXECUTION_ENABLED` | execution-service | Default **`false`** (falla cerrado, como el resto del servicio): un deploy que no la toque deja la ejecución **apagada**, que es el estado seguro. Para encender hay que ponerla explícitamente en `true`, y recién después abrir de a una comisión con `EXECUTION_ENABLED_COMISIONES`. Hasta el 2026-08-03 el default era `true` y esta fila advertía lo contrario: era la única pieza del ADR-060 que fallaba abierto. |
+
+**El runner NO debe ser alcanzable desde fuera de la red interna.** Su Dockerfile
+bindea `0.0.0.0`, así que esto depende de que EasyPanel no publique el puerto
+8015. Es el control D3 del ADR-060: el runner es el único con el socket de
+Docker, y permitir `POST /containers/create` es permitir crear un contenedor
+privilegiado con `/` montado.
+
+Verificar sobre el host del runner, antes de habilitar:
+
+```bash
+bash scripts/verificar-despliegue-ejecucion.sh
+```
+
+Su paso 0 avisa si Docker corre **rootless** — en ese caso el runner sobra.
 
 ---
 

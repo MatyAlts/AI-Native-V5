@@ -250,6 +250,11 @@ POLICIES: list[tuple[str, str, str, str]] = [
     ("role:docente", "*", "ejercicio:*", "delete"),
     ("role:estudiante", "*", "ejercicio:*", "read"),
     ("role:tutor_service", "*", "ejercicio:*", "read"),
+    # execution_service (ADR-059): lectura del ejercicio COMPLETO para ejecutar
+    # sus test cases ocultos server-side — la propiedad que la ejecucion en el
+    # navegador no podia dar. Solo `read`, y solo sobre `ejercicio`: no crea, no
+    # edita, y no toca ninguna otra entidad.
+    ("role:execution_service", "*", "ejercicio:*", "read"),
     # ── Instrumentos del diseño cuasi-experimental (ADR-053) ─────────
     # P2-1 (pretest autoeficacia), P2-2 (cuestionario IA previa), P2-3
     # (test de transferencia) del PlanMejora.md. Estudiante crea/lee su

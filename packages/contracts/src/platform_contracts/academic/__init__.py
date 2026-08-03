@@ -1,6 +1,7 @@
 """Eventos y schemas del plano académico."""
 
 from platform_contracts.academic.ejercicio import (
+    DEFAULT_LANGUAGE,
     AntiPatronSchema,
     BancoPreguntasSchema,
     CriterioRubricaSchema,
@@ -8,6 +9,7 @@ from platform_contracts.academic.ejercicio import (
     EjercicioRead,
     EjercicioUpdate,
     HeuristicaCierreSchema,
+    Language,
     MisconceptionSchema,
     PistaSchema,
     PreguntaSocraticaSchema,
@@ -19,6 +21,8 @@ from platform_contracts.academic.ejercicio import (
     TpEjerciciosValidator,
     TpEjercicioUpdate,
     TutorRulesSchema,
+    validar_lenguaje_unico,
+    validar_tp_no_vacia,
 )
 from platform_contracts.academic.events import (
     CarreraCreada,
@@ -29,6 +33,7 @@ from platform_contracts.academic.events import (
 )
 
 __all__ = [
+    "DEFAULT_LANGUAGE",
     "AntiPatronSchema",
     "BancoPreguntasSchema",
     "CarreraCreada",
@@ -39,6 +44,7 @@ __all__ = [
     "EjercicioUpdate",
     "EstudianteInscripto",
     "HeuristicaCierreSchema",
+    "Language",
     "MaterialIngerido",
     "MisconceptionSchema",
     "PistaSchema",
@@ -52,4 +58,6 @@ __all__ = [
     "TpEjerciciosValidator",
     "TutorRulesSchema",
     "UniversidadCreada",
+    "validar_lenguaje_unico",
+    "validar_tp_no_vacia",
 ]

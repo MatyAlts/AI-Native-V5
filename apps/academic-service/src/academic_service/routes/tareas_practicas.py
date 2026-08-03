@@ -14,7 +14,9 @@ from sqlalchemy.ext.asyncio import AsyncSession
 logger = logging.getLogger(__name__)
 
 from platform_contracts.academic.ejercicio import (
+    DEFAULT_LANGUAGE,
     EjercicioRead,
+    Language,
     TpEjercicioCreate,
     TpEjercicioRead,
     TpEjercicioUpdate,
@@ -36,6 +38,7 @@ from academic_service.services.content_visibility import (
     sanitize_ejercicio_for_student,
     sanitize_tarea_practica_for_student,
 )
+from academic_service.services.prompt_variants import resolve_prompt_name
 from academic_service.services.tarea_practica_service import TareaPracticaService
 from academic_service.services.tp_ejercicio_service import TpEjercicioService
 
@@ -238,6 +241,10 @@ class TPGenerateRequest(BaseModel):
     dificultad: Literal["basica", "intermedia", "avanzada"] | None = None
     contexto: str | None = Field(default=None, max_length=2000)
     comision_id: UUID | None = None
+    # Lenguaje de la TP. Decide QUE variante de prompt se usa y aplica a TODOS
+    # los ejercicios generados: una TP admite un solo lenguaje. Omitirlo conserva
+    # el comportamiento previo a `java-authoring-experience`.
+    language: Language = DEFAULT_LANGUAGE
     # Si el wizard se abrió desde una plantilla, la pasamos para prefijar la
     # consigna pedagógica al mensaje del LLM. Trazabilidad solamente; el TP
     # resultante puede asociarse al template via `template_id` en el POST final.
@@ -328,18 +335,26 @@ async def generate_tarea_practica(  # noqa: PLR0912, PLR0915
             if template_obj is not None:
                 consigna_plantilla = template_obj.consigna
 
-    # 2. Resolver prompt (governance-service)
+    # 2. Resolver prompt (governance-service) — la familia depende del lenguaje
+    #    pedido; para el lenguaje por omision el nombre no cambia.
     governance = GovernanceClient(settings.governance_service_url)
-    prompt_version_full = f"tp_generator/{settings.tp_generator_prompt_version}"
+    prompt_name = resolve_prompt_name("tp_generator", req.language)
+    prompt_version_full = f"{prompt_name}/{settings.tp_generator_prompt_version}"
     try:
-        prompt_cfg = await governance.get_prompt(
-            "tp_generator", settings.tp_generator_prompt_version
-        )
+        prompt_cfg = await governance.get_prompt(prompt_name, settings.tp_generator_prompt_version)
     except Exception as exc:
-        logger.error("tp_generator_prompt_fetch_failed: %s", exc)
+        logger.error(
+            "tp_generator_prompt_fetch_failed prompt=%s language=%s: %s",
+            prompt_name,
+            req.language,
+            exc,
+        )
         raise HTTPException(
             status_code=status.HTTP_502_BAD_GATEWAY,
-            detail="No se pudo resolver el prompt activo del tp_generator",
+            detail=(
+                f"No se pudo resolver el prompt activo del generador de TPs "
+                f"para el lenguaje '{req.language}'"
+            ),
         ) from exc
 
     # 2b. RAG: buscar materiales relevantes con materia_id como scope principal
@@ -383,6 +398,8 @@ async def generate_tarea_practica(  # noqa: PLR0912, PLR0915
     result = None
     t0 = time.perf_counter()
 
+    max_output_tokens = settings.tp_generator_max_tokens
+
     # Sin sesión DB abierta acá (P-9): la conexión ya volvió al pool. El semáforo
     # limita cuántas generaciones IA corren a la vez (no cuántas conexiones DB).
     async with get_generation_semaphore():
@@ -395,7 +412,7 @@ async def generate_tarea_practica(  # noqa: PLR0912, PLR0915
                     tenant_id=user.tenant_id,
                     materia_id=req.materia_id,
                     temperature=0.7,
-                    max_tokens=8192,
+                    max_tokens=max_output_tokens,
                     response_format={"type": "json_object"},
                 )
             except httpx.HTTPError as exc:
@@ -423,13 +440,33 @@ async def generate_tarea_practica(  # noqa: PLR0912, PLR0915
             try:
                 parsed = json.loads(raw_content)
             except json.JSONDecodeError as exc:
+                # Distinguir JSON *malformado* de JSON *truncado*, igual que el
+                # generador de ejercicios. Si el modelo agotó el techo de salida,
+                # la respuesta viene cortada a mitad de string y nunca va a
+                # parsear: reintentar es determinista, falla las 3 veces y quema
+                # llamadas al LLM para terminar en el mismo 502. Se corta en el
+                # primer intento con un mensaje que apunta al techo y no al prompt.
+                truncated = result.output_tokens >= max_output_tokens
                 logger.error(
-                    "tp_generator_invalid_json provider=%s model=%s error=%s raw_start=%r",
+                    "tp_generator_invalid_json provider=%s model=%s "
+                    "truncated=%s output_tokens=%d/%d error=%s raw_start=%r",
                     result.provider,
                     result.model,
+                    truncated,
+                    result.output_tokens,
+                    max_output_tokens,
                     str(exc),
                     raw_content[:300],
                 )
+                if truncated:
+                    raise HTTPException(
+                        status_code=status.HTTP_502_BAD_GATEWAY,
+                        detail=(
+                            f"La respuesta del modelo se corto por limite de tokens "
+                            f"({result.output_tokens}/{max_output_tokens}). Subi "
+                            f"TP_GENERATOR_MAX_TOKENS o pedi una TP mas acotada."
+                        ),
+                    ) from exc
                 if attempt < max_attempts - 1:
                     continue
                 raise HTTPException(

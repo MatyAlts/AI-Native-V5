@@ -7,6 +7,29 @@ Tres funciones puras sobre snapshots de codigo Python:
 
 Agregadas en `compute_cec(snapshots)` -> CECResult.
 
+GUARD DE LENGUAJE (multi-language-research-integrity, seccion 6):
+  Las 3 sub-coherencias se calibraron SOLO sobre codigo Python (Pyodide) —
+  ver `subgrupo.py:14-18` sobre la calibracion original con datos de prod. El
+  AST de este modulo es el de Python (`ast.parse`). Codigo de otro lenguaje
+  (ej. Java) NO es medible con estos umbrales: `ast.parse` tiraria SyntaxError
+  y el modulo lo confundiria con "Python a medio escribir", emitiendo
+  puntuaciones-fantasma calibradas para Python (naming_consistency = 1.0,
+  granularidad con 0 funciones). Por eso `compute_cec` recibe el `language`
+  del episodio (dato de procedencia resuelto server-side, ver
+  episode-language-provenance) y distingue TRES estados en `CECResult.status`:
+
+    - `medido`            -> Python valido, las 3 coherencias computadas.
+    - `error_transitorio` -> Python pero el codigo final no parsea (edicion en
+                             curso). Se distingue de "lenguaje no soportado".
+    - `no_aplicable`      -> lenguaje != python. NINGUNA puntuacion numerica
+                             (todos los campos None). Se excluye de agregados.
+
+  `SUPPORTED_LANGUAGES` es local al modulo a proposito: "CEC calibrado para X"
+  es un concepto DISTINTO de "la plataforma soporta X". Java es lenguaje
+  soportado por la plataforma (epic java-language-model) pero CEC NO esta
+  calibrado para el — declararlo `no_aplicable` es integridad de datos, no una
+  limitacion a esconder.
+
 BLOQUEO CRITICO (design doc seccion 1):
   Este modulo NO debe conectarse al `pipeline.py` ni a `tree.py` hasta que
   A1 (re-clasificacion de las 106 classifications historicas con el
@@ -27,9 +50,19 @@ from __future__ import annotations
 import ast
 import re
 from dataclasses import dataclass, field
-from typing import Any
+from typing import Any, Literal
 
 CEC_VERSION = "1.0.0"
+
+# Estado de aplicabilidad del computo CEC sobre un episodio (seccion 6).
+CECStatus = Literal["medido", "error_transitorio", "no_aplicable"]
+
+# Lenguajes para los que CEC esta calibrado. HOY solo Python (los umbrales de
+# `subgrupo.py` y los rangos de este modulo se calibraron sobre Pyodide). NO es
+# la lista de lenguajes que soporta la plataforma — es la lista para la que
+# estas metricas estructurales tienen sentido. Ampliar SOLO tras recalibrar.
+SUPPORTED_LANGUAGES = frozenset({"python"})
+DEFAULT_CEC_LANGUAGE = "python"
 
 # Rangos pedagogicos sugeridos (calibrar con docentes UTN antes de produccion).
 # Operacionalizacion inicial — no validados empiricamente.
@@ -54,12 +87,20 @@ class FunctionGranularityResult:
 
 @dataclass(frozen=True)
 class CECResult:
-    """Resultado agregado de las 3 sub-coherencias estructurales."""
+    """Resultado agregado de las 3 sub-coherencias estructurales.
 
-    depth_variance: float
-    function_granularity: FunctionGranularityResult
-    naming_consistency_ratio: float  # [0, 1]
-    cec_summary: float  # [0, 1] derivado de las 3 anteriores
+    Los campos numericos son `None` cuando `status == "no_aplicable"` (lenguaje
+    no calibrado): CEC no emite puntuaciones-fantasma para codigo que no puede
+    medir. En `medido` y `error_transitorio` los campos llevan valor (en el
+    segundo, computado sobre un codigo final que no parsea — interpretar con el
+    `status`, no a ciegas).
+    """
+
+    depth_variance: float | None
+    function_granularity: FunctionGranularityResult | None
+    naming_consistency_ratio: float | None  # [0, 1]
+    cec_summary: float | None  # [0, 1] derivado de las 3 anteriores
+    status: CECStatus = "medido"
     cec_version: str = CEC_VERSION
     diagnostics: dict[str, Any] = field(default_factory=dict)
 
@@ -248,6 +289,8 @@ def _clip(value: float, lo: float = 0.0, hi: float = 1.0) -> float:
 def compute_cec(
     snapshots: list[str],
     final_code: str | None = None,
+    *,
+    language: str = DEFAULT_CEC_LANGUAGE,
 ) -> CECResult:
     """Computa la Coherencia Estructural del Codigo (CEC) sobre un episodio.
 
@@ -258,14 +301,43 @@ def compute_cec(
         final_code: el ultimo snapshot — si es None, se toma snapshots[-1].
             Util cuando el caller quiere especificar el snapshot final
             independientemente del muestreo.
+        language: lenguaje de procedencia del episodio (resuelto server-side,
+            ver episode-language-provenance). GUARD: si no esta en
+            `SUPPORTED_LANGUAGES` (hoy solo "python"), NO se computa nada —
+            se devuelve un CECResult `no_aplicable` sin ninguna puntuacion.
+            El guard vive aca, en el modulo (seccion 6, tarea 6.7), no en los
+            invocadores: cualquier caller que pase codigo Java obtiene
+            `no_aplicable` sin poder saltearse el chequeo.
 
     Returns:
-        CECResult con las 3 sub-coherencias + cec_summary derivado + version.
+        CECResult con `status` en {medido, error_transitorio, no_aplicable}.
+        Solo `medido`/`error_transitorio` llevan puntuaciones; `no_aplicable`
+        las lleva en None.
 
     Funcion pura, deterministica.
     """
+    # Guard de lenguaje ANTES de cualquier ast.parse (seccion 6, tarea 6.2):
+    # codigo no-Python no es medible con umbrales calibrados para Python.
+    if language not in SUPPORTED_LANGUAGES:
+        return CECResult(
+            depth_variance=None,
+            function_granularity=None,
+            naming_consistency_ratio=None,
+            cec_summary=None,
+            status="no_aplicable",
+            diagnostics={
+                "language": language,
+                "reason": "cec_no_calibrado_para_este_lenguaje",
+                "supported_languages": sorted(SUPPORTED_LANGUAGES),
+            },
+        )
+
     if final_code is None:
         final_code = snapshots[-1] if snapshots else ""
+
+    # Python cuyo codigo final no parsea = edicion en curso (error transitorio),
+    # NO lenguaje no soportado (tarea 6.5). Se distingue via `status`.
+    status: CECStatus = "medido" if _safe_parse(final_code) is not None else "error_transitorio"
 
     dv = depth_variance(snapshots)
     fg = function_granularity(final_code)
@@ -289,6 +361,7 @@ def compute_cec(
         function_granularity=fg,
         naming_consistency_ratio=nc,
         cec_summary=cec_summary,
+        status=status,
         diagnostics={
             "component_depth": component_depth,
             "component_granularity": component_granularity,
@@ -296,4 +369,42 @@ def compute_cec(
             "n_snapshots_input": len(snapshots),
             "n_snapshots_parseables": sum(1 for s in snapshots if _safe_parse(s) is not None),
         },
+    )
+
+
+@dataclass(frozen=True)
+class CECAggregate:
+    """Agregado de CEC sobre varios episodios, con contabilidad de exclusiones.
+
+    `no_aplicable` NUNCA entra al promedio (seccion 6, tarea 6.6): promediar un
+    lenguaje no calibrado contra Python contaminaria la metrica. El agregado
+    declara explicitamente cuantos excluyo para que quien lea el dato sepa sobre
+    que universo se calculo — un promedio sin ese conteo es un dato que parece
+    mas solido de lo que es.
+    """
+
+    mean_cec_summary: float | None  # None si no quedo ningun resultado medible
+    n_total: int
+    n_no_aplicable_excluded: int
+    n_aggregated: int
+
+
+def aggregate_cec(results: list[CECResult]) -> CECAggregate:
+    """Promedia `cec_summary` sobre resultados medibles, excluyendo no-aplicables.
+
+    Excluye todo `no_aplicable` (y cualquier resultado con `cec_summary is None`)
+    del promedio, y reporta cuantos quedaron afuera. Si no queda ningun resultado
+    medible, `mean_cec_summary` es None (no 0.0 — ausencia de dato, no un cero).
+
+    Funcion pura, deterministica.
+    """
+    n_total = len(results)
+    n_no_aplicable = sum(1 for r in results if r.status == "no_aplicable")
+    medibles = [r.cec_summary for r in results if r.cec_summary is not None]
+    mean = sum(medibles) / len(medibles) if medibles else None
+    return CECAggregate(
+        mean_cec_summary=mean,
+        n_total=n_total,
+        n_no_aplicable_excluded=n_no_aplicable,
+        n_aggregated=len(medibles),
     )

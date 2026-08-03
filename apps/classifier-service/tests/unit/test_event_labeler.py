@@ -267,6 +267,28 @@ def test_edicion_codigo_pasted_external_es_n4() -> None:
     assert label_event("edicion_codigo", {"origin": "pasted_external"}) == "N4"
 
 
+def test_edicion_codigo_snippet_expanded_es_n2_no_n4() -> None:
+    """Un snippet de ceremonia del editor NO es interaccion con IA.
+
+    N4 en este modelo significa "interaccion con IA" (ver docstring del
+    modulo). Un `System.out.println` o un getter expandido por el editor
+    (`web-student/src/lib/javaSnippets.ts`) no es elaboracion tipeada, pero
+    tampoco viene del tutor: mandarlo a N4 inflaria la metrica de dependencia
+    del tutor cada vez que un alumno escribe `sout`, y ese sesgo no se nota
+    porque el evento se ve igual que cualquier otro.
+
+    Este test es el candado de esa decision: si alguien agrega
+    `snippet_expanded` a `_EDICION_CODIGO_N4_ORIGINS`, revienta aca. Cambiarla
+    es un bump de LABELER_VERSION + ADR, no un ajuste al pasar.
+    """
+    assert label_event("edicion_codigo", {"origin": "snippet_expanded"}) == "N2"
+    # Misma etiqueta que el tipeo directo — la distincion vive en el payload,
+    # no en el nivel, y queda disponible para el analisis posterior.
+    assert label_event("edicion_codigo", {"origin": "snippet_expanded"}) == label_event(
+        "edicion_codigo", {"origin": "student_typed"}
+    )
+
+
 def test_event_type_desconocido_cae_a_meta() -> None:
     """Fallback conservador: nunca crashear ante un evento experimental o legacy."""
     assert label_event("evento_inventado_v9000") == "meta"

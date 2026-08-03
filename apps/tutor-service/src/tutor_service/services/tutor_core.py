@@ -21,6 +21,7 @@ from typing import Any, Literal, NoReturn
 from uuid import UUID, uuid4
 
 from fastapi import HTTPException, status
+from platform_contracts.academic.ejercicio import DEFAULT_LANGUAGE
 
 from tutor_service.config import settings
 from tutor_service.metrics import (
@@ -378,6 +379,7 @@ class TutorCore:
             "comision_id": str(comision_id),
             "curso_config_hash": curso_config_hash,
             "model": state.model,
+            "language": self._resolve_episode_language(contexto_data),
         }
         # ADR-049: vincular episodio con el Ejercicio reusable por UUID +
         # orden denormalizado. Consistencia: ambos None o ambos no-None.
@@ -405,6 +407,43 @@ class TutorCore:
         tutor_active_sessions_count.add(1)
 
         return episode_id
+
+    @staticmethod
+    def _resolve_episode_language(contexto_data: dict | None) -> str:
+        """Resuelve el lenguaje del episodio SIEMPRE server-side (D1).
+
+        multi-language-research-integrity (episode-language-provenance,
+        task 2.4/2.5): el lenguaje NUNCA se acepta de la request del
+        cliente — `OpenEpisodeRequest` (routes/episodes.py) deliberadamente
+        no declara un campo `language`, así que cualquier valor que un
+        cliente meta en el body del POST queda ignorado por Pydantic
+        (`extra="ignore"` default) antes de llegar siquiera acá. Este
+        método es la única fuente de verdad para el `language` que se
+        emite en el payload de `episodio_abierto`.
+
+        `contexto_data` es el MISMO dict ya resuelto en `open_episode` para
+        construir el contexto pedagógico del system message — sea el
+        Ejercicio del banco (ADR-047, `AcademicClient.get_ejercicio_by_id`,
+        que expone `language` vía `EjercicioRead`/`_EjercicioBase`) o la TP
+        monolítica (`AcademicClient.get_tarea_practica_full`, que expone
+        `language` vía `TareaPracticaOut`). Reusarlo evita un round-trip
+        nuevo al academic-service (design D1, riesgo "sobrecarga de una
+        consulta extra" ya mitigado).
+
+        Ambos caminos del academic-service ya declaran `language` con
+        default `DEFAULT_LANGUAGE` ("python") — verificado contra código
+        real (epic java-language-model, cerrado). Este método igual
+        defiende contra `contexto_data=None` (académic-service no
+        configurado, o ambas consultas fallaron fail-soft) devolviendo el
+        mismo default: los episodios sin contexto pedagógico resuelto se
+        interpretan como Python, igual que los episodios legacy pre-cambio
+        (ver spec episode-language-provenance).
+        """
+        if contexto_data is not None:
+            language = contexto_data.get("language")
+            if isinstance(language, str) and language:
+                return language
+        return DEFAULT_LANGUAGE
 
     # ── Interacción (streaming) ────────────────────────────────────────
 
@@ -1126,7 +1165,10 @@ class TutorCore:
         diff_chars: int,
         language: str,
         user_id: UUID,
-        origin: (Literal["student_typed", "copied_from_tutor", "pasted_external"] | None) = None,
+        origin: (
+            Literal["student_typed", "copied_from_tutor", "pasted_external", "snippet_expanded"]
+            | None
+        ) = None,
     ) -> int:
         """Publica un evento edicion_codigo al CTR.
 
@@ -1148,7 +1190,11 @@ class TutorCore:
                 "student_typed" cuando el alumno tipeó directo en Monaco;
                 "pasted_external" cuando vino de paste del clipboard;
                 "copied_from_tutor" cuando el frontend insertó código
-                tomado del chat del tutor (botón "Insertar código").
+                tomado del chat del tutor (botón "Insertar código");
+                "snippet_expanded" cuando el alumno expandió un snippet de
+                ceremonia del editor (System.out.println, getters/setters —
+                ver web-student/src/lib/javaSnippets.ts). No lleva override a
+                N4: no es tipeo, pero tampoco es interacción con IA.
 
         Returns:
             El seq asignado al evento (útil para debugging del cliente).
@@ -1409,6 +1455,7 @@ class TutorCore:
         tests_hidden: int,
         ejecucion_ms: int,
         chunks_used_hash: str | None = None,
+        emisor_interno: bool = False,
     ) -> int:
         """Publica un evento `tests_ejecutados` al CTR con los conteos del cliente.
 
@@ -1426,7 +1473,12 @@ class TutorCore:
             user_id: estudiante autenticado (su autoria — no service account).
             test_count_total/passed/failed: agregados de la corrida.
             tests_publicos: count de tests con is_public=true ejecutados.
-            tests_hidden: siempre 0 en piloto-1 (declarado en ADR-033).
+            tests_hidden: casos ocultos ejecutados. 0 obligatorio desde el
+                cliente; real cuando `emisor_interno` es True.
+            emisor_interno: la llamada viene del execution-service, verificada
+                por secreto compartido (NO por presencia de header — el gateway
+                no lo filtra). Default False = fail-closed: un caller que no
+                prueba ser interno queda con la regla vieja.
             ejecucion_ms: duracion total de la corrida en ms.
             chunks_used_hash: opcional — propagado del ultimo prompt_enviado del
                 episodio para correlacionar con el contexto RAG vigente.
@@ -1443,10 +1495,28 @@ class TutorCore:
                 f"Conteos inconsistentes: passed={test_count_passed} + "
                 f"failed={test_count_failed} != total={test_count_total}"
             )
-        if tests_hidden != 0:
+        # Los casos ocultos solo pueden venir de una corrida SERVER-SIDE.
+        #
+        # El guard sigue existiendo porque protege el camino de Pyodide: el
+        # navegador nunca recibe los casos `is_public=false` (el academic-service
+        # los filtra por rol), asi que un `tests_hidden > 0` desde el browser es
+        # un cliente mintiendo sobre lo que ejecuto. Borrarlo abriria esa puerta.
+        #
+        # Lo que cambia es que ahora existe un emisor legitimo con ocultos: el
+        # execution-service (ADR-060), que los corre en el sandbox precisamente
+        # porque el alumno no los ve. Ejecutar un caso oculto sin revelarlo es LA
+        # capacidad que justifica el reemplazo de Pyodide — y era justo la que
+        # hacia que el evento nunca se emitiera.
+        #
+        # `emisor_interno` NO puede decidirse por presencia de un header: el
+        # api-gateway no filtra `X-Internal-Service-Token` (cero referencias), asi
+        # que un browser puede mandarlo forjado. Lo decide el caller comparando
+        # contra el secreto configurado. Ver `_es_emisor_interno` en la ruta.
+        if tests_hidden != 0 and not emisor_interno:
             raise ValueError(
-                f"tests_hidden debe ser 0 en piloto-1 (recibido {tests_hidden}). "
-                "El client-side NO ejecuta tests is_public=false."
+                f"tests_hidden debe ser 0 desde el cliente (recibido {tests_hidden}). "
+                "El client-side NO ejecuta tests is_public=false; solo el "
+                "execution-service puede reportar ocultos."
             )
 
         payload: dict[str, Any] = {
@@ -1928,7 +1998,13 @@ class TutorCore:
         enunciado = ejercicio.get("enunciado_md") or ejercicio.get("enunciado") or ""
         parts.append(f"\n\n[{kind}{orden_label}]\n**{titulo}**\n\n{enunciado}")
         if ejercicio.get("inicial_codigo"):
-            parts.append(f"\n\nCódigo inicial:\n```python\n{ejercicio['inicial_codigo']}\n```")
+            # El fence lleva el lenguaje del ejercicio, no uno fijo: rotular
+            # código Java como `python` le da al modelo una señal falsa sobre la
+            # sintaxis que está leyendo. Es el único fence hardcodeado del
+            # builder — el código que el alumno escribe en vivo ya usa uno
+            # genérico sin etiqueta.
+            language = ejercicio.get("language") or DEFAULT_LANGUAGE
+            parts.append(f"\n\nCódigo inicial:\n```{language}\n{ejercicio['inicial_codigo']}\n```")
 
         # Bloque 2 — reglas operativas del tutor para este ejercicio (F2). Antes
         # solo se inyectaba `instrucciones_adicionales`; ahora también las flags
