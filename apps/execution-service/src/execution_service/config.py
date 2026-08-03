@@ -84,7 +84,14 @@ class Settings(BaseSettings):
     # el editor vuelve solo al estado "ejecucion no disponible" — sin desplegar
     # nada y sin romper los episodios en curso, porque ejecutar es un agregado y
     # no un bloqueante. Es el procedimiento de apagado.
-    execution_enabled: bool = Field(default=True)
+    #
+    # FALLA CERRADO (default `false`), igual que el resto de este servicio: el
+    # runner no arranca sin RUNNER_TOKEN, no arranca con tag mutable y las cuotas
+    # fallan cerradas. Con default `true` este flag era la unica pieza que fallaba
+    # ABIERTO — un deploy que no lo tocara encendia la ejecucion de codigo para el
+    # piloto entero de entrada. Estaba documentado, pero un doc no frena un deploy
+    # y un default si. Dev no se rompe: `EXECUTION_ENABLED=true` va en .env.example.
+    execution_enabled: bool = Field(default=False)
 
     def comision_habilitada(self, comision_id: str | None) -> bool:
         """True si esa comision puede ejecutar.

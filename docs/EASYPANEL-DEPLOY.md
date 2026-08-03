@@ -69,7 +69,7 @@ arranque si faltan; la cuarta falla en silencio, que es peor:
 | `JAVA_IMAGE` | ambos | Pineada por **digest**, no por tag. Con tag mutable el runner **no arranca**. `docker inspect --format='{{index .RepoDigests 0}}' <imagen>` |
 | `RUNNER_URL` | execution-service | Apunta al runner por la red interna |
 | **`INTERNAL_SERVICE_TOKEN`** | execution-service y **tutor-service**, **mismo valor** | ⚠️ Si no coincide, los ejercicios **con casos ocultos** pierden su `tests_ejecutados`: el tutor los rechaza con 422 y la emisión falla soft. **No se cae nada** — queda un agujero en el corpus, justo en los ejercicios que sostienen el claim del ADR-060. Vigilar `execution_ctr_emissions_failed_total`. |
-| `EXECUTION_ENABLED` | execution-service | **`false` en el primer deploy.** El default es `true`: si no se toca, queda prendido para todo el piloto de entrada. Se prende para una comisión con `EXECUTION_ENABLED_COMISIONES` después de verificar. |
+| `EXECUTION_ENABLED` | execution-service | Default **`false`** (falla cerrado, como el resto del servicio): un deploy que no la toque deja la ejecución **apagada**, que es el estado seguro. Para encender hay que ponerla explícitamente en `true`, y recién después abrir de a una comisión con `EXECUTION_ENABLED_COMISIONES`. Hasta el 2026-08-03 el default era `true` y esta fila advertía lo contrario: era la única pieza del ADR-060 que fallaba abierto. |
 
 **El runner NO debe ser alcanzable desde fuera de la red interna.** Su Dockerfile
 bindea `0.0.0.0`, así que esto depende de que EasyPanel no publique el puerto
