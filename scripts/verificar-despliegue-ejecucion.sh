@@ -131,6 +131,61 @@ else
     dato "docker pull ${IMAGEN}"
 fi
 
+# ── 6. INTERNAL_SERVICE_TOKEN coincide entre los dos servicios ───────────────
+# El modo de falla que este paso ataca: si el token NO coincide,
+# `_es_emisor_interno` da False (falla cerrado, correcto), el tutor rechaza el
+# `tests_ejecutados` con 422 y `TutorClient` falla soft. Neto: los ejercicios
+# CON CASOS OCULTOS pierden su evento. No se cae nada — queda un agujero en el
+# corpus, justo en los ejercicios que sostienen el claim del ADR-060.
+#
+# Hoy eso se detecta DESPUES, mirando `execution_ctr_emissions_failed_total`.
+# O sea: contando lo que ya se perdio. Este paso lo detecta ANTES de habilitar.
+#
+# Por que NO se prueba emitiendo un `tests_ejecutados` sintetico, que seria lo
+# obvio: `emit_tests_ejecutados` valida la SESION primero (tutor_core.py:1489,
+# raise en la 1491) y recien despues mira `tests_hidden`/`emisor_interno`. Con
+# un episodio inventado nunca se llega al chequeo de token; para llegar haria
+# falta un episodio real, y eso escribe en el CTR. Este script no modifica nada.
+#
+# Se comparan HUELLAS (sha256 corto), nunca los valores: un secreto no se
+# imprime ni siquiera en una verificacion.
+titulo "6. INTERNAL_SERVICE_TOKEN coincide entre execution-service y tutor-service"
+
+descubrir_contenedor() {
+    docker ps --format '{{.Names}}' 2>/dev/null | grep -i -m1 "$1" || true
+}
+
+huella_token() {
+    local valor
+    valor="$(docker exec "$1" printenv INTERNAL_SERVICE_TOKEN 2>/dev/null || true)"
+    [ -n "$valor" ] && printf '%s' "$valor" | sha256sum | cut -c1-12
+}
+
+EXEC_CONTAINER="${EXEC_CONTAINER:-$(descubrir_contenedor 'execution-service')}"
+TUTOR_CONTAINER="${TUTOR_CONTAINER:-$(descubrir_contenedor 'tutor-service')}"
+
+if ! command -v docker >/dev/null 2>&1; then
+    avisa "Sin docker en este host: no puedo comparar los tokens."
+elif [ -z "$EXEC_CONTAINER" ] || [ -z "$TUTOR_CONTAINER" ]; then
+    avisa "No encontre los dos contenedores (execution-service: '${EXEC_CONTAINER:-?}', tutor-service: '${TUTOR_CONTAINER:-?}')."
+    dato "Nombrarlos a mano:  EXEC_CONTAINER=x TUTOR_CONTAINER=y bash $0"
+else
+    h_exec="$(huella_token "$EXEC_CONTAINER")"
+    h_tutor="$(huella_token "$TUTOR_CONTAINER")"
+    if [ -z "$h_exec" ] && [ -z "$h_tutor" ]; then
+        falla "INTERNAL_SERVICE_TOKEN vacio en LOS DOS: los casos ocultos van a perder su evento."
+        dato "Sin token, _es_emisor_interno da False y el tutor rechaza con 422 (falla soft)."
+    elif [ -z "$h_exec" ] || [ -z "$h_tutor" ]; then
+        falla "INTERNAL_SERVICE_TOKEN falta en uno de los dos."
+        dato "execution-service: ${h_exec:-VACIO} · tutor-service: ${h_tutor:-VACIO}"
+    elif [ "$h_exec" != "$h_tutor" ]; then
+        falla "Los tokens NO coinciden (huellas ${h_exec} vs ${h_tutor})."
+        dato "Mismo valor en ambos servicios. Es la fila marcada en docs/EASYPANEL-DEPLOY.md."
+    else
+        pasa "Los tokens coinciden (huella ${h_exec})."
+    fi
+fi
+
 # ── Resumen ─────────────────────────────────────────────────────────────────
 printf '\n\033[1m== Resumen ==\033[0m\n'
 printf '  %s ok · %s fallas · %s avisos\n' "$ok" "$fallos" "$avisos"
