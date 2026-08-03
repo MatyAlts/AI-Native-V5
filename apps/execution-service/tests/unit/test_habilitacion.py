@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import pytest
+
 from execution_service.config import Settings
 
 COMISION_A = "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa"
@@ -37,22 +39,38 @@ def test_la_lista_admite_varias_y_tolera_espacios() -> None:
     assert s.comision_habilitada(COMISION_B) is True
 
 
-def test_el_default_falla_cerrado() -> None:
+def test_el_default_falla_cerrado(monkeypatch: pytest.MonkeyPatch) -> None:
     """Candado del arreglo: sin tocar nada, NO se ejecuta.
 
     Es la propiedad que el PR #57 tenia invertida — el unico flag del ADR-060
     que fallaba abierto. Un deploy que no configure la variable deja la
     ejecucion apagada, no prendida para el piloto entero.
+
+    Aserta el default DEL CODIGO, aislado del entorno: `model_config` declara
+    `env_file=".env"`, asi que un `Settings()` pelado lo lee. Con
+    `EXECUTION_ENABLED=true` en `.env` —que es lo que dice `.env.example`— este
+    candado daba verde por el entorno y dejaba de proteger nada. Lo encontro
+    Neyen el 2026-08-03: el mismo push que puso el candado escribio la linea
+    que lo vaciaba.
     """
-    s = Settings()
+    monkeypatch.delenv("EXECUTION_ENABLED", raising=False)
+    s = Settings(_env_file=None)  # type: ignore[call-arg]
     assert s.execution_enabled is False
     assert s.comision_habilitada(COMISION_A) is False
     assert s.comision_habilitada(None) is False
 
 
 def test_con_lista_una_request_sin_comision_no_pasa() -> None:
-    """Si hay lista, no declarar comision no es un permiso implicito."""
-    s = Settings(execution_enabled_comisiones=COMISION_A)
+    """Si hay lista, no declarar comision no es un permiso implicito.
+
+    `execution_enabled=True` explicito: sin el, al pasar el default a `false`
+    este test seguia VERDE pero por el interruptor general, no por la lista —
+    quedaba tautologico. Es el hallazgo 5 de Neyen, y el mas fino de los cinco:
+    los otros 3 del grupo se pusieron rojos y se arreglaron; este no aviso nada
+    porque aserta lo NEGATIVO, y un assert negativo se puede vaciar entero sin
+    que el CI pestanee.
+    """
+    s = Settings(execution_enabled=True, execution_enabled_comisiones=COMISION_A)
     assert s.comision_habilitada(None) is False
 
 

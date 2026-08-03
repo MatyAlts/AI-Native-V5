@@ -132,6 +132,15 @@ jobs:
           # field `dev_trust_headers` lee la env var `DEV_TRUST_HEADERS`
           # (case-insensitive).
           DEV_TRUST_HEADERS: "true"
+          # FALTABA: desde `92ba7bd` el default de `execution_enabled` es `false`
+          # (falla cerrado — era la unica pieza del ADR-060 que fallaba abierta).
+          # Sin esta linea el execution-service arranca apagado y devuelve 503
+          # "La ejecucion de codigo no esta habilitada para esta comision
+          # todavia", asi que los 4 tests de `test_smoke_java_execution.py` que
+          # ejecutan de verdad fallan con `assert 202` contra un 503. Roto en el
+          # run 30817464761 (2026-08-03) por ese mismo commit: el cambio de
+          # default se hizo sin mirar quien dependia del default anterior.
+          EXECUTION_ENABLED: "true"
         run: |
           # Imagen del sandbox de Java (ADR-060), ANTES de arrancar servicios.
           # `docker_runner.py` aplica el wall-time limit (10s) sobre el
