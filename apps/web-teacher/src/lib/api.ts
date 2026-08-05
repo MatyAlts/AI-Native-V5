@@ -491,6 +491,12 @@ export interface TareaPracticaCreate {
   codigo: string
   titulo: string
   enunciado: string
+  /** Lenguaje de la TP. El backend lo acepta desde siempre
+   * (`tarea_practica_service.py:94`) pero este formulario no lo mandaba, asi que
+   * TODA TP nacia `python` y agregarle un ejercicio Java devolvia 422 por mezcla:
+   * una TP en Java era imposible de crear desde la UI. Detectado el 2026-08-05,
+   * el mismo dia que Java empezo a ejecutar en produccion. */
+  language?: Language
   fecha_inicio?: string | null
   fecha_fin?: string | null
   peso?: string

@@ -43,6 +43,12 @@ export interface RunRemoteOptions {
    * Opcional porque el panel del docente prueba ejercicios fuera de todo
    * episodio, y esa corrida no es actividad de ningún alumno. */
   episodeId?: string | undefined
+  /** Comision del episodio, para la habilitacion progresiva del backend
+   * (`EXECUTION_ENABLED_COMISIONES`). Opcional por el mismo motivo que
+   * `episodeId`: el panel del docente prueba fuera de toda comision — y por eso
+   * el backend exime al staff del filtro, si no quedaria sin poder probar
+   * durante el rollout. */
+  comisionId?: string | undefined
   // `| undefined` explicito: el repo usa `exactOptionalPropertyTypes`.
   getToken?: TokenGetter | undefined
   /** Se llama cuando la corrida pasa de encolada a ejecutandose, para que la UI
@@ -68,6 +74,7 @@ export async function runRemote(opts: RunRemoteOptions): Promise<ExecutionResult
       ejercicio_id: opts.ejercicioId,
       source_code: opts.sourceCode,
       ...(opts.episodeId ? { episode_id: opts.episodeId } : {}),
+      ...(opts.comisionId ? { comision_id: opts.comisionId } : {}),
     },
     opts.getToken,
   )

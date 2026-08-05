@@ -441,7 +441,18 @@ export class ExecutionUnavailableError extends Error {}
  * arrancar una JVM no es instantáneo, así que el resultado se consulta aparte.
  */
 export async function requestExecution(
-  payload: { ejercicio_id: string; source_code: string; episode_id?: string },
+  payload: {
+    ejercicio_id: string
+    source_code: string
+    episode_id?: string
+    /** Comision del episodio. La usa la habilitacion progresiva del
+     * execution-service (`EXECUTION_ENABLED_COMISIONES`, tarea 9.3). Sin esto el
+     * backend recibe `None`, la lista no matchea con nada y **nadie puede
+     * ejecutar** — con un 503 que dice "no esta habilitada para esta comision",
+     * o sea apuntando al lugar equivocado. La feature figuraba cerrada y estaba
+     * cableada de un solo lado; detectado el 2026-08-05. */
+    comision_id?: string
+  },
   getToken?: TokenGetter,
 ): Promise<{ execution_id: string; quota_remaining: number }> {
   const r = await fetch("/api/v1/executions", {

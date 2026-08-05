@@ -136,6 +136,10 @@ export interface CodeEditorProps {
    * emitir `tests_ejecutados` al CTR: sin esto el evento no se emite y el
    * episodio queda sin la señal que el labeler usa para N3/N4. */
   episodeId?: string | undefined
+  /** Comision del episodio. Viaja al execution-service para la habilitacion
+   * progresiva (`EXECUTION_ENABLED_COMISIONES`): sin esto, con una lista de
+   * comisiones configurada el backend rechaza TODAS las corridas de alumno. */
+  comisionId?: string | undefined
   /** Para autenticar contra el execution-service. */
   getToken?: TokenGetter | undefined
 }
@@ -214,6 +218,7 @@ export function CodeEditor({
   language = DEFAULT_LANGUAGE,
   ejercicioId,
   episodeId,
+  comisionId,
   getToken,
 }: CodeEditorProps): ReactNode {
   // Un solo lugar decide POR DONDE se ejecuta. Todo lo que dependa de eso
@@ -878,6 +883,7 @@ def __tutor_run_tests(student_code, cases_json):
         ejercicioId,
         sourceCode: code,
         ...(episodeId ? { episodeId } : {}),
+        ...(comisionId ? { comisionId } : {}),
         getToken,
         onStateChange: (state) => {
           setRemoteWait(
@@ -1029,6 +1035,7 @@ def __tutor_run_tests(student_code, cases_json):
         sourceCode: code,
         getToken,
         ...(episodeId ? { episodeId } : {}),
+        ...(comisionId ? { comisionId } : {}),
         onStateChange: (state) => {
           setRemoteWait(
             state === "queued"

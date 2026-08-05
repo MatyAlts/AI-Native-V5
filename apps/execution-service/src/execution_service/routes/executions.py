@@ -38,6 +38,14 @@ logger = logging.getLogger(__name__)
 
 _ROLES = ("estudiante", "docente", "docente_admin", "jtp", "auxiliar", "superadmin")
 
+# La habilitacion progresiva (9.3) acota la exposicion de los ALUMNOS mientras se
+# despliega. El personal docente queda afuera del filtro a proposito: los
+# ejercicios del banco son reusables entre comisiones (ADR-047) y el panel de
+# prueba corre fuera de todo episodio, asi que una corrida suya no tiene comision
+# que mirar. Aplicarles el filtro los dejaria sin poder probar NADA justo durante
+# el rollout, que es cuando mas falta hace.
+_ROLES_STAFF = frozenset({"docente", "docente_admin", "jtp", "auxiliar", "superadmin"})
+
 
 class ExecutionRequest(BaseModel):
     ejercicio_id: UUID
@@ -160,7 +168,15 @@ async def request_execution(
     """Encola una ejecucion y responde de inmediato con su identificador."""
     # Habilitacion progresiva / apagado (9.2 y 9.3). Va ANTES que la cuota: si
     # el lenguaje no esta habilitado para esta comision, no se consume nada.
-    if not settings.comision_habilitada(str(req.comision_id) if req.comision_id else None):
+    #
+    # El staff no pasa por el filtro por comision (ver `_ROLES_STAFF`), pero SI
+    # por el interruptor general: con `EXECUTION_ENABLED=false` no ejecuta nadie,
+    # que es el procedimiento de apagado y no admite excepciones.
+    es_staff = bool(user.roles & _ROLES_STAFF)
+    if not settings.execution_enabled or (
+        not es_staff
+        and not settings.comision_habilitada(str(req.comision_id) if req.comision_id else None)
+    ):
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
             detail=(

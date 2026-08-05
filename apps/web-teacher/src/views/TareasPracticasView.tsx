@@ -40,6 +40,7 @@ import {
   DEFAULT_LANGUAGE,
   type Ejercicio,
   LANGUAGE_LABELS,
+  type Language,
   type TareaEstado,
   type TareaPractica,
   type TareaPracticaTemplate,
@@ -720,6 +721,7 @@ interface FormValues {
   rubrica: Record<string, unknown> | null
   permite_pausa: boolean
   template_id?: string | null
+  language?: Language
 }
 
 function TareaFormModal({
@@ -755,6 +757,11 @@ function TareaFormModal({
   // permite_pausa: en create arranca habilitado (default del backend); en
   // edit/version respeta el valor de la TP existente.
   const [permitePausa, setPermitePausa] = useState(initial?.permite_pausa ?? true)
+  // Solo se elige al CREAR: el backend valida que todos los ejercicios del banco
+  // coincidan con el lenguaje de la TP (al agregar y al publicar), asi que
+  // cambiarlo con ejercicios ya asociados dejaria la TP impublicable. Para
+  // cambiar de lenguaje se crea otra.
+  const [language, setLanguage] = useState<Language>(initial?.language ?? DEFAULT_LANGUAGE)
 
   const [submitting, setSubmitting] = useState(false)
   const [formError, setFormError] = useState<string | null>(null)
@@ -836,6 +843,7 @@ function TareaFormModal({
         rubrica,
         permite_pausa: permitePausa,
         ...(mode === "create" && templateId ? { template_id: templateId } : {}),
+        ...(mode === "create" ? { language } : {}),
       })
     } catch (e) {
       setFormError(String(e))
@@ -924,6 +932,32 @@ function TareaFormModal({
             />
           </div>
         </div>
+
+        {!isEditing && (
+          <div>
+            <label htmlFor="tp-language" className="block text-xs text-muted mb-1">
+              Lenguaje
+            </label>
+            <select
+              id="tp-language"
+              name="language"
+              data-testid="tp-form-language"
+              value={language}
+              onChange={(e) => setLanguage(e.target.value as Language)}
+              className="w-full border border-border rounded px-2 py-1 text-sm"
+            >
+              {(Object.keys(LANGUAGE_LABELS) as Language[]).map((l) => (
+                <option key={l} value={l}>
+                  {LANGUAGE_LABELS[l]}
+                </option>
+              ))}
+            </select>
+            <p className="mt-1 text-xs text-muted">
+              Todos los ejercicios que le asocies tienen que ser de este lenguaje — el backend
+              rechaza la mezcla al agregarlos y al publicar. No se puede cambiar despues.
+            </p>
+          </div>
+        )}
 
         <div>
           <label htmlFor="tp-titulo" className="block text-xs text-muted mb-1">

@@ -35,6 +35,7 @@ from __future__ import annotations
 import asyncio
 import contextlib
 import logging
+import re
 import secrets
 from collections.abc import AsyncIterator
 
@@ -149,6 +150,18 @@ def verificar_configuracion_segura() -> list[str]:
             f"JAVA_IMAGE por tag mutable ({settings.java_image}): pinear por digest. "
             "Obtenerlo con `docker inspect --format='{{index .RepoDigests 0}}' <imagen>`."
         )
+    else:
+        # El digest se valida ENTERO. Preguntar solo por el substring `@sha256:`
+        # dejaba pasar un digest cortado: el 2026-08-05 produccion corria con 55
+        # de 64 caracteres, el runner arrancaba sin chistar y toda corrida moria
+        # despues, en el `docker run`. Un control que un valor roto satisface no
+        # es un control — y este el ADR-060 lo declara falla-cerrado.
+        digest = settings.java_image.split("@sha256:", 1)[1]
+        if not re.fullmatch(r"[0-9a-f]{64}", digest):
+            problemas.append(
+                f"JAVA_IMAGE con digest mal formado ({len(digest)} chars, deberian ser 64 "
+                "hex): se corta al pegarlo. Verificar con `docker images --digests <imagen>`."
+            )
 
     return problemas
 

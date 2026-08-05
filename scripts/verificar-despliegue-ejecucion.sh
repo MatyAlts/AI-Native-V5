@@ -27,7 +27,11 @@ avisa()  { printf '  \033[0;33m[AVISO]\033[0m %s\n' "$1"; avisos=$((avisos + 1))
 dato()   { printf '          %s\n' "$1"; }
 
 RUNNER_PORT="${RUNNER_PORT:-8015}"
-IMAGEN="${EXECUTION_IMAGE:-eclipse-temurin:21-jdk}"
+# `JAVA_IMAGE`, que es la que el servicio lee de verdad (`config.py:33`). Hasta
+# el 2026-08-05 esto decia `EXECUTION_IMAGE`, una variable que no existe en
+# ningun lado: el gate 4 media algo que nadie configuraba y reportaba contra el
+# default. Se acepta `EXECUTION_IMAGE` como alias por si quedo en algun runbook.
+IMAGEN="${JAVA_IMAGE:-${EXECUTION_IMAGE:-eclipse-temurin:21-jdk}}"
 
 # ── 0. Rootless: si esta, el runner sobra ────────────────────────────────────
 # ADR-060 (Alternativas): "Conviene evaluar rootless en el VPS antes de
@@ -107,9 +111,21 @@ fi
 # Un tag es mutable: `21-jdk` de hoy no es el de manana. Para un sandbox que
 # ejecuta codigo de terceros, el digest es lo que hace reproducible QUE se corrio.
 titulo "4. Imagen del sandbox pineada por digest (8.4)"
-if printf '%s' "$IMAGEN" | grep -q '@sha256:'; then
-    pasa "EXECUTION_IMAGE pineada por digest."
+# El digest se valida ENTERO, no por la presencia del `@sha256:`. El 2026-08-05
+# produccion tenia uno de 55 de los 64 caracteres —cortado en un paste— y pasaba
+# igual, porque el chequeo era `grep '@sha256:'`. Un control que se satisface con
+# un valor roto no es un control, y este es de los que el ADR-060 declara "falla
+# cerrado". Mismo arreglo en `runner_main.py`.
+DIGEST="${IMAGEN##*@sha256:}"
+if printf '%s' "$IMAGEN" | grep -q '@sha256:' &&
+    printf '%s' "$DIGEST" | grep -qE '^[0-9a-f]{64}$'; then
+    pasa "JAVA_IMAGE pineada por digest, 64 chars hex."
     dato "$IMAGEN"
+elif printf '%s' "$IMAGEN" | grep -q '@sha256:'; then
+    falla "El digest esta MAL FORMADO: ${#DIGEST} chars, deberian ser 64."
+    dato "$IMAGEN"
+    dato "Se corta facil al pegarlo. Obtenerlo entero con:"
+    dato "  docker images --digests ${IMAGEN%%@*}"
 else
     falla "La imagen usa un TAG mutable, no un digest: ${IMAGEN}"
     dato "Un tag puede cambiar debajo tuyo. Obtener el digest con:"

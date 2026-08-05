@@ -119,6 +119,10 @@ function resolveCodigoInicial(tarea: AvailableTarea): string | null {
 
 export function EpisodeView({ episodeId, onExit, ejercicioContext, getToken }: EpisodeViewProps) {
   const [tarea, setTarea] = useState<AvailableTarea | null>(null)
+  // Sale del estado del episodio, no de un selector: el alumno puede estar
+  // inscripto en varias comisiones y la que manda es la del episodio abierto.
+  // Viaja al execution-service para la habilitacion progresiva (tarea 9.3).
+  const [comisionId, setComisionId] = useState<string | null>(null)
   // Default neutro: si el ejercicio trae `inicial_codigo` se usa eso (ver
   // resolveCodigoInicial); este fallback NO debe sugerir una consigna concreta
   // (antes mostraba `def factorial` para TODOS los ejercicios — NEW-002 QA).
@@ -404,6 +408,7 @@ export function EpisodeView({ episodeId, onExit, ejercicioContext, getToken }: E
       try {
         const state = await getEpisodeState(episodeId)
         if (cancelled) return
+        setComisionId(state.comision_id ?? null)
         if (state.estado === "closed") {
           window.sessionStorage.removeItem(ACTIVE_EPISODE_KEY)
           onExit()
@@ -815,6 +820,9 @@ export function EpisodeView({ episodeId, onExit, ejercicioContext, getToken }: E
         // Sin esto el execution-service no sabe a que cadena adjuntar
         // `tests_ejecutados`, y Java sigue sin emitirlo (ver `tutor_client.py`).
         episodeId={episodeId}
+        // Sin esto, con `EXECUTION_ENABLED_COMISIONES` cargada el backend
+        // rechaza TODAS las corridas de alumno con un 503 enganoso.
+        comisionId={comisionId ?? undefined}
         getToken={getToken}
         isMaximized={editorMaximized}
         // ED-1: el boton maximizar solo tiene sentido en desktop (el PanelGroup
