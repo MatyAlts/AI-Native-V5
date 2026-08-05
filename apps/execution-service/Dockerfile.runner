@@ -26,7 +26,19 @@ RUN --mount=from=ghcr.io/astral-sh/uv:latest,source=/uv,target=/bin/uv \
 FROM python:3.12-slim
 
 # El cliente de Docker: el runner invoca `docker run`, no habla el protocolo.
-RUN apt-get update && apt-get install -y --no-install-recommends docker.io \
+#
+# Es `docker-cli`, NO `docker.io`. En Debian trixie (la base de python:3.12-slim)
+# el paquete esta partido: `docker.io` trae el DAEMON y `docker-cli` el comando
+# `docker`. Con `--no-install-recommends` el cliente no viene de arrastre, asi
+# que `docker.io` instala bien, loguea `Setting up docker.io 26.1.5`, y deja la
+# imagen sin `/usr/bin/docker`. El runner arranca igual y contesta 401 como
+# corresponde —el warmup es best-effort— pero no puede ejecutar una sola
+# corrida. Costo un dia de diagnostico el 2026-08-03: el build en verde y el log
+# del apt decian que estaba, y el binario no estaba.
+#
+# Ademas el daemon aca sobra y es superficie de mas: este es el unico contenedor
+# con el socket montado (ADR-060 D3), y el daemon real vive en el host.
+RUN apt-get update && apt-get install -y --no-install-recommends docker-cli \
     && rm -rf /var/lib/apt/lists/*
 
 COPY --from=builder /app /app
