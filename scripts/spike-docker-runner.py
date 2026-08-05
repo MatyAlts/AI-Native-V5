@@ -16,11 +16,19 @@ from execution_service.services.docker_runner import run_java
 OK = 'public class Main { public static void main(String[] a){ System.out.println("Hola"); } }'
 MAL = 'public class Main { public static void main(String[] a){ System.out.println("x") } }'
 LOOP = "public class Main { public static void main(String[] a){ while(true){} } }"
+# Lee la entrada. Es el caso que faltaba: sin `-i` en el `docker run` el
+# contenedor arranca con stdin vacio y esto revienta con NoSuchElementException,
+# pero un programa que solo imprime pasa igual. Todo el banco del PID lee
+# entrada, asi que el spike no puede no probarlo.
+STDIN = (
+    "import java.util.Scanner; public class Main { public static void main(String[] a){ "
+    "Scanner s = new Scanner(System.in); System.out.println(s.nextInt() + s.nextInt()); } }"
+)
 
 
-async def cronometrar(src: str):
+async def cronometrar(src: str, stdin: str = ""):
     t0 = time.perf_counter()
-    r = await run_java(src)
+    r = await run_java(src, stdin)
     return time.perf_counter() - t0, r
 
 
@@ -31,6 +39,13 @@ async def main():
         estado = "COMPILE_ERROR" if r.compile_failed else f"exit={r.exit_code}"
         salida = r.stdout.strip()[:40] or r.stderr.strip()[:60]
         print(f"  {nombre:18} {dt:5.2f}s  {estado:15} {salida!r}")
+
+    dt, r = await cronometrar(STDIN, "2 3\n")
+    obtenido = r.stdout.strip()
+    estado = f"exit={r.exit_code}"
+    print(f"  {'lee stdin (2 3)':18} {dt:5.2f}s  {estado:15} {obtenido!r} esperado '5'")
+    if obtenido != "5":
+        print("    !! stdin NO llega al contenedor — revisar el `-i` del docker run")
 
     print("\n=== 2. El bucle infinito se corta ===")
     dt, r = await cronometrar(LOOP)

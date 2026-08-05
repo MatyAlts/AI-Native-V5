@@ -120,6 +120,15 @@ def _docker_args(source_code: str) -> list[str]:
         "docker",
         "run",
         "--rm",
+        # Sin `-i` el contenedor NO recibe stdin: lo que `communicate()` escribe
+        # en el pipe del CLI se pierde, y el programa del alumno arranca con la
+        # entrada vacia. El sintoma es un NoSuchElementException de Scanner que
+        # se lee como error del alumno y no del sandbox, justo en los ejercicios
+        # que leen entrada — o sea la mayoria de los del PID.
+        #
+        # NO va `-t`: un TTY mezcla stdout con stderr y nos rompe la comparacion
+        # contra la salida esperada.
+        "-i",
         # C2 del ADR-059: el codigo del alumno NO tiene salida de red.
         "--network=none",
         f"--memory={settings.execution_memory_limit_kb}k",
