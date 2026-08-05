@@ -42,10 +42,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
-import shutil
-import tempfile
 from dataclasses import dataclass
-from pathlib import Path
 
 from execution_service.config import settings
 from execution_service.services.sandbox_types import SandboxResult, SandboxStatus
@@ -118,7 +115,7 @@ class DockerRunResult:
     compile_failed: bool
 
 
-def _docker_args(workdir: Path) -> list[str]:
+def _docker_args(source_code: str) -> list[str]:
     return [
         "docker",
         "run",
@@ -140,8 +137,24 @@ def _docker_args(workdir: Path) -> list[str]:
         "--cap-drop=ALL",
         "--security-opt=no-new-privileges",
         f"--user={CONTAINER_USER}",
-        "-v",
-        f"{workdir}:/src:ro",
+        # El fuente viaja por ENV, NO por bind mount. Un `-v /tmp/exec-xxx:/src`
+        # lo resuelve el DAEMON, y el daemon vive en el host: con el runner
+        # adentro de un contenedor esa ruta no existe del otro lado, Docker monta
+        # un directorio vacio SIN error, y el `cp` falla con "No such file or
+        # directory". En local no se ve, porque ahi el runner no esta
+        # containerizado y la ruta si es del host — o sea que la unica topologia
+        # que rompe es exactamente la de produccion.
+        #
+        # Detectado el 2026-08-05 corriendo el spike sobre el despliegue real:
+        # 0/30 corridas exitosas, y aun asi el resto del script reportaba OK
+        # (el bucle infinito "se cortaba" en 0,32s y la red figuraba bloqueada,
+        # porque nunca se ejecuto codigo). Un control sobre algo que no corrio
+        # siempre pasa.
+        #
+        # Por ENV anda igual containerizado o no, que es lo que cierra la
+        # asimetria dev/prod de raiz.
+        "-e",
+        f"SRC={source_code}",
         "-w",
         "/work",
         settings.java_image,
@@ -149,7 +162,7 @@ def _docker_args(workdir: Path) -> list[str]:
         "-c",
         # Se compila y ejecuta en /work (tmpfs). El exit code 101 se reserva
         # para "no compilo", que es distinto de "el programa fallo".
-        "cp /src/Main.java . && javac Main.java 2>&1 || exit 101; java Main",
+        'printf %s "$SRC" > Main.java && javac Main.java 2>&1 || exit 101; java Main',
     ]
 
 
@@ -172,44 +185,35 @@ async def run_java(source_code: str, stdin: str = "") -> DockerRunResult:
 
 async def _run_java_sin_techo(source_code: str, stdin: str = "") -> DockerRunResult:
     """El cuerpo real. Separado para que el wall-time NO cuente la espera."""
-    tmpdir = Path(tempfile.mkdtemp(prefix="exec-"))
+    proc = await asyncio.create_subprocess_exec(
+        *_docker_args(source_code),
+        stdin=asyncio.subprocess.PIPE,
+        stdout=asyncio.subprocess.PIPE,
+        stderr=asyncio.subprocess.PIPE,
+    )
     try:
-        (tmpdir / "Main.java").write_text(source_code, encoding="utf-8")
-        # El directorio tiene que ser legible por el usuario del contenedor.
-        tmpdir.chmod(0o755)
-        (tmpdir / "Main.java").chmod(0o644)
-
-        proc = await asyncio.create_subprocess_exec(
-            *_docker_args(tmpdir),
-            stdin=asyncio.subprocess.PIPE,
-            stdout=asyncio.subprocess.PIPE,
-            stderr=asyncio.subprocess.PIPE,
+        out, err = await asyncio.wait_for(
+            proc.communicate(stdin.encode()),
+            timeout=settings.execution_wall_time_limit_seconds,
         )
-        try:
-            out, err = await asyncio.wait_for(
-                proc.communicate(stdin.encode()),
-                timeout=settings.execution_wall_time_limit_seconds,
-            )
-        except TimeoutError:
-            # `docker run` tambien se puede colgar: el limite del contenedor no
-            # cubre el caso de que el daemon no responda.
-            proc.kill()
-            await proc.wait()
-            return DockerRunResult(
-                exit_code=-1, stdout="", stderr="", timed_out=True, compile_failed=False
-            )
-
-        code = proc.returncode or 0
+    except TimeoutError:
+        # `docker run` tambien se puede colgar: el limite del contenedor no
+        # cubre el caso de que el daemon no responda.
+        proc.kill()
+        await proc.wait()
         return DockerRunResult(
-            exit_code=code,
-            stdout=out.decode("utf-8", errors="replace"),
-            stderr=err.decode("utf-8", errors="replace"),
-            timed_out=False,
-            # 101 es el codigo que el comando reserva para fallo de compilacion.
-            compile_failed=code == 101,
+            exit_code=-1, stdout="", stderr="", timed_out=True, compile_failed=False
         )
-    finally:
-        shutil.rmtree(tmpdir, ignore_errors=True)
+
+    code = proc.returncode or 0
+    return DockerRunResult(
+        exit_code=code,
+        stdout=out.decode("utf-8", errors="replace"),
+        stderr=err.decode("utf-8", errors="replace"),
+        timed_out=False,
+        # 101 es el codigo que el comando reserva para fallo de compilacion.
+        compile_failed=code == 101,
+    )
 
 
 def to_sandbox_result(run: DockerRunResult, expected_output: str | None) -> SandboxResult:
