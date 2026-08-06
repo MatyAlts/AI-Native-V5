@@ -87,12 +87,18 @@ def test_armar_contexto_episodio_mudo() -> None:
 
 
 # ── Flujo completo con `complete` mockeado ────────────────────────────────
-def _mock_complete(salida: dict | str):
-    """Devuelve un callable async que ignora los args y responde `salida`."""
+def _mock_complete(salida: dict | str, output_tokens: int = 50):
+    """Devuelve un callable async que ignora los args y responde `salida`.
+
+    `output_tokens` viaja en el doble porque el codigo lo usa para distinguir
+    una respuesta TRUNCADA de un JSON mal formado. Un doble sin ese campo hace
+    que el test recorra un camino que en produccion no existe: `CompleteResult`
+    siempre lo trae.
+    """
     content = salida if isinstance(salida, str) else json.dumps(salida, ensure_ascii=False)
 
     async def _fn(**_kwargs):
-        return SimpleNamespace(content=content)
+        return SimpleNamespace(content=content, output_tokens=output_tokens)
 
     return _fn
 
@@ -162,6 +168,66 @@ async def test_error_parseo_si_json_invalido() -> None:
     assert r.regimen is None
 
 
+@pytest.mark.asyncio
+async def test_truncado_no_reintenta_y_queda_registrado() -> None:
+    """Una respuesta cortada por el techo de tokens NO se reintenta.
+
+    El juez corre con `temperature=0.0`: el reintento es determinista y devuelve
+    el MISMO corte. Reintentar quema tres llamadas al LLM para el mismo fallo —
+    es el error que costo el incidente del wizard de ejercicios (27/07).
+
+    Y el motivo tiene que quedar en `razon`, que se persiste en
+    `features['regimen_llm']`. Sin eso, separar truncado de JSON roto obliga a
+    ir a los logs del contenedor, que rotan.
+    """
+    llamadas = []
+
+    async def _fn(**kwargs):
+        llamadas.append(1)
+        # JSON bien formado pero cortado a la mitad, con la salida en el techo.
+        return SimpleNamespace(content='{"regimen": "REFLE', output_tokens=kwargs["max_tokens"])
+
+    r = await clasificar_regimen_llm(
+        events=_EVENTS,
+        enunciado="x",
+        episode_id="e-trunc",
+        complete=_fn,
+        model="gpt-4o",
+        tenant_id=TENANT,
+        max_reintentos=2,
+        max_tokens=100,
+    )
+    assert r.estado == "error_parseo"
+    assert r.regimen is None
+    assert len(llamadas) == 1, "un truncado no se reintenta"
+    assert "truncada" in r.razon
+    assert "100" in r.razon, "el techo tiene que estar en el motivo, para poder subirlo"
+
+
+@pytest.mark.asyncio
+async def test_json_roto_no_truncado_si_reintenta() -> None:
+    """El contrapunto: si NO llego al techo, el fallo puede ser transitorio y se reintenta."""
+    llamadas = []
+
+    async def _fn(**_kwargs):
+        llamadas.append(1)
+        return SimpleNamespace(content="esto no es json", output_tokens=12)
+
+    r = await clasificar_regimen_llm(
+        events=_EVENTS,
+        enunciado="x",
+        episode_id="e-roto",
+        complete=_fn,
+        model="gpt-4o",
+        tenant_id=TENANT,
+        max_reintentos=2,
+        max_tokens=100,
+    )
+    assert r.estado == "error_parseo"
+    assert len(llamadas) == 3, "sin truncamiento se agotan los reintentos"
+    assert "truncada" not in r.razon
+
+
 # ── El juez GOBIERNA la etiqueta en el pipeline (helper de classify_ep, v4.0.0) ──
 from classifier_service.config import settings as _settings
 from classifier_service.routes.classify_ep import (
@@ -209,7 +275,7 @@ async def test_juez_gobierna_appropriation_cuando_ok(monkeypatch) -> None:
     salida = _raw(True, True, True, False, "REFLEXIVA", conf=0.95).model_dump()
 
     async def _fake_complete(self, **_kwargs):  # bound method: recibe self
-        return SimpleNamespace(content=json.dumps(salida, ensure_ascii=False))
+        return SimpleNamespace(content=json.dumps(salida, ensure_ascii=False), output_tokens=50)
 
     monkeypatch.setattr(AIGatewayClient, "complete", _fake_complete)
     # Arranca como superficial (proxy) y el juez lo sube a reflexiva.
@@ -231,7 +297,7 @@ async def test_juez_desenganchado_con_tutor_pasa_por_el_juez(monkeypatch) -> Non
     salida = _raw(False, False, False, True, "SUPERFICIAL", conf=0.9).model_dump()
 
     async def _fake_complete(self, **_kwargs):
-        return SimpleNamespace(content=json.dumps(salida, ensure_ascii=False))
+        return SimpleNamespace(content=json.dumps(salida, ensure_ascii=False), output_tokens=50)
 
     monkeypatch.setattr(AIGatewayClient, "complete", _fake_complete)
     result = _FakeResult({"subgrupo": {"key": "desenganchado"}})
@@ -249,7 +315,7 @@ async def test_fallback_proxy_y_needs_review_si_veredicto_no_ok(monkeypatch) -> 
     salida = _raw(True, True, True, False, "REFLEXIVA", conf=0.3).model_dump()  # conf < 0.70
 
     async def _fake_complete(self, **_kwargs):
-        return SimpleNamespace(content=json.dumps(salida, ensure_ascii=False))
+        return SimpleNamespace(content=json.dumps(salida, ensure_ascii=False), output_tokens=50)
 
     monkeypatch.setattr(AIGatewayClient, "complete", _fake_complete)
     result = _FakeResult({"subgrupo": {"key": "colaborador_reflexivo"}})
@@ -272,7 +338,7 @@ async def test_fallback_proxy_y_needs_review_si_veredicto_inconsistente(monkeypa
     salida = _raw(True, True, True, True, "REFLEXIVA", conf=0.9).model_dump()
 
     async def _fake_complete(self, **_kwargs):
-        return SimpleNamespace(content=json.dumps(salida, ensure_ascii=False))
+        return SimpleNamespace(content=json.dumps(salida, ensure_ascii=False), output_tokens=50)
 
     monkeypatch.setattr(AIGatewayClient, "complete", _fake_complete)
     result = _FakeResult({"subgrupo": {"key": "colaborador_reflexivo"}})
@@ -292,7 +358,7 @@ async def test_fallback_proxy_y_needs_review_si_error_parseo(monkeypatch) -> Non
     monkeypatch.setattr(_settings, "eje_fino_llm_enabled", True)
 
     async def _fake_complete(self, **_kwargs):
-        return SimpleNamespace(content="esto no es json")
+        return SimpleNamespace(content="esto no es json", output_tokens=12)
 
     monkeypatch.setattr(AIGatewayClient, "complete", _fake_complete)
     result = _FakeResult({"subgrupo": {"key": "desenganchado"}})

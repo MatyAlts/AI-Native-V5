@@ -2,7 +2,7 @@
 
 from functools import lru_cache
 
-from pydantic import Field
+from pydantic import Field, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -77,7 +77,18 @@ class Settings(BaseSettings):
     # el hash vigente del classifier al servicio dueño de la fórmula
     # determinista (compute_classifier_config_hash). Si no responde, el
     # handler degrada al fallback hardcoded "d"*64 (warning en log).
+    # Sin barra final: se concatena con "/api/v1/..." y una barra de mas produce
+    # `//api/v1/...`, que da 404. El handler degrada al fallback "d"*64 con solo
+    # un warning, y ese valor es hex valido: pasa cualquier validacion de formato
+    # y se ve como un hash legitimo. Asi los 981 episodios del piloto quedaron
+    # firmados con el placeholder sin que nadie lo notara (detectado 2026-08-06).
+    # No se repara hacia atras: la cadena es append-only.
     classifier_service_url: str = Field(default="http://127.0.0.1:8008")
+
+    @field_validator("classifier_service_url")
+    @classmethod
+    def _sin_barra_final(cls, v: str) -> str:
+        return v.rstrip("/")
     tp_generator_prompt_version: str = Field(default="v1.0.0")
     # Default Gemini (namespaced → OpenRouter con fallback keyless a Gemini nativo).
     # Antes era "mistral-small-latest" (sin key de Mistral configurada → 502).

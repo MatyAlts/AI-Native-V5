@@ -424,6 +424,12 @@ async def clasificar_regimen_llm(
     materia_id: UUID | None = None,
     confianza_min: float = 0.70,
     max_reintentos: int = 2,
+    # Techo de salida del juez. Gemini 2.5 consume tokens de "thinking" del MISMO
+    # presupuesto con el que escribe, asi que un numero que alcanza para el JSON
+    # no alcanza cuando el modelo piensa mas. Ya se subio a mano una vez (700 ->
+    # 3000) y volvio a quedar corto: 14 de 324 episodios juzgados terminaron en
+    # `error_parseo`. Parametro y no constante para poder moverlo sin tocar codigo.
+    max_tokens: int = 6000,
     fewshot: list[tuple[str, dict[str, Any]]] | None = None,
 ) -> RegimenLLMResult:
     """Clasifica el eje superficial↔reflexiva leyendo el contenido del episodio.
@@ -451,6 +457,7 @@ async def clasificar_regimen_llm(
         )
 
     raw: RegimenLLMRaw | None = None
+    motivo_fallo = "el modelo no devolvió un JSON válido"
     for intento in range(max_reintentos + 1):
         res = await complete(
             messages=messages,
@@ -459,10 +466,7 @@ async def clasificar_regimen_llm(
             tenant_id=tenant_id,
             materia_id=materia_id,
             temperature=0.0,  # determinismo (§4.3)
-            # Gemini 2.5 consume tokens de "thinking" del presupuesto de salida;
-            # con 700 el JSON se truncaba (~89 tokens visibles). 3000 deja margen
-            # para el thinking + el JSON completo de las 4 dimensiones.
-            max_tokens=3000,
+            max_tokens=max_tokens,
             # El ai-gateway acepta response_format como dict[str,str] (JSON mode
             # simple), NO el json_schema anidado. El esquema lo garantizan el
             # prompt + la validación de RegimenLLMRaw aguas abajo (RESPONSE_JSON_SCHEMA
@@ -474,11 +478,31 @@ async def clasificar_regimen_llm(
             raw = RegimenLLMRaw.model_validate(data)
             break
         except (json.JSONDecodeError, ValidationError) as exc:
+            # Truncado = la salida llego al techo y vino cortada por la mitad.
+            # NO se reintenta: con `temperature=0.0` el reintento es determinista
+            # y devuelve el MISMO corte, quemando tres llamadas al LLM para el
+            # mismo fallo. Es exactamente el error que costo el incidente del
+            # wizard de ejercicios (27/07), donde tres 502 identicos venian de un
+            # JSON bien formado pero cortado en el mismo caracter.
+            truncado = res.output_tokens >= max_tokens
+            motivo_fallo = (
+                f"respuesta truncada en {res.output_tokens} tokens (techo {max_tokens})"
+                if truncado
+                else f"{type(exc).__name__}: {exc}"
+            )
             logger.warning(
                 "regimen_llm_parseo_fallo",
-                extra={"episode_id": episode_id, "intento": intento, "error": str(exc)},
+                extra={
+                    "episode_id": episode_id,
+                    "intento": intento,
+                    "truncado": truncado,
+                    "output_tokens": res.output_tokens,
+                    "error": str(exc),
+                },
             )
             raw = None
+            if truncado:
+                break
 
     if raw is None:
         return _result(
@@ -486,7 +510,12 @@ async def clasificar_regimen_llm(
             None,
             None,
             None,
-            "El modelo no devolvió un JSON válido tras los reintentos.",
+            # El motivo CONCRETO queda en features['regimen_llm']['razon'], que se
+            # persiste. Antes decia solo "no devolvio JSON valido tras los
+            # reintentos" y para separar truncado / JSON roto / campos faltantes
+            # habia que ir a los logs del contenedor, que rotan. El diagnostico
+            # del 2026-08-06 tuvo que adivinar entre las tres.
+            f"El juez no devolvió un veredicto usable: {motivo_fallo}. Va a revisión humana.",
         )
 
     # Verificación de consistencia EN CÓDIGO (la regla manda, no el LLM).

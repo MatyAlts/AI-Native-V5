@@ -49,6 +49,16 @@ class Settings(BaseSettings):
     # Modelo del juez ruteado por OpenRouter (contrato v4.0.0). Va por el
     # ai-gateway (mismo proveedor que el tutor). Ver informe-validacion-juez-llm.
     eje_fino_model: str = "google/gemini-2.5-flash"
+    # Techo de salida del juez. NO entra al `classifier_config_hash` (que sólo
+    # cubre `tree_version` + `profile`), así que moverlo no invalida ni una
+    # clasificación existente ni obliga a reclasificar.
+    #
+    # Gemini 2.5 gasta tokens de "thinking" del MISMO presupuesto con el que
+    # escribe: el JSON llega cortado y el parseo falla. Ya se subió a mano una vez
+    # (700 → 3000) y volvió a quedar corto — 14 de 324 episodios juzgados del
+    # piloto terminaron en `error_parseo` (medido 2026-08-06). Por eso ahora es
+    # configurable: la próxima vez se mueve sin tocar código ni redeployar imagen.
+    eje_fino_max_tokens: int = 6000
 
     # ADR-023 / ADR-045 (Mejora 3 plan post-piloto-1, sub-componente G8b):
     # override lexico de `anotacion_creada` sobre contenido textual con

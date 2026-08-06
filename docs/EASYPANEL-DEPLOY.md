@@ -110,7 +110,20 @@ Su paso 0 avisa si Docker corre **rootless** — en ese caso el runner sobra.
 `SERVICE_NAME, SERVICE_PORT, ENVIRONMENT, LOG_LEVEL, LOG_FORMAT, CORS_ORIGINS, OTEL_ENDPOINT, SENTRY_DSN, KEYCLOAK_URL, KEYCLOAK_REALM, CTR_DB_URL, DB_ECHO, REDIS_URL, NUM_PARTITIONS`
 
 ### classifier-service
-`SERVICE_NAME, SERVICE_PORT, ENVIRONMENT, LOG_LEVEL, LOG_FORMAT, CORS_ORIGINS, OTEL_ENDPOINT, SENTRY_DSN, CLASSIFIER_DB_URL, DB_ECHO, REDIS_URL, CTR_SERVICE_URL, LEXICAL_ANOTACION_OVERRIDE_ENABLED, GUARDRAIL_MODIFIER_ENABLED`
+`SERVICE_NAME, SERVICE_PORT, ENVIRONMENT, LOG_LEVEL, LOG_FORMAT, CORS_ORIGINS, OTEL_ENDPOINT, SENTRY_DSN, CLASSIFIER_DB_URL, DB_ECHO, REDIS_URL, CTR_SERVICE_URL, AI_GATEWAY_URL, LEXICAL_ANOTACION_OVERRIDE_ENABLED, GUARDRAIL_MODIFIER_ENABLED, EJE_FINO_MAX_TOKENS`
+
+> `EJE_FINO_MAX_TOKENS` (default **6000**) es el techo de salida del juez LLM. Gemini 2.5 gasta
+> tokens de *thinking* del mismo presupuesto con el que escribe, así que si queda corto el JSON
+> llega cortado y el veredicto se pierde: el episodio cae al proxy conductual y va a revisión
+> humana. Se diagnostica con esta consulta sobre `classifier_db` — si aparece "truncada", subir
+> el número **sin tocar código**:
+> ```sql
+> SELECT features->'regimen_llm'->>'razon', COUNT(*) FROM classifications
+> WHERE is_current AND features->'regimen_llm'->>'estado' = 'error_parseo'
+> GROUP BY 1 ORDER BY 2 DESC;
+> ```
+> **No entra al `classifier_config_hash`** (que sólo cubre `tree_version` + `profile`): moverlo
+> no invalida clasificaciones existentes ni obliga a reclasificar.
 
 ### content-service
 `SERVICE_NAME, SERVICE_PORT, ENVIRONMENT, LOG_LEVEL, LOG_FORMAT, CORS_ORIGINS, OTEL_ENDPOINT, SENTRY_DSN, KEYCLOAK_URL, KEYCLOAK_REALM, CONTENT_DB_URL, DB_ECHO, S3_ENDPOINT, S3_ACCESS_KEY, S3_SECRET_KEY, S3_BUCKET_MATERIALS`

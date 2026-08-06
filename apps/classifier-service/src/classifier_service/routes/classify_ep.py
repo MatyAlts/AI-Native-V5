@@ -177,6 +177,7 @@ async def _aplicar_juez_eje_fino(
             model=settings.eje_fino_model,
             tenant_id=tenant_id,
             materia_id=UUID(materia) if materia else None,
+            max_tokens=settings.eje_fino_max_tokens,
         )
     except Exception as exc:
         # Gateway caído / cualquier error: el cierre NO falla — fallback a proxy.
