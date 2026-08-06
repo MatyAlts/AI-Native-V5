@@ -589,9 +589,14 @@ function EjercicioCodigo({ resolvedEpisodeId, orden, active, getToken }: Ejercic
   const [code, setCode] = useState<string | null>(null)
   const [loading, setLoading] = useState(false)
   const [fetchError, setFetchError] = useState<string | null>(null)
+  // Guarda de "ya pedido" en un ref y NO en el estado de render. Es la unica
+  // forma de cortar el ciclo sin pelearse con `useExhaustiveDependencies`: un
+  // ref no es dependencia reactiva, asi que leerlo no obliga a declararlo.
+  const pedido = useRef<string | null>(null)
 
   useEffect(() => {
-    if (!active || code !== null || loading || !resolvedEpisodeId) return
+    if (!active || !resolvedEpisodeId || pedido.current === resolvedEpisodeId) return
+    pedido.current = resolvedEpisodeId
     let cancelled = false
     setLoading(true)
     setFetchError(null)
@@ -603,6 +608,10 @@ function EjercicioCodigo({ resolvedEpisodeId, orden, active, getToken }: Ejercic
       })
       .catch((e) => {
         if (!cancelled) setFetchError(String(e))
+        // Se libera la guarda: un fallo de red tiene que poder reintentarse al
+        // cerrar y reabrir la tarjeta. El exito si queda cacheado — es lo que
+        // evita re-pedir los eventos cada vez que el docente despliega.
+        pedido.current = null
       })
       .finally(() => {
         if (!cancelled) setLoading(false)
@@ -610,7 +619,26 @@ function EjercicioCodigo({ resolvedEpisodeId, orden, active, getToken }: Ejercic
     return () => {
       cancelled = true
     }
-  }, [active, resolvedEpisodeId, code, loading, getToken])
+    // POR QUE la guarda va en un ref y no en `code`/`loading`:
+    //
+    // Antes las deps eran `[active, resolvedEpisodeId, code, loading, getToken]` y
+    // la guarda leia `code`/`loading`. El efecto llamaba `setLoading(true)` ->
+    // cambiaba `loading`, que estaba en deps -> React corria la LIMPIEZA del efecto
+    // anterior -> `cancelled = true` -> y cuando la respuesta llegaba,
+    // `if (!cancelled)` era falso y el resultado se descartaba. El efecto se
+    // cancelaba a si mismo: el pedido salia, volvia 200 con los eventos completos,
+    // y se tiraba. `loading` quedaba en `true` para siempre, asi que no aparecia ni
+    // el codigo ni el "// Sin codigo registrado" — solo un spinner infinito.
+    //
+    // El codigo del alumno NO SE MOSTRO NUNCA en esta vista: con esas deps no podia
+    // funcionar. Detectado el 2026-08-06 mirando la pestana Network (200, 8,7 kB de
+    // eventos, con el `snapshot` completo) contra una pantalla vacia.
+    //
+    // Sacar las deps a secas deja `useExhaustiveDependencies` en rojo — que es
+    // exactamente como nacio el bug: alguien agrego `code` y `loading` para callar
+    // al linter. Por eso la guarda pasa a un ref, que no es dependencia reactiva.
+    // `getToken` sale de `Route.useRouteContext()` y es estable.
+  }, [active, resolvedEpisodeId, getToken])
 
   return (
     <div className="space-y-2">
