@@ -519,16 +519,48 @@ async def clasificar_regimen_llm(
         )
 
     # Verificación de consistencia EN CÓDIGO (la regla manda, no el LLM).
+    #
+    # Las DOS causas van separadas a proposito. Antes eran un solo `or` con un
+    # solo mensaje ("no respeta la regla ... O no hay evidencia citable"), y eso
+    # producia lineas que se leian como autocontradictorias: "el regimen del
+    # modelo (SUPERFICIAL) no respeta la regla (esperado: SUPERFICIAL)". Para
+    # saber cual de las dos habia disparado no alcanzaba el registro guardado:
+    # habia que reconstruirlo a mano contra el JSON crudo (2026-08-06).
     esperado = regimen_segun_regla(raw)
-    if raw.regimen != esperado or not _hay_evidencia_citable(raw):
+    if raw.regimen != esperado:
         return _result(
             "inconsistente",
             None,
             raw.confianza,
             raw,
-            f"El régimen del modelo ({raw.regimen}) no respeta la regla "
-            f"aplicada a sus dimensiones (esperado: {esperado}) o no hay "
-            f"evidencia citable. Va a revisión humana.",
+            f"El régimen del modelo ({raw.regimen}) no respeta la regla aplicada a sus "
+            f"propias dimensiones (esperado: {esperado}). Va a revisión humana.",
+        )
+
+    # La evidencia citable se exige SOLO cuando el juez afirma REFLEXIVA.
+    #
+    # Antes se exigia siempre, y eso descartaba el veredicto justo en los
+    # episodios que el juez lee con mas claridad: si el alumno no razono, no
+    # verifico y no justifico, las cuatro dimensiones vuelven `presente: false`
+    # con `evidencia: ""` — no hay frase que citar porque no ocurrio. Pedir una
+    # cita de algo que NO paso es pedir evidencia de una ausencia.
+    #
+    # El efecto era una inflacion silenciosa: descartado el SUPERFICIAL correcto,
+    # la etiqueta oficial caia al proxy conductual, que en esos casos puede decir
+    # "apropiacion reflexiva" — la mas alta. Medido el 2026-08-06 sobre el piloto:
+    # 7 de 12 `inconsistente` eran este caso (las cuatro evidencias vacias).
+    #
+    # Para REFLEXIVA la exigencia se mantiene y es la que importa: ahi el juez
+    # esta AFIRMANDO que hubo marcadores, y una afirmacion sin una sola cita no
+    # es verificable.
+    if raw.regimen == "REFLEXIVA" and not _hay_evidencia_citable(raw):
+        return _result(
+            "inconsistente",
+            None,
+            raw.confianza,
+            raw,
+            "El régimen del modelo (REFLEXIVA) afirma que hubo razonamiento pero no cita "
+            "evidencia en ninguna dimensión. Va a revisión humana.",
         )
 
     if raw.confianza < confianza_min:

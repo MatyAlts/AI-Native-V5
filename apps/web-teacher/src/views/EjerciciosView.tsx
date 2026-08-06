@@ -866,14 +866,22 @@ function EjercicioFormModal({ initial, title, unidades, onClose, onSubmit }: For
             </div>
           </div>
           {/* Honestidad tecnica explicita: el docente se entera de la limitacion
-              al crear, no recien cuando intenta probar y no pasa nada. */}
-          {(draft.language ?? DEFAULT_LANGUAGE) !== DEFAULT_LANGUAGE && (
-            <p className="mt-2 text-xs text-muted" data-testid="aviso-sin-runtime">
-              Los casos de prueba de {LANGUAGE_LABELS[draft.language ?? DEFAULT_LANGUAGE]} todavia
-              no se pueden verificar desde el panel de prueba: no hay entorno de ejecucion. El
-              ejercicio se crea y el tutor lo acompaña igual.
-            </p>
-          )}
+              al crear, no recien cuando intenta probar y no pasa nada.
+              ⚠️ Este aviso decia LO CONTRARIO hasta el 2026-08-06: avisaba que los
+              casos de Java no se podian verificar "porque no hay entorno de
+              ejecucion". Era cierto ANTES de que Java ejecutara — hoy Java corre
+              server-side (verificado 2/2 en produccion) y el que no tiene control
+              de casos ocultos es Python. El aviso quedo invertido el dia que Java
+              salio y nadie volvio a leerlo. */}
+          {(draft.language ?? DEFAULT_LANGUAGE) === "python" &&
+            (draft.test_cases ?? []).some((tc) => !tc.is_public) && (
+              <p className="mt-2 text-xs text-warning" data-testid="aviso-ocultos-python">
+                Ojo: los casos <strong>ocultos</strong> de Python no se evaluan cuando el alumno
+                aprieta "Probar". Python corre en el navegador del alumno, asi que mandarle los
+                casos ocultos seria mostrarselos — solo se ejecutan los publicos. En Java si se
+                evaluan, porque la ejecucion es server-side.
+              </p>
+            )}
         </FormSection>
 
         <FormSection title="Rubrica de correccion">
@@ -1850,7 +1858,7 @@ Devolve EXACTAMENTE esta estructura, respetando los nombres de campo tal cual:
 }
 
 Reglas de contenido:
-- test_cases: usa "pytest_assert" para clases/funciones (code = los asserts); usa "stdin_stdout" para programas con input()/print (code = "", expected = la salida esperada exacta). is_public true = el alumno lo ve; false = test oculto de control. weight es un numero mayor o igual a 0.
+- test_cases: usa "pytest_assert" para clases/funciones (code = los asserts); usa "stdin_stdout" para programas con input()/print, y ahi **code = la ENTRADA que se le pasa al programa por stdin** (un dato por linea si el programa hace varios input()), expected = la salida esperada exacta. Si el programa no lee nada, code = "". is_public true = el alumno lo ve; false = test oculto de control. weight es un numero mayor o igual a 0.
 - banco_preguntas: N1 comprension del concepto, N2 aplicacion, N3 analisis/validacion, N4 sintesis. Cada pregunta es un objeto con texto + senal_comprension + senal_alerta (NUNCA strings sueltas).
 - rubrica: cada criterio con puntaje_max mayor a 0 (el campo se llama puntaje_max, NO peso).
 - No inventes misconceptions implausibles. Mejor pocas y buenas.

@@ -404,7 +404,22 @@ export function EpisodeTimelineView({ getToken, initialEpisodeId }: Props) {
                       <th className="px-3 py-2 text-left w-16">+ts</th>
                       <th className="px-3 py-2 text-left w-12">seq</th>
                       <th className="px-3 py-2 text-left">Evento</th>
-                      <th className="px-3 py-2 text-left w-16">N</th>
+                      {/* "N base", no "N": esta columna sale de `EVENT_META.nLevelBase`,
+                          que mapea tipo-de-evento → nivel y NO aplica los overrides
+                          temporales del labeler (v1.1.0 `anotacion_creada`, v1.2.0
+                          `tests_ejecutados`). El nivel OFICIAL puede diferir: un
+                          `tests_ejecutados` con todo en verde y sin tutor reciente
+                          se contabiliza N4 aunque acá figure N3.
+                          Deliberadamente NO se replican los overrides en TS — serian
+                          una sexta copia de reglas que ya se desincronizaron una vez
+                          (ver el gotcha de los cinco `Literal` de `origin`). El fix de
+                          fondo es que el backend exponga el nivel por evento. */}
+                      <th
+                        className="px-3 py-2 text-left w-20"
+                        title="Nivel base por tipo de evento. El nivel oficial puede diferir: el labeler aplica overrides temporales que esta vista no calcula."
+                      >
+                        N base
+                      </th>
                       <th className="px-3 py-2 text-left">Resumen</th>
                     </tr>
                   </thead>

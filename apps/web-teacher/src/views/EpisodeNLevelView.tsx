@@ -471,7 +471,12 @@ function DocenteInterpretation({
     N1: "El alumno paso la mayor parte del tiempo leyendo el enunciado. Puede que le cueste entender la consigna o que sea un problema nuevo para el.",
     N2: "El alumno dedico bastante tiempo a planificar y escribir codigo (todavia sin ejecutarlo). Buena senal de estrategia antes de validar.",
     N3: "El alumno paso la mayor parte del tiempo ejecutando codigo y corriendo tests. Esta validando activamente su solucion.",
-    N4: "El alumno paso la mayor parte del tiempo usando el tutor IA. Conviene revisar si esta entendiendo o solo copiando respuestas.",
+    // N4 tiene DOS entradas desde v1.2.0: el dialogo con la IA (ADR-020) y los
+    // tests que pasan sin tutor reciente (apropiacion reflexiva, ADR-033/034).
+    // El texto no puede afirmar "uso el tutor" sin mirar cual de las dos fue:
+    // ya mostro "paso el tiempo usando el tutor IA" en un episodio donde el
+    // dialogo duro 3 segundos y el resto era una corrida de tests (06/08).
+    N4: "El alumno paso la mayor parte del tiempo dialogando con el tutor IA o validando su solucion por su cuenta (tests en verde sin consultar). Mira el timeline para distinguir cual de las dos: si predomina el dialogo, conviene revisar si esta entendiendo o solo copiando respuestas.",
     meta: "La mayor parte del tiempo fue de inicio y cierre de sesion. Puede que la sesion haya sido muy corta.",
   }
 

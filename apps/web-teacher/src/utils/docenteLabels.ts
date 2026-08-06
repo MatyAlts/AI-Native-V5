@@ -90,11 +90,23 @@ export const PROGRESSION_DOCENTE: Record<string, string> = {
 // no "escribiendo". Cambiar la semántica del labeler requiere bumpear
 // LABELER_VERSION + re-clasificar — pero los labels del UI pueden y deben
 // alinearse con lo que ya se mide.
+// ⚠️ Estos NO son baldes de actividad: son baldes de NIVEL, y desde v1.2.0 el
+// nivel ya no se deriva sólo del tipo de evento. Un `tests_ejecutados` con todos
+// los tests en verde y sin tutor reciente se etiqueta N4 (apropiación reflexiva),
+// así que su tiempo NO aparece en "probando código" sino en el balde de N4.
+//
+// Eso hacía que un episodio donde el alumno corrió las pruebas mostrara
+// "0 segundos probando código" y varios segundos en "Usando el tutor IA" — con
+// el tutor sin tocar. Detectado el 2026-08-06 en un episodio real.
+//
+// Por eso N4 dejó de llamarse "Usando el tutor IA": es correcto para el caso
+// original (ADR-020: N4 = interacción con IA) pero falso para el que agregó
+// v1.2.0. El label tiene que cubrir las dos entradas o miente en una.
 export const NLEVEL_DOCENTE: Record<string, string> = {
   N1: "Leyendo el problema",
   N2: "Planificando y escribiendo codigo",
   N3: "Probando codigo (ejecutando)",
-  N4: "Usando el tutor IA",
+  N4: "Dialogando con la IA o validando por su cuenta",
   meta: "Abriendo/cerrando la sesion",
 }
 

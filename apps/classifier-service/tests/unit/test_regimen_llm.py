@@ -228,6 +228,67 @@ async def test_json_roto_no_truncado_si_reintenta() -> None:
     assert "truncada" not in r.razon
 
 
+def _raw_sin_evidencia(regimen: str, *, verb: bool = False, verif: bool = False) -> dict:
+    """Payload con las CUATRO `evidencia` vacias.
+
+    `_raw` pone siempre `autonomia.evidencia = "x"`, asi que con ese helper
+    `_hay_evidencia_citable` devuelve True SIEMPRE y la rama queda inalcanzable
+    desde los tests. Por eso el bug de los 7 episodios del piloto no lo agarro
+    ninguno: el doble hacia imposible el caso que se daba en produccion.
+    """
+    return {
+        "verbalizacion": {"presente": verb, "evidencia": ""},
+        "verificacion": {"presente": verif, "evidencia": ""},
+        "justificacion": {"presente": False, "evidencia": ""},
+        "autonomia": {"oraculo": False, "evidencia": ""},
+        "regimen": regimen,
+        "confianza": 0.9,
+        "justificacion_global": "test",
+    }
+
+
+@pytest.mark.asyncio
+async def test_superficial_sin_evidencia_es_ok() -> None:
+    """Un episodio vacio no tiene nada que citar, y eso NO invalida el veredicto.
+
+    Si el alumno no razono, no verifico y no justifico, las cuatro dimensiones
+    vuelven vacias: no hay frase que citar porque no ocurrio. Exigir la cita ahi
+    es pedir evidencia de una ausencia — y descartaba el SUPERFICIAL correcto,
+    dejando que la etiqueta cayera al proxy conductual (que puede decir
+    "apropiacion reflexiva"). 7 de 12 `inconsistente` del piloto eran este caso.
+    """
+    r = await clasificar_regimen_llm(
+        events=_EVENTS,
+        enunciado="x",
+        episode_id="e-sup-vacio",
+        complete=_mock_complete(_raw_sin_evidencia("SUPERFICIAL")),
+        model="gpt-4o",
+        tenant_id=TENANT,
+    )
+    assert r.estado == "ok"
+    assert r.regimen == "SUPERFICIAL"
+
+
+@pytest.mark.asyncio
+async def test_reflexiva_sin_evidencia_sigue_inconsistente() -> None:
+    """El contrapunto: afirmar REFLEXIVA sin citar una sola frase NO es verificable.
+
+    Aca el juez esta afirmando que hubo marcadores. Una afirmacion sin cita se
+    sigue mandando a revision humana — esa exigencia no se relaja.
+    """
+    r = await clasificar_regimen_llm(
+        events=_EVENTS,
+        enunciado="x",
+        episode_id="e-ref-vacio",
+        complete=_mock_complete(_raw_sin_evidencia("REFLEXIVA", verb=True, verif=True)),
+        model="gpt-4o",
+        tenant_id=TENANT,
+    )
+    assert r.estado == "inconsistente"
+    assert r.regimen is None
+    assert "no cita evidencia" in r.razon
+
+
 # ── El juez GOBIERNA la etiqueta en el pipeline (helper de classify_ep, v4.0.0) ──
 from classifier_service.config import settings as _settings
 from classifier_service.routes.classify_ep import (
