@@ -29,6 +29,8 @@ import {
   listUnidades,
   updateUnidad,
 } from "../lib/api"
+import { useTutorialDeVista } from "../tour/useTutorialDeVista"
+import { unidadesTour } from "../tour/vistas"
 import { helpContent } from "../utils/helpContent"
 
 interface Props {
@@ -70,6 +72,10 @@ export function UnidadesView({ comisionId, getToken }: Props) {
   useEffect(() => {
     fetchAll()
   }, [fetchAll])
+
+  // Esperar a que la lista este montada: los pasos anclados al boton, a la lista y a
+  // "Sin unidad" no encuentran su ancla sobre el esqueleto de carga.
+  useTutorialDeVista(unidadesTour, !loading)
 
   function toggleExpand(id: string) {
     setExpandedIds((prev) => {
@@ -181,6 +187,7 @@ export function UnidadesView({ comisionId, getToken }: Props) {
               </div>
               <button
                 type="button"
+                data-tour="unidades:nueva"
                 onClick={() => setModal({ kind: "create" })}
                 className="press-shrink inline-flex items-center gap-1.5 rounded-md bg-accent-brand hover:bg-accent-brand-deep px-3 py-1.5 text-sm font-medium text-white transition-colors shadow-[0_1px_2px_0_rgba(24,95,165,0.25)]"
               >
@@ -189,7 +196,12 @@ export function UnidadesView({ comisionId, getToken }: Props) {
               </button>
             </div>
 
-            <div className="space-y-2">
+            {/*
+              El ancla de la lista va en el contenedor y no en el `map`: una comision sin
+              unidades creadas igual tiene la card de "Sin unidad" adentro, asi que el paso
+              del tutorial siempre encuentra algo que iluminar.
+            */}
+            <div className="space-y-2" data-tour="unidades:lista">
               {unidades.map((unidad, idx) => (
                 <div
                   key={unidad.id}
@@ -393,7 +405,10 @@ function SinUnidadCard({
   savingTpId: string | null
 }) {
   return (
-    <div className="rounded-xl border border-dashed border-border bg-surface-alt overflow-hidden">
+    <div
+      data-tour="unidades:sin-unidad"
+      className="rounded-xl border border-dashed border-border bg-surface-alt overflow-hidden"
+    >
       <button
         type="button"
         onClick={onToggle}

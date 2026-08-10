@@ -25,7 +25,9 @@ const LS_KEY = "selectedComisionId"
  * `main.tsx`) en vez de refetchear por componente. Al ser la misma key, el
  * `useComisionLabel` y el `<ComisionSelector>` reusan la misma entrada.
  */
-const COMISIONES_QUERY_KEY = ["comisiones-mias"] as const
+/** Exportada para que el onboarding lea de esta misma entrada de cache y no dispare un
+ *  segundo `/comisiones/mis`: el selector vive en el header y ya la trajo. */
+export const COMISIONES_QUERY_KEY = ["comisiones-mias"] as const
 
 interface Props {
   value: string | null
