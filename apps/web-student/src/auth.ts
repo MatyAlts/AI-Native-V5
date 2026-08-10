@@ -5,10 +5,18 @@
 import { v5 as uuidv5 } from "uuid"
 
 const CLERK_PUBLISHABLE_KEY = import.meta.env.VITE_CLERK_PUBLISHABLE_KEY as string
-// Dev sin Clerk: si no hay publishable key, hardcodeamos un alumno del seed
-// (alumno01) y la identidad la inyecta el proxy de Vite. El UUID coincide con
-// el default x-user-id del proxy y tiene inscripcion real en el tenant fallback.
+// Dev sin Clerk: si no hay publishable key, hardcodeamos un alumno del seed.
+// OJO: el comentario viejo decia que este UUID "coincide con el default
+// x-user-id del proxy de Vite". NO coincide, y ademas ese default nunca se usa:
+// `main.tsx` parchea fetch e inyecta `x-user-id` con ESTE valor, y el
+// `setDefault` del proxy solo actua si el header no viene. El de vite.config.ts
+// es codigo muerto que quedo apuntando a otro alumno.
 export const DEV_NO_CLERK = !CLERK_PUBLISHABLE_KEY
+
+// Para PROBAR el onboarding progresivo hay que cambiar esto por un UUID que no
+// exista: TODOS los alumnos del seed tienen episodios (el minimo son 2), asi que
+// con cualquiera de ellos los pasos nacen cumplidos y no se muestra un cartel.
+// Es este valor el que hay que tocar, no el de vite.config.ts (ver arriba).
 export const DEV_STUDENT_UUID = "e19354fb-c05a-4535-a0bf-a7d3ea09692d"
 
 export const SELECTED_TENANT_STORAGE_KEY = "selectedTenantId"
