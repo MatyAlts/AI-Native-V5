@@ -68,7 +68,7 @@ jobs:
         run: uv python install ${{ env.PYTHON_VERSION }}
 
       - name: Install Python deps
-        run: uv sync --all-packages
+        run: uv sync --all-packages --locked
 
       - name: Crear las 4 bases logicas
         # init-dbs.sql es la fuente de verdad del bootstrap (misma que dev): crea
