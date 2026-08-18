@@ -90,6 +90,7 @@ def _out(c: CorreccionIA) -> CorreccionIAOut:
     return CorreccionIAOut(
         id=c.id,
         entrega_id=c.entrega_id,
+        tp_ejercicio_id=c.tp_ejercicio_id,
         orden=c.orden,
         estado=c.estado,
         rubrica_id=c.rubrica_id,

@@ -122,6 +122,12 @@ export function ResumenCorreccionIA({ ejercicios, correcciones, onUsarComoBase }
             Gana donde tiene la rubrica cargada y el humano no la leyo. Pierde donde hay que
             entender si el programa <em>responde la pregunta</em>.
           </li>
+          <li>
+            <strong>El chequeo de suma no lo cubre todo.</strong> Verifica que los criterios sumen
+            el total, y nada mas. El 2026-08-17 una rubrica declaraba una reduccion del 30% que el
+            motor no aplico: los criterios sumaban exacto y la nota estaba mal igual.{" "}
+            <em>Que el desglose cierre no prueba que la nota sea correcta.</em>
+          </li>
         </ul>
       </details>
     </section>
@@ -162,6 +168,18 @@ function Desgloses({ correcciones }: { correcciones: CorreccionIA[] }) {
                 </li>
               ))}
             </ul>
+            {chequeo?.indeterminado && (
+              <p
+                className="mt-2 flex items-start gap-1.5 text-xs text-warning"
+                data-testid={`resumen-indeterminado-${c.orden}`}
+              >
+                <AlertTriangle size={12} className="mt-0.5 shrink-0" aria-hidden="true" />
+                <span>
+                  No pude sumar los criterios de este desglose: vino en un formato que no reconozco.{" "}
+                  <strong>No es que cierre</strong> — es que no lo pude chequear.
+                </span>
+              </p>
+            )}
             {chequeo?.difiere && (
               <p
                 className="mt-2 flex items-start gap-1.5 text-xs text-warning"

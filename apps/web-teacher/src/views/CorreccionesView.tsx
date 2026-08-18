@@ -48,6 +48,7 @@ import {
   tareasPracticasApi,
   tpEjerciciosApi,
 } from "../lib/api"
+import { ejerciciosParaResumen } from "../utils/correccionIA"
 import { studentShortLabel } from "../utils/docenteLabels"
 import { helpContent } from "../utils/helpContent"
 
@@ -1641,11 +1642,7 @@ function GradingFormView({
         // (`peso_en_tp`). `ejercicioGrupos` es la vista de la entrega y no
         // los lleva — ponderar con un 1 por defecto daria un promedio simple
         // disfrazado de ponderado.
-        ejercicios={tpEjercicios.map((tp) => ({
-          orden: tp.orden,
-          titulo: tp.ejercicio.titulo,
-          peso: Number.parseFloat(tp.peso_en_tp) || 0,
-        }))}
+        ejercicios={ejerciciosParaResumen(tpEjercicios)}
         correcciones={correccionesIA}
         onUsarComoBase={(nota10) => {
           // Rellena y deja el foco en el campo. NO guarda: el docente aprieta
@@ -1739,6 +1736,13 @@ function GradingFormView({
                         entregaId={entrega.id}
                         orden={grupo.orden}
                         getToken={getToken}
+                        onCambio={(c) => {
+                          // Se reemplaza la del mismo ejercicio en vez de
+                          // apilar: si no, la card veria dos correcciones del
+                          // mismo `orden` y el promedio dependeria de cual
+                          // gana el desempate.
+                          setCorreccionesIA((prev) => [...prev.filter((p) => p.id !== c.id), c])
+                        }}
                       />
 
                       {tieneRub && (

@@ -26,6 +26,15 @@ interface Props {
   entregaId: string
   orden: number
   getToken: () => Promise<string | null>
+  /**
+   * Avisa al padre que esta correccion cambio de estado.
+   *
+   * Sin esto la card de resumen se cargaba UNA vez al abrir el form y no se
+   * enteraba de nada: el docente disparaba las correcciones, las veia
+   * terminar en cada tarjeta, y el promedio ponderado —el entregable central
+   * del epic— no aparecia hasta salir y volver a entrar.
+   */
+  onCambio?: (correccion: CorreccionIA) => void
 }
 
 const POLL_MS = 3000
@@ -34,7 +43,7 @@ function esCorreccion(x: CorreccionPreview | CorreccionIA): x is CorreccionIA {
   return "estado" in x
 }
 
-export function CorreccionIAPanel({ entregaId, orden, getToken }: Props) {
+export function CorreccionIAPanel({ entregaId, orden, getToken, onCambio }: Props) {
   const [correccion, setCorreccion] = useState<CorreccionIA | null>(null)
   const [preview, setPreview] = useState<CorreccionPreview | null>(null)
   const [cargando, setCargando] = useState(false)
@@ -42,11 +51,18 @@ export function CorreccionIAPanel({ entregaId, orden, getToken }: Props) {
   // `setTimeout` recursivo y no `setInterval`: con interval, una respuesta
   // lenta se solapa con el tick siguiente y se acumulan requests.
   const timerRef = useRef<number | null>(null)
+  // `onCambio` por ref y no en las deps: el padre lo define inline, o sea
+  // referencia nueva en cada render. En las deps de un `useEffect` eso es el
+  // loop infinito con 429 que el repo ya documenta.
+  const onCambioRef = useRef(onCambio)
+  onCambioRef.current = onCambio
 
   const cargar = useCallback(async () => {
     try {
       const todas = await listarCorreccionesIA(entregaId, getToken)
-      setCorreccion(todas.find((c) => c.orden === orden) ?? null)
+      const mia = todas.find((c) => c.orden === orden) ?? null
+      setCorreccion(mia)
+      if (mia) onCambioRef.current?.(mia)
     } catch {
       // Silencioso: no tener correccion todavia es lo normal.
     }
@@ -66,7 +82,11 @@ export function CorreccionIAPanel({ entregaId, orden, getToken }: Props) {
     const id = correccion.id
     timerRef.current = window.setTimeout(async () => {
       try {
-        setCorreccion(await getCorreccionIA(entregaId, id, getToken))
+        const fresca = await getCorreccionIA(entregaId, id, getToken)
+        setCorreccion(fresca)
+        // El padre se entera en cada tick del poll, no solo al final: asi la
+        // card aparece en cuanto la primera correccion termina.
+        onCambioRef.current?.(fresca)
       } catch {
         // idem
       }
@@ -86,6 +106,7 @@ export function CorreccionIAPanel({ entregaId, orden, getToken }: Props) {
       const r = await pedirCorreccionIA(entregaId, orden, confirmado, getToken)
       if (esCorreccion(r)) {
         setCorreccion(r)
+        onCambioRef.current?.(r)
         setPreview(null)
       } else {
         setPreview(r)

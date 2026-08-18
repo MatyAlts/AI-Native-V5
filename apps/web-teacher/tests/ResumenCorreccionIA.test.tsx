@@ -10,6 +10,7 @@ function correccion(orden: number, nota: number | null, over: Partial<Correccion
   return {
     id: `c${orden}`,
     entrega_id: "e1",
+    tp_ejercicio_id: `ej-${orden}`,
     orden,
     estado: nota === null ? "error" : "done",
     rubrica_id: "r1",
@@ -28,8 +29,8 @@ function correccion(orden: number, nota: number | null, over: Partial<Correccion
 }
 
 const DOS = [
-  { orden: 1, titulo: "Ejercicio 1", peso: 0.5 },
-  { orden: 2, titulo: "Ejercicio 2", peso: 0.5 },
+  { ejercicioId: "ej-1", orden: 1, titulo: "Ejercicio 1", peso: 0.5 },
+  { ejercicioId: "ej-2", orden: 2, titulo: "Ejercicio 2", peso: 0.5 },
 ]
 
 describe("ResumenCorreccionIA", () => {
@@ -84,7 +85,7 @@ describe("ResumenCorreccionIA", () => {
     // El caso real del 2026-08-17.
     render(
       <ResumenCorreccionIA
-        ejercicios={[{ orden: 1, titulo: "E1", peso: 1 }]}
+        ejercicios={[{ ejercicioId: "ej-1", orden: 1, titulo: "E1", peso: 1 }]}
         correcciones={[
           correccion(1, 61, {
             desglose: [
@@ -102,7 +103,7 @@ describe("ResumenCorreccionIA", () => {
   test("no avisa cuando cierran", () => {
     render(
       <ResumenCorreccionIA
-        ejercicios={[{ orden: 1, titulo: "E1", peso: 1 }]}
+        ejercicios={[{ ejercicioId: "ej-1", orden: 1, titulo: "E1", peso: 1 }]}
         correcciones={[
           correccion(1, 87, {
             desglose: [
@@ -120,7 +121,7 @@ describe("ResumenCorreccionIA", () => {
   test("los criterios se muestran tal cual, sin cruzarlos con la rubrica local", () => {
     render(
       <ResumenCorreccionIA
-        ejercicios={[{ orden: 1, titulo: "E1", peso: 1 }]}
+        ejercicios={[{ ejercicioId: "ej-1", orden: 1, titulo: "E1", peso: 1 }]}
         correcciones={[
           correccion(1, 87, { desglose: [{ nombre: "Excepcion propia", puntaje: 2 }] }),
         ]}
@@ -134,7 +135,7 @@ describe("ResumenCorreccionIA", () => {
   test("lleva los modos de fallo medidos del motor", () => {
     render(
       <ResumenCorreccionIA
-        ejercicios={[{ orden: 1, titulo: "E1", peso: 1 }]}
+        ejercicios={[{ ejercicioId: "ej-1", orden: 1, titulo: "E1", peso: 1 }]}
         correcciones={[correccion(1, 87)]}
         onUsarComoBase={() => {}}
       />,
@@ -182,5 +183,31 @@ describe("la nota la decide el docente", () => {
     )
     const botones = Array.from(container.querySelectorAll("button")).map((b) => b.textContent ?? "")
     expect(botones.some((t) => /guardar|calificar|aplicar/i.test(t))).toBe(false)
+  })
+})
+
+describe("el guardrail dice lo que NO cubre", () => {
+  test("un desglose ilegible se marca como indeterminado, no como que cierra", () => {
+    render(
+      <ResumenCorreccionIA
+        ejercicios={[{ ejercicioId: "ej-1", orden: 1, titulo: "E1", peso: 1 }]}
+        correcciones={[correccion(1, 87, { desglose: [{ comentario: "bien" }] })]}
+        onUsarComoBase={() => {}}
+      />,
+    )
+    expect(screen.getByTestId("resumen-indeterminado-1")).toBeInTheDocument()
+  })
+
+  test("la pantalla advierte que un desglose que cierra no prueba nada", () => {
+    // Sin esto el docente lee "no hay aviso" como "el numero cierra", y en el
+    // caso medido el numero cerraba y estaba mal igual.
+    render(
+      <ResumenCorreccionIA
+        ejercicios={[{ ejercicioId: "ej-1", orden: 1, titulo: "E1", peso: 1 }]}
+        correcciones={[correccion(1, 87)]}
+        onUsarComoBase={() => {}}
+      />,
+    )
+    expect(screen.getByText(/no prueba que la nota sea correcta/i)).toBeInTheDocument()
   })
 })

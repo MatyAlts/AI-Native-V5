@@ -2542,6 +2542,8 @@ export type EstadoCorreccionIA = "pending" | "running" | "done" | "error"
 export interface CorreccionIA {
   id: string
   entrega_id: string
+  /** Identidad ESTABLE del ejercicio. `orden` cambia si la TP se reordena. */
+  tp_ejercicio_id: string | null
   orden: number
   estado: EstadoCorreccionIA
   rubrica_id: string

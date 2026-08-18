@@ -111,6 +111,13 @@ class CorreccionIAOut(BaseModel):
 
     id: UUID
     entrega_id: UUID
+    # La identidad ESTABLE del ejercicio. `orden` es su posición al momento de
+    # corregir, y una TP que se reordena la cambia: sin este campo el frontend
+    # sólo puede emparejar por `orden`, y termina ponderando la nota de un
+    # ejercicio con el peso de otro. Mismo criterio que ADR-047 para
+    # `ejercicio_estados`, y que el `external_ref` con el que se empareja la
+    # respuesta de Active-IA.
+    tp_ejercicio_id: UUID | None = None
     orden: int
     estado: str
     rubrica_id: str
