@@ -85,7 +85,16 @@ ROUTE_MAP: dict[str, str] = {
     "/api/v1/byok": settings.ai_gateway_url,
     # tp-entregas-correccion: entregas + calificaciones via evaluation-service (puerto 8004)
     "/api/v1/entregas": settings.evaluation_service_url,
+    # OJO: `/api/v1/calificaciones` esta mapeado pero NINGUN router lo sirve
+    # (`evaluation-service/main.py` solo registra health, entregas y activeia).
+    # Hoy devuelve 404 del servicio, no del gateway. Se deja porque quitarlo no
+    # arregla nada y el prefijo esta reservado; la calificacion se opera por
+    # `/api/v1/entregas/{id}/calificacion`.
     "/api/v1/calificaciones": settings.evaluation_service_url,
+    # correccion-activeia Epic 2: cuenta de Active-IA del docente. El resto de
+    # la integracion (disparo y resultado) cuelga de `/api/v1/entregas/...`,
+    # que ya esta mapeado arriba.
+    "/api/v1/activeia": settings.evaluation_service_url,
     # ADR-059 (epic java-execution-engine): ejecucion server-side de Java via
     # execution-service (puerto 8013, reservado desde ADR-033). Lo consumen el
     # editor del alumno (web-student) y el panel de prueba del docente

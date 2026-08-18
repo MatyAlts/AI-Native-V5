@@ -666,6 +666,45 @@ export const helpContent: HelpContentMap = {
     </div>
   ),
 
+  activeIa: (
+    <div className="space-y-4 text-sidebar-text-muted">
+      <p className="text-lg font-medium text-[var(--text-inverse)]">Correccion asistida</p>
+      <p>
+        Active-IA corrige el codigo de un ejercicio contra su rubrica y devuelve una nota sobre 100.
+        La nota la decide siempre el docente: la plataforma nunca la guarda sola.
+      </p>
+      <ul className="list-disc list-inside space-y-2 ml-4">
+        <li>
+          <strong>La cuenta es tuya, no de la catedra:</strong> del lado de Active-IA las comisiones
+          y las rubricas salen de la cuenta con la que entras. Con la cuenta de otro docente los ids
+          no existen.
+        </li>
+        <li>
+          <strong>Sincronizado:</strong> la rubrica que tiene Active-IA es la misma que la de aca.
+        </li>
+        <li>
+          <strong>Desactualizado:</strong> editaste la rubrica del ejercicio despues de sincronizar.
+          Active-IA sigue con la vieja. Volve a sincronizar ANTES de corregir: una rubrica
+          equivocada no da una nota floja, corrige otra cosa.
+        </li>
+        <li>
+          <strong>Sin rubrica:</strong> el ejercicio no tiene rubrica cargada. No es un problema de
+          sincronizacion, no hay nada contra que corregir.
+        </li>
+        <li>
+          <strong>Modo simulado:</strong> si aparece el aviso amarillo, Active-IA todavia no recibe
+          rubricas y lo que ves no se envio. No dispares correcciones reales.
+        </li>
+      </ul>
+      <p>
+        Que hace bien y que no: hace cumplir reglas explicitas de la consigna que a ojo se pasan por
+        alto. Pierde donde hay que entender si el programa responde la pregunta — cuenta que las
+        piezas existan, no que funcionen juntas. Suma los criterios y comparalos con el total antes
+        de dar la nota por buena.
+      </p>
+    </div>
+  ),
+
   interraterCoding: (
     <div className="space-y-4 text-sidebar-text-muted">
       <p className="text-lg font-medium text-[var(--text-inverse)]">Codificacion a ciegas</p>
