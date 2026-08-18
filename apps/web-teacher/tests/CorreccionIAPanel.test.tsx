@@ -32,6 +32,7 @@ function correccion(over: Partial<CorreccionIA> = {}): CorreccionIA {
     error_detail: null,
     es_infraestructura: false,
     external_correccion_id: null,
+    tiene_pdf: false,
     created_at: "2026-08-18T10:00:00Z",
     finished_at: "2026-08-18T10:02:00Z",
     ...over,
@@ -115,5 +116,22 @@ describe("CorreccionIAPanel", () => {
     await waitFor(() => {
       expect(screen.getByTestId("correccion-ia-en-curso")).toBeInTheDocument()
     })
+  })
+})
+
+describe("el PDF de devolucion", () => {
+  test("ofrece bajarlo cuando existe", async () => {
+    render([correccion({ tiene_pdf: true })])
+    await waitFor(() => {
+      expect(screen.getByTestId("correccion-ia-pdf")).toBeInTheDocument()
+    })
+  })
+
+  test("no lo ofrece cuando no hay", async () => {
+    render([correccion({ tiene_pdf: false })])
+    await waitFor(() => {
+      expect(screen.getByTestId("correccion-ia-resultado")).toBeInTheDocument()
+    })
+    expect(screen.queryByTestId("correccion-ia-pdf")).not.toBeInTheDocument()
   })
 })

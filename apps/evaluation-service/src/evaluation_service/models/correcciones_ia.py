@@ -60,6 +60,9 @@ class CorreccionIA(Base, TenantMixin):
     # está arriba y la sube de nuevo — y la cobra de nuevo.
     external_entrega_id: Mapped[str | None] = mapped_column(String(100), nullable=True)
     external_correccion_id: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    # Donde quedo el PDF de devolucion. La KEY, no el contenido: un PDF en una
+    # columna infla la tabla que el docente consulta en cada apertura del form.
+    pdf_storage_key: Mapped[str | None] = mapped_column(String(500), nullable=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, server_default=sa.text("now()")
     )

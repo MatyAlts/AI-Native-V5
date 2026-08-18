@@ -624,3 +624,77 @@ class TestLaApiDistingueElTipoDeFallo:
         ok.estado = "done"
         ok.nota_100 = Decimal("90.00")
         assert _out(ok).es_infraestructura is False
+
+
+class TestElPDF:
+    """El PDF lleva el nombre del alumno y la devolucion sobre su codigo."""
+
+    def test_la_key_no_es_adivinable(self) -> None:
+        """Sin el token random, alguien con el `correccion_id` —que viaja en
+        la URL del frontend— construye la ruta del objeto. Si el bucket queda
+        mal configurado, eso es un link directo a la devolucion de un
+        alumno."""
+        from evaluation_service.services.correccion_pdf import make_pdf_key
+
+        t, e, c = uuid4(), uuid4(), uuid4()
+        k1 = make_pdf_key(t, e, c)
+        k2 = make_pdf_key(t, e, c)
+        assert k1 != k2, "la key es deterministica: se puede construir desde los ids"
+        assert len(k1.rsplit("/", 1)[-1]) > 20
+
+    def test_la_key_NO_va_al_bucket_de_materiales(self) -> None:
+        """En materiales hay objetos que se sirven a la comision entera: un
+        permiso pensado para uno alcanzaria al otro."""
+        from evaluation_service.services.correccion_pdf import make_pdf_key
+
+        k = make_pdf_key(uuid4(), uuid4(), uuid4())
+        assert k.startswith("correcciones/")
+        assert "materials/" not in k
+
+    async def test_si_el_pdf_no_baja_la_correccion_NO_falla(self) -> None:
+        """La nota ya existe y es lo que importa. Perder la correccion entera
+        por un PDF seria tirar el trabajo que ya se pago."""
+        from evaluation_service.services.correccion_pdf import bajar_y_guardar
+
+        cliente = MagicMock()
+        cliente.request = AsyncMock(side_effect=RuntimeError("se cayo"))
+        key = await bajar_y_guardar(
+            cliente=cliente,
+            tenant_id=uuid4(),
+            entrega_id=uuid4(),
+            correccion_id=uuid4(),
+            external_correccion_id="42",
+        )
+        assert key is None
+
+    async def test_un_404_del_pdf_tampoco_rompe(self) -> None:
+        from evaluation_service.services.correccion_pdf import bajar_y_guardar
+
+        cliente = MagicMock()
+        cliente.request = AsyncMock(return_value=MagicMock(status_code=404, content=b""))
+        assert (
+            await bajar_y_guardar(
+                cliente=cliente,
+                tenant_id=uuid4(),
+                entrega_id=uuid4(),
+                correccion_id=uuid4(),
+                external_correccion_id="42",
+            )
+            is None
+        )
+
+    async def test_borrar_un_pdf_inexistente_es_exito(self) -> None:
+        """El derecho al olvido: si el objeto ya no esta, eso ES el estado que
+        se queria, no un error."""
+        from evaluation_service.services.correccion_pdf import borrar
+
+        assert await borrar(None) is True
+
+    def test_la_api_no_expone_la_key_del_storage(self) -> None:
+        """Publicar la ruta convierte un bucket mal configurado en un link
+        directo. Se expone `tiene_pdf`, que es lo que la UI necesita."""
+        from evaluation_service.schemas.activeia import CorreccionIAOut
+
+        campos = set(CorreccionIAOut.model_fields)
+        assert "pdf_storage_key" not in campos
+        assert "tiene_pdf" in campos

@@ -17,6 +17,7 @@ import { useCallback, useEffect, useRef, useState } from "react"
 import {
   type CorreccionIA,
   type CorreccionPreview,
+  descargarPdfCorreccion,
   getCorreccionIA,
   listarCorreccionesIA,
   pedirCorreccionIA,
@@ -129,7 +130,7 @@ export function CorreccionIAPanel({ entregaId, orden, getToken, onCambio }: Prop
   }
 
   if (correccion?.estado === "done") {
-    return <Resultado correccion={correccion} />
+    return <Resultado correccion={correccion} entregaId={entregaId} getToken={getToken} />
   }
 
   if (correccion) {
@@ -284,7 +285,36 @@ function BannerError({
   )
 }
 
-function Resultado({ correccion }: { correccion: CorreccionIA }) {
+function Resultado({
+  correccion,
+  entregaId,
+  getToken,
+}: {
+  correccion: CorreccionIA
+  entregaId: string
+  getToken: () => Promise<string | null>
+}) {
+  const [bajando, setBajando] = useState(false)
+
+  async function bajarPdf() {
+    setBajando(true)
+    try {
+      const blob = await descargarPdfCorreccion(entregaId, correccion.id, getToken)
+      const url = URL.createObjectURL(blob)
+      const a = document.createElement("a")
+      a.href = url
+      a.download = `devolucion_${correccion.id.slice(0, 8)}.pdf`
+      document.body.appendChild(a)
+      a.click()
+      a.remove()
+      URL.revokeObjectURL(url)
+    } catch {
+      // El PDF es un extra: la nota esta arriba igual.
+    } finally {
+      setBajando(false)
+    }
+  }
+
   return (
     <div
       className="rounded-lg border border-subtle p-3 text-xs space-y-1"
@@ -293,6 +323,17 @@ function Resultado({ correccion }: { correccion: CorreccionIA }) {
       <p className="text-body">
         Active-IA sugiere <strong>{correccion.nota_100}/100</strong>
       </p>
+      {correccion.tiene_pdf && (
+        <button
+          type="button"
+          onClick={() => void bajarPdf()}
+          disabled={bajando}
+          data-testid="correccion-ia-pdf"
+          className="underline text-secondary disabled:opacity-50"
+        >
+          {bajando ? "Bajando..." : "Bajar el PDF de devolucion"}
+        </button>
+      )}
       {/* La nota la decide el docente, siempre. */}
       <p className="text-muted">
         Es una sugerencia: no se guarda ni rellena la calificacion. Sumá los criterios y comparalos

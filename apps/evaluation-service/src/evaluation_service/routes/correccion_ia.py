@@ -16,7 +16,7 @@ from __future__ import annotations
 from uuid import UUID
 
 import structlog
-from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, status
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Response, status
 from sqlalchemy import and_, select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -47,6 +47,7 @@ from evaluation_service.services.correccion_ia import (
     reabrir_para_reintento,
     resolver_rubrica,
 )
+from evaluation_service.services.correccion_pdf import get_storage as get_storage_pdf
 from evaluation_service.services.correccion_worker import con_semaforo_y_presupuesto
 
 router = APIRouter(prefix="/api/v1/entregas", tags=["correccion-ia"])
@@ -102,6 +103,7 @@ def _out(c: CorreccionIA) -> CorreccionIAOut:
         error_detail=c.error_detail,
         es_infraestructura=bool(c.error_code) and infra,
         external_correccion_id=c.external_correccion_id,
+        tiene_pdf=bool(c.pdf_storage_key),
         created_at=c.created_at,
         finished_at=c.finished_at,
     )
@@ -261,6 +263,51 @@ async def listar_correcciones(
         .order_by(CorreccionIA.orden, CorreccionIA.created_at.desc())
     )
     return CorreccionIAListOut(correcciones=[_out(c) for c in rows.scalars().all()])
+
+
+@router.get("/{entrega_id}/correccion-ia/{correccion_id}/pdf")
+async def descargar_pdf(
+    entrega_id: UUID,
+    correccion_id: UUID,
+    user: User = Depends(require_correccion_ia),
+    db: AsyncSession = Depends(get_db),
+) -> Response:
+    """El PDF de devolución de Active-IA.
+
+    Se sirve por acá y NO por una URL firmada: una URL que sobrevive a que el
+    docente cierre la sesión es una URL que puede circular, y este PDF lleva
+    el nombre del alumno y la devolución sobre su código. Cada descarga pasa
+    por el mismo gate de comisión que el resto del epic — 404 y no 403.
+    """
+    entrega = await _entrega_de_mi_comision(db, entrega_id, user)
+    stmt = select(CorreccionIA).where(
+        and_(CorreccionIA.id == correccion_id, CorreccionIA.entrega_id == entrega.id)
+    )
+    c = (await db.execute(stmt)).scalar_one_or_none()
+    if c is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Corrección no existe")
+    if not c.pdf_storage_key:
+        # 404 y no 204: para el cliente "esta corrección no tiene PDF" y "esta
+        # corrección no existe" se resuelven igual, y un 204 con cuerpo vacío
+        # se lee como un PDF de cero bytes.
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Esta corrección no tiene PDF de devolución.",
+        )
+
+    try:
+        contenido = await get_storage_pdf().get(c.pdf_storage_key)
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="No se pudo recuperar el PDF en este momento.",
+        ) from e
+
+    return Response(
+        content=contenido,
+        media_type="application/pdf",
+        headers={"Content-Disposition": f'attachment; filename="devolucion_{correccion_id}.pdf"'},
+    )
 
 
 @router.get("/{entrega_id}/correccion-ia/{correccion_id}", response_model=CorreccionIAOut)

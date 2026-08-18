@@ -31,6 +31,7 @@ function correccion(orden: number, nota: number | null, over: Partial<Correccion
     error_detail: null,
     es_infraestructura: false,
     external_correccion_id: null,
+    tiene_pdf: false,
     created_at: "2026-08-18T10:00:00Z",
     finished_at: "2026-08-18T10:02:00Z",
     ...over,

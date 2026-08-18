@@ -22,7 +22,6 @@
         "platform-contracts",
         "platform-observability",
         "jsonschema>=4.21",
-        "weasyprint>=62",
     ]
 
     [dependency-groups]

@@ -2558,6 +2558,8 @@ export interface CorreccionIA {
    *  false = el servicio rechazo la operacion (reintentar es reintentar el error). */
   es_infraestructura: boolean
   external_correccion_id: string | null
+  /** Hay PDF de devolucion para bajar. La key del storage NO se expone. */
+  tiene_pdf: boolean
   created_at: string
   finished_at: string | null
 }
@@ -2612,4 +2614,23 @@ export async function getCorreccionIA(
   })
   await throwIfNotOk(r)
   return r.json()
+}
+
+/**
+ * Baja el PDF de devolucion.
+ *
+ * Va por el endpoint y no por una URL firmada: una URL que sobrevive a que el
+ * docente cierre la sesion es una URL que puede circular, y este PDF lleva el
+ * nombre del alumno y la devolucion sobre su codigo.
+ */
+export async function descargarPdfCorreccion(
+  entregaId: string,
+  correccionId: string,
+  getToken?: TokenGetter,
+): Promise<Blob> {
+  const r = await fetch(`/api/v1/entregas/${entregaId}/correccion-ia/${correccionId}/pdf`, {
+    headers: await authHeaders(getToken),
+  })
+  await throwIfNotOk(r)
+  return r.blob()
 }

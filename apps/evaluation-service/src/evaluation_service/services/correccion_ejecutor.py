@@ -33,6 +33,7 @@ from evaluation_service.db.session import tenant_session
 from evaluation_service.models.correcciones_ia import CorreccionIA
 from evaluation_service.services.activeia_client import ActiveIAError
 from evaluation_service.services.correccion_ia import mapear_error_activeia, marcar_error
+from evaluation_service.services.correccion_pdf import bajar_y_guardar
 from evaluation_service.services.correccion_pre_ejecucion import (
     PreEjecucionError,
     correr_tests,
@@ -167,28 +168,19 @@ async def ejecutar_correccion(
             tests=tests.as_dict(),
         )
 
-        async with tenant_session(tenant_id) as db:
-            c = await db.get(CorreccionIA, correccion_id)
-            if c is None:
-                return
-            c.tests_snapshot = tests.as_dict()
-            c.external_entrega_id = resultado.get("external_entrega_id")
-            c.external_correccion_id = resultado.get("external_correccion_id")
-            nota = resultado.get("nota_100")
-            if nota is None:
-                # Sin nota no hay nota. El estado terminal es error, y el CHECK
-                # de la base lo hace cumplir aunque este código se equivoque.
-                marcar_error(
-                    c,
-                    error_code=resultado.get("error_code") or "SIN_NOTA",
-                    detalle=resultado.get("error_detail") or "Active-IA no devolvió una nota.",
-                    es_infraestructura=True,
-                )
-                return
-            c.estado = "done"
-            c.nota_100 = nota
-            c.desglose = resultado.get("desglose") or []
-            c.finished_at = datetime.now(UTC)
+        entrega_id = await _cerrar_con_resultado(
+            tenant_id, correccion_id, resultado, tests.as_dict()
+        )
+        if entrega_id is None:
+            return
+
+        await _guardar_pdf(
+            cliente=cliente,
+            tenant_id=tenant_id,
+            entrega_id=entrega_id,
+            correccion_id=correccion_id,
+            external_correccion_id=resultado.get("external_correccion_id"),
+        )
 
     except asyncio.CancelledError:
         # Se acabó el presupuesto. NO se cierra la fila acá: estamos siendo
@@ -213,6 +205,76 @@ async def ejecutar_correccion(
         await _cerrar_con_error(
             tenant_id, correccion_id, "ERROR_INTERNO", f"{type(e).__name__}", True
         )
+
+
+async def _cerrar_con_resultado(
+    tenant_id: UUID,
+    correccion_id: UUID,
+    resultado: dict[str, Any],
+    tests: dict[str, Any],
+) -> UUID | None:
+    """Escribe el resultado. Devuelve el `entrega_id`, o `None` si no hay PDF
+    que bajar (porque no hubo nota, o porque la fila desapareció).
+
+    Sin nota no hay nota: el estado terminal es `error`, y el CHECK de la base
+    lo hace cumplir aunque este código se equivoque.
+    """
+    async with tenant_session(tenant_id) as db:
+        c = await db.get(CorreccionIA, correccion_id)
+        if c is None:
+            return None
+        c.tests_snapshot = tests
+        c.external_entrega_id = resultado.get("external_entrega_id")
+        c.external_correccion_id = resultado.get("external_correccion_id")
+
+        nota = resultado.get("nota_100")
+        if nota is None:
+            marcar_error(
+                c,
+                error_code=resultado.get("error_code") or "SIN_NOTA",
+                detalle=resultado.get("error_detail") or "Active-IA no devolvió una nota.",
+                es_infraestructura=True,
+            )
+            return None
+
+        c.estado = "done"
+        c.nota_100 = nota
+        c.desglose = resultado.get("desglose") or []
+        c.finished_at = datetime.now(UTC)
+        # Se captura DENTRO de la sesión: leerlo afuera anda sólo porque el
+        # factory tiene `expire_on_commit=False`, y apoyarse en eso es
+        # apoyarse en una config que alguien puede cambiar.
+        return c.entrega_id
+
+
+async def _guardar_pdf(
+    *,
+    cliente: Any,
+    tenant_id: UUID,
+    entrega_id: UUID,
+    correccion_id: UUID,
+    external_correccion_id: Any,
+) -> None:
+    """Baja el PDF y guarda su key. Corre DESPUÉS de cerrar la corrección.
+
+    En su propia sesión y después de que la nota está guardada: un fallo
+    bajando el PDF no puede revertirla. El PDF es un extra, no el resultado.
+    """
+    if not external_correccion_id:
+        return
+    key = await bajar_y_guardar(
+        cliente=cliente,
+        tenant_id=tenant_id,
+        entrega_id=entrega_id,
+        correccion_id=correccion_id,
+        external_correccion_id=str(external_correccion_id),
+    )
+    if not key:
+        return
+    async with tenant_session(tenant_id) as db:
+        fila = await db.get(CorreccionIA, correccion_id)
+        if fila is not None:
+            fila.pdf_storage_key = key
 
 
 async def _rubrica_de(tenant_id: UUID, correccion_id: UUID) -> str:

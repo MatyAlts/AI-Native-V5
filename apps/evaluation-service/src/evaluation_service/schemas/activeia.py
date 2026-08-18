@@ -132,6 +132,10 @@ class CorreccionIAOut(BaseModel):
     # segundo. Confundirlos ya costó dos días de reintentos inútiles.
     es_infraestructura: bool = False
     external_correccion_id: str | None = None
+    # `True` si hay PDF de devolución para bajar. NO se expone la key: es una
+    # ruta de storage, y publicarla convierte un bucket mal configurado en un
+    # link directo a la devolución de un alumno.
+    tiene_pdf: bool = False
     created_at: datetime
     finished_at: datetime | None = None
 

@@ -104,14 +104,14 @@
 
 ## 5. Epic 5 — PDF y derecho al olvido (requiere 3)
 
-- [ ] 5.1 Extraer `BaseStorage`/`MockStorage`/`S3Storage` y los helpers de key de content-service (`services/storage.py:21-152`) a un paquete compartido — **PR propia**, con el smoke de materiales verde antes de seguir
-- [ ] 5.2 Bajar el PDF al cerrar la corrección y guardar `pdf_storage_key`: key no adivinable, prefijo propio, nunca el bucket de materiales
-- [ ] 5.3 `GET .../correccion-ia/{cid}/pdf` con el mismo gate de comisión. Sin link público ni URL firmada de larga vida
-- [ ] 5.4 Extender `anonymize_student` (`platform_ops/privacy.py:147-192`): rotar el pseudónimo en `correcciones_ia`, borrar el PDF del storage y borrar el artefacto del Epic 1
+- [x] 5.1 Extraer `BaseStorage`/`MockStorage`/`S3Storage` y los helpers de key de content-service (`services/storage.py:21-152`) a un paquete compartido — **PR propia**, con el smoke de materiales verde antes de seguir
+- [x] 5.2 Bajar el PDF al cerrar la corrección y guardar `pdf_storage_key`: key no adivinable, prefijo propio, nunca el bucket de materiales
+- [x] 5.3 `GET .../correccion-ia/{cid}/pdf` con el mismo gate de comisión. Sin link público ni URL firmada de larga vida
+- [x] 5.4 Extender `anonymize_student` (`platform_ops/privacy.py:147-192`): rotar el pseudónimo en `correcciones_ia`, borrar el PDF del storage y borrar el artefacto del Epic 1
 - [ ] 5.5 Llamar al borrado por alumno de Active-IA dentro del mismo procedimiento (depende del pedido 3.6 del documento de cambios)
-- [ ] 5.6 Política de retención de PDFs y artefactos, con job o procedimiento manual documentado
-- [ ] 5.7 Resolver la dep muerta `weasyprint>=62` (`evaluation-service/pyproject.toml:25`, cero imports): usarla o sacarla
-- [ ] 5.8 Test: `anonymize_student` sobre un alumno con corrección deja el PDF borrado y la fila sin pseudónimo
+- [x] 5.6 Política de retención de PDFs y artefactos, con job o procedimiento manual documentado
+- [x] 5.7 Resolver la dep muerta `weasyprint>=62` (`evaluation-service/pyproject.toml:25`, cero imports): usarla o sacarla
+- [x] 5.8 Test: `anonymize_student` sobre un alumno con corrección deja el PDF borrado y la fila sin pseudónimo
 
 ## 6. Epic 6 — Hardening y cierre
 
