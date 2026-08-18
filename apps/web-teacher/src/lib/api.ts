@@ -1691,8 +1691,36 @@ export interface EntregaDocente {
   estado: EntregaEstado
   ejercicio_estados: EjercicioEstado[]
   submitted_at: string | null
+  /** sha256 del conjunto de artefactos. `null` = no se persistió código. */
+  artefacto_sha256: string | null
+  /**
+   * Entrega anterior a la persistencia del artefacto. Su código no existe:
+   * lo único reconstruible es una lectura best-effort del CTR, que no es lo
+   * que el alumno entregó.
+   */
+  legacy: boolean
   created_at: string
   updated_at: string
+}
+
+export interface ArtefactoEjercicio {
+  orden: number
+  ejercicio_id: string | null
+  episode_id: string | null
+  codigo: string
+  language: string
+  sha256: string
+  created_at: string
+}
+
+export interface EntregaArtefacto {
+  entrega_id: string
+  tarea_practica_id: string
+  student_pseudonym: string
+  submitted_at: string | null
+  artefacto_sha256: string | null
+  legacy: boolean
+  artefactos: ArtefactoEjercicio[]
 }
 
 export interface EntregaListResponse {
@@ -1821,12 +1849,33 @@ export async function getCalificacion(
   return r.json()
 }
 
+/**
+ * Descarga el código que el alumno entregó.
+ *
+ * 404 sin artefacto persistido y 404 sin permiso de comisión son la misma
+ * respuesta a propósito (el backend no distingue): un 403 confirmaría que la
+ * entrega existe. Acá lo traducimos a `null` y la UI decide qué decir según
+ * el flag `legacy` que ya tiene de la entrega.
+ */
+export async function getEntregaArtefacto(
+  entregaId: string,
+  getToken?: TokenGetter,
+): Promise<EntregaArtefacto | null> {
+  const r = await fetch(`/api/v1/entregas/${entregaId}/artefacto`, {
+    headers: await authHeaders(getToken),
+  })
+  if (r.status === 404) return null
+  await throwIfNotOk(r)
+  return r.json()
+}
+
 export const entregasDocenteApi = {
   list: listEntregas,
   get: getEntrega,
   calificar: calificarEntrega,
   devolver: devolverEntrega,
   getCalificacion,
+  getArtefacto: getEntregaArtefacto,
 }
 
 // ── TP Generation con IA: ver bloque ADR-036 al inicio del archivo (línea 477) ──
@@ -2395,4 +2444,170 @@ export const instrumentosSummaryApi = {
   cuestionarioIA: getCuestionarioIASummary,
   pretest: getPretestSummary,
   transferencia: getTransferenciaSummary,
+}
+
+// ── Active-IA: cuenta del docente + sincronizacion de rubricas (Epic 2) ──
+
+export interface ActiveIACredencialEstado {
+  conectada: boolean
+  /** El simulador de escritura esta puesto: nada llega a Active-IA. */
+  modo_simulado: boolean
+  username: string | null
+  created_at: string | null
+  last_login_at: string | null
+  last_login_ok: boolean | null
+}
+
+export type EstadoSyncEjercicio =
+  | "sincronizado"
+  | "desactualizado"
+  | "sin_sincronizar"
+  | "sin_rubrica"
+
+export interface EjercicioSync {
+  ejercicio_id: string
+  titulo: string
+  estado: EstadoSyncEjercicio
+  rubrica_id: string | null
+  sincronizado_at: string | null
+  /** El vinculo salio del simulador: esa rubrica NO existe en Active-IA. */
+  simulado: boolean
+}
+
+export interface SincronizacionTP {
+  ejercicios: EjercicioSync[]
+  /** Si es true, NADA de lo que muestra esta pantalla llego a Active-IA. */
+  modo_simulado: boolean
+}
+
+export async function getActiveIACredencial(
+  getToken?: TokenGetter,
+): Promise<ActiveIACredencialEstado> {
+  const r = await fetch("/api/v1/activeia/credenciales", {
+    headers: await authHeaders(getToken),
+  })
+  await throwIfNotOk(r)
+  return r.json()
+}
+
+export async function conectarActiveIA(
+  username: string,
+  password: string,
+  getToken?: TokenGetter,
+): Promise<ActiveIACredencialEstado> {
+  const r = await fetch("/api/v1/activeia/credenciales", {
+    method: "POST",
+    headers: await authHeaders(getToken),
+    body: JSON.stringify({ username, password }),
+  })
+  await throwIfNotOk(r)
+  return r.json()
+}
+
+export async function desconectarActiveIA(getToken?: TokenGetter): Promise<void> {
+  const r = await fetch("/api/v1/activeia/credenciales", {
+    method: "DELETE",
+    headers: await authHeaders(getToken),
+  })
+  await throwIfNotOk(r)
+}
+
+export async function getSincronizacionTP(
+  tareaPracticaId: string,
+  getToken?: TokenGetter,
+): Promise<SincronizacionTP> {
+  const r = await fetch(`/api/v1/activeia/tp/${tareaPracticaId}/sincronizacion`, {
+    headers: await authHeaders(getToken),
+  })
+  await throwIfNotOk(r)
+  return r.json()
+}
+
+export async function sincronizarTP(
+  tareaPracticaId: string,
+  getToken?: TokenGetter,
+): Promise<SincronizacionTP> {
+  const r = await fetch(`/api/v1/activeia/tp/${tareaPracticaId}/sincronizar`, {
+    method: "POST",
+    headers: await authHeaders(getToken),
+  })
+  await throwIfNotOk(r)
+  return r.json()
+}
+
+// ── Epic 3: correccion asistida por ejercicio ────────────────────────────
+
+export type EstadoCorreccionIA = "pending" | "running" | "done" | "error"
+
+export interface CorreccionIA {
+  id: string
+  entrega_id: string
+  orden: number
+  estado: EstadoCorreccionIA
+  rubrica_id: string
+  /** null salvo que `estado === "done"`. Un fallo NUNCA lleva nota. */
+  nota_100: number | null
+  desglose: Array<Record<string, unknown>>
+  tests_snapshot: Record<string, unknown>
+  artefacto_sha256: string
+  error_code: string | null
+  error_detail: string | null
+  /** true = el servicio no pudo responder (reintentar PUEDE servir).
+   *  false = el servicio rechazo la operacion (reintentar es reintentar el error). */
+  es_infraestructura: boolean
+  external_correccion_id: string | null
+  created_at: string
+  finished_at: string | null
+}
+
+export interface CorreccionPreview {
+  orden: number
+  ejercicio_titulo: string
+  rubrica_id: string
+  rubrica_estado: string
+  rubrica_simulada: boolean
+  n_test_cases: number
+  codigo_bytes: number
+  ya_corregido: boolean
+  cuota_restante: number
+}
+
+/** `confirmado=false` devuelve el preview y NO gasta nada. */
+export async function pedirCorreccionIA(
+  entregaId: string,
+  ejercicioOrden: number,
+  confirmado: boolean,
+  getToken?: TokenGetter,
+): Promise<CorreccionPreview | CorreccionIA> {
+  const r = await fetch(`/api/v1/entregas/${entregaId}/correccion-ia`, {
+    method: "POST",
+    headers: await authHeaders(getToken),
+    body: JSON.stringify({ ejercicio_orden: ejercicioOrden, confirmado }),
+  })
+  await throwIfNotOk(r)
+  return r.json()
+}
+
+export async function listarCorreccionesIA(
+  entregaId: string,
+  getToken?: TokenGetter,
+): Promise<CorreccionIA[]> {
+  const r = await fetch(`/api/v1/entregas/${entregaId}/correccion-ia`, {
+    headers: await authHeaders(getToken),
+  })
+  await throwIfNotOk(r)
+  const body = (await r.json()) as { correcciones: CorreccionIA[] }
+  return body.correcciones
+}
+
+export async function getCorreccionIA(
+  entregaId: string,
+  correccionId: string,
+  getToken?: TokenGetter,
+): Promise<CorreccionIA> {
+  const r = await fetch(`/api/v1/entregas/${entregaId}/correccion-ia/${correccionId}`, {
+    headers: await authHeaders(getToken),
+  })
+  await throwIfNotOk(r)
+  return r.json()
 }
