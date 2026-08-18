@@ -91,16 +91,16 @@
 
 ## 4. Epic 4 — Mostrar sin decidir (requiere 3)
 
-- [ ] 4.1 Card de resultado por ejercicio entre la barra de progreso y las tarjetas (`CorreccionesView.tsx:1487-1531`), con el patrón visual del repo
-- [ ] 4.2 Mostrar nota /100, desglose si lo hay, rúbrica usada y link al PDF
-- [ ] 4.3 Promedio ponderado por `peso_en_tp` **mostrando el cálculo**, no sólo el resultado
-- [ ] 4.4 Si falta la corrección de algún ejercicio, no promediar: mostrar parcial y nombrar los que faltan
-- [ ] 4.5 Botón "Usar como base" que rellena el campo de nota (÷10, con el redondeo visible) y deja el foco — **no guarda**
-- [ ] 4.6 Guardrail aritmético: sumar los criterios del desglose y comparar con el total; si difieren, marcarlo
-- [ ] 4.7 Microcopy con los modos de fallo conocidos del motor: cuenta presencia y no vínculo, puede elogiar código hardcodeado, puede recomendar lo que la cátedra prohíbe
-- [ ] 4.8 **No** mapear los criterios de Active-IA contra los de la rúbrica local: lado a lado, sin fusionar (`mapSavedToInputs` empareja por string, `CorreccionesView.tsx:738-761`)
-- [ ] 4.9 Entrada en `helpContent` y tests en `web-teacher/tests/CorreccionesView.test.tsx` (usar el helper `setupFetchMock`)
-- [ ] 4.10 Test: calificar usando la sugerencia como base y guardar una nota distinta de la propuesta
+- [x] 4.1 Card de resultado por ejercicio entre la barra de progreso y las tarjetas (`CorreccionesView.tsx:1487-1531`), con el patrón visual del repo
+- [x] 4.2 Mostrar nota /100, desglose si lo hay, rúbrica usada y link al PDF
+- [x] 4.3 Promedio ponderado por `peso_en_tp` **mostrando el cálculo**, no sólo el resultado
+- [x] 4.4 Si falta la corrección de algún ejercicio, no promediar: mostrar parcial y nombrar los que faltan
+- [x] 4.5 Botón "Usar como base" que rellena el campo de nota (÷10, con el redondeo visible) y deja el foco — **no guarda**
+- [x] 4.6 Guardrail aritmético: sumar los criterios del desglose y comparar con el total; si difieren, marcarlo
+- [x] 4.7 Microcopy con los modos de fallo conocidos del motor: cuenta presencia y no vínculo, puede elogiar código hardcodeado, puede recomendar lo que la cátedra prohíbe
+- [x] 4.8 **No** mapear los criterios de Active-IA contra los de la rúbrica local: lado a lado, sin fusionar (`mapSavedToInputs` empareja por string, `CorreccionesView.tsx:738-761`)
+- [x] 4.9 Entrada en `helpContent` y tests en `web-teacher/tests/CorreccionesView.test.tsx` (usar el helper `setupFetchMock`)
+- [x] 4.10 Test: calificar usando la sugerencia como base y guardar una nota distinta de la propuesta
 
 ## 5. Epic 5 — PDF y derecho al olvido (requiere 3)
 

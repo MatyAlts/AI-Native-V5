@@ -28,9 +28,11 @@ import {
   SkipForward,
   X,
 } from "lucide-react"
-import { useEffect, useMemo, useRef, useState } from "react"
+import { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import { CorreccionIAPanel } from "../components/CorreccionIAPanel"
+import { ResumenCorreccionIA } from "../components/ResumenCorreccionIA"
 import { useStudentProfiles } from "../hooks/useStudentProfiles"
+import { type CorreccionIA, listarCorreccionesIA } from "../lib/api"
 import {
   type CalificacionCreate,
   type EjercicioEstado,
@@ -1086,6 +1088,9 @@ function GradingFormView({
   const [calificacionError, setCalificacionError] = useState<string | null>(null)
   const [episodeResolveError, setEpisodeResolveError] = useState<string | null>(null)
   const [devolviendo, setDevolviendo] = useState(false)
+  // Las correcciones asistidas de esta entrega, para el resumen. Se cargan
+  // una vez y las refresca el panel de cada ejercicio al terminar.
+  const [correccionesIA, setCorreccionesIA] = useState<CorreccionIA[]>([])
   const [descargando, setDescargando] = useState(false)
   const [descargaError, setDescargaError] = useState<string | null>(null)
   const queueMode = !!queueControls
@@ -1116,6 +1121,26 @@ function GradingFormView({
   // cada ejercicio + su `ejercicio_id` estable. `getTareaPractica` no popula
   // `tarea.ejercicios`, por eso se carga aca aparte (best-effort).
   const [tpEjercicios, setTpEjercicios] = useState<TpEjercicio[]>([])
+
+  const fetchCorrecciones = useCallback(
+    () => listarCorreccionesIA(entrega.id, getToken),
+    [entrega.id, getToken],
+  )
+
+  useEffect(() => {
+    let cancelled = false
+    fetchCorrecciones()
+      .then((cs: CorreccionIA[]) => {
+        if (!cancelled) setCorreccionesIA(cs)
+      })
+      .catch(() => {
+        // Sin correcciones todavia es lo normal: la card no se muestra.
+        if (!cancelled) setCorreccionesIA([])
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [fetchCorrecciones])
 
   useEffect(() => {
     let cancelled = false
@@ -1608,6 +1633,30 @@ function GradingFormView({
           actividad, y puede faltarle lo último que el alumno escribió.
         </div>
       )}
+
+      {/* Sugerencia de Active-IA. Va ARRIBA de las tarjetas porque es un
+          resumen de todas, y MUESTRA: no escribe la nota. */}
+      <ResumenCorreccionIA
+        // Los pesos salen de `tpEjercicios`, que es quien los tiene
+        // (`peso_en_tp`). `ejercicioGrupos` es la vista de la entrega y no
+        // los lleva — ponderar con un 1 por defecto daria un promedio simple
+        // disfrazado de ponderado.
+        ejercicios={tpEjercicios.map((tp) => ({
+          orden: tp.orden,
+          titulo: tp.ejercicio.titulo,
+          peso: Number.parseFloat(tp.peso_en_tp) || 0,
+        }))}
+        correcciones={correccionesIA}
+        onUsarComoBase={(nota10) => {
+          // Rellena y deja el foco en el campo. NO guarda: el docente aprieta
+          // Calificar como siempre, y puede cambiar el numero antes.
+          setNota(String(nota10))
+          setReediting(true)
+          window.requestAnimationFrame(() => {
+            document.getElementById("nota-final")?.focus()
+          })
+        }}
+      />
 
       {/* Ejercicios (F17): una tarjeta colapsable por ejercicio, con el codigo
           del alumno + la rubrica de ESE ejercicio + su subtotal, juntos. */}
