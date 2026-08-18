@@ -204,7 +204,7 @@ export function ExerciseListView({
 
         {/* Barra de progreso */}
         {totalEjercicios > 0 && (
-          <div className="mb-6" data-testid="entrega-progress">
+          <div className="mb-6" data-testid="entrega-progress" data-tour="entrega-progreso">
             <div className="flex items-center justify-between mb-1">
               <span className="text-xs text-muted">Ejercicios completados</span>
               <span className="text-xs font-mono text-body">

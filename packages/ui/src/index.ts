@@ -25,6 +25,22 @@ export { StateMessage } from "./components/StateMessage"
 export { EmptyHero } from "./components/EmptyHero"
 export { AuditFooter } from "./components/AuditFooter"
 
+export { TourProvider, useTour, useTourOpcional } from "./components/Tour/TourProvider"
+export {
+  OnboardingProvider,
+  useOnboarding,
+  useOnboardingProgress,
+} from "./components/Tour/OnboardingProvider"
+export type {
+  TourFlow,
+  TourStep,
+  TourStatus,
+  TourPlacement,
+  OnboardingFlow,
+  OnboardingHint,
+  OnboardingProgress,
+} from "./components/Tour/types"
+
 /* === v2 — componentes nuevos para el rediseño "Stack Blue institucional" === */
 export { Section } from "./components/Section"
 export { KpiCard } from "./components/KpiCard"

@@ -1294,6 +1294,7 @@ def __tutor_run_tests(student_code, cases_json):
             type="button"
             onClick={runCode}
             disabled={!hasRuntime || loading || running || testing}
+            data-tour="ejecutar-codigo"
             aria-keyshortcuts="Control+Enter Meta+Enter"
             title={
               hasRuntime ? undefined : `No hay entorno de ejecucion de ${languageLabel} todavia`

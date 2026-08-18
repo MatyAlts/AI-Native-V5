@@ -53,6 +53,8 @@ import {
   tareasPracticasTemplatesApi,
   tpEjerciciosApi,
 } from "../lib/api"
+import { useTutorialDeVista } from "../tour/useTutorialDeVista"
+import { tareasPracticasTour } from "../tour/vistas"
 import { helpContent } from "../utils/helpContent"
 
 interface Props {
@@ -185,6 +187,10 @@ export function TareasPracticasView({ comisionId, getToken }: Props) {
     refreshList()
   }, [refreshList])
 
+  // Tutorial de la vista (capa 2). Espera a que la lista haya cargado: dos de sus
+  // pasos iluminan una card del grid, que antes del fetch no existe.
+  useTutorialDeVista(tareasPracticasTour, !loading)
+
   const handlePublish = async (t: TareaPractica) => {
     try {
       await tareasPracticasApi.publish(t.id, getToken)
@@ -236,6 +242,7 @@ export function TareasPracticasView({ comisionId, getToken }: Props) {
           <div
             role="tablist"
             aria-label="Filtro por estado"
+            data-tour="tp:filtros"
             className="flex items-center gap-1 bg-surface border border-border rounded-lg p-1 shadow-[0_1px_2px_0_rgba(0,0,0,0.04)]"
           >
             {(["all", "draft", "published", "archived"] as const).map((f) => {
@@ -285,6 +292,7 @@ export function TareasPracticasView({ comisionId, getToken }: Props) {
             <button
               type="button"
               onClick={() => setModal({ kind: "create" })}
+              data-tour="tp:nuevo"
               className="press-shrink inline-flex items-center gap-1.5 px-4 py-1.5 text-sm bg-accent-brand hover:bg-accent-brand-deep text-white rounded-md font-medium transition-colors shadow-[0_1px_2px_0_rgba(24,95,165,0.25)]"
             >
               <Plus className="h-3.5 w-3.5" />
@@ -341,7 +349,7 @@ export function TareasPracticasView({ comisionId, getToken }: Props) {
 
         {/* ═══ Grid de TPs ════════════════════════════════════════════════ */}
         {tareas.length > 0 && (
-          <ul className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
+          <ul className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4" data-tour="tp:lista">
             {tareas.map((t, idx) => (
               <li
                 key={t.id}
@@ -570,6 +578,9 @@ function TareaCard({
         <button
           type="button"
           onClick={onComposicion}
+          // Ancla del tutorial de la vista. Esta en todas las cards; el tour ilumina
+          // la primera, que es lo que se quiere mostrar.
+          data-tour="tp:composicion"
           className={`press-shrink grow basis-1/3 inline-flex items-center justify-center gap-1.5 px-3 py-2.5 text-xs font-medium transition-colors ${
             estado === "draft"
               ? "text-accent-brand-deep hover:bg-accent-brand-soft"
