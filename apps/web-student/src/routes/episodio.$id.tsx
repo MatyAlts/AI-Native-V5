@@ -16,7 +16,14 @@
  * ExerciseListView de la TP correspondiente.
  */
 import { createFileRoute, useNavigate, useParams } from "@tanstack/react-router"
-import { createOrGetEntrega, getEpisodeState, submitEntrega } from "../lib/api"
+import {
+  DEFAULT_LANGUAGE,
+  createOrGetEntrega,
+  getEpisodeState,
+  getTareaById,
+  submitEntrega,
+} from "../lib/api"
+import { MONOLITHIC_ORDEN, clearArtefactoDrafts, collectArtefactoDrafts } from "../lib/artefactos"
 import { type EjercicioContext, EpisodeView } from "../pages/EpisodePage"
 import { ACTIVE_EXERCISE_CONTEXT_KEY, type ActiveExerciseContext } from "./materia.$id"
 
@@ -67,7 +74,30 @@ function EpisodioPage() {
           getToken,
         )
         if (entrega.estado === "draft" || entrega.estado === "returned") {
-          await submitEntrega(entrega.id, getToken)
+          // El borrador de la TP monolítica está keyeado por episodio: cuando
+          // el alumno lo escribió, esta entrega todavía no existía.
+          //
+          // Si no hay borrador (otra máquina, o una re-entrega en la que no
+          // volvió a tocar el editor) cae al último snapshot del episodio,
+          // que ya tenemos en `state`. Sin este fallback el backend rechaza
+          // la re-entrega sin código y el alumno queda trabado.
+          let artefactos = collectArtefactoDrafts(id, [MONOLITHIC_ORDEN])
+          if (artefactos.length === 0 && state.last_code_snapshot?.trim()) {
+            // El lenguaje sale de la TP, no de un default: rotularlo mal hace
+            // que el Epic 3 elija el runtime equivocado para correr los tests.
+            const tarea = await getTareaById(state.tarea_practica_id, getToken)
+            artefactos = [
+              {
+                orden: MONOLITHIC_ORDEN,
+                ejercicio_id: null,
+                episode_id: id,
+                codigo: state.last_code_snapshot,
+                language: tarea?.language ?? DEFAULT_LANGUAGE,
+              },
+            ]
+          }
+          await submitEntrega(entrega.id, artefactos, getToken)
+          clearArtefactoDrafts(id, [MONOLITHIC_ORDEN])
         }
       }
     } catch {

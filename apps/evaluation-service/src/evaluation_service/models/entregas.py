@@ -14,8 +14,11 @@ from typing import TYPE_CHECKING, Any
 
 import sqlalchemy as sa
 from sqlalchemy import (
+    Boolean,
     CheckConstraint,
     DateTime,
+    ForeignKey,
+    Integer,
     Numeric,
     String,
     Text,
@@ -69,9 +72,24 @@ class Entrega(Base, TenantMixin, TimestampMixin):
         JSONB, nullable=False, default=list, server_default=sa.text("'[]'::jsonb")
     )
     submitted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    # sha256 del conjunto de artefactos, calculado en el submit. Se guarda y
+    # NO se recalcula al leer: recalcularlo haría que un cambio silencioso del
+    # contenido pase desapercibido, y el hash dejaría de probar nada.
+    artefacto_sha256: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    # Entregas anteriores a la persistencia del artefacto. Su código puede
+    # reconstruirse best-effort desde el CTR, pero eso es una lectura, no lo
+    # que el alumno entregó: no son elegibles para correccion automatica.
+    legacy: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=False, server_default=sa.text("false")
+    )
 
     calificacion: Mapped[Calificacion | None] = relationship(
         back_populates="entrega", uselist=False
+    )
+    artefactos: Mapped[list[EntregaArtefacto]] = relationship(
+        back_populates="entrega",
+        cascade="all, delete-orphan",
+        order_by="EntregaArtefacto.orden",
     )
 
     __table_args__ = (
@@ -85,6 +103,50 @@ class Entrega(Base, TenantMixin, TimestampMixin):
             "estado IN ('draft', 'submitted', 'graded', 'returned')",
             name="ck_entregas_estado",
         ),
+    )
+
+
+class EntregaArtefacto(Base, TenantMixin):
+    """El código que el alumno entregó, una fila por ejercicio.
+
+    Se escribe en el submit con lo que manda el cliente. NO se reconstruye
+    leyendo el CTR: esa ingesta es asíncrona y el editor emite
+    fire-and-forget, así que lo que se leyera podría no ser lo último que el
+    alumno escribió. La diferencia entre "lo que leí" y "lo que entregó"
+    importa cuando el resultado termina en un legajo.
+
+    Una fila por ejercicio y no un blob porque la corrección asistida es por
+    ejercicio: cada uno se manda con su propia rúbrica y necesita su propio
+    hash (design.md D1 y D3).
+    """
+
+    __tablename__ = "entrega_artefactos"
+
+    id: Mapped[uuid.UUID] = uuid_pk()
+    entrega_id: Mapped[uuid.UUID] = mapped_column(
+        PgUUID(as_uuid=True),
+        ForeignKey("entregas.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    orden: Mapped[int] = mapped_column(Integer, nullable=False)
+    # Nullable: la TP monolítica (sin ejercicioContext) todavía no lo resuelve.
+    episode_id: Mapped[uuid.UUID | None] = mapped_column(PgUUID(as_uuid=True), nullable=True)
+    ejercicio_id: Mapped[uuid.UUID | None] = mapped_column(PgUUID(as_uuid=True), nullable=True)
+    codigo: Mapped[str] = mapped_column(Text, nullable=False)
+    language: Mapped[str] = mapped_column(
+        String(20), nullable=False, default="python", server_default="python"
+    )
+    sha256: Mapped[str] = mapped_column(String(64), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=sa.text("now()")
+    )
+
+    entrega: Mapped[Entrega] = relationship(back_populates="artefactos")
+
+    __table_args__ = (
+        UniqueConstraint("tenant_id", "entrega_id", "orden", name="uq_entrega_artefacto_orden"),
+        CheckConstraint("orden >= 1", name="ck_entrega_artefactos_orden"),
     )
 
 

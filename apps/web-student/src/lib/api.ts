@@ -7,6 +7,8 @@
  * El proxy de Vite (vite.config.ts) redirige /api/* al api-gateway.
  */
 
+import type { ArtefactoDraft } from "./artefactos"
+
 export interface OpenEpisodeRequest {
   comision_id: string
   problema_id: string
@@ -1175,10 +1177,15 @@ export async function createOrGetEntrega(
  * Envia la entrega (draft → submitted). Requiere que todos los ejercicios
  * esten completados. Emite CTR tp_entregada.
  */
-export async function submitEntrega(entregaId: string, getToken?: TokenGetter): Promise<Entrega> {
+export async function submitEntrega(
+  entregaId: string,
+  artefactos: ArtefactoDraft[] = [],
+  getToken?: TokenGetter,
+): Promise<Entrega> {
   const r = await fetch(`/api/v1/entregas/${entregaId}/submit`, {
     method: "POST",
-    headers: await authHeaders(getToken),
+    headers: { ...(await authHeaders(getToken)), "Content-Type": "application/json" },
+    body: JSON.stringify({ artefactos }),
   })
   if (!r.ok) {
     const body = await r.text()

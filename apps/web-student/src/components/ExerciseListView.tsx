@@ -17,12 +17,19 @@
 import { useEffect, useState } from "react"
 import {
   type AvailableTarea,
+  DEFAULT_LANGUAGE,
   type Entrega,
   type EntregaEstado,
   type TpEjercicio,
   entregasApi,
+  getEpisodeState,
   listEjerciciosTp,
 } from "../lib/api"
+import {
+  type ArtefactoDraft,
+  clearArtefactoDrafts,
+  collectArtefactoDrafts,
+} from "../lib/artefactos"
 
 export interface ExerciseListViewProps {
   tarea: AvailableTarea
@@ -61,6 +68,57 @@ function entregaEstadoBadgeClass(estado: EntregaEstado): string {
     case "returned":
       return "bg-warning-soft text-warning/85"
   }
+}
+
+/**
+ * Junta el código a entregar: primero el borrador local, y para el ejercicio
+ * que no lo tenga, el último snapshot que el episodio alcanzó a registrar.
+ *
+ * El fallback existe porque el borrador vive en `localStorage`, o sea en ESTE
+ * navegador: un alumno que hizo el ejercicio 1 en la facultad y el 2 en casa
+ * no tendría el 1, y el submit lo rechazaría por un ejercicio que sí hizo.
+ * El snapshot del episodio es peor evidencia (es lo último que el editor
+ * alcanzó a reportar, no lo que el alumno tenía en pantalla), pero se sella
+ * con hash en el submit igual que el resto: entra como lo entregado, no como
+ * una reconstrucción hecha al corregir.
+ */
+async function recuperarArtefactos(
+  entrega: Entrega,
+  ejercicios: Array<{ ejercicio_id: string; orden: number }>,
+  ordenes: number[],
+  language: string,
+): Promise<ArtefactoDraft[]> {
+  const locales = collectArtefactoDrafts(entrega.id, ordenes)
+  const tengo = new Set(locales.map((a) => a.orden))
+  const faltantes = ejercicios.filter((e) => !tengo.has(e.orden))
+  if (faltantes.length === 0) return locales
+
+  const estados = entrega.ejercicio_estados ?? []
+  const recuperados = await Promise.all(
+    faltantes.map(async (ej): Promise<ArtefactoDraft | null> => {
+      const episodeId = estados.find((e) => e.orden === ej.orden)?.episode_id
+      if (!episodeId) return null
+      try {
+        const state = await getEpisodeState(episodeId)
+        if (!state.last_code_snapshot?.trim()) return null
+        return {
+          orden: ej.orden,
+          ejercicio_id: ej.ejercicio_id,
+          episode_id: episodeId,
+          codigo: state.last_code_snapshot,
+          language,
+        }
+      } catch {
+        // Si no se puede recuperar, el submit va a rechazar nombrando el
+        // ejercicio. Es mejor eso que entregar un ejercicio vacío.
+        return null
+      }
+    }),
+  )
+
+  return [...locales, ...recuperados.filter((a): a is ArtefactoDraft => a !== null)].sort(
+    (a, b) => a.orden - b.orden,
+  )
 }
 
 export function ExerciseListView({
@@ -114,8 +172,16 @@ export function ExerciseListView({
     setSubmitting(true)
     setSubmitError(null)
     try {
-      const updated = await entregasApi.submit(entrega.id)
+      const ordenes = ejercicios.map((e) => e.orden)
+      const artefactos = await recuperarArtefactos(
+        entrega,
+        ejercicios,
+        ordenes,
+        tarea.language ?? DEFAULT_LANGUAGE,
+      )
+      const updated = await entregasApi.submit(entrega.id, artefactos)
       setEntrega(updated)
+      clearArtefactoDrafts(entrega.id, ordenes)
     } catch (e) {
       setSubmitError(String(e))
     } finally {
