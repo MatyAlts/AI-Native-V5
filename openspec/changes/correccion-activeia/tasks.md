@@ -121,6 +121,6 @@
 - [ ] 6.4 Agregar `ACADEMIC_DB_URL` al env de ctr-service en EasyPanel y verificar que el gate de comisión deja de ser no-op (`ctr-service/auth/dependencies.py:173`, `docs/EASYPANEL-DEPLOY.md:110`)
 - [x] 6.5 Extender el filtro por comisión a los cuatro endpoints que hoy no lo tienen: `GET /{id}`, `calificar`, `PATCH /calificacion`, `return`
 - [ ] 6.6 ADR nuevo (el último es el 060): por qué Active-IA no pasa por el ai-gateway, con la decisión de privacidad y la resolución de la tarea 0.5. `docs/adr/004-ai-gateway-propio.md:9` nombra este caso de uso
-- [ ] 6.7 `FEATURES.md:59` deja de decir "⛔ vive en active-ia, fuera de scope"
-- [ ] 6.8 Runbook: kill switch, rotación de `ACTIVEIA_MASTER_KEY` y por qué es distinta de `BYOK_MASTER_KEY`, qué pasa con las `running` durante un deploy, y si evaluation-service se suma a la lista de "nunca redeployar en caliente"
+- [x] 6.7 `FEATURES.md:59` deja de decir "⛔ vive en active-ia, fuera de scope"
+- [x] 6.8 Runbook: kill switch, rotación de `ACTIVEIA_MASTER_KEY` y por qué es distinta de `BYOK_MASTER_KEY`, qué pasa con las `running` durante un deploy, y si evaluation-service se suma a la lista de "nunca redeployar en caliente"
 - [ ] 6.9 Actualizar la nota viva de Obsidian: **reescribir** frontmatter, Estado actual, Últimos avances y Próximos pasos; **apilar** en Gotchas y Decisiones clave

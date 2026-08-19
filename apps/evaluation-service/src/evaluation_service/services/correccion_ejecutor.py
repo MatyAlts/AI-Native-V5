@@ -247,15 +247,24 @@ async def _registrar_desenlace(tenant_id: UUID, correccion_id: UUID, duracion_s:
                 metrics.record_completada(outcome="desaparecida", duration_seconds=duracion_s)
                 return
             estado, code = c.estado, c.error_code
-            infra = bool(getattr(c, "es_infraestructura", False))
 
         if estado == "done":
             outcome = "con_nota"
-        elif infra or code in _CAUSAS_DE_INFRA:
-            outcome = "infra_failure"
-            metrics.record_infra_failure(causa=code or "SIN_CODIGO")
         else:
-            outcome = "rechazada"
+            # La clasificación infra/rechazo sale de `mapear_error_activeia`,
+            # que es la misma que usa el endpoint para pintar la tarjeta ámbar
+            # o roja. Una lista propia acá se desincronizaría de la de allá, y
+            # entonces el panel y la UI dirían cosas distintas del mismo fallo.
+            #
+            # `es_infraestructura` NO es una columna: es un campo derivado del
+            # schema de salida. Leerlo de la fila (con `getattr`, por ejemplo)
+            # devuelve siempre `False` y parece que se consultó algo.
+            causa, es_infra = mapear_error_activeia(code, "")
+            if es_infra:
+                outcome = "infra_failure"
+                metrics.record_infra_failure(causa=causa)
+            else:
+                outcome = "rechazada"
 
         metrics.record_completada(outcome=outcome, duration_seconds=duracion_s)
         log.info(
@@ -271,22 +280,6 @@ async def _registrar_desenlace(tenant_id: UUID, correccion_id: UUID, duracion_s:
             correccion_id=str(correccion_id),
             exc_info=True,
         )
-
-
-# `error_code` que son de infraestructura aunque la fila no lo diga. Existe
-# porque `es_infraestructura` es un campo del schema de salida, no siempre una
-# columna: sin esta lista, un `GEMINI_OVERLOADED` se contaría como rechazo del
-# servicio y el pico de "Active-IA caído" quedaría invisible.
-_CAUSAS_DE_INFRA = frozenset(
-    {
-        "GEMINI_OVERLOADED",
-        "TIMEOUT_POLL",
-        "CONFLICTO_SIN_SALIDA",
-        "SIN_ENTREGA_ID",
-        "SIN_NOTA",
-        "ERROR_INTERNO",
-    }
-)
 
 
 async def _cerrar_con_resultado(
