@@ -111,6 +111,23 @@ async def recalificar_setup() -> AsyncIterator[dict]:
                 "g": str(uuid.uuid4()),
             },
         )
+        # El docente tiene que estar EN la comision de la entrega: desde la
+        # tarea 6.5 los endpoints por-entrega filtran por `usuarios_comision`
+        # y un docente ajeno recibe 404. Sembrarlo es lo que hace que este
+        # test siga probando la re-calificacion y no el guard.
+        await s.execute(
+            text(
+                "INSERT INTO usuarios_comision "
+                "(id, tenant_id, user_id, comision_id, rol, fecha_desde) "
+                "VALUES (:id, :t, :u, :c, 'docente', CURRENT_DATE)"
+            ),
+            {
+                "id": str(uuid.uuid4()),
+                "t": str(tenant_id),
+                "u": str(DOCENTE_ID),
+                "c": str(comision_id),
+            },
+        )
         await s.commit()
 
     # Override get_db: sesion superuser con el tenant seteado (bypasa RLS).
@@ -146,6 +163,10 @@ async def recalificar_setup() -> AsyncIterator[dict]:
             await s.execute(
                 text("DELETE FROM entregas WHERE id = :e"),
                 {"e": str(entrega_id)},
+            )
+            await s.execute(
+                text("DELETE FROM usuarios_comision WHERE user_id = :u"),
+                {"u": str(DOCENTE_ID)},
             )
             await s.commit()
         await engine.dispose()

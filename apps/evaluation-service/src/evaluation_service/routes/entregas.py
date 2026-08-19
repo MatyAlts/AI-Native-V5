@@ -236,6 +236,7 @@ async def get_entrega(
 ) -> EntregaOut:
     entrega = await _get_or_404(db, entrega_id)
     _assert_can_read(entrega, user)
+    await _assert_comision_visible(db, entrega, user)
     return EntregaOut.model_validate(entrega)
 
 
@@ -380,23 +381,10 @@ async def get_entrega_artefacto(
     """
     entrega = await _get_or_404(db, entrega_id)
 
-    roles = user.roles
     is_owner = entrega.student_pseudonym == user.id
-    if not is_owner:
-        if not (roles & _READ_ARTEFACTO_ROLES):
-            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Entrega no existe")
-        if not (roles & _OVERSIGHT_ROLES):
-            rows = await db.execute(
-                text(
-                    "SELECT 1 FROM usuarios_comision "
-                    "WHERE user_id = :uid AND comision_id = :cid AND deleted_at IS NULL"
-                ),
-                {"uid": str(user.id), "cid": str(entrega.comision_id)},
-            )
-            if rows.first() is None:
-                raise HTTPException(
-                    status_code=status.HTTP_404_NOT_FOUND, detail="Entrega no existe"
-                )
+    if not is_owner and not (user.roles & _READ_ARTEFACTO_ROLES):
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Entrega no existe")
+    await _assert_comision_visible(db, entrega, user)
 
     artefactos = (
         (
@@ -524,6 +512,7 @@ async def calificar_entrega(
     Emite audit log tp_calificada (structlog, no CTR chain).
     """
     entrega = await _get_or_404(db, entrega_id)
+    await _assert_comision_visible(db, entrega, user)
 
     if entrega.estado != "submitted":
         raise HTTPException(
@@ -599,6 +588,7 @@ async def recalificar_entrega(
       con la nota anterior y la nueva.
     """
     entrega = await _get_or_404(db, entrega_id)
+    await _assert_comision_visible(db, entrega, user)
 
     stmt = select(Calificacion).where(
         and_(
@@ -708,6 +698,7 @@ async def return_entrega(
     El alumno puede volver a enviarla (returned -> submitted).
     """
     entrega = await _get_or_404(db, entrega_id)
+    await _assert_comision_visible(db, entrega, user)
 
     if entrega.estado != "graded":
         raise HTTPException(
@@ -875,11 +866,49 @@ async def _get_or_404(
         stmt = stmt.options(selectinload(Entrega.artefactos))
     obj = (await db.execute(stmt)).scalar_one_or_none()
     if obj is None:
+        # Mismo texto que el rechazo por comisión de `_assert_comision_visible`,
+        # y sin el id adentro. Devolver dos mensajes distintos deja el oráculo
+        # de existencia abierto en el body aunque el status sea 404 en los dos
+        # casos: "no encontrada" diria que no existe y "no existe" que existe
+        # pero es de otra comision. Si se toca uno, se tocan los dos.
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
-            detail=f"Entrega {entrega_id} no encontrada",
+            detail="Entrega no existe",
         )
     return obj
+
+
+async def _assert_comision_visible(db: AsyncSession, entrega: Entrega, user: User) -> None:
+    """El docente sólo opera sobre entregas de SUS comisiones.
+
+    `_assert_can_read` cubre al ESTUDIANTE (sólo lo suyo), pero deja pasar a
+    cualquier docente sobre cualquier entrega. Sin esto, un docente de otra
+    comisión podía leer una entrega ajena, calificarla, re-calificarla y
+    devolverla: el `entrega_id` era la única credencial. Con el filtro puesto
+    en el listado pero no acá, además, alcanzaba con probar ids.
+
+    **404 y no 403**, mismo criterio que `GET /{id}/artefacto`: un 403
+    confirmaría que la entrega existe, y ahí el id de una comisión ajena se
+    vuelve un oráculo de existencia.
+
+    El dueño de la entrega no pasa por acá — a un estudiante lo gobierna
+    `_assert_can_read` / `_assert_can_write`, y su `student_pseudonym` ya es
+    un filtro más estrecho que la comisión.
+    """
+    if entrega.student_pseudonym == user.id:
+        return
+    if user.roles & _OVERSIGHT_ROLES:
+        return
+
+    rows = await db.execute(
+        text(
+            "SELECT 1 FROM usuarios_comision "
+            "WHERE user_id = :uid AND comision_id = :cid AND deleted_at IS NULL"
+        ),
+        {"uid": str(user.id), "cid": str(entrega.comision_id)},
+    )
+    if rows.first() is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Entrega no existe")
 
 
 def _assert_can_read(entrega: Entrega, user: User) -> None:
