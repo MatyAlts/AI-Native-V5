@@ -39,9 +39,19 @@ class OlvidoCorreccionAdapter:
         Se llega por `entregas` porque `correcciones_ia` no lleva el
         pseudónimo: la corrección es de una ENTREGA, y la entrega es de un
         alumno.
+
+        Devuelve además el `external_entrega_id`: es el identificador que
+        Active-IA le dio a la entrega subida, y **es lo único con lo que
+        alguien puede encontrar y borrar esa copia desde el panel de
+        Active-IA**. Mientras el borrado por API no exista (pedido 3.6), ese
+        dato es lo que vuelve accionable el "hay que borrarlo a mano".
         """
         stmt = (
-            select(CorreccionIA.id, CorreccionIA.pdf_storage_key)
+            select(
+                CorreccionIA.id,
+                CorreccionIA.pdf_storage_key,
+                CorreccionIA.external_entrega_id,
+            )
             .join(Entrega, Entrega.id == CorreccionIA.entrega_id)
             .where(
                 and_(
@@ -50,7 +60,10 @@ class OlvidoCorreccionAdapter:
                 )
             )
         )
-        return [{"id": r[0], "pdf_storage_key": r[1]} for r in (await self._db.execute(stmt)).all()]
+        return [
+            {"id": r[0], "pdf_storage_key": r[1], "external_entrega_id": r[2]}
+            for r in (await self._db.execute(stmt)).all()
+        ]
 
     async def delete_pdf(self, storage_key: str) -> bool:
         return await borrar_pdf(storage_key)
@@ -88,12 +101,54 @@ class OlvidoCorreccionAdapter:
         return int(n)
 
     async def update_correcciones_pseudonym(self, original: UUID, new: UUID) -> int:
-        """Rota el pseudónimo de las ENTREGAS del alumno.
+        """Rota el pseudónimo y VACÍA lo que describe el código del alumno.
 
-        `correcciones_ia` no lleva el pseudónimo, así que lo que se rota es la
-        entrega — que es de donde cuelga. Rotarla desvincula de una vez la
-        entrega, sus artefactos (ya borrados) y sus correcciones.
+        Rotar un identificador no alcanza acá. `correcciones_ia` guarda tres
+        cosas que son datos derivados del código, no referencias a él, y que
+        siguen siendo legibles con o sin pseudónimo:
+
+        - **`artefacto_sha256`** — el MISMO hash que se acaba de borrar de
+          `entregas`, con el `orden` del ejercicio al lado para saber cuál era
+          el enunciado. Borrar la fila del artefacto y dejar su hash acá es
+          hacer la mitad del trabajo por el que se borró.
+        - **`tests_snapshot`** — lleva `salida_obtenida`, hasta 2000
+          caracteres de **la salida real del programa** por caso. Es lo que el
+          código de esa persona imprimió.
+        - **`desglose`** — la devolución de Active-IA criterio por criterio
+          sobre su trabajo. Es exactamente lo que justifica borrar el PDF,
+          en JSON en vez de en PDF.
+
+        Y `pdf_storage_key` se limpia porque el objeto ya no está: dejarla
+        apuntando a un borrado hacía que la API dijera `tiene_pdf: true` y que
+        la descarga devolviera **503 "no se pudo recuperar en este momento"**,
+        que se lee como un fallo transitorio y no como "esto se borró".
+
+        Lo que SÍ se conserva es la fila: que hubo una corrección, cuándo, con
+        qué rúbrica y quién la disparó. Eso es trazabilidad del piloto y no
+        dice quién fue el alumno.
         """
+        entregas = select(Entrega.id).where(
+            and_(
+                Entrega.tenant_id == self._tenant_id,
+                Entrega.student_pseudonym == original,
+            )
+        )
+        await self._db.execute(
+            update(CorreccionIA)
+            .where(
+                and_(
+                    CorreccionIA.tenant_id == self._tenant_id,
+                    CorreccionIA.entrega_id.in_(entregas),
+                )
+            )
+            .values(
+                artefacto_sha256="",
+                tests_snapshot={},
+                desglose=[],
+                pdf_storage_key=None,
+            )
+        )
+
         res = await self._db.execute(
             update(Entrega)
             .where(

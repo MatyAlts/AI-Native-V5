@@ -22,6 +22,7 @@ from __future__ import annotations
 
 import asyncio
 import io
+import time
 import zipfile
 from datetime import UTC, datetime
 from typing import Any
@@ -31,6 +32,7 @@ import structlog
 
 from evaluation_service.db.session import tenant_session
 from evaluation_service.models.correcciones_ia import CorreccionIA
+from evaluation_service.services import correccion_metrics as metrics
 from evaluation_service.services.activeia_client import ActiveIAError
 from evaluation_service.services.correccion_ia import mapear_error_activeia, marcar_error
 from evaluation_service.services.correccion_pdf import bajar_y_guardar
@@ -101,8 +103,20 @@ async def ejecutar_correccion(
         if c is None:
             log.error("activeia_correccion_desaparecida", correccion_id=str(correccion_id))
             return
+        es_reintento = c.started_at is not None
         c.estado = "running"
         c.started_at = datetime.now(UTC)
+
+    arranque = time.monotonic()
+    metrics.record_disparada(es_reintento=es_reintento)
+    log.info(
+        "correccion_ia_disparada",
+        correccion_id=str(correccion_id),
+        comision_id=str(comision_id),
+        ejercicio_id=str(ejercicio_id) if ejercicio_id else None,
+        language=language,
+        reintento=es_reintento,
+    )
 
     try:
         # ── 1. Tests en el sandbox ────────────────────────────────────────
@@ -205,6 +219,74 @@ async def ejecutar_correccion(
         await _cerrar_con_error(
             tenant_id, correccion_id, "ERROR_INTERNO", f"{type(e).__name__}", True
         )
+    finally:
+        # En `finally` y no al final del `try`: el cuerpo tiene returns
+        # tempranos (NO_COMPILA, por ejemplo) y los except cierran por su
+        # cuenta. Si esto viviera en el camino feliz, `in_flight` subiría para
+        # siempre en cuanto algo fallara — y el indicador de saturación
+        # mentiría justo cuando hace falta leerlo.
+        await _registrar_desenlace(tenant_id, correccion_id, time.monotonic() - arranque)
+
+
+async def _registrar_desenlace(tenant_id: UUID, correccion_id: UUID, duracion_s: float) -> None:
+    """Métricas y rastro de cierre (tareas 6.2 y 6.3).
+
+    El desenlace se lee de la FILA y no de una variable de la función: la fila
+    es la que gobierna —tiene el CHECK que impide una nota sin `done`— y hay
+    caminos que la cierran desde adentro (`marcar_error` en `_cerrar_con_resultado`)
+    sin volver acá con un valor. Una variable local se desincronizaría del
+    estado real justo en los caminos de error, que son los que se miden.
+
+    Nunca levanta: una métrica rota no puede tumbar una corrección que ya
+    terminó, ni dejarla `running` para siempre.
+    """
+    try:
+        async with tenant_session(tenant_id) as db:
+            c = await db.get(CorreccionIA, correccion_id)
+            if c is None:
+                metrics.record_completada(outcome="desaparecida", duration_seconds=duracion_s)
+                return
+            estado, code = c.estado, c.error_code
+            infra = bool(getattr(c, "es_infraestructura", False))
+
+        if estado == "done":
+            outcome = "con_nota"
+        elif infra or code in _CAUSAS_DE_INFRA:
+            outcome = "infra_failure"
+            metrics.record_infra_failure(causa=code or "SIN_CODIGO")
+        else:
+            outcome = "rechazada"
+
+        metrics.record_completada(outcome=outcome, duration_seconds=duracion_s)
+        log.info(
+            "correccion_ia_completada",
+            correccion_id=str(correccion_id),
+            outcome=outcome,
+            error_code=code,
+            duracion_s=round(duracion_s, 2),
+        )
+    except Exception:
+        log.warning(
+            "activeia_metrica_desenlace_fallo",
+            correccion_id=str(correccion_id),
+            exc_info=True,
+        )
+
+
+# `error_code` que son de infraestructura aunque la fila no lo diga. Existe
+# porque `es_infraestructura` es un campo del schema de salida, no siempre una
+# columna: sin esta lista, un `GEMINI_OVERLOADED` se contaría como rechazo del
+# servicio y el pico de "Active-IA caído" quedaría invisible.
+_CAUSAS_DE_INFRA = frozenset(
+    {
+        "GEMINI_OVERLOADED",
+        "TIMEOUT_POLL",
+        "CONFLICTO_SIN_SALIDA",
+        "SIN_ENTREGA_ID",
+        "SIN_NOTA",
+        "ERROR_INTERNO",
+    }
+)
 
 
 async def _cerrar_con_resultado(

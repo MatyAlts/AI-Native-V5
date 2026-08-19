@@ -698,3 +698,105 @@ class TestElPDF:
         campos = set(CorreccionIAOut.model_fields)
         assert "pdf_storage_key" not in campos
         assert "tiene_pdf" in campos
+
+
+class TestElGateDelPDF:
+    """El PDF lleva el nombre del alumno y la devolucion sobre su codigo. Su
+    autorizacion es lo unico que impide que un docente de otra comision lo
+    baje con solo tener el `correccion_id` — que viaja en la URL."""
+
+    @pytest.fixture
+    def client(self):
+        from evaluation_service.auth import get_db as _get_db
+        from evaluation_service.auth.dependencies import User, get_current_user
+        from evaluation_service.main import app
+        from fastapi.testclient import TestClient
+
+        self.docente = User(
+            id=uuid4(),
+            tenant_id=TENANT,
+            email="d@utn.edu.ar",
+            roles=frozenset({"docente"}),
+            realm="utn",
+        )
+        self.db = MagicMock()
+        app.dependency_overrides[get_current_user] = lambda: self.docente
+        app.dependency_overrides[_get_db] = lambda: self.db
+        with TestClient(app) as c:
+            yield c
+        app.dependency_overrides.clear()
+
+    def test_docente_de_otra_comision_recibe_404(self, client) -> None:
+        entrega = _entrega()
+        self.db.execute = AsyncMock(
+            side_effect=[
+                _scalar(entrega),
+                MagicMock(first=MagicMock(return_value=None)),  # no es su comision
+            ]
+        )
+        r = client.get(f"/api/v1/entregas/{entrega.id}/correccion-ia/{uuid4()}/pdf")
+        assert r.status_code == 404
+
+    def test_sin_pdf_da_404_y_no_204(self, client) -> None:
+        """Un 204 con cuerpo vacio se lee como un PDF de cero bytes."""
+        entrega = _entrega()
+        c = CorreccionIA(
+            tenant_id=TENANT,
+            entrega_id=entrega.id,
+            orden=1,
+            disparado_por=uuid4(),
+            rubrica_id="r1",
+            artefacto_sha256="s",
+        )
+        c.pdf_storage_key = None
+        self.db.execute = AsyncMock(
+            side_effect=[
+                _scalar(entrega),
+                MagicMock(first=MagicMock(return_value=(1,))),
+                _scalar(c),
+            ]
+        )
+        r = client.get(f"/api/v1/entregas/{entrega.id}/correccion-ia/{c.id or uuid4()}/pdf")
+        assert r.status_code == 404
+
+
+class TestBorrarPDF:
+    async def test_si_el_storage_falla_devuelve_False(self) -> None:
+        """De este booleano depende `pdfs_con_error`: el mecanismo entero de
+        "un PDF que no se puede borrar queda listado" cuelga de aca."""
+        from evaluation_service.services import correccion_pdf as mod
+
+        fake = MagicMock()
+        fake.delete = AsyncMock(side_effect=RuntimeError("storage caido"))
+        with patch.object(mod, "get_storage", MagicMock(return_value=fake)):
+            assert await mod.borrar("k.pdf") is False
+
+    async def test_si_el_storage_anda_devuelve_True(self) -> None:
+        from evaluation_service.services import correccion_pdf as mod
+
+        fake = MagicMock()
+        fake.delete = AsyncMock()
+        with patch.object(mod, "get_storage", MagicMock(return_value=fake)):
+            assert await mod.borrar("k.pdf") is True
+
+    async def test_una_respuesta_que_no_es_200_NO_se_guarda_como_pdf(self) -> None:
+        """Un 404 o un HTML de error de Active-IA quedaria en el bucket con
+        extension .pdf y `tiene_pdf: true`."""
+        from evaluation_service.services import correccion_pdf as mod
+
+        cliente = MagicMock()
+        cliente.request = AsyncMock(
+            return_value=MagicMock(status_code=500, content=b"<html>error</html>")
+        )
+        fake = MagicMock()
+        fake.put = AsyncMock()
+        with patch.object(mod, "get_storage", MagicMock(return_value=fake)):
+            key = await mod.bajar_y_guardar(
+                cliente=cliente,
+                tenant_id=uuid4(),
+                entrega_id=uuid4(),
+                correccion_id=uuid4(),
+                external_correccion_id="42",
+            )
+        assert key is None
+        fake.put.assert_not_awaited()

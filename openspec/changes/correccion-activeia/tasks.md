@@ -115,9 +115,9 @@
 
 ## 6. Epic 6 — Hardening y cierre
 
-- [ ] 6.1 Smoke E2E en `tests/e2e/smoke/` con Active-IA reemplazado por un doble HTTP: camino feliz, 409, `GEMINI_OVERLOADED`, credencial inválida, artefacto ausente
-- [ ] 6.2 Métricas OTel: disparadas, completadas, `infra_failure` con causa, duración, in-flight, rechazos de cuota (molde `execution-service/services/metrics.py:27-92`)
-- [ ] 6.3 Rastro structlog `correccion_ia_disparada` / `correccion_ia_completada`, patrón `tp_calificada` (`routes/entregas.py:391-400`) — **meta-evento, NO va al CTR**
+- [x] 6.1 Smoke E2E en `tests/e2e/smoke/` con Active-IA reemplazado por un doble HTTP: camino feliz, 409, `GEMINI_OVERLOADED`, credencial inválida, artefacto ausente
+- [x] 6.2 Métricas OTel: disparadas, completadas, `infra_failure` con causa, duración, in-flight, rechazos de cuota (molde `execution-service/services/metrics.py:27-92`)
+- [x] 6.3 Rastro structlog `correccion_ia_disparada` / `correccion_ia_completada`, patrón `tp_calificada` (`routes/entregas.py:391-400`) — **meta-evento, NO va al CTR**
 - [ ] 6.4 Agregar `ACADEMIC_DB_URL` al env de ctr-service en EasyPanel y verificar que el gate de comisión deja de ser no-op (`ctr-service/auth/dependencies.py:173`, `docs/EASYPANEL-DEPLOY.md:110`)
 - [x] 6.5 Extender el filtro por comisión a los cuatro endpoints que hoy no lo tienen: `GET /{id}`, `calificar`, `PATCH /calificacion`, `return`
 - [ ] 6.6 ADR nuevo (el último es el 060): por qué Active-IA no pasa por el ai-gateway, con la decisión de privacidad y la resolución de la tarea 0.5. `docs/adr/004-ai-gateway-propio.md:9` nombra este caso de uso
