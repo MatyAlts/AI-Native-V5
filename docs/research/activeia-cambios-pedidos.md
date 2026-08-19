@@ -2,7 +2,32 @@
 
 **Para:** el equipo que mantiene `api.active-ia.com`
 **De:** AI-Native (plataforma del tutor socrático N4, `tutor.active-ia.com`)
-**Fecha:** 2026-08-18
+**Fecha:** 2026-08-18 · **actualizado el 2026-08-19**
+
+---
+
+## 0. Estado: nuestro lado ya está construido
+
+> **Novedad respecto de la versión del 18/08.** Cuando se escribió este documento, la integración
+> era un plan. Ya no: **el lado de AI-Native está implementado y probado**, esperando que exista
+> el de ustedes.
+>
+> Qué significa eso en concreto para ustedes:
+>
+> - **El cliente HTTP ya habla el contrato de la sección 3.** Está escrito contra este documento,
+>   no contra una idea: `evaluation-service/services/activeia_client.py`. El día que los endpoints
+>   existan, se apaga un flag y anda.
+> - **Mientras tanto corre contra un mock explícito.** Todo lo que simula devuelve
+>   `"simulado": true` y un `rubrica_id` con prefijo `MOCK-`, y loguea en WARNING cada llamada. Un
+>   mock silencioso en producción es indistinguible de una integración que anda, y no queremos eso.
+> - **Tenemos un doble HTTP de su API** para probar sin gastarles cuota
+>   (`tests/e2e/smoke/test_smoke_activeia_doble.py`). Si quieren, sirve como especificación
+>   ejecutable de lo que esperamos: los casos que cubre son el camino feliz, el 409, el motor
+>   saturado, la credencial inválida y la respuesta sin id.
+> - **Nada de esto está encendido sobre alumnos reales.** El flag viene apagado por default.
+>
+> **Lo que los bloquea a ustedes no nos bloquea a nosotros para seguir**, pero sí bloquea el
+> piloto: sin los endpoints de escritura, las rúbricas hay que cargarlas a mano del otro lado.
 
 ---
 
@@ -192,6 +217,8 @@ POST /correcciones/ejercicios/{ejercicio_ref}/corregir
   "alumno_ref": "pseudonimo-del-alumno",
   "codigo": "...",
   "resultado_tests": {
+    "compila": true,
+    "error_compilacion": null,
     "total": 4, "pasados": 4,
     "casos": [
       { "id": "t1", "paso": true,
@@ -200,6 +227,23 @@ POST /correcciones/ejercicios/{ejercicio_ref}/corregir
   }
 }
 ```
+
+**`compila` es un campo aparte y no se deduce de `pasados: 0`** (agregado el 19/08). Son dos
+situaciones distintas y merecen devoluciones distintas:
+
+| | `compila` | `pasados/total` | Qué le pasó al alumno |
+|---|---|---|---|
+| No compila | `false` | `0/6` | Un error de sintaxis. Puede ser un punto y coma. |
+| Compila y falla todo | `true` | `0/6` | El programa corre y hace otra cosa. |
+
+**Mandamos el código aunque no compile.** Antes lo cortábamos —para no gastarles una corrida sobre
+código roto— y lo revertimos: un punto y coma que falta no justifica dejar al alumno sin
+devolución, porque el juicio sobre el **diseño** sigue siendo útil y es justo lo que un compilador
+no le da.
+
+Lo que les pedimos a cambio: **con `compila: false`, no cierren criterios del tipo "el programa
+funciona"**. Ninguna corrida los respalda. El error del compilador va en `error_compilacion` para
+que puedan usarlo en la devolución.
 
 Y que el motor **use ese resultado como hecho establecido**, no como sugerencia: si los tests
 pasan, el código funciona — no hace falta que Gemini lo deduzca. Que se concentre en lo que un test
@@ -265,3 +309,39 @@ Para acotar el alcance:
    modos de fallo del motor.
 5. **3.5 y 3.6** — cuenta de servicio y borrado. El 3.6 puede ir después del piloto, pero antes de
    que un alumno lo pida.
+
+
+---
+
+## 7. Cómo verificamos, por si quieren replicarlo
+
+Tres cosas medidas contra su API en vivo que nuestro cliente ya respeta. Las dejamos acá porque
+son comportamientos que quizás no estén documentados de su lado:
+
+1. **`GET /pendientes/moodle` tardó 25, 40 y 24 segundos** en tres corridas. Nuestro timeout es de
+   90s y no de 30, porque con 30 fallaba una de cada tres.
+2. **`GET /entregas/{id}` devuelve 500.** Para saber si una entrega ya se corrigió usamos
+   `GET /correcciones/entregas/{id}`: 200 = corregida, 404 = todavía no.
+3. **El 409 de `POST /entregas/` keyea por `(comision_id, rubrica_id, alumno_nombre)`.** Sin
+   comparar el `rubrica_id` retomábamos la entrega de OTRO TP del mismo alumno y le adjuntábamos la
+   devolución de otra unidad. **El `rubrica_id` en el match no es opcional.**
+
+Si alguno de estos tres cambia, avísennos: los tres están codificados en nuestro cliente.
+
+---
+
+## 8. Qué necesitamos de ustedes para arrancar
+
+Concretamente, y en este orden:
+
+1. **Una respuesta sobre la personería.** No es técnica y es la que más nos bloquea:
+   ¿AI-Native y Active-IA son el **mismo responsable de datos** frente al consentimiento que
+   firmaron los alumnos del piloto? Si no lo somos, mandarles código de un alumno es una cesión a
+   un tercero y el consentimiento tiene que decirlo. **Esto bloquea el despliegue con datos
+   reales**, y no depende de ninguna línea de código.
+2. **Una cuenta de servicio** (§ 3.5) para poder probar contra un entorno suyo.
+3. **Una fecha estimada** para 3.1 + 3.2 (nivel de ejercicio y `external_ref`). Con eso podemos
+   planificar el piloto; sin eso no.
+
+Cualquier duda sobre el contrato, el cliente está escrito y se puede leer:
+`apps/evaluation-service/src/evaluation_service/services/activeia_client.py`.
