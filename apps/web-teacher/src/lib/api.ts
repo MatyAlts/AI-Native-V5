@@ -2550,7 +2550,17 @@ export interface CorreccionIA {
   /** null salvo que `estado === "done"`. Un fallo NUNCA lleva nota. */
   nota_100: number | null
   desglose: Array<Record<string, unknown>>
-  tests_snapshot: Record<string, unknown>
+  /** El resultado de correr los tests en el sandbox, ANTES de mandar a
+   *  corregir. `compila: false` importa: desde el 19/08 el codigo que no
+   *  compila se manda igual, asi que la nota puede venir de leer codigo que
+   *  nunca corrio — y eso el docente tiene que verlo antes de usarla. */
+  tests_snapshot: {
+    compila?: boolean
+    error_compilacion?: string | null
+    total?: number
+    passed?: number
+    failed?: number
+  } & Record<string, unknown>
   artefacto_sha256: string
   error_code: string | null
   error_detail: string | null

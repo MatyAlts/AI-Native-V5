@@ -8,8 +8,8 @@ siguiente por una razón:
 2. **Idempotencia.** Si esta misma corrección ya existe, se devuelve. Un doble
    click no paga dos veces.
 3. **Cuota.** Falla cerrada. Va antes de ejecutar porque ejecutar ya cuesta.
-4. **Pre-ejecución en el sandbox.** Si no compila, se corta acá: pagar una
-   corrección sobre código que no compila es tirar plata, y el error de
+4. **Pre-ejecución en el sandbox.** Que no compile NO corta (19/08): se manda
+   igual, con el estado de compilación explícito. El error de
    compilación es la devolución más accionable que hay.
 5. **Active-IA.**
 

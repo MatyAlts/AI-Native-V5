@@ -239,6 +239,24 @@ class TestElOutcomeSaleDeLaFila:
         finally:
             await _limpiar(db, cid)
 
+    async def test_una_cancelacion_cuenta_como_timeout_y_no_como_rechazo(
+        self, db: AsyncSession
+    ) -> None:
+        """Llegar al cierre todavía en `running` sólo pasa por cancelación: el
+        `wait_for` del envoltorio de presupuesto corta, este bloque corre en el
+        `finally`, y el `TIMEOUT` se escribe DESPUÉS.
+
+        Antes se leía `error_code=None` → `ACTIVEIA_ERROR` → rechazo. Durante un
+        incidente de Active-IA el panel mostraba cero `infra_failure` y un pico
+        de rechazos: la lectura opuesta a la real."""
+        cid = await _correccion(db, estado="running")
+        try:
+            espia = await _desenlace(cid)
+            assert espia["completada"] == ["infra_failure"]
+            assert espia["infra"] == ["TIMEOUT"]
+        finally:
+            await _limpiar(db, cid)
+
     async def test_la_fila_borrada_igual_cierra_el_contador(self) -> None:
         """Si la fila desapareció, `in_flight` tiene que bajar lo mismo. Sin
         esto, una corrección borrada a mitad de camino deja el contador

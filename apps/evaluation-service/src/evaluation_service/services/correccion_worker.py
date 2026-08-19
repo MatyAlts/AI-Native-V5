@@ -193,3 +193,42 @@ async def _cerrar_sin_escapar(tenant_id: UUID, correccion_id: UUID) -> None:
         await cerrar_por_timeout(tenant_id, correccion_id)
     except Exception:
         log.exception("activeia_no_se_pudo_cerrar_por_timeout", correccion_id=str(correccion_id))
+
+
+async def run_reconciliador(*, intervalo_s: float) -> None:
+    """Reconcilia huérfanas cada `intervalo_s`, además de la pasada del arranque.
+
+    **Por qué no alcanzaba con la del arranque** (hallazgo de la auditoría del
+    19/08): el reconciliador sólo toca filas más viejas que `_UMBRAL_HUERFANA`
+    (2× el presupuesto, 6 minutos). Un deploy que reinicie en menos de eso deja
+    huérfanas todas las correcciones que arrancaron en la ventana: al arrancar
+    todavía son "recientes", y no había una segunda pasada nunca.
+
+    El resultado era una corrección `running` para siempre, con el panel del
+    docente girando sin tope. Y el design D9 se apoya en el reconciliador para
+    justificar que el trabajo corra en `BackgroundTasks` sin cola durable — o
+    sea que el agujero salía justo debajo de lo que sostiene la decisión.
+
+    Mismo patrón que `abandonment_worker` del tutor-service: un fallo de una
+    pasada NO corta el loop, y la cancelación del shutdown se re-lanza.
+    """
+    log.info("activeia_reconciliador_periodico_arranca", intervalo_s=intervalo_s)
+    try:
+        while True:
+            await asyncio.sleep(intervalo_s)
+            try:
+                for tenant_id in await tenants_con_running():
+                    cerradas = await reconciliar_running(tenant_id)
+                    if cerradas:
+                        log.info(
+                            "activeia_reconciliador_periodico_cerro",
+                            tenant_id=str(tenant_id),
+                            cerradas=cerradas,
+                        )
+            except Exception:
+                # Una pasada que falla no puede matar el loop: sin él, las
+                # huérfanas vuelven a no tener quien las levante.
+                log.exception("activeia_reconciliador_periodico_fallo")
+    except asyncio.CancelledError:
+        log.info("activeia_reconciliador_periodico_cancelado")
+        raise

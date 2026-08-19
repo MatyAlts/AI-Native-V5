@@ -99,6 +99,13 @@ class Settings(BaseSettings):
     # inexistente corrigiendo entregas reales.
     activeia_mock_escritura: bool = Field(default=False)
 
+    # Cada cuánto reconcilia correcciones huérfanas, además de la pasada del
+    # arranque. Existe porque sólo con la del arranque, un deploy que reinicie
+    # en menos de 6 minutos (el umbral de "huérfana") deja colgadas todas las
+    # correcciones de esa ventana, sin nadie que las levante nunca.
+    # 300s: la mitad del umbral, para que ninguna espere más de un ciclo largo.
+    activeia_reconciliador_intervalo_s: float = Field(default=300.0)
+
 
 @lru_cache
 def get_settings() -> Settings:

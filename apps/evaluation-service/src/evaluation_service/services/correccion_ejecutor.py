@@ -5,9 +5,10 @@ que se cierra cuando el 202 ya salió) y bajo el semáforo del worker.
 
 El orden de los pasos es el que evita gastar de más:
 
-1. Se re-ejecutan los tests en el sandbox. Si **no compila**, se corta acá:
-   pagar una corrección sobre código que no compila es tirar plata, y el error
-   de compilación ya es la devolución más accionable que hay.
+1. Se re-ejecutan los tests en el sandbox. **Que no compile ya no corta**
+   (19/08): un punto y coma que falta no justifica dejar al alumno sin
+   devolución. Lo que sí viaja es el estado de compilación, explícito, para
+   que el motor no cierre criterios de "funciona" que ninguna corrida respalda.
 2. Se sube el artefacto a Active-IA. Un **409** significa que ya estaba
    arriba: se retoma esa, no se sube de nuevo (subirla otra vez la cobra otra
    vez).
@@ -222,7 +223,7 @@ async def ejecutar_correccion(
         )
     finally:
         # En `finally` y no al final del `try`: el cuerpo tiene returns
-        # tempranos (NO_COMPILA, por ejemplo) y los except cierran por su
+        # tempranos (SIN_RUBRICA, por ejemplo) y los except cierran por su
         # cuenta. Si esto viviera en el camino feliz, `in_flight` subiría para
         # siempre en cuanto algo fallara — y el indicador de saturación
         # mentiría justo cuando hace falta leerlo.
@@ -251,6 +252,21 @@ async def _registrar_desenlace(tenant_id: UUID, correccion_id: UUID, duracion_s:
 
         if estado == "done":
             outcome = "con_nota"
+        elif estado == "running":
+            # Llegar acá todavía en `running` significa **cancelación**: este
+            # bloque corre en el `finally` del ejecutor, y el único camino que
+            # lo alcanza sin haber cerrado la fila es el `wait_for` del
+            # envoltorio de presupuesto. El `TIMEOUT` lo escribe él, DESPUÉS —
+            # así que leer la fila acá devuelve `error_code=None`.
+            #
+            # Sin este branch, `mapear_error_activeia(None, "")` devuelve
+            # `("ACTIVEIA_ERROR", False)` y el timeout —el fallo de infra más
+            # probable que hay— se contaba como rechazo. O sea que durante un
+            # incidente de Active-IA el panel mostraba **cero** `infra_failure`
+            # y un pico de rechazos: exactamente la lectura opuesta a la que
+            # este módulo existe para permitir.
+            outcome = "infra_failure"
+            metrics.record_infra_failure(causa="TIMEOUT")
         else:
             # La clasificación infra/rechazo sale de `mapear_error_activeia`,
             # que es la misma que usa el endpoint para pintar la tarjeta ámbar

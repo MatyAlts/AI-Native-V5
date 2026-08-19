@@ -323,6 +323,26 @@ function Resultado({
       <p className="text-body">
         Active-IA sugiere <strong>{correccion.nota_100}/100</strong>
       </p>
+      {/* Desde el 19/08 el codigo que no compila se manda igual a corregir: un
+          punto y coma que falta no justifica dejar al alumno sin devolucion.
+          Pero entonces esta nota se calculo sobre codigo que NUNCA CORRIO, y
+          el docente tiene que verlo antes de usarla como base — si no, un
+          criterio de "funciona" que el motor haya dado por cumplido pasa a la
+          calificacion sin que nada lo respalde. */}
+      {correccion.tests_snapshot?.compila === false && (
+        <p
+          className="rounded border border-warning/30 bg-warning-soft p-2 text-warning"
+          data-testid="correccion-ia-no-compila"
+        >
+          <strong>Ojo: este codigo no compila.</strong> La nota sale de leerlo, no de
+          ejecutarlo: ningun test lo respalda.
+          {correccion.tests_snapshot?.error_compilacion && (
+            <span className="mt-1 block font-mono text-[11px] opacity-80">
+              {correccion.tests_snapshot.error_compilacion}
+            </span>
+          )}
+        </p>
+      )}
       {correccion.tiene_pdf && (
         <button
           type="button"

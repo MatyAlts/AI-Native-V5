@@ -3,8 +3,9 @@
 Activado en epic tp-entregas-correccion: entregas de alumnos + corrección docente.
 """
 
+import asyncio
 from collections.abc import AsyncIterator
-from contextlib import asynccontextmanager
+from contextlib import asynccontextmanager, suppress
 
 import structlog
 from fastapi import FastAPI, Request
@@ -16,7 +17,11 @@ from sqlalchemy.exc import IntegrityError
 from evaluation_service.config import settings
 from evaluation_service.observability import setup_observability
 from evaluation_service.routes import activeia, correccion_ia, entregas, health
-from evaluation_service.services.correccion_worker import reconciliar_running, tenants_con_running
+from evaluation_service.services.correccion_worker import (
+    reconciliar_running,
+    run_reconciliador,
+    tenants_con_running,
+)
 
 
 @asynccontextmanager
@@ -46,6 +51,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     # Best-effort: un fallo acá NO impide que el servicio arranque. Dejar el
     # servicio caído por no poder limpiar filas viejas sería peor que las filas
     # viejas.
+    reconciliador: asyncio.Task[None] | None = None
     if settings.activeia_enabled:
         try:
             for tenant_id in await tenants_con_running():
@@ -53,7 +59,20 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         except Exception:
             structlog.get_logger().exception("activeia_reconciliador_fallo")
 
-    yield
+        # Y periódico, no sólo al arrancar: el umbral de "huérfana" son 6
+        # minutos, así que un reinicio más rápido que eso dejaba colgadas las
+        # correcciones de esa ventana para siempre (auditoría del 19/08).
+        reconciliador = asyncio.create_task(
+            run_reconciliador(intervalo_s=settings.activeia_reconciliador_intervalo_s)
+        )
+
+    try:
+        yield
+    finally:
+        if reconciliador is not None:
+            reconciliador.cancel()
+            with suppress(asyncio.CancelledError):
+                await reconciliador
 
 
 app = FastAPI(

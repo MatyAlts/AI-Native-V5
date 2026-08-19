@@ -6,7 +6,8 @@ no existe — y el payload que llega al CTR sólo lleva `total/passed/failed`,
 sin el detalle por caso. Re-ejecutar además hace la corrección **reproducible**:
 el resultado que se le manda a Active-IA se puede volver a producir.
 
-**Por qué antes de contactar a Active-IA**: si el código no compila, la
+**Por qué antes de contactar a Active-IA** (y no porque corte — desde el 19/08
+ya no corta): el resultado viaja CON el envío, así que hay que tenerlo antes. Si el código no compila, la
 corrección no puede decir nada útil, y pagarla igual es tirar plata. Se corta
 con el error de compilación, que además es la devolución más accionable que
 puede recibir el alumno.

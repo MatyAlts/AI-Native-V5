@@ -11,6 +11,7 @@ Las dos propiedades que este epic no puede perder:
 
 from __future__ import annotations
 
+import contextlib
 import io
 from datetime import UTC, datetime
 from decimal import Decimal
@@ -866,3 +867,80 @@ class TestLaClasificacionUsaLosCodigosQueElFlujoEmITE:
 
         _, infra = mapear_error_activeia(code, "")
         assert infra is False, f"{code} es un rechazo: reintentar devuelve lo mismo"
+
+
+class TestElReconciliadorCorrePeriodicamente:
+    """Hallazgo de la auditoría del 19/08: corría UNA sola vez, en el lifespan.
+
+    Como sólo toca filas más viejas que 6 minutos, un deploy que reinicie más
+    rápido que eso dejaba huérfanas todas las correcciones de esa ventana —
+    al arrancar todavía eran "recientes" y no había una segunda pasada nunca.
+    El panel del docente giraba para siempre.
+
+    Importa más de lo que parece: el design D9 se apoya en el reconciliador
+    para justificar que el trabajo corra en `BackgroundTasks` sin cola durable.
+    El agujero salía justo debajo de lo que sostiene esa decisión.
+    """
+
+    async def test_reconcilia_mas_de_una_vez(self) -> None:
+        import asyncio
+
+        from evaluation_service.services import correccion_worker as mod
+
+        pasadas = 0
+
+        async def _contar() -> list:
+            nonlocal pasadas
+            pasadas += 1
+            return []
+
+        with patch.object(mod, "tenants_con_running", _contar):
+            tarea = asyncio.create_task(mod.run_reconciliador(intervalo_s=0.01))
+            await asyncio.sleep(0.08)
+            tarea.cancel()
+            with contextlib.suppress(asyncio.CancelledError):
+                await tarea
+
+        assert pasadas >= 3, f"corrio {pasadas} vez/veces: no es periodico"
+
+    async def test_una_pasada_que_falla_no_corta_el_loop(self) -> None:
+        """Si un fallo matara el loop, las huérfanas volverían a no tener quien
+        las levante — y el modo de falla sería silencioso."""
+        import asyncio
+
+        from evaluation_service.services import correccion_worker as mod
+
+        intentos = 0
+
+        async def _explota_la_primera() -> list:
+            nonlocal intentos
+            intentos += 1
+            if intentos == 1:
+                raise RuntimeError("la base no responde")
+            return []
+
+        with patch.object(mod, "tenants_con_running", _explota_la_primera):
+            tarea = asyncio.create_task(mod.run_reconciliador(intervalo_s=0.01))
+            await asyncio.sleep(0.08)
+            tarea.cancel()
+            with contextlib.suppress(asyncio.CancelledError):
+                await tarea
+
+        assert intentos >= 3, f"el loop murio tras el fallo (intentos={intentos})"
+
+    async def test_la_cancelacion_del_shutdown_se_propaga(self) -> None:
+        """Tragarse el `CancelledError` dejaría la tarea colgada y el shutdown
+        esperándola."""
+        import asyncio
+
+        from evaluation_service.services import correccion_worker as mod
+
+        async def _vacio() -> list:
+            return []
+
+        with patch.object(mod, "tenants_con_running", _vacio):
+            tarea = asyncio.create_task(mod.run_reconciliador(intervalo_s=5))
+            await asyncio.sleep(0.02)
+            tarea.cancel()
+            with pytest.raises(asyncio.CancelledError):
+                await tarea

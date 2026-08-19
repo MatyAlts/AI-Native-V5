@@ -35,10 +35,18 @@ The system SHALL store the sent result alongside the correction, so the returned
 - **WHEN** a correction completes
 - **THEN** the test result that was sent SHALL be stored with the correction record
 
-#### Scenario: Code that does not compile stops before spending a call
+#### Scenario: Code that does not compile is still sent, flagged
 - **WHEN** the artefacto fails to compile during the pre-execution
-- **THEN** the correction SHALL NOT be sent to Active-IA
-- **AND** the compilation error SHALL be reported to the teacher
+- **THEN** the correction SHALL still be sent to Active-IA
+- **AND** the payload SHALL carry the compilation state explicitly (`compila`, `error_compilacion`)
+- **AND** the teacher's result view SHALL warn that the grade came from code that never ran
+
+> Revised 2026-08-19. The original scenario cut the flow to avoid paying for a
+> correction on broken code. A missing semicolon is not a reason to leave the
+> student without feedback: the qualitative judgement on the *design* is still
+> useful, and it is exactly what a compiler does not give. What replaces the
+> gate is that the compilation state travels explicitly, so the engine can
+> avoid closing "it works" criteria that no run backs.
 
 ### Requirement: Preview does not consume quota
 When invoked with `confirmado=false`, the endpoint SHALL return what would be sent — exercise, rubric and its synchronization state, test cases to be run, and payload size — without executing tests, contacting Active-IA or consuming quota.

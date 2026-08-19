@@ -73,7 +73,7 @@
 - [x] 3.3 Config: `activeia_enabled` con default `False` (molde `execution-service/config.py:86-94`) y parámetros de cuota
 - [x] 3.4 Cuota por docente y día contando filas en Postgres, que **falla cerrada**: 503 si no se puede leer el contador, 429 si se excedió
 - [x] 3.5 Servicio de pre-ejecución: correr los test cases del ejercicio contra el artefacto persistido usando el execution-service, y devolver el detalle por caso
-- [x] 3.6 Cortar antes de contactar a Active-IA si el artefacto no compila, reportando el error de compilación
+- [x] 3.6 ~~Cortar antes de contactar a Active-IA si el artefacto no compila~~ → **revertido el 19/08**: se manda igual y el estado de compilación viaja explícito (`compila`, `error_compilacion`). Ver ADR/spec.
 - [x] 3.7 `POST /api/v1/entregas/{id}/correccion-ia` con `{ejercicio_orden?, confirmado}` → 202 (molde `execution-service/routes/executions.py:162-221`)
 - [x] 3.8 Preview con `confirmado=false`: qué ejercicio, qué rúbrica y su estado de sincronización, qué tests, tamaño — sin ejecutar ni contactar ni consumir cuota
 - [x] 3.9 Gate de membresía de comisión en los tres endpoints, devolviendo 404 y no 403 (**no** copiar `_assert_can_read`, `routes/entregas.py:585-593`)
