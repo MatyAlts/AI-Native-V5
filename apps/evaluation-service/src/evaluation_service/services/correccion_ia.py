@@ -271,7 +271,32 @@ def mapear_error_activeia(error_code: str | None, mensaje: str) -> tuple[str, bo
         "SANDBOX_ERROR",
         "SANDBOX_QUOTA",
         "SANDBOX_DISABLED",
+        # Los seis de abajo faltaban, y el efecto no era cosmético: este flag es
+        # lo ÚNICO que decide si la UI muestra el botón "Reintentar". Con
+        # `es_infraestructura=False` el panel pinta rojo, dice "reintentar sin
+        # cambiar nada va a devolver el mismo error" y NO renderiza el botón.
+        #
+        # El caso que lo delata: `PROCESO_INTERRUMPIDO` lo escribe el
+        # reconciliador con el detalle "probablemente por un reinicio del
+        # servicio… podés volver a dispararla" — y la pantalla le escondía el
+        # botón para hacer exactamente eso.
+        #
+        # `marcar_error(es_infraestructura=...)` NO persiste: sólo loguea. La UI
+        # re-deriva el flag de acá, así que este set es la única fuente de
+        # verdad y tiene que cubrir todo lo que el flujo emite.
+        "PROCESO_INTERRUMPIDO",
+        "ERROR_INTERNO",
+        "SIN_NOTA",
+        "SIN_ENTREGA_ID",
+        "CONFLICTO_SIN_SALIDA",
+        "ACTIVEIA_ERROR",
     }
+    # Todo 5xx de Active-IA es infraestructura: el servicio no pudo responder.
+    # Se resuelve por prefijo y no enumerando, porque `_subir_y_corregir` arma
+    # el código con el status crudo (`HTTP_502`, `HTTP_504`…) y una lista se
+    # queda corta con el primer código que el proxy invente.
+    if code.startswith("HTTP_5"):
+        return code, True
     if code in infra:
         return code, True
     if not code:

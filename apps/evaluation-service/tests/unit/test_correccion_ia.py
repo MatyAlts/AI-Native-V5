@@ -806,3 +806,63 @@ class TestBorrarPDF:
             )
         assert key is None
         fake.put.assert_not_awaited()
+
+
+class TestLaClasificacionUsaLosCodigosQueElFlujoEmITE:
+    """Los códigos de acá salieron de grepear qué escribe producción, no de
+    inventarlos (19/08, hallazgo de la auditoría).
+
+    Por qué importa el detalle: los tests que ya existían probaban el lado
+    "rechazo" con `RUBRICA_INEXISTENTE`, un código **que no emite nadie**. Con
+    un código inventado, cualquier cosa que no esté en el set da `False` y el
+    test pasa — por eso seis códigos de infraestructura real estuvieron
+    clasificados como rechazo sin que nada fallara.
+
+    Y no es cosmético: `es_infraestructura` es lo ÚNICO que decide si la UI
+    muestra el botón "Reintentar" (`CorreccionIAPanel.tsx`). Clasificar mal un
+    fallo de infra le esconde al docente el botón que resolvería el problema.
+    """
+
+    @pytest.mark.parametrize(
+        "code",
+        [
+            "GEMINI_OVERLOADED",  # el motor saturado
+            "HTTP_500",
+            "HTTP_502",
+            "HTTP_503",
+            "HTTP_504",  # cualquier 5xx de la API
+            "PROCESO_INTERRUMPIDO",  # lo escribe el reconciliador
+            "ERROR_INTERNO",  # el except general del ejecutor
+            "SIN_NOTA",  # respondió sin nota
+            "SIN_ENTREGA_ID",  # 201 sin id
+            "CONFLICTO_SIN_SALIDA",  # 409 que no se pudo ubicar
+            "TIMEOUT",
+        ],
+    )
+    def test_es_infraestructura_y_por_lo_tanto_reintentable(self, code: str) -> None:
+        from evaluation_service.services.correccion_ia import mapear_error_activeia
+
+        _, infra = mapear_error_activeia(code, "")
+        assert infra is True, (
+            f"{code} es infraestructura; clasificado como rechazo, la UI le "
+            "esconde el boton de reintentar al docente"
+        )
+
+    @pytest.mark.parametrize(
+        "code",
+        [
+            "NO_COMPILA",
+            "SIN_RUBRICA",
+            "LENGUAJE_DESCONOCIDO",
+            "HTTP_422",
+            "HTTP_400",
+            "HTTP_403",
+        ],
+    )
+    def test_es_rechazo_y_reintentar_no_lo_arregla(self, code: str) -> None:
+        """El otro lado: si TODO fuera infraestructura, el botón aparecería
+        siempre y el docente reintentaría errores que nunca se destraban."""
+        from evaluation_service.services.correccion_ia import mapear_error_activeia
+
+        _, infra = mapear_error_activeia(code, "")
+        assert infra is False, f"{code} es un rechazo: reintentar devuelve lo mismo"

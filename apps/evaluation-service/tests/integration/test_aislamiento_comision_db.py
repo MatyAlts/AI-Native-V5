@@ -42,12 +42,19 @@ from evaluation_service.auth.dependencies import User
 from evaluation_service.models.entregas import Entrega
 from evaluation_service.routes.entregas import (
     calificar_entrega,
+    get_calificacion,
     get_entrega,
     get_entrega_artefacto,
+    mark_ejercicio_completado,
     recalificar_entrega,
     return_entrega,
+    submit_entrega,
 )
-from evaluation_service.schemas.entrega import CalificacionCreate, CalificacionUpdate
+from evaluation_service.schemas.entrega import (
+    CalificacionCreate,
+    CalificacionUpdate,
+    MarkEjercicioBody,
+)
 from fastapi import HTTPException
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
@@ -223,6 +230,40 @@ class TestDocenteAjenoNoLlega:
         entrega = await _entrega(db, estado="graded")
         with pytest.raises(HTTPException) as e:
             await return_entrega(entrega.id, user=_docente(uuid.uuid4()), db=db)
+        assert e.value.status_code == 404
+
+    async def test_get_calificacion(self, db: AsyncSession) -> None:
+        """Se me habia pasado en el barrido del 19/08: cerre cinco call sites y
+        este quedo afuera. Un docente ajeno leia la nota, los criterios y el
+        `graded_by` con solo tener el id."""
+        entrega = await _entrega(db, estado="graded")
+        await _con_calificacion(db, entrega)
+        with pytest.raises(HTTPException) as e:
+            await get_calificacion(entrega.id, user=_docente(uuid.uuid4()), db=db)
+        assert e.value.status_code == 404
+
+    async def test_submit(self, db: AsyncSession) -> None:
+        """`_assert_can_write` tiene el mismo agujero que `_assert_can_read`:
+        cubre al alumno y deja pasar a cualquier docente. Sin el gate, un
+        docente ajeno puede FORZAR la entrega de un alumno — que ademas le
+        cierra la edicion."""
+        entrega = await _entrega(db, estado="draft")
+        with pytest.raises(HTTPException) as e:
+            await submit_entrega(entrega.id, body=None, user=_docente(uuid.uuid4()), db=db)
+        assert e.value.status_code == 404
+
+    async def test_marcar_ejercicio(self, db: AsyncSession) -> None:
+        """Idem: marcarle ejercicios completados a un alumno ajeno falsea su
+        progreso y le habilita el submit."""
+        entrega = await _entrega(db, estado="draft")
+        with pytest.raises(HTTPException) as e:
+            await mark_ejercicio_completado(
+                entrega.id,
+                1,
+                MarkEjercicioBody(),
+                user=_docente(uuid.uuid4()),
+                db=db,
+            )
         assert e.value.status_code == 404
 
     async def test_artefacto_sigue_cerrado(self, db: AsyncSession) -> None:

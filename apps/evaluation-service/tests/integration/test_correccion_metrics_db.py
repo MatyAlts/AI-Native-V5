@@ -15,9 +15,11 @@ sin volver con un valor de retorno. Una variable local se desincronizaría del
 estado real precisamente en los caminos de error, que son los que se miden.
 
 **3. Infra y rechazo se cuentan por separado.** `GEMINI_OVERLOADED` es "Active-IA
-se cayó" y `NO_COMPILA` es "el código del alumno no compila". Contarlos juntos
-haría que un incidente del proveedor se lea como un día con muchos alumnos
-trabados.
+se cayó" y `HTTP_422` es "el motor rechazó el disparo". Contarlos juntos haría
+que un incidente del proveedor se lea como un día con muchas entregas mal
+configuradas. Los códigos de estos tests salen de grepear qué escribe
+producción: usar uno inventado hace el test vacuo, porque cualquier código
+desconocido cae en "rechazo" por default.
 
 Contra Postgres real porque lo que se prueba es la lectura de la fila.
 
@@ -212,11 +214,16 @@ class TestElOutcomeSaleDeLaFila:
         finally:
             await _limpiar(db, cid)
 
-    async def test_no_compila_cuenta_como_rechazo_y_no_como_infra(self, db: AsyncSession) -> None:
-        """El código del alumno no compila: eso NO es Active-IA caído. Si se
-        contaran juntos, un día con muchos alumnos trabados se leería como un
-        incidente del proveedor."""
-        cid = await _correccion(db, estado="error", error_code="NO_COMPILA")
+    async def test_un_rechazo_del_motor_no_cuenta_como_infra(self, db: AsyncSession) -> None:
+        """El código era `NO_COMPILA` hasta el 19/08 — y ese día dejó de
+        emitirlo producción, con lo cual el test pasó a ser vacuo: ninguna
+        mutación podía hacerlo fallar. Lo encontró la auditoría (séptimo test
+        vacuo del epic).
+
+        `HTTP_422` sí lo emite `_subir_y_corregir` cuando el motor rechaza el
+        disparo. Es un rechazo de verdad: reintentar devuelve lo mismo, y no
+        puede contarse junto a un incidente del proveedor."""
+        cid = await _correccion(db, estado="error", error_code="HTTP_422")
         try:
             espia = await _desenlace(cid)
             assert espia["completada"] == ["rechazada"]

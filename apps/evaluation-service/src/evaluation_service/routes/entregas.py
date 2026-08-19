@@ -261,6 +261,7 @@ async def submit_entrega(
     # (hasta 200 entregas) se traiga el código de todos los alumnos.
     entrega = await _get_or_404(db, entrega_id, con_artefactos=True)
     _assert_can_write(entrega, user)
+    await _assert_comision_visible(db, entrega, user)
 
     if entrega.estado == "submitted":
         return EntregaOut.model_validate(entrega)
@@ -431,6 +432,7 @@ async def mark_ejercicio_completado(
     """
     entrega = await _get_or_404(db, entrega_id)
     _assert_can_write(entrega, user)
+    await _assert_comision_visible(db, entrega, user)
 
     if entrega.estado not in ("draft", "returned"):
         raise HTTPException(
@@ -668,9 +670,10 @@ async def get_calificacion(
     user: User = Depends(require_permission("calificacion", "read")),
     db: AsyncSession = Depends(get_db),
 ) -> CalificacionOut:
-    """Lee la calificacion. Docentes ven todas; estudiantes solo la suya."""
+    """Lee la calificacion. Docentes ven las de SUS comisiones; estudiantes la suya."""
     entrega = await _get_or_404(db, entrega_id)
     _assert_can_read(entrega, user)
+    await _assert_comision_visible(db, entrega, user)
 
     stmt = select(Calificacion).where(
         and_(
