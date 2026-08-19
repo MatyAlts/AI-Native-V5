@@ -273,3 +273,82 @@ class TestFallosDeSubida:
         out = await _correr(doble)
 
         assert out["error_code"] == "SIN_ENTREGA_ID"
+
+
+class TestElCodigoQueNoCompilaSeMandaIgual:
+    """Decisión del 19/08: un punto y coma que falta no justifica dejar al
+    alumno sin devolución. El motor puede decirle si el diseño va encaminado,
+    que es la parte que un compilador no le da.
+
+    Estos tres espían el `form` en vez de leerlo del doble: httpx manda el
+    multipart con `Transfer-Encoding: chunked` y `BaseHTTPRequestHandler` no
+    lo parsea. Lo que se verifica es QUÉ se manda, no cómo se serializa — el
+    transporte ya lo cubren los doce de arriba.
+    """
+
+    @staticmethod
+    def _espia() -> tuple[Any, dict]:
+        visto: dict = {}
+
+        class _Cliente:
+            async def request(self, method: str, path: str, **kw: Any) -> Any:
+                if path == "/entregas/":
+                    visto.update(kw.get("data") or {})
+
+                # 201 al subir, 200 en el resto (disparo y poll): el poll
+                # exige 200 y con 201 se leía como "respondió mal".
+                codigo = 201 if path == "/entregas/" else 200
+
+                class _R:
+                    status_code = codigo
+
+                    @staticmethod
+                    def json() -> dict:
+                        return {"id": "EXT-1", "estado": "CORREGIDA", "nota_final": 7}
+
+                return _R()
+
+        return _Cliente(), visto
+
+    async def _mandar(self, cliente: Any, *, compila: bool) -> dict:
+        return await _subir_y_corregir(
+            cliente=cliente,
+            codigo="public class Main {}",
+            language="java",
+            alumno_nombre="Alumno Prueba",
+            comision_id="COM-1",
+            rubrica_id="RUB-1",
+            tests={
+                "passed": 0 if not compila else 6,
+                "total": 6,
+                "compila": compila,
+                "error_compilacion": None if compila else "error: ';' expected",
+            },
+        )
+
+    async def test_viaja_que_no_compilo_y_por_que(self) -> None:
+        cliente, visto = self._espia()
+
+        await self._mandar(cliente, compila=False)
+
+        assert visto["compila"] == "false"
+        assert "';' expected" in visto["error_compilacion"]
+
+    async def test_cuando_compila_lo_dice_igual(self) -> None:
+        """Sin el campo, `tests_resultado: "0/6"` no distingue «no compiló» de
+        «compiló y falló todo», y son dos devoluciones distintas."""
+        cliente, visto = self._espia()
+
+        await self._mandar(cliente, compila=True)
+
+        assert visto["compila"] == "true"
+        assert visto["error_compilacion"] == ""
+
+    async def test_sin_compilar_igual_dispara_la_correccion(self) -> None:
+        """La prueba de que ya no corta: antes ni se subía."""
+        cliente, visto = self._espia()
+
+        out = await self._mandar(cliente, compila=False)
+
+        assert out.get("error_code") is None, out
+        assert visto, "no llego a armar el form: se corto antes de subir"

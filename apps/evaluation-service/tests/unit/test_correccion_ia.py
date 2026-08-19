@@ -370,9 +370,15 @@ class TestElEjecutor:
             z = zipfile.ZipFile(io.BytesIO(_zip_del_codigo("x", lang)))
             assert z.namelist() == [esperado]
 
-    async def test_si_no_compila_NO_contacta_a_active_ia(self) -> None:
-        """Pagar una correccion sobre codigo que no compila es tirar plata, y
-        el error de compilacion ya es la devolucion mas accionable que hay."""
+    async def test_si_no_compila_SE_MANDA_IGUAL(self) -> None:
+        """Cambio del 19/08: antes se cortaba para no pagar una correccion
+        sobre codigo roto. Se revirtio — un punto y coma que falta no
+        justifica dejar al alumno sin devolucion, y el motor igual puede
+        decirle si el diseno va encaminado.
+
+        Lo que NO cambia: el estado de compilacion viaja explicito, para que
+        el motor no cierre criterios de "funciona" sobre un archivo que nunca
+        corrio."""
         from evaluation_service.services import correccion_ejecutor as mod
         from evaluation_service.services.correccion_pre_ejecucion import ResultadoTests
 
@@ -421,10 +427,10 @@ class TestElEjecutor:
                 headers_sandbox={},
             )
 
-        fake_cliente.assert_not_awaited()
-        assert correccion.estado == "error"
-        assert correccion.nota_100 is None
-        assert correccion.error_code == "NO_COMPILA"
+        fake_cliente.assert_awaited()  # antes: assert_not_awaited()
+        assert correccion.error_code != "NO_COMPILA", (
+            "volvio a cortar por no compilar: ese gate se saco a proposito"
+        )
 
     async def test_una_excepcion_inesperada_no_deja_la_correccion_en_running(self) -> None:
         """Corre en background: una excepcion que escape se pierde en un log y

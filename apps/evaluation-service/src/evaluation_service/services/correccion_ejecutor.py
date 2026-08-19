@@ -134,24 +134,25 @@ async def ejecutar_correccion(
 
             tests = ResultadoTests(compila=True)
 
+        # Que no compile YA NO CORTA (decisión de Juani, 19/08). Un punto y coma
+        # que falta no es motivo para dejar al alumno sin devolución: el motor
+        # igual puede decirle si el diseño va encaminado, y esa es la parte que
+        # un compilador no le da.
+        #
+        # Lo que sí cambia es que el estado del código **viaja explícito**: sin
+        # eso, el motor recibiría un archivo roto sin saberlo y podría cerrar
+        # criterios de "funciona" que ninguna corrida respalda. Con `compila:
+        # false` y el error adentro, la decisión de cuánto pesar eso queda del
+        # lado que corrige, que es donde vive la rúbrica.
+        #
+        # Los tests que fallan nunca cortaron: eso ya se mandaba con su
+        # `passed/total`.
         if not tests.compila:
-            # NO es un fallo de infraestructura: es información sobre el código
-            # del alumno. Pero tampoco es una nota — no la pusimos nosotros ni
-            # la puso Active-IA.
-            async with tenant_session(tenant_id) as db:
-                c = await db.get(CorreccionIA, correccion_id)
-                if c is not None:
-                    c.tests_snapshot = tests.as_dict()
-                    marcar_error(
-                        c,
-                        error_code="NO_COMPILA",
-                        detalle=(
-                            "El código no compila, así que no se mandó a corregir. "
-                            f"{tests.error_compilacion or ''}"
-                        ),
-                        es_infraestructura=False,
-                    )
-            return
+            log.info(
+                "correccion_ia_sin_compilar",
+                correccion_id=str(correccion_id),
+                detalle=(tests.error_compilacion or "")[:300],
+            )
 
         # ── 2 y 3. Active-IA ──────────────────────────────────────────────
         async with tenant_session(tenant_id) as db:
@@ -402,6 +403,15 @@ async def _subir_y_corregir(
         # El resultado de los tests YA ejecutados. El motor cuenta presencia,
         # no vínculo: un criterio del tipo "funciona" necesita un hecho detrás.
         "tests_resultado": str(tests.get("passed", 0)) + "/" + str(tests.get("total", 0)),
+        # Si compiló o no, EXPLÍCITO. Desde el 19/08 el código que no compila
+        # se manda igual —un punto y coma que falta no justifica dejar al
+        # alumno sin devolución— pero el motor tiene que saberlo: con
+        # `tests_resultado: "0/6"` a secas no puede distinguir "no compiló" de
+        # "compiló y falló todo", y son dos devoluciones distintas.
+        "compila": "true" if tests.get("compila", True) else "false",
+        # Vacío cuando compiló. Recortado: es un mensaje de compilador, y el
+        # form no es el lugar para volcar un stack entero.
+        "error_compilacion": (tests.get("error_compilacion") or "")[:1000],
     }
 
     resp = await cliente.request("POST", "/entregas/", data=form, files=files)
