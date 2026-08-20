@@ -11,11 +11,23 @@ Documento operativo — el procedimiento es manual a propósito (ver el final).
 | `entregas.artefacto_sha256` | Postgres | Hash del conjunto: la constancia de qué se corrigió |
 | `correcciones_ia.pdf_storage_key` | Postgres | Dónde quedó el PDF |
 | El PDF | Bucket `correcciones` (S3/MinIO) | La devolución de Active-IA, con el nombre del alumno |
+| `correcciones_ia.tests_snapshot` | Postgres | La salida real del programa del alumno, por caso |
+| `correcciones_ia.desglose` | Postgres | La devolución criterio por criterio sobre su trabajo |
 | El zip subido | **Active-IA, fuera de nuestro perímetro** | El mismo código, del otro lado |
+| `edicion_codigo.snapshot` | **CTR, append-only** | Snapshots del código mientras lo escribía |
 
-Esa última fila es la que importa para cualquier decisión de retención: **una
-copia del código de cada alumno vive en un sistema que no es este**. Borrar acá
-no la borra allá.
+Dos filas de esa tabla mandan sobre cualquier decisión de retención:
+
+**El zip vive en Active-IA**, fuera de nuestro perímetro. Borrar acá no lo
+borra allá.
+
+**El CTR guarda snapshots del código y es append-only** (ADR-010). El olvido
+NO lo alcanza y no puede: su hash canónico incluye el payload, así que
+modificarlo rompería la cadena criptográfica en la que se apoya la tesis. Lo
+que `anonymize_student` hace ahí es rotar el pseudónimo en `episodes`, que es
+la disociación que ese plano admite: los eventos quedan, pero sin fila que los
+vincule a la persona. **Es disociación, no borrado**, y hay que decirlo así
+cuando se le explique a alguien qué significa "olvidar" en este sistema.
 
 ## Por cuánto
 

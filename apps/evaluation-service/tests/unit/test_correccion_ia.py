@@ -505,11 +505,13 @@ class TestElEjecutorNoManda:
         el tutor le adjuntaba la devolucion de otra unidad."""
         from evaluation_service.services.correccion_ejecutor import _subir_y_corregir
 
+        vacio = MagicMock(status_code=200, json=MagicMock(return_value={"items": []}))
         cliente = MagicMock()
         cliente.request = AsyncMock(
             side_effect=[
                 MagicMock(status_code=409),  # ya existe
-                MagicMock(status_code=200, json=MagicMock(return_value={"items": []})),
+                vacio,  # busqueda EN la comision
+                vacio,  # y sin filtrar por comision (ver el test de abajo)
             ]
         )
         r = await _subir_y_corregir(
@@ -523,6 +525,70 @@ class TestElEjecutorNoManda:
         )
         assert r["error_code"] == "CONFLICTO_SIN_SALIDA"
         assert "nota_100" not in r
+
+    async def test_el_409_de_otra_comision_no_se_retoma(self) -> None:
+        """El equipo de Active-IA nos corrigio el supuesto (2026-08-20): el
+        indice unico es `(rubrica_id, alumno_nombre)` y **no incluye la
+        comision**. O sea que el 409 puede venir de una entrega que vive en
+        otra comision.
+
+        Se la busca —para poder decir que existe— pero NO se retoma: adjuntarle
+        la devolucion al alumno de otra comision es el mismo modo de falla que
+        ya nos mordio cuando el match ignoraba el `rubrica_id`."""
+        from evaluation_service.services.correccion_ejecutor import _subir_y_corregir
+
+        ajena = {
+            "id": "EXT-DE-OTRA-COMISION",
+            "rubrica_id": "r1",
+            "alumno_nombre": "Ana",
+            "comision_id": "999",
+        }
+        cliente = MagicMock()
+        cliente.request = AsyncMock(
+            side_effect=[
+                MagicMock(status_code=409),
+                # en NUESTRA comision no esta...
+                MagicMock(status_code=200, json=MagicMock(return_value={"items": []})),
+                # ...pero existe en otra
+                MagicMock(status_code=200, json=MagicMock(return_value={"items": [ajena]})),
+            ]
+        )
+        r = await _subir_y_corregir(
+            cliente=cliente,
+            codigo="x",
+            language="java",
+            alumno_nombre="Ana",
+            comision_id="1",
+            rubrica_id="r1",
+            tests={},
+        )
+        assert r["error_code"] == "CONFLICTO_SIN_SALIDA"
+        assert r.get("external_entrega_id") != "EXT-DE-OTRA-COMISION"
+
+    async def test_el_409_de_la_misma_comision_si_se_retoma(self) -> None:
+        """El caso normal no se rompio: subirla de nuevo la cobra de nuevo."""
+        from evaluation_service.services.correccion_ejecutor import _subir_y_corregir
+
+        propia = {"id": "EXT-YA-ESTABA", "rubrica_id": "r1", "alumno_nombre": "Ana"}
+        cliente = MagicMock()
+        cliente.request = AsyncMock(
+            side_effect=[
+                MagicMock(status_code=409),
+                MagicMock(status_code=200, json=MagicMock(return_value={"items": [propia]})),
+                MagicMock(status_code=200),  # disparo
+                MagicMock(status_code=200, json=MagicMock(return_value={"nota_final": 8})),
+            ]
+        )
+        r = await _subir_y_corregir(
+            cliente=cliente,
+            codigo="x",
+            language="java",
+            alumno_nombre="Ana",
+            comision_id="1",
+            rubrica_id="r1",
+            tests={},
+        )
+        assert r["external_entrega_id"] == "EXT-YA-ESTABA"
 
     async def test_el_409_solo_retoma_la_entrega_de_LA_MISMA_rubrica(self) -> None:
         """El bug documentado de produccion: sin comparar `rubrica_id`

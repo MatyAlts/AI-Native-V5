@@ -220,8 +220,18 @@ def _test_cases_para_activeia(test_cases: Any) -> list[dict[str, Any]]:
             "es_publico": es_publico,
         }
         if tipo == "stdin_stdout":
-            caso["entrada"] = tc.get("code") or tc.get("entrada") or ""
+            # La ENTRADA tampoco viaja si el caso es oculto (2026-08-20).
+            # Antes iba siempre, y era más de lo que declaramos en el documento
+            # de integración: ahí dice que de un caso oculto mandamos "el id, el
+            # nombre y el tipo", nada más.
+            #
+            # No es formalismo. El PDF de devolución se le entrega al alumno, y
+            # con la entrada a la vista —"probamos con 3 estudiantes y cupo
+            # 2"— la regla que el caso oculto codifica queda dicha. Un caso
+            # oculto citado deja de estar oculto para toda la cohorte, no sólo
+            # para quien lo leyó.
             if es_publico:
+                caso["entrada"] = tc.get("code") or tc.get("entrada") or ""
                 caso["salida_esperada"] = tc.get("expected") or tc.get("salida_esperada") or ""
         # En los de assert el código ES el criterio: no hay entrada ni
         # salida que mandar, y meterlo en `entrada` sería mentir sobre qué

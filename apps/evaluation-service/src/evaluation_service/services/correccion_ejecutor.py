@@ -538,16 +538,49 @@ async def _ubicar_entrega(
     retomaba la entrega de otro TP del mismo alumno: el tutor le adjuntaba la
     devolución de otra unidad. Se compara como texto porque la API no
     garantiza el tipo (12 vs "12").
+
+    **Busca en la comisión y, si no aparece, sin filtrar por comisión**
+    (2026-08-20). El equipo de Active-IA corrigió un supuesto nuestro: el índice
+    único real es `(rubrica_id, alumno_nombre)` y **NO incluye `comision_id`**.
+    O sea que el 409 puede venir de una entrega que existe en OTRA comisión, y
+    buscándola sólo dentro de la nuestra no aparecía nunca — la corrección moría
+    en `CONFLICTO_SIN_SALIDA` sin motivo entendible.
+
+    Lo que NO hace es retomarla a ciegas: si la encuentra fuera de la comisión,
+    devuelve `None`. Retomar la entrega de otra comisión es el camino directo a
+    adjuntarle la devolución al alumno equivocado, y ese modo de falla ya nos
+    mordió una vez con el `rubrica_id`. Mejor cortar con un motivo legible.
     """
+    objetivo = alumno_nombre.strip().lower()
+
+    def _buscar(items: Any) -> str | None:
+        for item in items or []:
+            if str(item.get("rubrica_id")) != str(rubrica_id):
+                continue
+            if str(item.get("alumno_nombre", "")).strip().lower() == objetivo:
+                return str(item.get("id"))
+        return None
+
     r = await cliente.request(
         "GET", "/entregas/", params={"comision_id": comision_id, "per_page": 100}
     )
     if r.status_code != 200:
         return None
-    objetivo = alumno_nombre.strip().lower()
-    for item in r.json().get("items", []):
-        if str(item.get("rubrica_id")) != str(rubrica_id):
-            continue
-        if str(item.get("alumno_nombre", "")).strip().lower() == objetivo:
-            return str(item.get("id"))
+    encontrada = _buscar(r.json().get("items", []))
+    if encontrada is not None:
+        return encontrada
+
+    # Segunda pasada sin el filtro de comisión: sólo para saber SI existe, y
+    # poder decirlo. No se retoma.
+    r2 = await cliente.request("GET", "/entregas/", params={"per_page": 100})
+    if r2.status_code == 200 and _buscar(r2.json().get("items", [])) is not None:
+        log.warning(
+            "activeia_entrega_existe_en_otra_comision",
+            rubrica_id=rubrica_id,
+            comision_id=comision_id,
+            detalle=(
+                "El 409 keyea por (rubrica_id, alumno_nombre) sin comision. "
+                "La entrega existe en otra comision y NO se retoma."
+            ),
+        )
     return None

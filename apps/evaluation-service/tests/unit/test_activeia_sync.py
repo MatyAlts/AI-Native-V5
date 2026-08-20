@@ -472,6 +472,14 @@ class TestTestCases:
         assert out["es_publico"] is False
         assert out["nombre"] == "caso oculto"
         assert "salida_esperada" not in out, "la salida esperada de un caso oculto salio"
+        # La ENTRADA tampoco (2026-08-20). El documento de integracion declara
+        # que de un caso oculto mandamos "el id, el nombre y el tipo": mandar
+        # ademas la entrada era mas de lo dicho, y del lado inseguro. Con la
+        # entrada a la vista en el PDF —"probamos con 3 estudiantes y cupo 2"—
+        # la regla que el caso codifica queda dicha para toda la cohorte.
+        assert "entrada" not in out, "la entrada de un caso oculto salio"
+        # Lo que si viaja, para que el motor sepa que el caso existe:
+        assert out["id"] and out["nombre"] and out["tipo"]
 
     def test_un_assert_oculto_tampoco_manda_la_asercion(self) -> None:
         oculto_assert = {**TC_ASSERT, "is_public": False}

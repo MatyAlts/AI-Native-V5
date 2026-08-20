@@ -330,6 +330,41 @@ Si alguno de estos tres cambia, avísennos: los tres están codificados en nuest
 
 ---
 
+## 7 bis. Respuesta a su roadmap (2026-08-20)
+
+Recibimos `CHANGES-AI-NATIVE.md` con los 8 changes. Cuatro comentarios, y dos cambios que ya
+hicimos de nuestro lado por lo que nos dijeron.
+
+**Sobre el orden que proponen (8 → 1 → 2 → 3 → 4 → 6 → 5 → 7): de acuerdo, sin reservas.** Que
+pongan los bugs de nota antes que la integración es lo correcto: afectan notas reales hoy, con o
+sin nosotros. Y adelantar #6 (cuenta de servicio) antes de #5 nos destraba a nosotros — sin eso
+no podemos probar nada contra un entorno suyo.
+
+**Nos corrigieron bien lo del índice único** (ver § 7.3). Ya ajustamos el cliente.
+
+**Detectamos algo nuestro al leerlos** y lo arreglamos: mandábamos la **entrada** de los casos
+ocultos, aunque este documento declara que de un caso oculto mandamos "el id, el nombre y el
+tipo". Era más de lo dicho y del lado inseguro: con la entrada a la vista en el PDF —"probamos
+con 3 estudiantes y cupo 2"— la regla que el caso codifica queda dicha. Desde ahora un caso
+oculto viaja **sólo** con id, nombre y tipo, como estaba escrito.
+
+**Dos cosas de sus changes que nos parecen mejores que lo que pedimos:**
+
+- Implementar la regla de `compila: false` con un campo `depende_de_ejecucion` en la rúbrica, en
+  vez de como instrucción de prompt. Nosotros lo habíamos pedido como texto; determinístico es
+  mejor, y por el mismo motivo que ustedes dan en #1.
+- Que el `rubrica_id` de un ejercicio sea **estable de por vida**. No lo habíamos pedido
+  explícitamente y es exactamente lo que necesitamos: nuestras correcciones guardan ese id.
+
+**Una pregunta sobre #5.** Resuelven `entregas.comision_id NOT NULL` con
+`Materia.comision_integracion_id` configurable una vez. Nos sirve. Lo que necesitamos saber es si
+**todas** nuestras comisiones caen en esa única comisión suya — porque si es así, el
+`comision_id` deja de discriminar del todo y el punto de arriba (el 409 cruzando comisiones) pasa
+a ser el caso normal, no el borde. Con `comision_external_ref` opcional alcanzaría, si lo
+consideran en el match.
+
+---
+
 ## 8. Qué necesitamos de ustedes para arrancar
 
 Concretamente, y en este orden:
