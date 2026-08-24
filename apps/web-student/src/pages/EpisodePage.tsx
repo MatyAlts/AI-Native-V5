@@ -315,6 +315,32 @@ export function EpisodeView({ episodeId, onExit, ejercicioContext, getToken }: E
     }
   }, [episodeId])
 
+  /* Emite por la cola durable del CTRClient en vez de por `fetch` directo.
+   *
+   * El fetch directo no tenia red: un fallo terminaba en un `console.warn` y
+   * el trabajo del alumno se perdia sin que nadie se enterara — es el
+   * incidente del piloto ("pause y perdi lo que habia escrito"). La cola
+   * persiste en localStorage, sobrevive al refresh, reintenta con backoff y
+   * manda `Idempotency-Key`, que es lo que evita que un reintento avance el
+   * contador de seq y abra un hueco en la cadena.
+   *
+   * El fallback al fetch cubre la ventana entre el primer render y el
+   * useEffect que monta el cliente: ahi todavia no hay cola, y perder el
+   * evento seria justamente lo que estamos evitando. */
+  const emitirConCola = useCallback(
+    (porCola: (client: CTRClient) => void, directo: () => Promise<unknown>, tipo: string) => {
+      const client = ctrClientRef.current
+      if (client) {
+        porCola(client)
+        return
+      }
+      void directo().catch((e) => {
+        console.warn(`emit ${tipo} failed (sin cola):`, e)
+      })
+    },
+    [],
+  )
+
   const ejercicioOrden = ejercicioContext?.ejercicioOrden ?? null
 
   const scrollToBottom = useCallback(() => {
@@ -850,42 +876,54 @@ export function EpisodeView({ episodeId, onExit, ejercicioContext, getToken }: E
           setMaxActividad((a) => (a < 3 ? 3 : a))
           // P0 (QA 2026-05-29): emitir codigo_ejecutado al CTR. Sin esto el
           // classifier no distingue N3/N4 y todo cae a apropiacion_superficial.
-          void emitCodigoEjecutado(episodeId, {
+          const payloadEjecucion = {
             code: result.code,
             stdout: result.output,
             stderr: result.error ?? "",
             duration_ms: Math.round(result.durationMs),
-          }).catch((e) => {
-            console.warn("emit codigo_ejecutado failed:", e)
-          })
+          }
+          emitirConCola(
+            (c) => c.codigoEjecutado(payloadEjecucion),
+            () => emitCodigoEjecutado(episodeId, payloadEjecucion),
+            "codigo_ejecutado",
+          )
         }}
         onEditDebounced={(snapshot, diffChars, origin) => {
           setMaxActividad((a) => (a < 2 ? 2 : a))
-          void emitEdicionCodigo(episodeId, {
+          const payloadEdicion = {
             snapshot,
             diff_chars: Math.abs(diffChars),
             language,
             origin,
-          }).catch((e) => {
-            console.warn("emit edicion_codigo failed:", e)
-          })
+          }
+          emitirConCola(
+            (c) => c.edicionCodigo(payloadEdicion),
+            () => emitEdicionCodigo(episodeId, payloadEdicion),
+            "edicion_codigo",
+          )
         }}
         onPasteAttempt={(payload) => {
-          void emitPegaIntentada(episodeId, {
+          const payloadPega = {
             contenido_longitud: payload.contenidoLongitud,
             contenido_preview: payload.contenidoPreview,
             metodo: payload.metodo,
-          }).catch((e) => {
-            console.warn("emit pega_intentada failed:", e)
-          })
+          }
+          emitirConCola(
+            (c) => c.pegaIntentada(payloadPega),
+            () => emitPegaIntentada(episodeId, payloadPega),
+            "pega_intentada",
+          )
         }}
         onCopyAttempt={(payload) => {
-          void emitCopiaIntentada(episodeId, {
+          const payloadCopia = {
             seleccion_chars: payload.seleccionChars,
             metodo: payload.metodo,
-          }).catch((e) => {
-            console.warn("emit copia_intentada failed:", e)
-          })
+          }
+          emitirConCola(
+            (c) => c.copiaIntentada(payloadCopia),
+            () => emitCopiaIntentada(episodeId, payloadCopia),
+            "copia_intentada",
+          )
         }}
       />
     </section>
@@ -1549,6 +1587,11 @@ function useReadingTimeReporter(episodeId: string | null, enabled: boolean, flus
       if (accumMs < 1000 || !episodeId) return
       const seconds = accumMs / 1000
       accumMs = 0
+      // Sigue por fetch directo, a diferencia de los eventos de codigo. Este
+      // hook vive en `EnunciadoPanel`, que no tiene el CTRClient a mano, y
+      // `lectura_enunciado` mide tiempo de lectura: perderlo degrada una
+      // metrica, no borra trabajo del alumno. La reacumulacion de `accumMs`
+      // ante el fallo es la red que le corresponde.
       try {
         await emitLecturaEnunciado(episodeId, { duration_seconds: seconds })
       } catch (e) {
