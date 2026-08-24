@@ -310,7 +310,7 @@ def _build_episode_state(episode_id: UUID, ep: dict[str, Any]) -> EpisodeStateRe
       - messages: pares (prompt_enviado, tutor_respondio) en orden de seq.
         prompt_enviado.payload.content → role="user".
         tutor_respondio.payload.content → role="assistant".
-      - notes: eventos `nota_personal` con payload.contenido.
+      - notes: eventos `anotacion_creada` con payload.content.
 
     Eventos sin los campos esperados se ignoran silenciosamente — la UI
     debe ser tolerante a versiones viejas del schema.
@@ -353,8 +353,19 @@ def _build_episode_state(episode_id: UUID, ep: dict[str, Any]) -> EpisodeStateRe
             content = payload.get("content")
             if isinstance(content, str):
                 messages.append({"role": "assistant", "content": content, "ts": ts})
-        elif et in ("nota_personal", "nota_estudiante"):
-            contenido = payload.get("contenido") or payload.get("content")
+        elif et in ("anotacion_creada", "nota_personal", "nota_estudiante"):
+            # El evento real es `anotacion_creada` con `payload.content` — asi
+            # lo emite `record_anotacion_creada` y asi lo define el contrato
+            # (`AnotacionCreadaPayload`). Este filtro buscaba `nota_personal`
+            # y `nota_estudiante`, dos literales que no existen en ninguna
+            # parte del codigo: las notas del alumno nunca se reconstruian.
+            # Escribia su reflexion, refrescaba, y el panel aparecia vacio —
+            # el dato seguia intacto en la cadena, pero el no volvia a verlo.
+            #
+            # Los dos nombres viejos se conservan por el criterio del
+            # docstring (tolerar versiones anteriores del schema); no cuestan
+            # nada y cubren cualquier evento historico que los usara.
+            contenido = payload.get("content") or payload.get("contenido")
             if isinstance(contenido, str):
                 notes.append({"contenido": contenido, "ts": ts})
 
