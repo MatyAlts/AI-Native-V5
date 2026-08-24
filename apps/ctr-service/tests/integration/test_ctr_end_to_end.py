@@ -503,19 +503,20 @@ def _apertura_payload() -> dict:
     }
 
 
-async def test_seq_adelantado_queda_pending_y_nunca_llega_a_dlq(
+async def test_seq_adelantado_se_reintenta_y_termina_en_dlq(
     pg_engine, session_factory, redis_container
 ) -> None:
-    """CARACTERIZACION: un evento con seq adelantado no se persiste, pero
-    tampoco se reintenta ni termina en la DLQ.
+    """Un evento que no puede persistirse se reintenta y termina en la DLQ,
+    marcando el episodio como `integrity_compromised`.
 
-    `_process_batch` lee el stream con ">" (solo mensajes nuevos), y no
-    existe XAUTOCLAIM/XCLAIM en el servicio. Un mensaje que falla queda
-    PENDING indefinidamente: `_get_attempts` nunca supera 1, nunca se
-    alcanza MAX_ATTEMPTS y `_move_to_dlq` nunca corre.
+    Antes del reclamo de pendientes esto no ocurria: `_process_batch` lee el
+    stream con ">" (solo mensajes nuevos), asi que un mensaje que fallaba
+    quedaba en la PEL sin que ninguna lectura posterior lo alcanzara.
+    `_get_attempts` nunca superaba 1, MAX_ATTEMPTS era inalcanzable y el
+    episodio afectado seguia figurando como sano.
 
-    Consecuencia: el episodio NO se marca `integrity_compromised`, asi que
-    la deteccion que el diseño promete no llega a materializarse.
+    `claim_min_idle_ms=0` hace que el reclamo ocurra en el ciclo siguiente
+    en vez de esperar el umbral de produccion.
     """
     import redis.asyncio as redis
     from ctr_service.models import Episode, Event
@@ -535,27 +536,36 @@ async def test_seq_adelantado_queda_pending_y_nunca_llega_a_dlq(
 
     tenant, episode_id = uuid4(), uuid4()
     worker = PartitionWorker(
-        config=PartitionConfig(partition=0, block_ms=500),
+        config=PartitionConfig(
+            partition=0,
+            block_ms=500,
+            claim_min_idle_ms=0,
+            # DLQ propia: el stream y el consumer group son compartidos por
+            # el modulo, contar sobre `ctr.dead` global ataria el test al
+            # orden de ejecucion.
+            dlq_stream=f"ctr.dead.{uuid4().hex[:8]}",
+        ),
         redis_client=r,
         session_factory=session_factory,
     )
     await worker.ensure_consumer_group()
 
-    # seq=0: apertura, se persiste bien.
     await producer.publish(
         _seq_event(episode_id, tenant, 0, "episodio_abierto", _apertura_payload())
     )
     await worker._process_batch()
 
-    # seq=5 con la cadena en 1: hueco. El worker levanta ValueError.
+    # seq=5 con la cadena en 1: hueco, no puede persistirse.
     await producer.publish(
-        _seq_event(episode_id, tenant, 5, "edicion_codigo", {"snapshot": "x = 1", "origin": "typed"})
+        _seq_event(
+            episode_id, tenant, 5, "edicion_codigo", {"snapshot": "x = 1", "origin": "typed"}
+        )
     )
     await worker._process_batch()
 
-    # Aunque el loop siga girando, el mensaje fallido NO se vuelve a leer:
-    # xreadgroup pide ">" y el pendiente no entra en esa lectura.
-    for _ in range(MAX_ATTEMPTS + 2):
+    # Cada ciclo reclama el pendiente y suma un intento. Al alcanzar
+    # MAX_ATTEMPTS el mensaje se mueve a la DLQ y se ackea.
+    for _ in range(MAX_ATTEMPTS + 1):
         await worker._process_batch()
 
     async with session_factory() as s:
@@ -568,17 +578,76 @@ async def test_seq_adelantado_queda_pending_y_nunca_llega_a_dlq(
         )
         ep = (await s.execute(select(Episode).where(Episode.id == episode_id))).scalar_one()
 
-    # 1. El evento no se persistio.
+    # El evento sigue sin persistirse — la cadena no se falsea para aceptarlo.
     assert [e.seq for e in events] == [0]
 
-    # 2. Quedo colgado en PENDING, no en la DLQ.
+    # Pero ahora deja rastro: DLQ + episodio marcado, y nada colgado en la PEL.
+    assert await r.xlen(worker.cfg.dlq_stream) == 1, "el mensaje debe terminar en la DLQ"
     pending = await r.xpending(worker.stream_key, worker.cfg.consumer_group)
-    assert int(pending.get("pending", 0)) == 1, "el mensaje fallido deberia estar pendiente"
-    assert await r.xlen(worker.cfg.dlq_stream) == 0, "nunca llega a la DLQ"
+    assert int(pending.get("pending", 0)) == 0, "no debe quedar nada pendiente"
+    assert ep.integrity_compromised is True
+    assert ep.estado == "integrity_compromised"
 
-    # 3. Y por eso el episodio nunca se marca comprometido.
-    assert ep.integrity_compromised is False
-    assert ep.estado != "integrity_compromised"
+    await r.aclose()
+
+
+async def test_pendiente_reciente_no_se_reclama_antes_del_umbral(
+    pg_engine, session_factory, redis_container
+) -> None:
+    """El reclamo respeta `claim_min_idle_ms`: un mensaje que acaba de fallar
+    no se reprocesa en el ciclo inmediato.
+
+    Sin ese umbral el worker giraria sobre el mismo mensaje fallido a la
+    velocidad del loop, gastando intentos y CPU antes de que la condicion
+    transitoria que lo hizo fallar tenga chance de resolverse.
+    """
+    import redis.asyncio as redis
+    from ctr_service.services.producer import EventProducer
+    from ctr_service.workers.partition_worker import PartitionConfig, PartitionWorker
+
+    redis_url = (
+        f"redis://{redis_container.get_container_host_ip()}:"
+        f"{redis_container.get_exposed_port(6379)}/0"
+    )
+    r = redis.from_url(redis_url, decode_responses=False)
+    producer = EventProducer(r, num_partitions=1)
+
+    tenant, episode_id = uuid4(), uuid4()
+    worker = PartitionWorker(
+        config=PartitionConfig(
+            partition=0,
+            block_ms=500,
+            claim_min_idle_ms=60_000,
+            dlq_stream=f"ctr.dead.{uuid4().hex[:8]}",
+        ),
+        redis_client=r,
+        session_factory=session_factory,
+    )
+    await worker.ensure_consumer_group()
+
+    await producer.publish(
+        _seq_event(episode_id, tenant, 0, "episodio_abierto", _apertura_payload())
+    )
+    await worker._process_batch()
+
+    _baseline = await r.xpending(worker.stream_key, worker.cfg.consumer_group)
+    antes = int(_baseline.get("pending", 0)) if _baseline else 0
+
+    await producer.publish(
+        _seq_event(
+            episode_id, tenant, 4, "edicion_codigo", {"snapshot": "y = 2", "origin": "typed"}
+        )
+    )
+    await worker._process_batch()
+
+    for _ in range(3):
+        await worker._process_batch()
+
+    # Sigue pendiente y todavia no fue a la DLQ: el umbral no se cumplio.
+    # El stream es compartido por el modulo, asi que comparamos el delta.
+    pending = await r.xpending(worker.stream_key, worker.cfg.consumer_group)
+    assert int(pending.get("pending", 0)) == antes + 1
+    assert await r.xlen(worker.cfg.dlq_stream) == 0
 
     await r.aclose()
 

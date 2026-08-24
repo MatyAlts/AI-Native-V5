@@ -63,6 +63,11 @@ class PartitionConfig:
     dlq_stream: str = "ctr.dead"
     block_ms: int = 2000
     batch_size: int = 32
+    # Idle minimo (ms) que debe acumular un mensaje pendiente para que otro
+    # ciclo lo reclame via XAUTOCLAIM. Sin este reclamo, un mensaje que
+    # falla queda PENDING para siempre: XREADGROUP con ">" solo entrega
+    # mensajes nuevos. Los tests lo bajan a 0 para no esperar.
+    claim_min_idle_ms: int = 60_000
 
 
 class PartitionWorker:
@@ -159,7 +164,14 @@ class PartitionWorker:
             await asyncio.sleep(30)
 
     async def _process_batch(self) -> None:
-        """Lee un batch del stream y procesa cada mensaje."""
+        """Lee un batch del stream y procesa cada mensaje.
+
+        Antes de pedir mensajes nuevos, reclama los que quedaron pendientes
+        de un intento anterior: sin eso el retry con DLQ que documenta este
+        modulo no llega a ocurrir nunca.
+        """
+        await self._reclaim_stale_pending()
+
         # XREADGROUP con block: espera hasta block_ms si no hay mensajes
         messages = cast(
             _XReadGroupMessages,
@@ -179,6 +191,55 @@ class PartitionWorker:
         for _, entries in messages:
             for message_id, fields in entries:
                 await self._process_message(message_id, fields)
+
+    async def _reclaim_stale_pending(self) -> None:
+        """Reclama mensajes pendientes que superaron `claim_min_idle_ms`.
+
+        `_process_batch` lee el stream con ">" y eso entrega unicamente
+        mensajes nuevos. Un mensaje que falla no se ackea y queda en la PEL
+        del grupo, donde ninguna lectura posterior lo alcanza: sin este
+        reclamo `_get_attempts` nunca supera 1, MAX_ATTEMPTS es inalcanzable
+        y `_move_to_dlq` — junto con el `integrity_compromised` que marca —
+        no llega a ejecutarse. El mensaje se pierde en silencio.
+
+        XAUTOCLAIM reasigna esos mensajes a este consumer e incrementa su
+        contador de entregas, que es lo que `_get_attempts` consulta. El
+        umbral de idle evita reprocesar en bucle apretado un mensaje que
+        acaba de fallar.
+
+        Fail-soft: si el reclamo falla, se registra y el ciclo sigue con los
+        mensajes nuevos — un problema reclamando no debe frenar la ingesta.
+        """
+        cursor: Any = "0-0"
+        reclaimed = 0
+        try:
+            while reclaimed < self.cfg.batch_size:
+                result = await self.redis.xautoclaim(
+                    name=self.stream_key,
+                    groupname=self.cfg.consumer_group,
+                    consumername=self.consumer_name,
+                    min_idle_time=self.cfg.claim_min_idle_ms,
+                    start_id=cursor,
+                    count=self.cfg.batch_size,
+                )
+                cursor, entries = result[0], result[1]
+                if not entries:
+                    break
+                for message_id, fields in entries:
+                    await self._process_message(message_id, fields)
+                    reclaimed += 1
+                if not cursor or cursor in ("0-0", b"0-0"):
+                    break
+        except Exception:
+            logger.exception("Error reclamando pendientes en partition=%d", self.cfg.partition)
+            return
+
+        if reclaimed:
+            logger.info(
+                "Reclamados %d mensajes pendientes en partition=%d",
+                reclaimed,
+                self.cfg.partition,
+            )
 
     async def _process_message(self, message_id: str, fields: dict[bytes, bytes]) -> None:
         """Procesa un mensaje con retry + DLQ."""
