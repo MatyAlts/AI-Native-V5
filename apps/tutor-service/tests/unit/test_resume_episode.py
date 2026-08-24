@@ -274,6 +274,36 @@ async def test_resume_heal_de_episodio_open_sin_sesion(
     assert state.seq == 5
 
 
+async def test_resume_desbloquea_episodio_con_integridad_comprometida(
+    tutor: TutorCore, fake_ctr: _FakeCTR
+) -> None:
+    """Un episodio marcado `integrity_compromised` se reanuda a proposito.
+
+    Ese estado lo pone el partition_worker cuando un evento no pudo entrar en
+    la cadena y termino en la DLQ. A partir de ahi el contador de seq quedo
+    adelantado respecto de `events_count` y todo evento nuevo del episodio se
+    rechaza: el alumno escribe y nada se guarda.
+
+    Bloquear la reanudacion lo dejaria sin poder ni entrar al ejercicio, que
+    es peor. Reanudar repone el contador desde `events_count` y lo desbloquea;
+    la marca del episodio no se toca — el hueco en la cadena queda registrado.
+    """
+    tenant_id, student_id, episode_id = uuid4(), uuid4(), uuid4()
+    fake_ctr.episodes[str(episode_id)] = _paused_episode(
+        episode_id, tenant_id, student_id, estado="integrity_compromised"
+    )
+
+    await tutor.resume_episode(episode_id=episode_id, tenant_id=tenant_id, user_id=student_id)
+
+    state = await tutor.sessions.get(episode_id)
+    assert state is not None
+    assert state.seq == 5  # events_count del episodio persistido
+
+    # El proximo evento reserva exactamente `events_count`: el seq que el
+    # partition_worker espera. La cadena vuelve a avanzar.
+    assert await tutor.sessions.next_seq(state) == 5
+
+
 async def test_resume_idempotente_con_sesion_viva(tutor: TutorCore, fake_ctr: _FakeCTR) -> None:
     """Si la sesión ya existe (doble click / dos pestañas), el resume devuelve
     el atajo idempotente sin resetear el seq.

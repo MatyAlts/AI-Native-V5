@@ -873,11 +873,14 @@ class TutorCore:
         primer evento posterior. Esto preserva append-only sin tipos nuevos.
 
         El `seq` de la sesión reconstruida sale de `events_count` del episodio
-        persistido. Gate de consistencia: solo se reanuda con `estado=paused`
+        persistido. Gate de consistencia: se reanuda con `estado=paused`
         (garantiza que el episodio_abandonado ya fue drenado del stream — no
-        hay eventos en vuelo que puedan colisionar seq) o `estado=open` SIN
+        hay eventos en vuelo que puedan colisionar seq), con `estado=open` SIN
         sesión viva (sesión expirada por TTL sin abandono: heal del episodio
-        huérfano, misma garantía porque sin sesión nadie pudo emitir).
+        huérfano, misma garantía porque sin sesión nadie pudo emitir), o con
+        `estado=integrity_compromised` (el partition_worker mando un evento a
+        la DLQ y borro la sesión: reanudar es justamente lo que repone el
+        contador de seq y desbloquea al alumno).
 
         Idempotente: si la sesión ya existe (doble click, dos pestañas),
         devuelve el contexto vigente sin tocar nada.
@@ -927,7 +930,16 @@ class TutorCore:
             }
 
         estado = ep.get("estado")
-        if estado not in ("paused", "open"):
+        # `integrity_compromised` se reanuda a proposito. Ese estado lo pone
+        # el partition_worker cuando un evento no pudo entrar en la cadena y
+        # termino en la DLQ; a partir de ahi el contador de seq quedo
+        # adelantado respecto de `events_count` y todo evento nuevo del
+        # episodio se rechaza. Bloquear la reanudacion dejaria al alumno sin
+        # poder entrar al ejercicio, que es peor que el problema que causo la
+        # marca. Reanudar repone el contador desde `events_count` y lo
+        # desbloquea; la bandera `integrity_compromised` del episodio NO se
+        # limpia — el hueco en la cadena queda registrado como evidencia.
+        if estado not in ("paused", "open", "integrity_compromised"):
             raise HTTPException(
                 status_code=status.HTTP_409_CONFLICT,
                 detail=f"Episodio en estado '{estado}' — solo se reanudan episodios en pausa",

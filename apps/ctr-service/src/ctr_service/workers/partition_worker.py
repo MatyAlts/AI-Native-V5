@@ -47,6 +47,16 @@ logger = logging.getLogger(__name__)
 
 MAX_ATTEMPTS = 3  # después se envía a DLQ
 
+# Sesión Redis del tutor-service. El CTR normalmente no conoce keys de otro
+# servicio; la excepción es deliberada y está acotada a un DEL. Cuando un
+# evento no puede persistirse, el contador de seq del tutor queda adelantado
+# respecto de `events_count` y TODO evento posterior de ese episodio se
+# rechaza: el alumno sigue trabajando y nada se guarda. Invalidar la sesión
+# fuerza que el próximo acceso pase por `resume_episode`, que ya repone el
+# contador desde `events_count` (el heal existe y está testeado; lo único
+# que faltaba era dispararlo).
+TUTOR_SESSION_KEY_PREFIX = "tutor:session:"
+
 # El stub de redis-py tipa xreadgroup() con un Union que cubre variantes de
 # respuesta (dict-shaped) que XREADGROUP nunca produce en la practica; con
 # decode_responses=False la forma real es siempre esta lista de tuplas
@@ -520,6 +530,22 @@ class PartitionWorker:
                 # Métrica: incremento del counter post-commit. tenant_id como
                 # único label (episode_id prohibido por cardinalidad).
                 ctr_episodes_integrity_compromised_total.add(1, {"tenant_id": str(tenant_id)})
+
+                # Desbloquear al alumno: sin sesión viva, el próximo acceso
+                # entra por `resume_episode` y repone el contador de seq
+                # desde `events_count`. Sin esto el episodio queda mudo —
+                # cada evento nuevo nace con un seq que ya no puede entrar.
+                # Fail-soft: el evento ya está en la DLQ y el episodio
+                # marcado; no poder invalidar la sesión no debe frenar al
+                # worker.
+                try:
+                    await self.redis.delete(f"{TUTOR_SESSION_KEY_PREFIX}{episode_id}")
+                except Exception:
+                    logger.warning(
+                        "No se pudo invalidar la sesión del tutor para episodio %s",
+                        episode_id,
+                        exc_info=True,
+                    )
             except Exception:
                 logger.exception("Error guardando dead-letter en DB")
 

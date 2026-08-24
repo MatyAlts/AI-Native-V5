@@ -555,6 +555,13 @@ async def test_seq_adelantado_se_reintenta_y_termina_en_dlq(
     )
     await worker._process_batch()
 
+    # Sesion viva del tutor: mientras exista, `resume_episode` hace
+    # early-return y el contador de seq nunca se repone.
+    from ctr_service.workers.partition_worker import TUTOR_SESSION_KEY_PREFIX
+
+    session_key = f"{TUTOR_SESSION_KEY_PREFIX}{episode_id}"
+    await r.set(session_key, b'{"seq": 5}')
+
     # seq=5 con la cadena en 1: hueco, no puede persistirse.
     await producer.publish(
         _seq_event(
@@ -587,6 +594,12 @@ async def test_seq_adelantado_se_reintenta_y_termina_en_dlq(
     assert int(pending.get("pending", 0)) == 0, "no debe quedar nada pendiente"
     assert ep.integrity_compromised is True
     assert ep.estado == "integrity_compromised"
+
+    # Y la sesion del tutor quedo invalidada: el proximo acceso del alumno
+    # entra por `resume_episode`, que repone el contador desde events_count.
+    # Sin esto el episodio queda mudo — todo evento nuevo nace con un seq
+    # que ya no puede entrar en la cadena.
+    assert await r.exists(session_key) == 0
 
     await r.aclose()
 
