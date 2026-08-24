@@ -47,15 +47,31 @@ logger = logging.getLogger(__name__)
 
 MAX_ATTEMPTS = 3  # después se envía a DLQ
 
-# Sesión Redis del tutor-service. El CTR normalmente no conoce keys de otro
-# servicio; la excepción es deliberada y está acotada a un DEL. Cuando un
-# evento no puede persistirse, el contador de seq del tutor queda adelantado
-# respecto de `events_count` y TODO evento posterior de ese episodio se
-# rechaza: el alumno sigue trabajando y nada se guarda. Invalidar la sesión
-# fuerza que el próximo acceso pase por `resume_episode`, que ya repone el
-# contador desde `events_count` (el heal existe y está testeado; lo único
-# que faltaba era dispararlo).
-TUTOR_SESSION_KEY_PREFIX = "tutor:session:"
+# Contador atómico de seq del tutor-service (`SessionManager.SEQ_KEY_PREFIX`).
+# El CTR normalmente no conoce keys de otro servicio; la excepción es
+# deliberada, está acotada a un SET y se documenta acá.
+#
+# Cuando un evento no puede persistirse, ese contador queda adelantado
+# respecto de `events_count` y TODO evento posterior del episodio se rechaza:
+# el alumno sigue trabajando y nada se guarda. El worker es el único que sabe
+# cuál es el valor correcto —lo tiene en `events_count`— así que lo repone
+# directamente.
+#
+# Se repone el contador y NO se toca `tutor:session:`. El `seq` del JSON de
+# sesión es un espejo no autoritativo (ver `SessionManager.next_seq`): el
+# contador manda. Borrar la sesión sería peor por tres razones: dependería de
+# que el frontend reanude (no lo hace para este estado), echaría al alumno de
+# una sesión viva, y una request en vuelo la recrearía dejando el contador
+# igual de desalineado.
+#
+# Reponer es además idempotente: si el mismo episodio manda N eventos a la
+# DLQ, las N reposiciones escriben el mismo valor.
+TUTOR_SEQ_KEY_PREFIX = "tutor:seq:"
+
+# TTL del contador, espejado de `SessionManager.SESSION_TTL` (6 h). Si se
+# repusiera sin TTL la key quedaría para siempre; si se repusiera con uno más
+# corto, expiraría antes que la sesión que la acompaña.
+TUTOR_SEQ_TTL_SECONDS = 6 * 3600
 
 # El stub de redis-py tipa xreadgroup() con un Union que cubre variantes de
 # respuesta (dict-shaped) que XREADGROUP nunca produce en la practica; con
@@ -201,6 +217,50 @@ class PartitionWorker:
         for _, entries in messages:
             for message_id, fields in entries:
                 await self._process_message(message_id, fields)
+
+    async def _reponer_contador_seq(self, episode_id: UUID, tenant_id: UUID) -> None:
+        """Repone el contador de seq del tutor al `events_count` del episodio.
+
+        Es el heal del incidente de desincronización: el tutor asigna el seq
+        con `INCR tutor:seq:{episode_id}` y el worker lo valida contra
+        `episodes.events_count`. Cuando un evento no entra, el contador ya lo
+        contó y la cadena no, y desde ahí todo lo que el alumno escriba se
+        rechaza. El worker es el único de los dos que sabe cuál es el valor
+        correcto.
+
+        Escribe `events_count` — el próximo `INCR` devolverá `events_count + 1`
+        y `next_seq` entregará `events_count`, que es exactamente lo que la
+        cadena espera a continuación.
+
+        Fail-soft y sin excepciones hacia afuera: llega desde `_move_to_dlq`,
+        donde el evento ya está archivado y el episodio marcado. Un fallo acá
+        deja el episodio bloqueado —el estado previo al fix— pero no debe
+        frenar la ingesta del resto.
+        """
+        try:
+            async with tenant_session(tenant_id) as session:
+                ep = await session.get(Episode, episode_id)
+                if ep is None:
+                    return
+                events_count = int(ep.events_count)
+
+            await self.redis.set(
+                f"{TUTOR_SEQ_KEY_PREFIX}{episode_id}",
+                events_count,
+                ex=TUTOR_SEQ_TTL_SECONDS,
+            )
+            logger.info(
+                "Contador de seq repuesto a %d para episodio %s",
+                events_count,
+                episode_id,
+            )
+        except Exception:
+            logger.warning(
+                "No se pudo reponer el contador de seq del episodio %s; "
+                "queda bloqueado hasta la proxima reanudacion",
+                episode_id,
+                exc_info=True,
+            )
 
     async def _reclaim_stale_pending(self) -> None:
         """Reclama mensajes pendientes que superaron `claim_min_idle_ms`.
@@ -412,11 +472,23 @@ class PartitionWorker:
                 # proyeccion de estado se sigue resolviendo bien (no rompe verify).
                 ep.estado = "open"
                 ep.closed_at = None
-            elif ep.estado == "paused":
+            elif ep.estado in ("paused", "integrity_compromised"):
                 # ADR-055: cualquier actividad posterior a un abandono reanuda
                 # el episodio (el estudiante retomo via resume). No requiere
                 # evento dedicado — la reanudacion es derivable de la cadena
                 # (episodio_abandonado seguido de mas eventos).
+                #
+                # `integrity_compromised` se repone por el mismo criterio: lo
+                # pone `_move_to_dlq` cuando un evento no entro en la cadena, y
+                # que llegue un evento posterior significa que el contador de
+                # seq volvio a alinearse y el episodio esta operativo otra vez.
+                #
+                # Dejarlo pegado en ese estado tiene un costo que no se ve: hay
+                # consultas que filtran por `estado IN ('closed','paused')`, asi
+                # que el episodio DESAPARECE de la vista del docente y del
+                # progreso del alumno — no aparece marcado, no aparece. La
+                # bandera `integrity_compromised` del episodio NO se toca: ahi
+                # queda registrado el hueco, que es lo que hay que preservar.
                 ep.estado = "open"
 
         # Salir del context manager → tenant_session hace commit. Si hubo
@@ -517,35 +589,40 @@ class PartitionWorker:
                     )
                     session.add(dl)
 
-                    # Marcar episodio afectado (integrity_compromised = TRUE)
+                    # Marcar episodio afectado (integrity_compromised = TRUE).
+                    #
+                    # La bandera se pone siempre — el hueco en la cadena
+                    # ocurrio y hay que registrarlo. El `estado`, en cambio,
+                    # NO se pisa si el episodio ya cerro: un mensaje viejo que
+                    # llega tarde a la DLQ lo des-cerraria, dejando
+                    # `closed_at` seteado con otro estado y rompiendo la
+                    # reflexion final, que exige `estado == "closed"`. Con el
+                    # reclamo de pendientes activo esto dejo de ser
+                    # improbable: los mensajes viejos ahora si se reprocesan.
                     await session.execute(
                         update(Episode)
                         .where(Episode.id == episode_id)
-                        .values(
-                            integrity_compromised=True,
-                            estado="integrity_compromised",
-                        )
+                        .values(integrity_compromised=True)
+                    )
+                    await session.execute(
+                        update(Episode)
+                        .where(Episode.id == episode_id, Episode.estado != "closed")
+                        .values(estado="integrity_compromised")
                     )
 
                 # Métrica: incremento del counter post-commit. tenant_id como
                 # único label (episode_id prohibido por cardinalidad).
                 ctr_episodes_integrity_compromised_total.add(1, {"tenant_id": str(tenant_id)})
 
-                # Desbloquear al alumno: sin sesión viva, el próximo acceso
-                # entra por `resume_episode` y repone el contador de seq
-                # desde `events_count`. Sin esto el episodio queda mudo —
-                # cada evento nuevo nace con un seq que ya no puede entrar.
-                # Fail-soft: el evento ya está en la DLQ y el episodio
-                # marcado; no poder invalidar la sesión no debe frenar al
+                # Desbloquear al alumno reponiendo el contador de seq al
+                # valor que la cadena espera. Sin esto el episodio queda mudo:
+                # cada evento nuevo nace con un seq que ya no puede entrar, y
+                # el alumno escribe sin que nada se guarde.
+                #
+                # Fail-soft: el evento ya está en la DLQ y el episodio quedó
+                # marcado; no poder reponer el contador no debe frenar al
                 # worker.
-                try:
-                    await self.redis.delete(f"{TUTOR_SESSION_KEY_PREFIX}{episode_id}")
-                except Exception:
-                    logger.warning(
-                        "No se pudo invalidar la sesión del tutor para episodio %s",
-                        episode_id,
-                        exc_info=True,
-                    )
+                await self._reponer_contador_seq(episode_id, tenant_id)
             except Exception:
                 logger.exception("Error guardando dead-letter en DB")
 

@@ -176,7 +176,6 @@ async def test_un_evento_perdido_desincroniza_los_contadores_y_el_heal_los_reali
     `events_count` — que es lo que hace `resume_episode` — realinea las dos
     puntas y el episodio vuelve a aceptar eventos.
     """
-    from ctr_service.workers.partition_worker import TUTOR_SESSION_KEY_PREFIX
     from tutor_service.services.session import SEQ_KEY_PREFIX
 
     r, producer, worker, sessions, state = await _armar(redis_container, session_factory)
@@ -207,13 +206,12 @@ async def test_un_evento_perdido_desincroniza_los_contadores_y_el_heal_los_reali
     assert await _seqs_persistidos(session_factory, state) == [0]
     assert await r.xlen(worker.cfg.dlq_stream) == 1
 
-    # El worker invalido la sesion del tutor: sin ella el proximo acceso
-    # entra por `resume_episode` en vez de por el atajo idempotente.
-    assert await r.exists(f"{TUTOR_SESSION_KEY_PREFIX}{state.episode_id}") == 0
-
-    # Eso es lo que hace `resume_episode`: reponer el contador desde el
-    # events_count persistido.
-    await sessions.init_seq_counter(state.episode_id, await _events_count(session_factory, state))
+    # El worker repuso el contador del tutor por su cuenta — no hay que
+    # reanudar a mano ni esperar a que el alumno recargue. Es el heal real:
+    # nadie del lado del tutor intervino en este bloque.
+    assert int(await r.get(f"{SEQ_KEY_PREFIX}{state.episode_id}")) == await _events_count(
+        session_factory, state
+    )
 
     recuperado = await sessions.next_seq(state)
     assert recuperado == 1, "el contador vuelve a producir el seq que la cadena espera"
