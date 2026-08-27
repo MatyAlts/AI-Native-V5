@@ -45,6 +45,7 @@
  * y una diferencia ahi seria justo la asimetria Java/Python que este modulo
  * existe para impedir. Estos cuatro son identicos en los dos lenguajes. */
 const BLANCOS_FINALES = /[ \t\f\v]+$/
+const BLANCOS_INICIALES = /^[ \t\f\v]+/
 
 /**
  * Normaliza una salida para compararla. Funcion PURA.
@@ -68,6 +69,15 @@ export function normalizarSalida(texto: string): string {
   // el criterio viejo: cambiarlos re-corrigiendo seria reescribir evidencia.
   while (lineas.length > 0 && lineas[0] === "") {
     lineas.shift()
+  }
+  // Y los blancos al principio de la PRIMERA linea, que es lo ultimo que el
+  // `strip()` viejo perdonaba y esta normalizacion no. Solo la primera: el
+  // `strip()` actuaba sobre los extremos del texto entero, asi que la sangria
+  // de las lineas siguientes SIEMPRE conto como contenido. Se replica esa
+  // asimetria tal cual — el objetivo es no cambiar ningun veredicto, ni para
+  // un lado ni para el otro.
+  if (lineas.length > 0) {
+    lineas[0] = lineas[0].replace(BLANCOS_INICIALES, "")
   }
   return lineas.join("\n")
 }

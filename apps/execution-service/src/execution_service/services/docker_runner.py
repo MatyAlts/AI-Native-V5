@@ -273,6 +273,8 @@ def normalize_output(text: str) -> str:
         lineas.pop()
     while lineas and lineas[0] == "":
         lineas.pop(0)
+    if lineas:
+        lineas[0] = lineas[0].lstrip(_BLANCOS_FINALES)
     return "\n".join(lineas)
 
 
