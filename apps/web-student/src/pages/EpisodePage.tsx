@@ -66,6 +66,7 @@ import {
   resumeEpisode,
   sendMessage,
 } from "../lib/api"
+import { guardarCodigoPrevio, leerCodigoPrevio } from "../lib/codigoPrevio"
 import { helpContent } from "../utils/helpContent"
 
 const ACTIVE_EPISODE_KEY = "active-episode-id"
@@ -159,6 +160,14 @@ export function EpisodeView({ episodeId, onExit, ejercicioContext, getToken }: E
   // hidratacion, porque al recargar la pagina ese contexto se pierde.
   const [ejercicioId, setEjercicioId] = useState<string | null>(
     ejercicioContext?.ejercicioId ?? null,
+  )
+  // ED-4: orden del ejercicio dentro de la TP, ya resuelto. Sale del contexto
+  // de navegacion y, si no vino (F5, link directo), del estado del episodio —
+  // la misma cascada que usa la hidratacion. `null` = TP monolitica. Lo
+  // necesitamos tambien FUERA del effect: al salir hay que dejar el buffer
+  // guardado para el ejercicio siguiente.
+  const [ejercicioOrdenEfectivo, setEjercicioOrdenEfectivo] = useState<number | null>(
+    ejercicioContext?.ejercicioOrden ?? null,
   )
   const [messages, setMessages] = useState<Message[]>([])
   // Indicador de ACTIVIDAD en curso (no es la clasificacion final del classifier,
@@ -465,7 +474,10 @@ export function EpisodeView({ episodeId, onExit, ejercicioContext, getToken }: E
         setTarea(t)
         // Lenguaje a nivel TP. Si la TP es multi-ejercicio se refina abajo con
         // el del ejercicio concreto, que es el que el alumno tiene delante.
-        applyLanguage(t.language ?? DEFAULT_LANGUAGE)
+        // Lo espejamos en una local porque la siembra ED-4 lo necesita YA, y
+        // el state de `language` recien existe en el render siguiente.
+        let langEfectivo: Language = t.language ?? DEFAULT_LANGUAGE
+        applyLanguage(langEfectivo)
         // El ejercicio del episodio sale del ESTADO, no del contexto de
         // navegacion: el contexto se pierde al recargar la pagina y el estado
         // no. Sin esto, un F5 dejaba la ejecucion server-side sin el id del
@@ -480,6 +492,7 @@ export function EpisodeView({ episodeId, onExit, ejercicioContext, getToken }: E
         // El orden sale del contexto de navegacion, y si no vino (F5, link
         // directo) del propio estado del episodio, que lo persiste.
         const ordenEfectivo = ejercicioOrden ?? state.ejercicio_orden ?? null
+        setEjercicioOrdenEfectivo(ordenEfectivo)
         if (ordenEfectivo != null) {
           try {
             const tpEjs = await listEjerciciosTp(state.tarea_practica_id)
@@ -489,7 +502,10 @@ export function EpisodeView({ episodeId, onExit, ejercicioContext, getToken }: E
               (tc) => tc.is_public !== false,
             )
             const ejLanguage = match?.ejercicio?.language
-            if (ejLanguage) applyLanguage(ejLanguage)
+            if (ejLanguage) {
+              langEfectivo = ejLanguage
+              applyLanguage(ejLanguage)
+            }
             if (match?.ejercicio?.id) setEjercicioId(match.ejercicio.id)
             // Codigo inicial del ejercicio del banco (solo si no hay snapshot ni
             // codigo inicial a nivel TP — mismo fallback que antes).
@@ -517,6 +533,31 @@ export function EpisodeView({ episodeId, onExit, ejercicioContext, getToken }: E
           if (initialCode) {
             usedPlaceholderRef.current = false
             setCode(initialCode)
+          }
+        }
+
+        // ED-4: ultimo eslabon de la cascada de siembra. Solo entra si NADA de
+        // lo anterior aplico (`usedPlaceholderRef` sigue en true): el snapshot
+        // del propio episodio y el scaffold que escribio el docente mandan
+        // siempre — pisarlos con el codigo del ejercicio anterior seria borrar
+        // trabajo del alumno en el primer caso y contradecir la consigna en el
+        // segundo.
+        //
+        // Esta siembra NO emite `edicion_codigo`: sale por el mismo camino que
+        // `last_code_snapshot` (el `initialCode` con el que se monta
+        // `CodeEditor`, que llega a Monaco por `editor.create`). El componente
+        // ni siquiera esta montado todavia — mientras `hydrating` es true la
+        // pagina devuelve el skeleton. Ver el test "el re-montaje NO emite un
+        // edicion_codigo fantasma".
+        if (usedPlaceholderRef.current && typeof window !== "undefined") {
+          const previo = leerCodigoPrevio(window.sessionStorage, {
+            tareaId: state.tarea_practica_id,
+            ejercicioOrden: ordenEfectivo,
+            language: langEfectivo,
+          })
+          if (previo) {
+            usedPlaceholderRef.current = false
+            setCode(previo)
           }
         }
         setMessages(
@@ -634,6 +675,31 @@ export function EpisodeView({ episodeId, onExit, ejercicioContext, getToken }: E
     await handleSend(msg)
   }
 
+  /**
+   * ED-4: deja el buffer actual disponible para el ejercicio SIGUIENTE de esta
+   * misma TP. Se llama en las dos salidas explicitas (cerrar y pausar): ambas
+   * son el momento en que el alumno abandona este ejercicio, y `code` ya es el
+   * espejo vivo del buffer de Monaco (`onCodeChange`).
+   *
+   * No escribe nada si el alumno no llego a escribir codigo propio: el andamio
+   * por omision del lenguaje no vale la pena arrastrarlo, y el siguiente
+   * ejercicio lo va a poner igual.
+   *
+   * No toca el CTR. Es estado de navegacion, como `active-exercise-context`.
+   */
+  function persistirCodigoParaElProximoEjercicio() {
+    if (typeof window === "undefined") return
+    const tareaId = tarea?.id
+    if (!tareaId || ejercicioOrdenEfectivo == null) return
+    if (code === LANGUAGE_PLACEHOLDER[language]) return
+    guardarCodigoPrevio(window.sessionStorage, {
+      tareaId,
+      ejercicioOrden: ejercicioOrdenEfectivo,
+      language,
+      code,
+    })
+  }
+
   async function handleClose() {
     // Guard doble-submit (NB-11): ref SINCRONICA (no el state async) — un segundo
     // click en el mismo tick ve el flag ya seteado y aborta. Consistente con NB-10.
@@ -657,6 +723,9 @@ export function EpisodeView({ episodeId, onExit, ejercicioContext, getToken }: E
       setSubmitting(false)
       return
     }
+    // ED-4: el episodio cerro de verdad; lo que el alumno dejo escrito es la
+    // semilla del ejercicio siguiente de esta TP.
+    persistirCodigoParaElProximoEjercicio()
     setClosed(true)
     setReflectionTargetId(episodeId)
     try {
@@ -706,6 +775,10 @@ export function EpisodeView({ episodeId, onExit, ejercicioContext, getToken }: E
       // No bloqueamos la salida por un fallo de red del emit.
       console.warn("emit episodio_abandonado (explicit) failed:", e)
     }
+    // ED-4: pausar tambien es salir del ejercicio. El episodio queda `paused` y
+    // el alumno puede retomarlo (ahi manda `last_code_snapshot`, no esto), pero
+    // si en el medio arranca el ejercicio siguiente, hereda igual.
+    persistirCodigoParaElProximoEjercicio()
     window.sessionStorage.removeItem(ACTIVE_EPISODE_KEY)
     onExit()
   }
