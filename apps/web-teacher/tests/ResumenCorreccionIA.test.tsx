@@ -212,3 +212,47 @@ describe("el guardrail dice lo que NO cubre", () => {
     expect(screen.getByText(/no prueba que la nota sea correcta/i)).toBeInTheDocument()
   })
 })
+
+describe("un cero que no se pudo verificar no se lee como un cero", () => {
+  // §3.2 del contrato de Active-IA: los criterios que cerraron en 0 porque el
+  // codigo no compilaba vuelven marcados. "No lo hizo" y "no se pudo comprobar"
+  // son dos cosas distintas y solo una es culpa del alumno — mostrarlas iguales
+  // es el mismo modo de falla que le reportamos al motor.
+
+  test("el criterio marcado dice 'sin verificar' en vez de su puntaje", () => {
+    render(
+      <ResumenCorreccionIA
+        ejercicios={[{ ejercicioId: "ej-1", orden: 1, titulo: "E1", peso: 1 }]}
+        correcciones={[
+          correccion(1, 30, {
+            desglose: [
+              { nombre: "Usa la interfaz", puntaje: 3 },
+              { nombre: "Produce la salida esperada", puntaje: 0, sin_ejecucion: true },
+            ],
+          }),
+        ]}
+        onUsarComoBase={() => {}}
+      />,
+    )
+    expect(screen.getByTestId("criterio-sin-verificar-1-1")).toBeInTheDocument()
+    expect(screen.getByTestId("resumen-sin-verificar-1")).toBeInTheDocument()
+    expect(screen.getByText(/no habia con que comprobarlo/i)).toBeInTheDocument()
+  })
+
+  test("sin la marca, el puntaje se muestra como siempre", () => {
+    // El otro lado: si el aviso apareciera igual, el docente lo dejaria de
+    // leer y la distincion no serviria para nada.
+    render(
+      <ResumenCorreccionIA
+        ejercicios={[{ ejercicioId: "ej-1", orden: 1, titulo: "E1", peso: 1 }]}
+        correcciones={[
+          correccion(1, 30, { desglose: [{ nombre: "Produce la salida esperada", puntaje: 0 }] }),
+        ]}
+        onUsarComoBase={() => {}}
+      />,
+    )
+    expect(screen.queryByTestId("resumen-sin-verificar-1")).not.toBeInTheDocument()
+    expect(screen.queryByTestId("criterio-sin-verificar-1-0")).not.toBeInTheDocument()
+    expect(screen.getByText("Produce la salida esperada")).toBeInTheDocument()
+  })
+})

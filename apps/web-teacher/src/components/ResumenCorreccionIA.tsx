@@ -157,17 +157,48 @@ function Desgloses({ correcciones }: { correcciones: CorreccionIA[] }) {
               Ejercicio {c.orden} · rubrica {c.rubrica_id}
             </p>
             <ul className="space-y-0.5 text-xs">
-              {c.desglose.map((criterio, i) => (
-                <li key={`${c.id}-${i}`} className="flex items-baseline justify-between gap-3">
-                  <span className="text-body">
-                    {String(criterio.nombre ?? criterio.criterio ?? `Criterio ${i + 1}`)}
-                  </span>
-                  <span className="font-mono text-muted">
-                    {String(criterio.puntaje ?? criterio.puntos ?? criterio.score ?? "—")}
-                  </span>
-                </li>
-              ))}
+              {c.desglose.map((criterio, i) => {
+                // `sin_ejecucion` lo estampa el backend con los criterios que
+                // Active-IA cerro en 0 porque el codigo no compilaba (§3.2 de
+                // su contrato). "No lo hizo" y "no se pudo verificar" son dos
+                // cosas distintas, y solo una es culpa del alumno: mostrarlas
+                // iguales es el mismo modo de falla que le reportamos al motor.
+                const sinVerificar = criterio.sin_ejecucion === true
+                return (
+                  <li key={`${c.id}-${i}`} className="flex items-baseline justify-between gap-3">
+                    <span className={sinVerificar ? "text-muted" : "text-body"}>
+                      {String(criterio.nombre ?? criterio.criterio ?? `Criterio ${i + 1}`)}
+                    </span>
+                    {sinVerificar ? (
+                      <span
+                        className="shrink-0 font-mono text-[10px] uppercase tracking-wider text-warning"
+                        title="El codigo no compilaba, asi que ninguna corrida respalda este criterio. El cero no dice que el alumno no lo haya hecho."
+                        data-testid={`criterio-sin-verificar-${c.orden}-${i}`}
+                      >
+                        sin verificar
+                      </span>
+                    ) : (
+                      <span className="font-mono text-muted">
+                        {String(criterio.puntaje ?? criterio.puntos ?? criterio.score ?? "—")}
+                      </span>
+                    )}
+                  </li>
+                )
+              })}
             </ul>
+            {c.desglose.some((cr) => cr.sin_ejecucion === true) && (
+              <p
+                className="mt-2 flex items-start gap-1.5 text-xs text-warning"
+                data-testid={`resumen-sin-verificar-${c.orden}`}
+              >
+                <AlertTriangle size={12} className="mt-0.5 shrink-0" aria-hidden="true" />
+                <span>
+                  Los criterios marcados <strong>no se pudieron verificar</strong> porque el codigo
+                  no compilaba. Su cero no dice que el alumno no lo haya hecho — dice que no habia
+                  con que comprobarlo.
+                </span>
+              </p>
+            )}
             {chequeo?.indeterminado && (
               <p
                 className="mt-2 flex items-start gap-1.5 text-xs text-warning"
