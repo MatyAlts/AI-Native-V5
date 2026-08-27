@@ -297,7 +297,9 @@ async def mark_ejercicio_completado(
     Si no existe y se marca completado, lo agrega.
     """
     entrega = await _get_or_404(db, entrega_id)
-    _assert_can_write(entrega, user)
+    # Autorizacion ANTES del chequeo de estado, mismo motivo que en el resto:
+    # el status code no debe delatar en que estado esta una entrega ajena.
+    await _assert_write_scope(db, entrega, user)
 
     if entrega.estado not in ("draft", "returned"):
         raise HTTPException(
