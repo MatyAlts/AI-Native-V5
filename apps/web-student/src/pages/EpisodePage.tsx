@@ -527,8 +527,27 @@ export function EpisodeView({ episodeId, onExit, ejercicioContext, getToken }: E
         if (state.last_code_snapshot) {
           usedPlaceholderRef.current = false
           setCode(state.last_code_snapshot)
-        } else if (ordenEfectivo == null) {
-          // TP monolitica: codigo inicial de la propia TP.
+        } else {
+          // Scaffold a nivel TP.
+          //
+          // Esta rama estaba gateada por `ordenEfectivo == null` ("TP
+          // monolitica") y eso dejaba un AGUJERO en la cascada: en una TP
+          // MULTI-ejercicio cuya TP tiene `inicial_codigo`, la rama del
+          // ejercicio del banco (arriba) esta guardada por
+          // `!resolveCodigoInicial(t)` — el scaffold de la TP tiene precedencia
+          // sobre el del ejercicio — y esta otra no corria. Resultado: el
+          // docente escribia un scaffold y el alumno abria el editor con el
+          // andamio del lenguaje.
+          //
+          // Se veia como un detalle cosmetico hasta que ED-4 llenó ese hueco:
+          // sin este `else`, el codigo del ejercicio ANTERIOR entraba encima de
+          // la consigna del docente. Y a diferencia del andamio, eso parece
+          // legitimo — el alumno no tiene forma de saber que lo que ve no es lo
+          // que le dejaron.
+          //
+          // Las dos ramas de scaffold son mutuamente excluyentes (por ese mismo
+          // guard), asi que abrir el `else` NO cambia ninguna precedencia: solo
+          // hace que la de la TP se aplique donde antes no se aplicaba nadie.
           const initialCode = resolveCodigoInicial(t)
           if (initialCode) {
             usedPlaceholderRef.current = false
@@ -536,12 +555,21 @@ export function EpisodeView({ episodeId, onExit, ejercicioContext, getToken }: E
           }
         }
 
-        // ED-4: ultimo eslabon de la cascada de siembra. Solo entra si NADA de
-        // lo anterior aplico (`usedPlaceholderRef` sigue en true): el snapshot
-        // del propio episodio y el scaffold que escribio el docente mandan
-        // siempre — pisarlos con el codigo del ejercicio anterior seria borrar
-        // trabajo del alumno en el primer caso y contradecir la consigna en el
-        // segundo.
+        // ED-4: ultimo eslabon REAL de la cascada de siembra. Solo entra si
+        // nada de lo anterior aplico (`usedPlaceholderRef` sigue en true).
+        //
+        // La cascada completa, de mayor a menor precedencia:
+        //   1. `state.last_code_snapshot` — lo que el alumno escribio en ESTE
+        //      episodio. Pisarlo es borrarle trabajo.
+        //   2. `inicial_codigo` de la TP — scaffold del docente.
+        //   3. `inicial_codigo` del ejercicio del banco — el otro scaffold del
+        //      docente, solo si la TP no trae el suyo.
+        //   4. esto: el codigo del ejercicio anterior de la misma TP.
+        //   5. `LANGUAGE_PLACEHOLDER` — el andamio del lenguaje.
+        //
+        // Que 4 vaya despues de 2 y 3 no es cosmetico: sembrar codigo de otro
+        // ejercicio encima de la consigna del docente es contradecir el
+        // enunciado con algo que parece legitimo.
         //
         // Esta siembra NO emite `edicion_codigo`: sale por el mismo camino que
         // `last_code_snapshot` (el `initialCode` con el que se monta
