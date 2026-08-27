@@ -92,6 +92,17 @@ export interface CodeEditorProps {
     diffChars: number,
     origin: "student_typed" | "pasted_external" | "snippet_expanded",
   ) => void
+  /** Espejo del buffer en el caller, en CADA cambio (sin debounce).
+   *
+   * Monaco posee el buffer y este componente lo siembra UNA sola vez con
+   * `initialCode`. Si el caller no sigue el buffer, todo re-montaje re-siembra
+   * con un valor viejo y el alumno pierde lo tipeado — pasa al cruzar el
+   * breakpoint mobile, porque el editor vive en dos subarboles distintos.
+   *
+   * NO es un evento de trazabilidad: no dispara nada al CTR. El evento
+   * `edicion_codigo` sigue saliendo por `onEditDebounced`, con su debounce.
+   */
+  onCodeChange?: (code: string) => void
   /** Disparado cuando el alumno intenta pegar. La accion fue bloqueada
    * por el editor — solo registrar en CTR + mostrar feedback. */
   onPasteAttempt?: (payload: {
@@ -233,6 +244,7 @@ export function CodeEditor({
   initialCode = LANGUAGE_PLACEHOLDER[DEFAULT_LANGUAGE],
   onCodeExecuted,
   onEditDebounced,
+  onCodeChange,
   onPasteAttempt,
   onCopyAttempt,
   testCases,
@@ -339,6 +351,15 @@ export function CodeEditor({
   useEffect(() => {
     onEditDebouncedRef.current = onEditDebounced
   }, [onEditDebounced])
+  const onCodeChangeRef = useRef<typeof onCodeChange>(onCodeChange)
+  useEffect(() => {
+    onCodeChangeRef.current = onCodeChange
+  }, [onCodeChange])
+  // Plantilla original del ejercicio, congelada al montar. Con `onCodeChange`
+  // cableado, `initialCode` deja de ser "la plantilla" y pasa a ser el ultimo
+  // buffer conocido: sin esta copia, "Restaurar plantilla inicial" restauraria
+  // el codigo del alumno sobre si mismo, o sea nada.
+  const plantillaRef = useRef<string>(initialCode)
 
   // 1. Cargar Monaco dinámicamente (evita tamaño inicial del bundle).
   // `code` se usa sólo como valor inicial del editor — Monaco luego posee
@@ -476,6 +497,11 @@ export function CodeEditor({
       editor.onDidChangeModelContent(() => {
         const value = editor.getValue()
         setCode(value)
+        // Espejo en el caller para que un re-montaje re-siembre con ESTE buffer
+        // y no con el de hace media hora. Se dispara SOLO desde un cambio real
+        // del modelo: la siembra de `editor.create` no pasa por aca, asi que un
+        // re-montaje no puede inventar un `edicion_codigo` que el alumno no hizo.
+        onCodeChangeRef.current?.(value)
 
         // Reseteamos el timer en cada keystroke; emitimos sólo cuando el
         // alumno hizo una pausa de EDIT_DEBOUNCE_MS. Capturamos el snapshot
@@ -1177,12 +1203,14 @@ def __tutor_run_tests(student_code, cases_json):
 
   // ED-5: restaurar la plantilla inicial (destructivo — pisa el buffer actual).
   function restoreTemplate() {
+    // `plantillaRef`, no `initialCode`: ver el comentario donde se declara.
+    const plantilla = plantillaRef.current
     const editor = editorRef.current
     if (editor) {
-      editor.setValue(initialCode)
+      editor.setValue(plantilla)
       editor.focus()
     }
-    setCode(initialCode)
+    setCode(plantilla)
     clearErrorMarkers()
     setShowResetConfirm(false)
   }

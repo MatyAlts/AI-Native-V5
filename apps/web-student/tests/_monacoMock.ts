@@ -57,8 +57,12 @@ function create(_container: HTMLElement, opciones: Record<string, unknown>): Edi
       for (const l of [...listeners]) l()
     },
     getValue: () => valor,
+    // Monaco real dispara `onDidChangeModelContent` tambien cuando el cambio
+    // viene de `setValue` (p.ej. "Restaurar plantilla"): el modelo cambio de
+    // verdad. Lo replicamos para no testear un editor mas complaciente que el
+    // que corre en produccion.
     setValue: (v: string) => {
-      valor = v
+      editor.__tipear(v)
     },
     onDidPaste: () => {},
     onDidChangeModelContent: (cb: () => void) => {

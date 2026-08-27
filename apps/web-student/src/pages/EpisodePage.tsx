@@ -871,6 +871,15 @@ export function EpisodeView({ episodeId, onExit, ejercicioContext, getToken }: E
             console.warn("emit tests_ejecutados failed:", e)
           })
         }}
+        // El buffer de Monaco es del editor; este espejo existe para que el
+        // re-montaje del panel (cruzar el breakpoint mobile desmonta y vuelve a
+        // montar `CodeEditor`, porque vive en dos subarboles distintos) lo
+        // re-siembre con lo ultimo que el alumno escribio. Antes se
+        // actualizaba solo al hidratar y al Ejecutar: un cambio de zoom en el
+        // medio de un ejercicio le borraba todo lo tipeado desde la ultima
+        // corrida. NO emite nada al CTR — `edicion_codigo` sigue saliendo por
+        // `onEditDebounced`.
+        onCodeChange={setCode}
         onCodeExecuted={(result) => {
           setCode(result.code)
           setMaxActividad((a) => (a < 3 ? 3 : a))
