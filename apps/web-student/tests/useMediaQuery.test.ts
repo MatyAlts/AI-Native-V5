@@ -68,8 +68,10 @@ describe("useMediaQuery", () => {
   })
 
   it("fallback a false si matchMedia no existe (SSR/jsdom)", () => {
-    // @ts-expect-error: forzamos ausencia de matchMedia
-    delete window.matchMedia
+    // Hay que forzar la AUSENCIA de matchMedia (SSR / jsdom viejo), no un
+    // `undefined` asignado. `Reflect.deleteProperty` hace eso sin el operador
+    // `delete`, que biome desaconseja.
+    Reflect.deleteProperty(window, "matchMedia")
     const { result } = renderHook(() => useMediaQuery("(max-width: 1023px)"))
     expect(result.current).toBe(false)
   })
