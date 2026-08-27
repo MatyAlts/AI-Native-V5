@@ -44,6 +44,10 @@ from evaluation_service.schemas.entrega import (
 
 router = APIRouter(prefix="/api/v1/entregas", tags=["entregas"])
 
+# Oversight academico del tenant: ve y corrige cualquier comision. Mismo
+# conjunto que usa `list_entregas` para saltear el filtro por comision.
+OVERSIGHT_ROLES = frozenset({"superadmin", "docente_admin"})
+
 # ── Endpoints de Entregas ─────────────────────────────────────────────────
 
 
@@ -356,6 +360,9 @@ async def calificar_entrega(
     Emite audit log tp_calificada (structlog, no CTR chain).
     """
     entrega = await _get_or_404(db, entrega_id)
+    # Autorizacion ANTES de la logica de negocio: si va despues, un docente
+    # ajeno distingue por el status code en que estado esta la entrega.
+    await _assert_docente_de_la_comision(db, entrega, user)
 
     if entrega.estado != "submitted":
         raise HTTPException(
@@ -431,6 +438,7 @@ async def recalificar_entrega(
       con la nota anterior y la nueva.
     """
     entrega = await _get_or_404(db, entrega_id)
+    await _assert_docente_de_la_comision(db, entrega, user)
 
     stmt = select(Calificacion).where(
         and_(
@@ -540,6 +548,7 @@ async def return_entrega(
     El alumno puede volver a enviarla (returned -> submitted).
     """
     entrega = await _get_or_404(db, entrega_id)
+    await _assert_docente_de_la_comision(db, entrega, user)
 
     if entrega.estado != "graded":
         raise HTTPException(
@@ -591,6 +600,43 @@ def _assert_can_read(entrega: Entrega, user: User) -> None:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="No tienes permiso para ver esta entrega",
+        )
+
+
+async def _assert_docente_de_la_comision(db: AsyncSession, entrega: Entrega, user: User) -> None:
+    """403 si el caller no es docente asignado a la comision de la entrega.
+
+    Es el mismo aislamiento que `list_entregas` aplica a la COLA de correccion,
+    pero para las ESCRITURAS. Hacia falta porque en prod todos los docentes
+    comparten un tenant fijo: la RLS separa tenants, no comisiones. Con solo el
+    chequeo de rol, cualquier docente con un `entrega_id` en la mano podia
+    calificar, recalificar y devolver entregas de una comision ajena — el
+    `entrega_id` ni siquiera es secreto, viaja en las URLs del web-teacher.
+
+    Oversight academico (`OVERSIGHT_ROLES`) pasa: coordinacion corrige
+    cross-comision a proposito, igual que ve toda la cola en `list_entregas`.
+
+    `usuarios_comision` vive en la misma DB (academic_main) que `entregas`, asi
+    que se consulta con la misma sesion — sin engine aparte ni join cross-base.
+    Mismo patron que `assert_comision_member` de analytics-service y ctr-service.
+    Ver docs/filtrado-teacher-plan.md.
+    """
+    if user.roles & OVERSIGHT_ROLES:
+        return
+    row = (
+        await db.execute(
+            text(
+                "SELECT 1 FROM usuarios_comision "
+                "WHERE comision_id = :c AND user_id = :u "
+                "AND deleted_at IS NULL LIMIT 1"
+            ),
+            {"c": str(entrega.comision_id), "u": str(user.id)},
+        )
+    ).first()
+    if row is None:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="No tenes acceso a las entregas de esta comision (no sos docente asignado).",
         )
 
 

@@ -57,8 +57,12 @@ async def _fetch_fk_triple(engine) -> tuple[uuid.UUID, uuid.UUID, uuid.UUID] | N
 async def recalificar_setup() -> AsyncIterator[dict]:
     """Crea una entrega + calificacion (nota 5.00) y overridea get_db.
 
-    Limpia la entrega/calificacion creadas al final. Skippea si no hay DB
-    o no hay seed para las FKs.
+    Tambien asigna a DOCENTE_ID a la comision de la entrega: desde BUG-10 el
+    PATCH exige que el docente sea miembro de `usuarios_comision`, asi que un
+    docente sin membresia recibe 403 antes de llegar a la re-calificacion.
+
+    Limpia la entrega/calificacion/membresia creadas al final. Skippea si no
+    hay DB o no hay seed para las FKs.
     """
     engine = create_async_engine(DB_URL)
     try:
@@ -75,14 +79,29 @@ async def recalificar_setup() -> AsyncIterator[dict]:
     student_id = uuid.uuid4()
     entrega_id = uuid.uuid4()
     calificacion_id = uuid.uuid4()
+    membresia_id = uuid.uuid4()
 
     factory = async_sessionmaker(engine, expire_on_commit=False)
 
-    # Seed: entrega submitted + calificacion (nota 5.00)
+    # Seed: membresia del docente + entrega submitted + calificacion (nota 5.00)
     async with factory() as s:
         await s.execute(
             text("SELECT set_config('app.current_tenant', :t, true)"),
             {"t": str(tenant_id)},
+        )
+        # Misma forma que emite scripts/seed-demo-data.py:363.
+        await s.execute(
+            text(
+                "INSERT INTO usuarios_comision "
+                "(id, tenant_id, comision_id, user_id, rol, fecha_desde) "
+                "VALUES (:id, :t, :c, :u, 'titular', CURRENT_DATE)"
+            ),
+            {
+                "id": str(membresia_id),
+                "t": str(tenant_id),
+                "c": str(comision_id),
+                "u": str(DOCENTE_ID),
+            },
         )
         await s.execute(
             text(
@@ -146,6 +165,10 @@ async def recalificar_setup() -> AsyncIterator[dict]:
             await s.execute(
                 text("DELETE FROM entregas WHERE id = :e"),
                 {"e": str(entrega_id)},
+            )
+            await s.execute(
+                text("DELETE FROM usuarios_comision WHERE id = :id"),
+                {"id": str(membresia_id)},
             )
             await s.commit()
         await engine.dispose()
