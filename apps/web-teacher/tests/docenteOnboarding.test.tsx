@@ -34,9 +34,9 @@
  *   5. TEXTOS SIN TILDES NI EM DASHES (regla de encoding del repo, cp1252 en Windows).
  */
 import {
-  OnboardingProvider,
   type OnboardingFlow,
   type OnboardingHint,
+  OnboardingProvider,
   useOnboardingProgress,
 } from "@platform/ui"
 import { cleanup, fireEvent, render, screen } from "@testing-library/react"
@@ -378,16 +378,17 @@ describe("docenteOnboarding — la unidad es opcional", () => {
 /* ========================================================================== */
 
 describe("docenteOnboarding — coherencia unlockWhen / doneWhen", () => {
-  test.each(ESTADOS)("en el estado $nombre, un hint cumplido nunca queda pendiente", ({
-    estado: e,
-  }) => {
-    // El contrato es `unlock && !done`. Que los dos den true a la vez es legal y
-    // significa "cumplido": lo que no puede pasar es que igual quede pendiente.
-    const cumplidosPendientes = hints
-      .filter((h) => h.doneWhen(e) && pendiente(h, e))
-      .map((h) => h.id)
-    expect(cumplidosPendientes).toEqual([])
-  })
+  test.each(ESTADOS)(
+    "en el estado $nombre, un hint cumplido nunca queda pendiente",
+    ({ estado: e }) => {
+      // El contrato es `unlock && !done`. Que los dos den true a la vez es legal y
+      // significa "cumplido": lo que no puede pasar es que igual quede pendiente.
+      const cumplidosPendientes = hints
+        .filter((h) => h.doneWhen(e) && pendiente(h, e))
+        .map((h) => h.id)
+      expect(cumplidosPendientes).toEqual([])
+    },
+  )
 
   test("en el estado terminal no queda NINGUN cartel pendiente", () => {
     // El "se muestra para siempre": un `doneWhen` que no llega a cubrir el estado
@@ -676,7 +677,7 @@ describe("docenteOnboarding — declaracion de rutas y anclas", () => {
 
 /** Todo lo que el docente LEE de un cartel: titulo, cuerpo renderizado y CTA. */
 function textoVisible(h: Hint): string {
-  return [h.title, h.ctaLabel ?? "", renderToStaticMarkup(<>{h.body}</>)].join(" ")
+  return [h.title, h.ctaLabel ?? "", renderToStaticMarkup(h.body)].join(" ")
 }
 
 const TILDES = /[À-ÿĀ-ſ]/g

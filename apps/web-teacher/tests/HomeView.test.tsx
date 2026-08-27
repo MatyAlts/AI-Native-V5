@@ -46,8 +46,26 @@ const progressionResponse = {
   insuficiente: 2,
   net_progression_ratio: 0.5,
   trajectories: [
-    { student_pseudonym: "stud-1", n_episodes: 3, points: [], first_classification: null, last_classification: null, max_appropriation_reached: null, progression_label: "mejorando", tercile_means: null },
-    { student_pseudonym: "stud-2", n_episodes: 2, points: [], first_classification: null, last_classification: null, max_appropriation_reached: null, progression_label: "insuficiente", tercile_means: null },
+    {
+      student_pseudonym: "stud-1",
+      n_episodes: 3,
+      points: [],
+      first_classification: null,
+      last_classification: null,
+      max_appropriation_reached: null,
+      progression_label: "mejorando",
+      tercile_means: null,
+    },
+    {
+      student_pseudonym: "stud-2",
+      n_episodes: 2,
+      points: [],
+      first_classification: null,
+      last_classification: null,
+      max_appropriation_reached: null,
+      progression_label: "insuficiente",
+      tercile_means: null,
+    },
   ],
 }
 

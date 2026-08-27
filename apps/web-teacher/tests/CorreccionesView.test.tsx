@@ -29,8 +29,18 @@ const mockEntregaSubmitted = {
   student_pseudonym: STUDENT_ID,
   estado: "submitted",
   ejercicio_estados: [
-    { orden: 1, completado: true, episode_id: "ep-0000001-abcd", completado_at: "2026-05-06T11:00:00Z" },
-    { orden: 2, completado: true, episode_id: "ep-0000002-abcd", completado_at: "2026-05-06T11:30:00Z" },
+    {
+      orden: 1,
+      completado: true,
+      episode_id: "ep-0000001-abcd",
+      completado_at: "2026-05-06T11:00:00Z",
+    },
+    {
+      orden: 2,
+      completado: true,
+      episode_id: "ep-0000002-abcd",
+      completado_at: "2026-05-06T11:30:00Z",
+    },
   ],
   submitted_at: "2026-05-06T12:00:00Z",
   created_at: "2026-05-06T10:00:00Z",
@@ -76,9 +86,7 @@ describe("CorreccionesView — EntregasListView", () => {
       "/api/v1/entregas": () => ({ data: [mockEntregaSubmitted], meta: { cursor_next: null } }),
       "/api/v1/tareas-practicas/": () => mockTarea,
     })
-    renderWithRouter(
-      <CorreccionesView comisionId={COMISION_ID} getToken={getToken} />,
-    )
+    renderWithRouter(<CorreccionesView comisionId={COMISION_ID} getToken={getToken} />)
     await waitFor(() => {
       expect(screen.getByTestId("entregas-list-view")).toBeDefined()
     })
@@ -92,9 +100,7 @@ describe("CorreccionesView — EntregasListView", () => {
       "/api/v1/entregas": () => ({ data: [mockEntregaSubmitted], meta: { cursor_next: null } }),
       "/api/v1/tareas-practicas/": () => mockTarea,
     })
-    renderWithRouter(
-      <CorreccionesView comisionId={COMISION_ID} getToken={getToken} />,
-    )
+    renderWithRouter(<CorreccionesView comisionId={COMISION_ID} getToken={getToken} />)
     await waitFor(() => {
       expect(screen.getByTestId("entrega-estado-submitted")).toBeDefined()
     })
@@ -107,9 +113,7 @@ describe("CorreccionesView — EntregasListView", () => {
     setupFetchMock({
       "/api/v1/entregas": () => ({ data: [], meta: { cursor_next: null } }),
     })
-    renderWithRouter(
-      <CorreccionesView comisionId={COMISION_ID} getToken={getToken} />,
-    )
+    renderWithRouter(<CorreccionesView comisionId={COMISION_ID} getToken={getToken} />)
     await waitFor(() => {
       expect(screen.getByTestId("entregas-list-view")).toBeDefined()
     })
@@ -121,9 +125,7 @@ describe("CorreccionesView — EntregasListView", () => {
       "/api/v1/entregas": () => ({ data: [mockEntregaSubmitted], meta: { cursor_next: null } }),
       "/api/v1/tareas-practicas/": () => mockTarea,
     })
-    renderWithRouter(
-      <CorreccionesView comisionId={COMISION_ID} getToken={getToken} />,
-    )
+    renderWithRouter(<CorreccionesView comisionId={COMISION_ID} getToken={getToken} />)
     await waitFor(() => {
       expect(screen.getByTestId("entrega-drill-btn")).toBeDefined()
     })
@@ -140,9 +142,7 @@ describe("CorreccionesView — GradingFormView", () => {
       "/api/v1/entregas": () => ({ data: [mockEntregaSubmitted], meta: { cursor_next: null } }),
       "/api/v1/tareas-practicas/": () => mockTarea,
     })
-    renderWithRouter(
-      <CorreccionesView comisionId={COMISION_ID} getToken={getToken} />,
-    )
+    renderWithRouter(<CorreccionesView comisionId={COMISION_ID} getToken={getToken} />)
     await waitFor(() => {
       expect(screen.getByTestId("entrega-drill-btn")).toBeDefined()
     })
@@ -159,9 +159,7 @@ describe("CorreccionesView — GradingFormView", () => {
       "/api/v1/entregas": () => ({ data: [mockEntregaSubmitted], meta: { cursor_next: null } }),
       "/api/v1/tareas-practicas/": () => mockTarea,
     })
-    renderWithRouter(
-      <CorreccionesView comisionId={COMISION_ID} getToken={getToken} />,
-    )
+    renderWithRouter(<CorreccionesView comisionId={COMISION_ID} getToken={getToken} />)
     await waitFor(() => {
       expect(screen.getByTestId("entrega-drill-btn")).toBeDefined()
     })
@@ -188,9 +186,7 @@ describe("CorreccionesView — GradingFormView", () => {
       "/api/v1/tareas-practicas/": () => mockTarea,
       "/calificacion": () => calificacion,
     })
-    renderWithRouter(
-      <CorreccionesView comisionId={COMISION_ID} getToken={getToken} />,
-    )
+    renderWithRouter(<CorreccionesView comisionId={COMISION_ID} getToken={getToken} />)
     await waitFor(() => {
       expect(screen.getByTestId("entrega-drill-btn")).toBeDefined()
     })
@@ -206,9 +202,7 @@ describe("CorreccionesView — GradingFormView", () => {
       "/api/v1/entregas": () => ({ data: [mockEntregaSubmitted], meta: { cursor_next: null } }),
       "/api/v1/tareas-practicas/": () => mockTarea,
     })
-    renderWithRouter(
-      <CorreccionesView comisionId={COMISION_ID} getToken={getToken} />,
-    )
+    renderWithRouter(<CorreccionesView comisionId={COMISION_ID} getToken={getToken} />)
     await waitFor(() => {
       expect(screen.getByTestId("entrega-drill-btn")).toBeDefined()
     })

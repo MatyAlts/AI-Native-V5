@@ -324,7 +324,8 @@ describe("con los payloads que la API produce de verdad", () => {
   })
 
   test("un `peso_en_tp` ilegible NO se convierte en cero", () => {
-    const roto = [{ ...TP_EJERCICIOS[0]!, peso_en_tp: "" }, TP_EJERCICIOS[1]!]
+    const [primero, segundo] = TP_EJERCICIOS
+    const roto = [{ ...primero, peso_en_tp: "" }, segundo]
     const r = resumirCorrecciones(ejerciciosParaResumen(roto), CORRECCIONES_API)
     expect(r.promedio100).toBeNull()
   })

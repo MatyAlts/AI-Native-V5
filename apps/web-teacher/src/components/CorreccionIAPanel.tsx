@@ -334,8 +334,8 @@ function Resultado({
           className="rounded border border-warning/30 bg-warning-soft p-2 text-warning"
           data-testid="correccion-ia-no-compila"
         >
-          <strong>Ojo: este codigo no compila.</strong> La nota sale de leerlo, no de
-          ejecutarlo: ningun test lo respalda.
+          <strong>Ojo: este codigo no compila.</strong> La nota sale de leerlo, no de ejecutarlo:
+          ningun test lo respalda.
           {correccion.tests_snapshot?.error_compilacion && (
             <span className="mt-1 block font-mono text-[11px] opacity-80">
               {correccion.tests_snapshot.error_compilacion}

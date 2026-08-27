@@ -1,3 +1,5 @@
+import { readFileSync, readdirSync } from "node:fs"
+import { join } from "node:path"
 // Contenido en espanol SIN tildes para evitar problemas de encoding en Windows/cp1252.
 /**
  * Tests de los TOURS LINEALES del docente: el panoramico de primer ingreso
@@ -26,8 +28,6 @@
  * fabricar una copia que se queda verde afirmando la regla vieja cuando el motor cambie.
  */
 import type { TourFlow, TourStep } from "@platform/ui"
-import { readFileSync, readdirSync } from "node:fs"
-import { join } from "node:path"
 import { renderToStaticMarkup } from "react-dom/server"
 import { describe, expect, test } from "vitest"
 import { docenteTour } from "../src/tour/docenteTour"
@@ -128,9 +128,7 @@ describe("tours del docente — ids", () => {
   test("ningun id de paso se repite entre flows distintos", () => {
     // No lo rompe hoy (el estado se guarda por flow) pero hace ilegible cualquier
     // rastro y es sintoma de copy-paste entre tutoriales.
-    const todos = FLOWS.flatMap(({ nombre, flow }) =>
-      flow.steps.map((s) => ({ nombre, id: s.id })),
-    )
+    const todos = FLOWS.flatMap(({ nombre, flow }) => flow.steps.map((s) => ({ nombre, id: s.id })))
     const vistos = new Map<string, string>()
     const choques: { id: string; en: string[] }[] = []
     for (const { nombre, id } of todos) {
@@ -290,16 +288,16 @@ function anclasDeclaradasEnElCodigo(): Set<string> {
 }
 
 describe("tutoriales de vista — anclas", () => {
-  test.each(TUTORIALES_DE_VISTA)("$nombre usa el prefijo de ancla de su vista", ({
-    nombre,
-    flow,
-  }) => {
-    const prefijo = PREFIJO_DE_ANCLA[nombre] ?? "(sin prefijo declarado)"
-    const ajenas = flow.steps
-      .filter((s) => s.anchor !== undefined && !s.anchor.startsWith(prefijo))
-      .map((s) => ({ paso: s.id, anchor: s.anchor }))
-    expect(ajenas).toEqual([])
-  })
+  test.each(TUTORIALES_DE_VISTA)(
+    "$nombre usa el prefijo de ancla de su vista",
+    ({ nombre, flow }) => {
+      const prefijo = PREFIJO_DE_ANCLA[nombre] ?? "(sin prefijo declarado)"
+      const ajenas = flow.steps
+        .filter((s) => s.anchor !== undefined && !s.anchor.startsWith(prefijo))
+        .map((s) => ({ paso: s.id, anchor: s.anchor }))
+      expect(ajenas).toEqual([])
+    },
+  )
 
   test("ningun ancla se declara desde dos tutoriales distintos", () => {
     // Dos tutoriales apuntando al mismo `data-tour` es sintoma de copy-paste y hace que
@@ -339,7 +337,7 @@ describe("tutoriales de vista — anclas", () => {
 /* ========================================================================== */
 
 function textoVisible(s: TourStep): string {
-  return [s.title, renderToStaticMarkup(<>{s.body}</>)].join(" ")
+  return [s.title, renderToStaticMarkup(s.body)].join(" ")
 }
 
 const TILDES = /[À-ÿĀ-ſ]/g

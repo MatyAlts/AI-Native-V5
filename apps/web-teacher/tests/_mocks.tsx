@@ -1,3 +1,11 @@
+import {
+  Outlet,
+  RouterProvider,
+  createMemoryHistory,
+  createRootRoute,
+  createRoute,
+  createRouter,
+} from "@tanstack/react-router"
 /**
  * Helper compartido para mockear fetch por path-prefix.
  *
@@ -18,15 +26,7 @@
  * properties of null (reading 'isServer')".
  */
 import { render } from "@testing-library/react"
-import { type ReactNode } from "react"
-import {
-  RouterProvider,
-  createRootRoute,
-  createRoute,
-  createRouter,
-  createMemoryHistory,
-  Outlet,
-} from "@tanstack/react-router"
+import type { ReactNode } from "react"
 import { vi } from "vitest"
 
 type Handler = () => unknown

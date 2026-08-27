@@ -342,8 +342,6 @@ async def _olvidar_correccion_asistida(
             # Se atrapa para poder LISTARLO, no para ignorarlo: el PDF entra
             # en `pdfs_con_error` y el informe deja de ser un exito limpio.
             ok = False
-        except Exception:
-            ok = False
         if ok:
             out["pdfs_borrados"] += 1
         else:

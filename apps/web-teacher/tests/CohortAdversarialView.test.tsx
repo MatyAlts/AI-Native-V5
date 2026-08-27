@@ -65,7 +65,9 @@ afterEach(() => {
 describe("CohortAdversarialView", () => {
   test("con initialComisionId, fetch al montar y renderiza estructura vacía", async () => {
     setupFetchMock({ "/adversarial-events": () => emptyResponse })
-    renderWithRouter(<CohortAdversarialView getToken={fakeGetToken} initialComisionId={COMISION_ID} />)
+    renderWithRouter(
+      <CohortAdversarialView getToken={fakeGetToken} initialComisionId={COMISION_ID} />,
+    )
     await waitFor(() => {
       expect(screen.getByText(/Sin eventos adversos en esta cohorte/i)).toBeInTheDocument()
     })
@@ -73,7 +75,9 @@ describe("CohortAdversarialView", () => {
 
   test("con eventos: renderiza categoria + severidad + ranking + recientes", async () => {
     setupFetchMock({ "/adversarial-events": () => populatedResponse })
-    renderWithRouter(<CohortAdversarialView getToken={fakeGetToken} initialComisionId={COMISION_ID} />)
+    renderWithRouter(
+      <CohortAdversarialView getToken={fakeGetToken} initialComisionId={COMISION_ID} />,
+    )
     await waitFor(() => {
       // Total de eventos. El "5" aparece tanto en el contador grande como
       // en el badge del tab → `getAllByText` para evitar la colisión.
@@ -96,7 +100,9 @@ describe("CohortAdversarialView", () => {
         body: () => ({ detail: "Internal error" }),
       },
     })
-    renderWithRouter(<CohortAdversarialView getToken={fakeGetToken} initialComisionId={COMISION_ID} />)
+    renderWithRouter(
+      <CohortAdversarialView getToken={fakeGetToken} initialComisionId={COMISION_ID} />,
+    )
     await waitFor(() => {
       expect(screen.getByText(/Error consultando la cohorte/i)).toBeInTheDocument()
     })
