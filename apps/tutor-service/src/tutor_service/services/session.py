@@ -47,6 +47,15 @@ DISTRACTION_TTL = 30 * 60  # 30 min sanity cap
 SEEN_KEY_PREFIX = "tutor:seen:"
 SEEN_TTL = SESSION_TTL  # mismo horizonte que la sesión (6h)
 
+# Claim de abandono (ADR-025 G10-A, fix del TOCTOU). La idempotencia del
+# abandono estaba apoyada en el estado de sesión: el primero borra la sesión, el
+# segundo la encuentra ausente. Eso vale sólo si las dos llamadas se serializan,
+# y no se serializan — entre el `get()` y el `delete()` hay un publish al CTR
+# entero. Esta key elige al emisor con un `SET NX` atómico. Se libera al abrir o
+# reanudar el episodio (`init_seq_counter`), no al emitir: el claim acompaña el
+# ciclo de vida del episodio, no el de la request.
+ABANDONO_KEY_PREFIX = "tutor:abandono:"
+
 # FIX A (keystone) — contador de seq ATÓMICO por episodio.
 #
 # El seq de la cadena CTR DEBE ser contiguo y sin huecos (el partition_worker
@@ -230,8 +239,52 @@ class SessionManager:
         `events_count` persistido (arranca del max seq ya en la cadena, NUNCA
         resetea a 0). SET incondicional: el caller garantiza que este es el
         punto de inicialización (apertura, o reanudación con la sesión ausente).
+
+        Acá también se libera el claim de abandono (ver `claim_abandono`): abrir
+        o reanudar el episodio empieza un ciclo nuevo, y un episodio pausado que
+        el alumno retoma tiene que poder volver a abandonarse. Sin este borrado
+        el claim del abandono anterior seguiría vigente y el segundo abandono
+        quedaría mudo hasta que venciera el TTL.
         """
         await self.redis.set(self._seq_key(episode_id), next_seq, ex=SESSION_TTL)
+        await self.redis.delete(self._abandono_key(episode_id))
+
+    # ── Claim de abandono (ADR-025, TOCTOU) ─────────────────────────────
+
+    def _abandono_key(self, episode_id: UUID) -> str:
+        return f"{ABANDONO_KEY_PREFIX}{episode_id}"
+
+    async def claim_abandono(self, episode_id: UUID) -> bool:
+        """Elige ATÓMICAMENTE quién emite el `episodio_abandonado` del episodio.
+
+        La idempotencia del abandono (ADR-025 G10-A) estaba escrita como «la
+        primera emisión borra la sesión, la segunda encuentra `session=None` y
+        no emite». Eso asume que las dos llamadas se serializan, y no se
+        serializan: entre el `sessions.get()` y el `sessions.delete()` hay una
+        publicación al CTR entera. Dos POST concurrentes —`beforeunload` y
+        `pagehide` del mismo cierre, dos pestañas, el worker de timeout pisándose
+        con el frontend— pasan los dos por el `if state is None` antes de que
+        ninguno borre, y la cadena termina con DOS `episodio_abandonado`.
+
+        `SET NX` resuelve la eleccion en una sola operación: gana uno solo, aun
+        entre réplicas distintas del tutor-service. El claim se libera al abrir
+        o reanudar el episodio (`init_seq_counter`), no al emitir — así el ciclo
+        de vida del claim acompaña al del episodio y no al de la request.
+
+        Es deliberado que esto NO dependa de un `Idempotency-Key` del cliente:
+        los dos emisores del ADR-025 son procesos distintos (frontend y worker
+        server-side) que jamás podrían coordinar una clave común.
+        """
+        ganado = await self.redis.set(self._abandono_key(episode_id), "1", nx=True, ex=SESSION_TTL)
+        return bool(ganado)
+
+    async def release_abandono(self, episode_id: UUID) -> None:
+        """Libera el claim de abandono (el emisor ganador no llegó a publicar).
+
+        Sin esto, un fallo del CTR dejaría el episodio sin poder abandonarse
+        nunca: el claim quedaría tomado por un intento que no emitió nada.
+        """
+        await self.redis.delete(self._abandono_key(episode_id))
 
     async def next_seq(self, state: SessionState) -> int:
         """Reserva ATÓMICAMENTE el próximo seq del episodio vía Redis INCR.

@@ -856,6 +856,21 @@ class TutorCore:
         if state is None:
             return None
 
+        # La cancelación por estado de sesión NO alcanza: entre este `get` y el
+        # `delete` de abajo hay un publish al CTR entero, así que dos llamadas
+        # concurrentes pasan las dos por el `if state is None`. Pasa de verdad
+        # con `beforeunload` + `pagehide` del mismo cierre, con dos pestañas
+        # sobre el episodio, y con el worker de timeout pisándose con el
+        # frontend — y deja DOS `episodio_abandonado` en una misma cadena.
+        #
+        # El claim `SET NX` elige un emisor en una sola operación atómica, aun
+        # entre réplicas. El perdedor devuelve None, que es el mismo contrato de
+        # siempre para "no emití" (ADR-025: la primera emisión gana, la segunda
+        # es no-op silenciosa) — lo que cambia es que ahora se cumple bajo
+        # concurrencia real y no sólo cuando las llamadas se serializan.
+        if not await self.sessions.claim_abandono(episode_id):
+            return None
+
         seq = await self.sessions.next_seq(state)
         event = self._build_event(
             state=state,
@@ -866,7 +881,14 @@ class TutorCore:
                 "last_activity_seconds_ago": float(last_activity_seconds_ago),
             },
         )
-        await self._publicar_evento(event, state, seq, user_id)
+        try:
+            await self._publicar_evento(event, state, seq, user_id)
+        except Exception:
+            # El ganador no llegó a emitir: soltamos el claim o el episodio se
+            # queda sin poder abandonarse nunca. El seq ya lo devolvió
+            # `_publicar_evento`.
+            await self.sessions.release_abandono(episode_id)
+            raise
         await self.sessions.delete(episode_id)
 
         # Métrica: sesión abandonada (cuenta junto a las cerradas).
