@@ -10,3 +10,21 @@ if (typeof globalThis.ResizeObserver === "undefined") {
     disconnect(): void {}
   } as unknown as typeof ResizeObserver
 }
+
+// Mismo motivo: `EpisodeView` instancia un IntersectionObserver al montar (mide
+// el tiempo de lectura del enunciado para `lectura_enunciado`). jsdom no lo
+// implementa y sin el stub el componente no se puede montar en ningun test.
+// Nunca dispara: los tests que lo necesiten que emitan el evento a mano.
+if (typeof globalThis.IntersectionObserver === "undefined") {
+  globalThis.IntersectionObserver = class {
+    observe(): void {}
+    unobserve(): void {}
+    disconnect(): void {}
+    takeRecords(): [] {
+      return []
+    }
+    readonly root = null
+    readonly rootMargin = ""
+    readonly thresholds: readonly number[] = []
+  } as unknown as typeof IntersectionObserver
+}

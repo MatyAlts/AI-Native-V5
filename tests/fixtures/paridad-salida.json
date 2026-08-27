@@ -1,0 +1,210 @@
+{
+  "_doc": [
+    "JAVA-1 - tabla UNICA de casos para la comparacion de la salida del alumno.",
+    "",
+    "Hay dos correctores porque hay dos runtimes: Python corre en el navegador",
+    "(Pyodide) y Java en el servidor (contenedor efimero, ADR-060). La paridad",
+    "entre los dos es una PROPIEDAD DEL SISTEMA, no un detalle: si las dos",
+    "normalizaciones se separan, el MISMO codigo del alumno se corrige distinto",
+    "segun el lenguaje y los conteos passed/failed que viajan al CTR dejan de ser",
+    "comparables entre cohortes.",
+    "",
+    "Por eso la tabla vive aca, fuera de los dos arboles de tests, y la leen los DOS lados:",
+    "  - apps/web-student/tests/comparacionSalida.test.ts",
+    "      (normalizarSalida / salidaCoincide)",
+    "  - apps/execution-service/tests/unit/test_comparacion_salida.py",
+    "      (normalize_output / outputs_match)",
+    "",
+    "Dos tablas copiadas se separan en la primera correccion que toque una sola.",
+    "Una sola tabla no puede.",
+    "",
+    "`coincide` es el veredicto esperado en AMBOS lenguajes. Los bordes con",
+    "semantica distinta a proposito (`expected` nulo) NO estan aca: el navegador lo",
+    "trata como cadena vacia y el servidor como 'no hay nada que comparar'. Se",
+    "testean por separado en cada lado."
+  ],
+  "casos": [
+    {
+      "nombre": "identicos",
+      "actual": "Hola mundo",
+      "esperado": "Hola mundo",
+      "coincide": true,
+      "porque": "el caso base tiene que seguir andando"
+    },
+    {
+      "nombre": "CRLF de Windows contra LF",
+      "actual": "Hola\r\nmundo",
+      "esperado": "Hola\nmundo",
+      "coincide": true,
+      "porque": "el EOL lo elige el sistema del alumno o el terminal del contenedor, no el alumno"
+    },
+    {
+      "nombre": "CR suelto (Mac clasico) contra LF",
+      "actual": "Hola\rmundo",
+      "esperado": "Hola\nmundo",
+      "coincide": true,
+      "porque": "mismo motivo que el CRLF"
+    },
+    {
+      "nombre": "espacios al final de una linea",
+      "actual": "Hola   \nmundo",
+      "esperado": "Hola\nmundo",
+      "coincide": true,
+      "porque": "un print con separador deja un espacio colgando: invisible en pantalla, letal para =="
+    },
+    {
+      "nombre": "tabs al final de una linea",
+      "actual": "Hola\t\nmundo",
+      "esperado": "Hola\nmundo",
+      "coincide": true,
+      "porque": "idem espacios"
+    },
+    {
+      "nombre": "form feed y tab vertical al final de una linea",
+      "actual": "Hola\f\u000b",
+      "esperado": "Hola",
+      "coincide": true,
+      "porque": "los cuatro blancos del set explicito se recortan igual en los dos lenguajes"
+    },
+    {
+      "nombre": "salto de linea final",
+      "actual": "Hola\n",
+      "esperado": "Hola",
+      "coincide": true,
+      "porque": "print siempre agrega uno; la salida esperada del banco casi nunca lo trae"
+    },
+    {
+      "nombre": "varias lineas en blanco al FINAL",
+      "actual": "Hola\n\n\n",
+      "esperado": "Hola",
+      "coincide": true,
+      "porque": "sobrante del medio, no contenido"
+    },
+    {
+      "nombre": "lineas en blanco al PRINCIPIO",
+      "actual": "\n\nHola",
+      "esperado": "Hola",
+      "coincide": true,
+      "porque": "el strip() viejo sobre el texto entero las perdonaba; endurecer perjudicaria al alumno y re-corregiria conteos que ya viajaron al CTR"
+    },
+    {
+      "nombre": "blancos en los dos extremos y CRLF a la vez",
+      "actual": "\n\nHola   \r\n\n",
+      "esperado": "Hola",
+      "coincide": true,
+      "porque": "las tres normalizaciones componen"
+    },
+    {
+      "nombre": "lineas en blanco al principio del ESPERADO",
+      "actual": "Hola",
+      "esperado": "\n\nHola\n",
+      "coincide": true,
+      "porque": "la normalizacion se aplica a los dos lados, no solo al del alumno"
+    },
+    {
+      "nombre": "las dos vacias",
+      "actual": "",
+      "esperado": "",
+      "coincide": true,
+      "porque": "un caso que no imprime nada contra una esperada vacia"
+    },
+    {
+      "nombre": "solo blancos contra vacia",
+      "actual": "   \n\t\n",
+      "esperado": "",
+      "coincide": true,
+      "porque": "normaliza a la cadena vacia por los dos caminos (blancos de linea + lineas en blanco)"
+    },
+    {
+      "nombre": "espacio interno de una linea",
+      "actual": "Hola  mundo",
+      "esperado": "Hola mundo",
+      "coincide": false,
+      "porque": "contenido que el alumno decidio imprimir; tolerarlo seria corregir mal"
+    },
+    {
+      "nombre": "espacios INICIALES de una linea (sangria de la salida)",
+      "actual": "  Hola",
+      "esperado": "Hola",
+      "coincide": false,
+      "porque": "solo se recortan los blancos del FINAL de cada linea; una sangria es contenido"
+    },
+    {
+      "nombre": "mayusculas y minusculas",
+      "actual": "hola mundo",
+      "esperado": "Hola mundo",
+      "coincide": false,
+      "porque": "el enunciado del banco pide el texto tal cual"
+    },
+    {
+      "nombre": "tildes",
+      "actual": "accion",
+      "esperado": "acción",
+      "coincide": false,
+      "porque": "los enunciados del banco PID-UTN estan en castellano con tildes"
+    },
+    {
+      "nombre": "enie",
+      "actual": "ano",
+      "esperado": "año",
+      "coincide": false,
+      "porque": "mismo motivo que las tildes"
+    },
+    {
+      "nombre": "linea en blanco INTERMEDIA",
+      "actual": "a\n\nb",
+      "esperado": "a\nb",
+      "coincide": false,
+      "porque": "solo se descartan las de los extremos; una del medio la imprimio el alumno"
+    },
+    {
+      "nombre": "linea en blanco intermedia del lado esperado",
+      "actual": "a\nb",
+      "esperado": "a\n\nb",
+      "coincide": false,
+      "porque": "simetrico del anterior"
+    },
+    {
+      "nombre": "espacio duro (nbsp) al final",
+      "actual": "Hola\u00a0",
+      "esperado": "Hola",
+      "coincide": false,
+      "porque": "el set de blancos es EXPLICITO y no incluye nbsp: el \\s de JS y el rstrip() de Python difieren justo ahi, y esa seria la asimetria Java/Python que este modulo evita"
+    },
+    {
+      "nombre": "contenido distinto",
+      "actual": "Chau",
+      "esperado": "Hola",
+      "coincide": false,
+      "porque": "el alumno fallo el caso"
+    },
+    {
+      "nombre": "una linea de mas al final (con contenido)",
+      "actual": "Hola\nmundo",
+      "esperado": "Hola",
+      "coincide": false,
+      "porque": "imprimio de mas"
+    },
+    {
+      "nombre": "una linea de menos",
+      "actual": "Hola",
+      "esperado": "Hola\nmundo",
+      "coincide": false,
+      "porque": "imprimio de menos"
+    },
+    {
+      "nombre": "salida vacia contra una esperada con contenido",
+      "actual": "",
+      "esperado": "Hola",
+      "coincide": false,
+      "porque": "el programa no imprimio nada"
+    },
+    {
+      "nombre": "el orden de las lineas importa",
+      "actual": "b\na",
+      "esperado": "a\nb",
+      "coincide": false,
+      "porque": "la salida es una secuencia, no un conjunto"
+    }
+  ]
+}
