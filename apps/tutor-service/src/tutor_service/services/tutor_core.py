@@ -401,7 +401,7 @@ class TutorCore:
             event_type="episodio_abierto",
             payload=episodio_abierto_payload,
         )
-        await self.ctr.publish_event(event, tenant_id, TUTOR_SERVICE_USER_ID)
+        await self._publicar_evento(event, state, abierto_seq, TUTOR_SERVICE_USER_ID)
 
         # Métrica: nueva sesión activa.
         tutor_active_sessions_count.add(1)
@@ -515,7 +515,7 @@ class TutorCore:
                     "chunks_used_hash": retrieval.chunks_used_hash,
                 },
             )
-            await self.ctr.publish_event(event, state.tenant_id, TUTOR_SERVICE_USER_ID)
+            await self._publicar_evento(event, state, seq, TUTOR_SERVICE_USER_ID)
             published_prompt_uuid = event["event_uuid"]
             return seq
 
@@ -557,14 +557,26 @@ class TutorCore:
                 },
             )
             try:
-                await self.ctr.publish_event(adv_event, state.tenant_id, TUTOR_SERVICE_USER_ID)
+                await self._publicar_evento(adv_event, state, adv_seq, TUTOR_SERVICE_USER_ID)
             except Exception:
-                # Fail-soft: si el CTR no acepta el evento (red caida, etc.),
-                # log y continua. El prompt principal sigue sin afectarse.
-                logger.warning(
-                    "publish intento_adverso_detectado failed pattern=%s",
+                # ADR-019/RN-129 manda que la deteccion adversa NO bloquee: el
+                # prompt del alumno sigue al LLM aunque el evento no entre. Lo
+                # que SI cambia es que el fallo deje de ser invisible.
+                #
+                # Antes esto era un `logger.warning` y ademas quemaba el seq
+                # reservado dos lineas arriba — un hipo de red mientras el alumno
+                # escribia "dame la respuesta" alcanzaba para abrir el hueco que
+                # termina marcando el episodio `integrity_compromised`.
+                # `_publicar_evento` ya devolvio el numero; queda el registro en
+                # ERROR con traceback para que el fallo sea auditable, que es lo
+                # minimo cuando se pierde evidencia de un intento adverso.
+                logger.exception(
+                    "no se pudo publicar intento_adverso_detectado pattern=%s "
+                    "episode=%s; el seq %s se devolvio al contador y el prompt "
+                    "sigue al LLM (ADR-019: la deteccion no bloquea)",
                     match.pattern_id,
-                    exc_info=True,
+                    state.episode_id,
+                    adv_seq,
                 )
 
         # 3.ter (ADR-043, G3 Mejora 5): deteccion de sobreuso por ventana
@@ -603,12 +615,17 @@ class TutorCore:
                     },
                 )
                 try:
-                    await self.ctr.publish_event(ovu_event, state.tenant_id, TUTOR_SERVICE_USER_ID)
+                    await self._publicar_evento(ovu_event, state, ovu_seq, TUTOR_SERVICE_USER_ID)
                 except Exception:
-                    logger.warning(
-                        "publish overuse intento_adverso_detectado failed pattern=%s",
+                    # Mismo criterio que el adverso de arriba (ADR-043 hereda el
+                    # side-channel de ADR-019): no bloquea, pero tampoco se
+                    # traga el error en silencio. El seq ya volvio al contador.
+                    logger.exception(
+                        "no se pudo publicar overuse intento_adverso_detectado "
+                        "pattern=%s episode=%s; el seq %s se devolvio al contador",
                         overuse_match.pattern_id,
-                        exc_info=True,
+                        state.episode_id,
+                        ovu_seq,
                     )
 
         # 4. Armar messages para el LLM
@@ -761,7 +778,7 @@ class TutorCore:
             event_type="tutor_respondio",
             payload=response_payload,
         )
-        await self.ctr.publish_event(response_event, state.tenant_id, TUTOR_SERVICE_USER_ID)
+        await self._publicar_evento(response_event, state, response_seq, TUTOR_SERVICE_USER_ID)
 
         # Métrica: registrar la duración del turno completo antes del done final.
         tutor_response_duration_seconds.record(time.perf_counter() - _turn_start)
@@ -790,7 +807,7 @@ class TutorCore:
             event_type="episodio_cerrado",
             payload={"reason": reason, "total_events": close_seq + 1},
         )
-        await self.ctr.publish_event(event, state.tenant_id, TUTOR_SERVICE_USER_ID)
+        await self._publicar_evento(event, state, close_seq, TUTOR_SERVICE_USER_ID)
         await self.sessions.delete(episode_id)
 
         # Métrica: sesión cerrada.
@@ -849,7 +866,7 @@ class TutorCore:
                 "last_activity_seconds_ago": float(last_activity_seconds_ago),
             },
         )
-        await self.ctr.publish_event(event, state.tenant_id, user_id)
+        await self._publicar_evento(event, state, seq, user_id)
         await self.sessions.delete(episode_id)
 
         # Métrica: sesión abandonada (cuenta junto a las cerradas).
@@ -1164,7 +1181,7 @@ class TutorCore:
             payload=payload,
         )
         # Publicar como el estudiante, no como el service account
-        await self.ctr.publish_event(event, state.tenant_id, user_id)
+        await self._publicar_evento(event, state, seq, user_id)
         await self._record_overuse_non_prompt_event(event)
         return seq
 
@@ -1234,7 +1251,7 @@ class TutorCore:
             payload=payload,
         )
         # Publicar como el estudiante, no como el service account
-        await self.ctr.publish_event(event, state.tenant_id, user_id)
+        await self._publicar_evento(event, state, seq, user_id)
         await self._record_overuse_non_prompt_event(event)
         # 2026-05-21 — guardar el snapshot actual en la sesión para que el
         # próximo prompt al tutor pueda inyectarlo como contexto (permite
@@ -1289,7 +1306,7 @@ class TutorCore:
             },
         )
         # Publicar como el estudiante (su reflexión, su autoría)
-        await self.ctr.publish_event(event, state.tenant_id, user_id)
+        await self._publicar_evento(event, state, seq, user_id)
         await self._record_overuse_non_prompt_event(event)
         return seq
 
@@ -1336,7 +1353,7 @@ class TutorCore:
             event_type="lectura_enunciado",
             payload={"duration_seconds": duration_seconds},
         )
-        await self.ctr.publish_event(event, state.tenant_id, user_id)
+        await self._publicar_evento(event, state, seq, user_id)
         await self._record_overuse_non_prompt_event(event)
         return seq
 
@@ -1366,7 +1383,7 @@ class TutorCore:
             event_type="pestana_perdida",
             payload={"trigger": trigger},
         )
-        await self.ctr.publish_event(event, state.tenant_id, user_id)
+        await self._publicar_evento(event, state, seq, user_id)
         await self._record_overuse_non_prompt_event(event)
         # Marcar inicio de distraccion para que el worker server-side
         # detecte el umbral de cierre automatico.
@@ -1391,7 +1408,7 @@ class TutorCore:
             event_type="pestana_recuperada",
             payload={"tiempo_fuera_segundos": tiempo_fuera_segundos},
         )
-        await self.ctr.publish_event(event, state.tenant_id, user_id)
+        await self._publicar_evento(event, state, seq, user_id)
         await self._record_overuse_non_prompt_event(event)
         # Cancelar el tracking de distraccion — el alumno volvio antes de
         # superar el umbral, no cerramos el episodio.
@@ -1417,7 +1434,7 @@ class TutorCore:
             event_type="copia_intentada",
             payload={"seleccion_chars": seleccion_chars, "metodo": metodo},
         )
-        await self.ctr.publish_event(event, state.tenant_id, user_id)
+        await self._publicar_evento(event, state, seq, user_id)
         await self._record_overuse_non_prompt_event(event)
         return seq
 
@@ -1450,7 +1467,7 @@ class TutorCore:
                 "metodo": metodo,
             },
         )
-        await self.ctr.publish_event(event, state.tenant_id, user_id)
+        await self._publicar_evento(event, state, seq, user_id)
         await self._record_overuse_non_prompt_event(event)
         return seq
 
@@ -1550,7 +1567,7 @@ class TutorCore:
             payload=payload,
         )
         # Caller = estudiante (su accion directa), no service account.
-        await self.ctr.publish_event(event, state.tenant_id, user_id)
+        await self._publicar_evento(event, state, seq, user_id)
         await self._record_overuse_non_prompt_event(event)
         return seq
 
@@ -1846,6 +1863,37 @@ class TutorCore:
                 "overuse: record_non_prompt_event failed event_type=%s",
                 event.get("event_type"),
             )
+
+    async def _publicar_evento(
+        self,
+        event: dict,
+        state: SessionState,
+        seq: int,
+        caller_id: UUID,
+    ) -> None:
+        """Publica un evento al CTR y, si el publish falla, DEVUELVE el seq.
+
+        `sessions.next_seq()` reserva el número ANTES de que el evento salga
+        hacia el ctr-service, porque el seq va adentro del evento que se firma:
+        no hay forma de reservarlo después. La consecuencia es que un publish
+        fallido (`publish_event` hace `raise_for_status`) quemaba el número —
+        nadie lo devolvía y el evento siguiente nacía en `reservado + 1`. El
+        partition_worker valida `seq == events_count`, no matchea, reintenta 3
+        veces, manda a la DLQ y marca el episodio `integrity_compromised`.
+
+        La rama `fix/ctr-seq-desincronizado` repone el contador desde el worker
+        cuando eso ya pasó; esto ataca la causa: el hueco no se abre. Toda
+        emisión de este servicio pasa por acá para que la propiedad valga
+        siempre y no dependa de que cada call-site se acuerde.
+
+        La excepción se re-propaga tal cual: quién puede seguir sin el evento y
+        quién no es decisión de cada caller, no de este helper.
+        """
+        try:
+            await self.ctr.publish_event(event, state.tenant_id, caller_id)
+        except Exception:
+            await self.sessions.release_seq(state.episode_id, seq)
+            raise
 
     def _build_event(
         self,

@@ -13,12 +13,16 @@ from __future__ import annotations
 
 import asyncio
 import json
+import logging
 import time
 from collections.abc import AsyncIterator, Awaitable, Callable
 from dataclasses import dataclass, field
 from uuid import UUID
 
 import redis.asyncio as redis
+from redis.exceptions import WatchError
+
+logger = logging.getLogger(__name__)
 
 SESSION_TTL = 6 * 3600  # 6 horas
 
@@ -254,6 +258,66 @@ class SessionManager:
         state.seq = new_val  # espejo no-autoritativo (el contador Redis manda)
         await self.set(state)
         return new_val - 1
+
+    async def release_seq(self, episode_id: UUID, seq: int) -> bool:
+        """Devuelve al contador un seq reservado que NO llegó a publicarse.
+
+        `next_seq` reserva ANTES de que el evento salga hacia el ctr-service.
+        Si el publish falla (red, 5xx, timeout — `publish_event` hace
+        `raise_for_status`) el número quedaba quemado: nadie lo devolvía y el
+        próximo evento nacía en `reservado + 1`. El partition_worker espera
+        `seq == events_count`, no matchea, reintenta 3 veces, manda a la DLQ y
+        marca el episodio `integrity_compromised`. Un episodio SANO terminaba
+        etiquetado como adulterado y desaparecía de las vistas de docente y
+        alumno — para una tesis sobre trazabilidad criptográfica eso es
+        corrupción, no una molestia operativa.
+
+        La compensación es un DECR **condicionado** (compare-and-decrement con
+        WATCH/MULTI): sólo devolvemos el número si el contador sigue valiendo
+        `seq + 1`, es decir si somos el último que reservó. Un DECR incondicional
+        sería peor que el hueco: si otra coroutine reservó `seq + 1` mientras
+        publicábamos, bajar el contador haría que el evento siguiente naciera
+        con un seq YA usado → dos eventos con el mismo seq, que es exactamente
+        el defecto que FIX A vino a cerrar.
+
+        Cuando el CAS pierde (hubo una reserva concurrente) el hueco es real y
+        no se puede cerrar desde acá: lo logueamos en ERROR para que quede
+        rastro, y el `_reponer_contador_seq` del partition_worker sigue siendo
+        la red de abajo. Devuelve True si compensó, False si no pudo.
+        """
+        key = self._seq_key(episode_id)
+        esperado = str(seq + 1)
+        try:
+            async with self.redis.pipeline() as pipe:
+                await pipe.watch(key)
+                actual = await pipe.get(key)
+                if isinstance(actual, bytes):
+                    actual = actual.decode("utf-8")
+                if actual != esperado:
+                    await pipe.unwatch()
+                    logger.error(
+                        "no se pudo devolver el seq %s del episodio %s: el contador "
+                        "vale %r y no %r (hubo una reserva concurrente). Queda un "
+                        "hueco en la cadena; lo repone el partition_worker.",
+                        seq,
+                        episode_id,
+                        actual,
+                        esperado,
+                    )
+                    return False
+                pipe.multi()
+                pipe.decr(key)
+                pipe.expire(key, SESSION_TTL)
+                await pipe.execute()
+                return True
+        except WatchError:
+            logger.error(
+                "no se pudo devolver el seq %s del episodio %s: el contador cambió "
+                "durante la compensación. Queda un hueco en la cadena.",
+                seq,
+                episode_id,
+            )
+            return False
 
     async def reserve_or_get_seq(
         self,
