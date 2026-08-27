@@ -38,6 +38,7 @@ import { resolverEdicionPendiente } from "../lib/edicionPendiente"
 import { parseJavaError } from "../lib/javaError"
 import { registerJavaSnippets } from "../lib/javaSnippets"
 import { extractPyodideErrorLine, extractPyodideErrorLineNumber } from "../lib/pyodideError"
+import { registerPythonSnippets } from "../lib/pythonSnippets"
 import { runRemote } from "../lib/runRemote"
 
 type PyodideAPI = {
@@ -569,25 +570,33 @@ export function CodeEditor({
     }
   }, [language, flushEdicionPendiente])
 
-  // Snippets de ceremonia para Java (System.out.println, getters/setters,
-  // import del Scanner). Effect propio con deps vacías a propósito: el
-  // proveedor se registra a nivel del *lenguaje* en Monaco, no del editor, así
-  // que sobrevive los re-montajes del effect de arriba sin duplicarse. Monaco
-  // solo lo consulta sobre modelos Java, por eso no hace falta gatearlo por
-  // `language`.
+  // Snippets de ceremonia. Java: System.out.println, getters/setters,
+  // constructores, overrides, import del Scanner. Python: print, input y la
+  // guarda `if __name__ == "__main__"`. Effect propio con deps vacías a
+  // propósito: los proveedores se registran a nivel del *lenguaje* en Monaco,
+  // no del editor, así que sobreviven los re-montajes del effect de arriba sin
+  // duplicarse. Monaco consulta cada uno solo sobre modelos de su lenguaje, por
+  // eso no hace falta gatearlos por `language`.
+  //
+  // Ambos comparten el MISMO `onAccept`: la marca que distingue
+  // `snippet_expanded` de `student_typed` es del buffer, no del lenguaje. Si un
+  // proveedor se registrara sin ella, el código que inserta el editor entraría
+  // a la cadena CTR como tipeado por el alumno.
   useEffect(() => {
-    let disposable: { dispose: () => void } | null = null
+    const disposables: { dispose: () => void }[] = []
     let cancelled = false
     ;(async () => {
       const monaco = await import(/* @vite-ignore */ "monaco-editor")
       if (cancelled) return
-      disposable = registerJavaSnippets(monaco, () => {
+      const marcarSnippet = () => {
         snippetSinceLastFlushRef.current = true
-      })
+      }
+      disposables.push(registerJavaSnippets(monaco, marcarSnippet))
+      disposables.push(registerPythonSnippets(monaco, marcarSnippet))
     })()
     return () => {
       cancelled = true
-      disposable?.dispose()
+      for (const d of disposables) d.dispose()
     }
   }, [])
 
