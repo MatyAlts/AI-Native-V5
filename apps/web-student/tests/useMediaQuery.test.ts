@@ -69,7 +69,7 @@ describe("useMediaQuery", () => {
 
   it("fallback a false si matchMedia no existe (SSR/jsdom)", () => {
     // @ts-expect-error: forzamos ausencia de matchMedia
-    delete window.matchMedia
+    window.matchMedia = undefined
     const { result } = renderHook(() => useMediaQuery("(max-width: 1023px)"))
     expect(result.current).toBe(false)
   })

@@ -172,16 +172,17 @@ describe("alumnoOnboarding — ids", () => {
 /* ========================================================================== */
 
 describe("alumnoOnboarding — coherencia unlockWhen / doneWhen", () => {
-  test.each(ESTADOS)("en el estado $nombre, un hint cumplido nunca queda pendiente", ({
-    estado: e,
-  }) => {
-    // El contrato es `unlock && !done`. Que los dos den true a la vez es legal y
-    // significa "cumplido": lo que no puede pasar es que igual quede pendiente.
-    const cumplidosPendientes = hints
-      .filter((h) => h.doneWhen(e) && pendiente(h, e))
-      .map((h) => h.id)
-    expect(cumplidosPendientes).toEqual([])
-  })
+  test.each(ESTADOS)(
+    "en el estado $nombre, un hint cumplido nunca queda pendiente",
+    ({ estado: e }) => {
+      // El contrato es `unlock && !done`. Que los dos den true a la vez es legal y
+      // significa "cumplido": lo que no puede pasar es que igual quede pendiente.
+      const cumplidosPendientes = hints
+        .filter((h) => h.doneWhen(e) && pendiente(h, e))
+        .map((h) => h.id)
+      expect(cumplidosPendientes).toEqual([])
+    },
+  )
 
   test("en el estado terminal no queda NINGUN cartel pendiente", () => {
     // Este es el "se muestra para siempre": un hint cuyo `doneWhen` no llega a cubrir
@@ -422,7 +423,7 @@ describe("alumnoOnboarding — declaracion de rutas y anclas", () => {
 
 /** Todo lo que el alumno LEE de un cartel: titulo, cuerpo renderizado y CTA. */
 function textoVisible(h: Hint): string {
-  return [h.title, h.ctaLabel ?? "", renderToStaticMarkup(<>{h.body}</>)].join(" ")
+  return [h.title, h.ctaLabel ?? "", renderToStaticMarkup(h.body)].join(" ")
 }
 
 const TILDES = /[À-ÿĀ-ſ]/g
