@@ -214,7 +214,7 @@ async def get_entrega(
     db: AsyncSession = Depends(get_db),
 ) -> EntregaOut:
     entrega = await _get_or_404(db, entrega_id)
-    _assert_can_read(entrega, user)
+    await _assert_read_scope(db, entrega, user)
     return EntregaOut.model_validate(entrega)
 
 
@@ -611,14 +611,24 @@ async def _get_or_404(db: AsyncSession, entrega_id: UUID) -> Entrega:
 
 def _assert_can_read(entrega: Entrega, user: User) -> None:
     """Estudiantes solo pueden leer sus propias entregas."""
-    is_docente = bool(
-        user.roles & frozenset({"superadmin", "docente_admin", "docente", "jtp", "auxiliar"})
-    )
-    if not is_docente and entrega.student_pseudonym != user.id:
+    if not (user.roles & DOCENTE_ROLES) and entrega.student_pseudonym != user.id:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="No tienes permiso para ver esta entrega",
         )
+
+
+async def _assert_read_scope(db: AsyncSession, entrega: Entrega, user: User) -> None:
+    """Scope completo de lectura sobre una entrega, para AMBOS tipos de caller.
+
+    Espejo de `_assert_write_scope`: estudiante → ser dueño; docente → estar
+    asignado a la comision. `list_entregas` ya filtraba su cola por
+    `usuarios_comision`, asi que un docente nunca ve un `entrega_id` ajeno por
+    la UI; pero el detalle por id no lo verificaba, y el id no es secreto.
+    """
+    _assert_can_read(entrega, user)
+    if user.roles & DOCENTE_ROLES:
+        await _assert_docente_de_la_comision(db, entrega, user)
 
 
 async def _assert_docente_de_la_comision(db: AsyncSession, entrega: Entrega, user: User) -> None:
