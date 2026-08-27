@@ -258,6 +258,21 @@ function equalsCampo(field: FieldDecl): string {
  * `Arrays.equals` porque el `==` de un array compara referencias.
  */
 export function equalsSource(className: string, fields: readonly FieldDecl[]): string {
+  // Sin campos no hay comparacion que hacer: dos instancias de una clase sin
+  // estado son iguales si son de la misma clase, y con eso alcanzan las dos
+  // guardas de arriba. El caso NO llega desde el proveedor (que saltea las
+  // clases sin campos), pero esta funcion es exportada y `toStringSource` si
+  // maneja su caso vacio — dejar el hueco solo acá seria una trampa: el `join`
+  // de una lista vacia produce `return ;`, que no compila.
+  if (fields.length === 0) {
+    return [
+      "@Override",
+      "public boolean equals(Object o) {",
+      "    if (this == o) return true;",
+      "    return o != null && getClass() == o.getClass();",
+      "}",
+    ].join("\n")
+  }
   return [
     "@Override",
     "public boolean equals(Object o) {",
