@@ -77,7 +77,9 @@ export function normalizarSalida(texto: string): string {
   // asimetria tal cual — el objetivo es no cambiar ningun veredicto, ni para
   // un lado ni para el otro.
   if (lineas.length > 0) {
-    lineas[0] = lineas[0].replace(BLANCOS_INICIALES, "")
+    // `?? ""` y no un `!`: con `noUncheckedIndexedAccess`, TypeScript no
+    // estrecha `lineas[0]` con el `length > 0` de arriba. Es inerte en runtime.
+    lineas[0] = (lineas[0] ?? "").replace(BLANCOS_INICIALES, "")
   }
   return lineas.join("\n")
 }

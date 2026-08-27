@@ -123,11 +123,18 @@
       "porque": "contenido que el alumno decidio imprimir; tolerarlo seria corregir mal"
     },
     {
-      "nombre": "espacios INICIALES de una linea (sangria de la salida)",
+      "nombre": "espacios INICIALES de la PRIMERA linea (lo que el strip() viejo perdonaba)",
       "actual": "  Hola",
       "esperado": "Hola",
+      "coincide": true,
+      "porque": "El criterio 'una sangria es contenido' es defendible y NO es el que gana. La comparacion anterior era strip() sobre el texto entero, que perdonaba los blancos iniciales de la primera linea: este caso PASABA. Hacerlo fallar es endurecer, y hay conteos passed/failed que YA viajaron al CTR con el criterio viejo — un alumno cuyo caso pasaba ayer no puede fallar hoy con el mismo codigo. Aplica solo a la PRIMERA linea porque es lo unico que el strip() tocaba"
+    },
+    {
+      "nombre": "sangria de una linea POSTERIOR (esa si es contenido)",
+      "actual": "Hola\n  Chau",
+      "esperado": "Hola\nChau",
       "coincide": false,
-      "porque": "solo se recortan los blancos del FINAL de cada linea; una sangria es contenido"
+      "porque": "El perdon de blancos iniciales aplica SOLO a la primera linea. El strip() viejo actuaba sobre los extremos del texto entero, asi que la sangria del medio siempre conto como contenido — y lo sigue contando"
     },
     {
       "nombre": "mayusculas y minusculas",

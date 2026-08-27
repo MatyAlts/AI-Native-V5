@@ -133,7 +133,12 @@ class TestToSandboxResultUsaLaNormalizacion:
         [
             ("hola", "Hola"),
             ("a\n\nb", "a\nb"),
-            ("  Hola", "Hola"),
+            # `("  Hola", "Hola")` NO va aca: la sangria de la PRIMERA linea es
+            # lo unico que el `strip()` viejo perdonaba, y se conserva para no
+            # cambiar veredictos de conteos que ya viajaron al CTR. La sangria
+            # de una linea POSTERIOR si sigue siendo contenido — ese caso vive
+            # en `paridad-salida.json` con su porque.
+            ("Hola\n  Chau", "Hola\nChau"),
         ],
     )
     def test_sigue_rechazando_lo_que_es_contenido_del_alumno(
