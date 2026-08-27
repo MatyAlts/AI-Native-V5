@@ -89,6 +89,7 @@ class Settings(BaseSettings):
     @classmethod
     def _sin_barra_final(cls, v: str) -> str:
         return v.rstrip("/")
+
     tp_generator_prompt_version: str = Field(default="v1.0.0")
     # Default Gemini (namespaced → OpenRouter con fallback keyless a Gemini nativo).
     # Antes era "mistral-small-latest" (sin key de Mistral configurada → 502).

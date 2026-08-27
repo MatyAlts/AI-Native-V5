@@ -44,6 +44,15 @@ from evaluation_service.schemas.entrega import (
 
 router = APIRouter(prefix="/api/v1/entregas", tags=["entregas"])
 
+# Oversight academico del tenant: ve y corrige cualquier comision. Mismo
+# conjunto que usa `list_entregas` para saltear el filtro por comision.
+OVERSIGHT_ROLES = frozenset({"superadmin", "docente_admin"})
+
+# Roles del lado docente. El scope de un docente lo da `usuarios_comision`; el
+# de un estudiante, ser dueño de la entrega (los alumnos no estan en esa tabla,
+# estan en `inscripciones`). Por eso los dos caminos no se pueden unificar.
+DOCENTE_ROLES = frozenset({"superadmin", "docente_admin", "docente", "jtp", "auxiliar"})
+
 # ── Endpoints de Entregas ─────────────────────────────────────────────────
 
 
@@ -205,7 +214,7 @@ async def get_entrega(
     db: AsyncSession = Depends(get_db),
 ) -> EntregaOut:
     entrega = await _get_or_404(db, entrega_id)
-    _assert_can_read(entrega, user)
+    await _assert_read_scope(db, entrega, user)
     return EntregaOut.model_validate(entrega)
 
 
@@ -221,7 +230,10 @@ async def submit_entrega(
     Emite audit log tp_entregada (structlog, no CTR chain).
     """
     entrega = await _get_or_404(db, entrega_id)
-    _assert_can_write(entrega, user)
+    # Autorizacion ANTES de la logica de estado, incluido el atajo idempotente
+    # de abajo: si no, un docente ajeno distingue por el status code en que
+    # estado esta una entrega que no deberia ni ver.
+    await _assert_write_scope(db, entrega, user)
 
     if entrega.estado == "submitted":
         return EntregaOut.model_validate(entrega)
@@ -285,7 +297,9 @@ async def mark_ejercicio_completado(
     Si no existe y se marca completado, lo agrega.
     """
     entrega = await _get_or_404(db, entrega_id)
-    _assert_can_write(entrega, user)
+    # Autorizacion ANTES del chequeo de estado, mismo motivo que en el resto:
+    # el status code no debe delatar en que estado esta una entrega ajena.
+    await _assert_write_scope(db, entrega, user)
 
     if entrega.estado not in ("draft", "returned"):
         raise HTTPException(
@@ -356,6 +370,9 @@ async def calificar_entrega(
     Emite audit log tp_calificada (structlog, no CTR chain).
     """
     entrega = await _get_or_404(db, entrega_id)
+    # Autorizacion ANTES de la logica de negocio: si va despues, un docente
+    # ajeno distingue por el status code en que estado esta la entrega.
+    await _assert_docente_de_la_comision(db, entrega, user)
 
     if entrega.estado != "submitted":
         raise HTTPException(
@@ -426,11 +443,14 @@ async def recalificar_entrega(
     - `graded_by` pasa al docente que re-califica (gobierna la nota vigente);
       `graded_at` preserva la primera calificacion, `updated_at` marca esta.
     - Deja la entrega en `graded` (normaliza el caso de una entrega re-enviada
-      que quedo en `submitted` con la calificacion vieja adherida — NB-4).
+      que quedo en `submitted` con la calificacion vieja adherida — NB-4),
+      SALVO que ya este en `returned`: ese estado se conserva porque es lo que
+      habilita al alumno a re-entregar.
     - Emite audit log `tp_recalificada` (structlog, NO va al CTR chain — ADR-010)
       con la nota anterior y la nueva.
     """
     entrega = await _get_or_404(db, entrega_id)
+    await _assert_docente_de_la_comision(db, entrega, user)
 
     stmt = select(Calificacion).where(
         and_(
@@ -484,7 +504,13 @@ async def recalificar_entrega(
     # Normaliza el estado: una re-calificacion deja la entrega calificada.
     # Cubre el caso NB-4 de una entrega re-enviada (returned -> submitted) que
     # quedo en 'submitted' con la calificacion vieja adherida.
-    entrega.estado = "graded"
+    #
+    # EXCEPTO si ya esta 'returned': ahi la devolucion es intencional y el
+    # alumno tiene la pelota. `submit_entrega` solo acepta 'draft'/'returned',
+    # asi que pisarla con 'graded' le contesta 409 cuando intenta re-entregar
+    # — corregir un typo en la nota le trababa el TP.
+    if entrega.estado != "returned":
+        entrega.estado = "graded"
 
     await db.flush()
     await db.refresh(cal)
@@ -512,7 +538,10 @@ async def get_calificacion(
 ) -> CalificacionOut:
     """Lee la calificacion. Docentes ven todas; estudiantes solo la suya."""
     entrega = await _get_or_404(db, entrega_id)
-    _assert_can_read(entrega, user)
+    # Antes del lookup de la calificacion: si fuera despues, el docente ajeno
+    # distinguiria por el status code (403 con nota vs 404 sin nota) si la
+    # entrega ajena ya esta corregida.
+    await _assert_read_scope(db, entrega, user)
 
     stmt = select(Calificacion).where(
         and_(
@@ -540,6 +569,7 @@ async def return_entrega(
     El alumno puede volver a enviarla (returned -> submitted).
     """
     entrega = await _get_or_404(db, entrega_id)
+    await _assert_docente_de_la_comision(db, entrega, user)
 
     if entrega.estado != "graded":
         raise HTTPException(
@@ -584,23 +614,85 @@ async def _get_or_404(db: AsyncSession, entrega_id: UUID) -> Entrega:
 
 def _assert_can_read(entrega: Entrega, user: User) -> None:
     """Estudiantes solo pueden leer sus propias entregas."""
-    is_docente = bool(
-        user.roles & frozenset({"superadmin", "docente_admin", "docente", "jtp", "auxiliar"})
-    )
-    if not is_docente and entrega.student_pseudonym != user.id:
+    if not (user.roles & DOCENTE_ROLES) and entrega.student_pseudonym != user.id:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="No tienes permiso para ver esta entrega",
         )
 
 
+async def _assert_read_scope(db: AsyncSession, entrega: Entrega, user: User) -> None:
+    """Scope completo de lectura sobre una entrega, para AMBOS tipos de caller.
+
+    Espejo de `_assert_write_scope`: estudiante → ser dueño; docente → estar
+    asignado a la comision. `list_entregas` ya filtraba su cola por
+    `usuarios_comision`, asi que un docente nunca ve un `entrega_id` ajeno por
+    la UI; pero el detalle por id no lo verificaba, y el id no es secreto.
+    """
+    _assert_can_read(entrega, user)
+    if user.roles & DOCENTE_ROLES:
+        await _assert_docente_de_la_comision(db, entrega, user)
+
+
+async def _assert_docente_de_la_comision(db: AsyncSession, entrega: Entrega, user: User) -> None:
+    """403 si el caller no es docente asignado a la comision de la entrega.
+
+    Es el mismo aislamiento que `list_entregas` aplica a la COLA de correccion,
+    pero para las ESCRITURAS. Hacia falta porque en prod todos los docentes
+    comparten un tenant fijo: la RLS separa tenants, no comisiones. Con solo el
+    chequeo de rol, cualquier docente con un `entrega_id` en la mano podia
+    calificar, recalificar y devolver entregas de una comision ajena — el
+    `entrega_id` ni siquiera es secreto, viaja en las URLs del web-teacher.
+
+    Oversight academico (`OVERSIGHT_ROLES`) pasa: coordinacion corrige
+    cross-comision a proposito, igual que ve toda la cola en `list_entregas`.
+
+    `usuarios_comision` vive en la misma DB (academic_main) que `entregas`, asi
+    que se consulta con la misma sesion — sin engine aparte ni join cross-base.
+    Mismo patron que `assert_comision_member` de analytics-service y ctr-service.
+    Ver docs/filtrado-teacher-plan.md.
+    """
+    if user.roles & OVERSIGHT_ROLES:
+        return
+    row = (
+        await db.execute(
+            text(
+                "SELECT 1 FROM usuarios_comision "
+                "WHERE comision_id = :c AND user_id = :u "
+                "AND deleted_at IS NULL LIMIT 1"
+            ),
+            {"c": str(entrega.comision_id), "u": str(user.id)},
+        )
+    ).first()
+    if row is None:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="No tenes acceso a las entregas de esta comision (no sos docente asignado).",
+        )
+
+
 def _assert_can_write(entrega: Entrega, user: User) -> None:
     """Estudiantes solo pueden escribir sus propias entregas."""
-    is_docente = bool(
-        user.roles & frozenset({"superadmin", "docente_admin", "docente", "jtp", "auxiliar"})
-    )
-    if not is_docente and entrega.student_pseudonym != user.id:
+    if not (user.roles & DOCENTE_ROLES) and entrega.student_pseudonym != user.id:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="No tienes permiso para modificar esta entrega",
         )
+
+
+async def _assert_write_scope(db: AsyncSession, entrega: Entrega, user: User) -> None:
+    """Scope completo de escritura sobre una entrega, para AMBOS tipos de caller.
+
+    Los endpoints que comparten alumno y docente (`submit`, `ejercicio`) tienen
+    dos scopes distintos y hay que aplicar el que corresponde:
+
+    - Estudiante → ser dueño de la entrega (`_assert_can_write`). NO se le puede
+      pedir membresia en `usuarios_comision`: los alumnos no viven ahi (viven en
+      `inscripciones`), asi que ese chequeo le daria 403 a TODOS los alumnos y
+      les romperia el flujo de entrega entero.
+    - Docente → estar asignado a la comision de la entrega. Sin esto,
+      `_assert_can_write` lo deja pasar sin mirar nada: solo frena estudiantes.
+    """
+    _assert_can_write(entrega, user)
+    if user.roles & DOCENTE_ROLES:
+        await _assert_docente_de_la_comision(db, entrega, user)
