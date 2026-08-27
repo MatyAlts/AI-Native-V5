@@ -163,6 +163,30 @@ const LANGUAGES_RUNTIME_REMOTO: readonly Language[] = ["java"]
 
 const EDIT_DEBOUNCE_MS = 1000
 
+/**
+ * Config de autocompletado del editor. No es cosmetica: con los defaults de
+ * Monaco no se puede escribir un f-string de Python.
+ *
+ * `acceptSuggestionOnCommitCharacter` viene en `true` por default y hace que
+ * cualquier "caracter de commit" acepte la sugerencia resaltada. El alumno
+ * tipea `f`, Monaco abre la lista de sugerencias con alguna palabra que empieza
+ * con f (`for`, `float`, `filter`) resaltada, y la comilla siguiente commitea
+ * esa sugerencia en vez de insertarse: la `f` se convierte en otra cosa y el
+ * f-string nunca se escribe. Es el primer formateo de strings que se ensena en
+ * la cursada, asi que el editor volvia inusable justo el ejercicio tipico.
+ *
+ * `quickSuggestions` apagado dentro de strings y comentarios por el mismo
+ * motivo: prosa en castellano no debe disparar la lista. Se deja prendido en
+ * `other` (codigo) y se conserva `suggestOnTriggerCharacters` para que el
+ * autocompletado siga existiendo donde ayuda — el fix no es "apagar
+ * IntelliSense", es que deje de robar teclas.
+ */
+export const SUGERENCIAS_OPTIONS = {
+  acceptSuggestionOnCommitCharacter: false,
+  quickSuggestions: { other: true, comments: false, strings: false },
+  suggestOnTriggerCharacters: true,
+} as const
+
 // ED-3: control de tamano de fuente del editor. Persistido en localStorage
 // para que el alumno no lo re-ajuste en cada episodio.
 const FONT_SIZE_KEY = "web-student.editor.fontSize"
@@ -347,6 +371,7 @@ export function CodeEditor({
         // vista lo que escriben fuera del viewport.
         wordWrap: "on",
         wrappingIndent: "indent",
+        ...SUGERENCIAS_OPTIONS,
       })
 
       // F6: detectar paste del clipboard. Monaco dispara onDidPaste *antes*
