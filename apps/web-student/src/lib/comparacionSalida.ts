@@ -44,8 +44,26 @@
  * exactamente los mismos code points (nbsp, \x85, ﻿, separadores unicode),
  * y una diferencia ahi seria justo la asimetria Java/Python que este modulo
  * existe para impedir. Estos cuatro son identicos en los dos lenguajes. */
-const BLANCOS_FINALES = /[ \t\f\v]+$/
-const BLANCOS_INICIALES = /^[ \t\f\v]+/
+/**
+ * Los blancos que recortamos: EXACTAMENTE los de `str.isspace()` de Python,
+ * menos `\n` (que ya se separó en lineas).
+ *
+ * Enumerados a mano y no `\s`, porque **`\s` de JS no es `isspace()` de
+ * Python**: `\s` incluye `\ufeff` (que Python NO considera blanco) y le faltan
+ * `\x1c-\x1f` y `\x85` (que Python SÍ). Con `\s` los dos correctores
+ * divergirían, que es lo único que este módulo existe para evitar.
+ *
+ * Y es el set de `isspace()` y no uno mas chico porque **el corrector viejo era
+ * `str.strip()`** — en los dos runners, incluido el del navegador, que corria
+ * dentro de Pyodide. Recortar menos que eso ENDURECE: hace fallar casos que
+ * pasaban, sobre conteos que ya viajaron al CTR. El caso realista no es
+ * teorico: el docente pega el `expected_output` desde Word y le entra un
+ * espacio duro (`\u00a0`).
+ */
+const CLASE_BLANCOS =
+  "\\t\\v\\f\\r\\x1c\\x1d\\x1e\\x1f\\x20\\x85\\u00a0\\u1680\\u2000-\\u200a\\u2028\\u2029\\u202f\\u205f\\u3000"
+const BLANCOS_FINALES = new RegExp(`[${CLASE_BLANCOS}]+$`)
+const BLANCOS_INICIALES = new RegExp(`^[${CLASE_BLANCOS}]+`)
 
 /**
  * Normaliza una salida para compararla. Funcion PURA.

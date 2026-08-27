@@ -266,15 +266,14 @@ def normalize_output(text: str) -> str:
     evidencia de la tesis.
     """
     lineas = [
-        linea.rstrip(_BLANCOS_FINALES)
-        for linea in text.replace("\r\n", "\n").replace("\r", "\n").split("\n")
+        linea.rstrip() for linea in text.replace("\r\n", "\n").replace("\r", "\n").split("\n")
     ]
     while lineas and lineas[-1] == "":
         lineas.pop()
     while lineas and lineas[0] == "":
         lineas.pop(0)
     if lineas:
-        lineas[0] = lineas[0].lstrip(_BLANCOS_FINALES)
+        lineas[0] = lineas[0].lstrip()
     return "\n".join(lineas)
 
 

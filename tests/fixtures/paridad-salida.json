@@ -172,11 +172,25 @@
       "porque": "simetrico del anterior"
     },
     {
-      "nombre": "espacio duro (nbsp) al final",
+      "nombre": "espacio duro (nbsp) al final — el caso del docente que pega desde Word",
       "actual": "Hola\u00a0",
       "esperado": "Hola",
+      "coincide": true,
+      "porque": "El set de blancos es EXPLICITO —el \\s de JS NO es isspace() de Python, y usar \\s divergiria— pero el set correcto es el de isspace(), no uno mas chico. El corrector viejo era str.strip() en los DOS runners (el del navegador corria en Pyodide), asi que este caso PASABA. Con un set de 4 caracteres quedaban 23 code points afuera y todos se volvian WRONG_ANSWER: el mas realista es este, el docente pegando el expected_output desde Word o un PDF. Eso cambia test_count_passed/failed, que es el evento del que el labeler v1.2.0 deriva N3 vs N4"
+    },
+    {
+      "nombre": "espacio unicode (U+2003, em space) al principio",
+      "actual": "\u2003Hola",
+      "esperado": "Hola",
+      "coincide": true,
+      "porque": "Mismo motivo que el nbsp: str.isspace() lo cubria y el strip() viejo lo perdonaba. Esta en la tabla para que la clase entera quede fijada por mas de un representante"
+    },
+    {
+      "nombre": "zero-width space (U+200B) al final — NO es blanco",
+      "actual": "Hola\u200b",
+      "esperado": "Hola",
       "coincide": false,
-      "porque": "el set de blancos es EXPLICITO y no incluye nbsp: el \\s de JS y el rstrip() de Python difieren justo ahi, y esa seria la asimetria Java/Python que este modulo evita"
+      "porque": "El limite por el otro lado. U+200B NO es isspace() en Python (y el \\s de JS TAMPOCO lo incluye), asi que el strip() viejo tampoco lo perdonaba. Recortarlo seria tolerancia NUEVA, no replicar la vieja — y este modulo no agrega tolerancia, solo evita quitarla"
     },
     {
       "nombre": "contenido distinto",
