@@ -538,7 +538,10 @@ async def get_calificacion(
 ) -> CalificacionOut:
     """Lee la calificacion. Docentes ven todas; estudiantes solo la suya."""
     entrega = await _get_or_404(db, entrega_id)
-    _assert_can_read(entrega, user)
+    # Antes del lookup de la calificacion: si fuera despues, el docente ajeno
+    # distinguiria por el status code (403 con nota vs 404 sin nota) si la
+    # entrega ajena ya esta corregida.
+    await _assert_read_scope(db, entrega, user)
 
     stmt = select(Calificacion).where(
         and_(
