@@ -92,9 +92,7 @@ def compute_chain_hash(self_hash: str, prev_chain_hash: str | None) -> str:
 
 
 def verify_chain_integrity(
-    events: list[
-        tuple[dict[str, Any], str, str] | tuple[dict[str, Any], str, str, str]
-    ],
+    events: list[tuple[dict[str, Any], str, str] | tuple[dict[str, Any], str, str, str]],
 ) -> tuple[bool, int | None]:
     """Verifica que la cadena de eventos sea íntegra.
 
