@@ -48,6 +48,11 @@ router = APIRouter(prefix="/api/v1/entregas", tags=["entregas"])
 # conjunto que usa `list_entregas` para saltear el filtro por comision.
 OVERSIGHT_ROLES = frozenset({"superadmin", "docente_admin"})
 
+# Roles del lado docente. El scope de un docente lo da `usuarios_comision`; el
+# de un estudiante, ser dueño de la entrega (los alumnos no estan en esa tabla,
+# estan en `inscripciones`). Por eso los dos caminos no se pueden unificar.
+DOCENTE_ROLES = frozenset({"superadmin", "docente_admin", "docente", "jtp", "auxiliar"})
+
 # ── Endpoints de Entregas ─────────────────────────────────────────────────
 
 
@@ -225,7 +230,10 @@ async def submit_entrega(
     Emite audit log tp_entregada (structlog, no CTR chain).
     """
     entrega = await _get_or_404(db, entrega_id)
-    _assert_can_write(entrega, user)
+    # Autorizacion ANTES de la logica de estado, incluido el atajo idempotente
+    # de abajo: si no, un docente ajeno distingue por el status code en que
+    # estado esta una entrega que no deberia ni ver.
+    await _assert_write_scope(db, entrega, user)
 
     if entrega.estado == "submitted":
         return EntregaOut.model_validate(entrega)
@@ -650,11 +658,26 @@ async def _assert_docente_de_la_comision(db: AsyncSession, entrega: Entrega, use
 
 def _assert_can_write(entrega: Entrega, user: User) -> None:
     """Estudiantes solo pueden escribir sus propias entregas."""
-    is_docente = bool(
-        user.roles & frozenset({"superadmin", "docente_admin", "docente", "jtp", "auxiliar"})
-    )
-    if not is_docente and entrega.student_pseudonym != user.id:
+    if not (user.roles & DOCENTE_ROLES) and entrega.student_pseudonym != user.id:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="No tienes permiso para modificar esta entrega",
         )
+
+
+async def _assert_write_scope(db: AsyncSession, entrega: Entrega, user: User) -> None:
+    """Scope completo de escritura sobre una entrega, para AMBOS tipos de caller.
+
+    Los endpoints que comparten alumno y docente (`submit`, `ejercicio`) tienen
+    dos scopes distintos y hay que aplicar el que corresponde:
+
+    - Estudiante → ser dueño de la entrega (`_assert_can_write`). NO se le puede
+      pedir membresia en `usuarios_comision`: los alumnos no viven ahi (viven en
+      `inscripciones`), asi que ese chequeo le daria 403 a TODOS los alumnos y
+      les romperia el flujo de entrega entero.
+    - Docente → estar asignado a la comision de la entrega. Sin esto,
+      `_assert_can_write` lo deja pasar sin mirar nada: solo frena estudiantes.
+    """
+    _assert_can_write(entrega, user)
+    if user.roles & DOCENTE_ROLES:
+        await _assert_docente_de_la_comision(db, entrega, user)

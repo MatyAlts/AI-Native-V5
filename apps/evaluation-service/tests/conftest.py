@@ -73,13 +73,20 @@ async def scope_setup() -> AsyncIterator[dict]:
     """Docente de la comision A + entregas en A (propia) y B (ajena).
 
     Entregas creadas (claves del dict devuelto):
+      - `propia_draft`      (comision A, 'draft', sin calificacion)
       - `propia_submitted`  (comision A, 'submitted', sin calificacion)
       - `propia_returned`   (comision A, 'returned', con calificacion 5.00)
       - `ajena_submitted`   (comision B, 'submitted', sin calificacion)
+      - `ajena_returned`    (comision B, 'returned', sin calificacion)
       - `ajena_graded`      (comision B, 'graded', con calificacion 5.00)
 
-    Ademas: `tenant_id`, `docente` / `admin` (headers listos) y `headers`
-    (callable para armar los de un alumno concreto).
+    Los estados `draft` y `returned` existen a proposito en las dos comisiones:
+    son los unicos que `submit_entrega` y `mark_ejercicio_completado` aceptan,
+    asi que sin ellos un guard de autorizacion no se distingue de un 409 de
+    estado.
+
+    Ademas: `tenant_id`, `docente` / `admin` (headers listos), `headers`
+    (callable generico) y `alumno_de(key)` (headers del dueño de esa entrega).
     """
     engine = create_async_engine(DB_URL)
     try:
@@ -96,12 +103,18 @@ async def scope_setup() -> AsyncIterator[dict]:
     membresia_id = uuid.uuid4()
 
     entregas = {
+        "propia_draft": (tp_propia, comision_propia, "draft", None),
         "propia_submitted": (tp_propia, comision_propia, "submitted", None),
         "propia_returned": (tp_propia, comision_propia, "returned", uuid.uuid4()),
         "ajena_submitted": (tp_ajena, comision_ajena, "submitted", None),
+        "ajena_returned": (tp_ajena, comision_ajena, "returned", None),
         "ajena_graded": (tp_ajena, comision_ajena, "graded", uuid.uuid4()),
     }
     ids = {k: uuid.uuid4() for k in entregas}
+    # El alumno dueño de cada entrega, para poder actuar como el sin tener que
+    # leerlo de vuelta por la API (leerlo con el docente ajeno es justo lo que
+    # varios de estos tests prohiben).
+    alumnos = {k: uuid.uuid4() for k in entregas}
 
     factory = async_sessionmaker(engine, expire_on_commit=False)
 
@@ -139,7 +152,7 @@ async def scope_setup() -> AsyncIterator[dict]:
                     "id": str(ids[key]),
                     "t": str(tenant_id),
                     "tp": str(tp_id),
-                    "st": str(uuid.uuid4()),
+                    "st": str(alumnos[key]),
                     "c": str(comision_id),
                     "e": estado,
                 },
@@ -180,6 +193,8 @@ async def scope_setup() -> AsyncIterator[dict]:
             "docente": build_headers(DOCENTE_ID, tenant_id, "docente"),
             "admin": build_headers(ADMIN_ID, tenant_id, "docente_admin"),
             "headers": lambda uid, roles: build_headers(uid, tenant_id, roles),
+            # Headers del alumno dueño de la entrega `<key>`.
+            "alumno_de": lambda key: build_headers(alumnos[key], tenant_id, "estudiante"),
             **ids,
         }
     finally:
