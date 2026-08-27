@@ -413,27 +413,9 @@ class TestElBloqueanteNoVuelvePorNingunaPuerta:
                 codigo="x",
                 language="java",
                 alumno_nombre="a",
-                activeia_comision_id="1",
+                ejercicio_ref="ej-1",
                 headers_sandbox={},
             )
-
-    async def test_el_poll_corta_solo_sin_depender_del_envoltorio(self) -> None:
-        """Un `while True` que solo corta por cancelacion externa depende de
-        que el envoltorio este puesto. Y salir por cancelacion es peor que
-        salir por decision propia: la primera no puede cerrar la fila."""
-        from evaluation_service.services import correccion_ejecutor as mod
-
-        cliente = MagicMock()
-        cliente.request = AsyncMock(return_value=MagicMock(status_code=404))
-
-        with (
-            patch.object(mod, "_POLL_INTERVAL_S", 0.01),
-            patch.object(mod, "_POLL_PRESUPUESTO_S", 0.05),
-        ):
-            r = await mod._poletear(cliente, "7")
-
-        assert r["error_code"] == "TIMEOUT"
-        assert "nota_100" not in r
 
 
 class TestPendingHuerfana:

@@ -12,7 +12,6 @@ Las dos propiedades que este epic no puede perder:
 from __future__ import annotations
 
 import contextlib
-import io
 from datetime import UTC, datetime
 from decimal import Decimal
 from unittest.mock import AsyncMock, MagicMock, patch
@@ -360,17 +359,6 @@ class TestEndpoints:
 class TestElEjecutor:
     """El trabajo en background. Nada de esto puede terminar en una nota."""
 
-    def test_el_zip_nombra_el_archivo_como_el_compilador_espera(self) -> None:
-        """Una clase publica Java tiene que vivir en un archivo con su nombre.
-        Un zip con `codigo.txt` adentro no compila del otro lado."""
-        import zipfile
-
-        from evaluation_service.services.correccion_ejecutor import _zip_del_codigo
-
-        for lang, esperado in (("java", "src/Main.java"), ("python", "src/main.py")):
-            z = zipfile.ZipFile(io.BytesIO(_zip_del_codigo("x", lang)))
-            assert z.namelist() == [esperado]
-
     async def test_si_no_compila_SE_MANDA_IGUAL(self) -> None:
         """Cambio del 19/08: antes se cortaba para no pagar una correccion
         sobre codigo roto. Se revirtio — un punto y coma que falta no
@@ -424,7 +412,7 @@ class TestElEjecutor:
                 codigo="roto",
                 language="java",
                 alumno_nombre="a",
-                activeia_comision_id="1",
+                ejercicio_ref="ej-1",
                 headers_sandbox={},
             )
 
@@ -469,7 +457,7 @@ class TestElEjecutor:
                 codigo="x",
                 language="java",
                 alumno_nombre="a",
-                activeia_comision_id="1",
+                ejercicio_ref="ej-1",
                 headers_sandbox={},
             )
 
@@ -489,177 +477,80 @@ class TestElOrdenEsObligatorio:
 
 
 class TestElEjecutorNoManda:
-    async def test_un_lenguaje_desconocido_corta(self) -> None:
-        """Antes caia al `else` y empaquetaba como `main.py`: del otro lado eso
-        es un archivo Python con algo que no es Python, y el motor corrige un
-        sinsentido en vez de fallar."""
-        from evaluation_service.services.correccion_ejecutor import _zip_del_codigo
-        from evaluation_service.services.correccion_pre_ejecucion import PreEjecucionError
+    """Lo que el ejecutor NUNCA convierte en una nota.
 
-        with pytest.raises(PreEjecucionError) as exc:
-            _zip_del_codigo("x", "cobol")
-        assert exc.value.error_code == "LENGUAJE_DESCONOCIDO"
+    **Reescrita el 2026-08-27.** Esta clase tenia siete tests y cinco probaban
+    ramas que ya no existen: el zip, el lenguaje desconocido que solo importaba
+    para nombrar el archivo del zip, y las cuatro del 409 de entrega duplicada.
+    Se borraron en vez de adaptarse — un test verde sobre codigo muerto es peor
+    que ninguno, porque cuenta como cobertura sin cubrir nada.
 
-    async def test_el_409_no_se_toma_por_exito_si_no_ubica_la_entrega(self) -> None:
-        """Retomar a ciegas subiria la correccion de otro TP del mismo alumno:
-        el tutor le adjuntaba la devolucion de otra unidad."""
-        from evaluation_service.services.correccion_ejecutor import _subir_y_corregir
+    Lo que quedo son los dos invariantes que sobreviven al cambio de endpoint,
+    mas el gate nuevo que el endpoint por ejercicio trae consigo.
+    """
 
-        vacio = MagicMock(status_code=200, json=MagicMock(return_value={"items": []}))
-        cliente = MagicMock()
-        cliente.request = AsyncMock(
-            side_effect=[
-                MagicMock(status_code=409),  # ya existe
-                vacio,  # busqueda EN la comision
-                vacio,  # y sin filtrar por comision (ver el test de abajo)
-            ]
-        )
-        r = await _subir_y_corregir(
-            cliente=cliente,
+    async def test_un_4xx_es_un_rechazo_y_no_una_nota(self) -> None:
+        """Un rechazo no se arregla reintentando. Antes esto ademas evitaba
+        quemar el presupuesto entero poleteando algo que nunca iba a salir."""
+        from evaluation_service.services.correccion_ejecutor import _corregir_ejercicio
+
+        class _Cliente:
+            async def corregir_ejercicio(self, **kw: object) -> tuple[int, dict]:
+                return 422, {"detail": "el caso oculto t3 trae salida esperada"}
+
+        r = await _corregir_ejercicio(
+            cliente=_Cliente(),
+            ejercicio_ref="EJ-1",
+            alumno_nombre="pseudo",
             codigo="x",
-            language="java",
-            alumno_nombre="Ana",
-            comision_id="1",
-            rubrica_id="r1",
-            tests={},
+            tests={"compila": True, "passed": 1, "total": 1},
         )
-        assert r["error_code"] == "CONFLICTO_SIN_SALIDA"
+
         assert "nota_100" not in r
-
-    async def test_el_409_de_otra_comision_no_se_retoma(self) -> None:
-        """El equipo de Active-IA nos corrigio el supuesto (2026-08-20): el
-        indice unico es `(rubrica_id, alumno_nombre)` y **no incluye la
-        comision**. O sea que el 409 puede venir de una entrega que vive en
-        otra comision.
-
-        Se la busca —para poder decir que existe— pero NO se retoma: adjuntarle
-        la devolucion al alumno de otra comision es el mismo modo de falla que
-        ya nos mordio cuando el match ignoraba el `rubrica_id`."""
-        from evaluation_service.services.correccion_ejecutor import _subir_y_corregir
-
-        ajena = {
-            "id": "EXT-DE-OTRA-COMISION",
-            "rubrica_id": "r1",
-            "alumno_nombre": "Ana",
-            "comision_id": "999",
-        }
-        cliente = MagicMock()
-        cliente.request = AsyncMock(
-            side_effect=[
-                MagicMock(status_code=409),
-                # en NUESTRA comision no esta...
-                MagicMock(status_code=200, json=MagicMock(return_value={"items": []})),
-                # ...pero existe en otra
-                MagicMock(status_code=200, json=MagicMock(return_value={"items": [ajena]})),
-            ]
-        )
-        r = await _subir_y_corregir(
-            cliente=cliente,
-            codigo="x",
-            language="java",
-            alumno_nombre="Ana",
-            comision_id="1",
-            rubrica_id="r1",
-            tests={},
-        )
-        assert r["error_code"] == "CONFLICTO_SIN_SALIDA"
-        assert r.get("external_entrega_id") != "EXT-DE-OTRA-COMISION"
-
-    async def test_el_409_de_la_misma_comision_si_se_retoma(self) -> None:
-        """El caso normal no se rompio: subirla de nuevo la cobra de nuevo."""
-        from evaluation_service.services.correccion_ejecutor import _subir_y_corregir
-
-        propia = {"id": "EXT-YA-ESTABA", "rubrica_id": "r1", "alumno_nombre": "Ana"}
-        cliente = MagicMock()
-        cliente.request = AsyncMock(
-            side_effect=[
-                MagicMock(status_code=409),
-                MagicMock(status_code=200, json=MagicMock(return_value={"items": [propia]})),
-                MagicMock(status_code=200),  # disparo
-                MagicMock(status_code=200, json=MagicMock(return_value={"nota_final": 8})),
-            ]
-        )
-        r = await _subir_y_corregir(
-            cliente=cliente,
-            codigo="x",
-            language="java",
-            alumno_nombre="Ana",
-            comision_id="1",
-            rubrica_id="r1",
-            tests={},
-        )
-        assert r["external_entrega_id"] == "EXT-YA-ESTABA"
-
-    async def test_el_409_solo_retoma_la_entrega_de_LA_MISMA_rubrica(self) -> None:
-        """El bug documentado de produccion: sin comparar `rubrica_id`
-        alcanzaba el nombre del alumno y se retomaba la entrega de OTRO TP."""
-        from evaluation_service.services.correccion_ejecutor import _ubicar_entrega
-
-        cliente = MagicMock()
-        cliente.request = AsyncMock(
-            return_value=MagicMock(
-                status_code=200,
-                json=MagicMock(
-                    return_value={
-                        "items": [
-                            {"id": "99", "rubrica_id": "OTRA", "alumno_nombre": "Ana"},
-                            {"id": "42", "rubrica_id": "r1", "alumno_nombre": "Ana"},
-                        ]
-                    }
-                ),
-            )
-        )
-        assert await _ubicar_entrega(cliente, "1", "r1", "Ana") == "42"
-        # Y si la unica del alumno es de otra rubrica, NO se retoma ninguna.
-        cliente.request = AsyncMock(
-            return_value=MagicMock(
-                status_code=200,
-                json=MagicMock(
-                    return_value={
-                        "items": [{"id": "99", "rubrica_id": "OTRA", "alumno_nombre": "Ana"}]
-                    }
-                ),
-            )
-        )
-        assert await _ubicar_entrega(cliente, "1", "r1", "Ana") is None
-
-    async def test_un_4xx_al_disparar_corta_sin_poletear(self) -> None:
-        """Antes solo cortaba con >=500, asi que un rechazo se poleteaba igual
-        hasta quemar el presupuesto entero."""
-        from evaluation_service.services.correccion_ejecutor import _subir_y_corregir
-
-        cliente = MagicMock()
-        cliente.request = AsyncMock(
-            side_effect=[
-                MagicMock(status_code=201, json=MagicMock(return_value={"id": "7"})),
-                MagicMock(status_code=422),  # el disparo lo rechaza
-            ]
-        )
-        r = await _subir_y_corregir(
-            cliente=cliente,
-            codigo="x",
-            language="java",
-            alumno_nombre="Ana",
-            comision_id="1",
-            rubrica_id="r1",
-            tests={},
-        )
         assert r["error_code"] == "HTTP_422"
-        assert "nota_100" not in r
-        # No poleteo: sólo dos requests (subir + disparar).
-        assert cliente.request.await_count == 2
+        assert "caso oculto t3" in r["error_detail"], "se perdio el detalle que mandaron"
 
-    async def test_el_poll_no_saca_nota_de_una_respuesta_que_no_es_200(self) -> None:
-        from evaluation_service.services.correccion_ejecutor import _poletear
+    async def test_un_5xx_es_infraestructura_y_tampoco_es_una_nota(self) -> None:
+        """`mapear_error_activeia` resuelve la infra por prefijo `HTTP_5`, y ese
+        flag es lo unico que decide si la UI muestra el boton Reintentar."""
+        from evaluation_service.services.correccion_ejecutor import _corregir_ejercicio
+        from evaluation_service.services.correccion_ia import mapear_error_activeia
 
-        cliente = MagicMock()
-        cliente.request = AsyncMock(
-            return_value=MagicMock(status_code=500, json=MagicMock(return_value={"nota": 95}))
+        class _Cliente:
+            async def corregir_ejercicio(self, **kw: object) -> tuple[int, dict]:
+                return 502, {}
+
+        r = await _corregir_ejercicio(
+            cliente=_Cliente(),
+            ejercicio_ref="EJ-1",
+            alumno_nombre="pseudo",
+            codigo="x",
+            tests={"compila": True, "passed": 1, "total": 1},
         )
-        with patch("evaluation_service.services.correccion_ejecutor._POLL_INTERVAL_S", 0.01):
-            r = await _poletear(cliente, "7")
+
         assert "nota_100" not in r
-        assert r["error_code"] == "HTTP_500"
+        assert r["error_code"] == "HTTP_502"
+        assert mapear_error_activeia(r["error_code"], "")[1] is True
+
+    async def test_un_200_sin_nota_no_inventa_un_cero(self) -> None:
+        """Sin nota el estado terminal es `error`, y el CHECK de la base lo hace
+        cumplir aunque este codigo se equivoque."""
+        from evaluation_service.services.correccion_ejecutor import _corregir_ejercicio
+
+        class _Cliente:
+            async def corregir_ejercicio(self, **kw: object) -> tuple[int, dict]:
+                return 200, {"desglose": [{"nombre": "algo"}]}
+
+        r = await _corregir_ejercicio(
+            cliente=_Cliente(),
+            ejercicio_ref="EJ-1",
+            alumno_nombre="pseudo",
+            codigo="x",
+            tests={"compila": True, "passed": 1, "total": 1},
+        )
+
+        assert "nota_100" not in r
+        assert r["error_code"] == "SIN_NOTA"
 
 
 class TestLaApiDistingueElTipoDeFallo:
@@ -893,7 +784,10 @@ class TestLaClasificacionUsaLosCodigosQueElFlujoEmITE:
     @pytest.mark.parametrize(
         "code",
         [
-            "GEMINI_OVERLOADED",  # el motor saturado
+            # El flujo ya no lo arma (ahora emite `HTTP_5xx` con el status
+            # crudo), pero puede venir en el CUERPO de ellos y lo propagamos
+            # tal cual por la rama de `SIN_NOTA`.
+            "GEMINI_OVERLOADED",
             "HTTP_500",
             "HTTP_502",
             "HTTP_503",
@@ -901,9 +795,13 @@ class TestLaClasificacionUsaLosCodigosQueElFlujoEmITE:
             "PROCESO_INTERRUMPIDO",  # lo escribe el reconciliador
             "ERROR_INTERNO",  # el except general del ejecutor
             "SIN_NOTA",  # respondió sin nota
-            "SIN_ENTREGA_ID",  # 201 sin id
-            "CONFLICTO_SIN_SALIDA",  # 409 que no se pudo ubicar
             "TIMEOUT",
+            # LEGACY: el flujo ya no los emite (el 409 y el 201-sin-id murieron
+            # con el endpoint viejo el 2026-08-27), pero hay filas guardadas con
+            # estos códigos y la UI re-deriva el flag de acá cada vez que las
+            # pinta. Se prueban para que nadie los saque del set "limpiando".
+            "SIN_ENTREGA_ID",
+            "CONFLICTO_SIN_SALIDA",
         ],
     )
     def test_es_infraestructura_y_por_lo_tanto_reintentable(self, code: str) -> None:
@@ -918,12 +816,16 @@ class TestLaClasificacionUsaLosCodigosQueElFlujoEmITE:
     @pytest.mark.parametrize(
         "code",
         [
-            "NO_COMPILA",
             "SIN_RUBRICA",
-            "LENGUAJE_DESCONOCIDO",
-            "HTTP_422",
+            "SIN_EJERCICIO_REF",  # el ejercicio no está sincronizado con ellos
+            "HTTP_422",  # caso oculto mal formado — ellos lo rechazan así
             "HTTP_400",
             "HTTP_403",
+            # LEGACY, mismo criterio que el bloque de arriba: `NO_COMPILA` dejó
+            # de emitirse el 19/08 y `LENGUAJE_DESCONOCIDO` el 27/08 (murió con
+            # el zip). Quedan porque hay filas guardadas con ellos.
+            "NO_COMPILA",
+            "LENGUAJE_DESCONOCIDO",
         ],
     )
     def test_es_rechazo_y_reintentar_no_lo_arregla(self, code: str) -> None:

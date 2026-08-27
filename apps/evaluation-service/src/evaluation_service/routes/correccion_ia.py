@@ -225,7 +225,12 @@ async def disparar_correccion(
             codigo=artefacto.codigo,
             language=artefacto.language,
             alumno_nombre=str(entrega.student_pseudonym),
-            activeia_comision_id=str(vinculo.external_ref or ""),
+            # El `external_ref` del EJERCICIO, que es lo que este campo tuvo
+            # siempre: hasta el 2026-08-27 se llamaba `activeia_comision_id` y
+            # viajaba como `comision_id` en el formulario, así que Active-IA
+            # recibía un id de ejercicio donde esperaba una comisión. El
+            # endpoint nuevo lo lleva en la URL, que es su lugar.
+            ejercicio_ref=str(vinculo.external_ref or ""),
             headers_sandbox={
                 "X-Tenant-Id": str(user.tenant_id),
                 "X-User-Id": str(user.id),

@@ -220,7 +220,7 @@ class TestElOutcomeSaleDeLaFila:
         mutación podía hacerlo fallar. Lo encontró la auditoría (séptimo test
         vacuo del epic).
 
-        `HTTP_422` sí lo emite `_subir_y_corregir` cuando el motor rechaza el
+        `HTTP_422` sí lo emite `_corregir_ejercicio` cuando el motor rechaza la
         disparo. Es un rechazo de verdad: reintentar devuelve lo mismo, y no
         puede contarse junto a un incidente del proveedor."""
         cid = await _correccion(db, estado="error", error_code="HTTP_422")

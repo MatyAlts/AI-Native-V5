@@ -175,18 +175,74 @@ class ActiveIAClient:
         items = cuerpo.get("items", cuerpo) if isinstance(cuerpo, dict) else cuerpo
         return list(items) if isinstance(items, list) else []
 
-    # ── Escritura de rúbricas: TODAVÍA NO EXISTE del otro lado ────────────
+    async def corregir_ejercicio(
+        self,
+        *,
+        ejercicio_ref: str,
+        alumno_ref: str,
+        codigo: str,
+        resultado_tests: dict[str, Any],
+        comision_external_ref: str | None = None,
+    ) -> tuple[int, dict[str, Any]]:
+        """`POST /correcciones/ejercicios/{ejercicio_ref}/corregir` — SINCRÓNICO.
+
+        Es el endpoint del §3.4 de `activeia-cambios-pedidos.md`, que el equipo
+        de Active-IA confirmó construido el 2026-08-24. Reemplaza al camino de
+        tres pasos (subir zip → disparar → poletear): **una sola llamada**, la
+        nota vuelve en la respuesta y no hay 202 ni polling.
+
+        Tres cosas que dejan de existir con este endpoint, y por eso el llamador
+        ya no las maneja:
+
+        - **No hay 409.** Corregir de nuevo el mismo ejercicio del mismo alumno
+          reusa la entrega y archiva la corrección anterior en su historial
+          (§4.2 del documento de ellos). Reintentar es la misma llamada.
+        - **No hay zip.** El código viaja como texto en el cuerpo.
+        - **No hay poll.** Un ejercicio entra cómodo en los 90s de timeout.
+
+        `comision_external_ref` es OPCIONAL y hoy no se manda: su modelo exige
+        que toda entrega pertenezca a una comisión y nosotros no tenemos, así
+        que configuraron una **comisión de integración** por materia que se usa
+        cuando el campo no viene (§3.3). El parámetro queda por si algún día
+        modelamos cohortes; mandarlo con un id que ellos no conocen sería peor
+        que no mandarlo.
+
+        Devuelve `(status_code, cuerpo)` en vez de levantar: el llamador
+        distingue un 5xx (el motor no pudo, reintentar sirve) de un 4xx (nos
+        rechazaron, reintentar devuelve lo mismo), y esa diferencia es la que
+        decide si la UI le muestra el botón "Reintentar" al docente.
+        """
+        payload: dict[str, Any] = {
+            "alumno_ref": alumno_ref,
+            "codigo": codigo,
+            "resultado_tests": resultado_tests,
+        }
+        if comision_external_ref:
+            payload["comision_external_ref"] = comision_external_ref
+
+        resp = await self.request(
+            "POST", f"/correcciones/ejercicios/{ejercicio_ref}/corregir", json=payload
+        )
+        try:
+            cuerpo = resp.json()
+        except Exception:
+            # Un cuerpo que no es JSON (un HTML de proxy, por ejemplo) no puede
+            # convertirse en una nota. Se devuelve vacío y el status manda.
+            cuerpo = {}
+        return resp.status_code, dict(cuerpo) if isinstance(cuerpo, dict) else {}
+
+    # ── Escritura de TPs: EXISTE desde el 2026-08-24 ──────────────────────
     #
-    # Estos dos métodos hablan contra el contrato que le PEDIMOS al equipo de
-    # Active-IA (`docs/research/activeia-cambios-pedidos.md`), no contra algo
-    # verificado en producción como el resto de este archivo. Hoy:
+    # `crear_o_actualizar_tp` habla contra `PUT /trabajos-practicos/by-ref/{ref}`,
+    # que el equipo de Active-IA confirmó construido y probado en su documento
+    # del 24/08 (§3.3 «Listo»). Hasta esa fecha esto era un contrato pedido y no
+    # verificado, y por eso existe `ActiveIAClientMock`: hoy el mock es un
+    # ensayo en seco, ya no una muleta obligatoria.
     #
-    #   - no hay `POST/PUT /rubricas/` documentado;
-    #   - `GET /rubricas/{id}` devuelve 403 con rol tutor, así que ni siquiera
-    #     se puede leer una rúbrica para comparar el hash.
-    #
-    # Se escriben igual para que el día que existan sólo haya que apagar el
-    # mock. Mientras tanto los cubre `ActiveIAClientMock`.
+    # Lo que SIGUE sin resolverse es la lectura: `GET /rubricas/{id}` devuelve
+    # 403 con rol tutor, así que no se puede leer una rúbrica para comparar el
+    # hash contra lo que tienen ellos. Por eso `rubrica_hash` compara contra lo
+    # que MANDAMOS, no contra lo que quedó del otro lado.
 
     async def crear_o_actualizar_tp(
         self, *, external_ref: str, payload: dict[str, Any]

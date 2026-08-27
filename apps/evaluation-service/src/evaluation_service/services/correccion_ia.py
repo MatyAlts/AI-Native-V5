@@ -287,12 +287,24 @@ def mapear_error_activeia(error_code: str | None, mensaje: str) -> tuple[str, bo
         "PROCESO_INTERRUMPIDO",
         "ERROR_INTERNO",
         "SIN_NOTA",
+        "ACTIVEIA_ERROR",
+        # ── Códigos que el flujo YA NO EMITE (2026-08-27) ──────────────────
+        #
+        # Salían del camino de tres pasos: `SIN_ENTREGA_ID` de un 201 sin id y
+        # `CONFLICTO_SIN_SALIDA` de un 409 que no se podía ubicar. El endpoint
+        # nuevo no tiene ninguna de las dos cosas.
+        #
+        # **Se quedan igual, y no es descuido.** La UI re-deriva
+        # `es_infraestructura` de este set cada vez que pinta una fila, también
+        # las viejas. Sacarlos volvería "rechazo" a correcciones históricas que
+        # se cerraron como infraestructura, y el docente vería cambiar de color
+        # algo que ya había leído. Un set de clasificación es sobre lo que hay
+        # guardado, no sólo sobre lo que se escribe hoy.
         "SIN_ENTREGA_ID",
         "CONFLICTO_SIN_SALIDA",
-        "ACTIVEIA_ERROR",
     }
     # Todo 5xx de Active-IA es infraestructura: el servicio no pudo responder.
-    # Se resuelve por prefijo y no enumerando, porque `_subir_y_corregir` arma
+    # Se resuelve por prefijo y no enumerando, porque `_corregir_ejercicio` arma
     # el código con el status crudo (`HTTP_502`, `HTTP_504`…) y una lista se
     # queda corta con el primer código que el proxy invente.
     if code.startswith("HTTP_5"):

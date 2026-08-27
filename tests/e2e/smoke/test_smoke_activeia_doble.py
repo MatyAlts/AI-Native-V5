@@ -7,11 +7,30 @@ no se pueden provocar a demanda contra el servicio real. Con un doble sí, y son
 justo los que nunca se prueban hasta que pasan en producción.
 
 **Por qué HTTP de verdad y no un mock del cliente.** Lo que se prueba acá es el
-cliente: que siga el redirect de `/entregas` a `/entregas/`, que re-loguee ante
-un 401, que distinga un 4xx (rechazo definitivo) de un 5xx (infraestructura),
-que retome ante el 409 en vez de volver a subir. Un `MagicMock` devuelve lo que
-se le pida y ninguna de esas cosas se ejercita — misma clase de test vacuo que
-ya apareció seis veces en este epic.
+cliente: que re-loguee ante un 401, que distinga un 4xx (rechazo definitivo) de
+un 5xx (infraestructura), que no invente una nota cuando no vino. Un `MagicMock`
+devuelve lo que se le pida y ninguna de esas cosas se ejercita — misma clase de
+test vacuo que ya apareció seis veces en este epic.
+
+**Este archivo es la especificación ejecutable del contrato** (punto 3 del
+pedido de Active-IA del 24/08). Lo que el doble acepta y responde es lo que
+esperamos de ellos; si algo no coincide, preferimos que aparezca acá.
+
+---
+
+**Reescrito el 2026-08-27 para el endpoint del §3.4.** Hasta esta fecha el doble
+hablaba el camino de tres pasos —subir un zip, disparar, poletear cada 5s— y
+tenía tres tests dedicados al 409 de entrega duplicada. Ese camino **ya no
+existe**: Active-IA construyó el endpoint sincrónico que le pedimos y con él el
+zip, el 409 y el polling desaparecen. Los tests que los cubrían se borraron en
+vez de adaptarse: probaban ramas que el cliente ya no tiene, y un test verde
+sobre código muerto es peor que ninguno.
+
+Lo que se ganó de paso: el cuerpo ahora es **JSON**, así que el doble lo parsea
+y verifica el contrato de verdad. Antes era multipart con `Transfer-Encoding:
+chunked`, que `BaseHTTPRequestHandler` no sabe leer, y los tres tests de "esto
+viaja" tenían que espiar con un cliente falso — o sea, dejaban de probar el
+transporte justo donde decían probarlo.
 
 El doble corre en un thread de este proceso; no hace falta stack levantado, así
 que **este archivo no depende del gate de health de la suite**.
@@ -27,10 +46,15 @@ import threading
 from collections.abc import Iterator
 from http.server import BaseHTTPRequestHandler, HTTPServer
 from typing import Any
+from uuid import uuid4
 
 import pytest
 from evaluation_service.services.activeia_client import ActiveIAClient, ActiveIAError
-from evaluation_service.services.correccion_ejecutor import _subir_y_corregir
+from evaluation_service.services.correccion_ejecutor import (
+    _corregir_ejercicio,
+    _marcar_sin_ejecucion,
+    _resultado_tests_para_activeia,
+)
 
 # El guion que cada test le pone al doble antes de arrancar: qué responde y
 # cuántas veces. Vive a nivel de módulo porque el handler de http.server se
@@ -40,15 +64,29 @@ pytestmark = pytest.mark.sin_stack
 
 GUION: dict[str, Any] = {}
 LLAMADAS: list[tuple[str, str]] = []
+CUERPOS: list[dict[str, Any]] = []
+
+_NOTA_OK = {
+    "nota_100": 8.5,
+    "correccion_id": "COR-1",
+    "entrega_id": "EXT-1",
+    "desglose": [
+        {"nombre": "Usa la interfaz", "puntaje": 3, "puntaje_max": 3},
+        {"nombre": "Produce la salida esperada", "puntaje": 4, "puntaje_max": 4},
+    ],
+}
 
 
 class _DobleActiveIA(BaseHTTPRequestHandler):
-    """Habla el mismo dialecto que Active-IA, con las rarezas que tiene.
+    """Habla el dialecto del endpoint del §3.4.
 
-    Las tres que importan y que el cliente ya aprendió a mano:
-      - `/entregas` redirige a `/entregas/` (por eso el cliente sigue redirects)
-      - el poll es `GET /correcciones/entregas/{id}`: 200 corregida, 404 todavía no
-      - el 409 keyea por `(comision_id, rubrica_id, alumno_nombre)`
+    Una sola ruta de corrección, sincrónica:
+      `POST /correcciones/ejercicios/{ejercicio_ref}/corregir` → 200 con la nota.
+
+    Lo que este doble **no** tiene, a propósito, porque el endpoint real
+    tampoco: `/entregas/`, el 409 por entrega duplicada, y el poll. Una llamada
+    a cualquiera de esos da 404 y el test que la provoque falla — que es lo que
+    queremos si alguien reintroduce el camino viejo.
     """
 
     def log_message(self, *args: Any) -> None:  # silencia el log a stderr
@@ -65,8 +103,7 @@ class _DobleActiveIA(BaseHTTPRequestHandler):
     def do_POST(self) -> None:
         LLAMADAS.append(("POST", self.path))
         largo = int(self.headers.get("Content-Length", 0))
-        if largo:
-            self.rfile.read(largo)
+        crudo = self.rfile.read(largo) if largo else b""
 
         if self.path == "/auth/login":
             if GUION.get("login_falla"):
@@ -75,35 +112,20 @@ class _DobleActiveIA(BaseHTTPRequestHandler):
                 self._responder(200, {"access_token": "token-de-prueba"})
             return
 
-        if self.path == "/entregas/":
-            self._responder(
-                GUION.get("upload_status", 201), GUION.get("upload_body", {"id": "EXT-1"})
-            )
-            return
-
-        if self.path.endswith("/corregir"):
-            self._responder(GUION.get("corregir_status", 200), {})
+        if self.path.startswith("/correcciones/ejercicios/") and self.path.endswith("/corregir"):
+            # El cuerpo es JSON: se guarda para que los tests verifiquen el
+            # contrato exacto que viaja, no una aproximación.
+            try:
+                CUERPOS.append(json.loads(crudo or b"{}"))
+            except json.JSONDecodeError:
+                CUERPOS.append({"__no_era_json__": crudo.decode("utf-8", "replace")})
+            self._responder(GUION.get("corregir_status", 200), GUION.get("corregir_body", _NOTA_OK))
             return
 
         self._responder(404, {"detail": "ruta no prevista por el doble"})
 
     def do_GET(self) -> None:
         LLAMADAS.append(("GET", self.path))
-
-        if self.path.startswith("/correcciones/entregas/"):
-            restantes = GUION.get("poll_404_restantes", 0)
-            if restantes > 0:
-                GUION["poll_404_restantes"] = restantes - 1
-                self._responder(404, {"detail": "todavia no"})
-                return
-            self._responder(200, GUION.get("poll_body", {"nota_final": 8.5, "id": "COR-1"}))
-            return
-
-        if self.path.startswith("/entregas/"):
-            # Listado que usa `_ubicar_entrega` para retomar tras el 409.
-            self._responder(200, GUION.get("listado", {"items": []}))
-            return
-
         self._responder(404, {"detail": "ruta no prevista por el doble"})
 
 
@@ -112,6 +134,7 @@ def doble() -> Iterator[str]:
     """Levanta el doble en un puerto libre y devuelve su base url."""
     GUION.clear()
     LLAMADAS.clear()
+    CUERPOS.clear()
     servidor = HTTPServer(("127.0.0.1", 0), _DobleActiveIA)
     hilo = threading.Thread(target=servidor.serve_forever, daemon=True)
     hilo.start()
@@ -126,59 +149,100 @@ def _cliente(base: str) -> ActiveIAClient:
     return ActiveIAClient(base, "docente@test", "secreto", timeout=5.0)
 
 
-async def _correr(base: str) -> dict[str, Any]:
-    return await _subir_y_corregir(
+async def _correr(base: str, **kw: Any) -> dict[str, Any]:
+    tests = {"compila": True, "passed": 3, "total": 4, "failed": 1, "casos": []}
+    tests.update(kw.pop("tests", {}))
+    return await _corregir_ejercicio(
         cliente=_cliente(base),
-        codigo="public class Main {}",
-        language="java",
-        alumno_nombre="Alumno Prueba",
-        comision_id="COM-1",
-        rubrica_id="RUB-1",
-        tests={"passed": 3, "total": 4},
+        ejercicio_ref=kw.pop("ejercicio_ref", "EJ-REF-1"),
+        alumno_nombre=kw.pop("alumno_nombre", "pseudonimo-abc"),
+        codigo=kw.pop("codigo", "public class Main {}"),
+        tests=tests,
     )
 
 
 class TestCaminoFeliz:
-    async def test_sube_dispara_poletea_y_trae_la_nota(self, doble: str) -> None:
-        GUION.update(poll_404_restantes=0, poll_body={"nota_final": 8.5, "id": "COR-1"})
+    async def test_una_sola_llamada_trae_la_nota(self, doble: str) -> None:
+        """El endpoint es sincrónico: la nota vuelve en la respuesta.
 
+        El assert sobre la cantidad de llamadas NO es cosmético: es lo que
+        detecta que alguien reintrodujo el poll.
+        """
         out = await _correr(doble)
 
         assert out.get("error_code") is None, out
-        assert out["external_entrega_id"] == "EXT-1"
+        assert out["nota_100"] == 8.5
+        assert out["external_correccion_id"] == "COR-1"
 
-    async def test_el_poll_espera_al_404_y_no_lo_toma_como_fallo(self, doble: str) -> None:
-        """404 en el poll es 'todavía no', no 'salió mal'. Si se leyera como
-        error, toda corrección que tarde más que el primer intento fallaría."""
-        GUION.update(poll_404_restantes=1)
+        corregir = [p for m, p in LLAMADAS if m == "POST" and p.endswith("/corregir")]
+        assert len(corregir) == 1, f"se llamó más de una vez: {LLAMADAS}"
+        assert not [p for m, p in LLAMADAS if m == "GET"], "volvió el poll"
 
-        out = await _correr(doble)
+    async def test_el_ejercicio_viaja_en_la_url_y_no_en_el_cuerpo(self, doble: str) -> None:
+        """Es lo que cierra el «comision_id mal cableado».
 
-        assert out.get("error_code") is None, out
-        polls = [p for m, p in LLAMADAS if m == "GET" and "/correcciones/" in p]
-        assert len(polls) >= 2, "no reintentó tras el 404"
+        Hasta el 2026-08-27 el ejercicio viajaba como `comision_id` en el
+        formulario — un id de ejercicio en el campo de una comisión. Ahora va
+        en el path, que es su lugar, y no hay campo de comisión que confundir.
+        """
+        await _correr(doble, ejercicio_ref="EJ-DE-PRUEBA")
+
+        assert ("POST", "/correcciones/ejercicios/EJ-DE-PRUEBA/corregir") in LLAMADAS
+        assert "comision_id" not in CUERPOS[0]
+        assert "comision_external_ref" not in CUERPOS[0], (
+            "se mandó la comisión: el modelo de ellos usa la de integración (§3.3), "
+            "y mandarles un id que no conocen es peor que no mandar nada"
+        )
+
+    async def test_el_cuerpo_es_el_contrato_que_acordamos(self, doble: str) -> None:
+        """`{alumno_ref, codigo, resultado_tests}` — §3.4 del documento.
+
+        Ojo con `pasados`: nuestro dataclass cuenta `passed` y el contrato dice
+        `pasados`. Si el remapeo se pierde, ellos reciben el campo en `None` y
+        la garantía de `compila: false` se apoya en un dato que no llegó.
+        """
+        await _correr(doble, tests={"passed": 3, "total": 4})
+
+        cuerpo = CUERPOS[0]
+        assert set(cuerpo) == {"alumno_ref", "codigo", "resultado_tests"}
+        assert cuerpo["alumno_ref"] == "pseudonimo-abc"
+        assert cuerpo["resultado_tests"]["pasados"] == 3
+        assert cuerpo["resultado_tests"]["total"] == 4
+        assert "passed" not in cuerpo["resultado_tests"]
+        assert "failed" not in cuerpo["resultado_tests"], (
+            "`failed` es `total - pasados`: mandar un tercer número que puede "
+            "contradecir a los otros dos le da al motor a quién creerle mal"
+        )
 
 
 class TestLosCaminosQueNoSePuedenProvocarContraElServicioReal:
-    async def test_gemini_saturado_es_infraestructura_y_no_una_nota(self, doble: str) -> None:
-        """Un 5xx al disparar NO puede convertirse en nota: es la invariante
-        central del epic."""
+    async def test_motor_saturado_es_infraestructura_y_no_una_nota(self, doble: str) -> None:
+        """Un 5xx NO puede convertirse en nota: es la invariante central del epic."""
         GUION.update(corregir_status=503)
 
         out = await _correr(doble)
 
-        assert out["error_code"] == "GEMINI_OVERLOADED"
-        assert "nota_final" not in out
+        assert out["error_code"] == "HTTP_503"
+        assert "nota_100" not in out
 
-    async def test_un_4xx_al_disparar_corta_en_vez_de_poletear(self, doble: str) -> None:
-        """Un rechazo no se arregla esperando. Antes sólo se cortaba con >=500,
-        así que un 4xx se poleteaba hasta quemar el presupuesto entero."""
-        GUION.update(corregir_status=422)
+    async def test_un_4xx_es_un_rechazo_definitivo(self, doble: str) -> None:
+        """Un rechazo no se arregla esperando ni reintentando.
+
+        El 422 es el caso concreto que ellos declararon (§3.4 de su documento):
+        un caso oculto mal formado se rechaza nombrando el ejercicio y el caso,
+        en vez de descartarse en silencio. Ese detalle tiene que sobrevivir
+        hasta la pantalla del docente.
+        """
+        GUION.update(
+            corregir_status=422,
+            corregir_body={"detail": "caso oculto t3 del ejercicio EJ-1 trae salida esperada"},
+        )
 
         out = await _correr(doble)
 
         assert out["error_code"] == "HTTP_422"
-        assert not [p for m, p in LLAMADAS if m == "GET" and "/correcciones/" in p]
+        assert "caso oculto t3" in out["error_detail"]
+        assert "nota_100" not in out
 
     async def test_credencial_invalida_no_es_infraestructura(self, doble: str) -> None:
         """Un 401 es 'la cuenta está mal', no 'el servicio se cayó'. La
@@ -201,78 +265,42 @@ class TestLosCaminosQueNoSePuedenProvocarContraElServicioReal:
 
         assert "secreto" not in str(e.value)
 
-
-class TestEl409SeRetomaEnVezDeCobrarDosVeces:
-    async def test_retoma_la_entrega_que_ya_estaba_arriba(self, doble: str) -> None:
-        GUION.update(
-            upload_status=409,
-            listado={
-                "items": [
-                    {
-                        "id": "EXT-YA-EXISTIA",
-                        "comision_id": "COM-1",
-                        "rubrica_id": "RUB-1",
-                        "alumno_nombre": "Alumno Prueba",
-                    }
-                ]
-            },
-        )
+    async def test_un_200_sin_nota_no_se_convierte_en_nota(self, doble: str) -> None:
+        """Sin nota, el estado terminal es `error`. Nunca un cero, nunca un
+        `None` que la UI pinte como algo."""
+        GUION.update(corregir_body={"error_code": "MOTOR_SIN_SALIDA", "error_mensaje": "vacío"})
 
         out = await _correr(doble)
 
-        assert out.get("external_entrega_id") == "EXT-YA-EXISTIA"
-        subidas = [p for m, p in LLAMADAS if m == "POST" and p == "/entregas/"]
-        assert len(subidas) == 1, "volvió a subir: eso se cobra de nuevo"
+        assert out["error_code"] == "MOTOR_SIN_SALIDA"
+        assert "nota_100" not in out
 
-    async def test_el_409_sin_entrega_ubicable_no_inventa_una(self, doble: str) -> None:
-        """Si dice que existe y no aparece, se corta con un motivo legible en
-        vez de seguir con un id vacío."""
-        GUION.update(upload_status=409, listado={"items": []})
+    async def test_una_respuesta_que_no_es_json_no_inventa_nada(self, doble: str) -> None:
+        """Un HTML de proxy con 200 es un 200 sin resultado, no un resultado."""
+        GUION.update(corregir_body={})
 
         out = await _correr(doble)
 
-        assert out["error_code"] == "CONFLICTO_SIN_SALIDA"
-
-    async def test_no_retoma_la_entrega_de_otro_tp_del_mismo_alumno(self, doble: str) -> None:
-        """El match tiene que incluir `rubrica_id`. Sin él se retomaba la
-        entrega de OTRA unidad del mismo alumno y se le adjuntaba la
-        devolución equivocada."""
-        GUION.update(
-            upload_status=409,
-            listado={
-                "items": [
-                    {
-                        "id": "EXT-DE-OTRO-TP",
-                        "comision_id": "COM-1",
-                        "rubrica_id": "RUB-DISTINTA",
-                        "alumno_nombre": "Alumno Prueba",
-                    }
-                ]
-            },
-        )
-
-        out = await _correr(doble)
-
-        assert out.get("external_entrega_id") != "EXT-DE-OTRO-TP"
-        assert out.get("error_code") == "CONFLICTO_SIN_SALIDA"
+        assert out["error_code"] == "SIN_NOTA"
 
 
-class TestFallosDeSubida:
-    async def test_un_5xx_al_subir_no_sigue_adelante(self, doble: str) -> None:
-        GUION.update(upload_status=502)
+class TestReintentarEsLaMismaLlamada:
+    async def test_no_hay_rama_de_conflicto(self, doble: str) -> None:
+        """§4.2: en el endpoint de ejercicio no hay 409.
 
-        out = await _correr(doble)
+        Ellos reusan la entrega y archivan la corrección anterior en su
+        historial. Nosotros no ramificamos: la segunda corrida es idéntica a la
+        primera. Este test existe para que nadie reintroduzca el manejo del 409
+        «por las dudas» — ese código era el que moría en `CONFLICTO_SIN_SALIDA`.
+        """
+        primera = await _correr(doble)
+        segunda = await _correr(doble)
 
-        assert out["error_code"] == "HTTP_502"
-        assert not [p for m, p in LLAMADAS if p.endswith("/corregir")]
-
-    async def test_sin_id_en_la_respuesta_se_corta(self, doble: str) -> None:
-        """Un 201 sin `id` deja el circuito sin a qué apuntar."""
-        GUION.update(upload_status=201, upload_body={})
-
-        out = await _correr(doble)
-
-        assert out["error_code"] == "SIN_ENTREGA_ID"
+        assert primera["nota_100"] == segunda["nota_100"]
+        corregir = [p for m, p in LLAMADAS if m == "POST" and p.endswith("/corregir")]
+        assert len(corregir) == 2
+        assert corregir[0] == corregir[1], "la segunda llamada no fue idéntica a la primera"
+        assert not [p for m, p in LLAMADAS if p == "/entregas/"], "volvió el camino viejo"
 
 
 class TestElCodigoQueNoCompilaSeMandaIgual:
@@ -280,75 +308,110 @@ class TestElCodigoQueNoCompilaSeMandaIgual:
     alumno sin devolución. El motor puede decirle si el diseño va encaminado,
     que es la parte que un compilador no le da.
 
-    Estos tres espían el `form` en vez de leerlo del doble: httpx manda el
-    multipart con `Transfer-Encoding: chunked` y `BaseHTTPRequestHandler` no
-    lo parsea. Lo que se verifica es QUÉ se manda, no cómo se serializa — el
-    transporte ya lo cubren los doce de arriba.
+    Ahora estos tests leen el cuerpo REAL que llegó al doble. Antes espiaban
+    con un cliente falso porque el multipart no se podía parsear — o sea,
+    dejaban de probar el transporte justo donde decían probarlo.
     """
 
-    @staticmethod
-    def _espia() -> tuple[Any, dict]:
-        visto: dict = {}
-
-        class _Cliente:
-            async def request(self, method: str, path: str, **kw: Any) -> Any:
-                if path == "/entregas/":
-                    visto.update(kw.get("data") or {})
-
-                # 201 al subir, 200 en el resto (disparo y poll): el poll
-                # exige 200 y con 201 se leía como "respondió mal".
-                codigo = 201 if path == "/entregas/" else 200
-
-                class _R:
-                    status_code = codigo
-
-                    @staticmethod
-                    def json() -> dict:
-                        return {"id": "EXT-1", "estado": "CORREGIDA", "nota_final": 7}
-
-                return _R()
-
-        return _Cliente(), visto
-
-    async def _mandar(self, cliente: Any, *, compila: bool) -> dict:
-        return await _subir_y_corregir(
-            cliente=cliente,
-            codigo="public class Main {}",
-            language="java",
-            alumno_nombre="Alumno Prueba",
-            comision_id="COM-1",
-            rubrica_id="RUB-1",
+    async def test_viaja_que_no_compilo_y_por_que(self, doble: str) -> None:
+        await _correr(
+            doble,
             tests={
-                "passed": 0 if not compila else 6,
+                "compila": False,
+                "passed": 0,
                 "total": 6,
-                "compila": compila,
-                "error_compilacion": None if compila else "error: ';' expected",
+                "error_compilacion": "error: ';' expected",
             },
         )
 
-    async def test_viaja_que_no_compilo_y_por_que(self) -> None:
-        cliente, visto = self._espia()
+        tests = CUERPOS[0]["resultado_tests"]
+        assert tests["compila"] is False
+        assert "';' expected" in tests["error_compilacion"]
 
-        await self._mandar(cliente, compila=False)
+    async def test_cuando_compila_lo_dice_igual(self, doble: str) -> None:
+        """Sin el campo, `pasados: 0` no distingue «no compiló» de «compiló y
+        falló todo», y son dos devoluciones distintas."""
+        await _correr(doble, tests={"compila": True, "passed": 0, "total": 6})
 
-        assert visto["compila"] == "false"
-        assert "';' expected" in visto["error_compilacion"]
+        tests = CUERPOS[0]["resultado_tests"]
+        assert tests["compila"] is True
+        assert tests["error_compilacion"] is None
 
-    async def test_cuando_compila_lo_dice_igual(self) -> None:
-        """Sin el campo, `tests_resultado: "0/6"` no distingue «no compiló» de
-        «compiló y falló todo», y son dos devoluciones distintas."""
-        cliente, visto = self._espia()
-
-        await self._mandar(cliente, compila=True)
-
-        assert visto["compila"] == "true"
-        assert visto["error_compilacion"] == ""
-
-    async def test_sin_compilar_igual_dispara_la_correccion(self) -> None:
-        """La prueba de que ya no corta: antes ni se subía."""
-        cliente, visto = self._espia()
-
-        out = await self._mandar(cliente, compila=False)
+    async def test_sin_compilar_igual_se_pide_la_correccion(self, doble: str) -> None:
+        """La prueba de que ya no corta: antes ni se enviaba."""
+        out = await _correr(doble, tests={"compila": False, "passed": 0, "total": 6})
 
         assert out.get("error_code") is None, out
-        assert visto, "no llego a armar el form: se corto antes de subir"
+        assert CUERPOS, "no llegó a enviar: se cortó antes"
+
+    def test_el_remapeo_no_pierde_el_error_de_compilacion(self) -> None:
+        """Directo sobre la función pura: `""` y `None` son lo mismo acá, pero
+        un mensaje de compilador NUNCA se puede perder — es lo que hace que la
+        garantía de ellos sea aplicable."""
+        salida = _resultado_tests_para_activeia(
+            {"compila": False, "passed": 0, "total": 3, "error_compilacion": "boom"}
+        )
+
+        assert salida["error_compilacion"] == "boom"
+        assert salida["compila"] is False
+        assert salida["pasados"] == 0
+
+
+class TestCriteriosQueNoSePudieronVerificar:
+    """§3.2 del documento del 24/08.
+
+    «No lo hizo» y «no se pudo verificar porque no compila» son dos cosas
+    distintas y merecen leerse distinto. Sólo una de las dos es culpa del
+    alumno, y mostrarlas iguales es el mismo modo de falla que le reportamos
+    al motor.
+    """
+
+    async def test_llegan_marcados_en_el_desglose(self, doble: str) -> None:
+        GUION.update(
+            corregir_body={
+                **_NOTA_OK,
+                "criterios_sin_ejecucion": ["Produce la salida esperada"],
+            }
+        )
+
+        out = await _correr(doble, tests={"compila": False, "passed": 0, "total": 4})
+
+        assert out["criterios_sin_ejecucion"] == ["Produce la salida esperada"]
+
+    def test_el_marcado_estampa_solo_el_criterio_que_corresponde(self) -> None:
+        desglose = [
+            {"nombre": "Usa la interfaz", "puntaje": 3},
+            {"nombre": "Produce la salida esperada", "puntaje": 0},
+        ]
+
+        marcado = _marcar_sin_ejecucion(
+            desglose, ["Produce la salida esperada"], correccion_id=uuid4()
+        )
+
+        assert marcado[0].get("sin_ejecucion") is None
+        assert marcado[1]["sin_ejecucion"] is True
+        assert desglose[1].get("sin_ejecucion") is None, "mutó la lista de entrada"
+
+    def test_matchea_por_id_cuando_lo_traen(self) -> None:
+        """El contrato no fija el nombre del identificador, así que se prueban
+        los tres que pueden venir. Emparejar sólo por `nombre` fallaría en
+        silencio el día que manden ids."""
+        marcado = _marcar_sin_ejecucion(
+            [{"id": "C5", "nombre": "El programa funciona"}], ["C5"], correccion_id=uuid4()
+        )
+
+        assert marcado[0]["sin_ejecucion"] is True
+
+    def test_un_id_que_no_matchea_no_se_pierde_en_silencio(self) -> None:
+        """El docente vería un 0 sin explicación. Se loguea, y el desglose
+        vuelve intacto en vez de a medio marcar."""
+        marcado = _marcar_sin_ejecucion(
+            [{"nombre": "Usa la interfaz"}], ["CRITERIO-FANTASMA"], correccion_id=uuid4()
+        )
+
+        assert marcado == [{"nombre": "Usa la interfaz"}]
+
+    def test_sin_criterios_devuelve_el_desglose_tal_cual(self) -> None:
+        desglose = [{"nombre": "Usa la interfaz", "puntaje": 3}]
+
+        assert _marcar_sin_ejecucion(desglose, [], correccion_id=uuid4()) == desglose

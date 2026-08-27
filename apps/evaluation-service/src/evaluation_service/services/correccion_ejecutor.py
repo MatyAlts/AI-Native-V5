@@ -3,28 +3,31 @@
 Corre en `BackgroundTasks` con su **propia sesión corta** (no la del request,
 que se cierra cuando el 202 ya salió) y bajo el semáforo del worker.
 
-El orden de los pasos es el que evita gastar de más:
+Son dos pasos:
 
 1. Se re-ejecutan los tests en el sandbox. **Que no compile ya no corta**
    (19/08): un punto y coma que falta no justifica dejar al alumno sin
    devolución. Lo que sí viaja es el estado de compilación, explícito, para
    que el motor no cierre criterios de "funciona" que ninguna corrida respalda.
-2. Se sube el artefacto a Active-IA. Un **409** significa que ya estaba
-   arriba: se retoma esa, no se sube de nuevo (subirla otra vez la cobra otra
-   vez).
-3. Se dispara la corrección y se poletea hasta `CORREGIDA` o `ERROR`.
+2. Se pide la corrección del ejercicio en **una sola llamada sincrónica**, con
+   el código y el resultado de los tests adentro.
 
-Y la regla que atraviesa todo: **un fallo de infraestructura nunca es una
-nota.** El timeout del motor se reporta como error para reintentar, jamás como
-un número.
+**Eran tres hasta el 2026-08-27**, y el del medio era subir un zip. El equipo
+de Active-IA construyó el endpoint del §3.4 que les pedimos —confirmado en su
+documento del 24/08— y con él desaparecen tres cosas que este archivo manejaba:
+el zip, el 409 de entrega duplicada, y el polling de hasta 150s. No es que
+dejaran de pasar: **dejaron de existir**. Reintentar ahora es repetir la misma
+llamada, y ellos archivan la corrección anterior en su historial (§4.2).
+
+Y la regla que atraviesa todo y NO cambió: **un fallo de infraestructura nunca
+es una nota.** El timeout del motor se reporta como error para reintentar,
+jamás como un número.
 """
 
 from __future__ import annotations
 
 import asyncio
-import io
 import time
-import zipfile
 from datetime import UTC, datetime
 from typing import Any
 from uuid import UUID
@@ -44,38 +47,27 @@ from evaluation_service.services.correccion_pre_ejecucion import (
 
 log = structlog.get_logger()
 
-_POLL_INTERVAL_S = 5.0
-# Menos que el presupuesto total, para que el poll corte SOLO y la fila se
-# pueda cerrar con su motivo, en vez de morir cancelado desde afuera.
-_POLL_PRESUPUESTO_S = 150.0
 
+def _resultado_tests_para_activeia(tests: dict[str, Any]) -> dict[str, Any]:
+    """Traduce nuestro `ResultadoTests.as_dict()` al contrato del §3.4.
 
-_NOMBRE_POR_LENGUAJE = {"java": "Main.java", "python": "main.py"}
+    La única diferencia real es el nombre: nosotros contamos `passed`, el
+    contrato que acordamos dice `pasados`. Se remapea acá y no se renombra el
+    dataclass porque `as_dict()` también es lo que se persiste en
+    `tests_snapshot`, y cambiarle las claves rompería la lectura de las
+    correcciones viejas.
 
-
-def _zip_del_codigo(codigo: str, language: str) -> bytes:
-    """Active-IA recibe un zip, no un archivo suelto.
-
-    El nombre importa: `Main.java` es lo que el compilador espera (una clase
-    pública tiene que vivir en un archivo con su nombre), y es el mismo que
-    usa el sandbox.
-
-    Un lenguaje desconocido **corta**. Antes caía al `else` y empaquetaba el
-    código como `main.py`: del otro lado eso es un archivo Python con algo que
-    no es Python, y el motor corrige un sinsentido en vez de fallar. La
-    columna `language` es un `String(20)` libre, así que "desconocido" es
-    alcanzable.
+    `failed` no viaja: es `total - pasados` y mandar un tercer número que puede
+    contradecir a los otros dos es darle al motor la chance de creerle al
+    equivocado.
     """
-    nombre = _NOMBRE_POR_LENGUAJE.get(language)
-    if nombre is None:
-        raise PreEjecucionError(
-            f"No sé cómo empaquetar código en '{language}' para Active-IA.",
-            error_code="LENGUAJE_DESCONOCIDO",
-        )
-    buf = io.BytesIO()
-    with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as z:
-        z.writestr(f"src/{nombre}", codigo)
-    return buf.getvalue()
+    return {
+        "compila": bool(tests.get("compila", True)),
+        "error_compilacion": tests.get("error_compilacion") or None,
+        "total": int(tests.get("total", 0) or 0),
+        "pasados": int(tests.get("passed", 0) or 0),
+        "casos": tests.get("casos") or [],
+    }
 
 
 async def ejecutar_correccion(
@@ -88,7 +80,7 @@ async def ejecutar_correccion(
     codigo: str,
     language: str,
     alumno_nombre: str,
-    activeia_comision_id: str,
+    ejercicio_ref: str,
     headers_sandbox: dict[str, str],
 ) -> None:
     """El trabajo completo. NUNCA levanta: todo fallo termina en la fila.
@@ -96,6 +88,20 @@ async def ejecutar_correccion(
     Que no levante es deliberado — corre en background, así que una excepción
     que escape se pierde en un log y la corrección queda en `running` para
     siempre, girando en la pantalla del docente.
+
+    `ejercicio_ref` es el `external_ref` con el que ESTE ejercicio quedó
+    sincronizado del otro lado, y es lo que identifica la rúbrica contra la
+    cual se corrige. Se lee del vínculo y no se re-deriva de `ejercicio_id`:
+    aunque hoy sean el mismo UUID, el que vale es el que Active-IA vio en el
+    último sync — re-derivarlo sería adivinar qué conoce el otro lado.
+
+    Hasta el 2026-08-27 este parámetro se llamaba `activeia_comision_id` y
+    viajaba en el campo `comision_id` del formulario. **El nombre mentía**: lo
+    que se le pasaba era ya `vinculo.external_ref`, o sea el id del ejercicio,
+    así que Active-IA recibía un id de ejercicio donde esperaba una comisión.
+    Es el «comision_id mal cableado» que ellos nos marcaron. El endpoint nuevo
+    lo cierra por construcción: el ejercicio va en la URL, que es su lugar, y
+    de comisión se encarga la comisión de integración de ellos (§3.3).
     """
     from evaluation_service.services.activeia_credenciales import cliente_para
 
@@ -155,14 +161,14 @@ async def ejecutar_correccion(
                 detalle=(tests.error_compilacion or "")[:300],
             )
 
-        # ── 2 y 3. Active-IA ──────────────────────────────────────────────
+        # ── 2. Active-IA, en una sola llamada ─────────────────────────────
         async with tenant_session(tenant_id) as db:
             cliente = await cliente_para(db, tenant_id, user_id)
 
         rubrica_id = await _rubrica_de(tenant_id, correccion_id)
         if not rubrica_id:
-            # Sin rúbrica no hay contra qué corregir. Antes se subía igual con
-            # `rubrica_id=""` y se pagaba la subida para que Active-IA la
+            # Sin rúbrica no hay contra qué corregir. Antes se enviaba igual
+            # con `rubrica_id=""` y se pagaba la llamada para que Active-IA la
             # rechazara después.
             await _cerrar_con_error(
                 tenant_id,
@@ -174,13 +180,32 @@ async def ejecutar_correccion(
             )
             return
 
-        resultado = await _subir_y_corregir(
+        if not ejercicio_ref:
+            # El endpoint nuevo corrige POR EJERCICIO: sin referencia no hay a
+            # qué apuntar. Antes esto no se notaba porque el ejercicio no
+            # viajaba en la URL sino como un campo más del formulario, así que
+            # un ref vacío se mandaba igual y el rechazo venía de allá.
+            #
+            # NO es infraestructura: reintentar sin sincronizar el TP devuelve
+            # exactamente lo mismo.
+            await _cerrar_con_error(
+                tenant_id,
+                correccion_id,
+                "SIN_EJERCICIO_REF",
+                (
+                    "Este ejercicio no tiene referencia sincronizada con Active-IA. "
+                    "Sincronizá el trabajo práctico y volvé a disparar."
+                ),
+                False,
+                tests.as_dict(),
+            )
+            return
+
+        resultado = await _corregir_ejercicio(
             cliente=cliente,
-            codigo=codigo,
-            language=language,
+            ejercicio_ref=ejercicio_ref,
             alumno_nombre=alumno_nombre,
-            comision_id=activeia_comision_id,
-            rubrica_id=rubrica_id,
+            codigo=codigo,
             tests=tests.as_dict(),
         )
 
@@ -299,6 +324,60 @@ async def _registrar_desenlace(tenant_id: UUID, correccion_id: UUID, duracion_s:
         )
 
 
+def _marcar_sin_ejecucion(
+    desglose: list[dict[str, Any]],
+    criterios_sin_ejecucion: list[Any],
+    *,
+    correccion_id: UUID,
+) -> list[dict[str, Any]]:
+    """Marca en el desglose los criterios que se cerraron sin poder verificarse.
+
+    Active-IA devuelve esos criterios como una lista de identificadores aparte
+    (§3.2 de su documento del 24/08). Se estampan **dentro** de cada criterio en
+    vez de guardarse como lista paralela por una razón práctica: el panel del
+    docente ya recorre `desglose`, y una lista de ids obligaría a cruzar dos
+    estructuras para pintar una fila. El dato pertenece al criterio.
+
+    La distinción que esto habilita no es cosmética. «El alumno no lo hizo» y
+    «no se pudo verificar porque el código no compilaba» son dos cosas
+    distintas, y sólo una de las dos es culpa del alumno. Mostrarlas iguales es
+    exactamente el modo de falla que le reportamos al motor.
+
+    Un id que no matchea con ningún criterio se **loguea**: perderlo en silencio
+    dejaría al docente viendo un 0 sin explicación, que es peor que un warning.
+    """
+    if not criterios_sin_ejecucion:
+        return list(desglose)
+
+    pendientes = {str(x) for x in criterios_sin_ejecucion}
+    marcados: list[dict[str, Any]] = []
+    for criterio in desglose:
+        if not isinstance(criterio, dict):
+            marcados.append(criterio)
+            continue
+        # Se prueba contra los nombres posibles del identificador porque el
+        # contrato no fija uno solo, y el `nombre` es lo único garantizado.
+        claves = {str(criterio.get(k)) for k in ("id", "criterio_id", "nombre") if criterio.get(k)}
+        golpe = claves & pendientes
+        if golpe:
+            pendientes -= golpe
+            marcados.append({**criterio, "sin_ejecucion": True})
+        else:
+            marcados.append(criterio)
+
+    if pendientes:
+        log.warning(
+            "activeia_criterio_sin_ejecucion_sin_match",
+            correccion_id=str(correccion_id),
+            ids=sorted(pendientes),
+            detalle=(
+                "Active-IA marcó criterios como no verificables pero no matchean "
+                "ninguna entrada del desglose. El docente ve el 0 sin el motivo."
+            ),
+        )
+    return marcados
+
+
 async def _cerrar_con_resultado(
     tenant_id: UUID,
     correccion_id: UUID,
@@ -331,7 +410,11 @@ async def _cerrar_con_resultado(
 
         c.estado = "done"
         c.nota_100 = nota
-        c.desglose = resultado.get("desglose") or []
+        c.desglose = _marcar_sin_ejecucion(
+            resultado.get("desglose") or [],
+            resultado.get("criterios_sin_ejecucion") or [],
+            correccion_id=correccion_id,
+        )
         c.finished_at = datetime.now(UTC)
         # Se captura DENTRO de la sesión: leerlo afuera anda sólo porque el
         # factory tiene `expire_on_commit=False`, y apoyarse en eso es
@@ -399,188 +482,82 @@ async def _cerrar_con_error(
         log.exception("activeia_no_se_pudo_cerrar", correccion_id=str(correccion_id))
 
 
-async def _subir_y_corregir(
+async def _corregir_ejercicio(
     *,
     cliente: Any,
-    codigo: str,
-    language: str,
+    ejercicio_ref: str,
     alumno_nombre: str,
-    comision_id: str,
-    rubrica_id: str,
+    codigo: str,
     tests: dict[str, Any],
 ) -> dict[str, Any]:
-    """Sube, dispara y poletea. Devuelve la nota o el motivo de que no haya."""
-    data = _zip_del_codigo(codigo, language)
-    files = {"archivo": (f"entrega_{rubrica_id}.zip", data, "application/zip")}
-    form = {
-        "alumno_nombre": alumno_nombre,
-        "comision_id": comision_id,
-        "rubrica_id": rubrica_id,
-        # El resultado de los tests YA ejecutados. El motor cuenta presencia,
-        # no vínculo: un criterio del tipo "funciona" necesita un hecho detrás.
-        "tests_resultado": str(tests.get("passed", 0)) + "/" + str(tests.get("total", 0)),
-        # Si compiló o no, EXPLÍCITO. Desde el 19/08 el código que no compila
-        # se manda igual —un punto y coma que falta no justifica dejar al
-        # alumno sin devolución— pero el motor tiene que saberlo: con
-        # `tests_resultado: "0/6"` a secas no puede distinguir "no compiló" de
-        # "compiló y falló todo", y son dos devoluciones distintas.
-        "compila": "true" if tests.get("compila", True) else "false",
-        # Vacío cuando compiló. Recortado: es un mensaje de compilador, y el
-        # form no es el lugar para volcar un stack entero.
-        "error_compilacion": (tests.get("error_compilacion") or "")[:1000],
-    }
+    """Una llamada, la nota vuelve en la respuesta.
 
-    resp = await cliente.request("POST", "/entregas/", data=form, files=files)
+    Reemplaza a `_subir_y_corregir` + `_poletear` + `_ubicar_entrega` (2026-08-27),
+    que implementaban el camino de tres pasos con zip, 409 y polling. Ese camino
+    no se rompió: el equipo de Active-IA construyó el endpoint del §3.4 que le
+    pedimos y con él esos tres problemas dejan de existir.
 
-    if resp.status_code == 409:
-        # Ya estaba arriba (tarea 3.15). Se RETOMA en vez de volver a subirla:
-        # subirla de nuevo la cobra de nuevo. El 409 keyea por
-        # `(comision_id, rubrica_id, alumno_nombre)` — el `rubrica_id` en el
-        # match no es opcional: sin él se retomaba la entrega de OTRO TP del
-        # mismo alumno y se adjuntaba la devolución de otra unidad.
-        entrega_id = await _ubicar_entrega(cliente, comision_id, rubrica_id, alumno_nombre)
-        if entrega_id is None:
-            return {
-                "error_code": "CONFLICTO_SIN_SALIDA",
-                "error_detail": (
-                    "Active-IA dice que la entrega ya existe pero no se pudo ubicar. "
-                    "Revisala en el panel de Active-IA."
-                ),
-            }
-    elif resp.status_code not in (200, 201):
+    `alumno_nombre` es el **pseudónimo** del alumno, no su nombre: es lo que
+    viaja como `alumno_ref` y es lo único que identifica a la persona del otro
+    lado. Sigue llamándose así acá porque así se llama en toda la cadena de
+    llamadas; renombrarlo es un cambio aparte.
+
+    Los códigos de error se arman con el status crudo (`HTTP_502`) porque
+    `mapear_error_activeia` resuelve la infraestructura por prefijo `HTTP_5`:
+    una lista enumerada se queda corta con el primer código que invente un
+    proxy, y ese flag es lo único que decide si la UI muestra "Reintentar".
+    """
+    status, cuerpo = await cliente.corregir_ejercicio(
+        ejercicio_ref=ejercicio_ref,
+        alumno_ref=alumno_nombre,
+        codigo=codigo,
+        resultado_tests=_resultado_tests_para_activeia(tests),
+        # No se manda: su modelo usa una comisión de integración por materia
+        # cuando el campo no viene (§3.3). Ver el docstring del cliente.
+        comision_external_ref=None,
+    )
+
+    if status >= 500:
         return {
-            "error_code": f"HTTP_{resp.status_code}",
-            "error_detail": f"Active-IA respondió {resp.status_code} al subir la entrega.",
+            "error_code": f"HTTP_{status}",
+            "error_detail": "El motor de Active-IA no pudo corregir. Reintentar puede servir.",
         }
-    else:
-        entrega_id = str(resp.json().get("id") or "")
-
-    if not entrega_id:
-        return {"error_code": "SIN_ENTREGA_ID", "error_detail": "Active-IA no devolvió el id."}
-
-    disp = await cliente.request("POST", f"/correcciones/entregas/{entrega_id}/corregir")
-    if disp.status_code >= 500:
+    if status >= 400:
+        # Un 4xx es un RECHAZO: no arrancó y no va a arrancar. Se conserva el
+        # detalle que manden, que en el 422 nombra el ejercicio y el caso.
+        detalle = cuerpo.get("detail") or cuerpo.get("mensaje") or ""
         return {
-            "external_entrega_id": entrega_id,
-            "error_code": "GEMINI_OVERLOADED",
-            "error_detail": "El motor no pudo arrancar la corrección.",
-        }
-    if disp.status_code >= 400:
-        # Un 4xx es un RECHAZO: la corrección no arrancó y no va a arrancar.
-        # Antes sólo se cortaba con >=500, así que un rechazo se poleteaba
-        # igual hasta quemar el presupuesto entero y recién ahí colgarse.
-        return {
-            "external_entrega_id": entrega_id,
-            "error_code": f"HTTP_{disp.status_code}",
+            "error_code": f"HTTP_{status}",
             "error_detail": (
-                f"Active-IA rechazó el disparo de la corrección ({disp.status_code}). "
-                "Reintentar sin cambiar nada va a devolver lo mismo."
+                f"Active-IA rechazó la corrección ({status}). "
+                f"Reintentar sin cambiar nada va a devolver lo mismo. {detalle}".strip()
             ),
         }
-
-    return {"external_entrega_id": entrega_id, **(await _poletear(cliente, entrega_id))}
-
-
-async def _poletear(cliente: Any, entrega_id: str) -> dict[str, Any]:
-    """`GET /correcciones/entregas/{id}`: 200 = corregida, 404 = todavía no.
-
-    NO se usa `GET /entregas/{id}`, que está roto del lado del server (500).
-
-    **Tope propio**, además del presupuesto de afuera. Un `while True` que
-    sólo corta por cancelación externa depende de que el envoltorio esté
-    puesto: si alguien llama a este flujo sin él, gira para siempre. Y salir
-    por cancelación es peor que salir por decisión propia — la primera no
-    puede cerrar la fila, la segunda sí.
-    """
-    restante = _POLL_PRESUPUESTO_S
-    while restante > 0:
-        await asyncio.sleep(_POLL_INTERVAL_S)
-        restante -= _POLL_INTERVAL_S
-        r = await cliente.request("GET", f"/correcciones/entregas/{entrega_id}")
-        if r.status_code == 404:
-            continue
-        if r.status_code != 200:
-            # Cualquier otro status corta. Seguir leyendo el cuerpo de una
-            # respuesta que no es 200 y sacarle una nota de ahí sería tomar
-            # por buena una respuesta que el servicio no dio por buena.
-            return {
-                "error_code": f"HTTP_{r.status_code}",
-                "error_detail": "Active-IA respondió mal al consultar la corrección.",
-            }
-        cuerpo = r.json()
-        nota = cuerpo.get("nota") or cuerpo.get("nota_final") or cuerpo.get("calificacion")
-        if nota is None:
-            return {
-                "error_code": cuerpo.get("error_code") or "SIN_NOTA",
-                "error_detail": cuerpo.get("error_mensaje") or "La corrección terminó sin nota.",
-            }
+    if status != 200:
         return {
-            "nota_100": nota,
-            "desglose": cuerpo.get("desglose") or cuerpo.get("criterios") or [],
-            "external_correccion_id": str(cuerpo.get("correccion_id") or cuerpo.get("id") or ""),
+            "error_code": f"HTTP_{status}",
+            "error_detail": f"Active-IA respondió {status}, que no es un resultado.",
+        }
+
+    nota = cuerpo.get("nota_100")
+    if nota is None:
+        # Se aceptan los nombres viejos porque el contrato del §3.4 no fija el
+        # de la nota y el flujo anterior ya leía estos tres. Lo que NO se hace
+        # es inventar una: sin nota, el estado terminal es `error`.
+        nota = cuerpo.get("nota") or cuerpo.get("nota_final") or cuerpo.get("calificacion")
+    if nota is None:
+        return {
+            "error_code": cuerpo.get("error_code") or "SIN_NOTA",
+            "error_detail": cuerpo.get("error_mensaje") or "La corrección terminó sin nota.",
         }
 
     return {
-        "error_code": "TIMEOUT",
-        "error_detail": (
-            "Active-IA no terminó la corrección a tiempo. La entrega quedó subida allá, "
-            "así que reintentar retoma ese trabajo en vez de duplicarlo."
-        ),
+        "nota_100": nota,
+        "desglose": cuerpo.get("desglose") or cuerpo.get("criterios") or [],
+        # Los criterios que cerraron en 0 porque el código no compilaba (§3.2).
+        # Van aparte para que el docente lea "no se pudo verificar" y no "no lo
+        # hizo": son dos cosas distintas y una de ellas no es culpa del alumno.
+        "criterios_sin_ejecucion": cuerpo.get("criterios_sin_ejecucion") or [],
+        "external_entrega_id": str(cuerpo.get("entrega_id") or "") or None,
+        "external_correccion_id": str(cuerpo.get("correccion_id") or cuerpo.get("id") or ""),
     }
-
-
-async def _ubicar_entrega(
-    cliente: Any, comision_id: str, rubrica_id: str, alumno_nombre: str
-) -> str | None:
-    """Busca la entrega que ya está arriba, para retomarla.
-
-    Compara `rubrica_id` **y** nombre. Sin la rúbrica alcanzaba el nombre, y se
-    retomaba la entrega de otro TP del mismo alumno: el tutor le adjuntaba la
-    devolución de otra unidad. Se compara como texto porque la API no
-    garantiza el tipo (12 vs "12").
-
-    **Busca en la comisión y, si no aparece, sin filtrar por comisión**
-    (2026-08-20). El equipo de Active-IA corrigió un supuesto nuestro: el índice
-    único real es `(rubrica_id, alumno_nombre)` y **NO incluye `comision_id`**.
-    O sea que el 409 puede venir de una entrega que existe en OTRA comisión, y
-    buscándola sólo dentro de la nuestra no aparecía nunca — la corrección moría
-    en `CONFLICTO_SIN_SALIDA` sin motivo entendible.
-
-    Lo que NO hace es retomarla a ciegas: si la encuentra fuera de la comisión,
-    devuelve `None`. Retomar la entrega de otra comisión es el camino directo a
-    adjuntarle la devolución al alumno equivocado, y ese modo de falla ya nos
-    mordió una vez con el `rubrica_id`. Mejor cortar con un motivo legible.
-    """
-    objetivo = alumno_nombre.strip().lower()
-
-    def _buscar(items: Any) -> str | None:
-        for item in items or []:
-            if str(item.get("rubrica_id")) != str(rubrica_id):
-                continue
-            if str(item.get("alumno_nombre", "")).strip().lower() == objetivo:
-                return str(item.get("id"))
-        return None
-
-    r = await cliente.request(
-        "GET", "/entregas/", params={"comision_id": comision_id, "per_page": 100}
-    )
-    if r.status_code != 200:
-        return None
-    encontrada = _buscar(r.json().get("items", []))
-    if encontrada is not None:
-        return encontrada
-
-    # Segunda pasada sin el filtro de comisión: sólo para saber SI existe, y
-    # poder decirlo. No se retoma.
-    r2 = await cliente.request("GET", "/entregas/", params={"per_page": 100})
-    if r2.status_code == 200 and _buscar(r2.json().get("items", [])) is not None:
-        log.warning(
-            "activeia_entrega_existe_en_otra_comision",
-            rubrica_id=rubrica_id,
-            comision_id=comision_id,
-            detalle=(
-                "El 409 keyea por (rubrica_id, alumno_nombre) sin comision. "
-                "La entrega existe en otra comision y NO se retoma."
-            ),
-        )
-    return None
