@@ -272,3 +272,214 @@ async def test_session_manager_seen_roundtrip(redis_client) -> None:
     assert await mgr.get_seen_seq(episode_id, str(uuid4())) is None
     # Otro episodio no comparte el registro.
     assert await mgr.get_seen_seq(uuid4(), key) is None
+
+
+# ── run-tests: el endpoint que no leia el header (BUG-8) ──────────────
+#
+# `POST /episodes/{id}/run-tests` declaraba `x_internal_service_token` y nada
+# mas: el `Idempotency-Key` llegaba y se descartaba. Mientras `tests_ejecutados`
+# se emitia con un fetch pelado eso pasaba desapercibido, pero con el evento
+# migrado a la cola durable del `ctr-client` el reintento es rutina: la cola
+# reenvia el MISMO `event_uuid` cuando pierde el ACK de una request que el
+# servidor SI persistio.
+#
+# El dano NO es un hueco de seq —cada POST reservaba su propio seq y la cadena
+# seguia verificando— sino un `tests_ejecutados` DE MAS. Y este evento no es
+# uno cualquiera: el labeler v1.2.0 deriva N3 vs N4 de `tests_ejecutados`. Un
+# duplicado puede cambiar como queda nivelado un episodio en los datos de la
+# tesis sin que nada falle ni se rompa.
+#
+# Contrato verificado contra el emisor (`packages/ctr-client/src/index.ts`, rama
+# `fix/editor-y-eventos-del-alumno`): manda el header literal `Idempotency-Key`
+# con `event.event_uuid`, estable a traves de los reintentos, y rutea
+# `tests_ejecutados` a `run-tests` via `RUTAS_POR_EVENTO`. Los tests usan ese
+# nombre de header exacto — si el server leyera otro, el de abajo cae.
+
+# El nombre del header, escrito una sola vez, tal cual lo manda el ctr-client.
+_HEADER_IDEMPOTENCIA = "Idempotency-Key"
+
+
+def _run_tests_body() -> dict:
+    """Payload de una corrida real de Pyodide: 3 publicos, todos pasando."""
+    return {
+        "test_count_total": 3,
+        "test_count_passed": 3,
+        "test_count_failed": 0,
+        "tests_publicos": 3,
+        "tests_hidden": 0,
+        "ejecucion_ms": 412,
+    }
+
+
+async def test_run_tests_reintento_con_misma_key_no_duplica_el_evento(
+    http_client, fake_ctr: FakeCTRClient
+) -> None:
+    """Dos POST con el MISMO Idempotency-Key emiten UN solo `tests_ejecutados`.
+
+    Es el reintento de la cola durable: el servidor persistio el primero y el
+    ACK se perdio. Sin dedup quedan dos eventos identicos en la cadena y el
+    labeler cuenta dos corridas donde hubo una.
+    """
+    client, tutor = http_client
+    tenant_id = uuid4()
+    student_id = uuid4()
+    episode_id = await tutor.open_episode(
+        tenant_id=tenant_id,
+        comision_id=uuid4(),
+        student_pseudonym=student_id,
+        problema_id=uuid4(),
+        curso_config_hash="c" * 64,
+        classifier_config_hash="b" * 64,
+    )
+    uuid_x = str(uuid4())
+    headers = _student_headers(student_id, tenant_id) | {_HEADER_IDEMPOTENCIA: uuid_x}
+
+    r1 = client.post(
+        f"/api/v1/episodes/{episode_id}/run-tests", json=_run_tests_body(), headers=headers
+    )
+    r2 = client.post(
+        f"/api/v1/episodes/{episode_id}/run-tests", json=_run_tests_body(), headers=headers
+    )
+
+    assert r1.status_code == 202
+    assert r2.status_code == 202
+    assert r1.json()["seq"] == r2.json()["seq"] == "1", "el reintento devolvio otro seq"
+
+    tipos = [ev["event_type"] for ev in fake_ctr.published_events]
+    assert tipos.count("tests_ejecutados") == 1, f"el reintento duplico la corrida: {tipos}"
+
+    # La cadena sigue contigua: el reintento no gasto un seq de mas.
+    assert [ev["seq"] for ev in fake_ctr.published_events] == [0, 1]
+
+
+async def test_run_tests_lee_el_header_con_el_nombre_que_manda_el_cliente(
+    http_client, fake_ctr: FakeCTRClient
+) -> None:
+    """Anti-test-vacuo: el dedup depende del NOMBRE exacto del header.
+
+    Si el server leyera otro nombre (o el cliente mandara otro), el fix no
+    serviria de nada y el test de arriba pasaria igual siempre que ambos lados
+    usaran el mismo nombre equivocado. Este fija la otra mitad: un header con
+    nombre distinto NO deduplica, o sea que el endpoint efectivamente keyea por
+    `Idempotency-Key` y no por "cualquier header que traiga un uuid".
+    """
+    client, tutor = http_client
+    tenant_id = uuid4()
+    student_id = uuid4()
+    episode_id = await tutor.open_episode(
+        tenant_id=tenant_id,
+        comision_id=uuid4(),
+        student_pseudonym=student_id,
+        problema_id=uuid4(),
+        curso_config_hash="c" * 64,
+        classifier_config_hash="b" * 64,
+    )
+    uuid_x = str(uuid4())
+    # Mismo valor, nombre equivocado.
+    headers = _student_headers(student_id, tenant_id) | {"X-Event-Uuid": uuid_x}
+
+    client.post(f"/api/v1/episodes/{episode_id}/run-tests", json=_run_tests_body(), headers=headers)
+    client.post(f"/api/v1/episodes/{episode_id}/run-tests", json=_run_tests_body(), headers=headers)
+
+    tipos = [ev["event_type"] for ev in fake_ctr.published_events]
+    assert tipos.count("tests_ejecutados") == 2, (
+        "el endpoint dedupica por un header que el ctr-client no manda"
+    )
+
+
+async def test_run_tests_keys_distintas_son_corridas_distintas(
+    http_client, fake_ctr: FakeCTRClient
+) -> None:
+    """Dos corridas genuinas siguen siendo dos eventos.
+
+    El alumno corre los tests, edita, y vuelve a correr: eso es exactamente la
+    señal que el labeler necesita para N3/N4. El dedup no puede comersela.
+    """
+    client, tutor = http_client
+    tenant_id = uuid4()
+    student_id = uuid4()
+    episode_id = await tutor.open_episode(
+        tenant_id=tenant_id,
+        comision_id=uuid4(),
+        student_pseudonym=student_id,
+        problema_id=uuid4(),
+        curso_config_hash="c" * 64,
+        classifier_config_hash="b" * 64,
+    )
+    base = _student_headers(student_id, tenant_id)
+
+    r1 = client.post(
+        f"/api/v1/episodes/{episode_id}/run-tests",
+        json=_run_tests_body(),
+        headers=base | {_HEADER_IDEMPOTENCIA: str(uuid4())},
+    )
+    r2 = client.post(
+        f"/api/v1/episodes/{episode_id}/run-tests",
+        json=_run_tests_body(),
+        headers=base | {_HEADER_IDEMPOTENCIA: str(uuid4())},
+    )
+
+    assert r1.json()["seq"] == "1"
+    assert r2.json()["seq"] == "2"
+    tipos = [ev["event_type"] for ev in fake_ctr.published_events]
+    assert tipos.count("tests_ejecutados") == 2
+
+
+async def test_run_tests_sin_key_mantiene_comportamiento_legacy(
+    http_client, fake_ctr: FakeCTRClient
+) -> None:
+    """Sin header, cada POST emite. El execution-service (ADR-060) no manda
+    Idempotency-Key y no tiene por que cambiar."""
+    client, tutor = http_client
+    tenant_id = uuid4()
+    student_id = uuid4()
+    episode_id = await tutor.open_episode(
+        tenant_id=tenant_id,
+        comision_id=uuid4(),
+        student_pseudonym=student_id,
+        problema_id=uuid4(),
+        curso_config_hash="c" * 64,
+        classifier_config_hash="b" * 64,
+    )
+    headers = _student_headers(student_id, tenant_id)
+
+    client.post(f"/api/v1/episodes/{episode_id}/run-tests", json=_run_tests_body(), headers=headers)
+    client.post(f"/api/v1/episodes/{episode_id}/run-tests", json=_run_tests_body(), headers=headers)
+
+    tipos = [ev["event_type"] for ev in fake_ctr.published_events]
+    assert tipos.count("tests_ejecutados") == 2
+
+
+async def test_run_tests_payload_invalido_no_se_queda_con_la_key(
+    http_client, fake_ctr: FakeCTRClient
+) -> None:
+    """Un 422 libera el claim: el reintento corregido con la MISMA key emite.
+
+    `reserve_or_get_seq` hace HDEL cuando el emit falla. Sin eso, un cliente que
+    manda conteos inconsistentes y despues los corrige reusando el event_uuid
+    quedaria mudo para siempre.
+    """
+    client, tutor = http_client
+    tenant_id = uuid4()
+    student_id = uuid4()
+    episode_id = await tutor.open_episode(
+        tenant_id=tenant_id,
+        comision_id=uuid4(),
+        student_pseudonym=student_id,
+        problema_id=uuid4(),
+        curso_config_hash="c" * 64,
+        classifier_config_hash="b" * 64,
+    )
+    uuid_x = str(uuid4())
+    headers = _student_headers(student_id, tenant_id) | {_HEADER_IDEMPOTENCIA: uuid_x}
+
+    malo = _run_tests_body() | {"test_count_passed": 1}  # 1 + 0 != 3
+    r_malo = client.post(f"/api/v1/episodes/{episode_id}/run-tests", json=malo, headers=headers)
+    assert r_malo.status_code == 422
+
+    r_bueno = client.post(
+        f"/api/v1/episodes/{episode_id}/run-tests", json=_run_tests_body(), headers=headers
+    )
+    assert r_bueno.status_code == 202, "el claim quedo tomado por una request que no emitio"
+    tipos = [ev["event_type"] for ev in fake_ctr.published_events]
+    assert tipos.count("tests_ejecutados") == 1
