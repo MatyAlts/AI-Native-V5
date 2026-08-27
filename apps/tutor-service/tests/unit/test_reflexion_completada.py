@@ -456,3 +456,114 @@ def test_post_reflection_campos_vacios_aceptados_si_validos(
     )
 
     assert r.status_code == 202
+
+
+# ── BUG-6: idempotencia por Idempotency-Key ──────────────────────────
+#
+# Este endpoint era el unico emisor de eventos del servicio sin dedup por
+# `Idempotency-Key`. Post-cierre la sesion Redis ya no existe, asi que
+# `record_reflexion_completada` toma `seq = events_count` leido del CTR,
+# salteando el contador atomico. Dos POST identicos —el reintento de red que el
+# alumno no ve— leen el MISMO `events_count` y emiten los dos con ese seq: el
+# segundo no matchea `expected_seq`, va a la DLQ y marca `integrity_compromised`
+# un episodio YA cerrado y completado, con todo el trabajo del alumno adentro.
+
+
+def test_post_reflection_reintento_con_misma_key_no_duplica_el_evento(
+    http_client, fake_ctr: FakeCTRClient
+) -> None:
+    """Dos POST con el MISMO Idempotency-Key emiten UN solo evento y devuelven
+    el MISMO seq.
+
+    Es el reintento de red: el server persistio el primero pero el ACK se
+    perdio, el alumno ve error y vuelve a mandar. Sin dedup se emiten dos
+    `reflexion_completada` con el mismo seq (ambos leen events_count=4).
+    """
+    client, _ = http_client
+    tenant_id = uuid4()
+    episode_id = uuid4()
+    student_id = uuid4()
+    _seed_closed_episode(fake_ctr, episode_id, tenant_id, events_count=4)
+
+    body = {
+        "que_aprendiste": "el caso base se piensa primero",
+        "dificultad_encontrada": "seguir el stack de llamadas",
+        "que_haria_distinto": "dibujar el arbol antes de tipear",
+        "prompt_version": "reflection/v1.0.0",
+        "tiempo_completado_ms": 5500,
+    }
+    headers = _student_headers(student_id, tenant_id) | {"Idempotency-Key": str(uuid4())}
+
+    primera = client.post(f"/api/v1/episodes/{episode_id}/reflection", json=body, headers=headers)
+    segunda = client.post(f"/api/v1/episodes/{episode_id}/reflection", json=body, headers=headers)
+
+    assert primera.status_code == 202
+    assert segunda.status_code == 202
+    assert primera.json() == segunda.json(), "el reintento devolvio un seq distinto"
+
+    tipos = [e["event_type"] for e in fake_ctr.published_events]
+    assert tipos.count("reflexion_completada") == 1, (
+        f"el reintento duplico el evento post-cierre: {tipos}"
+    )
+
+
+def test_post_reflection_keys_distintas_son_reflexiones_distintas(
+    http_client, fake_ctr: FakeCTRClient
+) -> None:
+    """Dos envios genuinos (keys distintas) siguen siendo dos eventos.
+
+    El dedup no debe convertirse en un candado que impida una segunda reflexion
+    real sobre el mismo episodio — el CTR es append-only y la acepta.
+    """
+    client, _ = http_client
+    tenant_id = uuid4()
+    episode_id = uuid4()
+    student_id = uuid4()
+    _seed_closed_episode(fake_ctr, episode_id, tenant_id, events_count=4)
+
+    body = {
+        "que_aprendiste": "a",
+        "dificultad_encontrada": "b",
+        "que_haria_distinto": "c",
+        "prompt_version": "reflection/v1.0.0",
+        "tiempo_completado_ms": 900,
+    }
+    base = _student_headers(student_id, tenant_id)
+
+    client.post(
+        f"/api/v1/episodes/{episode_id}/reflection",
+        json=body,
+        headers=base | {"Idempotency-Key": str(uuid4())},
+    )
+    client.post(
+        f"/api/v1/episodes/{episode_id}/reflection",
+        json=body,
+        headers=base | {"Idempotency-Key": str(uuid4())},
+    )
+
+    tipos = [e["event_type"] for e in fake_ctr.published_events]
+    assert tipos.count("reflexion_completada") == 2
+
+
+def test_post_reflection_sin_key_mantiene_comportamiento_legacy(
+    http_client, fake_ctr: FakeCTRClient
+) -> None:
+    """Sin header, cada POST emite — los clientes viejos no cambian."""
+    client, _ = http_client
+    tenant_id = uuid4()
+    episode_id = uuid4()
+    _seed_closed_episode(fake_ctr, episode_id, tenant_id, events_count=4)
+
+    body = {
+        "que_aprendiste": "a",
+        "dificultad_encontrada": "b",
+        "que_haria_distinto": "c",
+        "prompt_version": "reflection/v1.0.0",
+        "tiempo_completado_ms": 900,
+    }
+    headers = _student_headers(uuid4(), tenant_id)
+    client.post(f"/api/v1/episodes/{episode_id}/reflection", json=body, headers=headers)
+    client.post(f"/api/v1/episodes/{episode_id}/reflection", json=body, headers=headers)
+
+    tipos = [e["event_type"] for e in fake_ctr.published_events]
+    assert tipos.count("reflexion_completada") == 2

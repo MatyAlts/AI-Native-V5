@@ -655,11 +655,19 @@ export async function submitReflection(
     prompt_version: string
     tiempo_completado_ms: number
   },
+  idempotencyKey?: string,
   getToken?: TokenGetter,
 ): Promise<EventEmitResponse> {
+  const headers = await authHeaders(getToken)
+  // Clave estable por apertura del modal. El reintento tras un error de red
+  // reusa el MISMO valor: sin eso, un POST que el server SI persistio y cuyo
+  // ACK se perdio termina emitiendo dos `reflexion_completada` con el mismo
+  // seq (post-cierre no hay sesion Redis, el seq sale de `events_count`), y el
+  // segundo manda a la DLQ un episodio ya cerrado y completado.
+  if (idempotencyKey) headers["Idempotency-Key"] = idempotencyKey
   const r = await fetch(`/api/v1/episodes/${episodeId}/reflection`, {
     method: "POST",
-    headers: await authHeaders(getToken),
+    headers,
     body: JSON.stringify(payload),
   })
   if (!r.ok) {
