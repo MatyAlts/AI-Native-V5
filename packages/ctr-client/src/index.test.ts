@@ -273,3 +273,103 @@ describe("CTRClient — Idempotency-Key (P-17)", () => {
     expect(client.pendingCount()).toBe(0)
   })
 })
+
+describe("CTRClient — tests_ejecutados (el evento de mayor señal)", () => {
+  /** Fetch mock que captura url, body y headers por llamada. */
+  function mockFetchDetallado(statuses: number[]) {
+    let i = 0
+    const calls: Array<{ url: string; body: unknown; headers: Record<string, string> }> = []
+    const impl = vi.fn(
+      async (
+        input: unknown,
+        init?: { body?: unknown; headers?: Record<string, string> },
+      ): Promise<Response> => {
+        calls.push({
+          url: String(input),
+          body: init?.body ? JSON.parse(String(init.body)) : undefined,
+          headers: { ...(init?.headers ?? {}) },
+        })
+        const status = statuses[Math.min(i, statuses.length - 1)] ?? 202
+        i += 1
+        return { ok: status >= 200 && status < 300, status } as Response
+      },
+    )
+    return { impl: impl as unknown as CTRFetch, calls }
+  }
+
+  const CONTEOS = {
+    test_count_total: 3,
+    test_count_passed: 2,
+    test_count_failed: 1,
+    tests_publicos: 3,
+    ejecucion_ms: 120,
+  }
+
+  it("va al endpoint /run-tests, no al generico /events/{tipo}", async () => {
+    // El backend valida los conteos antes de appendear, asi que este evento
+    // tiene ruta propia. Mandarlo al generico seria un 404 => dead-letter.
+    const storage = memStorage()
+    const { impl, calls } = mockFetchDetallado([202])
+    const client = new CTRClient(baseOpts(storage, impl))
+    client.testsEjecutados(CONTEOS)
+    await client.flush()
+    expect(calls).toHaveLength(1)
+    expect(calls[0]?.url).toBe("/api/v1/episodes/ep-1/run-tests")
+  })
+
+  it("agrega tests_hidden: 0 — los casos ocultos no corren en el navegador", async () => {
+    const storage = memStorage()
+    const { impl, calls } = mockFetchDetallado([202])
+    const client = new CTRClient(baseOpts(storage, impl))
+    client.testsEjecutados(CONTEOS)
+    await client.flush()
+    expect(calls[0]?.body).toEqual({ ...CONTEOS, tests_hidden: 0 })
+  })
+
+  it("sobrevive a un 5xx y reintenta con el MISMO Idempotency-Key", async () => {
+    // Es lo que separa "el episodio queda mal nivelado" de "no pasa nada": el
+    // labeler v1.2.0 deriva N3 vs N4 de este evento.
+    const storage = memStorage()
+    const { impl, calls } = mockFetchDetallado([500, 202])
+    const client = new CTRClient(baseOpts(storage, impl))
+    client.testsEjecutados(CONTEOS)
+    await client.flush()
+    expect(client.pendingCount()).toBe(1) // no se perdio
+    await client.flush()
+    expect(calls).toHaveLength(2)
+    expect(calls[0]?.headers["Idempotency-Key"]).toBe(calls[1]?.headers["Idempotency-Key"])
+    expect(client.pendingCount()).toBe(0)
+  })
+
+  it("sobrevive a la recarga de la pagina: la cola se retoma del storage", async () => {
+    const storage = memStorage()
+    const caido = mockFetchDetallado([500])
+    const client = new CTRClient(baseOpts(storage, caido.impl))
+    client.testsEjecutados(CONTEOS)
+    await client.flush()
+    client.dispose()
+
+    // Nueva pestaña, mismo episodio: la cola persistida se retoma.
+    const revivido = mockFetchDetallado([202])
+    const client2 = new CTRClient(baseOpts(storage, revivido.impl))
+    await client2.flush()
+    expect(revivido.calls).toHaveLength(1)
+    expect(revivido.calls[0]?.url).toBe("/api/v1/episodes/ep-1/run-tests")
+    expect(client2.pendingCount()).toBe(0)
+  })
+
+  it("no se adelanta a un edicion_codigo encolado antes (FIFO)", async () => {
+    // El orden importa: `tests_ejecutados` no puede preceder a la edicion del
+    // snapshot que se probo.
+    const storage = memStorage()
+    const { impl, calls } = mockFetchDetallado([202])
+    const client = new CTRClient(baseOpts(storage, impl))
+    client.edicionCodigo({ snapshot: "x = 1", diff_chars: 5, language: "python" })
+    client.testsEjecutados(CONTEOS)
+    await client.flush()
+    expect(calls.map((c) => c.url)).toEqual([
+      "/api/v1/episodes/ep-1/events/edicion_codigo",
+      "/api/v1/episodes/ep-1/run-tests",
+    ])
+  })
+})

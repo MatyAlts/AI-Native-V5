@@ -864,18 +864,24 @@ export function EpisodeView({ episodeId, onExit, ejercicioContext, getToken }: E
         onTestsRun={(result) => {
           // F1: correr tests es actividad de EJECUCION (N3), igual que "Ejecutar".
           setMaxActividad((a) => (a < 3 ? 3 : a))
-          // Emitir tests_ejecutados al CTR (conteos agregados; el labeler v1.2.0
-          // deriva N3/N4 de esto). Best-effort: un fallo de red / 409 (sesion
-          // cerrada) NO rompe la UI ni el flujo — mismo criterio que codigo_ejecutado.
-          void emitTestsEjecutados(episodeId, {
+          // Emitir tests_ejecutados al CTR (conteos agregados). Va por la cola
+          // durable como el resto de los eventos de codigo: es el de MAYOR
+          // señal de todos — el labeler v1.2.0 deriva N3 vs N4 de aca — y era
+          // justo el que quedaba por fetch pelado, sin reintentos ni
+          // Idempotency-Key. Un fallo de red lo perdia en un console.warn y el
+          // episodio quedaba mal nivelado en la tesis.
+          const payloadTests = {
             test_count_total: result.total,
             test_count_passed: result.passed,
             test_count_failed: result.failed,
             tests_publicos: result.total,
             ejecucion_ms: Math.round(result.durationMs),
-          }).catch((e) => {
-            console.warn("emit tests_ejecutados failed:", e)
-          })
+          }
+          emitirConCola(
+            (c) => c.testsEjecutados(payloadTests),
+            () => emitTestsEjecutados(episodeId, payloadTests),
+            "tests_ejecutados",
+          )
         }}
         // El buffer de Monaco es del editor; este espejo existe para que el
         // re-montaje del panel (cruzar el breakpoint mobile desmonta y vuelve a

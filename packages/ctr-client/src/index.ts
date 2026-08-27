@@ -47,12 +47,26 @@
 export type CTRClientEventType =
   | "codigo_ejecutado"
   | "edicion_codigo"
+  | "tests_ejecutados"
   | "lectura_enunciado"
   | "anotacion_creada"
   | "pestana_perdida"
   | "pestana_recuperada"
   | "copia_intentada"
   | "pega_intentada"
+
+/**
+ * Eventos cuyo endpoint NO sigue el patron `/events/{event_type}`.
+ *
+ * `tests_ejecutados` se emite contra `POST /episodes/{id}/run-tests` (ADR-033 /
+ * ADR-034): el backend valida los conteos (`passed + failed == total`,
+ * `tests_hidden == 0`) antes de appendear, asi que tiene ruta propia. El
+ * `event_type` que viaja en la cola es el del CONTRATO CTR — lo que cambia es
+ * solo por donde se lo manda.
+ */
+const RUTAS_POR_EVENTO: Partial<Record<CTRClientEventType, string>> = {
+  tests_ejecutados: "run-tests",
+}
 
 export interface CTREventInput {
   event_type: CTRClientEventType
@@ -219,6 +233,27 @@ export class CTRClient {
     this.emit({ event_type: "edicion_codigo", payload })
   }
 
+  /**
+   * Conteos agregados de una corrida de tests del alumno.
+   *
+   * Es el evento de mayor señal de todos: el labeler v1.2.0 deriva N3 vs N4 de
+   * aca (tests pasados con ventana suficiente desde el ultimo `tutor_respondio`
+   * => apropiacion reflexiva). Un episodio que lo pierde queda mal nivelado.
+   *
+   * `tests_hidden` viaja SIEMPRE 0 y lo pone el cliente: los casos ocultos no
+   * se corren en el navegador, y el backend rechaza con 422 cualquier otro
+   * valor. No es un parametro, es una propiedad del emisor.
+   */
+  testsEjecutados(payload: {
+    test_count_total: number
+    test_count_passed: number
+    test_count_failed: number
+    tests_publicos: number
+    ejecucion_ms: number
+  }): void {
+    this.emit({ event_type: "tests_ejecutados", payload: { ...payload, tests_hidden: 0 } })
+  }
+
   lecturaEnunciado(payload: { duration_seconds: number }): void {
     this.emit({ event_type: "lectura_enunciado", payload })
   }
@@ -323,7 +358,8 @@ export class CTRClient {
   // ── Internos ───────────────────────────────────────────────────────────
 
   private async send(event: QueuedEvent): Promise<SendResult> {
-    const url = `${this.apiBase}/api/v1/episodes/${this.episodeId}/events/${event.event_type}`
+    const ruta = RUTAS_POR_EVENTO[event.event_type] ?? `events/${event.event_type}`
+    const url = `${this.apiBase}/api/v1/episodes/${this.episodeId}/${ruta}`
     // P-17: mandamos el `event_uuid` como Idempotency-Key para que el backend
     // deduplique reintentos del MISMO evento (ACK-perdido). Sin esto, un
     // reintento vuelve a asignar seq y avanza el contador de sesion, dejando un
