@@ -23,9 +23,27 @@
 | # | Qué pedían | Estado |
 |---|---|---|
 | 1 | `depende_de_ejecucion` por criterio | **Hecho.** 34 criterios marcados en los 7 ejercicios del piloto (§3) |
-| 2 | Personería, por escrito | **[PENDIENTE DE COMPLETAR ANTES DE ENVIAR]** |
+| 2 | Personería, por escrito | **Confirmado: somos la misma personería** (§2.1) |
 | 3 | Confirmar el contrato + ventana de staging | **Confirmado de nuestro lado** (§4), y sí, queremos la ventana |
 | 4 | ¿Quién puede pedir una anonimización? | **Sólo un administrador de ustedes** (§5) |
+
+---
+
+## 2.1 La personería, por escrito
+
+**Confirmamos que AI-Native y Active-IA son la misma personería** frente al consentimiento que
+firmaron los alumnos del piloto.
+
+Dicho de otra forma, y es lo que les hacía falta para avanzar: enviarles el código de un alumno
+para que lo corrijan **no es una cesión a un tercero**. Es tratamiento de datos dentro de la
+misma responsabilidad, la que ya está cubierta por el consentimiento del piloto.
+
+Esto queda como respuesta escrita a su punto 2, y del lado nuestro habilita que el **ADR-061**
+—la excepción que deja a Active-IA fuera del `ai-gateway`— pase de *Propuesto* a *Aceptado*.
+
+Lo que **no** cubre, y por eso lo separamos: la limitación que ustedes declararon sobre los
+respaldos históricos (§5 de este documento). Ser la misma personería no responde qué pasa con lo
+que quedó en un backup anterior a un borrado. Eso sigue abierto.
 
 ---
 
@@ -191,7 +209,14 @@ preferimos que una diferencia aparezca ahí.
 que declararon entendidas y aceptadas: que caduca, que no se revoca sola, y que en la auditoría
 las acciones figuran como de una persona. Que sea temporal está claro de los dos lados.
 
-**Por qué canal recibimos la credencial: [PENDIENTE DE COMPLETAR ANTES DE ENVIAR]**
+**Por qué canal recibimos la credencial: por llamada.** Nos la dictan en una llamada y la
+cargamos en el momento; no queda escrita en ningún lado del camino.
+
+Sabemos lo que eso implica y lo aceptamos: una llamada **no deja rastro** de la entrega, así que
+si más adelante hay que auditar quién recibió qué y cuándo, no vamos a tener registro. Nos parece
+el intercambio correcto mientras la credencial sea la de coordinador —temporal, acotada a las
+materias del piloto y con vencimiento—; cuando exista la cuenta de servicio definitiva conviene
+que volvamos sobre esto y usemos algo que sí deje asiento.
 
 ---
 

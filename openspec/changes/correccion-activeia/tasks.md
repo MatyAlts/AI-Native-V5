@@ -25,7 +25,7 @@
   `correccion_id`), **404 = todavía no**. El PDF sale aparte de
   `GET /documentos/correcciones/{correccion_id}/pdf`. Ojo: **`GET /entregas/{id}` está
   roto del lado del server** (500), por eso el poll va por `/correcciones/`
-- [ ] 0.5 Confirmar si AI-Native y Active-IA son la misma personería frente al consentimiento del piloto. Bloquea el despliegue con datos reales, no el desarrollo
+- [x] 0.5 Confirmar si AI-Native y Active-IA son la misma personería frente al consentimiento del piloto — **2026-08-27: SON LA MISMA.** El tratamiento es interno, el consentimiento vigente alcanza, no es cesión a un tercero. Comunicado en la respuesta §2.1 y volcado al ADR-061
 - [x] 0.6 Entregar `docs/research/activeia-cambios-pedidos.md` al equipo de Active-IA — entregado; contestaron el 20/08 y de nuevo el 24/08 con §3.1-3.4 construidos. Respuesta nuestra en `docs/research/activeia-respuesta-2026-08-27.md`
 - [x] 0.7 Marcar `depende_de_ejecucion` en las rúbricas (§3.1 del pedido de ellos) — 34 criterios de los 7 ejercicios del piloto, 14 en `true`. Herramienta en dos fases en `scripts/marcar-depende-de-ejecucion.py`
 - [x] 0.8 Migrar el cliente al endpoint `POST /correcciones/ejercicios/{ref}/corregir` — se fueron el zip, el 409 y el poll. Cierra el «comision_id mal cableado»

@@ -1,6 +1,6 @@
 # ADR-061 — La corrección con Active-IA no pasa por el ai-gateway
 
-- **Estado**: **Propuesto** — la decisión técnica está tomada; el gate de personería (§ Consentimiento) sigue abierto y **bloquea el despliegue con datos reales**, no el desarrollo.
+- **Estado**: **Propuesto** — la decisión técnica está tomada y **la personería quedó resuelta el 2026-08-27** (§ Consentimiento): son la misma, así que el consentimiento vigente alcanza y el despliegue con datos reales deja de estar bloqueado por ahí. Sigue *Propuesto* por lo único que falta: el **borrado por alumno del lado de Active-IA** (tarea 5.5), que depende del §3.6 de ellos, todavía sin empezar.
 - **Fecha**: 2026-08-19
 - **Deciders**: Alberto Cortez (decisión de privacidad y su defensa académica). Juani Sarmiento (implementación).
 - **Tags**: privacidad, integraciones, correccion, terceros, activeia
@@ -25,8 +25,9 @@ descuido y "arregla" el ruteo.
 **1. Active-IA no es un proveedor de LLM: es un servicio de corrección.**
 
 El gateway rutea `completions` y `embeddings` — pide texto, devuelve texto, y
-puede cambiar de proveedor porque el contrato es el mismo. Active-IA recibe un
-**zip con el código del alumno**, una rúbrica, un identificador de comisión, y
+puede cambiar de proveedor porque el contrato es el mismo. Active-IA recibe **el
+código del alumno, el resultado de los tests que ya corrimos en nuestro sandbox,
+y una referencia al ejercicio** que del otro lado resuelve a una rúbrica; y
 devuelve una nota con desglose y un PDF. No hay otro proveedor al que rutear
 eso, porque no es una capacidad genérica: es un producto con su propio modelo
 de datos, sus cuentas y sus rúbricas cargadas del otro lado.
@@ -82,9 +83,29 @@ Lo que sí está resuelto:
 - **Derecho al olvido parcial.** El procedimiento borra de nuestro lado el
   artefacto, el snapshot de tests, el desglose y el PDF.
 
-Lo que **no** está resuelto, y por eso este ADR está *Propuesto* y no *Aceptado*:
+Los dos gates que mantenían este ADR en *Propuesto*. El primero se cerró el
+2026-08-27; el segundo sigue abierto y es el único que falta:
 
-### Consentimiento y personería (tarea 0.5, ABIERTA)
+### Consentimiento y personería (tarea 0.5, RESUELTA el 2026-08-27)
+
+> **Son la misma personería.** Confirmado por Juani el 2026-08-27 y comunicado
+> por escrito a Active-IA en `docs/research/activeia-respuesta-2026-08-27.md`
+> §2.1, que era lo que ellos pedían como punto 2 de su documento del 24/08.
+>
+> Se aplica entonces la primera rama de las dos que este ADR planteaba: **el
+> tratamiento es interno y el consentimiento vigente alcanza**. Mandarle el
+> código de un alumno a Active-IA **no es una cesión a un tercero**, así que no
+> hace falta tocar el texto del consentimiento del piloto.
+>
+> **Lo que esto NO cubre**, y conviene no leerlo de más: la limitación que el
+> propio equipo de Active-IA declaró de frente — la anonimización va a cubrir la
+> base viva pero **no los respaldos históricos**. Ser la misma personería no
+> responde qué pasa con lo que quedó en un backup anterior a un borrado. Eso
+> sigue abierto y va a la dirección del proyecto junto con la política de
+> retención.
+
+El razonamiento original, que se conserva porque es lo que fundamenta la
+respuesta de arriba:
 
 **Hay que determinar si AI-Native y Active-IA son la misma personería frente al
 consentimiento firmado por los estudiantes del piloto.**
@@ -125,6 +146,7 @@ escala a las tres comisiones.
 
 ## Pendiente antes de pasar a Aceptado
 
-- [ ] Resolver la personería (tarea 0.5) y escribir acá la respuesta
-- [ ] Si son personerías distintas: revisar el texto del consentimiento del piloto
-- [ ] Borrado por alumno del lado de Active-IA (tarea 5.5)
+- [x] Resolver la personería (tarea 0.5) y escribir acá la respuesta — 2026-08-27: son la misma
+- [x] Si son personerías distintas: revisar el texto del consentimiento del piloto — NO aplica, son la misma
+- [ ] Borrado por alumno del lado de Active-IA (tarea 5.5) — **lo único que falta.** Depende del §3.6 de ellos, especificado y sin empezar
+- [ ] Política de retención para los respaldos históricos, que la anonimización de ellos NO cubre (lo declararon el 24/08). Va a la dirección del proyecto
