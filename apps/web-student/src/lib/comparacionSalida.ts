@@ -61,6 +61,14 @@ export function normalizarSalida(texto: string): string {
   while (lineas.length > 0 && lineas[lineas.length - 1] === "") {
     lineas.pop()
   }
+  // Tambien las INICIALES: el `strip()` viejo sobre el texto entero las
+  // perdonaba, y no descartarlas endurecia el corrector — un caso que pasaba
+  // solo por eso empezaba a fallar. Endurecer perjudica al alumno; mantener la
+  // tolerancia no perjudica a nadie. Y hay conteos que ya viajaron al CTR con
+  // el criterio viejo: cambiarlos re-corrigiendo seria reescribir evidencia.
+  while (lineas.length > 0 && lineas[0] === "") {
+    lineas.shift()
+  }
   return lineas.join("\n")
 }
 

@@ -255,10 +255,15 @@ def normalize_output(text: str) -> str:
     el alumno decidio imprimir; tolerarlo seria corregir mal, no corregir menos
     literal.
 
-    Ojo: la comparacion anterior (``strip()`` sobre el texto entero) tambien
-    perdonaba lineas en blanco y espacios INICIALES. Esta no — solo descarta las
-    del final. Es deliberado, pero significa que un caso que antes pasaba por
-    ese motivo ahora falla.
+    Se descartan las lineas en blanco de los DOS extremos, no solo las del
+    final. La comparacion anterior (``strip()`` sobre el texto entero) tambien
+    perdonaba las iniciales, y quedarse corto endurecia el corrector: un caso
+    que pasaba solo por eso empezaba a fallar.
+
+    El error no es simetrico. Endurecer perjudica al alumno; mantener la
+    tolerancia vieja no perjudica a nadie. Y hay conteos que YA viajaron al CTR
+    con el criterio viejo — cambiar veredictos al re-correr seria reescribir
+    evidencia de la tesis.
     """
     lineas = [
         linea.rstrip(_BLANCOS_FINALES)
@@ -266,6 +271,8 @@ def normalize_output(text: str) -> str:
     ]
     while lineas and lineas[-1] == "":
         lineas.pop()
+    while lineas and lineas[0] == "":
+        lineas.pop(0)
     return "\n".join(lineas)
 
 
