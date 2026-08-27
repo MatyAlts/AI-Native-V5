@@ -1245,9 +1245,16 @@ export function EpisodeView({ episodeId, onExit, ejercicioContext, getToken }: E
             onClick={handleClose}
             disabled={submitting}
             data-testid="close-episode-button"
-            className="press-shrink inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium border border-border rounded-md text-body hover:bg-danger-soft hover:border-danger/30 hover:text-danger transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+            // ED-2: "Cerrar episodio" es la accion que TERMINA el episodio y
+            // dispara la reflexion + clasificacion. A `text-xs px-3 py-1.5`
+            // quedaba del tamano de los chips informativos de la barra y el
+            // alumno no la encontraba (reporte de alumno). Sube al tamano `md`
+            // del sistema (`text-sm` + `px-4 py-2`); "Seguir despues" se queda
+            // chica a proposito: la jerarquia visual tiene que distinguir la
+            // salida definitiva de la pausa.
+            className="press-shrink inline-flex items-center gap-1.5 px-4 py-2 text-sm font-medium border border-border rounded-md text-body hover:bg-danger-soft hover:border-danger/30 hover:text-danger transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
           >
-            <LogOut className="h-3 w-3" />
+            <LogOut className="h-4 w-4" />
             Cerrar episodio
           </button>
         </div>
