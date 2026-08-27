@@ -34,6 +34,7 @@ import {
   type TestCasePublic,
   type TokenGetter,
 } from "../lib/api"
+import { salidaCoincide } from "../lib/comparacionSalida"
 import { resolverEdicionPendiente } from "../lib/edicionPendiente"
 import { parseJavaError } from "../lib/javaError"
 import { registerJavaSnippets } from "../lib/javaSnippets"
@@ -838,7 +839,14 @@ def __tutor_run_tests(student_code, cases_json):
                     exec(compile(assert_code, "<test>", "exec"), ns)
             actual = buf.getvalue()
             if ctype == "stdin_stdout":
-                passed = actual.strip() == ((expected or "")).strip()
+                # JAVA-1: la comparacion NO se decide aca. La resuelve
+                # salidaCoincide() de comparacionSalida.ts, del lado JS, que es
+                # el gemelo exacto de la que aplica el execution-service para
+                # Java. Un solo criterio por runtime: dos implementaciones de
+                # la misma regla se separan con el tiempo y el mismo codigo
+                # termina aprobando en un lenguaje y fallando en el otro.
+                # Este False es un placeholder que el lado JS pisa.
+                passed = False
             else:
                 passed = True
         except _TutorTimeout:
@@ -1204,7 +1212,16 @@ def __tutor_run_tests(student_code, cases_json):
       const raw = await pyodideRef.current.runPythonAsync(
         "__tutor_run_tests(__tutor_test_code, __tutor_test_cases_json)",
       )
-      const parsed = JSON.parse(String(raw)) as TestCaseResult[]
+      // JAVA-1: el runner Python devuelve la salida cruda; el veredicto de los
+      // casos `stdin_stdout` lo da acá `salidaCoincide`, la misma normalizacion
+      // que el execution-service aplica a Java. Los casos que ya murieron con
+      // error (excepcion, timeout, EOF) no se re-evaluan: fallaron por otra
+      // razon y su `actual` esta truncado.
+      const parsed = (JSON.parse(String(raw)) as TestCaseResult[]).map((r) =>
+        r.type === "stdin_stdout" && r.error === null
+          ? { ...r, passed: salidaCoincide(r.actual, r.expected) }
+          : r,
+      )
       setTestResults(parsed)
       const durationMs = performance.now() - started
       const passed = parsed.filter((r) => r.passed).length

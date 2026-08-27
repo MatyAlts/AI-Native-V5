@@ -225,6 +225,62 @@ async def _run_java_sin_techo(source_code: str, stdin: str = "") -> DockerRunRes
     )
 
 
+# ── Comparacion de salidas (JAVA-1) ──────────────────────────────────────────
+#
+# GEMELO OBLIGADO: `normalizarSalida` / `salidaCoincide` en
+# `apps/web-student/src/lib/comparacionSalida.ts`.
+#
+# Hay DOS correctores porque hay dos runtimes: Java corre acá (contenedor
+# efimero) y Python en el navegador (Pyodide). Si las normalizaciones se
+# separan, el MISMO codigo aprueba en un lenguaje y falla en el otro, y los
+# conteos `passed`/`failed` que viajan al CTR dejan de ser comparables entre
+# cohortes. Cualquier cambio acá va tambien allá, y al reves.
+
+# Blancos horizontales que se recortan al final de cada linea. Set explicito y
+# no `str.rstrip()` sin argumentos: el `\s` de JavaScript y el `rstrip()` de
+# Python no cubren los mismos code points (nbsp, \x85, separadores unicode), y
+# una diferencia ahi seria justo la asimetria Java/Python que esto evita.
+_BLANCOS_FINALES = " \t\f\v"
+
+
+def normalize_output(text: str) -> str:
+    """Normaliza una salida para compararla. Funcion PURA.
+
+    1. Unifica los fines de linea (``\\r\\n`` y ``\\r`` sueltos) a ``\\n``.
+    2. Recorta los blancos al final de CADA linea.
+    3. Descarta las lineas en blanco del final.
+
+    Lo que NO se toca, a proposito: mayusculas/minusculas, tildes, espacios
+    INTERNOS de una linea y lineas en blanco INTERMEDIAS. Eso es contenido que
+    el alumno decidio imprimir; tolerarlo seria corregir mal, no corregir menos
+    literal.
+
+    Ojo: la comparacion anterior (``strip()`` sobre el texto entero) tambien
+    perdonaba lineas en blanco y espacios INICIALES. Esta no — solo descarta las
+    del final. Es deliberado, pero significa que un caso que antes pasaba por
+    ese motivo ahora falla.
+    """
+    lineas = [
+        linea.rstrip(_BLANCOS_FINALES)
+        for linea in text.replace("\r\n", "\n").replace("\r", "\n").split("\n")
+    ]
+    while lineas and lineas[-1] == "":
+        lineas.pop()
+    return "\n".join(lineas)
+
+
+def outputs_match(actual: str, expected: str) -> bool:
+    """``True`` si la salida obtenida equivale a la esperada. Funcion PURA.
+
+    Solo compara. La decision de si hay algo que comparar (``expected_output``
+    ``None`` significa "con terminar bien alcanza", caso ``junit_assert``) se
+    toma antes de llamar acá — esa semantica NO se comparte con el navegador,
+    donde el mismo nulo significa "no imprime nada". Lo unico compartido, y lo
+    unico que tiene que estar en paridad, es la normalizacion.
+    """
+    return normalize_output(actual) == normalize_output(expected)
+
+
 def to_sandbox_result(run: DockerRunResult, expected_output: str | None) -> SandboxResult:
     """Traduce la corrida cruda al tipo comun del servicio.
 
@@ -265,10 +321,11 @@ def to_sandbox_result(run: DockerRunResult, expected_output: str | None) -> Sand
             memory_kb=None,
         )
 
-    # Corrio bien. Si el caso declara salida esperada, se compara normalizando
-    # espacios de los bordes — mismo criterio que el runner de Pyodide.
+    # Corrio bien. Si el caso declara salida esperada, se compara con
+    # `outputs_match` — mismo criterio, caracter por caracter, que el runner de
+    # Pyodide del web-student (ver el comentario de `normalize_output`).
     if expected_output is not None:
-        ok = run.stdout.strip() == expected_output.strip()
+        ok = outputs_match(run.stdout, expected_output)
         status = SandboxStatus.ACCEPTED if ok else SandboxStatus.WRONG_ANSWER
     else:
         # Sin `expected` no hay nada que comparar: que haya terminado con exito
