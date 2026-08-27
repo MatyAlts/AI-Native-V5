@@ -433,7 +433,9 @@ async def recalificar_entrega(
     - `graded_by` pasa al docente que re-califica (gobierna la nota vigente);
       `graded_at` preserva la primera calificacion, `updated_at` marca esta.
     - Deja la entrega en `graded` (normaliza el caso de una entrega re-enviada
-      que quedo en `submitted` con la calificacion vieja adherida — NB-4).
+      que quedo en `submitted` con la calificacion vieja adherida — NB-4),
+      SALVO que ya este en `returned`: ese estado se conserva porque es lo que
+      habilita al alumno a re-entregar.
     - Emite audit log `tp_recalificada` (structlog, NO va al CTR chain — ADR-010)
       con la nota anterior y la nueva.
     """
@@ -492,7 +494,13 @@ async def recalificar_entrega(
     # Normaliza el estado: una re-calificacion deja la entrega calificada.
     # Cubre el caso NB-4 de una entrega re-enviada (returned -> submitted) que
     # quedo en 'submitted' con la calificacion vieja adherida.
-    entrega.estado = "graded"
+    #
+    # EXCEPTO si ya esta 'returned': ahi la devolucion es intencional y el
+    # alumno tiene la pelota. `submit_entrega` solo acepta 'draft'/'returned',
+    # asi que pisarla con 'graded' le contesta 409 cuando intenta re-entregar
+    # — corregir un typo en la nota le trababa el TP.
+    if entrega.estado != "returned":
+        entrega.estado = "graded"
 
     await db.flush()
     await db.refresh(cal)
