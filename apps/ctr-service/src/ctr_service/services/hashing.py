@@ -92,13 +92,21 @@ def compute_chain_hash(self_hash: str, prev_chain_hash: str | None) -> str:
 
 
 def verify_chain_integrity(
-    events: list[tuple[dict[str, Any], str, str]],
+    events: list[
+        tuple[dict[str, Any], str, str] | tuple[dict[str, Any], str, str, str]
+    ],
 ) -> tuple[bool, int | None]:
     """Verifica que la cadena de eventos sea íntegra.
 
     Args:
-        events: lista de (event_payload, self_hash, chain_hash) en orden
-                estricto por seq.
+        events: lista de (event_payload, self_hash, chain_hash) —o, con el
+                anclaje explícito hacia atrás, (event_payload, self_hash,
+                chain_hash, prev_chain_hash)— en orden estricto por seq.
+                Cuando la tupla trae el 4º campo (prev_chain_hash persistido),
+                se verifica además que cada eslabón declare como anterior el
+                chain_hash real del evento previo. Las tuplas de 3 campos
+                conservan el comportamiento anterior (retrocompatibilidad de
+                fixtures/golden hashes).
 
     Returns:
         (valid, failing_index).
@@ -106,10 +114,21 @@ def verify_chain_integrity(
         valid=False → falla; failing_index apunta al evento que rompe.
     """
     prev_chain = GENESIS_HASH
-    for i, (event, declared_self, declared_chain) in enumerate(events):
+    for i, ev in enumerate(events):
+        event, declared_self, declared_chain = ev[0], ev[1], ev[2]
+        declared_prev = ev[3] if len(ev) > 3 else None
         # Re-computar self_hash del payload declarado
         computed_self = compute_self_hash(event)
         if computed_self != declared_self:
+            return False, i
+        # Verificar el eslabón hacia atrás: el prev_chain_hash PERSISTIDO en el
+        # evento debe coincidir con el chain_hash real del anterior (el que
+        # venimos acarreando). Sin esto, alterar la columna prev_chain_hash de
+        # una fila —sin tocar self_hash ni chain_hash— pasaba inadvertido: el
+        # campo se persistía pero nadie lo cotejaba. Verifica el tercero de los
+        # tres campos criptográficos que la Tabla 2 presenta como parte del
+        # sellado (observación del dictamen CoNaIISI, 2026-08-25).
+        if declared_prev is not None and declared_prev != prev_chain:
             return False, i
         # Re-computar chain_hash con el prev que venimos acarreando
         computed_chain = compute_chain_hash(declared_self, prev_chain)

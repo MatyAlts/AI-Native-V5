@@ -24,12 +24,16 @@ from ctr_service.services.hashing import (
 
 def _build_chain(
     n: int = 5,
-) -> list[tuple[dict[str, Any], str, str]]:
-    """Construye una cadena de N eventos correctamente encadenados."""
+) -> list[tuple[dict[str, Any], str, str, str]]:
+    """Construye una cadena de N eventos correctamente encadenados.
+
+    Cada tupla incluye el prev_chain_hash (4º campo) para ejercitar la
+    verificación explícita del eslabón hacia atrás.
+    """
     episode_id = uuid4()
     tenant_id = uuid4()
     base_ts = datetime(2026, 5, 4, 12, 0, 0, tzinfo=UTC)
-    events: list[tuple[dict[str, Any], str, str]] = []
+    events: list[tuple[dict[str, Any], str, str, str]] = []
     prev_chain = GENESIS_HASH
     for i in range(n):
         event = {
@@ -46,7 +50,7 @@ def _build_chain(
         }
         self_h = compute_self_hash(event)
         chain_h = compute_chain_hash(self_h, prev_chain)
-        events.append((event, self_h, chain_h))
+        events.append((event, self_h, chain_h, prev_chain))
         prev_chain = chain_h
     return events
 
@@ -63,13 +67,13 @@ def test_mutated_self_hash_is_detected() -> None:
     """Mutar un byte del self_hash de un evento intermedio → detectado."""
     events = _build_chain(n=5)
     # Mutar self_hash del evento en index=2
-    event, self_h, chain_h = events[2]
+    event, self_h, chain_h, prev_h = events[2]
     # Elegir un char distinto del primero — el test era flaky 1/16 cuando
     # self_h[0] casualmente era "0" y la mutacion no cambiaba nada.
     new_first = "a" if self_h[0] != "a" else "b"
     mutated_self = new_first + self_h[1:]
     assert mutated_self != self_h
-    events[2] = (event, mutated_self, chain_h)
+    events[2] = (event, mutated_self, chain_h, prev_h)
 
     valid, failing_index = verify_chain_integrity(events)
 
@@ -80,13 +84,13 @@ def test_mutated_self_hash_is_detected() -> None:
 def test_mutated_chain_hash_is_detected() -> None:
     """Mutar un byte del chain_hash de un evento intermedio → detectado."""
     events = _build_chain(n=5)
-    event, self_h, chain_h = events[1]
+    event, self_h, chain_h, prev_h = events[1]
     # Elegir un char distinto del primero — el test era flaky 1/16 cuando
     # chain_h[0] casualmente era "f" y la mutación no cambiaba nada.
     new_first = "a" if chain_h[0] != "a" else "b"
     mutated_chain = new_first + chain_h[1:]
     assert mutated_chain != chain_h
-    events[1] = (event, self_h, mutated_chain)
+    events[1] = (event, self_h, mutated_chain, prev_h)
 
     valid, failing_index = verify_chain_integrity(events)
 
@@ -97,10 +101,10 @@ def test_mutated_chain_hash_is_detected() -> None:
 def test_mutated_payload_breaks_self_hash_consistency() -> None:
     """Mutar el payload (sin recomputar hash) → detectado en self_hash."""
     events = _build_chain(n=3)
-    event, self_h, chain_h = events[1]
+    event, self_h, chain_h, prev_h = events[1]
     # Mutar el payload pero NO recomputar self_hash
     mutated_event = {**event, "payload": {"step": 1, "msg": "tampered"}}
-    events[1] = (mutated_event, self_h, chain_h)
+    events[1] = (mutated_event, self_h, chain_h, prev_h)
 
     valid, failing_index = verify_chain_integrity(events)
 
@@ -111,14 +115,45 @@ def test_mutated_payload_breaks_self_hash_consistency() -> None:
 def test_break_at_first_event_detected() -> None:
     """Tampering en el primer evento (vs GENESIS) detectado en index=0."""
     events = _build_chain(n=3)
-    event, self_h, _chain_h = events[0]
+    event, self_h, _chain_h, prev_h = events[0]
     mutated_chain = "f" * 64  # totally bogus chain_hash
-    events[0] = (event, self_h, mutated_chain)
+    events[0] = (event, self_h, mutated_chain, prev_h)
 
     valid, failing_index = verify_chain_integrity(events)
 
     assert valid is False
     assert failing_index == 0
+
+
+def test_mutated_prev_chain_hash_is_detected() -> None:
+    """Alterar SOLO el prev_chain_hash persistido de una fila —sin tocar
+    self_hash ni chain_hash— se detecta ahora en ese índice.
+
+    Antes pasaba inadvertido: el campo se persistía pero el verificador no lo
+    cotejaba contra el chain_hash real del evento anterior. Cierra la
+    observación 1 del dictamen CoNaIISI (2026-08-25).
+    """
+    events = _build_chain(n=5)
+    event, self_h, chain_h, prev_h = events[3]
+    # prev_chain_hash falso, distinto del chain_hash real del evento 2.
+    bogus_prev = "e" * 64
+    assert bogus_prev != prev_h
+    events[3] = (event, self_h, chain_h, bogus_prev)
+
+    valid, failing_index = verify_chain_integrity(events)
+
+    assert valid is False
+    assert failing_index == 3
+
+
+def test_prev_chain_hash_de_3_tuplas_conserva_comportamiento_legacy() -> None:
+    """Una cadena de 3-tuplas (sin prev_chain_hash) sigue verificando por
+    self/chain como antes — retrocompatibilidad de fixtures y golden hashes."""
+    full = _build_chain(n=4)
+    legacy = [(ev[0], ev[1], ev[2]) for ev in full]
+    valid, failing_index = verify_chain_integrity(legacy)
+    assert valid is True
+    assert failing_index is None
 
 
 def test_empty_chain_is_valid() -> None:
