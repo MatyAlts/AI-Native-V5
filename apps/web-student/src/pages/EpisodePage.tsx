@@ -40,6 +40,7 @@ import { CodeEditor } from "../components/CodeEditor"
 import { NotesPanel } from "../components/NotesPanel"
 import { ReflectionModal } from "../components/ReflectionModal"
 import { useMediaQuery } from "../hooks/useMediaQuery"
+import { type LatchAbandono, crearLatchAbandono } from "../lib/abandonLatch"
 import {
   type AvailableTarea,
   type Classification,
@@ -266,7 +267,11 @@ export function EpisodeView({ episodeId, onExit, ejercicioContext, getToken }: E
   // Guard de idempotencia local del abandono: el backend ya es idempotente por
   // estado de sesion (ADR-025), pero esto evita spamear el endpoint cuando
   // beforeunload y visibilitychange→hidden disparan en sucesion (fix QA #9).
-  const abandonEmittedRef = useRef(false)
+  //
+  // NO es un booleano: `beforeunload` dispara ANTES de saber si el alumno se va
+  // o se queda, asi que un guard plano se envenenaba con el primer "Quedarse" y
+  // el cierre real ya no emitia nunca. Ver `lib/abandonLatch.ts`.
+  const [abandonLatch] = useState<LatchAbandono>(crearLatchAbandono)
   // Guard de idempotencia del marcado de ejercicio completado (NB-12): el
   // cierre del episodio puede llegar por dos caminos que corren en carrera —
   // el ClassificationPanel (onReset) cuando la clasificacion resuelve, y el
@@ -369,20 +374,19 @@ export function EpisodeView({ episodeId, onExit, ejercicioContext, getToken }: E
       // fetch(keepalive) con Bearer (sobrevive el unload y lleva el token);
       // sin el, caia a sendBeacon → sin Authorization → 401 en prod → el
       // evento nunca se appendea (fix QA #9). Guard local para no spamear.
-      if (!abandonEmittedRef.current) {
-        abandonEmittedRef.current = true
+      abandonLatch.intentarPorUnload(() => {
         void emitEpisodioAbandonado(
           episodeId,
           { reason: "beforeunload", last_activity_seconds_ago: 0 },
           getToken,
         )
-      }
+      })
       event.preventDefault()
       event.returnValue = ""
     }
     window.addEventListener("beforeunload", handler)
     return () => window.removeEventListener("beforeunload", handler)
-  }, [episodeId, closed, getToken])
+  }, [episodeId, closed, getToken, abandonLatch])
 
   // Integridad de pestaña: detecta cuando el alumno deja de ver el episodio
   // y vuelve. Usamos SOLO `visibilitychange` (NO `window blur`): blur se
@@ -688,7 +692,9 @@ export function EpisodeView({ episodeId, onExit, ejercicioContext, getToken }: E
     actionInFlightRef.current = true
     setSubmitting(true)
     setError(null)
-    abandonEmittedRef.current = true
+    // Definitivo, a diferencia del `beforeunload`: el episodio se pauso de
+    // verdad y el unload posterior no debe volver a emitir.
+    abandonLatch.marcarDefinitivo()
     try {
       await emitEpisodioAbandonado(
         episodeId,
