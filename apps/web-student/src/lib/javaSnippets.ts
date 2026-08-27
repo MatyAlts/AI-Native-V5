@@ -4,7 +4,10 @@
  * ALCANCE DELIBERADO — solo ceremonia, nunca logica
  * -------------------------------------------------
  * Java obliga al alumno a escribir andamiaje que no es lo que se esta
- * evaluando: `System.out.println`, getters/setters, el `import` del Scanner.
+ * evaluando: `System.out.println`, getters/setters, el `import` del Scanner,
+ * los constructores que repiten `this.x = x` una vez por campo y los overrides
+ * canonicos (`toString`, `equals`, `hashCode`), cuyo cuerpo queda determinado
+ * por los campos y no admite decision del alumno.
  * Eso es ruido de sintaxis, no elaboracion. El editor ya asume esa postura en
  * otro lado: `LANGUAGE_PLACEHOLDER.java` (ver `api.ts`) abre el archivo con la
  * clase `Main` y su `main` ya escritos, porque el runner corre literalmente
@@ -43,6 +46,10 @@ export const SNIPPET_ACCEPTED_COMMAND_ID = "aiNative.javaSnippetAccepted"
 
 /** Import que el snippet `scanner` necesita tener arriba del archivo. */
 const SCANNER_IMPORT = "import java.util.Scanner;"
+
+/** Imports que necesitan los overrides de igualdad (JAVA-2). */
+const OBJECTS_IMPORT = "import java.util.Objects;"
+const ARRAYS_IMPORT = "import java.util.Arrays;"
 
 export interface FieldDecl {
   /** Tipo declarado, tal cual aparece en el fuente (`int`, `String`, `double`). */
@@ -120,6 +127,169 @@ export function setterSource(field: FieldDecl): string {
 /** Un accesor ya definido no se vuelve a ofrecer. */
 function hasMethod(source: string, method: string): boolean {
   return new RegExp(`\\b${method}\\s*\\(`).test(source)
+}
+
+// ── JAVA-2: constructores y overrides ────────────────────────────────────────
+//
+// Todo lo de abajo es ceremonia canonica: dado el conjunto de campos, el cuerpo
+// del constructor, del `toString`, del `equals` y del `hashCode` no admite
+// decision del alumno — se escriben SIEMPRE igual. Es exactamente el andamiaje
+// que Java exige y que no es lo que la materia evalua.
+
+/** Una clase declarada en el archivo, con el fuente que le corresponde. */
+export interface ClassBlock {
+  name: string
+  /** Fuente desde su `class X` hasta la declaracion de la clase siguiente (o
+   * el fin del archivo). Sirve para atribuirle SUS campos y SUS metodos. */
+  source: string
+}
+
+const CLASS_DECL_RE =
+  /^[ \t]*(?:(?:public|final|abstract|static|private|protected)[ \t]+)*class[ \t]+([A-Za-z_$][\w$]*)/gm
+
+/**
+ * Parte el archivo por declaracion de clase.
+ *
+ * Regex y no parser, igual que `parseFields`: el codigo de Programacion 1 es un
+ * archivo con la clase `Main` y, a lo sumo, una clase auxiliar plana al lado.
+ *
+ * El corte es por declaracion, NO por llaves balanceadas: una clase anidada
+ * quedaria como un bloque hermano y le robaria el resto del fuente a la que la
+ * contiene. Es la misma aproximacion (y la misma limitacion) que ya tenia
+ * `parseFields`, que mira el archivo entero.
+ */
+export function parseClassBlocks(source: string): ClassBlock[] {
+  const marcas: { name: string; index: number }[] = []
+  CLASS_DECL_RE.lastIndex = 0
+  let m: RegExpExecArray | null = CLASS_DECL_RE.exec(source)
+  while (m !== null) {
+    const name = m[1]
+    if (name) marcas.push({ name, index: m.index })
+    m = CLASS_DECL_RE.exec(source)
+  }
+  return marcas.map((marca, i) => ({
+    name: marca.name,
+    source: source.slice(marca.index, marcas[i + 1]?.index ?? source.length),
+  }))
+}
+
+/**
+ * Listas de parametros (crudas, sin parsear) de los constructores ya
+ * declarados en la clase. `[""]` significa "hay un constructor sin argumentos".
+ *
+ * Existe para no ofrecer dos veces lo mismo: si el alumno ya escribio el
+ * constructor completo, el snippet desaparece.
+ */
+export function declaredConstructorParams(classSource: string, className: string): string[] {
+  // `$` es legal en un identificador Java y significa "fin de input" en una
+  // regex: sin escaparlo, una clase `A$B` construiria un patron que no matchea
+  // nada (o peor, matchea de mas).
+  const re = new RegExp(
+    `^[ \\t]*(?:(?:public|protected|private)[ \\t]+)?${className.replace(/\$/g, "\\$")}[ \\t]*\\(([^)\\n]*)\\)`,
+    "gm",
+  )
+  const out: string[] = []
+  let m: RegExpExecArray | null = re.exec(classSource)
+  while (m !== null) {
+    out.push(m[1] ?? "")
+    m = re.exec(classSource)
+  }
+  return out
+}
+
+const PRIMITIVOS = new Set(["boolean", "byte", "char", "short", "int", "long", "float", "double"])
+
+function esArray(field: FieldDecl): boolean {
+  return field.type.endsWith("[]")
+}
+
+/** Constructor con TODOS los campos, en el orden en que estan declarados. */
+export function constructorSource(className: string, fields: readonly FieldDecl[]): string {
+  const params = fields.map((f) => `${f.type} ${f.name}`).join(", ")
+  const cuerpo = fields.map((f) => `    this.${f.name} = ${f.name};`)
+  return [`public ${className}(${params}) {`, ...cuerpo, "}"].join("\n")
+}
+
+/** Constructor sin argumentos. Java lo deja de dar gratis apenas escribis otro. */
+export function emptyConstructorSource(className: string): string {
+  return [`public ${className}() {`, "}"].join("\n")
+}
+
+/**
+ * `toString` con todos los campos. Concatenacion con `+` a proposito: es lo que
+ * se ensena en la cursada, y `String.format` agregaria una sintaxis nueva.
+ *
+ * Los arrays van por `Arrays.toString`: concatenar un array con `+` imprime su
+ * referencia (`[D@1b6d3586`), que es exactamente el tipo de "anda pero esta
+ * mal" que un snippet no puede regalar.
+ */
+export function toStringSource(className: string, fields: readonly FieldDecl[]): string {
+  if (fields.length === 0) {
+    return ["@Override", "public String toString() {", `    return "${className}{}";`, "}"].join(
+      "\n",
+    )
+  }
+  const partes = fields.map((f, i) => {
+    const valor = esArray(f) ? `Arrays.toString(${f.name})` : f.name
+    return `"${i === 0 ? "" : ", "}${f.name}=" + ${valor}`
+  })
+  return [
+    "@Override",
+    "public String toString() {",
+    `    return "${className}{" + ${partes.join(" + ")} + "}";`,
+    "}",
+  ].join("\n")
+}
+
+/** Comparacion de UN campo dentro de `equals`, segun su tipo. */
+function equalsCampo(field: FieldDecl): string {
+  if (esArray(field)) return `Arrays.equals(this.${field.name}, otro.${field.name})`
+  if (field.type === "float") return `Float.compare(this.${field.name}, otro.${field.name}) == 0`
+  if (field.type === "double") return `Double.compare(this.${field.name}, otro.${field.name}) == 0`
+  if (PRIMITIVOS.has(field.type)) return `this.${field.name} == otro.${field.name}`
+  return `Objects.equals(this.${field.name}, otro.${field.name})`
+}
+
+/**
+ * `equals` canonico: identidad, null + clase, cast, campo por campo.
+ *
+ * `float`/`double` van por `compare` y no por `==` porque `NaN != NaN` y
+ * `0.0 == -0.0`, que rompen el contrato de `equals`. Los arrays van por
+ * `Arrays.equals` porque el `==` de un array compara referencias.
+ */
+export function equalsSource(className: string, fields: readonly FieldDecl[]): string {
+  return [
+    "@Override",
+    "public boolean equals(Object o) {",
+    "    if (this == o) return true;",
+    "    if (o == null || getClass() != o.getClass()) return false;",
+    `    ${className} otro = (${className}) o;`,
+    `    return ${fields.map(equalsCampo).join(" && ")};`,
+    "}",
+  ].join("\n")
+}
+
+/** `hashCode` consistente con el `equals` de arriba (mismos campos, mismo trato). */
+export function hashCodeSource(fields: readonly FieldDecl[]): string {
+  const args = fields.map((f) => (esArray(f) ? `Arrays.hashCode(${f.name})` : f.name))
+  return [
+    "@Override",
+    "public int hashCode() {",
+    `    return Objects.hash(${args.join(", ")});`,
+    "}",
+  ].join("\n")
+}
+
+/** Imports que `equals`/`hashCode` necesitan segun los campos involucrados. */
+export function importsParaIgualdad(fields: readonly FieldDecl[]): string[] {
+  const imports = [OBJECTS_IMPORT]
+  if (fields.some(esArray)) imports.push(ARRAYS_IMPORT)
+  return imports
+}
+
+/** Import que `toString` necesita: solo si hay algun campo array. */
+export function importsParaToString(fields: readonly FieldDecl[]): string[] {
+  return fields.some(esArray) ? [ARRAYS_IMPORT] : []
 }
 
 /**
@@ -221,12 +391,18 @@ export function registerJavaSnippets(
       const lines = source.split("\n")
       const suggestions: Monaco.languages.CompletionItem[] = []
 
-      /** Edit que agrega el import arriba del archivo, si todavia no esta. */
+      /** Edit que agrega los imports faltantes arriba del archivo.
+       *
+       * Un SOLO edit con todos: dos edits en el mismo rango se pisan entre si
+       * al aplicarse (`equals` con un campo array necesita `Objects` y
+       * `Arrays` a la vez). */
       const importEdits = (
-        importStmt: string | undefined,
+        ...requeridos: (string | undefined)[]
       ): Monaco.editor.ISingleEditOperation[] | undefined => {
-        if (!importStmt) return undefined
-        if (source.includes(importStmt)) return undefined
+        const faltantes = requeridos.filter(
+          (imp): imp is string => Boolean(imp) && !source.includes(imp as string),
+        )
+        if (faltantes.length === 0) return undefined
         const line = importInsertLine(lines)
         return [
           {
@@ -236,7 +412,7 @@ export function registerJavaSnippets(
               startColumn: 1,
               endColumn: 1,
             },
-            text: `${importStmt}\n`,
+            text: `${faltantes.join("\n")}\n`,
           },
         ]
       }
@@ -304,6 +480,95 @@ export function registerJavaSnippets(
           range,
           command: acceptCommand,
         })
+      }
+
+      // ── JAVA-2: constructores y overrides, por clase declarada ────────────
+      // Se resuelven POR BLOQUE de clase (a diferencia de los accesores, que
+      // miran el archivo entero): un constructor de `Main` con los campos de
+      // `Persona` no seria ceremonia, seria basura.
+      for (const bloque of parseClassBlocks(source)) {
+        const camposClase = parseFields(bloque.source)
+        // Sin campos no hay ceremonia que ahorrar: un `ctorvacio` o un
+        // `toString` de la clase `Main` (que nunca tiene estado) es ruido en la
+        // lista de sugerencias, no ayuda.
+        if (camposClase.length === 0) continue
+        const ctorParams = declaredConstructorParams(bloque.source, bloque.name)
+        const tieneCtorVacio = ctorParams.some((p) => p.trim() === "")
+        const tieneCtorConArgs = ctorParams.some((p) => p.trim() !== "")
+
+        if (!tieneCtorConArgs) {
+          suggestions.push({
+            label: "ctor",
+            kind: monaco.languages.CompletionItemKind.Snippet,
+            detail: `Constructor completo de ${bloque.name} (${camposClase.length} campos)`,
+            documentation: `Recibe todos los campos de ${bloque.name} y los asigna.`,
+            insertText: constructorSource(bloque.name, camposClase),
+            insertTextRules: monaco.languages.CompletionItemInsertTextRule.InsertAsSnippet,
+            range,
+            command: acceptCommand,
+          })
+        }
+
+        if (!tieneCtorVacio) {
+          suggestions.push({
+            label: "ctorvacio",
+            kind: monaco.languages.CompletionItemKind.Snippet,
+            detail: `Constructor sin argumentos de ${bloque.name}`,
+            // Java deja de dar el constructor por omision apenas escribis otro:
+            // el vacio hay que volver a declararlo a mano, y eso sorprende.
+            documentation: `Constructor vacio de ${bloque.name}.`,
+            insertText: emptyConstructorSource(bloque.name),
+            insertTextRules: monaco.languages.CompletionItemInsertTextRule.InsertAsSnippet,
+            range,
+            command: acceptCommand,
+          })
+        }
+
+        if (!hasMethod(bloque.source, "toString")) {
+          const extra = importEdits(...importsParaToString(camposClase))
+          suggestions.push({
+            label: "tostring",
+            kind: monaco.languages.CompletionItemKind.Snippet,
+            detail: `toString() de ${bloque.name}`,
+            documentation: `Representacion en texto de ${bloque.name} con todos sus campos.`,
+            insertText: toStringSource(bloque.name, camposClase),
+            insertTextRules: monaco.languages.CompletionItemInsertTextRule.InsertAsSnippet,
+            range,
+            command: acceptCommand,
+            ...(extra ? { additionalTextEdits: extra } : {}),
+          })
+        }
+
+        const importsIgualdad = importsParaIgualdad(camposClase)
+        if (!hasMethod(bloque.source, "equals")) {
+          const extra = importEdits(...importsIgualdad)
+          suggestions.push({
+            label: "equals",
+            kind: monaco.languages.CompletionItemKind.Snippet,
+            detail: `equals(Object) de ${bloque.name}`,
+            documentation: "Igualdad por valor, campo por campo. Agrega los imports si faltan.",
+            insertText: equalsSource(bloque.name, camposClase),
+            insertTextRules: monaco.languages.CompletionItemInsertTextRule.InsertAsSnippet,
+            range,
+            command: acceptCommand,
+            ...(extra ? { additionalTextEdits: extra } : {}),
+          })
+        }
+        if (!hasMethod(bloque.source, "hashCode")) {
+          const extra = importEdits(...importsIgualdad)
+          suggestions.push({
+            label: "hashCode",
+            kind: monaco.languages.CompletionItemKind.Snippet,
+            detail: `hashCode() de ${bloque.name}`,
+            documentation:
+              "Hash consistente con equals (mismos campos). Agrega los imports si faltan.",
+            insertText: hashCodeSource(camposClase),
+            insertTextRules: monaco.languages.CompletionItemInsertTextRule.InsertAsSnippet,
+            range,
+            command: acceptCommand,
+            ...(extra ? { additionalTextEdits: extra } : {}),
+          })
+        }
       }
 
       return { suggestions }
