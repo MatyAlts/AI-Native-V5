@@ -1249,6 +1249,30 @@ export async function getEntregaForTp(
 }
 
 /**
+ * Lista TODAS las entregas del estudiante en una comision.
+ *
+ * Mismo endpoint que `getEntregaForTp`, sin el filtro por TP: el backend
+ * (`evaluation-service/routes/entregas.py::list_entregas`) tiene ambos query
+ * params opcionales y para un usuario sin rol docente fuerza
+ * `student_pseudonym = user.id`, asi que un alumno solo puede ver las propias.
+ *
+ * La usa el onboarding progresivo para responder "¿entrego alguna vez?" sin
+ * pedir una TP por vez ni agregar un endpoint nuevo.
+ */
+export async function listMisEntregas(
+  comisionId: string,
+  getToken?: TokenGetter,
+): Promise<Entrega[]> {
+  const qs = new URLSearchParams({ comision_id: comisionId, limit: "50" })
+  const r = await fetch(`/api/v1/entregas?${qs.toString()}`, {
+    headers: await authHeaders(getToken),
+  })
+  if (!r.ok) throw new Error(`list mis entregas failed: ${r.status}`)
+  const body = (await r.json()) as { data: Entrega[]; meta: unknown }
+  return body.data
+}
+
+/**
  * Marca un ejercicio como completado dentro de una entrega (ADR-047).
  * Llamado despues de cerrar el episodio del ejercicio correspondiente.
  * PATCH /api/v1/entregas/{id}/ejercicio/{orden}
@@ -1281,6 +1305,7 @@ export const entregasApi = {
   createOrGet: createOrGetEntrega,
   submit: submitEntrega,
   getForTp: getEntregaForTp,
+  listMine: listMisEntregas,
   getCalificacion,
   listEjerciciosTp,
   markEjercicioCompleted,

@@ -48,6 +48,8 @@ import {
   tareasPracticasApi,
   tpEjerciciosApi,
 } from "../lib/api"
+import { useTutorialDeVista } from "../tour/useTutorialDeVista"
+import { correccionesTour } from "../tour/vistas"
 import { ejerciciosParaResumen } from "../utils/correccionIA"
 import { studentShortLabel } from "../utils/docenteLabels"
 import { helpContent } from "../utils/helpContent"
@@ -240,6 +242,11 @@ function EntregasListView({
     }
   }, [entregas, getToken])
 
+  // Tutorial de la vista (capa 2). Vive aca y no en `CorreccionesView` para que se
+  // dispare solo en el listado: la vista de correccion y la cola en lote son otro
+  // momento, y ahi un tour encima estorba.
+  useTutorialDeVista(correccionesTour, !loading)
+
   if (!comisionId) {
     return (
       <div className="rounded-2xl border border-dashed border-border bg-surface p-10 text-center animate-fade-in-up">
@@ -298,6 +305,7 @@ function EntregasListView({
         <div
           role="tablist"
           aria-label="Filtro por estado"
+          data-tour="correcciones:filtros"
           className="flex items-center gap-1 bg-surface border border-border rounded-lg p-1 w-fit shadow-[0_1px_2px_0_rgba(0,0,0,0.04)] animate-fade-in-up"
         >
           {(["", "draft", "submitted", "graded", "returned"] as const).map((f) => {
@@ -336,6 +344,7 @@ function EntregasListView({
                 type="button"
                 onClick={() => onStartBatch(pendientesQueue)}
                 data-testid="corregir-en-lote-btn"
+                data-tour="correcciones:lote"
                 className="press-shrink inline-flex items-center gap-2 rounded-lg px-3.5 py-2 text-sm font-medium text-white transition-colors animate-fade-in-up"
                 style={{ backgroundColor: "var(--color-accent-brand)" }}
                 onMouseEnter={(e) => {
@@ -435,6 +444,7 @@ function EntregasListView({
         <ul
           className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4"
           data-testid="entregas-table"
+          data-tour="correcciones:lista"
         >
           {filteredEntregas.map((entrega, idx) => {
             const tarea = tareasByID[entrega.tarea_practica_id]

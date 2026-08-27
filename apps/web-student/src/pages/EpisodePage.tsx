@@ -815,6 +815,7 @@ export function EpisodeView({ episodeId, onExit, ejercicioContext, getToken }: E
     <section
       className="animate-fade-in-up animate-delay-100 flex-1 flex flex-col rounded-xl border border-border bg-surface overflow-hidden shadow-[0_1px_3px_-1px_rgba(0,0,0,0.04)]"
       aria-label="Editor de código"
+      data-tour="editor-codigo"
     >
       <PanelHeader
         level="N3"
@@ -928,6 +929,7 @@ export function EpisodeView({ episodeId, onExit, ejercicioContext, getToken }: E
     <section
       className="animate-fade-in-up animate-delay-150 flex-1 flex flex-col rounded-xl border border-border bg-surface overflow-hidden shadow-[0_1px_3px_-1px_rgba(0,0,0,0.04)]"
       aria-label="Tutor socrático"
+      data-tour="tutor-chat"
     >
       <PanelHeader
         level="N4"

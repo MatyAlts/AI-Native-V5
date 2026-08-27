@@ -12,6 +12,8 @@ import {
   getEpisodeClassification,
   getEpisodeNLevelDistribution,
 } from "../lib/api"
+import { useTutorialDeVista } from "../tour/useTutorialDeVista"
+import { nivelesTour } from "../tour/vistas"
 import { NLEVEL_DOCENTE, NLEVEL_INVESTIGADOR, explicarEstadoDocente } from "../utils/docenteLabels"
 import { helpContent } from "../utils/helpContent"
 
@@ -229,6 +231,10 @@ export function EpisodeNLevelView({ getToken, initialEpisodeId }: Props) {
     ? dominantLevel(data.distribution_seconds, isDocente ? NLEVEL_DOCENTE : NLEVEL_INVESTIGADOR)
     : null
 
+  // Tutorial de la vista (capa 2). Espera a que haya una sesion cargada: sin datos
+  // esta pantalla es un formulario de busqueda y no hay nada que explicar todavia.
+  useTutorialDeVista(nivelesTour, data !== null)
+
   return (
     <PageContainer
       title={isDocente ? "Que hizo el alumno en esta sesion" : "Distribucion N1-N4 por episodio"}
@@ -289,14 +295,19 @@ export function EpisodeNLevelView({ getToken, initialEpisodeId }: Props) {
 
         {data && (
           <>
-            {isDocente && dom && <DocenteInterpretation dominant={dom} />}
             {isDocente && (
-              <DocenteAppropriationVerdict classification={classification} distribution={data} />
+              <div className="space-y-6" data-tour="niveles:lectura">
+                {dom && <DocenteInterpretation dominant={dom} />}
+                <DocenteAppropriationVerdict classification={classification} distribution={data} />
+              </div>
             )}
             {classification?.regimen_llm && <DocenteJuezLLM regimen={classification.regimen_llm} />}
-            <div className="rounded-xl border border-border bg-white overflow-hidden">
+            <div
+              className="rounded-xl border border-border bg-white overflow-hidden"
+              data-tour="niveles:distribucion"
+            >
               <div className="flex items-start justify-between gap-4 border-b border-border px-6 py-4">
-                <div>
+                <div data-tour="niveles:episodio">
                   <div className="text-xs uppercase tracking-wider text-muted mb-1">
                     {isDocente ? "Sesion" : "Episodio"}
                   </div>

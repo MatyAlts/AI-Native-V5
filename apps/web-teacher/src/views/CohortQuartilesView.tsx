@@ -299,17 +299,19 @@ export function CohortQuartilesView({ getToken, initialComisionId }: Props) {
 
         {data && !loading && (
           <>
-            {/* Privacy gate — todavia no hay datos suficientes */}
+            {/* Privacy gate (k-anonymity, ADR-022). No es "faltan datos": el calculo
+                se puede hacer y a proposito no se muestra, porque con una cohorte
+                chica la distribucion permite deducir a cada alumno. */}
             {data.insufficient_data && (
               <div className="rounded-xl border border-warning/30 bg-warning-soft px-6 py-4 text-sm text-warning">
                 <div className="font-semibold mb-1">
                   {isDocente
-                    ? "Datos insuficientes para mostrar la distribución"
+                    ? "La distribución no se muestra en cohortes chicas"
                     : "Insufficient data"}
                 </div>
                 <div>
                   {isDocente
-                    ? `Necesitamos al menos ${data.min_students_for_quartiles} alumnos con episodios suficientes. La cohorte tiene ${data.n_students_evaluated} con datos por ahora — esperá a que cierren más episodios.`
+                    ? `La cohorte tiene ${data.n_students_evaluated} alumnos con recorrido suficiente y hacen falta ${data.min_students_for_quartiles}. No es que falten datos para calcularla: con tan pocos alumnos, la distribución permitiría deducir el desempeño de cada uno, así que el panel se reserva hasta llegar al mínimo.`
                     : `La cohorte tiene ${data.n_students_evaluated} estudiantes con mean_slope computable; se requieren ${data.min_students_for_quartiles} (k-anonymity, ADR-022). Esperar mas episodios cerrados o ampliar el periodo de la cohorte.`}
                 </div>
               </div>

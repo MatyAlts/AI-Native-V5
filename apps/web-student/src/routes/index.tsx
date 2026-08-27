@@ -139,7 +139,7 @@ export function HomeContent({ isLoading, error, materias, onEnter }: HomeContent
         {usaListaDensa ? (
           <DensaList materias={materias} onEnter={onEnter} />
         ) : (
-          <ul className="space-y-4">
+          <ul className="space-y-4" data-tour="mis-materias">
             {materias.map((m, idx) => (
               <li
                 key={m.inscripcion_id}
@@ -395,6 +395,7 @@ function DensaList({
     <ul
       className="rounded-xl border border-border bg-surface divide-y divide-border-soft overflow-hidden"
       data-testid="home-densa-list"
+      data-tour="mis-materias"
     >
       {materias.map((m, idx) => {
         const comisionLabel = m.comision_nombre ?? `Comisión ${m.comision_codigo}`

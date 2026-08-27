@@ -11,7 +11,15 @@
  * Route.useSearch().
  */
 import { UserButton } from "@clerk/clerk-react"
-import { AuditFooter, type NavGroup, Sidebar } from "@platform/ui"
+import {
+  AuditFooter,
+  type NavGroup,
+  type OnboardingFlow,
+  OnboardingProvider,
+  Sidebar,
+  TourProvider,
+  useTour,
+} from "@platform/ui"
 import {
   Outlet,
   createRootRouteWithContext,
@@ -23,6 +31,7 @@ import {
   BookOpen,
   CheckSquare,
   ClipboardList,
+  Compass,
   Cpu,
   Download,
   FlaskConical,
@@ -36,12 +45,24 @@ import {
   TrendingUp,
   Users,
 } from "lucide-react"
-import { useCallback } from "react"
+import { type ReactNode, useCallback, useEffect } from "react"
 import { ComisionSelectorRouted } from "../components/ComisionSelectorRouted"
 import { TenantSelector } from "../components/TenantSelector"
 import { ViewModeToggle } from "../components/ViewModeToggle"
+import { docenteOnboarding } from "../onboarding/docenteOnboarding"
+import { type EstadoDocente, useEstadoDocente } from "../onboarding/estadoDocente"
+import { docenteTour } from "../tour/docenteTour"
 
 const HAS_CLERK = !!import.meta.env.VITE_CLERK_PUBLISHABLE_KEY
+
+/**
+ * Comision elegida en el selector, persistida por `ComisionSelectorRouted`. Es el
+ * fallback cuando el search de la ruta actual no la trae (rutas con path param, o
+ * recarga inicial sin search).
+ */
+function comisionGuardada(): string | null {
+  return typeof window !== "undefined" ? window.localStorage.getItem("selectedComisionId") : null
+}
 
 export interface RouterContext {
   /** Función de auth, placeholder hasta integración Keycloak (F8). */
@@ -89,21 +110,92 @@ const NAV_GROUPS: NavGroup[] = [
   },
 ]
 
+/** Dispara el tour en el primer ingreso. Vive adentro del provider para poder usar el hook. */
+function TourAutoStart() {
+  const { maybeStart } = useTour()
+  useEffect(() => {
+    maybeStart(docenteTour)
+  }, [maybeStart])
+  return null
+}
+
+/**
+ * Mismo flow, sin carteles. Es como apagamos el onboarding por estado mientras corre un
+ * tour: los dos mecanismos son ciegos entre si, y el arbitraje corresponde a esta capa,
+ * que es la unica que conoce a los dos.
+ *
+ * Conserva el `id` del flow real a proposito: es el prefijo de los descartes en
+ * localStorage. Con otro id, alternar de uno al otro leeria un catalogo vacio y le
+ * resucitaria al docente carteles que ya habia cerrado.
+ */
+const DOCENTE_SIN_CARTELES: OnboardingFlow<EstadoDocente> = {
+  id: docenteOnboarding.id,
+  hints: [],
+}
+
+/**
+ * Onboarding por estado. Vive ADENTRO del TourProvider a proposito: necesita saber si
+ * hay un tour corriendo para no abrir un cartel encima del recorrido guiado. Los dos
+ * iluminan el mismo sidebar, asi que superpuestos no son el doble de ayuda: son ruido.
+ */
+function OnboardingDocente({
+  comisionActivaId,
+  route,
+  children,
+}: {
+  comisionActivaId: string | null
+  route: string
+  children: ReactNode
+}) {
+  const { activo } = useTour()
+  const estado = useEstadoDocente(comisionActivaId)
+  return (
+    <OnboardingProvider
+      flow={activo ? DOCENTE_SIN_CARTELES : docenteOnboarding}
+      estado={estado}
+      route={route}
+    >
+      {children}
+    </OnboardingProvider>
+  )
+}
+
+/** Relanzar el tour a mano. El primer ingreso pasa una vez; las dudas vuelven. */
+function TourRelanzar() {
+  const { start, activo } = useTour()
+  if (activo) return null
+  return (
+    <button
+      type="button"
+      onClick={() => start(docenteTour)}
+      title="Ver el tour de nuevo"
+      className="text-muted hover:text-ink focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-border-strong"
+    >
+      <Compass className="h-4 w-4" aria-hidden="true" />
+      <span className="sr-only">Ver el tour de nuevo</span>
+    </button>
+  )
+}
+
 function RootLayout() {
   const navigate = useNavigate()
   const search = useRouterState({
     select: (s) => s.location.search as Record<string, unknown>,
   })
+  // Ruta actual sin el basepath del router (`/teacher`): es lo que los carteles del
+  // onboarding comparan contra su `route`. El motor no conoce el router.
+  const rutaActual = useRouterState({
+    select: (s) => s.matches[s.matches.length - 1]?.fullPath ?? "/",
+  })
   const searchComisionId = typeof search.comisionId === "string" ? search.comisionId : null
+  const comisionActivaId = searchComisionId ?? comisionGuardada()
   const handleNavigate = useCallback(
     (id: string) => {
       // El sidebar navega entre rutas que requieren `comisionId` (search) y rutas
       // que no. Preservar el comisionId actual entre clicks evita el loop al home.
       // Fallback a localStorage cuando venimos de /comision/$id (path param) o de
       // recarga inicial sin search.
-      const fromStorage =
-        typeof window !== "undefined" ? window.localStorage.getItem("selectedComisionId") : null
-      const carry = searchComisionId ?? fromStorage
+      const carry = searchComisionId ?? comisionGuardada()
       if (carry) {
         navigate({
           to: id as never,
@@ -120,53 +212,66 @@ function RootLayout() {
     [navigate, searchComisionId],
   )
 
+  // El tour usa EL MISMO navegador que el sidebar, y no uno propio: `navigate({ to })`
+  // sin `search` DESCARTA los query params, y ahi vive el `comisionId` — el estado
+  // global que consume `ComisionSelectorRouted` y del que dependen /ejercicios,
+  // /tareas-practicas y /correcciones (sin el redirigen al home). Un tour con su
+  // propio navegador le borraba al docente la comision elegida y se rebotaba solo.
+
   return (
-    <div className="min-h-screen flex flex-col bg-canvas text-ink">
-      <header
-        data-testid="teacher-global-header"
-        className="border-b border-border bg-white px-6 h-12 flex items-center justify-between gap-4 shrink-0"
-      >
-        <div className="flex items-center gap-3 min-w-0">
-          <span
-            aria-hidden="true"
-            className="inline-block w-1.5 h-4 rounded-sm"
-            style={{ backgroundColor: "var(--color-accent-brand)" }}
-          />
-          <h1 className="text-sm font-semibold tracking-tight text-ink">
-            Plataforma N4 <span className="text-muted mx-1">·</span> UTN
-          </h1>
-        </div>
-        <div className="flex items-center gap-3 shrink-0">
-          <ViewModeToggle />
-          <span className="w-px h-5 bg-border" aria-hidden="true" />
-          <TenantSelector />
-          <span className="w-px h-5 bg-border" aria-hidden="true" />
-          <ComisionSelectorRouted />
-          {HAS_CLERK && (
-            <>
+    <TourProvider navigate={handleNavigate}>
+      <OnboardingDocente comisionActivaId={comisionActivaId} route={rutaActual}>
+        <TourAutoStart />
+        <div className="min-h-screen flex flex-col bg-canvas text-ink">
+          <header
+            data-testid="teacher-global-header"
+            className="border-b border-border bg-white px-6 h-12 flex items-center justify-between gap-4 shrink-0"
+          >
+            <div className="flex items-center gap-3 min-w-0">
+              <span
+                aria-hidden="true"
+                className="inline-block w-1.5 h-4 rounded-sm"
+                style={{ backgroundColor: "var(--color-accent-brand)" }}
+              />
+              <h1 className="text-sm font-semibold tracking-tight text-ink">
+                Plataforma N4 <span className="text-muted mx-1">·</span> UTN
+              </h1>
+            </div>
+            <div className="flex items-center gap-3 shrink-0">
+              <TourRelanzar />
               <span className="w-px h-5 bg-border" aria-hidden="true" />
-              <UserButton afterSignOutUrl="/teacher/" />
-            </>
-          )}
+              <ViewModeToggle />
+              <span className="w-px h-5 bg-border" aria-hidden="true" />
+              <TenantSelector />
+              <span className="w-px h-5 bg-border" aria-hidden="true" />
+              <ComisionSelectorRouted />
+              {HAS_CLERK && (
+                <>
+                  <span className="w-px h-5 bg-border" aria-hidden="true" />
+                  <UserButton afterSignOutUrl="/teacher/" />
+                </>
+              )}
+            </div>
+          </header>
+
+          <div className="flex-1 flex min-h-0">
+            <Sidebar
+              navGroups={NAV_GROUPS}
+              headerLabel="Docente · N4"
+              collapsedHeaderLabel="N4"
+              storageKey="web-teacher-sidebar-collapsed"
+              activeItemId={window.location.pathname}
+              onNavigate={handleNavigate}
+            />
+            <main className="flex-1 overflow-x-hidden overflow-y-auto bg-canvas">
+              <Outlet />
+            </main>
+          </div>
+
+          <AuditFooter episodeId={null} classifierHash={null} />
         </div>
-      </header>
-
-      <div className="flex-1 flex min-h-0">
-        <Sidebar
-          navGroups={NAV_GROUPS}
-          headerLabel="Docente · N4"
-          collapsedHeaderLabel="N4"
-          storageKey="web-teacher-sidebar-collapsed"
-          activeItemId={window.location.pathname}
-          onNavigate={handleNavigate}
-        />
-        <main className="flex-1 overflow-x-hidden overflow-y-auto bg-canvas">
-          <Outlet />
-        </main>
-      </div>
-
-      <AuditFooter episodeId={null} classifierHash={null} />
-    </div>
+      </OnboardingDocente>
+    </TourProvider>
   )
 }
 

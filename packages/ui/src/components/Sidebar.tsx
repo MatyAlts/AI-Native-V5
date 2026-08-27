@@ -188,6 +188,10 @@ function NavLink({ item, active, onNavigate, collapsed }: NavLinkProps): ReactNo
     <button
       type="button"
       onClick={() => onNavigate(item.id)}
+      // Ancla del onboarding tour. Derivarla del id en vez de pedirle un `data-tour`
+      // a cada NavItem hace que toda entrada del sidebar sea iluminable sin tocar
+      // los NAV_GROUPS de ningun frontend, hoy ni cuando se agregue una vista nueva.
+      data-tour={`nav:${item.id}`}
       className={`${baseClasses} ${stateClasses} ${justifyClass} w-full text-left`}
       aria-current={active ? "page" : undefined}
       title={collapsed ? item.label : undefined}

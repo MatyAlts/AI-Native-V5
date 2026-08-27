@@ -61,6 +61,8 @@ import {
   updateEjercicio,
 } from "../lib/api"
 import { type TestCaseRunResult, isPyodideRuntimeReady, runTestCases } from "../lib/pyodideRunner"
+import { useTutorialDeVista } from "../tour/useTutorialDeVista"
+import { ejerciciosTour } from "../tour/vistas"
 import { helpContent } from "../utils/helpContent"
 
 interface Props {
@@ -291,6 +293,10 @@ export function EjerciciosView({ comisionId, getToken }: Props) {
     fetchList()
   }, [fetchList])
 
+  // Tutorial de la vista (capa 2). Espera a que el banco haya cargado: los pasos
+  // anclados a la tabla no tienen que iluminar un esqueleto.
+  useTutorialDeVista(ejerciciosTour, !loading)
+
   // Ejercicios visibles tras aplicar la busqueda por texto (sobre la lista ya
   // filtrada/ordenada por el server). Matchea titulo, enunciado y el label de
   // la unidad tematica. Sin termino -> lista completa.
@@ -348,7 +354,7 @@ export function EjerciciosView({ comisionId, getToken }: Props) {
       helpContent={helpContent.ejercicios}
     >
       <div className="flex flex-wrap items-center justify-between gap-3 mb-4">
-        <div className="flex flex-wrap items-center gap-2">
+        <div className="flex flex-wrap items-center gap-2" data-tour="ejercicios:filtros">
           <div className="relative w-64">
             <Search className="pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2 w-4 h-4 text-muted" />
             <Input
@@ -403,7 +409,7 @@ export function EjerciciosView({ comisionId, getToken }: Props) {
             <option value="false">Creados manualmente</option>
           </select>
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2" data-tour="ejercicios:acciones">
           <button
             type="button"
             onClick={() => setModal({ kind: "ai-wizard" })}
@@ -483,7 +489,10 @@ export function EjerciciosView({ comisionId, getToken }: Props) {
       )}
 
       {!loading && visibles.length > 0 && (
-        <div className="border border-border rounded overflow-hidden bg-white">
+        <div
+          className="border border-border rounded overflow-hidden bg-white"
+          data-tour="ejercicios:lista"
+        >
           <table className="w-full text-sm">
             <thead className="bg-canvas border-b border-border">
               <tr>

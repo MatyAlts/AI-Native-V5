@@ -4,6 +4,7 @@ import { Outlet, createRootRouteWithContext } from "@tanstack/react-router"
 import { type ReactNode, useCallback, useEffect, useState } from "react"
 import { DEV_NO_CLERK, DEV_STUDENT_UUID, clearClerkUserId, setClerkUserId } from "../auth"
 import { TenantSelector } from "../components/TenantSelector"
+import { OnboardingAlumno } from "../onboarding/OnboardingAlumno"
 import { helpContent } from "../utils/helpContent"
 
 const ENROLLED_COMISION_KEY = "enrolledComisionId"
@@ -162,6 +163,7 @@ function InviteCodeScreen({
         <div className="space-y-3">
           <input
             type="text"
+            data-tour="codigo-comision"
             value={code}
             onChange={(e) => setCode(e.target.value.toUpperCase())}
             placeholder="Ej: C1-7X3K"
@@ -303,7 +305,9 @@ function ClerkRootLayout() {
           </div>
         </div>
       ) : (
-        <EnrollmentBody state={state} error={error} enroll={enroll} />
+        <OnboardingAlumno>
+          <EnrollmentBody state={state} error={error} enroll={enroll} />
+        </OnboardingAlumno>
       )}
     </LayoutShell>
   )
@@ -328,7 +332,9 @@ function DevRootLayout() {
 
   return (
     <LayoutShell headerActions={headerActions}>
-      <EnrollmentBody state={state} error={error} enroll={enroll} />
+      <OnboardingAlumno>
+        <EnrollmentBody state={state} error={error} enroll={enroll} />
+      </OnboardingAlumno>
     </LayoutShell>
   )
 }
