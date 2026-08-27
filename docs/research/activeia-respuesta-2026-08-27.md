@@ -22,7 +22,7 @@
 
 | # | Qué pedían | Estado |
 |---|---|---|
-| 1 | `depende_de_ejecucion` por criterio | **En curso** — herramienta lista, marcado y re-sync pendientes (§3) |
+| 1 | `depende_de_ejecucion` por criterio | **Hecho.** 34 criterios marcados en los 7 ejercicios del piloto (§3) |
 | 2 | Personería, por escrito | **[PENDIENTE DE COMPLETAR ANTES DE ENVIAR]** |
 | 3 | Confirmar el contrato + ventana de staging | **Confirmado de nuestro lado** (§4), y sí, queremos la ventana |
 | 4 | ¿Quién puede pedir una anonimización? | **Sólo un administrador de ustedes** (§5) |
@@ -64,31 +64,47 @@ hay campo de comisión que confundir.
 
 ---
 
-## 3. `depende_de_ejecucion` — cómo lo estamos haciendo y por qué tarda
+## 3. `depende_de_ejecucion` — hecho, y qué criterio usamos
 
 Su explicación del §3.1 nos convenció, incluido el argumento de por qué va determinístico en su
 backend y no en el prompt. *«Una garantía declarativa no es una garantía»* es exactamente la
 lección del bug 2, y coincidimos.
 
-**Lo que ya está resuelto:** el campo viaja solo. Nuestro sincronizador envía la rúbrica
-verbatim desde nuestra base, así que marcar el criterio es suficiente para que les llegue. No
-hay código de transporte que escribir.
+**Marcados los 34 criterios de los 7 ejercicios del piloto** (TP1 E1-E3, TP2 E1-E4, materia
+Paradigmas): **14 en `true`, 20 en `false`**.
 
-**Lo que falta y por qué no lo despachamos hoy:** decidir qué criterio depende de la ejecución
-es un juicio sobre el texto de cada criterio, y esas rúbricas corrigen entregas de ~87 alumnos
-reales. Automatizarlo con una heurística sobre castellano sería una adivinanza con buena
-presentación.
+La regla que aplicamos, por si les sirve para leer lo que les llega:
 
-Y el error no es simétrico. **Marcar de más es peor que no marcar**: un criterio de diseño
-marcado como dependiente se cerraría en 0 cada vez que un alumno no compila — o sea le bajaría
-la nota por algo que sí hizo. Que es, literalmente, el modo de falla que fuimos a reportarles.
+> `true` **sólo** si el criterio no se puede juzgar leyendo el código.
 
-Así que lo hicimos en dos fases con una persona en el medio: una herramienta propone sobre todos
-los criterios, un docente revisa el archivo, y una segunda pasada escribe sólo lo revisado.
+Y no lo decidimos con una heurística sobre el texto, aunque escribimos una: el error no es
+simétrico. **Marcar de más es peor que no marcar.** Un criterio de diseño marcado como
+dependiente se cierra en 0 cada vez que un alumno no compila — o sea le baja la nota por algo que
+sí hizo, que es literalmente el modo de falla que fuimos a reportarles. No marcar, en cambio,
+sólo deja la garantía apagada. Así que ante la duda va `false`, y cada uno de los 34 lo revisó
+una persona.
 
-**Cuando terminemos el marcado hay que re-sincronizar los TPs** para que ustedes reciban las
-rúbricas nuevas. Les avisamos cuando esté hecho: **hasta ese momento la garantía no aplica**, y
-preferimos que lo sepan a que lo deduzcan de sus logs.
+Los que quedaron en `true` son de dos clases: **formato y salida** («cada línea sale con el
+formato exacto pedido», «los tres rótulos con su sangría») y **comportamiento con un valor
+concreto** («Charla 0.0, Taller 5000.0 con notebook», «sin confirmar, `getTicket()` da null»,
+«el saldo nunca queda negativo»).
+
+Tres que dejamos en `false` y que muestran bien dónde pusimos el límite:
+
+- **«La excepción propia, verificada»** (extiende `Exception`, no `RuntimeException`) — es el
+  mismo ejemplo que ustedes usaron en su documento.
+- **«Suma polimórfica sin instanceof»** — ningún test puede verificar la *ausencia* de un
+  `instanceof`. Sólo se lee.
+- **«Wildcard acotado»** y **«Lista efectivamente tipada»** — son propiedades de compilación. Si
+  compila, ya están.
+
+También hay cuatro donde la mayor parte se lee y una puntita necesita correr — por ejemplo
+*«`inscribir()` la declara y la lanza, con el mensaje exacto»*. Quedaron en `false`: marcarlos
+haría que el alumno pierda **todo** el criterio, incluida la parte que sí hizo.
+
+**Sobre el sync:** verificamos que nunca sincronizamos una sola rúbrica con ustedes, así que no
+hay nada viejo del otro lado que corregir. **La primera sincronización ya va a llegar con las
+marcas puestas.**
 
 ---
 
@@ -205,7 +221,6 @@ sin haberlo pensado.
 
 | Qué | De quién | Bloquea |
 |---|---|---|
-| Marcado de `depende_de_ejecucion` + re-sync de los TPs | Nuestro | Que su garantía aplique |
 | Personería por escrito | Nuestro | Encender con datos de alumnos reales |
 | Canal de entrega de la credencial | A definir entre los dos | Que nos la puedan mandar |
 | Confirmar el nombre del campo de la nota (§4.2) | Suyo | Sacar la cascada de alternativas |

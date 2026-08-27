@@ -26,7 +26,11 @@
   `GET /documentos/correcciones/{correccion_id}/pdf`. Ojo: **`GET /entregas/{id}` está
   roto del lado del server** (500), por eso el poll va por `/correcciones/`
 - [ ] 0.5 Confirmar si AI-Native y Active-IA son la misma personería frente al consentimiento del piloto. Bloquea el despliegue con datos reales, no el desarrollo
-- [ ] 0.6 Entregar `docs/research/activeia-cambios-pedidos.md` al equipo de Active-IA
+- [x] 0.6 Entregar `docs/research/activeia-cambios-pedidos.md` al equipo de Active-IA — entregado; contestaron el 20/08 y de nuevo el 24/08 con §3.1-3.4 construidos. Respuesta nuestra en `docs/research/activeia-respuesta-2026-08-27.md`
+- [x] 0.7 Marcar `depende_de_ejecucion` en las rúbricas (§3.1 del pedido de ellos) — 34 criterios de los 7 ejercicios del piloto, 14 en `true`. Herramienta en dos fases en `scripts/marcar-depende-de-ejecucion.py`
+- [x] 0.8 Migrar el cliente al endpoint `POST /correcciones/ejercicios/{ref}/corregir` — se fueron el zip, el 409 y el poll. Cierra el «comision_id mal cableado»
+- [ ] 0.9 Confirmar con Active-IA el nombre del campo de la nota en la respuesta: hoy leemos `nota_100` y caemos a `nota`/`nota_final`/`calificacion`. Esa cascada funciona hasta el día que devuelve el campo equivocado
+- [ ] 0.10 Definir con Active-IA `salida_obtenida` vs `obtenido` en el detalle por caso: nuestro documento decía uno y el código manda el otro (ver §4.1 de la respuesta)
 
 ## 1. Epic 1 — La entrega contiene lo que se entregó (no depende de Active-IA)
 

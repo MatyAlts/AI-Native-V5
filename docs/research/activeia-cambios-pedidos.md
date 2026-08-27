@@ -221,12 +221,27 @@ POST /correcciones/ejercicios/{ejercicio_ref}/corregir
     "error_compilacion": null,
     "total": 4, "pasados": 4,
     "casos": [
-      { "id": "t1", "paso": true,
-        "entrada": "...", "esperado": "...", "obtenido": "..." }
+      { "id": "t1", "nombre": "suma de dos enteros", "paso": true,
+        "salida_obtenida": "...", "es_publico": true }
     ]
   }
 }
 ```
+
+> **Corregido el 2026-08-27.** Hasta hoy este bloque mostraba los casos como
+> `{id, paso, entrada, esperado, obtenido}` — y **no es lo que el código manda**. El nombre real
+> del campo de la salida es `salida_obtenida`, y viajan además `nombre` y `es_publico`.
+>
+> No era cosmético: si Active-IA armó su parser leyendo este documento, `obtenido` les llegaba
+> vacío, o sea perdían la salida real del alumno — el único hecho que esta sección existe para
+> darles.
+>
+> Peor todavía: mostraba `entrada` y `esperado`, que son **exactamente los campos de los casos
+> ocultos que el §3.3.1 declara NO enviar**. El documento se contradecía a sí mismo.
+>
+> La lección queda anotada en la nota del proyecto: un documento de contrato con un tercero es
+> código, y sin nada que lo compare contra lo que sale por el cable se pudre igual que un
+> comentario viejo — con la diferencia de que acá el que paga es el otro equipo.
 
 **`compila` es un campo aparte y no se deduce de `pasados: 0`** (agregado el 19/08). Son dos
 situaciones distintas y merecen devoluciones distintas:
