@@ -56,6 +56,12 @@ export interface FieldDecl {
   type: string
   /** Nombre del campo. */
   name: string
+  /** `final` entre los modificadores. Un campo final NO admite setter. */
+  esFinal: boolean
+  /** `static` entre los modificadores. */
+  esStatic: boolean
+  /** Trae inicializador en la propia declaracion (`= 20`). */
+  tieneInicializador: boolean
 }
 
 /**
@@ -65,9 +71,13 @@ export interface FieldDecl {
  *
  * Acepta modificadores en cualquier orden (`private static final`), tipos
  * genericos (`List<String>`) y arrays (`int[]`), con o sin inicializador.
+ *
+ * Los modificadores se CAPTURAN, no se descartan: `admiteSetter` y
+ * `admiteAsignacionEnConstructor` los necesitan para no generar Java que no
+ * compila sobre una constante (ver JAVA-2 / H6).
  */
 const FIELD_RE =
-  /^[ \t]*private[ \t]+(?:(?:static|final|transient|volatile)[ \t]+)*([A-Za-z_$][\w$.]*(?:<[^>\n]*>)?(?:\[\])*)[ \t]+([a-zA-Z_$][\w$]*)[ \t]*(?:=[^;\n]*)?;/gm
+  /^[ \t]*private[ \t]+((?:(?:static|final|transient|volatile)[ \t]+)*)([A-Za-z_$][\w$.]*(?:<[^>\n]*>)?(?:\[\])*)[ \t]+([a-zA-Z_$][\w$]*)[ \t]*(=[^;\n]*)?;/gm
 
 export function parseFields(source: string): FieldDecl[] {
   const out: FieldDecl[] = []
@@ -77,15 +87,60 @@ export function parseFields(source: string): FieldDecl[] {
   FIELD_RE.lastIndex = 0
   let m: RegExpExecArray | null = FIELD_RE.exec(source)
   while (m !== null) {
-    const type = m[1]
-    const name = m[2]
+    const modificadores = m[1] ?? ""
+    const type = m[2]
+    const name = m[3]
     if (type && name && !seen.has(name)) {
       seen.add(name)
-      out.push({ type, name })
+      out.push({
+        type,
+        name,
+        esFinal: /\bfinal\b/.test(modificadores),
+        esStatic: /\bstatic\b/.test(modificadores),
+        tieneInicializador: m[4] !== undefined,
+      })
     }
     m = FIELD_RE.exec(source)
   }
   return out
+}
+
+/**
+ * JAVA-2 / H6: un campo `final` NO admite setter. `javac` lo rechaza con
+ * `cannot assign a value to final variable`, y con
+ * `cannot assign a value to static final variable` si ademas es `static` —
+ * que es la forma en que aparece la constante idiomatica de Programacion 1:
+ *
+ *     private static final int MAX_TURNOS = 20;
+ *
+ * El getter SI puede ir: leer una constante es legitimo.
+ */
+export function admiteSetter(field: FieldDecl): boolean {
+  return !field.esFinal
+}
+
+/**
+ * JAVA-2 / H6: si el constructor puede asignar este campo — o sea, si va como
+ * parametro y como `this.x = x` en el cuerpo.
+ *
+ * Los tres casos, que NO son el mismo:
+ *
+ *  - no `final` → si, siempre.
+ *  - `final` CON inicializador (`private final int x = 5;`) → NO: ya tiene
+ *    valor y reasignarlo es `cannot assign a value to final variable`. Es el
+ *    caso de la constante `private static final int MAX_TURNOS = 20;`.
+ *  - `final` SIN inicializador → depende de `static`. Un "blank final" de
+ *    instancia (`private final String nombre;`) no solo PUEDE asignarse en el
+ *    constructor: DEBE, o la clase no compila por
+ *    `variable nombre might not have been initialized`. Por eso la regla no
+ *    puede ser "los finales quedan afuera" a secas — dejarlo afuera cambia un
+ *    error de compilacion por otro. Un blank final `static` es distinto: se
+ *    asigna en un bloque `static { }`, nunca en el constructor.
+ */
+export function admiteAsignacionEnConstructor(field: FieldDecl): boolean {
+  if (!field.esFinal) return true
+  if (field.tieneInicializador) return false
+  return !field.esStatic
 }
 
 /** `precioUnitario` -> `PrecioUnitario`, para armar `getPrecioUnitario`. */
@@ -203,10 +258,17 @@ function esArray(field: FieldDecl): boolean {
   return field.type.endsWith("[]")
 }
 
-/** Constructor con TODOS los campos, en el orden en que estan declarados. */
+/**
+ * Constructor con todos los campos ASIGNABLES, en el orden en que estan
+ * declarados. Los que el constructor no puede asignar (una constante
+ * `private static final int MAX = 20;`) no van ni como parametro ni al cuerpo:
+ * `javac` rechaza el `this.MAX = MAX` con `cannot assign a value to static
+ * final variable`. Ver `admiteAsignacionEnConstructor`.
+ */
 export function constructorSource(className: string, fields: readonly FieldDecl[]): string {
-  const params = fields.map((f) => `${f.type} ${f.name}`).join(", ")
-  const cuerpo = fields.map((f) => `    this.${f.name} = ${f.name};`)
+  const asignables = fields.filter(admiteAsignacionEnConstructor)
+  const params = asignables.map((f) => `${f.type} ${f.name}`).join(", ")
+  const cuerpo = asignables.map((f) => `    this.${f.name} = ${f.name};`)
   return [`public ${className}(${params}) {`, ...cuerpo, "}"].join("\n")
 }
 
@@ -450,7 +512,11 @@ export function registerJavaSnippets(
       // ── Accesores derivados de los campos declarados en el archivo ────────
       const fields = parseFields(source)
       const missingGetters = fields.filter((f) => !hasMethod(source, getterName(f)))
-      const missingSetters = fields.filter((f) => !hasMethod(source, setterName(f)))
+      // `admiteSetter` primero: un campo `final` no lleva setter aunque no lo
+      // tenga escrito. El setter de una constante no compila (H6).
+      const missingSetters = fields.filter(
+        (f) => admiteSetter(f) && !hasMethod(source, setterName(f)),
+      )
 
       for (const field of missingGetters) {
         suggestions.push({
@@ -510,12 +576,17 @@ export function registerJavaSnippets(
         const ctorParams = declaredConstructorParams(bloque.source, bloque.name)
         const tieneCtorVacio = ctorParams.some((p) => p.trim() === "")
         const tieneCtorConArgs = ctorParams.some((p) => p.trim() !== "")
+        // Los campos que el constructor puede asignar. Si una clase solo tiene
+        // constantes, `ctor` armaria un `public Foo() {}` — identico a
+        // `ctorvacio` y ofrecido dos veces en la misma lista. Sin campos
+        // asignables no hay constructor completo que ofrecer (H6).
+        const camposAsignables = camposClase.filter(admiteAsignacionEnConstructor)
 
-        if (!tieneCtorConArgs) {
+        if (!tieneCtorConArgs && camposAsignables.length > 0) {
           suggestions.push({
             label: "ctor",
             kind: monaco.languages.CompletionItemKind.Snippet,
-            detail: `Constructor completo de ${bloque.name} (${camposClase.length} campos)`,
+            detail: `Constructor completo de ${bloque.name} (${camposAsignables.length} campos)`,
             documentation: `Recibe todos los campos de ${bloque.name} y los asigna.`,
             insertText: constructorSource(bloque.name, camposClase),
             insertTextRules: monaco.languages.CompletionItemInsertTextRule.InsertAsSnippet,
@@ -524,7 +595,16 @@ export function registerJavaSnippets(
           })
         }
 
-        if (!tieneCtorVacio) {
+        // Un "blank final" de instancia (`private final String nombre;`) DEBE
+        // quedar asignado al terminar cada constructor. Un constructor vacio no
+        // puede hacerlo: `javac` lo rechaza con `variable nombre might not have
+        // been initialized`. Mientras la clase tenga uno, no hay `ctorvacio`
+        // que ofrecer — el unico constructor legal es el que lo asigna, y ese
+        // es `ctor` (H6).
+        const tieneBlankFinal = camposClase.some(
+          (f) => f.esFinal && !f.tieneInicializador && !f.esStatic,
+        )
+        if (!tieneCtorVacio && !tieneBlankFinal) {
           suggestions.push({
             label: "ctorvacio",
             kind: monaco.languages.CompletionItemKind.Snippet,

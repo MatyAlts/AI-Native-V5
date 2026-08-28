@@ -21,6 +21,7 @@
 
 import { describe, expect, it } from "vitest"
 import {
+  type FieldDecl,
   constructorSource,
   declaredConstructorParams,
   emptyConstructorSource,
@@ -34,6 +35,17 @@ import {
   toStringSource,
 } from "../src/lib/javaSnippets"
 import { crearMonacoFalso } from "./_monacoSnippetsFake"
+
+/**
+ * Campo comun de Programacion 1: ni `final`, ni `static`, ni inicializado en la
+ * declaracion. Los tres modificadores son parte de `FieldDecl` desde H6 —
+ * `admiteSetter` y `admiteAsignacionEnConstructor` los miran para no generar
+ * Java que no compila sobre una constante. Los casos que SI llevan
+ * modificadores se escriben con el literal completo, para que se vean.
+ */
+function campo(type: string, name: string): FieldDecl {
+  return { type, name, esFinal: false, esStatic: false, tieneInicializador: false }
+}
 
 /** Clase auxiliar tipica de Programacion 1: dos campos, tipos mixtos. */
 const CLASE_PERSONA = `class Persona {
@@ -56,7 +68,7 @@ class Persona {
     // Un constructor de `Main` con los campos de `Persona` no seria ceremonia,
     // seria basura: por eso los overrides se resuelven POR BLOQUE y no sobre el
     // archivo entero como los accesores.
-    expect(parseFields(bloques[1]?.source ?? "")).toEqual([{ type: "String", name: "nombre" }])
+    expect(parseFields(bloques[1]?.source ?? "")).toEqual([campo("String", "nombre")])
     expect(parseFields(bloques[0]?.source ?? "")).toEqual([])
   })
 
@@ -147,7 +159,7 @@ describe("toStringSource", () => {
   it("un array va por Arrays.toString, NO concatenado con +", () => {
     // Concatenar un array con `+` imprime su referencia (`[I@1b6d3586`): anda,
     // compila, y esta mal.
-    const fuente = toStringSource("Caja", [{ type: "int[]", name: "numeros" }])
+    const fuente = toStringSource("Caja", [campo("int[]", "numeros")])
     expect(fuente).toContain("Arrays.toString(numeros)")
     expect(fuente).not.toContain("+ numeros +")
   })
@@ -161,32 +173,32 @@ describe("toStringSource", () => {
 
 describe("equalsSource — el tipo del campo decide la comparacion", () => {
   it("los objetos van por Objects.equals (null-safe)", () => {
-    expect(equalsSource("Persona", [{ type: "String", name: "nombre" }])).toContain(
+    expect(equalsSource("Persona", [campo("String", "nombre")])).toContain(
       "Objects.equals(this.nombre, otro.nombre)",
     )
   })
 
   it("los primitivos que no son coma flotante van por ==", () => {
     for (const tipo of ["int", "long", "char", "boolean", "byte", "short"]) {
-      expect(equalsSource("A", [{ type: tipo, name: "x" }]), tipo).toContain("this.x == otro.x")
+      expect(equalsSource("A", [campo(tipo, "x")]), tipo).toContain("this.x == otro.x")
     }
   })
 
   it("float va por Float.compare, no por ==", () => {
     // `NaN != NaN` y `0.0 == -0.0` rompen el contrato de equals.
-    const fuente = equalsSource("A", [{ type: "float", name: "peso" }])
+    const fuente = equalsSource("A", [campo("float", "peso")])
     expect(fuente).toContain("Float.compare(this.peso, otro.peso) == 0")
     expect(fuente).not.toContain("this.peso == otro.peso")
   })
 
   it("double va por Double.compare, no por ==", () => {
-    const fuente = equalsSource("A", [{ type: "double", name: "precio" }])
+    const fuente = equalsSource("A", [campo("double", "precio")])
     expect(fuente).toContain("Double.compare(this.precio, otro.precio) == 0")
     expect(fuente).not.toContain("this.precio == otro.precio")
   })
 
   it("los arrays van por Arrays.equals, no por == (que compara referencias)", () => {
-    const fuente = equalsSource("A", [{ type: "int[]", name: "nums" }])
+    const fuente = equalsSource("A", [campo("int[]", "nums")])
     expect(fuente).toContain("Arrays.equals(this.nums, otro.nums)")
     expect(fuente).not.toContain("this.nums == otro.nums")
   })
@@ -216,7 +228,7 @@ describe("hashCodeSource", () => {
   })
 
   it("un array va por Arrays.hashCode (el suyo propio es la identidad)", () => {
-    const fuente = hashCodeSource([{ type: "int[]", name: "nums" }])
+    const fuente = hashCodeSource([campo("int[]", "nums")])
     expect(fuente).toContain("Arrays.hashCode(nums)")
     expect(fuente).not.toContain("Objects.hash(nums)")
   })
@@ -224,23 +236,19 @@ describe("hashCodeSource", () => {
 
 describe("imports que exigen los overrides", () => {
   it("equals/hashCode siempre necesitan Objects", () => {
-    expect(importsParaIgualdad([{ type: "int", name: "x" }])).toEqual(["import java.util.Objects;"])
+    expect(importsParaIgualdad([campo("int", "x")])).toEqual(["import java.util.Objects;"])
   })
 
   it("con un campo array suman Arrays", () => {
-    expect(
-      importsParaIgualdad([
-        { type: "int", name: "x" },
-        { type: "String[]", name: "tags" },
-      ]),
-    ).toEqual(["import java.util.Objects;", "import java.util.Arrays;"])
+    expect(importsParaIgualdad([campo("int", "x"), campo("String[]", "tags")])).toEqual([
+      "import java.util.Objects;",
+      "import java.util.Arrays;",
+    ])
   })
 
   it("toString solo necesita Arrays, y solo si hay algun array", () => {
-    expect(importsParaToString([{ type: "String", name: "n" }])).toEqual([])
-    expect(importsParaToString([{ type: "double[]", name: "notas" }])).toEqual([
-      "import java.util.Arrays;",
-    ])
+    expect(importsParaToString([campo("String", "n")])).toEqual([])
+    expect(importsParaToString([campo("double[]", "notas")])).toEqual(["import java.util.Arrays;"])
   })
 })
 
@@ -443,11 +451,8 @@ describe("LIMITACION CONOCIDA — la clase anidada no se corta por llaves balanc
     const bloques = parseClassBlocks(src)
     expect(bloques.map((b) => b.name)).toEqual(["Externa", "Interna"])
     // `c` esta declarado en `Externa` pero cae del lado de `Interna`.
-    expect(parseFields(bloques[0]?.source ?? "")).toEqual([{ type: "int", name: "a" }])
-    expect(parseFields(bloques[1]?.source ?? "")).toEqual([
-      { type: "int", name: "b" },
-      { type: "int", name: "c" },
-    ])
+    expect(parseFields(bloques[0]?.source ?? "")).toEqual([campo("int", "a")])
+    expect(parseFields(bloques[1]?.source ?? "")).toEqual([campo("int", "b"), campo("int", "c")])
     // Consecuencia observable: el `ctor` de `Externa` sale sin `c`.
     expect(constructorSource("Externa", parseFields(bloques[0]?.source ?? ""))).toBe(
       "public Externa(int a) {\n    this.a = a;\n}",
