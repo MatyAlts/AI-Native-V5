@@ -128,11 +128,17 @@ def tutor(redis_client, fake_ctr) -> TutorCore:
     )
 
 
+# El dueño del episodio. Desde el gate de pertenencia
+# (`TutorCore.sesion_del_emisor`) el emisor tiene que ser este mismo alumno:
+# un `user_id` cualquiera sobre el episodio de otro es 403.
+_ALUMNO = UUID("aaaaaaaa-0000-0000-0000-00000000000a")
+
+
 async def _episodio(tutor: TutorCore) -> UUID:
     return await tutor.open_episode(
         tenant_id=uuid4(),
         comision_id=uuid4(),
-        student_pseudonym=uuid4(),
+        student_pseudonym=_ALUMNO,
         problema_id=uuid4(),
         curso_config_hash="c" * 64,
         classifier_config_hash="b" * 64,
@@ -151,7 +157,7 @@ async def test_el_execution_service_puede_reportar_ocultos(
     episode_id = await _episodio(tutor)
     seq = await tutor.emit_tests_ejecutados(
         episode_id=episode_id,
-        user_id=uuid4(),
+        user_id=_ALUMNO,
         test_count_total=ocultos + 2,
         test_count_passed=2,
         test_count_failed=ocultos,
@@ -177,7 +183,7 @@ async def test_el_navegador_no_puede_reportar_ocultos(
     with pytest.raises(ValueError, match="desde el cliente"):
         await tutor.emit_tests_ejecutados(
             episode_id=episode_id,
-            user_id=uuid4(),
+            user_id=_ALUMNO,
             test_count_total=ocultos + 2,
             test_count_passed=2,
             test_count_failed=ocultos,
@@ -196,7 +202,7 @@ async def test_sin_ocultos_el_camino_de_pyodide_sigue_intacto(
     episode_id = await _episodio(tutor)
     seq = await tutor.emit_tests_ejecutados(
         episode_id=episode_id,
-        user_id=uuid4(),
+        user_id=_ALUMNO,
         test_count_total=2,
         test_count_passed=1,
         test_count_failed=1,
@@ -218,7 +224,7 @@ async def test_el_default_de_emisor_interno_es_cerrado(tutor: TutorCore) -> None
     with pytest.raises(ValueError, match="desde el cliente"):
         await tutor.emit_tests_ejecutados(
             episode_id=episode_id,
-            user_id=uuid4(),
+            user_id=_ALUMNO,
             test_count_total=3,
             test_count_passed=1,
             test_count_failed=2,

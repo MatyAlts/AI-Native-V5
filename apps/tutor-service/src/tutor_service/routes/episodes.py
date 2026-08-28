@@ -494,6 +494,19 @@ async def send_message(
                 user_id=user.id,
             )
 
+    # Pertenencia ANTES de abrir el stream. `interact()` no recibe `user_id`
+    # —es la unica pieza del flujo que trabaja sólo con el `SessionState`— asi
+    # que el gate no puede vivir adentro sin propagar el parametro por todo el
+    # generador. Aca es ademas donde tiene que estar: una vez abierto el
+    # `StreamingResponse` el status ya es 200 y el error viaja como evento
+    # `data:`, indistinguible de una falla del LLM para el cliente.
+    #
+    # El heal de arriba NO alcanzaba como gate: `resume_episode` sí valida
+    # dueño, pero sólo corre cuando la sesion FALTA. Con la sesion viva —el
+    # caso normal— no se ejecutaba nada y `prompt_enviado` + `tutor_respondio`
+    # entraban a la cadena del otro alumno.
+    await tutor.sesion_del_emisor(episode_id, user.id)
+
     async def event_stream():
         try:
             async for event in tutor.interact(
@@ -518,7 +531,19 @@ async def close_episode(
     req: CloseEpisodeRequest,
     user: User = Depends(require_role("estudiante", "docente", "docente_admin", "superadmin")),
 ) -> None:
+    """Cierra el episodio (emite `episodio_cerrado` y borra la sesion).
+
+    Estados:
+      - 204: cerrado.
+      - 403: el episodio es de otro estudiante.
+      - 404: no hay sesion activa para ese episodio.
+    """
     tutor = _get_tutor()
+    # Igual que `/message`: `close_episode` trabaja sólo con el `SessionState`
+    # y no recibe `user_id`, asi que el gate va aca. Sin el, un alumno con el
+    # `episode_id` de otro le cerraba el episodio en medio del ejercicio y le
+    # metia un `episodio_cerrado` en la cadena.
+    await tutor.sesion_del_emisor(episode_id, user.id)
     try:
         await tutor.close_episode(episode_id, reason=req.reason)
     except ValueError as e:
@@ -1168,11 +1193,19 @@ async def emit_tests_ejecutados(
     Estados:
       - 202: evento aceptado, devuelve seq. Tambien cuando la sesion Redis no
         estaba y el heal la reconstruyo (ver abajo) — antes eso era 409.
-      - 403: episodio de otro estudiante o de otro tenant (lo precisa el heal).
+      - 403: episodio de otro estudiante o de otro tenant.
       - 404: episodio inexistente (lo precisa el heal).
       - 409: episodio cerrado, o sesion ausente que el heal no pudo reponer.
       - 422: payload invalido (conteos inconsistentes, tests_hidden!=0).
       - 503: reserva de secuencia en curso en otra replica (reintentar).
+
+    El 403 lo pone `TutorCore.sesion_del_emisor`, y por eso ahora es cierto
+    en los DOS casos. Antes lo ponia unicamente el `resume_episode` del heal,
+    que solo corre cuando la sesion FALTA: con la sesion de la victima viva
+    la respuesta era 202 y el evento quedaba escrito en SU cadena, con los
+    conteos que eligiera el atacante. Este docstring documentaba una
+    validacion que el endpoint hacia en la mitad de los casos, y la mitad que
+    faltaba era justo la del alumno que esta trabajando ahora.
 
     Auto-heal de la sesion: este era el UNICO emisor de eventos del servicio
     que llamaba a `_idempotent_seq` pelado. Los otros ocho pasan por
@@ -1308,6 +1341,7 @@ async def emit_reflexion_completada(
 
     Estados:
       - 202: evento aceptado, devuelve seq asignado.
+      - 403: episodio de otro estudiante (mismo tenant).
       - 404: episodio no encontrado o de otro tenant.
       - 409: episodio no esta cerrado (la reflexion solo se acepta post-cierre).
       - 422: payload invalido (campos > 500 chars o tiempo_completado_ms negativo).

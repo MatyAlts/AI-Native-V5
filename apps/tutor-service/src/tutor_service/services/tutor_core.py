@@ -77,6 +77,34 @@ _REFLEXION_NAMESPACE = UUID("6f1c9a2e-3b47-5d18-9e0a-7c25d4f83b61")
 TUTOR_SERVICE_USER_ID = UUID("00000000-0000-0000-0000-000000000010")
 
 
+class EpisodioAjenoError(HTTPException):
+    """El emisor no es el estudiante dueño del episodio. 403, y no se emite.
+
+    Subclase de `HTTPException` —y NO de `ValueError`— a propósito, por dos
+    motivos que se apoyan uno en el otro:
+
+    1. `_emitir_con_heal` de las rutas trata TODO `ValueError` como «sesión
+       ausente» y arranca el heal. Un episodio ajeno no es una sesión que
+       falte: sanarlo no arregla nada y cuesta una lectura de la cadena
+       entera del otro alumno.
+    2. FastAPI ya sabe traducir `HTTPException` a la respuesta correcta, así
+       que el 403 sale igual desde cualquiera de los once emisores sin que
+       cada ruta tenga que enterarse. `resume_episode` y
+       `_validate_tarea_practica` ya levantaban `HTTPException` desde el
+       core: no es un patrón nuevo acá.
+    """
+
+    def __init__(self) -> None:
+        # El detalle NO nombra al dueño ni dice si el episodio existe: el
+        # `episode_id` es un UUID no adivinable, y un mensaje distinto por
+        # caso lo convertiría en oráculo. Mismo criterio que
+        # `_assert_comision_visible` del evaluation-service.
+        super().__init__(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="El episodio es de otro estudiante",
+        )
+
+
 # ADR-019, Sección 8.5.1 de la tesis: cuando se detecta intento adverso de
 # severidad alta (>= 3), inyectar un system message adicional ANTES del prompt
 # del estudiante para reforzar el rol socrático del tutor. Cumple la promesa
@@ -909,7 +937,7 @@ class TutorCore:
         Returns:
             seq asignado al evento, o None si la sesión ya no existía.
         """
-        state = await self.sessions.get(episode_id)
+        state = await self.sesion_del_emisor(episode_id, user_id)
         if state is None:
             return None
 
@@ -1242,6 +1270,69 @@ class TutorCore:
             "ejercicio_orden": ejercicio_orden,
         }
 
+    # ── Pertenencia del episodio (gate único de todos los emisores) ─────
+
+    async def sesion_del_emisor(
+        self,
+        episode_id: UUID,
+        user_id: UUID,
+    ) -> SessionState | None:
+        """La sesión del episodio, SOLO si `user_id` es su dueño.
+
+        Reemplaza al `self.sessions.get(episode_id)` pelado que hacía cada
+        emisor. Ese `get` validaba que la sesión EXISTIERA y nada más: el
+        `user_id` llegaba por parámetro y no se comparaba con nada, mientras
+        el evento se construía desde el `SessionState` de la víctima
+        (`_build_event(state=state, ...)`). Cualquier alumno que conociera un
+        `episode_id` ajeno —incluso de otro tenant— appendeaba a la cadena
+        del otro, con su `tenant_id`, su `student_pseudonym` y los conteos
+        que él eligiera.
+
+        Duele sobre todo en `tests_ejecutados`: `test_count_failed == 0` con
+        el último `tutor_respondio` a >=60s es la regla exacta que el labeler
+        v1.2.0 traduce a N4 (apropiación reflexiva). Es la afirmación más
+        fuerte que la plataforma hace sobre un alumno, y era fabricable.
+
+        Hay UN gate y no nueve `if` copiados porque la regla tiene tres
+        excepciones sutiles (service-account, sesión ausente, tipo de la
+        excepción) y nueve copias es nueve oportunidades de que una quede
+        atrás — que es exactamente cómo nació el agujero.
+
+        Tres contratos que este método preserva:
+
+        - **Sesión ausente devuelve `None`, no 403.** Sin sesión no hay dueño
+          contra quién comparar, y el caller ya sabe qué hacer con `None`
+          (`ValueError` que gatilla el heal, o `None` idempotente en el
+          abandono). Convertirla en 403 rompería el auto-heal legítimo del
+          alumno al que se le venció el TTL. La pertenencia del episodio
+          igual se verifica ahí: el `resume_episode` del heal la valida
+          contra la cadena del CTR.
+        - **El service-account pasa.** ADR-025: `episodio_abandonado` con
+          `reason="timeout"` lo emite el `abandonment_worker` con
+          `TUTOR_SERVICE_USER_ID`, y el `distraction_worker` con
+          `reason="distraccion_pestana"`. Bloquearlos dejaría episodios
+          inactivos `open` para siempre.
+        - **El tenant no se compara aparte** porque `student_pseudonym` ya lo
+          subsume: es un UUID global, el api-gateway es la única autoridad
+          sobre `X-User-Id` (invariante del repo), y un alumno pertenece a un
+          solo tenant. Comparar tenants además exigiría propagar `tenant_id`
+          por nueve firmas para no ganar nada.
+        """
+        state = await self.sessions.get(episode_id)
+        if state is None:
+            return None
+        if user_id == TUTOR_SERVICE_USER_ID:
+            return state
+        if state.student_pseudonym != user_id:
+            logger.warning(
+                "episodio_ajeno_rechazado episode_id=%s emisor=%s dueno_tenant=%s",
+                episode_id,
+                user_id,
+                state.tenant_id,
+            )
+            raise EpisodioAjenoError()
+        return state
+
     # ── Evento codigo_ejecutado (emitido por el frontend con Pyodide) ───
 
     async def emit_codigo_ejecutado(
@@ -1265,7 +1356,7 @@ class TutorCore:
         Returns:
             El seq asignado al evento (útil para debugging del cliente).
         """
-        state = await self.sessions.get(episode_id)
+        state = await self.sesion_del_emisor(episode_id, user_id)
         if state is None:
             raise ValueError(f"Episode {episode_id} no existe o expiró")
 
@@ -1327,7 +1418,7 @@ class TutorCore:
         Raises:
             ValueError: si el episodio no existe o está cerrado/expirado.
         """
-        state = await self.sessions.get(episode_id)
+        state = await self.sesion_del_emisor(episode_id, user_id)
         if state is None:
             raise ValueError(f"Episode {episode_id} no existe, está cerrado o expiró")
 
@@ -1387,7 +1478,7 @@ class TutorCore:
         Raises:
             ValueError: si el episodio no existe o está cerrado/expirado.
         """
-        state = await self.sessions.get(episode_id)
+        state = await self.sesion_del_emisor(episode_id, user_id)
         if state is None:
             raise ValueError(f"Episode {episode_id} no existe, está cerrado o expiró")
 
@@ -1438,7 +1529,7 @@ class TutorCore:
         Raises:
             ValueError: si el episodio no existe o está cerrado/expirado.
         """
-        state = await self.sessions.get(episode_id)
+        state = await self.sesion_del_emisor(episode_id, user_id)
         if state is None:
             raise ValueError(f"Episode {episode_id} no existe, está cerrado o expiró")
 
@@ -1468,7 +1559,7 @@ class TutorCore:
         registra como evidencia auditable. El worker de abandono
         server-side decide si cerrar el episodio cuando supera el umbral.
         """
-        state = await self.sessions.get(episode_id)
+        state = await self.sesion_del_emisor(episode_id, user_id)
         if state is None:
             raise ValueError(f"Episode {episode_id} no existe, está cerrado o expiró")
 
@@ -1493,7 +1584,7 @@ class TutorCore:
         tiempo_fuera_segundos: float,
     ) -> int:
         """Registra que el alumno volvió a la pestaña del episodio."""
-        state = await self.sessions.get(episode_id)
+        state = await self.sesion_del_emisor(episode_id, user_id)
         if state is None:
             raise ValueError(f"Episode {episode_id} no existe, está cerrado o expiró")
 
@@ -1519,7 +1610,7 @@ class TutorCore:
         metodo: str,
     ) -> int:
         """Registra intento de copiar contenido del editor Monaco (bloqueado en UI)."""
-        state = await self.sessions.get(episode_id)
+        state = await self.sesion_del_emisor(episode_id, user_id)
         if state is None:
             raise ValueError(f"Episode {episode_id} no existe, está cerrado o expiró")
 
@@ -1548,7 +1639,7 @@ class TutorCore:
         evita guardar payloads gigantes cuando el alumno pega un archivo
         entero. El preview es suficiente para auditoría académica.
         """
-        state = await self.sessions.get(episode_id)
+        state = await self.sesion_del_emisor(episode_id, user_id)
         if state is None:
             raise ValueError(f"Episode {episode_id} no existe, está cerrado o expiró")
 
@@ -1610,11 +1701,40 @@ class TutorCore:
 
         Raises:
             ValueError: si el episodio no existe o esta cerrado/expirado.
+            EpisodioAjenoError: si el emisor no es el dueño del episodio.
         """
-        state = await self.sessions.get(episode_id)
-        if state is None:
-            raise ValueError(f"Episode {episode_id} no existe, está cerrado o expiró")
-
+        # LOS GUARDS DEL PAYLOAD VAN PRIMERO, ANTES DE MIRAR LA SESION.
+        #
+        # Al reves —como estaba— un body invalido sobre una sesion vencida
+        # salia como el `ValueError` de la SESION, que `_es_rechazo_de_payload`
+        # no matchea. La ruta lo leia como "sesion ausente", `_emitir_con_heal`
+        # arrancaba el heal y `resume_episode` RESUCITABA la sesion (con TTL de
+        # 6h) para un request que igual terminaba en 422. Dos danos, no uno:
+        #
+        #   (a) El 409 tapaba al 422 — literalmente el escenario que el
+        #       docstring de la ruta declara evitado. Sobre un episodio
+        #       `closed`, el `resume_episode` del heal contestaba 409 "solo se
+        #       reanudan episodios en pausa" y el cliente nunca se enteraba de
+        #       que sus conteos no cerraban.
+        #   (b) Un `episodio_abandonado` de mas EN LA CADENA APPEND-ONLY. La
+        #       sesion resucitada refresca `last_activity_at`, asi que el
+        #       `abandonment_worker` la barre 30 min despues y emite. Eso rompe
+        #       la idempotencia del ADR-025, que esta fundada en el estado de
+        #       sesion ("la primera emision borra la sesion; la segunda
+        #       encuentra `session=None` y no emite"): el heal recrea la sesion
+        #       y desarma el guard. Un episodio ya abandonado recibia un
+        #       SEGUNDO `episodio_abandonado`, disparado por un payload
+        #       malformado.
+        #
+        # Un payload inconsistente es 422 SIEMPRE, exista o no la sesion. Es la
+        # unica de las tres validaciones que no depende de estado, asi que es la
+        # unica que puede ir primero — y ponerla primero es lo que hace que la
+        # clasificacion 422-vs-409 de la ruta sea correcta por construccion en
+        # vez de por suerte.
+        #
+        # El heal legitimo NO cambia: payload valido + sesion ausente sigue
+        # cayendo en el `ValueError` de sesion de abajo, que es el que lo
+        # gatilla.
         if test_count_passed + test_count_failed != test_count_total:
             raise ValueError(
                 f"Conteos inconsistentes: passed={test_count_passed} + "
@@ -1643,6 +1763,10 @@ class TutorCore:
                 "El client-side NO ejecuta tests is_public=false; solo el "
                 "execution-service puede reportar ocultos."
             )
+
+        state = await self.sesion_del_emisor(episode_id, user_id)
+        if state is None:
+            raise ValueError(f"Episode {episode_id} no existe, está cerrado o expiró")
 
         payload: dict[str, Any] = {
             "test_count_total": test_count_total,
@@ -1712,6 +1836,20 @@ class TutorCore:
             raise ValueError(f"Episode {episode_id} no encontrado")
         if str(ep.get("tenant_id")) != str(tenant_id):
             raise ValueError(f"Episode {episode_id} pertenece a otro tenant")
+        # Mismo gate que `sesion_del_emisor`, aplicado contra la cadena en vez
+        # de contra la sesion Redis: post-cierre la sesion ya no existe, asi
+        # que el dueño se lee del episodio persistido. El chequeo de tenant de
+        # arriba NO alcanzaba — dejaba que cualquier compañero de tenant
+        # appendeara una reflexion firmada con el `student_pseudonym` de otro
+        # a una cadena append-only, y ademas post-cierre, cuando el episodio ya
+        # estaba completo y attestado.
+        if str(ep.get("student_pseudonym")) != str(user_id):
+            logger.warning(
+                "reflexion_de_episodio_ajeno_rechazada episode_id=%s emisor=%s",
+                episode_id,
+                user_id,
+            )
+            raise EpisodioAjenoError()
         if ep.get("estado") != "closed":
             raise ValueError(
                 f"Episode {episode_id} no esta cerrado (estado={ep.get('estado')!r}); "

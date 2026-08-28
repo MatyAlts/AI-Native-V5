@@ -531,3 +531,121 @@ class TestElPayloadInvalidoNoGatillaElHeal:
         assert r.status_code == 422, r.text
         assert "tests_hidden" in r.json()["detail"]
         assert llamadas == [], "el payload inválido gatilló el heal"
+
+
+class TestElPayloadInvalidoConSesionVencida:
+    """El hueco que los dos tests de arriba no cubrían: sesión AUSENTE.
+
+    Los guards del payload corrían DESPUÉS del de la sesión, así que con la
+    sesión vencida el `ValueError` que salía era el de la SESIÓN.
+    `_es_rechazo_de_payload` no lo matchea, `_emitir_con_heal` lo leía como
+    "sesión ausente" y arrancaba el heal — por un body que nunca iba a entrar.
+
+    Dos daños, y el caro no es el costo:
+
+    (a) **El 409 tapaba al 422.** Es textualmente el escenario que el docstring
+        del endpoint declara evitado ("sobre un episodio cerrado el
+        `resume_episode` del heal devolvería 409 tapando el 422 que
+        corresponde"). El código hacía exactamente lo que su comentario decía
+        que no hacía.
+
+    (b) **Un evento espúreo en la cadena append-only.** La sesión resucitada
+        (TTL 6h) refresca `last_activity_at`, así que el `abandonment_worker`
+        la barre 30 min después y emite `episodio_abandonado`. Eso rompe la
+        idempotencia del ADR-025, que está fundada en el estado de sesión ("la
+        primera emisión borra la sesión; la segunda encuentra `session=None` y
+        no emite"): el heal recrea la sesión y desarma el guard. Un episodio ya
+        abandonado recibía un SEGUNDO `episodio_abandonado`, disparado por un
+        payload malformado.
+
+    El fix es de orden, no de lógica: los guards del payload son las únicas dos
+    validaciones que no dependen de estado, así que van primero. Un payload
+    inconsistente es 422 siempre, exista o no la sesión.
+    """
+
+    async def test_episodio_abierto_con_sesion_vencida_es_422_y_no_resucita(
+        self, http_client, fake_ctr: _FakeCTR, monkeypatch
+    ) -> None:
+        client, tutor = http_client
+        tenant_id, student_id = uuid4(), uuid4()
+        episode_id = await _abrir(tutor, fake_ctr, tenant_id, student_id)
+        await tutor.sessions.delete(episode_id)  # TTL vencido
+
+        llamadas: list[UUID] = []
+        original = tutor.resume_episode
+
+        async def _espia(*, episode_id: UUID, tenant_id: UUID, user_id: UUID):
+            llamadas.append(episode_id)
+            return await original(episode_id=episode_id, tenant_id=tenant_id, user_id=user_id)
+
+        monkeypatch.setattr(tutor, "resume_episode", _espia)
+
+        malo = _body() | {"test_count_passed": 99}  # 99 + 0 != 3
+        r = client.post(
+            f"/api/v1/episodes/{episode_id}/run-tests",
+            json=malo,
+            headers=_student_headers(student_id, tenant_id),
+        )
+
+        assert r.status_code == 422, r.text
+        assert "Conteos inconsistentes" in r.json()["detail"]
+        assert llamadas == [], "el payload inválido con sesión vencida gatilló el heal"
+        assert await tutor.sessions.get(episode_id) is None, (
+            "la sesión quedó resucitada con TTL 6h por un request que terminó en 422; "
+            "el abandonment_worker la va a barrer y va a emitir un episodio_abandonado "
+            "de más en una cadena append-only (ADR-025)"
+        )
+
+    async def test_episodio_cerrado_con_payload_invalido_es_422_y_no_409(
+        self, http_client, fake_ctr: _FakeCTR
+    ) -> None:
+        """El caso (a): el 409 del heal tapaba el 422 que le corresponde al body.
+
+        Comparado contra su gemelo `test_episodio_cerrado_sigue_siendo_409`,
+        que fija la otra mitad: con el payload VÁLIDO el 409 sigue siendo la
+        respuesta correcta. Los dos juntos son lo que dice que el fix separa
+        por el motivo real, y no que simplemente cambió todos los códigos.
+        """
+        client, tutor = http_client
+        tenant_id, student_id = uuid4(), uuid4()
+        episode_id = await _abrir(tutor, fake_ctr, tenant_id, student_id)
+        fake_ctr.episodes[str(episode_id)]["estado"] = "closed"
+        await tutor.sessions.delete(episode_id)
+
+        malo = _body() | {"test_count_passed": 99}
+        r = client.post(
+            f"/api/v1/episodes/{episode_id}/run-tests",
+            json=malo,
+            headers=_student_headers(student_id, tenant_id),
+        )
+
+        assert r.status_code == 422, (
+            f"el episodio cerrado tapó el rechazo del body con un 409: {r.text}"
+        )
+        assert "Conteos inconsistentes" in r.json()["detail"]
+        tipos = [ev["event_type"] for ev in fake_ctr.published_events]
+        assert "tests_ejecutados" not in tipos
+
+    async def test_el_payload_valido_con_sesion_vencida_SIGUE_sanando(
+        self, http_client, fake_ctr: _FakeCTR
+    ) -> None:
+        """La otra mitad del fix: el heal legítimo no se tocó.
+
+        Sin esto, adelantar los guards del payload podría haber cortado el
+        camino que el heal vino a arreglar —sesión vencida, episodio vivo,
+        alumno trabajando— y el `tests_ejecutados` volvería a perderse.
+        """
+        client, tutor = http_client
+        tenant_id, student_id = uuid4(), uuid4()
+        episode_id = await _abrir(tutor, fake_ctr, tenant_id, student_id)
+        await tutor.sessions.delete(episode_id)
+
+        r = client.post(
+            f"/api/v1/episodes/{episode_id}/run-tests",
+            json=_body(),
+            headers=_student_headers(student_id, tenant_id),
+        )
+
+        assert r.status_code == 202, r.text
+        tipos = [ev["event_type"] for ev in fake_ctr.published_events]
+        assert tipos.count("tests_ejecutados") == 1

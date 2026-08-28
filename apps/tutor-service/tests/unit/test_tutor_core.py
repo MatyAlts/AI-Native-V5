@@ -436,17 +436,20 @@ async def test_emit_codigo_ejecutado_publica_evento_con_seq_correcto(
 ) -> None:
     """El evento se publica con el siguiente seq del episodio."""
     tenant_id = uuid4()
+    # El emisor tiene que ser el DUEÑO del episodio: desde el gate de
+    # pertenencia (`TutorCore.sesion_del_emisor`) un `user_id` cualquiera
+    # sobre el episodio de otro alumno es 403, no un evento en su cadena.
+    student_user_id = uuid4()
     episode_id = await tutor.open_episode(
         tenant_id=tenant_id,
         comision_id=uuid4(),
-        student_pseudonym=uuid4(),
+        student_pseudonym=student_user_id,
         problema_id=uuid4(),
         curso_config_hash="c" * 64,
         classifier_config_hash="b" * 64,
     )
     # Después de open, hay 1 evento (seq=0)
 
-    student_user_id = uuid4()
     seq = await tutor.emit_codigo_ejecutado(
         episode_id=episode_id,
         user_id=student_user_id,
@@ -488,10 +491,11 @@ async def test_emit_codigo_ejecutado_mantiene_orden_con_otros_eventos(
     fake_ctr: FakeCTRClient,
 ) -> None:
     """Intercalar codigo_ejecutado con interact preserva seqs consecutivos."""
+    student_id = uuid4()
     episode_id = await tutor.open_episode(
         tenant_id=uuid4(),
         comision_id=uuid4(),
-        student_pseudonym=uuid4(),
+        student_pseudonym=student_id,
         problema_id=uuid4(),
         curso_config_hash="c" * 64,
         classifier_config_hash="b" * 64,
@@ -504,7 +508,7 @@ async def test_emit_codigo_ejecutado_mantiene_orden_con_otros_eventos(
 
     await tutor.emit_codigo_ejecutado(
         episode_id=episode_id,
-        user_id=uuid4(),
+        user_id=student_id,
         payload={"code": "x=1", "stdout": "", "stderr": "", "duration_ms": 1.0},
     )
     # seq=3: codigo_ejecutado
@@ -544,10 +548,11 @@ async def test_codigo_ejecutado_usa_user_id_del_estudiante_no_el_tutor(
 
     fake_ctr.publish_event = capturing_publish  # type: ignore
 
+    student_id = uuid4()
     episode_id = await tutor.open_episode(
         tenant_id=uuid4(),
         comision_id=uuid4(),
-        student_pseudonym=uuid4(),
+        student_pseudonym=student_id,
         problema_id=uuid4(),
         curso_config_hash="c" * 64,
         classifier_config_hash="b" * 64,
@@ -555,7 +560,6 @@ async def test_codigo_ejecutado_usa_user_id_del_estudiante_no_el_tutor(
     # open_episode usa el service account
     assert captured_callers[0] == TUTOR_SERVICE_USER_ID
 
-    student_id = uuid4()
     await tutor.emit_codigo_ejecutado(
         episode_id=episode_id,
         user_id=student_id,

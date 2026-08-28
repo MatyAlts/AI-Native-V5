@@ -118,17 +118,20 @@ async def test_edicion_codigo_publica_evento_con_seq_correcto(
 ) -> None:
     """El evento se publica con el siguiente seq del episodio."""
     tenant_id = uuid4()
+    # El emisor tiene que ser el DUEÑO del episodio: desde el gate de
+    # pertenencia (`TutorCore.sesion_del_emisor`) un `user_id` cualquiera
+    # sobre el episodio de otro alumno es 403, no un evento en su cadena.
+    student_id = uuid4()
     episode_id = await tutor.open_episode(
         tenant_id=tenant_id,
         comision_id=uuid4(),
-        student_pseudonym=uuid4(),
+        student_pseudonym=student_id,
         problema_id=uuid4(),
         curso_config_hash="c" * 64,
         classifier_config_hash="b" * 64,
     )
     # seq=0: episodio_abierto
 
-    student_id = uuid4()
     seq = await tutor.record_edicion_codigo(
         episode_id=episode_id,
         snapshot="def foo():\n    return 42\n",
@@ -151,10 +154,11 @@ async def test_edicion_codigo_usa_user_id_del_estudiante_no_el_tutor(
     tutor: TutorCore, fake_ctr: FakeCTRClient
 ) -> None:
     """El evento se publica con el user_id del estudiante, no el service account."""
+    student_id = uuid4()
     episode_id = await tutor.open_episode(
         tenant_id=uuid4(),
         comision_id=uuid4(),
-        student_pseudonym=uuid4(),
+        student_pseudonym=student_id,
         problema_id=uuid4(),
         curso_config_hash="c" * 64,
         classifier_config_hash="b" * 64,
@@ -162,7 +166,6 @@ async def test_edicion_codigo_usa_user_id_del_estudiante_no_el_tutor(
     # caller[0] = TUTOR_SERVICE_USER_ID (episodio_abierto)
     assert fake_ctr.captured_callers[0] == TUTOR_SERVICE_USER_ID
 
-    student_id = uuid4()
     await tutor.record_edicion_codigo(
         episode_id=episode_id,
         snapshot="x = 1",
@@ -389,10 +392,11 @@ async def test_edicion_codigo_origin_se_propaga_al_payload(
     tutor: TutorCore, fake_ctr: FakeCTRClient
 ) -> None:
     """F6: si se pasa origin, llega al payload del evento; si es None se omite."""
+    student_id = uuid4()
     episode_id = await tutor.open_episode(
         tenant_id=uuid4(),
         comision_id=uuid4(),
-        student_pseudonym=uuid4(),
+        student_pseudonym=student_id,
         problema_id=uuid4(),
         curso_config_hash="c" * 64,
         classifier_config_hash="b" * 64,
@@ -403,7 +407,7 @@ async def test_edicion_codigo_origin_se_propaga_al_payload(
         snapshot="x = 1",
         diff_chars=5,
         language="python",
-        user_id=uuid4(),
+        user_id=student_id,
         origin="pasted_external",
     )
     pasted = next(
@@ -418,7 +422,7 @@ async def test_edicion_codigo_origin_se_propaga_al_payload(
         snapshot="y = 2",
         diff_chars=5,
         language="python",
-        user_id=uuid4(),
+        user_id=student_id,
         # origin omitido (default None) — no debe aparecer en el payload
     )
     no_origin_events = [
@@ -699,10 +703,11 @@ async def test_anotacion_record_service_method_publica_seq_consecutivo(
 
 async def test_anotacion_words_count_es_correcto(tutor: TutorCore, fake_ctr: FakeCTRClient) -> None:
     """`words` en el payload debe coincidir con len(contenido.split())."""
+    student_id = uuid4()
     episode_id = await tutor.open_episode(
         tenant_id=uuid4(),
         comision_id=uuid4(),
-        student_pseudonym=uuid4(),
+        student_pseudonym=student_id,
         problema_id=uuid4(),
         curso_config_hash="c" * 64,
         classifier_config_hash="b" * 64,
@@ -712,7 +717,7 @@ async def test_anotacion_words_count_es_correcto(tutor: TutorCore, fake_ctr: Fak
     await tutor.record_anotacion_creada(
         episode_id=episode_id,
         contenido=contenido,
-        user_id=uuid4(),
+        user_id=student_id,
     )
 
     nota = next(e for e in fake_ctr.published_events if e["event_type"] == "anotacion_creada")

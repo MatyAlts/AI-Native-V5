@@ -98,6 +98,11 @@ async def redis_client():
     await client.aclose()
 
 
+# Dueño por default de los episodios sembrados. Fijo (no `uuid4()`) para que
+# los tests puedan pasarlo como `user_id` del emisor.
+_ALUMNO = UUID("aaaaaaaa-0000-0000-0000-00000000000a")
+
+
 @pytest.fixture
 def fake_ctr() -> FakeCTRClient:
     return FakeCTRClient()
@@ -119,13 +124,20 @@ def _seed_closed_episode(
     episode_id: UUID,
     tenant_id: UUID,
     events_count: int = 5,
+    student_pseudonym: UUID = _ALUMNO,
 ) -> None:
-    """Inyecta un episodio cerrado con `events_count` eventos al CTR mock."""
+    """Inyecta un episodio cerrado con `events_count` eventos al CTR mock.
+
+    `student_pseudonym` es el DUEÑO: `record_reflexion_completada` lo compara
+    contra el `user_id` del emisor (el chequeo de tenant solo no alcanzaba —
+    dejaba que un compañero de tenant appendeara una reflexion firmada con el
+    pseudonimo de otro a una cadena append-only ya cerrada).
+    """
     fake_ctr.episodes[episode_id] = {
         "id": str(episode_id),
         "tenant_id": str(tenant_id),
         "comision_id": str(uuid4()),
-        "student_pseudonym": str(uuid4()),
+        "student_pseudonym": str(student_pseudonym),
         "problema_id": str(uuid4()),
         "estado": "closed",
         "opened_at": "2026-04-01T10:00:00Z",
@@ -155,7 +167,7 @@ async def test_record_reflexion_completada_publica_con_seq_de_events_count(
     """El seq del evento sale de ep.events_count del CTR (NO de la sesion Redis)."""
     tenant_id = uuid4()
     episode_id = uuid4()
-    student_id = uuid4()
+    student_id = _ALUMNO
     _seed_closed_episode(fake_ctr, episode_id, tenant_id, events_count=7)
 
     seq = await tutor.record_reflexion_completada(
@@ -193,7 +205,7 @@ async def test_record_reflexion_completada_caller_es_estudiante_no_service_accou
     """La autoria es del estudiante — caller != TUTOR_SERVICE_USER_ID."""
     tenant_id = uuid4()
     episode_id = uuid4()
-    student_id = uuid4()
+    student_id = _ALUMNO
     _seed_closed_episode(fake_ctr, episode_id, tenant_id)
 
     await tutor.record_reflexion_completada(
@@ -220,6 +232,7 @@ async def test_record_reflexion_completada_episodio_no_cerrado_falla(
     fake_ctr.episodes[episode_id] = {
         "id": str(episode_id),
         "tenant_id": str(tenant_id),
+        "student_pseudonym": str(_ALUMNO),
         "estado": "open",
         "events_count": 3,
         "prompt_system_hash": "a" * 64,
@@ -232,7 +245,7 @@ async def test_record_reflexion_completada_episodio_no_cerrado_falla(
         await tutor.record_reflexion_completada(
             episode_id=episode_id,
             tenant_id=tenant_id,
-            user_id=uuid4(),
+            user_id=_ALUMNO,
             que_aprendiste="x",
             dificultad_encontrada="y",
             que_haria_distinto="z",
@@ -249,7 +262,7 @@ async def test_record_reflexion_completada_episodio_inexistente_falla(
         await tutor.record_reflexion_completada(
             episode_id=uuid4(),
             tenant_id=uuid4(),
-            user_id=uuid4(),
+            user_id=_ALUMNO,
             que_aprendiste="x",
             dificultad_encontrada="y",
             que_haria_distinto="z",
@@ -271,7 +284,7 @@ async def test_record_reflexion_completada_otro_tenant_falla(
         await tutor.record_reflexion_completada(
             episode_id=episode_id,
             tenant_id=requesting_tenant,  # tenant distinto al del episodio
-            user_id=uuid4(),
+            user_id=_ALUMNO,
             que_aprendiste="x",
             dificultad_encontrada="y",
             que_haria_distinto="z",
@@ -313,7 +326,7 @@ def test_post_reflection_happy_path_returns_202(http_client, fake_ctr: FakeCTRCl
     client, _ = http_client
     tenant_id = uuid4()
     episode_id = uuid4()
-    student_id = uuid4()
+    student_id = _ALUMNO
     _seed_closed_episode(fake_ctr, episode_id, tenant_id, events_count=4)
 
     r = client.post(
@@ -352,7 +365,7 @@ def test_post_reflection_campo_excede_500_chars_returns_422(
             "prompt_version": "reflection/v1.0.0",
             "tiempo_completado_ms": 100,
         },
-        headers=_student_headers(uuid4(), tenant_id),
+        headers=_student_headers(_ALUMNO, tenant_id),
     )
 
     assert r.status_code == 422
@@ -375,7 +388,7 @@ def test_post_reflection_tiempo_negativo_returns_422(http_client, fake_ctr: Fake
             "prompt_version": "reflection/v1.0.0",
             "tiempo_completado_ms": -1,
         },
-        headers=_student_headers(uuid4(), tenant_id),
+        headers=_student_headers(_ALUMNO, tenant_id),
     )
 
     assert r.status_code == 422
@@ -389,6 +402,7 @@ def test_post_reflection_episodio_abierto_returns_409(http_client, fake_ctr: Fak
     fake_ctr.episodes[episode_id] = {
         "id": str(episode_id),
         "tenant_id": str(tenant_id),
+        "student_pseudonym": str(_ALUMNO),
         "estado": "open",  # NO cerrado
         "events_count": 2,
         "prompt_system_hash": "a" * 64,
@@ -406,7 +420,7 @@ def test_post_reflection_episodio_abierto_returns_409(http_client, fake_ctr: Fak
             "prompt_version": "reflection/v1.0.0",
             "tiempo_completado_ms": 100,
         },
-        headers=_student_headers(uuid4(), tenant_id),
+        headers=_student_headers(_ALUMNO, tenant_id),
     )
 
     assert r.status_code == 409
@@ -452,7 +466,7 @@ def test_post_reflection_campos_vacios_aceptados_si_validos(
             "prompt_version": "reflection/v1.0.0",
             "tiempo_completado_ms": 100,
         },
-        headers=_student_headers(uuid4(), tenant_id),
+        headers=_student_headers(_ALUMNO, tenant_id),
     )
 
     assert r.status_code == 202
@@ -482,7 +496,7 @@ def test_post_reflection_reintento_con_misma_key_no_duplica_el_evento(
     client, _ = http_client
     tenant_id = uuid4()
     episode_id = uuid4()
-    student_id = uuid4()
+    student_id = _ALUMNO
     _seed_closed_episode(fake_ctr, episode_id, tenant_id, events_count=4)
 
     body = {
@@ -518,7 +532,7 @@ def test_post_reflection_keys_distintas_son_reflexiones_distintas(
     client, _ = http_client
     tenant_id = uuid4()
     episode_id = uuid4()
-    student_id = uuid4()
+    student_id = _ALUMNO
     _seed_closed_episode(fake_ctr, episode_id, tenant_id, events_count=4)
 
     body = {
@@ -561,7 +575,7 @@ def test_post_reflection_sin_key_mantiene_comportamiento_legacy(
         "prompt_version": "reflection/v1.0.0",
         "tiempo_completado_ms": 900,
     }
-    headers = _student_headers(uuid4(), tenant_id)
+    headers = _student_headers(_ALUMNO, tenant_id)
     client.post(f"/api/v1/episodes/{episode_id}/reflection", json=body, headers=headers)
     client.post(f"/api/v1/episodes/{episode_id}/reflection", json=body, headers=headers)
 
@@ -591,7 +605,7 @@ async def test_el_mismo_idempotency_key_produce_el_MISMO_event_uuid(
     Verificado por reversion: volviendo a `str(uuid4())`, los dos uuid difieren
     y este test cae.
     """
-    episode_id, tenant_id, user_id = uuid4(), uuid4(), uuid4()
+    episode_id, tenant_id, user_id = uuid4(), uuid4(), _ALUMNO
     _seed_closed_episode(fake_ctr, episode_id, tenant_id)
 
     async def _emitir() -> None:
@@ -622,7 +636,7 @@ async def test_keys_distintas_son_reflexiones_distintas(
     tutor: TutorCore, fake_ctr: FakeCTRClient
 ) -> None:
     """El derivado no puede colapsar dos envios genuinamente distintos."""
-    episode_id, tenant_id, user_id = uuid4(), uuid4(), uuid4()
+    episode_id, tenant_id, user_id = uuid4(), uuid4(), _ALUMNO
     _seed_closed_episode(fake_ctr, episode_id, tenant_id)
 
     for key in ("K1", "K2"):
@@ -644,7 +658,7 @@ async def test_keys_distintas_son_reflexiones_distintas(
 
 async def test_sin_key_sigue_generando_uno_nuevo(tutor: TutorCore, fake_ctr: FakeCTRClient) -> None:
     """Los callers legacy que no mandan el header no cambian de comportamiento."""
-    episode_id, tenant_id, user_id = uuid4(), uuid4(), uuid4()
+    episode_id, tenant_id, user_id = uuid4(), uuid4(), _ALUMNO
     _seed_closed_episode(fake_ctr, episode_id, tenant_id)
 
     for _ in range(2):

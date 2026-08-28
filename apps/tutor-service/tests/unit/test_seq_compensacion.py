@@ -135,11 +135,17 @@ def _tutor(redis_client, ctr) -> TutorCore:
     )
 
 
+# Dueño de los episodios que abre `_abrir`. Fijo, para que los tests lo
+# puedan pasar como `user_id` del emisor: desde el gate de pertenencia
+# (`TutorCore.sesion_del_emisor`) un `user_id` cualquiera es 403.
+_ALUMNO = UUID("aaaaaaaa-0000-0000-0000-00000000000a")
+
+
 async def _abrir(tutor: TutorCore) -> UUID:
     return await tutor.open_episode(
         tenant_id=uuid4(),
         comision_id=uuid4(),
-        student_pseudonym=uuid4(),
+        student_pseudonym=_ALUMNO,
         problema_id=uuid4(),
         curso_config_hash="c" * 64,
         classifier_config_hash="b" * 64,
@@ -182,7 +188,7 @@ async def test_publish_fallido_devuelve_el_seq_al_contador(redis_client) -> None
     ctr = CTRQueRechaza({"codigo_ejecutado"})
     tutor = _tutor(redis_client, ctr)
     episode_id = await _abrir(tutor)
-    user_id = uuid4()
+    user_id = _ALUMNO
     payload = {
         "code": "print('hola')",
         "stdout": "hola\n",
@@ -246,7 +252,7 @@ async def test_publish_fallido_bajo_concurrencia_no_duplica_seq(redis_client) ->
     ctr = CTRQueRechaza({"codigo_ejecutado"})
     tutor = _tutor(redis_client, ctr)
     episode_id = await _abrir(tutor)
-    user_id = uuid4()
+    user_id = _ALUMNO
 
     async def _codigo() -> None:
         await tutor.emit_codigo_ejecutado(
@@ -301,7 +307,7 @@ async def test_un_timeout_TRAS_persistir_no_produce_dos_eventos_con_el_mismo_seq
     ctr = CTRQuePersisteYPierdeElACK({"codigo_ejecutado"})
     tutor = _tutor(redis_client, ctr)
     episode_id = await _abrir(tutor)
-    user_id = uuid4()
+    user_id = _ALUMNO
 
     with pytest.raises(httpx.ReadTimeout):
         await tutor.emit_codigo_ejecutado(
@@ -373,7 +379,7 @@ async def test_tres_eventos_tras_un_fallo_ambiguo_siguen_contiguos(redis_client)
     ctr = CTRQuePersisteYPierdeElACK({"codigo_ejecutado"})
     tutor = _tutor(redis_client, ctr)
     episode_id = await _abrir(tutor)
-    user_id = uuid4()
+    user_id = _ALUMNO
 
     with pytest.raises(httpx.ReadTimeout):
         await tutor.emit_codigo_ejecutado(
