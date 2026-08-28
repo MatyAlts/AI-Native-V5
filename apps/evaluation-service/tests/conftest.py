@@ -224,7 +224,19 @@ async def scope_setup() -> AsyncIterator[dict]:
             "tenant_id": tenant_id,
             "comision_propia": comision_propia,
             "comision_ajena": comision_ajena,
+            # Las TPs de cada comision, para los guards que reciben el
+            # `tarea_practica_id` directo en la URL en vez de una entrega
+            # (`_assert_tp_de_mi_comision` en `routes/activeia.py`).
+            "tp_propia": tp_propia,
+            "tp_ajena": tp_ajena,
+            "docente_id": DOCENTE_ID,
             "docente": build_headers(DOCENTE_ID, tenant_id, "docente"),
+            # La MISMA identidad, con los roles que el gateway emite de verdad
+            # (`clerk_base_roles = "estudiante,docente"`). Ver el docstring de
+            # `tests/unit/test_scope_con_roles_de_produccion.py`: un test de
+            # autorizacion con un usuario de UN solo rol no prueba nada en este
+            # deploy.
+            "docente_prod": build_headers(DOCENTE_ID, tenant_id, "estudiante,docente"),
             "admin": build_headers(ADMIN_ID, tenant_id, "docente_admin"),
             "headers": lambda uid, roles: build_headers(uid, tenant_id, roles),
             "rechazo_ajeno": rechazo_ajeno,

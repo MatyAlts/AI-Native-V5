@@ -228,9 +228,15 @@ class TestPropiedadesDeclaradasDelEpic:
 
         assert anterior.revoked_at is not None, "quedarian dos credenciales vigentes"
 
-    def test_el_gate_de_rol_no_deja_pasar_a_un_estudiante(self) -> None:
+    def test_el_gate_de_rol_frena_a_un_usuario_que_SOLO_es_estudiante(self) -> None:
         """Disparar una correccion manda codigo de un alumno a un servicio
-        externo y gasta cuota que se paga. Es una accion docente."""
+        externo y gasta cuota que se paga. Es una accion docente.
+
+        Ojo con lo que este test prueba y lo que NO: `{"estudiante"}` a secas es
+        una identidad que el deploy con Clerk **nunca emite**. Lo que se fija
+        aca es la tabla `CORRECCION_IA_ROLES`, no una proteccion del piloto —
+        eso lo cubre el test de abajo.
+        """
         from evaluation_service.auth.dependencies import require_correccion_ia
         from fastapi import HTTPException
 
@@ -244,6 +250,44 @@ class TestPropiedadesDeclaradasDelEpic:
         with pytest.raises(HTTPException) as exc:
             require_correccion_ia(alumno)
         assert exc.value.status_code == 403
+
+    def test_con_los_roles_DE_PRODUCCION_el_gate_de_rol_no_frena_a_nadie(self) -> None:
+        """El test de arriba, con la identidad que el gateway emite de verdad.
+
+        Y da lo contrario. `clerk_base_roles = "estudiante,docente"`: TODO
+        usuario logueado con Clerk llega con los dos roles, asi que
+        `user.roles & CORRECCION_IA_ROLES` es no-vacio para el alumno de primer
+        ano tambien. La version anterior de este archivo tenia el caso negativo
+        armado con `{"estudiante"}` a secas y afirmaba una proteccion que en
+        este deploy **no existe**. Fijado en el api-gateway por
+        `tests/unit/test_clerk_roles_de_produccion.py`.
+
+        Lo que SI frena al alumno son los guards de MEMBRESIA, que preguntan por
+        `usuarios_comision` y no por rol: `_entrega_de_mi_comision`
+        (`routes/correccion_ia.py:70`) en el endpoint que gasta plata, y
+        `_assert_tp_de_mi_comision` (`routes/activeia.py:133`) en los de
+        sincronizacion. El alumno vive en `inscripciones`, no en
+        `usuarios_comision`, asi que los dos le devuelven 404. Verificado en
+        `tests/test_scope_comision_activeia.py`.
+
+        Queda expuesto lo que NO tiene guard de membresia: el CRUD de
+        `/activeia/credenciales`, donde un alumno logueado puede conectar,
+        consultar y revocar UNA cuenta propia (su propia fila, por
+        `user.tenant_id`/`user.id`). No alcanza para tocar la de nadie mas ni
+        para disparar una correccion, pero el gate de rol no es lo que lo
+        impide. Escrito aca para que no vuelva a leerse como si lo fuera.
+        """
+        from evaluation_service.auth.dependencies import require_correccion_ia
+
+        alumno = User(
+            id=uuid4(),
+            tenant_id=TENANT,
+            email="a@utn.edu.ar",
+            roles=frozenset({"estudiante", "docente"}),
+            realm="utn",
+        )
+
+        assert require_correccion_ia(alumno) is alumno
 
     def test_el_gate_de_rol_deja_pasar_a_un_docente(self) -> None:
         """Control positivo: el 403 de arriba tiene que ser por el rol, no

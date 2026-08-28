@@ -136,7 +136,19 @@ class TestQueSobrevive:
             )
         ).one()
 
-        assert fila[0] == "", f"sobrevivio el hash del artefacto: {fila[0]}"
+        # NULL, no `""`. Este assert exigia `== ""` y estaba vencido: desde
+        # `44a20f9` la columna es nullable y `services/olvido.py` escribe
+        # `artefacto_sha256=None`.
+        #
+        # Y NULL no es "una de dos formas igual de validas de vaciar": `""` es
+        # incorrecto acá. `uq_correccion_ia_idempotencia` incluye esta columna y
+        # no es deferrable, asi que un alumno con DOS correcciones sobre la misma
+        # entrega/orden/rubrica (el que reentrego tras un `returned`) chocaba el
+        # UNIQUE al vaciar las dos con el mismo `""` y se caia la anonimizacion
+        # ENTERA — justo para los alumnos que mas usaron la plataforma. En
+        # Postgres dos NULL no colisionan. Ver el comentario de `olvido.py:145` y
+        # la migracion 20260827_0002.
+        assert fila[0] is None, f"sobrevivio el hash del artefacto: {fila[0]}"
         assert SALIDA_DEL_ALUMNO not in fila[1], "sobrevivio la salida del programa del alumno"
         assert DEVOLUCION not in fila[2], "sobrevivio la devolucion sobre su trabajo"
         assert fila[3] is None, "la key del PDF quedo apuntando a un objeto borrado"
