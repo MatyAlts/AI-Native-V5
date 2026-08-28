@@ -66,8 +66,28 @@ GUION: dict[str, Any] = {}
 LLAMADAS: list[tuple[str, str]] = []
 CUERPOS: list[dict[str, Any]] = []
 
+# El cuerpo que el doble contesta es el de ELLOS, no el nuestro. Dos cosas que
+# se confundían hasta el 2026-08-28:
+#
+#   - El campo se llama **`nota`**, no `nota_100`. Active-IA lo confirmó por
+#     escrito el 27/08 (§4.2: «no existe `nota_100`, ni `nota_final`, ni
+#     `calificacion`») y `1b9ac8b` bajó la cascada de cuatro nombres a uno en
+#     `_corregir_ejercicio`. Este archivo se quedó en `nota_100` y nadie se
+#     enteró porque nada lo corría: no lleva `@pytest.mark.smoke`, así que
+#     `make test-smoke` lo tiraba al montón de `19 deselected`, y el job
+#     `Unit tests` sólo mira `apps/*/tests/` y `packages/*/tests/`.
+#     Con el nombre viejo el doble devolvía 200 sin nota → `SIN_NOTA`, y los
+#     cuatro tests del camino feliz fallaban.
+#   - **Viaja como STRING** (`"8.50"`, con comillas): default de Pydantic v2
+#     para `Decimal`, deliberado de su lado para que una nota no pase por un
+#     float. Ponerlo como número acá dejaría el casteo explícito de
+#     `_corregir_ejercicio` sin ejercitar, que es justo lo que ese commit
+#     agregó.
+#
+# `nota_100` sigue siendo el nombre INTERNO de la clave que devuelve
+# `_corregir_ejercicio`; por eso los asserts de abajo lo usan y este dict no.
 _NOTA_OK = {
-    "nota_100": 8.5,
+    "nota": "8.50",
     "correccion_id": "COR-1",
     "entrega_id": "EXT-1",
     "desglose": [
