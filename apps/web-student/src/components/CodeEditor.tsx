@@ -314,29 +314,36 @@ export function CodeEditor({
   const publicTestCases = (testCases ?? []).filter((tc) => tc.is_public !== false)
   const hasTests = publicTestCases.length > 0
   /**
-   * En un lenguaje REMOTO, "Ejecutar" y "Probar" son la MISMA llamada: las dos
-   * postean a `/executions` con `{ejercicio_id, source_code}` y el servidor
-   * corre los casos (publicos + ocultos, que el navegador no ve). O sea que en
-   * remoto "Ejecutar" es una corrida de tests con otro nombre, y el
-   * `tests_ejecutados` que emite el execution-service sale igual.
+   * "Ejecutar" corre el programa y muestra su salida. "Probar" corre los casos.
    *
-   * Con CERO casos, esa corrida no ejecuta nada —el servidor itera sobre la
-   * lista de casos— y devuelve `total=0, passed=0, failed=0`. El labeler lee
-   * `failed == 0` como "paso todo" y etiqueta N4 un episodio donde el codigo
-   * del alumno nunca corrio. El alumno, del otro lado, ve la consola vacia: no
-   * pierde nada al no poder apretar el boton, porque hoy apretarlo no le
-   * devuelve nada.
+   * Hasta el 2026-08-28 en un lenguaje REMOTO eran la MISMA llamada: las dos
+   * posteaban a `/executions` y el servidor corria los casos. El navegador no
+   * tiene runtime de Java, asi que la unica corrida posible era contra los
+   * casos y "Ejecutar" era una corrida de tests con otro nombre. Sobre un
+   * ejercicio sin casos no ejecutaba nada, le devolvia al alumno una consola
+   * vacia, y el `failed == 0` resultante le daba N4 al labeler.
    *
-   * Por eso "Ejecutar" pide lo mismo que "Probar" **solo en remoto**. En local
-   * (Pyodide) no aplica: ahi "Ejecutar" corre el codigo suelto del alumno y le
-   * muestra su stdout, sin tests de por medio y sin emitir conteo ninguno.
+   * Ahora "Ejecutar" manda `modo: "libre"`: el servidor corre el programa una
+   * vez con el `stdin` que escribio el alumno y devuelve la salida, sin evaluar
+   * nada y sin emitir `tests_ejecutados`. El ciclo escribir-correr-ver, que en
+   * Python siempre existio, ahora existe tambien en Java.
    *
-   * El backend cierra el mismo agujero del lado del servidor; esto evita que
-   * la peticion salga siquiera.
+   * Por eso el guard de `hasTests` que estuvo acá entre medio ya no hace falta:
+   * una corrida libre no puede producir conteos falsos porque no produce
+   * conteos. El backend lo cierra por su lado (`debe_emitir_conteos`).
    */
-  const puedeEjecutar = hasRuntime && (!isRemoto || hasTests)
+  const puedeEjecutar = hasRuntime
   // Toast naranja cuando el alumno intenta copiar/pegar; auto-oculta en 4s.
   const [clipboardWarning, setClipboardWarning] = useState<string | null>(null)
+  /** Entrada del programa para la corrida libre (solo lenguajes remotos).
+   *
+   * En Python el `input()` se intercepta y se le pregunta al alumno en el
+   * momento. En un contenedor efimero eso no existe: el proceso corre hasta
+   * terminar sin canal de vuelta, asi que lo que el programa vaya a leer tiene
+   * que estar escrito ANTES de apretar Ejecutar. Es el mismo modelo que usan
+   * los jueces online, y se muestra explicito para que el alumno entienda por
+   * que su `Scanner` no le pregunta nada. */
+  const [stdinLibre, setStdinLibre] = useState("")
   // Refs estables para los callbacks de clipboard (evita re-mount del editor).
   const onPasteAttemptRef = useRef<typeof onPasteAttempt>(onPasteAttempt)
   const onCopyAttemptRef = useRef<typeof onCopyAttempt>(onCopyAttempt)
@@ -1088,6 +1095,8 @@ def __tutor_run_tests(student_code, cases_json):
       result = await runRemote({
         ejercicioId,
         sourceCode: code,
+        modo: "libre",
+        stdin: stdinLibre,
         ...(episodeId ? { episodeId } : {}),
         ...(comisionId ? { comisionId } : {}),
         getToken,
@@ -1128,17 +1137,22 @@ def __tutor_run_tests(student_code, cases_json):
       return
     }
 
-    // Salida y error del primer caso: es lo que el alumno esperaba ver al
-    // apretar "Ejecutar" (a diferencia de "Probar", que lista todos).
+    // En modo libre no hay casos: el programa corrio una vez y su salida viene
+    // en `stdout`. El `?? ""` de `cases[0]?.got` queda como respaldo para una
+    // respuesta en modo tests (un backend viejo, o un rollback del servicio):
+    // sin eso, la consola quedaria en blanco justo durante un deploy a medias.
     const primero = result.cases[0]
-    const salida = primero?.got ?? ""
+    const salida = result.stdout ?? primero?.got ?? ""
     outputBufferRef.current = salida
     setOutput(salida)
 
-    const javaErr =
-      result.outcome === "compilation_error"
-        ? parseJavaError(result.compile_output, "")
-        : parseJavaError("", primero?.error ?? "")
+    // La compilacion fallida viaja en `compile_output` en los dos modos. El
+    // error de EJECUCION sale de `stderr` en libre (no hay caso que lo lleve) y
+    // de `cases[0].error` en tests.
+    const errorDeEjecucion = result.stderr ?? primero?.error ?? ""
+    const javaErr = result.compile_output
+      ? parseJavaError(result.compile_output, "")
+      : parseJavaError("", errorDeEjecucion)
 
     if (javaErr) {
       setError(javaErr.message)
@@ -1696,6 +1710,32 @@ def __tutor_run_tests(student_code, cases_json):
               </div>
             )}
           </div>
+
+          {/* Entrada del programa — solo en lenguajes remotos.
+              En Python el `input()` abre una ventanita durante la corrida; acá
+              el contenedor no tiene canal de vuelta, asi que los datos se
+              escriben ANTES. Se muestra siempre (no detras de un toggle) para
+              que el alumno cuyo `Scanner` "no le pregunta nada" encuentre por
+              que sin tener que adivinar. */}
+          {isRemoto && outputTab === "consola" && (
+            <div className="border-b border-white/10 px-4 py-2">
+              <label
+                htmlFor="stdin-libre"
+                className="mb-1 block text-[10px] uppercase tracking-wider text-muted-soft"
+              >
+                Entrada del programa
+              </label>
+              <textarea
+                id="stdin-libre"
+                value={stdinLibre}
+                onChange={(e) => setStdinLibre(e.target.value)}
+                rows={2}
+                spellCheck={false}
+                placeholder={`Un dato por linea, en el orden en que tu programa los lee.\nSe manda entero al apretar Ejecutar.`}
+                className="w-full resize-y rounded border border-white/10 bg-black/30 px-2 py-1 font-mono text-xs leading-relaxed text-surface placeholder:text-muted-soft focus:border-white/30 focus:outline-none"
+              />
+            </div>
+          )}
 
           {/* Cuerpo del panel */}
           <div className="flex-1 min-h-0 overflow-auto">

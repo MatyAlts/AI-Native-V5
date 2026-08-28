@@ -1,22 +1,32 @@
 /**
  * "Ejecutar" sobre un ejercicio remoto SIN casos de prueba.
  *
- * En un lenguaje remoto (Java, ADR-060) "Ejecutar" y "Probar" son la MISMA
- * llamada: las dos postean a `/executions` con `{ejercicio_id, source_code}` y
- * el servidor corre los casos. "Probar" tenia el guard `hasTests`; "Ejecutar"
- * no. Con `test_cases: []` —que el contrato admite— la corrida no ejecuta nada
- * (el servidor itera sobre la lista de casos) y devuelve
- * `total=0, passed=0, failed=0`. El labeler lee `failed == 0` como "paso todo"
- * y etiqueta N4 un episodio donde el codigo del alumno nunca corrio.
+ * Este archivo nacio el 2026-08-28 afirmando que el boton quedaba BLOQUEADO, y
+ * ese era el arreglo correcto para el codigo de ese momento: en un lenguaje
+ * remoto "Ejecutar" y "Probar" eran la MISMA llamada. El navegador no tiene
+ * runtime de Java, asi que la unica corrida posible era contra los casos. Con
+ * `test_cases: []` el servidor iteraba sobre una lista vacia, no ejecutaba
+ * nada, y devolvia `total=0, passed=0, failed=0` — el `failed == 0` que el
+ * labeler traduce a N4 sobre un episodio donde el codigo nunca corrio.
  *
- * El alumno no pierde nada: hoy apretar el boton le devuelve la consola vacia,
- * porque no hay ningun caso cuyo stdout mostrar. Lo unico que producia era el
- * evento.
+ * El mismo dia, mas tarde, se cerro la causa en vez del sintoma: `modo:
+ * "libre"` corre el programa una vez con el stdin del alumno y devuelve su
+ * salida, sin evaluar nada y sin emitir conteos. El ciclo
+ * escribir-correr-ver-que-sale, que en Python siempre existio, ahora existe
+ * tambien en Java — y el boton no tiene por que bloquearse.
  *
- * El backend cierra el mismo agujero del lado del servidor. Esto evita que la
- * peticion salga siquiera — y que consuma cuota, que en remoto se cobra.
+ * Asi que los dos primeros tests estan INVERTIDOS respecto de como nacieron:
+ * antes afirmaban que no se mandaba nada; ahora afirman que se manda en modo
+ * libre. Lo que NO cambio es la propiedad de fondo, y es la que siguen
+ * cuidando entre los dos archivos: una corrida sobre un ejercicio sin casos no
+ * puede terminar contada como "aprobo todo".
+ *
+ * El backend la cierra por su lado (`debe_emitir_conteos`, con un test por
+ * cada termino). Acá se cuida que el cliente pida el modo correcto: si
+ * "Ejecutar" volviera a mandar `tests`, el agujero se reabre desde este lado
+ * sin que el backend pueda distinguirlo.
  */
-import { act, render, screen, waitFor } from "@testing-library/react"
+import { act, fireEvent, render, screen, waitFor } from "@testing-library/react"
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 import { CodeEditor } from "../src/components/CodeEditor"
 import type { ExecutionResult, TestCasePublic } from "../src/lib/api"
@@ -91,21 +101,67 @@ describe("Ejecutar en remoto sin casos de prueba", () => {
       atajo()
     })
 
-    expect(runRemote).not.toHaveBeenCalled()
-    expect(onCodeExecuted).not.toHaveBeenCalled()
+    // Dos veces: el boton y el atajo. Los dos tienen que llegar al mismo lado
+    // — el guard viejo vivia en el `disabled` y el atajo se le colaba.
+    expect(runRemote).toHaveBeenCalledTimes(2)
+    for (const llamada of vi.mocked(runRemote).mock.calls) {
+      expect(llamada[0]?.modo).toBe("libre")
+    }
+    // Y la corrida queda en la trazabilidad como `codigo_ejecutado`, igual que
+    // la de Python: no se pierde, cambia de evento.
+    expect(onCodeExecuted).toHaveBeenCalled()
   })
 
-  it("el boton queda deshabilitado y dice por que", async () => {
+  it("el boton esta HABILITADO: sin casos igual se puede correr", async () => {
     render(
       <CodeEditor initialCode="class Main {}" language="java" ejercicioId="ej-1" testCases={[]} />,
     )
     await esperarEditor()
-    expect(botonEjecutar().disabled).toBe(true)
-    expect(botonEjecutar().title).toMatch(/no tiene casos de prueba/i)
+    expect(botonEjecutar().disabled).toBe(false)
   })
 
-  it("con al menos un caso publico, 'Ejecutar' vuelve a andar", async () => {
-    // El guard no puede cerrarle la puerta al ejercicio normal.
+  it("el alumno ve lo que imprimio su programa, no un caso", async () => {
+    // En libre no hay `cases`: la salida viene en `stdout`. Si el cliente
+    // siguiera leyendo `cases[0].got`, la consola quedaria vacia — que es
+    // exactamente el sintoma que esta feature vino a sacar.
+    vi.mocked(runRemote).mockResolvedValue({
+      ...EJECUCION_SIN_CASOS,
+      modo: "libre",
+      stdout: "hola mundo\n",
+    })
+    render(
+      <CodeEditor initialCode="class Main {}" language="java" ejercicioId="ej-1" testCases={[]} />,
+    )
+    await esperarEditor()
+    await act(async () => {
+      botonEjecutar().click()
+    })
+    await waitFor(() => expect(screen.getByText(/hola mundo/)).toBeTruthy())
+  })
+
+  it("la entrada que escribe el alumno viaja con la corrida", async () => {
+    render(
+      <CodeEditor initialCode="class Main {}" language="java" ejercicioId="ej-1" testCases={[]} />,
+    )
+    await esperarEditor()
+    const entrada = screen.getByLabelText(/entrada del programa/i)
+    // `fireEvent.change` y no asignar `.value`: el textarea es controlado, y
+    // escribirle la propiedad directo no pasa por el setter de React — el
+    // estado queda en "" y el test verifica el DOM, no el componente.
+    await act(async () => {
+      fireEvent.change(entrada, { target: { value: "42\nJuani\n" } })
+    })
+    await act(async () => {
+      botonEjecutar().click()
+    })
+    expect(vi.mocked(runRemote).mock.calls[0]?.[0]?.stdin).toBe("42\nJuani\n")
+  })
+
+  it("con casos publicos, 'Ejecutar' SIGUE siendo libre (no corre los tests)", async () => {
+    // La separacion es el punto: "Ejecutar" corre el programa, "Probar" corre
+    // los casos. Que el ejercicio TENGA casos no convierte a "Ejecutar" en
+    // "Probar" — si asi fuera, volveriamos al estado en que los dos botones
+    // hacian lo mismo.
     const onCodeExecuted = vi.fn()
     render(
       <CodeEditor
@@ -122,6 +178,7 @@ describe("Ejecutar en remoto sin casos de prueba", () => {
       botonEjecutar().click()
     })
     expect(runRemote).toHaveBeenCalledTimes(1)
+    expect(vi.mocked(runRemote).mock.calls[0]?.[0]?.modo).toBe("libre")
   })
 })
 

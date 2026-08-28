@@ -414,6 +414,18 @@ export interface ExecutionCase {
 }
 
 export interface ExecutionResult {
+  /** Presente solo en modo libre. La salida del programa, sin evaluar nada.
+   *
+   * En modo tests la salida vive en `cases[n].got` porque cada caso tiene la
+   * suya; en libre no hay casos y el programa corrio una vez. */
+  stdout?: string
+  stderr?: string
+  exit_code?: number
+  timed_out?: boolean
+  /** `true` cuando el lenguaje no tiene runtime server-side. No es un fallo
+   * del alumno ni de la infraestructura: no hay donde ejecutarlo. */
+  sin_runtime?: boolean
+  modo?: "tests" | "libre"
   outcome: ExecutionOutcome
   total: number
   passed: number
@@ -447,6 +459,17 @@ export async function requestExecution(
     ejercicio_id: string
     source_code: string
     episode_id?: string
+    /** `"tests"` corre los casos del ejercicio; `"libre"` corre el programa
+     * una vez con `stdin` y devuelve su salida, sin evaluar nada.
+     *
+     * Ausente = `"tests"`, que es como se comportaba antes de que existiera el
+     * campo: ningun llamador viejo cambia de significado. */
+    modo?: "tests" | "libre"
+    /** Entrada del programa, entera y por adelantado. En Python el `input()`
+     * se intercepta acá en el navegador y se le pregunta al alumno en el
+     * momento; el contenedor de Java corre hasta terminar sin canal de vuelta,
+     * asi que lo que vaya a leer tiene que viajar con la request. */
+    stdin?: string
     /** Comision del episodio. La usa la habilitacion progresiva del
      * execution-service (`EXECUTION_ENABLED_COMISIONES`, tarea 9.3). Sin esto el
      * backend recibe `None`, la lista no matchea con nada y **nadie puede

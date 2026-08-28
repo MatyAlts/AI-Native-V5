@@ -33,6 +33,18 @@ const POLL_TIMEOUT_MS = 90_000
 export interface RunRemoteOptions {
   ejercicioId: string
   sourceCode: string
+  /** `"tests"` (default) corre los casos; `"libre"` corre el programa y
+   * devuelve su salida.
+   *
+   * Existe porque en un lenguaje remoto "Ejecutar" y "Probar" eran la MISMA
+   * llamada: sin runtime en el navegador, la unica corrida posible era contra
+   * los casos. El alumno de Python podia escribir, correr y ver que sale; el
+   * de Java no tenia ese ciclo, y sobre un ejercicio sin casos "Ejecutar" le
+   * devolvia una consola vacia. */
+  modo?: "tests" | "libre"
+  /** Entrada del programa en modo libre. Va entera y por adelantado: el
+   * contenedor no tiene forma de pedir un dato a mitad de camino. */
+  stdin?: string
   /** Episodio al que pertenece la corrida.
    *
    * Es lo que le permite al execution-service emitir `tests_ejecutados` al CTR.
@@ -75,6 +87,11 @@ export async function runRemote(opts: RunRemoteOptions): Promise<ExecutionResult
       source_code: opts.sourceCode,
       ...(opts.episodeId ? { episode_id: opts.episodeId } : {}),
       ...(opts.comisionId ? { comision_id: opts.comisionId } : {}),
+      ...(opts.modo ? { modo: opts.modo } : {}),
+      // El stdin viaja aunque sea "": un programa con Scanner y entrada vacia
+      // es un caso legitimo, y omitir el campo lo volveria indistinguible de
+      // "no me lo mandaron".
+      ...(opts.modo === "libre" ? { stdin: opts.stdin ?? "" } : {}),
     },
     opts.getToken,
   )
