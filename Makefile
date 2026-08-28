@@ -1,5 +1,5 @@
 .PHONY: help init install dev dev-bootstrap test test-fast test-rls test-adversarial \
-        test-e2e test-e2e-clean test-e2e-headed test-smoke test-smoke-local \
+        test-e2e test-e2e-clean test-e2e-headed test-smoke test-smoke-local test-sin-stack \
         lint lint-fix typecheck migrate migrate-new setup-dev-perms setup-rls-user clean clean-all \
         check-health check-rls check-claude-md generate-service seed-casbin seed-smoke eval-retrieval backup restore \
         onboard-utn kappa progression export-academic generate-protocol status build check-tools
@@ -133,6 +133,12 @@ test-smoke: ## Smoke E2E API contra stack already-up (12 servicios + DB seedeada
 
 test-smoke-local: seed-smoke ## Smoke E2E para piloto local: re-seedea + skipea integrity-attestation-service (:8012)
 	SMOKE_SKIP_ATTESTATION_CHECK=1 $(UV) run pytest tests/e2e/smoke/ -v -m smoke --tb=short --override-ini="testpaths="
+
+# `test-smoke` selecciona `-m smoke` y estos llevan `sin_stack`: salian en el
+# "19 deselected" de cada corrida y no los corria NADIE. Levantan su propio
+# doble HTTP en proceso — no hace falta stack, ni DB, ni Redis.
+test-sin-stack: ## Smoke que NO necesita stack (doble HTTP en proceso, ~8s)
+	$(UV) run pytest tests/e2e/smoke/ -v -m sin_stack --tb=short --override-ini="testpaths="
 
 
 ## Calidad
