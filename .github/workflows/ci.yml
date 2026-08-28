@@ -37,7 +37,7 @@ jobs:
         run: uv python install ${{ env.PYTHON_VERSION }}
 
       - name: Install deps
-        run: uv sync --all-packages
+        run: uv sync --all-packages --locked
 
       - name: Ruff check
         run: uv run ruff check .
@@ -86,7 +86,7 @@ jobs:
         run: uv python install ${{ env.PYTHON_VERSION }}
 
       - name: Install deps
-        run: uv sync --all-packages
+        run: uv sync --all-packages --locked
 
       - name: mypy
         run: uv run mypy .
@@ -242,7 +242,7 @@ jobs:
         run: uv python install ${{ env.PYTHON_VERSION }}
 
       - name: Install deps
-        run: uv sync --all-packages
+        run: uv sync --all-packages --locked
 
       - name: Init DBs
         run: PGPASSWORD=postgres psql -h localhost -U postgres -f infrastructure/postgres/init-dbs.sql
@@ -250,9 +250,18 @@ jobs:
       - name: Alembic upgrade (academic + evaluation)
         env:
           ACADEMIC_DB_URL: postgresql+asyncpg://postgres:postgres@localhost:5432/academic_main
+        # Se entra al directorio de cada servicio en vez de pasar `-c` desde la
+        # raiz. Los dos `alembic.ini` declaran `script_location = alembic`, que
+        # es RELATIVO al cwd — no al .ini. Desde la raiz, alembic busca
+        # `./alembic`, no existe, y muere con:
+        #
+        #   FAILED: Path doesn't exist: alembic
+        #
+        # antes de tocar la base. Ese fallo dejo el job `Unit tests` en rojo en
+        # `main` apenas se agrego este paso.
         run: |
-          uv run alembic -c apps/academic-service/alembic.ini upgrade head
-          uv run alembic -c apps/evaluation-service/alembic.ini upgrade head
+          (cd apps/academic-service && uv run alembic upgrade head)
+          (cd apps/evaluation-service && uv run alembic upgrade head)
 
       - name: Pytest (unit)
         # Coverage gate (GAP-9): documented target is 80% global, 85% pedagogy
@@ -327,7 +336,7 @@ jobs:
         run: uv python install ${{ env.PYTHON_VERSION }}
 
       - name: Install deps
-        run: uv sync --all-packages
+        run: uv sync --all-packages --locked
 
       - name: Crear ctr_store y el usuario non-superuser
         # CRITICO: los tests DEBEN correr con un usuario NOBYPASSRLS. Con
@@ -416,7 +425,7 @@ jobs:
         run: uv python install ${{ env.PYTHON_VERSION }}
 
       - name: Install deps
-        run: uv sync --all-packages
+        run: uv sync --all-packages --locked
 
       - name: Init DBs
         run: PGPASSWORD=postgres psql -h localhost -U postgres -f infrastructure/postgres/init-dbs.sql
