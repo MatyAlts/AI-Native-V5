@@ -125,9 +125,15 @@ async def _run_and_store(execution_id: UUID, *, req: ExecutionRequest, user: Use
     # guardar el resultado: emitir es lo unico que el alumno no ve, asi que si
     # falla no puede retrasarle la respuesta ni tumbar la corrida.
     #
-    # `should_emit` es el guard anti-inflacion: ante fallo de infraestructura NO
+    # `should_emit` es el guard anti-inflacion: si no se ejecuto NINGUN caso no
     # se emite, porque el labeler lee `failed == 0` como "paso todo" y etiquetaria
-    # N4 un episodio donde se cayo el sandbox. Ver `ctr_emitter`.
+    # N4 —el nivel mas alto del modelo— un episodio donde no corrio nada. Cubre
+    # las dos formas de que no corra nada: el sandbox caido
+    # (`INFRASTRUCTURE_FAILURE`) y la corrida vacia (ejercicio sin casos, o
+    # lenguaje sin runtime con todo `skipped`). Ver `ctr_emitter`.
+    #
+    # El alumno IGUAL ve el resultado: `to_client_payload` ya se calculo y se
+    # guarda mas abajo. Lo unico que no ocurre es el evento CTR.
     if (
         req.episode_id is not None
         and run is not None

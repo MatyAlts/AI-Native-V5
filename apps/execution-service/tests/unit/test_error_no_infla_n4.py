@@ -230,3 +230,105 @@ def test_el_fallo_de_infraestructura_sigue_sin_emitirse() -> None:
     from execution_service.services.result_mapper import infrastructure_failure
 
     assert not should_emit(infrastructure_failure("sandbox no alcanzable"))
+
+
+# ── La TERCERA puerta a `failed == 0`: la corrida VACIA ──────────────────────
+
+
+class TestLaCorridaVacia:
+    """`total = passed = failed = 0` con `outcome=COMPLETED` — y `should_emit` True.
+
+    La misma inflación de N4, por la tercera puerta. Las dos primeras están
+    cerradas: `INFRASTRUCTURE_FAILURE` no emite, y `CaseStatus.ERROR` cuenta
+    como fallo. Esta no la blindaba nadie.
+
+    Y ésta no necesita ataque: alcanza con un ejercicio mal autorado. Hay dos
+    caminos, los dos legítimos del lado del código:
+
+      1. **Ejercicio sin casos de prueba.** `test_cases` admite `[]`, así que
+         `run_cases` devuelve `cases=[]` con outcome `COMPLETED`.
+      2. **Lenguaje sin runtime.** `run_cases` marca todos los casos `skipped`,
+         y `RunResult.total` excluye los skipped por definición ("solo los
+         casos que efectivamente corrieron").
+
+    En los dos el payload sale `failed=0`, el labeler v1.2.0 lee `failed == 0`
+    como "pasó todo" y —con el tutor a >=60s— etiqueta **N4, apropiación
+    reflexiva**. El alumno ni se entera: apretó "Ejecutar" sobre un ejercicio
+    que no tenía nada que ejecutar y quedó registrado en el corpus de la tesis
+    con el nivel más alto del modelo.
+
+    El fix es la misma regla que el módulo ya declara para el fallo de
+    infraestructura, aplicada al caso de al lado: *"El evento se llama
+    `tests_ejecutados`; si no se ejecutaron, no hay evento."* Cero casos
+    corridos es literalmente eso.
+    """
+
+    def test_ejercicio_sin_casos_no_emite(self) -> None:
+        run = RunResult(outcome=RunOutcome.COMPLETED, cases=[])
+
+        assert (run.total, run.passed, run.failed) == (0, 0, 0), "precondicion"
+        assert not should_emit(run), (
+            "una corrida sin un solo caso ejecutado se emite con failed=0 y el "
+            "labeler la lee como 'paso todo'"
+        )
+
+    def test_lenguaje_sin_runtime_no_emite(self) -> None:
+        """Todos `skipped`: `total` los excluye, así que la corrida es vacía."""
+        saltados = [
+            CaseResult(
+                id=f"t{i}",
+                name="caso",
+                type="stdin_stdout",
+                status=CaseStatus.SKIPPED,
+                input="",
+                expected=None,
+                got="",
+                error="No hay entorno de ejecucion para este lenguaje.",
+                weight=1.0,
+            )
+            for i in range(3)
+        ]
+        run = RunResult(outcome=RunOutcome.COMPLETED, cases=saltados)
+
+        assert run.total == 0, "precondicion: los skipped no cuentan como corridos"
+        assert not should_emit(run)
+
+    def test_el_payload_de_una_corrida_vacia_seria_n4(self) -> None:
+        """Por qué importa: el labeler REAL sobre el payload REAL.
+
+        No depende del fix — describe el daño que el fix evita. Si algún día
+        el labeler dejara de leer `failed == 0` como N4, este test avisa que
+        el guard de arriba perdió su motivo (y ahí se decide con el director,
+        no acá: tocar el labeler bumpea `LABELER_VERSION`).
+        """
+        payload = _payload_de(RunResult(outcome=RunOutcome.COMPLETED, cases=[]))
+
+        assert payload["test_count_failed"] == 0
+        assert label_event("tests_ejecutados", payload, context=_contexto_tutor_lejano()) == "N4"
+
+    def test_una_corrida_con_UN_caso_saltado_y_otro_aprobado_SI_emite(self) -> None:
+        """El borde: no se corta por "hay skipped", se corta por "no corrió nada".
+
+        Un ejercicio con un caso saltado y otro aprobado SI es evidencia
+        pedagógica real, y cortar por la presencia de skipped la tiraría.
+        """
+        run = RunResult(
+            outcome=RunOutcome.COMPLETED,
+            cases=[
+                _caso(SandboxStatus.ACCEPTED, case_id="t1", stdout="Hola\n"),
+                CaseResult(
+                    id="t2",
+                    name="caso",
+                    type="stdin_stdout",
+                    status=CaseStatus.SKIPPED,
+                    input="",
+                    expected=None,
+                    got="",
+                    error="saltado",
+                    weight=1.0,
+                ),
+            ],
+        )
+
+        assert run.total == 1
+        assert should_emit(run), "una corrida con casos reales no puede dejar de emitirse"

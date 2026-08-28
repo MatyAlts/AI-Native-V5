@@ -1,6 +1,8 @@
 """Emision del evento de trazabilidad de una corrida (tareas 5.1, 5.2 y 5.4).
 
-**La regla central de este modulo: un fallo de infraestructura NO emite evento.**
+**La regla central de este modulo: una corrida donde no se ejecuto NINGUN caso
+NO emite evento.** El fallo de infraestructura es un caso particular de eso; la
+corrida vacia es el otro.
 
 Suena obvio y no lo es. D4 resuelve que una caida del sandbox no se registre
 como "el alumno fallo todos los tests", y para eso `RunResult.failed` devuelve 0
@@ -21,6 +23,14 @@ el problema que D4 evita: no degrada la clasificacion, la infla.
 Por eso, ante `INFRASTRUCTURE_FAILURE` no se emite nada. El evento se llama
 `tests_ejecutados`; si no se ejecutaron, no hay evento. Pedagogicamente no paso
 nada, y el alumno ve el error en pantalla.
+
+Esa ultima frase es el enunciado general, y durante un tiempo se aplico solo a
+la mitad. La otra mitad es la **corrida vacia**: `run.total == 0` con outcome
+`COMPLETED`, que sale de un ejercicio sin casos de prueba (`test_cases` admite
+`[]`) o de un lenguaje sin runtime (todos los casos `skipped`, que `total`
+excluye). Mismo payload `failed=0`, misma lectura N4 del labeler, y sin
+necesidad de que nada se rompa: alcanza con un ejercicio mal autorado, y el
+alumno ni se entera. Ver `should_emit`.
 
 Arreglarlo del otro lado —que el labeler mire un campo nuevo— obligaria a
 bumpear `LABELER_VERSION`, re-etiquetar los historicos y escribir un ADR. No
@@ -55,8 +65,46 @@ def idempotency_key(execution_id: UUID) -> str:
 
 
 def should_emit(run: RunResult) -> bool:
-    """False ante fallo de infraestructura. Ver el docstring del modulo."""
-    return run.outcome is not RunOutcome.INFRASTRUCTURE_FAILURE
+    """False cuando NO SE EJECUTO NINGUN CASO. Ver el docstring del modulo.
+
+    Dos formas de que no se haya ejecutado nada, y las dos terminan en el mismo
+    payload —`total = passed = failed = 0`— que el labeler lee como N4:
+
+    1. **Fallo de infraestructura.** El caso original de D4: el sandbox se cayo.
+       `RunResult.failed` devuelve 0 por diseno para no registrar la caida como
+       "el alumno fallo todos los tests", y emitir igual invertia el problema
+       hacia el lado peor.
+
+    2. **Corrida vacia** (`run.total == 0` con outcome `COMPLETED`). Es la
+       tercera puerta a `failed == 0`, y la unica que no necesita que nada se
+       rompa: alcanza un ejercicio mal autorado. `test_cases` admite `[]`, con
+       lo cual `run_cases` devuelve `cases=[]`; y un lenguaje sin runtime deja
+       todos los casos `skipped`, que `total` excluye por definicion ("solo los
+       casos que efectivamente corrieron"). En los dos el alumno apreta
+       "Ejecutar", no ve nada raro, y su episodio queda en el corpus de la
+       tesis etiquetado N4 —apropiacion reflexiva, el nivel mas alto del
+       modelo— por una corrida donde no se ejecuto una sola linea de test.
+
+    La regla es UNA y ya estaba escrita en el docstring del modulo: *"El evento
+    se llama `tests_ejecutados`; si no se ejecutaron, no hay evento."* El fallo
+    de infraestructura era el caso particular; esto es el enunciado general. Se
+    expresa por `total == 0` y no enumerando los dos motivos por el mismo
+    criterio con que `RunResult.failed` se define por negacion: un tercer
+    camino a la corrida vacia cae del lado conservador solo, en vez de colarse
+    inflando hacia N4.
+
+    Lo que NO corta: una corrida con al menos un caso corrido, aunque el resto
+    esten `skipped` o hayan dado `error`. Eso SI es evidencia pedagogica
+    legitima y sigue emitiendose (los `error` cuentan como fallo, que es lo que
+    lo manda a N3).
+
+    Arreglarlo del otro lado —que el labeler distinga `total == 0`— obligaria a
+    bumpear `LABELER_VERSION`, re-etiquetar los historicos y escribir un ADR.
+    No vale para un caso que se resuelve no emitiendo.
+    """
+    if run.outcome is RunOutcome.INFRASTRUCTURE_FAILURE:
+        return False
+    return run.total > 0
 
 
 def build_payload(
