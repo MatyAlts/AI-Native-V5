@@ -142,7 +142,16 @@ class OlvidoCorreccionAdapter:
                 )
             )
             .values(
-                artefacto_sha256="",
+                # NULL y no `""`: el UNIQUE de idempotencia incluye esta
+                # columna, y un alumno que reentrego tras un `returned` tiene
+                # DOS filas sobre la misma entrega/orden/rubrica con sha
+                # distinto. Vaciar las dos con el mismo `""` chocaba contra
+                # `uq_correccion_ia_idempotencia` —que no es deferrable— y la
+                # anonimizacion ENTERA se caia con IntegrityError, justo para
+                # los alumnos que mas usaron la plataforma. En Postgres dos NULL
+                # no colisionan en un UNIQUE, y ademas es lo que el dato es: no
+                # hay hash, se borro. Ver migracion 20260827_0002.
+                artefacto_sha256=None,
                 tests_snapshot={},
                 desglose=[],
                 pdf_storage_key=None,

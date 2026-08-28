@@ -239,26 +239,9 @@ async def ejecutar_correccion(
         raise
     except PreEjecucionError as e:
         await _cerrar_con_error(tenant_id, correccion_id, e.error_code, e.mensaje, True)
-    except CredencialNoConfiguradaError as e:
-        # El docente nunca conectó su cuenta. NO es infraestructura: reintentar
-        # devuelve exactamente lo mismo hasta que la conecte. Antes caía al
-        # `except Exception` de abajo y se cerraba como `ERROR_INTERNO`, que sí
-        # está en el set de infra — o sea que la UI le ofrecía "Reintentar" al
-        # docente que lo único que tenía que hacer era ir a conectar su cuenta.
-        await _cerrar_con_error(tenant_id, correccion_id, "SIN_CREDENCIAL", str(e), False)
-    except ActiveIAError as e:
-        code, infra = mapear_error_activeia(None, e.mensaje)
-        es_infra = infra or e.es_infraestructura
-        # `ACTIVEIA_ERROR` está en el set de infraestructura por las filas
-        # históricas, así que guardarlo para un RECHAZO hacía que la UI lo
-        # re-derivara como infra y mostrara "reintentar puede servir". El caso
-        # que lo delata: el docente cambió su contraseña en Active-IA y no la
-        # actualizó acá — el panel le decía ámbar y "reintentá" indefinidamente
-        # sobre algo que sólo se arregla reconectando la cuenta. Es exactamente
-        # lo que el docstring de `marcar_error` dice haber costado dos días.
-        if not es_infra and code == "ACTIVEIA_ERROR":
-            code = "ACTIVEIA_RECHAZO"
-        await _cerrar_con_error(tenant_id, correccion_id, code, e.mensaje, es_infra)
+    except (CredencialNoConfiguradaError, ActiveIAError) as e:
+        code, detalle, es_infra = _clasificar_fallo(e)
+        await _cerrar_con_error(tenant_id, correccion_id, code, detalle, es_infra)
     except Exception as e:
         log.exception("activeia_correccion_excepcion", correccion_id=str(correccion_id))
         await _cerrar_con_error(
@@ -271,6 +254,43 @@ async def ejecutar_correccion(
         # siempre en cuanto algo fallara — y el indicador de saturación
         # mentiría justo cuando hace falta leerlo.
         await _registrar_desenlace(tenant_id, correccion_id, time.monotonic() - arranque)
+
+
+def _clasificar_fallo(e: Exception) -> tuple[str, str, bool]:
+    """Traduce un fallo del circuito a `(error_code, detalle, es_infraestructura)`.
+
+    Vive acá y no inline en el `except` porque la clasificación es lo ÚNICO que
+    decide si la UI le muestra al docente el botón "Reintentar", y esa decisión
+    merece un lugar con nombre.
+
+    Dos casos que antes se pintaban mal, los dos como infraestructura:
+
+    - **El docente nunca conectó su cuenta.** `CredencialNoConfiguradaError`
+      caía al `except Exception` genérico y se cerraba como `ERROR_INTERNO`, que
+      está en el set de infra. O sea que la pantalla le ofrecía "Reintentar" a
+      alguien cuyo único paso posible era ir a conectar su cuenta.
+
+    - **La contraseña de Active-IA cambió.** `mapear_error_activeia` devuelve
+      `("ACTIVEIA_ERROR", False)` para un rechazo sin código, pero
+      `ACTIVEIA_ERROR` está DENTRO del set de infra por las filas históricas —
+      y como el flag no se persiste, la UI lo re-deriva del código guardado y
+      vuelve a decir "reintentar puede servir". El `False` era inalcanzable.
+
+    Los rechazos nuevos usan códigos propios (`SIN_CREDENCIAL`,
+    `ACTIVEIA_RECHAZO`) que no están en el set, así que la re-derivación da lo
+    mismo que la clasificación original.
+    """
+    from evaluation_service.services.activeia_credenciales import CredencialNoConfiguradaError
+
+    if isinstance(e, CredencialNoConfiguradaError):
+        return "SIN_CREDENCIAL", str(e), False
+
+    assert isinstance(e, ActiveIAError)
+    code, infra = mapear_error_activeia(None, e.mensaje)
+    es_infra = infra or e.es_infraestructura
+    if not es_infra and code == "ACTIVEIA_ERROR":
+        code = "ACTIVEIA_RECHAZO"
+    return code, e.mensaje, es_infra
 
 
 async def _registrar_desenlace(tenant_id: UUID, correccion_id: UUID, duracion_s: float) -> None:

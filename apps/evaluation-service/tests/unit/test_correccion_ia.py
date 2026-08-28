@@ -699,7 +699,12 @@ class TestElEjecutorNoManda:
         for clave in ("nota_100", "nota", "nota_final", "calificacion"):
 
             class _Cliente:
-                async def corregir_ejercicio(self, **kw: object) -> tuple[int, dict]:
+                # `clave=clave` liga el valor de ESTA vuelta: sin eso el closure
+                # lo resolveria al final del loop y las cuatro variantes
+                # probarian la misma.
+                async def corregir_ejercicio(
+                    self, clave: str = clave, **kw: object
+                ) -> tuple[int, dict]:
                     return 200, {clave: 0, "desglose": []}
 
             r = await _corregir_ejercicio(

@@ -277,21 +277,48 @@ En todos los casos, documentar.
 1. Verificar identidad del solicitante (firma + DNI vs consentimiento
    archivado).
 
-2. Ejecutar anonimización:
-   ```python
-   from platform_ops.privacy import anonymize_student
-   report = anonymize_student(
-       student_pseudonym=UUID("..."),
-       data_source=academic_data_source,
-   )
+2. Ejecutar la anonimización con el script:
+
+   ```bash
+   # Primero en seco, para ver qué va a tocar. No escribe nada.
+   ACADEMIC_DB_URL=postgresql+asyncpg://... \
+       uv run python scripts/olvidar-alumno.py <student_pseudonym> <tenant_id> --dry-run
+
+   # Y después de verdad.
+   ACADEMIC_DB_URL=postgresql+asyncpg://... \
+       uv run python scripts/olvidar-alumno.py <student_pseudonym> <tenant_id>
    ```
+
+   > **Hasta el 2026-08-27 este paso decía** `data_source=academic_data_source`,
+   > y esa variable **no existe en el repo**: el protocolo `_DataSource` sólo lo
+   > implementan archivos de test. Quien siguiera el runbook al pie de la letra
+   > se comía un `NameError` — o peor, si armaba una fuente a mano sin los
+   > métodos de la corrección asistida, `anonymize_student` caía en su guard de
+   > `hasattr` y devolvía un informe **exitoso con todo en cero**, idéntico al de
+   > un alumno que no tenía correcciones, mientras su código y los PDF con su
+   > nombre seguían en la base. El script cablea el
+   > `OlvidoCorreccionAdapter` y **sale con código 1 cuando el olvido quedó
+   > incompleto**, así que no se puede leer un fallo como un éxito.
+
+   El script borra el código entregado, el hash del conjunto, el
+   `tests_snapshot` (que lleva la salida real de su programa), el `desglose` de
+   la devolución y los PDF; y rota el pseudónimo del episodio y de las
+   correcciones.
 
 3. La cadena CTR **se preserva** (los eventos siguen ahí con los hashes
    intactos), pero el pseudónimo nuevo no se liga a la identidad real.
    Esto cumple el derecho al olvido sin romper la trazabilidad del
    registro.
 
-4. Comunicar al estudiante por escrito:
+4. **Si el informe dice `ESTADO: INCOMPLETO`, cerrar lo que falta antes de
+   comunicar.** Hoy son dos cosas posibles:
+   - PDF que el storage no pudo borrar (el script los lista por key).
+   - La copia que quedó del lado de **Active-IA**: todavía no exponen borrado
+     por alumno (pedido 3.6 de `activeia-cambios-pedidos.md`), así que hay que
+     borrarla a mano desde su panel. El script imprime los `external_entrega_id`
+     con los que se la encuentra.
+
+5. Comunicar al estudiante por escrito:
    - Fecha de ejecución
    - Confirmación de anonimización
    - Aclaración de que los eventos agregados en análisis publicados

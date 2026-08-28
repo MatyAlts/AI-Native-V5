@@ -53,7 +53,14 @@ class CorreccionIA(Base, TenantMixin):
     tests_snapshot: Mapped[dict[str, Any]] = mapped_column(
         JSONB, nullable=False, default=dict, server_default=sa.text("'{}'::jsonb")
     )
-    artefacto_sha256: Mapped[str] = mapped_column(String(64), nullable=False)
+    # Nullable SOLO para el estado terminal de una fila anonimizada: el derecho
+    # al olvido lo vacia porque el hash de un archivo chico es reversible por
+    # fuerza bruta si alguien tiene la consigna. NULL y no `""` porque esta
+    # columna entra en `uq_correccion_ia_idempotencia` y dos filas del mismo
+    # alumno sobre la misma entrega (una reentrega tras `returned`) colisionaban
+    # al vaciarse. Una correccion VIVA siempre lo tiene: lo escriben tanto el
+    # INSERT de la ruta como `reabrir_para_reintento`.
+    artefacto_sha256: Mapped[str | None] = mapped_column(String(64), nullable=True)
     error_code: Mapped[str | None] = mapped_column(String(50), nullable=True)
     error_detail: Mapped[str | None] = mapped_column(Text, nullable=True)
     # Sin esto, un reintento tras un timeout no puede retomar la entrega que ya
