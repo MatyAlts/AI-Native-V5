@@ -228,18 +228,29 @@ async def _run_java_sin_techo(source_code: str, stdin: str = "") -> DockerRunRes
 # ── Comparacion de salidas (JAVA-1) ──────────────────────────────────────────
 #
 # GEMELO OBLIGADO: `normalizarSalida` / `salidaCoincide` en
-# `apps/web-student/src/lib/comparacionSalida.ts`.
+# `packages/contracts/src/comparacionSalida.ts`.
 #
-# Hay DOS correctores porque hay dos runtimes: Java corre acá (contenedor
-# efimero) y Python en el navegador (Pyodide). Si las normalizaciones se
-# separan, el MISMO codigo aprueba en un lenguaje y falla en el otro, y los
-# conteos `passed`/`failed` que viajan al CTR dejan de ser comparables entre
-# cohortes. Cualquier cambio acá va tambien allá, y al reves.
+# Hay DOS implementaciones porque hay dos lenguajes, no dos runtimes: este
+# modulo en Python, y el de TypeScript que importan LOS TRES frontends. Ese
+# "tres" es la correccion del 2026-08-28: este comentario decia "DOS
+# correctores" y habia un tercero sin declarar —el `normalize()` propio de
+# `web-teacher/src/lib/pyodideRunner.ts`, el que pinta el verde cuando el
+# docente prueba un ejercicio ANTES de asignarlo— que usaba el `\s` de JS y
+# recortaba 24 code points en vez de 28. Un `expected_output` pegado con BOM
+# le daba verde al docente y WRONG_ANSWER en silencio a toda la cohorte. Por
+# eso la copia de TS ahora vive en `packages/contracts` y se importa: una
+# implementacion por lenguaje, no una por pantalla.
+#
+# Si las normalizaciones se separan, el MISMO codigo aprueba en un lenguaje y
+# falla en el otro, y los conteos `passed`/`failed` que viajan al CTR dejan de
+# ser comparables entre cohortes. Cualquier cambio acá va tambien allá, y al
+# reves. El fixture `tests/fixtures/paridad-salida.json` es el que lo ata: lo
+# leen las suites de los dos lenguajes.
 
 # Los blancos que se recortan al final de cada linea son los de `str.rstrip()`
 # sin argumentos, o sea `str.isspace()`. ESTE LADO ES LA REFERENCIA: el gemelo
-# de JavaScript enumera a mano ese mismo set (`CLASE_BLANCOS` en
-# `comparacionSalida.ts`) porque el `\s` de JS NO es `isspace()` de Python —
+# de JavaScript enumera a mano ese mismo set (`CODIGOS_BLANCOS` en
+# `packages/contracts/src/comparacionSalida.ts`) porque el `\s` de JS NO es `isspace()` de Python —
 # `\s` incluye `﻿`, que Python no considera blanco, y le faltan `\x1c-\x1f`
 # y `\x85`, que Python si.
 #
