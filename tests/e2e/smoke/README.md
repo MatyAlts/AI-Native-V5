@@ -22,7 +22,7 @@ Pre-requisito: stack up. Si no lo está:
 make dev-bootstrap                          # postgres, redis, keycloak, minio, ...
 make migrate                                # las 4 bases al head
 uv run python scripts/seed-3-comisiones.py  # seed con 3 comisiones / 18 students / 94 episodios cerrados
-bash scripts/dev-start-all.sh               # arranca los 12 servicios Python (logs en /tmp/piloto-logs/)
+bash scripts/dev-start-all.sh               # arranca los 13 servicios Python (logs en .dev-logs/)
 ```
 
 Luego:

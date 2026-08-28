@@ -218,7 +218,7 @@ def _wait_for_health(request: pytest.FixtureRequest) -> None:
             "Pre-condicion de smoke FALLO — los siguientes servicios no estan up:\n"
             + "\n".join(failed)
             + "\n\nPista: arrancalos con `bash scripts/dev-start-all.sh` o tu launcher local.\n"
-            "Cada servicio escribe a /tmp/piloto-logs/<svc>.log.\n"
+            "Cada servicio escribe a .dev-logs/<svc>.log.\n"
             "Para skipear sólo el integrity-attestation-service (piloto local sin "
             "infra institucional): export SMOKE_SKIP_ATTESTATION_CHECK=1"
         )

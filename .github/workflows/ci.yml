@@ -134,9 +134,9 @@ jobs:
 
       # NADIE corria estos tests. `rg "vitest" .github/workflows/` daba CERO
       # hasta el 2026-08-27: los jobs de front eran `turbo lint typecheck` y
-      # cuatro `build`, nada mas. Son ~450 tests entre `packages/ui`,
-      # `web-student` y `web-teacher`, y por eso llegaron a haber 14 rojos
-      # viviendo en `main` sin que nadie se enterara.
+      # cuatro `build`, nada mas. Son 767 tests repartidos en seis paquetes
+      # (desglose abajo), y por eso llegaron a haber 14 rojos viviendo en `main`
+      # sin que nadie se enterara.
       #
       # Es el mismo agujero que el de los tests de integracion de Python, del
       # otro lado del monorepo: escribir tests que despues nadie ejecuta.
@@ -146,35 +146,39 @@ jobs:
       # lo que tira ~144 rojos FALSOS. El CI usa `NODE_VERSION: 20`, donde eso
       # no pasa. Si alguien sube la version del CI, esperar esos rojos y no
       # leerlos como regresiones.
-      - run: pnpm --filter @platform/ui test
-      - run: pnpm --filter @platform/web-student test
-
-      # FALTA `@platform/web-teacher` (254 tests), y NO es un olvido.
       #
-      # Quedan 4 rojos REALES pre-existentes, todos en un mismo lugar:
+      # ---
       #
-      #   tests/CorreccionesView.test.tsx > GradingFormView
-      #     - muestra los ejercicios completados en la entrega
-      #     - muestra el formulario de calificacion para entrega submitted
-      #     - muestra boton Devolver para entrega graded
-      #     - boton Volver regresa a la lista
+      # `-r` y no una lista de `--filter`, a proposito.
       #
-      # DIAGNOSTICO (2026-08-28, no confirmado): los cuatro pasan el primer
-      # `waitFor` —o sea que la lista carga y el drill-down encuentra su
-      # boton— y fallan DESPUES del click. Instrumentando el DOM justo tras
-      # ese `waitFor`, `document.body` tiene 587 caracteres y CERO elementos
-      # con `data-testid`: algo desmonta la vista entre una linea y la
-      # siguiente. Sospecha principal: `useTutorialDeVista(correccionesTour,
-      # !loading)`, que el epic de Active-IA agrego a esta vista.
+      # Hasta el 2026-08-28 esto eran dos lineas —`@platform/ui` y
+      # `@platform/web-student`— y todo lo demas quedaba afuera. El comentario
+      # que justificaba la ausencia de `web-teacher` hablaba de "4 rojos REALES
+      # pre-existentes en CorreccionesView.test.tsx"; esos 4 se arreglaron en
+      # `ca798df` y el comentario sobrevivio, dejando 254 tests verdes fuera del
+      # CI por una razon que ya no era cierta.
       #
-      # No se arreglaron a ciegas a proposito: tocan `GradingFormView`, que
-      # ese epic acaba de reescribir, y forzar el test hasta que pase verde
-      # sin entender por que se desmonta es fabricar cobertura.
+      # Y no eran solo esos. Verificado corriendo `pnpm -r test` el 2026-08-28,
+      # todo en verde:
       #
-      # Se deja afuera en vez de con `continue-on-error`: un job que se
-      # permite fallar es la misma enfermedad que este cambio viene a curar.
-      # Cuando los 4 esten en verde, agregar la linea y borrar este comentario:
-      #   - run: pnpm --filter @platform/web-teacher test
+      #   packages/ui            117   (ya corria)
+      #   apps/web-student       346   (ya corria)
+      #   apps/web-teacher       254   <- afuera por el comentario vencido
+      #   packages/auth-client    25   <- afuera y sin ninguna razon escrita
+      #   packages/ctr-client     15   <- idem
+      #   apps/web-admin          10   <- idem
+      #                          ---
+      #                          767   (antes corrian 463)
+      #
+      # Una lista explicita de filtros vuelve a tener el mismo problema el dia
+      # que alguien agregue un paquete con tests: hay que acordarse de sumar la
+      # linea, y nadie se entera si no se suma. `-r` corre el script `test` de
+      # todo workspace que lo tenga y saltea los que no — un paquete nuevo entra
+      # al CI por existir, no por acordarse.
+      #
+      # OJO con la version de Node (ver el bloque de arriba): bajo Node 26 el
+      # Web Storage nativo le gana al de jsdom y aparecen ~144 rojos FALSOS.
+      - run: pnpm -r test
 
   build-frontend:
     name: Build frontends (Vite)
@@ -263,6 +267,46 @@ jobs:
           (cd apps/academic-service && uv run alembic upgrade head)
           (cd apps/evaluation-service && uv run alembic upgrade head)
 
+      - name: Seed minimo para los tests con DB
+        # ESTE STEP FALTABA, y era el agujero mas grande del job.
+        #
+        # Levantar Postgres y correr alembic deja la base CON ESQUEMA Y SIN UNA
+        # SOLA FILA. Los tests `*_db.py` y los `test_scope_comision_*` no piden
+        # "una base": piden una base SEMBRADA, y cuando no la encuentran se
+        # apagan solos. Medido en `main` el 2026-08-28: **114 skipped**, de los
+        # cuales 110 eran literalmente "la base esta vacia":
+        #
+        #    45  El seed no tiene tareas_practicas en dos comisiones distintas
+        #    19  la base no tiene comisiones sembradas
+        #    15  la base no tiene entregas
+        #    12  la base necesita dos comisiones sembradas para distinguirlas
+        #     9  la base no tiene comisiones/ejercicios sembrados
+        #     5  la base no tiene TPs/comisiones
+        #     3  la base no tiene ejercicios con rubrica
+        #     2  Sin seed de tareas_practicas/comisiones para las FKs
+        #     4  CTR_STORE_URL_FOR_RLS_TESTS no seteada   <- las unicas legitimas
+        #
+        # Los 45 primeros son los de scope de comision: los mismos que el
+        # comentario del step de abajo dice haber agregado al glob porque "un
+        # cambio de autorizacion entraba sin una sola verificacion automatica".
+        # Estaban colectados y sin ejecutar. El job pasaba verde igual — un skip
+        # no rompe nada, y por eso este agujero duro tanto.
+        #
+        # Mismo comando contra una base sembrada: 2015 passed / 5 skipped.
+        # Son ~110 tests que el CI colectaba y nunca ejecutaba.
+        #
+        # `seed-ci-tests.py` siembra el minimo academico (2 comisiones, TPs en
+        # las dos, entregas) y `seed-ejercicios-piloto.py` pone los 25
+        # ejercicios con `rubrica` y test cases ocultos que pide
+        # `test_activeia_payload_db.py`. NO se usa `seed-3-comisiones.py`: ese
+        # ademas escribe en `ctr_store` y `classifier_db`, que este job no
+        # migra. El detalle esta en el docstring de `seed-ci-tests.py`.
+        env:
+          ACADEMIC_DB_URL: postgresql+asyncpg://postgres:postgres@localhost:5432/academic_main
+        run: |
+          uv run python scripts/seed-ci-tests.py
+          uv run python scripts/seed-ejercicios-piloto.py
+
       - name: Pytest (unit)
         # Coverage gate (GAP-9): documented target is 80% global, 85% pedagogy
         # (tutor/ctr/classifier) per CLAUDE.md > "Convenciones".
@@ -286,6 +330,46 @@ jobs:
         # comision del evaluation-service viven UN NIVEL ARRIBA de `tests/unit/`
         # y el glob viejo no los matcheaba, asi que un cambio de autorizacion
         # entraba sin una sola verificacion automatica.
+        #
+        # ── ROJOS CONOCIDOS, SIN TAPAR (2026-08-28) ──────────────────────────
+        #
+        # Medido contra una replica exacta de este job (postgres:16-alpine +
+        # init-dbs.sql + los dos alembic + los dos seeds):
+        #
+        #            antes            despues
+        #   passed    1905             2020
+        #   skipped    114                5
+        #   failed       3                1
+        #   errors       3                3
+        #   ejecutados 1908             2021
+        #
+        # Quedan 4 rojos REALES. NO se apagan, NO llevan `continue-on-error` y
+        # NO se les afloja el assert: son verificaciones que nunca habian
+        # corrido y lo que dicen es cierto. Los 4 viven en `evaluation-service`
+        # y son bugs DE TEST, no de producto:
+        #
+        # 1) `test_olvido_db.py::test_no_queda_NADA_que_describa_el_codigo_del_alumno`
+        #    Assert vencido. El test exige `artefacto_sha256 == ""`, pero
+        #    `services/olvido.py:154` escribe `None` desde `44a20f9`, que hizo
+        #    la columna nullable justamente "para que el olvido no reviente".
+        #    NULL cumple la propiedad (no queda nada que describa el codigo)
+        #    igual o mejor que `""`. Fix: `assert fila[0] is None`.
+        #
+        # 2-4) `test_reconciliador_rls_db.py` — los 3 ERROR.
+        #    `ForeignKeyViolationError` en `fk_correcciones_ia_entrega`: la
+        #    fixture `dos_tenants_colgados` inserta `correcciones_ia` con
+        #    `entrega_id = uuid.uuid4()`, una entrega que NO existe. NINGUN
+        #    seed puede arreglar esto — el id se inventa en cada corrida. Fix:
+        #    que la fixture cree la entrega (o lea una real) antes de insertar
+        #    la correccion.
+        #
+        # Los otros dos rojos que habia ANTES se arreglaron solos al sembrar,
+        # y vale la pena mirarlos: eran los dos de `test_activeia_payload_db.py`
+        # que en vez de skipear GRITAN
+        # (`assert vistos_ocultos > 0, "la base no tiene casos ocultos: el test
+        # no probo nada"`). De 114 tests sin datos, esos dos fueron los UNICOS
+        # que avisaron. Los otros 112 se apagaron en silencio y el job seguia
+        # verde. Ese patron es el correcto — copialo.
         run: >-
           uv run pytest
           apps/*/tests/*.py
@@ -301,6 +385,62 @@ jobs:
         with:
           files: ./coverage.xml
           fail_ci_if_error: false
+
+  test-sin-stack:
+    name: Smoke sin stack
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    # Los tests marcados `sin_stack` levantan su propio doble HTTP en proceso:
+    # no necesitan Postgres, ni Redis, ni los 13 servicios. Igual NADIE los
+    # corria.
+    #
+    # `tests/e2e/smoke/test_smoke_activeia_doble.py` son 19 tests que verifican
+    # el contrato con Active-IA —el 5xx que no puede volverse nota, el 401 que
+    # re-loguea, el 200 sin nota— y caian en el hueco entre los dos jobs que si
+    # existen:
+    #
+    #   - `make test-smoke` selecciona `-m smoke`, y este archivo lleva
+    #     `pytestmark = pytest.mark.sin_stack`, no `smoke`. Salian en el
+    #     "19 deselected" que aparece en el output de CADA corrida del workflow
+    #     `E2E Smoke`, y nadie lo leyo como lo que era.
+    #   - el job `Unit tests` mira `apps/*/tests/` y `packages/*/tests/`, y esto
+    #     vive en `tests/e2e/smoke/`.
+    #
+    # Corriendolos a mano el 2026-08-28: **4 failed, 15 passed**. Los 4 seguian
+    # mandando `nota_100` en el cuerpo del doble cuando `1b9ac8b` (27/08) ya
+    # habia cambiado el campo del contrato a `nota` —string, no numero— y
+    # actualizado los unit. Ese commit dice "187 en verde": cierto, porque estos
+    # 19 no los corria nada.
+    #
+    # NO se les pone el marker `smoke` para meterlos en `make test-smoke`: eso
+    # los ataria al gate de health de un stack que no necesitan. Job propio, 8
+    # segundos, sin servicios.
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v3
+        with:
+          # Mismo motivo que en los demas jobs: setup-uv cachea contra
+          # `**/uv.lock`, que no esta versionado.
+          enable-cache: false
+
+      - name: Setup Python
+        run: uv python install ${{ env.PYTHON_VERSION }}
+
+      - name: Install deps
+        run: uv sync --all-packages --locked
+
+      - name: Pytest (sin_stack)
+        # `--override-ini="testpaths="` porque `pyproject.toml` fija
+        # `testpaths = ["tests"]` y el path explicito de abajo tiene que mandar.
+        #
+        # `-p no:randomly` NO se usa a proposito: estos tests comparten el
+        # `GUION` a nivel de modulo, y que el orden varie es parte de lo que
+        # verifica que la fixture lo limpie bien.
+        run: >-
+          uv run pytest tests/e2e/smoke/ -m sin_stack -v
+          --override-ini="testpaths="
 
   # NOTA: el job `test-integration` (Integration tests / testcontainers) se
   # removio a proposito (2026-07-21). Moria en "Alembic upgrade academic" por el
@@ -442,7 +582,15 @@ jobs:
     name: Build Docker images
     runs-on: ubuntu-latest
     timeout-minutes: 20
-    needs: [lint-python, typecheck-python, lint-frontend, test-frontend, test-unit]
+    needs:
+      [
+        lint-python,
+        typecheck-python,
+        lint-frontend,
+        test-frontend,
+        test-unit,
+        test-sin-stack,
+      ]
     strategy:
       matrix:
         service:

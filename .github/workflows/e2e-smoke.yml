@@ -152,7 +152,10 @@ jobs:
           # 16s y fallo `assert 1 == 2`; los siguientes, mismo codigo, ~2s y verdes.
           # `dev-start-all.sh` hace el mismo pull para el dev loop local.
           docker pull eclipse-temurin:21-jdk
-          mkdir -p /tmp/piloto-logs
+          # NO se crea /tmp/piloto-logs: era vestigial. El workflow lo creaba y
+          # NADIE escribia ahi — `dev-start-all.sh` manda los 13 servicios a
+          # `.dev-logs/<name>.log`. Se saco junto con su mitad del step de
+          # upload de artifacts.
           # El integrity-attestation-service (:8012) appendea a `attestations/`
           # (relativo al repo root, su CWD). Sin el dir, su health check
           # `attestation_dir_writable` da error -> status='error' -> el smoke
@@ -199,8 +202,22 @@ jobs:
           name: piloto-logs
           # upload-artifact resuelve paths contra el workspace root, no contra
           # el working-directory del job.
-          path: |
-            .dev-logs/
-            /tmp/piloto-logs/
-          if-no-files-found: ignore
+          #
+          # `include-hidden-files: true` NO es opcional: `.dev-logs/` empieza
+          # con punto y desde upload-artifact@v4.4 el default es `false`, asi
+          # que la action descartaba TODO y el step terminaba con
+          #   "No files were found with the provided path: .dev-logs/ /tmp/piloto-logs/"
+          # Los logs SI estaban ahi. Resultado: cuando el smoke fallaba no
+          # quedaba un solo log para mirar, que es exactamente cuando hacen
+          # falta.
+          #
+          # `/tmp/piloto-logs/` se saco: nadie escribe ahi (ver el step de
+          # arranque). Tenerlo en la lista era lo que hacia creible el mensaje
+          # de "no files found" — parecia que faltaban los dos, y en realidad
+          # uno no existia y el otro estaba escondido.
+          include-hidden-files: true
+          path: .dev-logs/
+          # `warn` y no `ignore`: si algun dia el dir realmente no esta,
+          # queremos verlo en el log del job en vez de que pase mudo.
+          if-no-files-found: warn
           retention-days: 7
