@@ -41,13 +41,13 @@ import {
   type TestCasePublic,
   type TokenGetter,
 } from "../lib/api"
-import { salidaCoincide } from "../lib/comparacionSalida"
 import { resolverEdicionPendiente } from "../lib/edicionPendiente"
 import { parseJavaError } from "../lib/javaError"
 import { registerJavaSnippets } from "../lib/javaSnippets"
 import { extractPyodideErrorLine, extractPyodideErrorLineNumber } from "../lib/pyodideError"
 import { registerPythonSnippets } from "../lib/pythonSnippets"
 import { runRemote } from "../lib/runRemote"
+import { type TestCaseResult, contarTests, resolverVeredictosPython } from "../lib/veredictoTests"
 
 type PyodideAPI = {
   runPythonAsync(code: string): Promise<unknown>
@@ -237,19 +237,6 @@ interface RunHistoryEntry {
   output: string
   error: string | null
   at: number
-}
-
-/** Resultado por caso de una corrida de tests (F1). Espejo del dict que arma
- * el runner Python `__tutor_run_tests`. */
-interface TestCaseResult {
-  id: string | null
-  name: string | null
-  type: "stdin_stdout" | "pytest_assert"
-  passed: boolean
-  expected: string | null
-  actual: string
-  stdin: string
-  error: string | null
 }
 
 export function CodeEditor({
@@ -1248,26 +1235,16 @@ def __tutor_run_tests(student_code, cases_json):
       const raw = await pyodideRef.current.runPythonAsync(
         "__tutor_run_tests(__tutor_test_code, __tutor_test_cases_json)",
       )
-      // JAVA-1: el runner Python devuelve la salida cruda; el veredicto de los
-      // casos `stdin_stdout` lo da acá `salidaCoincide`, la misma normalizacion
-      // que el execution-service aplica a Java. Los casos que ya murieron con
-      // error (excepcion, timeout, EOF) no se re-evaluan: fallaron por otra
-      // razon y su `actual` esta truncado.
-      const parsed = (JSON.parse(String(raw)) as TestCaseResult[]).map((r) =>
-        r.type === "stdin_stdout" && r.error === null
-          ? { ...r, passed: salidaCoincide(r.actual, r.expected) }
-          : r,
-      )
+      // JAVA-1: el runner Python devuelve la salida cruda y `passed: False`
+      // fijo para los casos `stdin_stdout`; el veredicto real lo pone
+      // `resolverVeredictosPython`. Vive en `lib/veredictoTests` y no acá
+      // porque de ese veredicto sale el conteo que viaja al CTR como
+      // `tests_ejecutados` — inline en este `.map()` no habia forma de
+      // ejercitarlo sin montar Monaco + Pyodide, y no lo ejercitaba nadie.
+      const parsed = resolverVeredictosPython(JSON.parse(String(raw)) as TestCaseResult[])
       setTestResults(parsed)
       const durationMs = performance.now() - started
-      const passed = parsed.filter((r) => r.passed).length
-      onTestsRunRef.current?.({
-        total: parsed.length,
-        passed,
-        failed: parsed.length - passed,
-        failedNames: parsed.filter((r) => !r.passed).map((r) => r.name ?? r.id ?? "test"),
-        durationMs,
-      })
+      onTestsRunRef.current?.({ ...contarTests(parsed), durationMs })
     } catch (e) {
       // Fallo del runner mismo (no de un test) — lo mostramos como un unico
       // "caso" en error para no dejar al alumno sin feedback.
