@@ -455,6 +455,32 @@ export function CodeEditor({
 
       // F6: detectar paste del clipboard. Monaco dispara onDidPaste *antes*
       // de onDidChangeModelContent, así marcamos el flag y lo lee el flush.
+      //
+      // ⚠ HOY ESTE CALLBACK NO SE DISPARA NUNCA, y es a proposito. Es el UNICO
+      // setter de `pasteSinceLastFlushRef`, o sea la unica fuente de
+      // `origin: "pasted_external"`, y el componente bloquea el pegado por dos
+      // vias independientes que corren ANTES:
+      //
+      //   1. el `addCommand(Ctrl+V)` de abajo, que reemplaza el keybinding de
+      //      Monaco (y con el, su `preventDefault`, asi que el navegador ni
+      //      llega a generar un evento `paste` nativo);
+      //   2. el listener DOM `paste` en fase de CAPTURA sobre el contenedor,
+      //      con `preventDefault()` + `stopPropagation()`: el evento se corta
+      //      bajando, antes de llegar al textarea oculto que Monaco escucha.
+      //
+      // El pegado no se "trackea", se PROHIBE: en su lugar sale un evento CTR
+      // `pega_intentada`. Eso hace que la rama `pasted_external` del override a
+      // N4 del labeler sea inalcanzable DESDE ESTE EDITOR — no rota, sino
+      // deliberadamente vacia. La linea se conserva porque si algun dia se
+      // levanta el bloqueo, esta es la costura correcta.
+      //
+      // NO derivar de aca que todo texto externo queda registrado: el
+      // arrastrar-y-soltar (`dropIntoEditor`, default `true` en Monaco) NO pasa
+      // por `onDidPaste` ni por ningun listener de este componente, asi que
+      // entra al buffer y sale como `origin: "student_typed"`. El valor
+      // `drag_drop` existe declarado en el contrato de `pega_intentada` y no lo
+      // emite nadie. Cerrar ese canal cambia que eventos entran al CTR, asi que
+      // es una decision del equipo, no del editor.
       editor.onDidPaste(() => {
         pasteSinceLastFlushRef.current = true
       })
