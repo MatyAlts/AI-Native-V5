@@ -114,6 +114,68 @@ jobs:
 
       - run: pnpm turbo lint typecheck
 
+  test-frontend:
+    name: Frontend tests (vitest)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+
+      # Sin `version:` a proposito, mismo motivo que `lint-frontend`.
+      - uses: pnpm/action-setup@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: pnpm
+          cache-dependency-path: pnpm-lock.yaml
+
+      - run: pnpm install --frozen-lockfile
+
+      # NADIE corria estos tests. `rg "vitest" .github/workflows/` daba CERO
+      # hasta el 2026-08-27: los jobs de front eran `turbo lint typecheck` y
+      # cuatro `build`, nada mas. Son ~450 tests entre `packages/ui`,
+      # `web-student` y `web-teacher`, y por eso llegaron a haber 14 rojos
+      # viviendo en `main` sin que nadie se enterara.
+      #
+      # Es el mismo agujero que el de los tests de integracion de Python, del
+      # otro lado del monorepo: escribir tests que despues nadie ejecuta.
+      #
+      # OJO con la version de Node: bajo Node 26 el Web Storage nativo le gana
+      # al de jsdom y `window.localStorage` queda `undefined` dentro de vitest,
+      # lo que tira ~144 rojos FALSOS. El CI usa `NODE_VERSION: 20`, donde eso
+      # no pasa. Si alguien sube la version del CI, esperar esos rojos y no
+      # leerlos como regresiones.
+      - run: pnpm --filter @platform/ui test
+      - run: pnpm --filter @platform/web-student test
+
+      # FALTA `@platform/web-teacher` (254 tests), y NO es un olvido.
+      #
+      # Quedan 4 rojos REALES pre-existentes, todos en un mismo lugar:
+      #
+      #   tests/CorreccionesView.test.tsx > GradingFormView
+      #     - muestra los ejercicios completados en la entrega
+      #     - muestra el formulario de calificacion para entrega submitted
+      #     - muestra boton Devolver para entrega graded
+      #     - boton Volver regresa a la lista
+      #
+      # DIAGNOSTICO (2026-08-28, no confirmado): los cuatro pasan el primer
+      # `waitFor` —o sea que la lista carga y el drill-down encuentra su
+      # boton— y fallan DESPUES del click. Instrumentando el DOM justo tras
+      # ese `waitFor`, `document.body` tiene 587 caracteres y CERO elementos
+      # con `data-testid`: algo desmonta la vista entre una linea y la
+      # siguiente. Sospecha principal: `useTutorialDeVista(correccionesTour,
+      # !loading)`, que el epic de Active-IA agrego a esta vista.
+      #
+      # No se arreglaron a ciegas a proposito: tocan `GradingFormView`, que
+      # ese epic acaba de reescribir, y forzar el test hasta que pase verde
+      # sin entender por que se desmonta es fabricar cobertura.
+      #
+      # Se deja afuera en vez de con `continue-on-error`: un job que se
+      # permite fallar es la misma enfermedad que este cambio viene a curar.
+      # Cuando los 4 esten en verde, agregar la linea y borrar este comentario:
+      #   - run: pnpm --filter @platform/web-teacher test
+
   build-frontend:
     name: Build frontends (Vite)
     # Gate que faltaba: `lint-frontend` corre `turbo lint typecheck` (tsc --noEmit),
@@ -149,6 +211,21 @@ jobs:
     name: Unit tests
     runs-on: ubuntu-latest
     timeout-minutes: 20
+    # Postgres real para que los tests `*_db.py` dejen de auto-skipearse.
+    # Sin base, `skipif(not EVAL_TEST_DB_URL)` los apagaba a todos y el job
+    # pasaba en verde sin haber tocado una fila.
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_PASSWORD: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
     steps:
       - uses: actions/checkout@v4
 
@@ -167,6 +244,16 @@ jobs:
       - name: Install deps
         run: uv sync --all-packages
 
+      - name: Init DBs
+        run: PGPASSWORD=postgres psql -h localhost -U postgres -f infrastructure/postgres/init-dbs.sql
+
+      - name: Alembic upgrade (academic + evaluation)
+        env:
+          ACADEMIC_DB_URL: postgresql+asyncpg://postgres:postgres@localhost:5432/academic_main
+        run: |
+          uv run alembic -c apps/academic-service/alembic.ini upgrade head
+          uv run alembic -c apps/evaluation-service/alembic.ini upgrade head
+
       - name: Pytest (unit)
         # Coverage gate (GAP-9): documented target is 80% global, 85% pedagogy
         # (tutor/ctr/classifier) per CLAUDE.md > "Convenciones".
@@ -179,9 +266,22 @@ jobs:
         # Sin los paths, este job colectaba 66 smoke tests y CERO de los 1364
         # unitarios reales (verificado con --collect-only 2026-07-20).
         # Mismos globs que `make test-fast`, que si funciona.
+        env:
+          # Sin esta var, los 6 archivos `*_db.py` del evaluation-service —unas
+          # 1900 lineas— se auto-skipean. Ahi viven las verificaciones del CHECK
+          # que sostiene la regla de oro del epic de Active-IA, del UNIQUE de
+          # idempotencia, del aislamiento RLS y del derecho al olvido: todo eso
+          # NO se verificaba en un PR.
+          EVAL_TEST_DB_URL: postgresql+asyncpg://postgres:postgres@localhost:5432/academic_main
+        # `apps/*/tests/*.py` ademas de `unit/`: los ~40 tests de scope de
+        # comision del evaluation-service viven UN NIVEL ARRIBA de `tests/unit/`
+        # y el glob viejo no los matcheaba, asi que un cambio de autorizacion
+        # entraba sin una sola verificacion automatica.
         run: >-
           uv run pytest
+          apps/*/tests/*.py
           apps/*/tests/unit/
+          apps/evaluation-service/tests/integration/
           apps/academic-service/tests/integration/test_casbin_matrix.py
           packages/*/tests/
           -m "not integration" --cov --cov-report=xml --cov-fail-under=60
@@ -333,7 +433,7 @@ jobs:
     name: Build Docker images
     runs-on: ubuntu-latest
     timeout-minutes: 20
-    needs: [lint-python, typecheck-python, lint-frontend, test-unit]
+    needs: [lint-python, typecheck-python, lint-frontend, test-frontend, test-unit]
     strategy:
       matrix:
         service:
