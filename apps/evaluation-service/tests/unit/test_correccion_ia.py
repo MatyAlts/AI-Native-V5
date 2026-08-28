@@ -33,7 +33,7 @@ from evaluation_service.services.correccion_ia import (
     marcar_error,
     resolver_rubrica,
 )
-from evaluation_service.services.correccion_pre_ejecucion import _mapear
+from evaluation_service.services.correccion_pre_ejecucion import PreEjecucionError, _mapear
 
 TENANT = UUID("aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa")
 COMISION = UUID("cccccccc-cccc-cccc-cccc-cccccccccccc")
@@ -183,23 +183,150 @@ class TestGates:
         assert await es_de_mi_comision(sin, uuid4(), COMISION) is False
 
 
-class TestPreEjecucion:
-    def test_un_error_de_compilacion_NO_es_fallo_de_infraestructura(self) -> None:
-        """Es informacion sobre el codigo del alumno, y de las mas
-        accionables. Por eso vuelve como resultado y no como excepcion."""
-        r = _mapear({"compile_error": "Main.java:3: cannot find symbol"})
-        assert r.compila is False
-        assert r.error_compilacion is not None
-        assert r.total == 0
+def _ejercicio_real(n_publicos: int = 2, n_ocultos: int = 1):
+    """Un `Ejercicio` del execution-service, con casos publicos y ocultos."""
+    from execution_service.services.academic_client import Ejercicio, TestCase
 
-    def test_cuenta_los_casos_que_pasaron(self) -> None:
-        r = _mapear({"test_results": [{"passed": True}, {"passed": False}, {"passed": True}]})
-        assert (r.total, r.passed, r.failed) == (3, 2, 1)
+    casos = [
+        TestCase(
+            id=f"pub-{i}",
+            name=f"Publico {i}",
+            type="stdout",
+            code="assert True",
+            expected="ok",
+            is_public=True,
+            weight=1.0,
+        )
+        for i in range(n_publicos)
+    ] + [
+        TestCase(
+            id=f"oculto-{i}",
+            name=f"Oculto {i}",
+            type="stdout",
+            code="assert True",
+            expected="secreto",
+            is_public=False,
+            weight=1.0,
+        )
+        for i in range(n_ocultos)
+    ]
+    return Ejercicio(id=uuid4(), language="java", inicial_codigo=None, test_cases=casos)
 
-    def test_no_explota_con_un_resultado_vacio(self) -> None:
-        r = _mapear({})
+
+def _corrida(outcome, estados, compile_output=""):
+    """Un `RunResult` real. `estados` es la lista de CaseStatus por caso."""
+    from execution_service.services.result_mapper import CaseResult, RunResult
+
+    return RunResult(
+        outcome=outcome,
+        cases=[
+            CaseResult(
+                id=f"pub-{i}" if i < len(estados) - 1 else "oculto-0",
+                name=f"Caso {i}",
+                type="stdout",
+                status=st,
+                input="",
+                expected="ok",
+                got=f"salida-{i}",
+                error=None,
+                weight=1.0,
+            )
+            for i, st in enumerate(estados)
+        ],
+        compile_output=compile_output,
+    )
+
+
+class TestContratoConElSandbox:
+    """El contrato entre `execution-service` y `_mapear`, cruzado de verdad.
+
+    Estos tests corren el PRODUCTOR real (`to_client_payload`) y le pasan su
+    salida al CONSUMIDOR real (`_mapear`). No hay dicts escritos a mano.
+
+    Esa es toda la razon por la que existen. Los tests que reemplazan le daban
+    a `_mapear` su propia entrada inventada (`{"compile_error": ...}`,
+    `{"test_results": [...]}`), y por eso pasaron en verde mientras NINGUNA de
+    las claves que la funcion leia existia del otro lado. Toda correccion de
+    produccion mandaba a Active-IA `compila: true` con cero tests, incluido el
+    codigo que no compilaba.
+
+    Un test que inventa la entrada del consumidor no verifica un contrato:
+    verifica que el consumidor es consistente consigo mismo.
+    """
+
+    def test_una_corrida_completa_llega_entera(self) -> None:
+        from execution_service.services.executor import to_client_payload
+        from execution_service.services.result_mapper import CaseStatus, RunOutcome
+
+        ej = _ejercicio_real(n_publicos=2, n_ocultos=1)
+        run = _corrida(
+            RunOutcome.COMPLETED,
+            [CaseStatus.PASS, CaseStatus.FAIL, CaseStatus.PASS],
+        )
+        r = _mapear(to_client_payload(run, ej))
+
         assert r.compila is True
+        assert (r.total, r.passed, r.failed) == (3, 2, 1)
+        assert len(r.casos) == 3
+        # La salida REAL del alumno viaja (es su codigo, no el enunciado).
+        assert r.casos[0]["salida_obtenida"] == "salida-0"
+        assert r.casos[0]["paso"] is True
+        assert r.casos[1]["paso"] is False
+        # Y el caso oculto llega marcado como tal.
+        assert any(c["es_publico"] is False for c in r.casos)
+
+    def test_el_codigo_que_no_compila_NO_viaja_como_compila_true(self) -> None:
+        """El bug de fondo, en su forma mas cara.
+
+        Un punto y coma que falta llegaba a Active-IA como `compila: true` con
+        cero tests, y el motor cerraba criterios de "el programa funciona" que
+        ninguna corrida respaldaba.
+        """
+        from execution_service.services.executor import to_client_payload
+        from execution_service.services.result_mapper import RunOutcome
+
+        ej = _ejercicio_real()
+        run = _corrida(
+            RunOutcome.COMPILATION_ERROR, [], compile_output="Main.java:3: ';' expected"
+        )
+        r = _mapear(to_client_payload(run, ej))
+
+        assert r.compila is False, "un error de compilacion NO puede viajar como compila=true"
+        assert r.error_compilacion is not None
+        assert "';' expected" in r.error_compilacion
         assert r.total == 0
+
+    def test_un_fallo_del_SANDBOX_no_se_convierte_en_evidencia(self) -> None:
+        """La regla de oro del epic, del lado de la evidencia.
+
+        `infrastructure_failure` se guarda con `state=done`, asi que llega hasta
+        aca como cualquier otro resultado. Antes salia por el camino feliz y el
+        motor recibia `compila: true` — un fallo del SISTEMA convertido en dato
+        sobre el codigo del ALUMNO, y despues en una nota.
+
+        El CHECK de la base protege el estado; esto protege la evidencia.
+        """
+        from execution_service.services.executor import to_client_payload
+        from execution_service.services.result_mapper import infrastructure_failure
+
+        ej = _ejercicio_real()
+        run = infrastructure_failure("el runner no respondio")
+        payload = to_client_payload(run, ej)
+
+        with pytest.raises(PreEjecucionError) as exc:
+            _mapear(payload)
+        assert exc.value.error_code == "SANDBOX_ERROR"
+
+    def test_un_outcome_desconocido_falla_cerrado(self) -> None:
+        """Un contrato que no reconocemos es exactamente como nacio este bug.
+
+        Devolver un resultado optimista ante lo desconocido es lo que hizo que
+        cuatro claves equivocadas sobrevivieran a cinco rondas de review.
+        """
+        with pytest.raises(PreEjecucionError):
+            _mapear({"outcome": "algo_que_no_existe", "cases": [], "total": 0})
+        with pytest.raises(PreEjecucionError):
+            _mapear({})
 
 
 class TestEndpoints:

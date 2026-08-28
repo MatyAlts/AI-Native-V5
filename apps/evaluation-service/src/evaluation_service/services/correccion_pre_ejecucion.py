@@ -141,6 +141,10 @@ async def _esperar_resultado(
         if cuerpo.get("state") in ("done", "DONE"):
             return _mapear(cuerpo.get("result") or {})
         if cuerpo.get("state") in ("error", "ERROR"):
+            # Defensivo: `ExecutionState` sólo tiene `queued|running|done`, así
+            # que hoy esto no se alcanza. Un fallo del sandbox llega como
+            # `state=done` con `outcome=infrastructure_failure`, y lo corta
+            # `_mapear`. Se conserva por si el contrato del otro lado crece.
             raise PreEjecucionError("El sandbox terminó con error.", error_code="SANDBOX_ERROR")
 
     raise PreEjecucionError(
@@ -151,37 +155,82 @@ async def _esperar_resultado(
 def _mapear(result: dict[str, Any]) -> ResultadoTests:
     """Traduce el resultado del sandbox a lo que viaja en la corrección.
 
-    Un fallo de COMPILACIÓN no es un fallo de infraestructura: es información
-    sobre el código del alumno, y de las más accionables. Por eso vuelve como
-    resultado y no como excepción.
+    **Las claves son las que el `execution-service` produce de verdad**, y eso
+    hay que decirlo porque hasta el 2026-08-27 no lo eran. Esta función leía
+    `compile_error`, `test_results`, `passed` por caso y `actual` — ninguna de
+    las cuatro existe. El productor es `execution_service.services.executor`
+    (`to_client_payload`) y emite `outcome`, `cases`, `status` y `got`.
+
+    Ni una clave coincidía, así que `casos_raw` salía SIEMPRE vacío y, al no
+    encontrar `compile_error`, la función salía por el camino feliz. **Toda
+    corrección de producción mandaba a Active-IA el mismo objeto:**
+    `{"compila": true, "error_compilacion": null, "total": 0, "pasados": 0,
+    "casos": []}`. Un alumno cuyo Java no compilaba viajaba como `compila: true`.
+
+    Y rompía la regla de oro del epic por la puerta de atrás: un
+    `infrastructure_failure` del sandbox se guarda con `state=done` (ver
+    `executions.py`), así que llegaba acá, no matcheaba ninguna clave, y volvía
+    como `compila=True` con cero tests. **Un fallo de infraestructura entraba
+    como evidencia positiva sobre la que el motor calcula una nota.** El CHECK
+    de la base protege el ESTADO; no protegía la EVIDENCIA.
+
+    Por eso ahora el `outcome` gobierna, y el default es cerrado: un `outcome`
+    que no reconocemos levanta en vez de devolver un resultado optimista. Es la
+    misma postura que el resto del epic — sin dato, no hay nota.
     """
-    if result.get("compile_error") or result.get("compilation_error"):
-        return ResultadoTests(
-            compila=False,
-            error_compilacion=str(result.get("compile_error") or result.get("compilation_error"))[
-                :4000
-            ],
+    outcome = str(result.get("outcome") or "").lower()
+
+    # El sandbox no pudo correr. NO es información sobre el código del alumno,
+    # así que no puede viajar como resultado: se levanta y la corrección cierra
+    # en `error` sin nota.
+    if outcome == "infrastructure_failure":
+        raise PreEjecucionError(
+            "El sandbox no pudo ejecutar los tests. No se envió nada a corregir.",
+            error_code="SANDBOX_ERROR",
         )
 
-    casos_raw = result.get("test_results") or result.get("results") or []
+    # Un fallo de COMPILACIÓN sí es información sobre el código del alumno, y de
+    # las más accionables. Vuelve como resultado, no como excepción — y desde el
+    # 19/08 tampoco corta: se manda igual, con el estado explícito.
+    if outcome == "compilation_error":
+        return ResultadoTests(
+            compila=False,
+            error_compilacion=str(result.get("compile_output") or "")[:4000] or None,
+        )
+
+    if outcome != "completed":
+        # Un contrato que no reconocemos es exactamente el bug que esto viene a
+        # cerrar. Falla cerrado y deja rastro con el valor crudo.
+        raise PreEjecucionError(
+            f"El sandbox devolvió un resultado que no se entiende (outcome={outcome!r}).",
+            error_code="SANDBOX_ERROR",
+        )
+
     casos = [
         {
-            "id": c.get("id") or c.get("test_id"),
-            "nombre": c.get("name") or c.get("nombre"),
-            "paso": bool(c.get("passed")),
+            "id": c.get("id"),
+            "nombre": c.get("name"),
+            "paso": str(c.get("status") or "").lower() == "pass",
             # La salida REAL del alumno sí va: es su código, no el enunciado.
             # Lo que no va es la esperada de un caso oculto.
-            "salida_obtenida": (c.get("actual") or c.get("stdout") or "")[:2000],
+            "salida_obtenida": str(c.get("got") or "")[:2000],
             "es_publico": c.get("is_public", True) is not False,
         }
-        for c in casos_raw
+        for c in result.get("cases") or []
         if isinstance(c, dict)
     ]
-    passed = sum(1 for c in casos if c["paso"])
+
+    # Los conteos salen del sandbox, no se recalculan desde `casos`: él sabe de
+    # casos que no emitió detalle (un `skipped` sin runtime, por ejemplo), y dos
+    # números que pueden contradecirse le dan al motor la chance de creerle al
+    # equivocado.
+    total = int(result.get("total") or 0)
+    passed = int(result.get("passed") or 0)
+    failed = int(result.get("failed") or max(total - passed, 0))
     return ResultadoTests(
         compila=True,
-        total=len(casos),
+        total=total,
         passed=passed,
-        failed=len(casos) - passed,
+        failed=failed,
         casos=casos,
     )
