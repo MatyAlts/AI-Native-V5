@@ -60,6 +60,16 @@ COPY apps/web-admin/   apps/web-admin/
 COPY apps/web-teacher/ apps/web-teacher/
 COPY apps/web-student/ apps/web-student/
 COPY apps/web-landing/ apps/web-landing/
+# La tabla de paridad del corrector de salida. NO es opcional para el build:
+# `tsc -b` typechequea tambien los `tests/`, y tres de ellos la importan por
+# ruta relativa (`../../../tests/fixtures/paridad-salida.json`). Sin esta linea
+# el build muere con TS2307 — y el CI no lo ve, porque ahi el repo esta entero
+# y acá se copia solo lo que se pide. Fue exactamente lo que rompio el deploy
+# del 2026-08-28.
+#
+# No engorda la imagen final: esto es la etapa `builder`, y el runtime solo
+# copia los `dist/`.
+COPY tests/fixtures/ tests/fixtures/
 
 # Build de los 4 frontends. Cada uno produce apps/<name>/dist/.
 RUN pnpm --filter @platform/web-admin   build \
