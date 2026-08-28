@@ -29,6 +29,7 @@ from uuid import UUID
 import redis.asyncio as redis
 from sqlalchemy import select, update
 from sqlalchemy.dialects.postgresql import insert
+from sqlalchemy.exc import DBAPIError, InterfaceError, OperationalError
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from ctr_service.config import settings
@@ -67,6 +68,12 @@ MAX_ATTEMPTS = 3  # después se envía a DLQ
 # Reponer es además idempotente: si el mismo episodio manda N eventos a la
 # DLQ, las N reposiciones escriben el mismo valor.
 TUTOR_SEQ_KEY_PREFIX = "tutor:seq:"
+
+# `SessionManager.SESSION_KEY_PREFIX`. Se usa SOLO en el camino de FALLO: si no
+# se pudo reponer el contador, borrar la sesion es lo que deja que el heal del
+# tutor lo reconstruya en el evento siguiente. Sin eso el episodio queda mudo
+# hasta que venza el TTL — seis horas.
+TUTOR_SESSION_KEY_PREFIX = "tutor:session:"
 
 # TTL del contador, espejado de `SessionManager.SESSION_TTL` (6 h). Si se
 # repusiera sin TTL la key quedaría para siempre; si se repusiera con uno más
@@ -257,7 +264,52 @@ class PartitionWorker:
         except Exception:
             logger.warning(
                 "No se pudo reponer el contador de seq del episodio %s; "
-                "queda bloqueado hasta la proxima reanudacion",
+                "se intenta borrar la sesion para que el tutor la reconstruya",
+                episode_id,
+                exc_info=True,
+            )
+            await self._forzar_reconstruccion_de_sesion(episode_id)
+
+    async def _forzar_reconstruccion_de_sesion(self, episode_id: UUID) -> None:
+        """Ultimo recurso cuando no se pudo reponer el contador.
+
+        **Sin esto, el episodio quedaba mudo seis horas.** El worker repone el
+        contador y NO toca `tutor:session:` — eso es correcto en el camino feliz
+        (borrar la sesion echaria al alumno de una sesion viva). Pero si la
+        reposicion falla —Postgres saturado, que es plausible: acabamos de
+        fallar tres veces contra la misma base— el resultado era:
+
+          - el contador queda adelantado y TODO evento posterior se rechaza;
+          - la sesion sigue viva, asi que `_emitir_con_heal` nunca dispara (solo
+            entra por `ValueError`, y ese `ValueError` sale de `sessions.get()`
+            devolviendo `None`);
+          - y aunque el alumno apriete "retomar", `resume_episode` tiene un
+            early-return idempotente ANTES de `init_seq_counter`: devuelve 200
+            sin tocar el contador.
+
+        O sea que el unico camino de salida era el TTL de la sesion: seis horas
+        con el alumno tipeando y nada guardandose.
+
+        Borrar la sesion invierte eso: el proximo evento encuentra `None`,
+        levanta `ValueError`, y el heal reconstruye la sesion Y el contador
+        desde `events_count`. El alumno pierde el estado en memoria de la
+        sesion —que es reconstruible— en vez de perder su trabajo.
+
+        Si esto tambien falla, el log sube a ERROR: ahi si el episodio queda
+        trabado y alguien tiene que enterarse.
+        """
+        try:
+            await self.redis.delete(f"{TUTOR_SESSION_KEY_PREFIX}{episode_id}")
+            logger.info(
+                "Sesion del episodio %s borrada: el proximo evento reconstruye "
+                "sesion y contador via el heal del tutor",
+                episode_id,
+            )
+        except Exception:
+            logger.error(
+                "El episodio %s quedo TRABADO: no se pudo reponer el contador de "
+                "seq ni borrar su sesion. Todo evento nuevo se va a rechazar "
+                "hasta que venza el TTL de la sesion.",
                 episode_id,
                 exc_info=True,
             )
@@ -311,6 +363,47 @@ class PartitionWorker:
                 self.cfg.partition,
             )
 
+    @staticmethod
+    def _es_transitorio(exc: BaseException) -> bool:
+        """¿El fallo es de INFRAESTRUCTURA, o del contenido del mensaje?
+
+        La diferencia decide si el mensaje puede ir a la DLQ, y no es un matiz:
+        **un evento que va a la DLQ sale de la cadena para siempre**, y su lugar
+        lo termina ocupando otro (el heal repone el contador al `events_count`).
+
+        - **Permanente** — `ValueError` de `_persist_event` (seq inesperado,
+          episodio inexistente), JSON roto, campos que faltan. Reintentar
+          devuelve exactamente lo mismo. La DLQ es la respuesta correcta.
+        - **Transitorio** — Postgres cortado, pool agotado, DNS, Redis caído.
+          El mensaje es VÁLIDO; lo único que pasa es que ahora no se puede
+          escribir.
+
+        Por qué importa tanto acá: hasta que se agregó el reclamo de pendientes,
+        `MAX_ATTEMPTS` era inalcanzable y la DLQ por fallo de procesamiento era
+        código muerto. Al encenderla, el presupuesto total pasó a ser
+        `1 entrega + 2 reclamos × 60s de idle ≈ 120 segundos`, plano y sin
+        backoff. Un failover de Postgres de tres minutos —que pasa— mandaba a
+        la DLQ TODOS los eventos de esa ventana y marcaba decenas de episodios
+        como adulterados. Eventos perfectamente válidos, de alumnos que estaban
+        trabajando bien.
+
+        Antes del reclamo esos mensajes se quedaban en la PEL, intactos y
+        recuperables con un `XCLAIM` manual cuando la base volvía. El fix del
+        retry no puede costar eso.
+
+        Ante un transitorio se reintenta SIN TOPE. Es deliberado: la alternativa
+        es tirar evidencia de la tesis porque la base tardó en volver. El
+        mensaje queda en la PEL —visible en `XPENDING`, que es donde un
+        operador lo busca— y el log lo dice en cada vuelta.
+        """
+        if isinstance(exc, OperationalError | InterfaceError):
+            return True
+        if isinstance(exc, DBAPIError) and exc.connection_invalidated:
+            return True
+        # `redis.RedisError` y los `OSError` de red (incluye `ConnectionError`
+        # y `TimeoutError`, que en Python 3.11+ heredan de `OSError`).
+        return isinstance(exc, redis.RedisError | OSError)
+
     async def _process_message(self, message_id: str, fields: dict[bytes, bytes]) -> None:
         """Procesa un mensaje con retry + DLQ."""
         try:
@@ -334,6 +427,18 @@ class PartitionWorker:
         except Exception as exc:
             # Contar intentos por mensaje usando XPENDING
             attempts = await self._get_attempts(message_id)
+            if self._es_transitorio(exc):
+                # NO consume presupuesto. El mensaje es valido; lo que fallo es
+                # la infraestructura, y mandarlo a la DLQ seria tirar un evento
+                # bueno porque la base tardo en volver.
+                logger.warning(
+                    "Mensaje %s: fallo TRANSITORIO (intento %d). Queda en la PEL "
+                    "y se reintenta sin tope; no cuenta para la DLQ.",
+                    message_id,
+                    attempts,
+                    exc_info=exc,
+                )
+                return
             if attempts >= MAX_ATTEMPTS:
                 logger.error(
                     "Mensaje %s falló %d veces; moviendo a DLQ",

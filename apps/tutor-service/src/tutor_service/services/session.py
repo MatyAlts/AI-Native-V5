@@ -232,21 +232,77 @@ class SessionManager:
         return f"{SEQ_KEY_PREFIX}{episode_id}"
 
     async def init_seq_counter(self, episode_id: UUID, next_seq: int) -> None:
-        """Inicializa el contador atómico de seq del episodio.
+        """Inicializa el contador atómico de seq del episodio. **Nunca lo baja.**
 
         `next_seq` = cantidad de seqs ya reservados = próximo seq a asignar.
         `open_episode` lo llama con 0 (episodio nuevo); `resume_episode` con el
         `events_count` persistido (arranca del max seq ya en la cadena, NUNCA
-        resetea a 0). SET incondicional: el caller garantiza que este es el
-        punto de inicialización (apertura, o reanudación con la sesión ausente).
+        resetea a 0).
+
+        **Era un SET incondicional**, y su docstring decía que "el caller
+        garantiza" que éste es el punto de inicialización. Eso valía cuando los
+        callers eran dos y explícitos: abrir el episodio y un `POST /resume`. El
+        heal de sesión lo convirtió en OCHO callers implícitos y CONCURRENTES
+        —los siete `emit_*` más `send_message`, vía `_emitir_con_heal`— y
+        ninguno garantiza nada: el `existing is not None` de `resume_episode` es
+        un check-then-act con dos `await` de red en el medio.
+
+        La carrera, con la sesión vencida por TTL y `events_count = N`:
+
+            A: POST /message          -> get()=None -> arranca resume
+            B: POST /edicion_codigo   -> get()=None -> arranca resume
+            B: set(state); init(N)                      [contador = N]
+            B: next_seq -> INCR -> N+1 -> publica seq=N
+            A: set(state); init(N)          <- REGRESION del contador a N
+            A: next_seq -> INCR -> N+1 -> publica seq=N   <- DUPLICADO
+
+        Dos eventos distintos con el mismo seq: el worker persiste uno, el otro
+        va a la DLQ y marca el episodio `integrity_compromised`. El bug que este
+        epic viene a cerrar, reintroducido por su propio heal. Y no es un borde:
+        el frontend emite `edicion_codigo` con debounce mientras el alumno
+        charla con el tutor.
+
+        Ahora es un compare-and-set: escribe sólo si el contador está AUSENTE o
+        vale MENOS. Si vale más, alguien reservó en el medio y se respeta —
+        bajarlo es lo único que produce el duplicado. El TTL se refresca igual.
 
         Acá también se libera el claim de abandono (ver `claim_abandono`): abrir
         o reanudar el episodio empieza un ciclo nuevo, y un episodio pausado que
-        el alumno retoma tiene que poder volver a abandonarse. Sin este borrado
-        el claim del abandono anterior seguiría vigente y el segundo abandono
-        quedaría mudo hasta que venciera el TTL.
+        el alumno retoma tiene que poder volver a abandonarse. Ese borrado va
+        SIEMPRE, gane o pierda el CAS: es del ciclo de vida del episodio, no del
+        contador.
         """
-        await self.redis.set(self._seq_key(episode_id), next_seq, ex=SESSION_TTL)
+        key = self._seq_key(episode_id)
+        try:
+            async with self.redis.pipeline() as pipe:
+                await pipe.watch(key)
+                actual = await pipe.get(key)
+                if isinstance(actual, bytes):
+                    actual = actual.decode("utf-8")
+                ya_reservo_mas = actual is not None and int(actual) >= next_seq
+                pipe.multi()
+                if not ya_reservo_mas:
+                    pipe.set(key, next_seq, ex=SESSION_TTL)
+                else:
+                    pipe.expire(key, SESSION_TTL)
+                await pipe.execute()
+                if ya_reservo_mas:
+                    logger.info(
+                        "init_seq_counter del episodio %s NO baja el contador: "
+                        "vale %s y se pidio %s (hubo una reserva concurrente).",
+                        episode_id,
+                        actual,
+                        next_seq,
+                    )
+        except WatchError:
+            # Otro caller lo movio mientras mirabamos. Su valor es al menos tan
+            # nuevo como el nuestro; el unico daño posible seria pisarlo hacia
+            # abajo, asi que no se reintenta.
+            logger.info(
+                "init_seq_counter del episodio %s perdio el CAS; se respeta el "
+                "valor del otro caller.",
+                episode_id,
+            )
         await self.redis.delete(self._abandono_key(episode_id))
 
     # ── Claim de abandono (ADR-025, TOCTOU) ─────────────────────────────
