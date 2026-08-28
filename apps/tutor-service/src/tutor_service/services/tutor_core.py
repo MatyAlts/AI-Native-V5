@@ -35,6 +35,7 @@ from tutor_service.services.clients import (
     ContentClient,
     CTRClient,
     GovernanceClient,
+    RetrievalResult,
 )
 from tutor_service.services.guardrails import (
     GUARDRAILS_CORPUS_HASH,
@@ -171,6 +172,27 @@ def _seguro_compensar(exc: BaseException) -> bool:
         # proxy respondiendo despues.
         return 400 <= exc.response.status_code < 500
     return False
+
+
+# Marca de "el RAG no corrio", distinta de "el RAG corrio y no encontro nada".
+#
+# La diferencia NO es cosmetica: `chunks_used_hash` viaja al CTR en
+# `prompt_enviado` y en el `done` del stream. Si un fallo del RAG produjera el
+# mismo hash que una busqueda vacia, la cadena diria "se consulto el material y
+# no habia nada relevante" sobre un turno donde el material NUNCA se consulto.
+# Eso es afirmar algo que no paso, que es exactamente lo que el CTR existe para
+# impedir.
+#
+# El hash de una busqueda vacia legitima es `_hash_chunk_ids([])` del
+# content-service. Este valor es un centinela textual que ningun hash puede
+# colisionar, y se reconoce leyendolo.
+RAG_NO_DISPONIBLE = "rag_no_disponible"
+
+_RETRIEVAL_CAIDO = RetrievalResult(
+    chunks=[],
+    chunks_used_hash=RAG_NO_DISPONIBLE,
+    latency_ms=0.0,
+)
 
 
 class TutorCore:
@@ -561,15 +583,49 @@ class TutorCore:
         if state is None:
             raise ValueError(f"Episode {episode_id} no existe o expiró")
 
-        # 1. Retrieval con materia_id preferido (defensa en profundidad)
-        retrieval = await self.content.retrieve(
-            query=user_message,
-            top_k=5,
-            tenant_id=state.tenant_id,
-            caller_id=TUTOR_SERVICE_USER_ID,
-            materia_id=getattr(state, "materia_id", None),
-            comision_id=state.comision_id,
-        )
+        # 1. Retrieval con materia_id preferido (defensa en profundidad).
+        #
+        # BEST-EFFORT desde el 2026-08-28. Antes esta llamada no tenia `try` y
+        # un fallo del content-service se llevaba puesto al tutor entero: el
+        # alumno veia "no disponible" y no podia preguntar nada.
+        #
+        # Paso de verdad ese dia. Se acabo el credito de la API de embeddings
+        # (USD 10 prepagos, sin recarga automatica), Google empezo a devolver
+        # 429, el content-service lo convirtio en 500 y el tutor murio. Diez
+        # dolares dejaron sin tutor a la cursada, y nadie se entero hasta que
+        # un alumno no pudo entrar.
+        #
+        # Y era desproporcionado: el RAG aporta la BIBLIOGRAFIA de catedra, no
+        # lo pedagogico. El enunciado, la rubrica, los test_cases, el banco
+        # socratico N1-N4, las misconceptions y el codigo que el alumno esta
+        # escribiendo ya viajan al modelo desde otras fuentes (ver el bloque 3
+        # de `open_episode`). El tutor sabe casi todo sin esto: perder el RAG
+        # es perder las citas, no la clase.
+        #
+        # El `if rag_context` de mas abajo ya sabia manejar el vacio, igual que
+        # `_format_rag_context` y `_build_citations`. Lo unico que faltaba era
+        # no morirse antes de llegar.
+        try:
+            retrieval = await self.content.retrieve(
+                query=user_message,
+                top_k=5,
+                tenant_id=state.tenant_id,
+                caller_id=TUTOR_SERVICE_USER_ID,
+                materia_id=getattr(state, "materia_id", None),
+                comision_id=state.comision_id,
+            )
+        except Exception:
+            # `Exception` a proposito y no una lista de tipos: lo que llega acá
+            # es un servicio de tercer nivel (tutor -> content -> Google), y
+            # enumerar sus modos de falla es apostar a conocerlos todos. La
+            # regla es simple: NINGUN fallo del RAG puede dejar al alumno sin
+            # tutor.
+            logger.warning(
+                "rag_no_disponible episode_id=%s — el tutor responde sin material de catedra",
+                episode_id,
+                exc_info=True,
+            )
+            retrieval = _RETRIEVAL_CAIDO
 
         # 2. Armar contexto RAG para el LLM
         rag_context = self._format_rag_context(retrieval.chunks)
