@@ -39,7 +39,20 @@ SERVICES_HEALTH = [
 ]
 
 PG_CONN_STR = os.environ.get("SMOKE_PG_DSN", "postgresql://postgres:postgres@127.0.0.1:5432")
-PILOTO_LOGS_DIR = Path("/tmp/piloto-logs")
+
+# Donde escriben los servicios DE VERDAD: `scripts/dev-start-all.sh` hace
+# `mkdir -p .dev-logs` y manda cada servicio a `.dev-logs/<name>.log`,
+# relativo al root del repo.
+#
+# Hasta el 2026-08-28 esto apuntaba a `/tmp/piloto-logs`, un directorio que
+# NADIE escribe: el workflow de smoke lo creaba con `mkdir -p` y ahi terminaba
+# su historia. Consecuencia: cada `tail_log()` de un test que fallaba imprimia
+# `(no log file at /tmp/piloto-logs/<svc>.log)` en vez del log, o sea que todo
+# el diagnostico in-test estaba muerto justo cuando hacia falta.
+#
+# `SMOKE_LOGS_DIR` permite apuntarlo a otro lado sin tocar codigo.
+_REPO_ROOT = Path(__file__).resolve().parents[3]
+PILOTO_LOGS_DIR = Path(os.environ.get("SMOKE_LOGS_DIR") or (_REPO_ROOT / ".dev-logs"))
 
 
 def fetch_pg(dbname: str, sql: str, params: tuple[Any, ...] = ()) -> list[tuple[Any, ...]]:
