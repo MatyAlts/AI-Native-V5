@@ -26,6 +26,7 @@ import {
  * properties of null (reading 'isServer')".
  */
 import { render } from "@testing-library/react"
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query"
 import type { ReactNode } from "react"
 import { vi } from "vitest"
 
@@ -88,5 +89,21 @@ export function renderWithRouter(node: ReactNode) {
     routeTree: rootRoute.addChildren([indexRoute]),
     history: createMemoryHistory({ initialEntries: ["/"] }),
   })
-  return render(<RouterProvider router={router} />)
+  // QueryClientProvider ADEMAS del router. `HomeView` y `CorreccionesView` ya
+  // usaban react-query en `main` y este helper solo montaba el router, asi que
+  // los dos archivos morian con "No QueryClient set" — 14 rojos que vivian en
+  // `main` sin que nadie los viera, porque hasta el 2026-08-27 el CI no corria
+  // vitest. Se arreglan aca y no test por test: el que agregue la proxima vista
+  // con react-query no tiene por que enterarse de esto.
+  //
+  // `retry: false` para que un fetch que el mock no cubre falle de una en vez
+  // de reintentar tres veces y agotar el timeout del test.
+  const queryClient = new QueryClient({
+    defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
+  })
+  return render(
+    <QueryClientProvider client={queryClient}>
+      <RouterProvider router={router} />
+    </QueryClientProvider>,
+  )
 }
