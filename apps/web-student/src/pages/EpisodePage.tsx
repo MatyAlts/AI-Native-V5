@@ -67,6 +67,7 @@ import {
   sendMessage,
 } from "../lib/api"
 import { MONOLITHIC_ORDEN, saveArtefactoDraft } from "../lib/artefactos"
+import { esPlaceholder, resolverCascadaDeCodigo } from "../lib/cascadaCodigo"
 import { guardarCodigoPrevio, leerCodigoPrevio } from "../lib/codigoPrevio"
 import { helpContent } from "../utils/helpContent"
 
@@ -500,6 +501,9 @@ export function EpisodeView({ episodeId, onExit, ejercicioContext, getToken }: E
         // y de ahi salen tanto los tests como el codigo inicial. Para TPs
         // monoliticas ambos vienen en la propia TP (ya saneada por rol, A0.3).
         let resolvedTests: TestCasePublic[] = []
+        // Candidato 3 de la cascada de siembra: el scaffold del ejercicio del
+        // banco. Se junta acá y se decide abajo, con los otros tres.
+        let scaffoldEjercicio: string | null = null
         // El orden sale del contexto de navegacion, y si no vino (F5, link
         // directo) del propio estado del episodio, que lo persiste.
         const ordenEfectivo = ejercicioOrden ?? state.ejercicio_orden ?? null
@@ -518,15 +522,7 @@ export function EpisodeView({ episodeId, onExit, ejercicioContext, getToken }: E
               applyLanguage(ejLanguage)
             }
             if (match?.ejercicio?.id) setEjercicioId(match.ejercicio.id)
-            // Codigo inicial del ejercicio del banco (solo si no hay snapshot ni
-            // codigo inicial a nivel TP — mismo fallback que antes).
-            if (!state.last_code_snapshot && !resolveCodigoInicial(t)) {
-              const ejInicial = match?.ejercicio?.inicial_codigo ?? null
-              if (ejInicial) {
-                usedPlaceholderRef.current = false
-                setCode(ejInicial)
-              }
-            }
+            scaffoldEjercicio = match?.ejercicio?.inicial_codigo ?? null
           } catch {
             // best-effort: sin tests / sin codigo inicial del banco → default.
           }
@@ -535,70 +531,39 @@ export function EpisodeView({ episodeId, onExit, ejercicioContext, getToken }: E
         }
         setTestCases(resolvedTests)
 
-        if (state.last_code_snapshot) {
-          usedPlaceholderRef.current = false
-          setCode(state.last_code_snapshot)
-        } else {
-          // Scaffold a nivel TP.
-          //
-          // Esta rama estaba gateada por `ordenEfectivo == null` ("TP
-          // monolitica") y eso dejaba un AGUJERO en la cascada: en una TP
-          // MULTI-ejercicio cuya TP tiene `inicial_codigo`, la rama del
-          // ejercicio del banco (arriba) esta guardada por
-          // `!resolveCodigoInicial(t)` — el scaffold de la TP tiene precedencia
-          // sobre el del ejercicio — y esta otra no corria. Resultado: el
-          // docente escribia un scaffold y el alumno abria el editor con el
-          // andamio del lenguaje.
-          //
-          // Se veia como un detalle cosmetico hasta que ED-4 llenó ese hueco:
-          // sin este `else`, el codigo del ejercicio ANTERIOR entraba encima de
-          // la consigna del docente. Y a diferencia del andamio, eso parece
-          // legitimo — el alumno no tiene forma de saber que lo que ve no es lo
-          // que le dejaron.
-          //
-          // Las dos ramas de scaffold son mutuamente excluyentes (por ese mismo
-          // guard), asi que abrir el `else` NO cambia ninguna precedencia: solo
-          // hace que la de la TP se aplique donde antes no se aplicaba nadie.
-          const initialCode = resolveCodigoInicial(t)
-          if (initialCode) {
-            usedPlaceholderRef.current = false
-            setCode(initialCode)
-          }
-        }
-
-        // ED-4: ultimo eslabon REAL de la cascada de siembra. Solo entra si
-        // nada de lo anterior aplico (`usedPlaceholderRef` sigue en true).
+        // Con QUE codigo abre el editor. La decision entera —la precedencia
+        // entre los cuatro candidatos— vive en `resolverCascadaDeCodigo`, una
+        // funcion pura: acá solo se juntan los candidatos y se aplica el
+        // resultado. Antes estaba desparramada en tres `if` separados por 60
+        // lineas, con `usedPlaceholderRef` mutando en el medio, y no habia
+        // forma de ejercitarla sin montar la pagina contra el backend.
         //
-        // La cascada completa, de mayor a menor precedencia:
-        //   1. `state.last_code_snapshot` — lo que el alumno escribio en ESTE
-        //      episodio. Pisarlo es borrarle trabajo.
-        //   2. `inicial_codigo` de la TP — scaffold del docente.
-        //   3. `inicial_codigo` del ejercicio del banco — el otro scaffold del
-        //      docente, solo si la TP no trae el suyo.
-        //   4. esto: el codigo del ejercicio anterior de la misma TP.
-        //   5. `LANGUAGE_PLACEHOLDER` — el andamio del lenguaje.
-        //
-        // Que 4 vaya despues de 2 y 3 no es cosmetico: sembrar codigo de otro
-        // ejercicio encima de la consigna del docente es contradecir el
-        // enunciado con algo que parece legitimo.
-        //
+        // `leerCodigoPrevio` se lee siempre (es un `getItem` + parse, sin
+        // efectos) y la cascada decide si aplica: el gate ahora es la
+        // precedencia, no un flag mutable.
+        const codigoPrevio =
+          typeof window !== "undefined"
+            ? leerCodigoPrevio(window.sessionStorage, {
+                tareaId: state.tarea_practica_id,
+                ejercicioOrden: ordenEfectivo,
+                language: langEfectivo,
+              })
+            : null
         // Esta siembra NO emite `edicion_codigo`: sale por el mismo camino que
         // `last_code_snapshot` (el `initialCode` con el que se monta
         // `CodeEditor`, que llega a Monaco por `editor.create`). El componente
         // ni siquiera esta montado todavia — mientras `hydrating` es true la
         // pagina devuelve el skeleton. Ver el test "el re-montaje NO emite un
         // edicion_codigo fantasma".
-        if (usedPlaceholderRef.current && typeof window !== "undefined") {
-          const previo = leerCodigoPrevio(window.sessionStorage, {
-            tareaId: state.tarea_practica_id,
-            ejercicioOrden: ordenEfectivo,
-            language: langEfectivo,
-          })
-          if (previo) {
-            usedPlaceholderRef.current = false
-            setCode(previo)
-          }
-        }
+        const siembra = resolverCascadaDeCodigo({
+          snapshot: state.last_code_snapshot,
+          scaffoldTp: resolveCodigoInicial(t),
+          scaffoldEjercicio,
+          codigoPrevio,
+          placeholder: LANGUAGE_PLACEHOLDER[langEfectivo],
+        })
+        usedPlaceholderRef.current = esPlaceholder(siembra)
+        setCode(siembra.codigo)
         setMessages(
           state.messages.map((m) => ({
             role: m.role === "assistant" ? "tutor" : "user",
