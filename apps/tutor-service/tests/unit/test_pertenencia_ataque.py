@@ -699,12 +699,19 @@ def test_la_reflexion_ajena_no_se_cuela_por_el_estado_del_episodio(
 
 
 @pytest.mark.parametrize("tenant_propio", [False, True], ids=["mismo-tenant", "otro-tenant"])
-async def test_BUG_el_replay_de_idempotency_key_no_pasa_por_el_gate(
+async def test_el_replay_de_idempotency_key_ya_pasa_por_el_gate(
     http: TestClient, fake_ctr: _FakeCTR, escenario: _Escenario, tenant_propio: bool
 ) -> None:
-    """PRODUCT BUG documentado, no fixeado: hay un camino que saltea `sesion_del_emisor`.
+    """FIXEADO el 2026-08-28. Antes habia un camino que salteaba el gate.
 
-    El gate vive DENTRO del `emit`. La ruta no lo llama directo: llama a
+    Este test nacio afirmando el comportamiento ROTO, para documentar el
+    agujero con codigo en vez de con un parrafo. El fix lo puso rojo, que era
+    exactamente la señal acordada, y aca quedo convertido: mismo escenario,
+    mismo ataque, assert invertido. El analisis se conserva porque explica
+    POR QUE el gate esta donde esta, y eso es lo que impide que alguien lo
+    "simplifique" devolviendolo adentro del emit.
+
+    El gate vivia DENTRO del `emit`. La ruta no lo llama directo: llama a
     `_emitir_con_heal` -> `_idempotent_seq` -> `SessionManager.reserve_or_get_seq`,
     y ese metodo **decide antes de correr `emit`**:
 
@@ -713,13 +720,13 @@ async def test_BUG_el_replay_de_idempotency_key_no_pasa_por_el_gate(
         # perdedor: HGET y devuelve el seq guardado, sin llamar a emit()
 
     O sea: si la `Idempotency-Key` ya fue usada en ESE episodio, el request
-    devuelve 202 con el `seq` de la victima y `sesion_del_emisor` **nunca
-    corre**. Vale igual para un alumno de otro tenant — el `seen_key` esta
+    devolvia 202 con el `seq` de la victima y `sesion_del_emisor` **nunca
+    corria**. Valia igual para un alumno de otro tenant — el `seen_key` esta
     indexado solo por `episode_id`.
 
-    Lo que NO pasa: no entra nada a la cadena (por eso el assert de abajo).
-    Lo que SI pasa:
-      - El endpoint contesta 202 donde su docstring promete 403.
+    Lo que NO pasaba: no entraba nada a la cadena (por eso ese assert sigue).
+    Lo que SI pasaba:
+      - El endpoint contestaba 202 donde su docstring promete 403.
       - El atacante confirma que el episodio existe y que esa key se uso.
       - Se lleva el `seq` exacto — o sea cuantos eventos tenia la cadena de
         la victima en ese momento. Contando seqs se reconstruye su ritmo de
@@ -737,8 +744,11 @@ async def test_BUG_el_replay_de_idempotency_key_no_pasa_por_el_gate(
     en las rutas `/events/*` es ANTES de `_emitir_con_heal`, como ya esta en
     `/message` y `/close`.
 
-    Este test AFIRMA el comportamiento roto. Cuando el gate suba antes del
-    `_idempotent_seq`, se pone rojo — y esa es la señal de que el bug murio.
+    El fix: `await _get_tutor().sesion_del_emisor(episode_id, user.id)` como
+    primera linea de `_emitir_con_heal`, o sea ANTES del `_idempotent_seq`.
+    Ahi y no en la ruta que lo descubrio, porque asi lo heredan los nueve
+    emisores que pasan por ese wrapper. Es el mismo lugar del que ya colgaban
+    `/message` y `/close`.
     """
     ruta = "events/edicion_codigo"
     body = {"snapshot": "x = 1", "diff_chars": 5}
@@ -759,12 +769,14 @@ async def test_BUG_el_replay_de_idempotency_key_no_pasa_por_el_gate(
         headers=headers | {"Idempotency-Key": key},
     )
 
-    assert r_atacante.status_code == 202, (
-        "si esto ya no es 202 el bug se arreglo: el gate subio antes del "
-        "`_idempotent_seq`. Borra este test y quedate con el assert de la cadena."
+    assert r_atacante.status_code == 403, (
+        f"el replay de un ajeno paso el gate: {r_atacante.status_code} "
+        f"{r_atacante.text[:200]}"
     )
-    assert r_atacante.json()["seq"] == r_victima.json()["seq"], (
-        "el 202 dejo de devolver el seq de la victima: el leak cambio de forma, revisar"
+    # Lo que se filtraba no era el evento —nunca entro uno— sino el seq: o sea
+    # cuantos eventos tenia la cadena de la victima en ese momento.
+    assert r_victima.json()["seq"] not in r_atacante.text, (
+        "el 403 sigue devolviendo el seq de la victima: el leak cambio de forma"
     )
     # La mitad que SI se sostiene y no debe perderse cuando esto se arregle:
     # el replay no appendea nada a la cadena append-only.
@@ -776,12 +788,16 @@ async def test_BUG_el_replay_de_idempotency_key_no_pasa_por_el_gate(
 # ── 7. La lectura: el gate cubre la escritura, no el GET ──────────────
 
 
-def test_BUG_el_GET_del_episodio_ajeno_devuelve_el_codigo_de_la_victima(
+def test_el_GET_del_episodio_ajeno_ya_no_devuelve_el_codigo_de_la_victima(
     http: TestClient, escenario: _Escenario
 ) -> None:
-    """PRODUCT BUG documentado, no fixeado: `GET /episodes/{id}` no mira dueño.
+    """FIXEADO el 2026-08-28. Antes `GET /episodes/{id}` no miraba dueño.
 
-    El handler valida `tenant_id` y nada mas (`routes/episodes.py`,
+    Nacio afirmando el comportamiento roto; el fix lo puso rojo y quedo
+    convertido. El escenario y el analisis son los mismos: lo unico que
+    cambia es que ahora el ataque falla.
+
+    El handler validaba `tenant_id` y nada mas (`routes/episodes.py`,
     `get_episode_state`) — el mismo error de forma que `sesion_del_emisor`
     acaba de cerrar del lado de la escritura: "es de mi tenant" no es "es mio".
     Un compañero de tenant con el `episode_id` de otro se lleva su ultimo
@@ -791,21 +807,21 @@ def test_BUG_el_GET_del_episodio_ajeno_devuelve_el_codigo_de_la_victima(
     `localStorage` del alumno, en las URLs que pega en el foro y en cualquier
     log del cliente.
 
-    Este test AFIRMA el comportamiento roto a proposito. Cuando se arregle
-    —`str(ep["student_pseudonym"]) != str(user.id)` -> 403, salvo docente de la
-    comision— este test se pone rojo, y esa es la señal de que el bug murio.
+    El fix es `str(ep["student_pseudonym"]) != str(user.id)` -> 403, sin
+    excepcion por rol: con `clerk_base_roles = "estudiante,docente"` TODO
+    usuario logueado tiene el rol `docente`, asi que un bypass por rol seria
+    no tener gate. El panel del docente no se rompe porque no pasa por aca —
+    lee episodios por `/api/v1/analytics/...` y `/api/v1/audit/episodes/...`.
     """
     resp = http.get(
         f"/api/v1/episodes/{escenario.episode_id}",
         headers=escenario.h_atacante,  # mismo tenant, NO es el dueño
     )
-    assert resp.status_code == 200, (
-        "si esto ya no es 200 el bug se arreglo: borra este test y quedate con "
-        "el de abajo, que fija el comportamiento correcto."
+    assert resp.status_code == 403, (
+        f"el episodio ajeno se leyo igual: {resp.status_code} {resp.text[:200]}"
     )
-    assert resp.json()["last_code_snapshot"] == "SECRETO_DE_LA_VICTIMA = 42", (
-        "el GET devolvio 200 pero sin el codigo: el leak cambio de forma, revisar"
-    )
+    # Y el codigo de la victima no viaja ni en el cuerpo del rechazo.
+    assert "SECRETO_DE_LA_VICTIMA" not in resp.text
 
 
 def test_el_GET_de_otro_tenant_si_esta_cortado(
