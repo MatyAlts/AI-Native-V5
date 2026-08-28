@@ -415,3 +415,108 @@ async def test_episodio_inexistente_sigue_devolviendo_None_no_403(
     dejaria de correr.
     """
     assert await tutor.sesion_del_emisor(uuid4(), escenario.atacante) is None
+
+
+# ── El replay del Idempotency-Key: el punto ciego del gate ───────────────
+#
+# El gate de pertenencia vivia DENTRO de los emisores del core, o sea despues
+# de `reserve_or_get_seq`. Y en un replay esa funcion devuelve el seq cacheado
+# sin llamar nunca al emit: el gate no corria. Un ajeno que reusara una clave
+# vista recibia 202 con el seq de la victima. No appendea nada — pero confirma
+# que el episodio existe y filtra cuantos eventos tiene su cadena, que es un
+# oraculo gratis para el que esta probando `episode_id` al azar.
+#
+# Y el `seen_key` va solo por `episode_id`, sin tenant: el ajeno podia estar
+# en otro tenant.
+#
+# Es estructural: cualquier autorizacion que viva dentro del emit tiene el
+# mismo punto ciego, porque la idempotencia decide antes. Por eso el fix sube
+# el gate a `_emitir_con_heal` y no lo parcha en la ruta que lo descubrio.
+
+
+def _clave() -> str:
+    return "11111111-2222-3333-4444-555555555555"
+
+
+def _cuerpo_tests() -> dict:
+    return {
+        "test_count_total": 3,
+        "test_count_passed": 3,
+        "test_count_failed": 0,
+        "tests_publicos": 3,
+        "tests_hidden": 0,
+        "ejecucion_ms": 120,
+    }
+
+
+def test_el_replay_de_un_ajeno_no_recibe_el_seq_de_la_victima(
+    http: TestClient, fake_ctr: _FakeCTR, escenario: _Escenario
+) -> None:
+    """La victima emite con una clave; el ajeno la reusa."""
+    url = f"/api/v1/episodes/{escenario.episode_id}/run-tests"
+    headers_victima = {**escenario.headers_victima, "Idempotency-Key": _clave()}
+
+    primera = http.post(url, json=_cuerpo_tests(), headers=headers_victima)
+    assert primera.status_code == 202, primera.text[:200]
+    seq_victima = primera.json()["seq"]
+    assert len(fake_ctr.published_events) == 1
+
+    # Mismo episodio, MISMA clave, otro alumno. Sin el fix esto devolvia 202
+    # con `seq_victima` adentro.
+    replay = http.post(
+        url,
+        json=_cuerpo_tests(),
+        headers={**escenario.headers_atacante_mismo_tenant, "Idempotency-Key": _clave()},
+    )
+    assert replay.status_code == 403, (
+        f"el replay de un ajeno paso: {replay.status_code} {replay.text[:200]}"
+    )
+    # Lo que se filtraba no era el evento: era el seq.
+    assert seq_victima not in replay.text
+    assert len(fake_ctr.published_events) == 1
+
+
+def test_el_replay_cross_tenant_tampoco(
+    http: TestClient, fake_ctr: _FakeCTR, escenario: _Escenario
+) -> None:
+    """El `seen_key` va solo por `episode_id`: el ajeno puede ser de otro tenant."""
+    url = f"/api/v1/episodes/{escenario.episode_id}/run-tests"
+    http.post(
+        url,
+        json=_cuerpo_tests(),
+        headers={**escenario.headers_victima, "Idempotency-Key": _clave()},
+    )
+
+    replay = http.post(
+        url,
+        json=_cuerpo_tests(),
+        headers={**escenario.headers_atacante_otro_tenant, "Idempotency-Key": _clave()},
+    )
+    assert replay.status_code == 403, replay.text[:200]
+    assert len(fake_ctr.published_events) == 1
+
+
+def test_el_replay_del_DUENO_sigue_siendo_idempotente(
+    http: TestClient, fake_ctr: _FakeCTR, escenario: _Escenario
+) -> None:
+    """La otra mitad, y es la que importa: cerrar el replay ajeno no puede
+    romper el replay legitimo.
+
+    El `ctr-client` reintenta con la MISMA clave cuando pierde el ACK. Si el
+    reintento del dueño dejara de devolver el seq cacheado y emitiera de
+    nuevo, meteriamos un `tests_ejecutados` duplicado en la cadena — que es
+    justo el bug que la idempotencia vino a cerrar, y del que el labeler
+    deriva N3 vs N4.
+    """
+    url = f"/api/v1/episodes/{escenario.episode_id}/run-tests"
+    headers = {**escenario.headers_victima, "Idempotency-Key": _clave()}
+
+    primera = http.post(url, json=_cuerpo_tests(), headers=headers)
+    segunda = http.post(url, json=_cuerpo_tests(), headers=headers)
+
+    assert primera.status_code == 202
+    assert segunda.status_code == 202
+    assert primera.json()["seq"] == segunda.json()["seq"]
+    assert len(fake_ctr.published_events) == 1, (
+        f"el replay del dueño emitio de nuevo: {fake_ctr.published_events}"
+    )

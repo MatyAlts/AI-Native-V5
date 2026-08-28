@@ -278,7 +278,28 @@ async def _emitir_con_heal(
     Reintentar con el mismo `Idempotency-Key` es seguro: si el primer intento
     falló, `reserve_or_get_seq` liberó el claim con HDEL y el reintento lo
     vuelve a ganar.
+
+    El gate de pertenencia va ACA ARRIBA y no adentro de `emit`, y eso es una
+    correccion del 2026-08-28 sobre el fix del mismo dia. `sesion_del_emisor`
+    vivia dentro de los emisores del core, o sea DESPUES de
+    `reserve_or_get_seq` — que en un replay devuelve el seq cacheado sin
+    llamar nunca a `emit`. Un ajeno que reusara un `Idempotency-Key` visto
+    recibia 202 con el seq de la victima: no appendeaba nada, pero confirmaba
+    que el episodio existe y filtraba cuantos eventos tenia su cadena. El
+    `seen_key` va solo por `episode_id`, asi que el ajeno podia ser de otro
+    tenant.
+
+    Es estructural, no un caso borde: CUALQUIER autorizacion que viva dentro
+    de `emit` tiene el mismo punto ciego, porque la idempotencia decide antes.
+    Subirlo aca lo cierra para los nueve emisores que pasan por este wrapper,
+    en vez de para el que lo descubrio. Es el mismo lugar del que ya colgaban
+    `/message` y `/close`, que reciben el gate desde su ruta.
+
+    Sesion ausente devuelve `None` sin levantar: el heal de abajo sigue
+    funcionando igual, y la pertenencia se revalida ahi contra la cadena del
+    CTR (`resume_episode`).
     """
+    await _get_tutor().sesion_del_emisor(episode_id, user.id)
     try:
         return await _idempotent_seq(episode_id, idempotency_key, emit)
     except ValueError as sin_sesion:
@@ -408,6 +429,23 @@ async def get_episode_state(
     Errores:
       - 404 si el episodio no existe.
       - 403 si el episodio pertenece a otro tenant.
+      - 403 si el episodio es de OTRO estudiante del mismo tenant.
+
+    Ese ultimo caso falto hasta el 2026-08-28: se validaba tenant y nada mas,
+    y un compañero que conociera el `episode_id` se llevaba el ultimo snapshot
+    de codigo, la conversacion entera con el tutor y las notas. El gate de
+    ESCRITURA se cerro ese mismo dia (`sesion_del_emisor`) y este quedo atras
+    — el mismo error de forma por el lado de la lectura.
+
+    El chequeo es contra `student_pseudonym` de la cadena del CTR, igual que
+    `resume_episode` (`tutor_core.py:1054`), y no contra la sesion Redis: el
+    endpoint tiene que seguir sirviendo episodios cerrados y pausados, que no
+    tienen sesion. Es dueño-o-nada y NO hay bypass por rol: el api-gateway
+    corre con `clerk_base_roles = "estudiante,docente"`, o sea que TODO usuario
+    logueado tiene el rol `docente`, y un bypass por rol seria no tener gate.
+    El panel del docente no pasa por aca — lee episodios por
+    `/api/v1/analytics/...` y `/api/v1/audit/episodes/...`, que son otros
+    servicios con su propia autorizacion.
     """
     ctr = _get_ctr_client()
     ep = await ctr.get_episode(
@@ -428,6 +466,12 @@ async def get_episode_state(
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Episode pertenece a otro tenant",
+        )
+
+    if str(ep.get("student_pseudonym")) != str(user.id):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Solo el estudiante dueño del episodio puede leerlo",
         )
 
     return _build_episode_state(episode_id, ep)

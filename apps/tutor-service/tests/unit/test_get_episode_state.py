@@ -35,6 +35,11 @@ TENANT_HEADERS = {
 
 USER_TENANT = UUID("22222222-2222-2222-2222-222222222222")
 OTHER_TENANT = UUID("99999999-9999-9999-9999-999999999999")
+# El dueño del episodio en el camino feliz: el MISMO que manda el request.
+# Hasta el 2026-08-28 el helper le ponia un `uuid4()` al azar y el endpoint no
+# miraba dueño, asi que "happy path" era en realidad un alumno leyendo el
+# episodio de un desconocido — y pasaba.
+USER_ID = UUID("11111111-1111-1111-1111-111111111111")
 
 
 @pytest.fixture
@@ -65,6 +70,7 @@ def _make_ctr_episode(
     opened_at: datetime | None = None,
     closed_at: datetime | None = None,
     events: list[dict[str, Any]] | None = None,
+    student_pseudonym: UUID | None = None,
 ) -> dict[str, Any]:
     """Construye el dict que el ctr-service devolvería en GET /episodes/{id}."""
     opened = opened_at or datetime.now(UTC)
@@ -72,7 +78,7 @@ def _make_ctr_episode(
         "id": str(episode_id),
         "tenant_id": str(tenant_id),
         "comision_id": str(comision_id),
-        "student_pseudonym": str(uuid4()),
+        "student_pseudonym": str(student_pseudonym or USER_ID),
         "problema_id": str(problema_id),
         "estado": estado,
         "opened_at": opened.isoformat().replace("+00:00", "Z"),
@@ -209,6 +215,70 @@ async def test_get_episode_state_otro_tenant_403(client: AsyncClient, ctr_mock: 
 
     assert resp.status_code == 403
     assert "tenant" in resp.json()["detail"].lower()
+
+
+async def test_un_companiero_del_mismo_tenant_no_puede_leer_el_episodio(
+    client: AsyncClient, ctr_mock: AsyncMock
+) -> None:
+    """El agujero real: el gate de tenant no separa alumnos entre si.
+
+    En produccion TODOS los alumnos y docentes viven en el MISMO tenant
+    (ADR-001: RLS aisla tenants, no comisiones). Asi que "es de mi tenant"
+    no era una autorizacion: era casi una tautologia. Un compañero que
+    conociera el `episode_id` se llevaba el ultimo snapshot de codigo, la
+    conversacion entera con el tutor y las notas del episodio ajeno.
+
+    El gate de ESCRITURA se cerro el 2026-08-28 (`sesion_del_emisor`) y este
+    quedo atras — el mismo error de forma por el lado de la lectura.
+    """
+    episode_id = uuid4()
+    ctr_mock.get_episode.return_value = _make_ctr_episode(
+        episode_id=episode_id,
+        tenant_id=USER_TENANT,  # MISMO tenant: es lo que hace real al ataque
+        comision_id=uuid4(),
+        problema_id=uuid4(),
+        student_pseudonym=uuid4(),  # otro alumno
+        events=[
+            _ev(0, "episodio_abierto", {"problema_id": str(uuid4())}),
+            _ev(1, "prompt_enviado", {"content": "no entiendo los punteros"}),
+            _ev(2, "edicion_codigo", {"code_snapshot": "int main() { return 0; }"}),
+        ],
+    )
+
+    resp = await client.get(f"/api/v1/episodes/{episode_id}", headers=TENANT_HEADERS)
+
+    assert resp.status_code == 403
+    # El detalle importa: 403 de tenant y 403 de dueño son causas distintas y
+    # un test que compare solo el status pasa con el gate de dueño borrado.
+    assert "dueño" in resp.json()["detail"]
+    # Y lo que de verdad se estaba filtrando no viaja en el body.
+    assert "punteros" not in resp.text
+    assert "int main" not in resp.text
+
+
+async def test_el_dueño_del_episodio_lo_lee_normal(
+    client: AsyncClient, ctr_mock: AsyncMock
+) -> None:
+    """La otra mitad: cerrar por dueño no puede romper al dueño.
+
+    Sin este test, "403 a todo el mundo" tambien cierra el agujero y rompe
+    el recovery on-mount del alumno, que es para lo que existe el endpoint.
+    """
+    episode_id = uuid4()
+    problema_id = uuid4()
+    ctr_mock.get_episode.return_value = _make_ctr_episode(
+        episode_id=episode_id,
+        tenant_id=USER_TENANT,
+        comision_id=uuid4(),
+        problema_id=problema_id,
+        student_pseudonym=USER_ID,  # el que manda el request
+        events=[_ev(0, "episodio_abierto", {"problema_id": str(problema_id)})],
+    )
+
+    resp = await client.get(f"/api/v1/episodes/{episode_id}", headers=TENANT_HEADERS)
+
+    assert resp.status_code == 200
+    assert resp.json()["episode_id"] == str(episode_id)
 
 
 async def test_get_episode_state_closed_episode_devuelve_estado(
