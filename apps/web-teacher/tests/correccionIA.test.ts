@@ -383,3 +383,36 @@ describe("un ejercicio con identidad estable no toma la nota de otro", () => {
     expect(a?.nota100).toBe(100)
   })
 })
+
+describe("chequearAritmetica — el umbral de tolerancia", () => {
+  // El umbral vivia sin un solo test que lo fijara: los 46 tests usaban
+  // diferencias de 26, 25 y 0.1, asi que cualquier valor entre 0.11 y 24.9
+  // sobrevivia. Subirlo a `> 5` pasaba la suite entera — y con eso un desglose
+  // desviado 4 puntos sobre 100 llega al legajo del alumno sin marca.
+  //
+  // 0.5 es lo que tolera el redondeo independiente de cada criterio. Ni un
+  // punto mas: el chequeo aritmetico es la unica defensa de esta pantalla.
+
+  test("una diferencia de exactamente 0.5 se tolera", () => {
+    expect(chequearAritmetica([{ puntaje: 86.5 }], 87)?.difiere).toBe(false)
+  })
+
+  test("una diferencia de 0.6 YA se marca", () => {
+    // El otro lado del limite. Con estos dos, el umbral queda encajonado en
+    // [0.5, 0.6): ningun valor mas permisivo sobrevive.
+    expect(chequearAritmetica([{ puntaje: 86.4 }], 87)?.difiere).toBe(true)
+  })
+
+  test("4 puntos sobre 100 se marcan: no es redondeo, es una nota distinta", () => {
+    // El caso que la mutacion `> 5` dejaba pasar. Cuatro puntos mueven una nota
+    // de aprobado a desaprobado en cualquier escala de la catedra.
+    const r = chequearAritmetica([{ puntaje: 50 }, { puntaje: 46 }], 100)
+    expect(r?.suma).toBe(96)
+    expect(r?.difiere).toBe(true)
+  })
+
+  test("es simetrico: da igual que el total sea mayor o menor que la suma", () => {
+    expect(chequearAritmetica([{ puntaje: 90 }], 87)?.difiere).toBe(true)
+    expect(chequearAritmetica([{ puntaje: 84 }], 87)?.difiere).toBe(true)
+  })
+})

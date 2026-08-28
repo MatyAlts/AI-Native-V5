@@ -222,7 +222,6 @@ export function loadPyodideRuntime(): Promise<PyodideAPI> {
   return runtimePromise
 }
 
-
 /**
  * Traduce la corrida cruda de UN caso al veredicto que ve el docente.
  *
