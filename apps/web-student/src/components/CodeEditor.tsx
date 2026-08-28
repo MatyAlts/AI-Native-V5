@@ -1731,7 +1731,9 @@ def __tutor_run_tests(student_code, cases_json):
                 onChange={(e) => setStdinLibre(e.target.value)}
                 rows={2}
                 spellCheck={false}
-                placeholder={`Un dato por linea, en el orden en que tu programa los lee.\nSe manda entero al apretar Ejecutar.`}
+                placeholder={
+                  "Un dato por linea, en el orden en que tu programa los lee.\nSe manda entero al apretar Ejecutar."
+                }
                 className="w-full resize-y rounded border border-white/10 bg-black/30 px-2 py-1 font-mono text-xs leading-relaxed text-surface placeholder:text-muted-soft focus:border-white/30 focus:outline-none"
               />
             </div>

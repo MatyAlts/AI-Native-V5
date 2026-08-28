@@ -91,14 +91,21 @@ class ExecutionAccepted(BaseModel):
     quota_remaining: int
 
 
-def debe_emitir_conteos(
+def datos_para_emitir(
     *,
     modo: str,
     episode_id: UUID | None,
     run: RunResult | None,
     ejercicio: Ejercicio | None,
-) -> bool:
-    """Si esta corrida debe appendear un `tests_ejecutados` a la cadena.
+) -> tuple[UUID, RunResult, Ejercicio] | None:
+    """Los datos para emitir `tests_ejecutados`, o `None` si no corresponde.
+
+    Devuelve la tupla en vez de un `bool` para que la decision y la prueba de
+    que los datos existen sean el MISMO acto. Con un booleano el llamador
+    quedaba sabiendo que puede emitir pero sin poder demostrarselo al type
+    checker —mypy no cruza el limite de la funcion— y la salida facil ahi es un
+    `assert` que calla al chequeador sin agregar garantia. Asi el `if` estrecha
+    los tipos de verdad.
 
     Vive fuera de `_run_and_store` a proposito. Adentro, la decision dependia
     de variables locales que ningun test podia armar, y eso tuvo una
@@ -124,13 +131,13 @@ def debe_emitir_conteos(
     una forma distinta de que un episodio quede mal nivelado en los datos de la
     tesis, y el solapamiento es lo que hace que sacar uno no se note.
     """
-    return (
-        modo != "libre"
-        and episode_id is not None
-        and run is not None
-        and ejercicio is not None
-        and should_emit(run)
-    )
+    if modo == "libre":
+        return None
+    if episode_id is None or run is None or ejercicio is None:
+        return None
+    if not should_emit(run):
+        return None
+    return (episode_id, run, ejercicio)
 
 
 def _payload_libre(libre: CorridaLibre) -> dict[str, Any]:
@@ -258,15 +265,19 @@ async def _run_and_store(execution_id: UUID, *, req: ExecutionRequest, user: Use
     #
     # El alumno IGUAL ve el resultado: `to_client_payload` ya se calculo y se
     # guarda mas abajo. Lo unico que no ocurre es el evento CTR.
-    if debe_emitir_conteos(modo=req.modo, episode_id=req.episode_id, run=run, ejercicio=ejercicio):
+    a_emitir = datos_para_emitir(
+        modo=req.modo, episode_id=req.episode_id, run=run, ejercicio=ejercicio
+    )
+    if a_emitir is not None:
+        episodio_destino, run_emitido, ejercicio_emitido = a_emitir
         await TutorClient().emit_tests_ejecutados(
-            episode_id=req.episode_id,
+            episode_id=episodio_destino,
             execution_id=execution_id,
             user_id=user.id,
             tenant_id=user.tenant_id,
             payload=build_payload(
-                run,
-                hidden_case_ids={c.id for c in ejercicio.hidden_cases},
+                run_emitido,
+                hidden_case_ids={c.id for c in ejercicio_emitido.hidden_cases},
                 ejecucion_ms=ejecucion_ms,
                 engine="docker-java",
             ),

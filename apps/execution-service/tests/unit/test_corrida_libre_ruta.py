@@ -285,7 +285,7 @@ async def test_los_conteos_del_payload_libre_van_en_cero(
 #
 # Desde dentro de `_run_and_store` eso NO se puede probar: `run` es una
 # variable local y ningun monkeypatch la alcanza. Por eso la decision se
-# extrajo a `debe_emitir_conteos`, que se llama con los cuatro terminos
+# extrajo a `datos_para_emitir`, que se llama con los cuatro terminos
 # explicitos. Acá se prueba cada uno por separado, incluido el estado futuro
 # que hoy no existe.
 
@@ -323,17 +323,20 @@ def test_el_modo_libre_no_emite_NI_CON_run_seteado() -> None:
     `modo != "libre"` creyendolo redundante. Es lo unico que queda cuando
     `run` deja de ser `None`.
     """
-    assert not ruta.debe_emitir_conteos(
-        modo="libre",
-        episode_id=EPISODIO,
-        run=_run_con_un_caso(),
-        ejercicio=_ejercicio(con_casos=True),
+    assert (
+        ruta.datos_para_emitir(
+            modo="libre",
+            episode_id=EPISODIO,
+            run=_run_con_un_caso(),
+            ejercicio=_ejercicio(con_casos=True),
+        )
+        is None
     )
 
 
 def test_el_modo_tests_con_todo_en_su_lugar_SI_emite() -> None:
     """La contracara: sin esto, `return False` pelado pasa el de arriba."""
-    assert ruta.debe_emitir_conteos(
+    assert ruta.datos_para_emitir(
         modo="tests",
         episode_id=EPISODIO,
         run=_run_con_un_caso(),
@@ -343,17 +346,21 @@ def test_el_modo_tests_con_todo_en_su_lugar_SI_emite() -> None:
 
 def test_sin_episodio_no_emite_aunque_sea_modo_tests() -> None:
     """El panel del docente: corre fuera de todo episodio."""
-    assert not ruta.debe_emitir_conteos(
-        modo="tests",
-        episode_id=None,
-        run=_run_con_un_caso(),
-        ejercicio=_ejercicio(con_casos=True),
+    assert (
+        ruta.datos_para_emitir(
+            modo="tests",
+            episode_id=None,
+            run=_run_con_un_caso(),
+            ejercicio=_ejercicio(con_casos=True),
+        )
+        is None
     )
 
 
 def test_sin_run_no_emite() -> None:
-    assert not ruta.debe_emitir_conteos(
-        modo="tests", episode_id=EPISODIO, run=None, ejercicio=_ejercicio()
+    assert (
+        ruta.datos_para_emitir(modo="tests", episode_id=EPISODIO, run=None, ejercicio=_ejercicio())
+        is None
     )
 
 
@@ -361,9 +368,12 @@ def test_una_corrida_vacia_en_modo_tests_tampoco_emite() -> None:
     """El guard anti-inflacion original sigue adentro del predicado."""
     from execution_service.services.result_mapper import RunOutcome, RunResult
 
-    assert not ruta.debe_emitir_conteos(
-        modo="tests",
-        episode_id=EPISODIO,
-        run=RunResult(outcome=RunOutcome.COMPLETED, cases=[]),
-        ejercicio=_ejercicio(),
+    assert (
+        ruta.datos_para_emitir(
+            modo="tests",
+            episode_id=EPISODIO,
+            run=RunResult(outcome=RunOutcome.COMPLETED, cases=[]),
+            ejercicio=_ejercicio(),
+        )
+        is None
     )
