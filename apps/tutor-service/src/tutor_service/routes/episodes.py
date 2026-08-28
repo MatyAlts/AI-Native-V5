@@ -1285,6 +1285,7 @@ async def emit_reflexion_completada(
                 que_haria_distinto=req.que_haria_distinto,
                 prompt_version=req.prompt_version,
                 tiempo_completado_ms=req.tiempo_completado_ms,
+                idempotency_key=idempotency_key,
             ),
         )
     except ValueError as e:

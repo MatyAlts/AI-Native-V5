@@ -567,3 +567,97 @@ def test_post_reflection_sin_key_mantiene_comportamiento_legacy(
 
     tipos = [e["event_type"] for e in fake_ctr.published_events]
     assert tipos.count("reflexion_completada") == 2
+
+
+# ── El `event_uuid` derivado del Idempotency-Key ──────────────────────────
+
+
+async def test_el_mismo_idempotency_key_produce_el_MISMO_event_uuid(
+    tutor: TutorCore, fake_ctr: FakeCTRClient
+) -> None:
+    """Cierra la ventana que el claim de `reserve_or_get_seq` NO cubre.
+
+    Ese claim se libera con HDEL cuando el emit tira, para que "un reintento
+    genuino pueda re-ganarlo". Combinado con un fallo AMBIGUO —el CTR persistio
+    y el ACK se perdio— el reintento del alumno leia el MISMO `events_count`
+    (el worker todavia no drenó) y publicaba el MISMO seq con un `event_uuid`
+    NUEVO: dos eventos con seq 4, el segundo a la DLQ, y
+    `integrity_compromised` sobre un episodio ya cerrado y completo.
+
+    Con el uuid derivado de la key, el reintento manda el mismo `event_uuid` y
+    la idempotencia del worker —que ya existe, por `(tenant_id, event_uuid)`—
+    lo absorbe como no-op.
+
+    Verificado por reversion: volviendo a `str(uuid4())`, los dos uuid difieren
+    y este test cae.
+    """
+    episode_id, tenant_id, user_id = uuid4(), uuid4(), uuid4()
+    _seed_closed_episode(fake_ctr, episode_id, tenant_id)
+
+    async def _emitir() -> None:
+        await tutor.record_reflexion_completada(
+            episode_id=episode_id,
+            tenant_id=tenant_id,
+            user_id=user_id,
+            que_aprendiste="a",
+            dificultad_encontrada="b",
+            que_haria_distinto="c",
+            prompt_version="reflection/v1.0.0",
+            tiempo_completado_ms=1000,
+            idempotency_key="K-DEL-MODAL",
+        )
+
+    await _emitir()
+    await _emitir()  # el reintento que el alumno dispara al ver el error
+
+    uuids = [e["event_uuid"] for e in fake_ctr.published_events]
+    assert len(uuids) == 2
+    assert uuids[0] == uuids[1], (
+        "el reintento con la misma key tiene que reusar el event_uuid para que "
+        f"la idempotencia del worker lo absorba; salieron {uuids}"
+    )
+
+
+async def test_keys_distintas_son_reflexiones_distintas(
+    tutor: TutorCore, fake_ctr: FakeCTRClient
+) -> None:
+    """El derivado no puede colapsar dos envios genuinamente distintos."""
+    episode_id, tenant_id, user_id = uuid4(), uuid4(), uuid4()
+    _seed_closed_episode(fake_ctr, episode_id, tenant_id)
+
+    for key in ("K1", "K2"):
+        await tutor.record_reflexion_completada(
+            episode_id=episode_id,
+            tenant_id=tenant_id,
+            user_id=user_id,
+            que_aprendiste="a",
+            dificultad_encontrada="b",
+            que_haria_distinto="c",
+            prompt_version="reflection/v1.0.0",
+            tiempo_completado_ms=1000,
+            idempotency_key=key,
+        )
+
+    uuids = [e["event_uuid"] for e in fake_ctr.published_events]
+    assert uuids[0] != uuids[1]
+
+
+async def test_sin_key_sigue_generando_uno_nuevo(tutor: TutorCore, fake_ctr: FakeCTRClient) -> None:
+    """Los callers legacy que no mandan el header no cambian de comportamiento."""
+    episode_id, tenant_id, user_id = uuid4(), uuid4(), uuid4()
+    _seed_closed_episode(fake_ctr, episode_id, tenant_id)
+
+    for _ in range(2):
+        await tutor.record_reflexion_completada(
+            episode_id=episode_id,
+            tenant_id=tenant_id,
+            user_id=user_id,
+            que_aprendiste="a",
+            dificultad_encontrada="b",
+            que_haria_distinto="c",
+            prompt_version="reflection/v1.0.0",
+            tiempo_completado_ms=1000,
+        )
+
+    uuids = [e["event_uuid"] for e in fake_ctr.published_events]
+    assert uuids[0] != uuids[1]

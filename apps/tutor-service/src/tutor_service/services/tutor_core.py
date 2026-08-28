@@ -18,7 +18,7 @@ import time
 from collections.abc import AsyncIterator, Callable
 from datetime import UTC, datetime
 from typing import Any, Literal, NoReturn
-from uuid import UUID, uuid4
+from uuid import UUID, uuid4, uuid5
 
 import httpx
 from fastapi import HTTPException, status
@@ -66,6 +66,11 @@ _PROMPT_KIND_MAPPING: dict[str, str] = {
 }
 
 logger = logging.getLogger(__name__)
+
+# Namespace fijo para derivar el `event_uuid` de `reflexion_completada` desde el
+# `Idempotency-Key`. Es una constante del contrato: cambiarla haria que un
+# reintento deje de matchear la idempotencia del worker.
+_REFLEXION_NAMESPACE = UUID("6f1c9a2e-3b47-5d18-9e0a-7c25d4f83b61")
 
 
 # UUID fijo del service-account del tutor (no cambia entre tenants)
@@ -1674,6 +1679,7 @@ class TutorCore:
         que_haria_distinto: str,
         prompt_version: str,
         tiempo_completado_ms: int,
+        idempotency_key: str | None = None,
     ) -> int:
         """Publica reflexion_completada al CTR DESPUES del cierre del episodio.
 
@@ -1723,8 +1729,39 @@ class TutorCore:
                 prompt_system_version = ev["prompt_system_version"]
                 break
 
+        # `event_uuid` DETERMINISTICO cuando hay Idempotency-Key, y esto es lo
+        # que cierra la ventana que el claim de `reserve_or_get_seq` NO cubre.
+        #
+        # Ese claim se libera con HDEL cuando el emit tira, para que "un
+        # reintento genuino pueda re-ganarlo". Combinado con un fallo AMBIGUO
+        # —el CTR persistio y el ACK se perdio— el resultado era:
+        #
+        #   1. POST con key K. HSETNX gana. Se lee `events_count = 4`, se
+        #      publica seq 4. El CTR lo persiste; el ACK no vuelve.
+        #   2. HDEL K -> el claim se libera. El alumno ve "error enviando".
+        #   3. Reintenta con la MISMA K (el modal la conserva en su ref).
+        #      HSETNX gana de nuevo, `events_count` sigue en 4 porque el worker
+        #      todavia no drenó, y se publica **seq 4 otra vez** con un
+        #      `event_uuid` nuevo.
+        #   4. Segundo evento con seq inesperado -> DLQ -> integrity_compromised
+        #      sobre un episodio YA CERRADO Y COMPLETO.
+        #
+        # Es literalmente el daño que este PR dice prevenir. Con el uuid derivado
+        # de la key, el paso 3 manda el MISMO `event_uuid` y la idempotencia del
+        # worker —que ya existe, por `(tenant_id, event_uuid)`— lo absorbe como
+        # no-op. Sin key se conserva el `uuid4()` de siempre: los callers legacy
+        # no cambian.
+        #
+        # Este es ademas el unico emisor que NO pasa por `_publicar_evento` (el
+        # seq sale de `events_count`, no del contador atomico), asi que es el
+        # path mas fragil y el que mas necesita la red del uuid.
+        event_uuid = (
+            str(uuid5(_REFLEXION_NAMESPACE, f"{episode_id}:{idempotency_key}"))
+            if idempotency_key
+            else str(uuid4())
+        )
         event = {
-            "event_uuid": str(uuid4()),
+            "event_uuid": event_uuid,
             "episode_id": str(episode_id),
             "tenant_id": str(tenant_id),
             "seq": seq,
