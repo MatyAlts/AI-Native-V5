@@ -37,7 +37,7 @@ jobs:
         run: uv python install ${{ env.PYTHON_VERSION }}
 
       - name: Install deps
-        run: uv sync --all-packages
+        run: uv sync --all-packages --locked
 
       - name: Ruff check
         run: uv run ruff check .
@@ -86,7 +86,7 @@ jobs:
         run: uv python install ${{ env.PYTHON_VERSION }}
 
       - name: Install deps
-        run: uv sync --all-packages
+        run: uv sync --all-packages --locked
 
       - name: mypy
         run: uv run mypy .
@@ -242,7 +242,7 @@ jobs:
         run: uv python install ${{ env.PYTHON_VERSION }}
 
       - name: Install deps
-        run: uv sync --all-packages
+        run: uv sync --all-packages --locked
 
       - name: Init DBs
         run: PGPASSWORD=postgres psql -h localhost -U postgres -f infrastructure/postgres/init-dbs.sql
@@ -327,7 +327,7 @@ jobs:
         run: uv python install ${{ env.PYTHON_VERSION }}
 
       - name: Install deps
-        run: uv sync --all-packages
+        run: uv sync --all-packages --locked
 
       - name: Crear ctr_store y el usuario non-superuser
         # CRITICO: los tests DEBEN correr con un usuario NOBYPASSRLS. Con
@@ -416,7 +416,7 @@ jobs:
         run: uv python install ${{ env.PYTHON_VERSION }}
 
       - name: Install deps
-        run: uv sync --all-packages
+        run: uv sync --all-packages --locked
 
       - name: Init DBs
         run: PGPASSWORD=postgres psql -h localhost -U postgres -f infrastructure/postgres/init-dbs.sql
