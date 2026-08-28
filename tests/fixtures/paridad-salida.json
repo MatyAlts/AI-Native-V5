@@ -257,6 +257,139 @@
       "porque": "el programa no imprimio nada"
     },
     {
+      "nombre": "equivalencia Unicode: NFC contra NFD",
+      "actual": "caf\u00e9",
+      "esperado": "cafe\u0301",
+      "coincide": false,
+      "porque": "No se normaliza Unicode, a proposito. El strip() viejo tampoco lo hacia, asi que no es tolerancia que se este quitando. Y unificarlo seria una decision de producto: 'e' + acento combinante y 'e con acento' son dos secuencias distintas que el alumno pudo imprimir a proposito"
+    },
+    {
+      "nombre": "emoji con ZWJ contra la misma secuencia sin ZWJ",
+      "actual": "\ud83d\udc69\u200d\ud83d\udcbb",
+      "esperado": "\ud83d\udc69\ud83d\udcbb",
+      "coincide": false,
+      "porque": "El U+200D (zero-width joiner) es contenido, no blanco: ni isspace() de Python ni el \\s de JS lo recortan. Fija que el corrector no rompe clusters de grafemas"
+    },
+    {
+      "nombre": "un caracter astral al final NO es blanco",
+      "actual": "Hola\ud83d\ude42",
+      "esperado": "Hola",
+      "coincide": false,
+      "porque": "El recorte de JS mira code UNITS de UTF-16 y el de Python code POINTS. Los 28 blancos son todos del BMP, asi que ningun surrogate (0xD800-0xDFFF) puede confundirse con uno \u2014 este caso lo ancla"
+    },
+    {
+      "nombre": "surrogate alto suelto al final NO es blanco",
+      "actual": "Hola\ud800",
+      "esperado": "Hola",
+      "coincide": false,
+      "porque": "El borde del punto anterior: una cadena mal formada no puede activar el recorte por casualidad. Los dos lenguajes la dejan pasar tal cual"
+    },
+    {
+      "nombre": "BOM (U+FEFF) al FINAL del actual",
+      "actual": "Hola\ufeff",
+      "esperado": "Hola",
+      "coincide": false,
+      "porque": "Espejo del caso del BOM al principio. El \\s de JS lo recortaba por los DOS extremos, asi que el corrector del docente daba verde tambien aca. isspace() de Python no lo considera blanco y el strip() viejo tampoco lo perdonaba"
+    },
+    {
+      "nombre": "zero-width space (U+200B) al PRINCIPIO",
+      "actual": "\u200bHola",
+      "esperado": "Hola",
+      "coincide": false,
+      "porque": "Espejo del U+200B al final: el limite de la tolerancia vale por los dos lados"
+    },
+    {
+      "nombre": "espacio duro (nbsp) al PRINCIPIO de la primera linea",
+      "actual": "\u00a0Hola",
+      "esperado": "Hola",
+      "coincide": true,
+      "porque": "La tabla tenia el nbsp al final y el em space al principio, pero no el nbsp al principio, que es la forma exacta en que llega pegado desde Word: el strip() viejo lo perdonaba y seguir perdonandolo es lo que evita re-corregir conteos que ya viajaron al CTR"
+    },
+    {
+      "nombre": "espacio ideografico (U+3000) al final",
+      "actual": "Hola\u3000",
+      "esperado": "Hola",
+      "coincide": true,
+      "porque": "El blanco Unicode mas alto del set. Un recorte escrito con un rango corto (\\u2000-\\u200a) lo dejaria afuera y ningun otro caso de la tabla lo notaria"
+    },
+    {
+      "nombre": "espacio angosto sin salto (U+202F) al final",
+      "actual": "Hola\u202f",
+      "esperado": "Hola",
+      "coincide": true,
+      "porque": "Idem: aisla los tres blancos sueltos de arriba del rango (U+202F, U+205F, U+3000), que son los que un rango mal escrito se come"
+    },
+    {
+      "nombre": "ogham space mark (U+1680) al final",
+      "actual": "Hola\u1680",
+      "esperado": "Hola",
+      "coincide": true,
+      "porque": "El unico blanco de isspace() entre U+00A0 y U+2000. Se afirma solo porque es el que mas facil se cae de una enumeracion escrita a mano"
+    },
+    {
+      "nombre": "U+2028 (line separator) al final SE recorta",
+      "actual": "Hola\u2028",
+      "esperado": "Hola",
+      "coincide": true,
+      "porque": "isspace() de Python lo cubre, asi que el strip() viejo lo perdonaba"
+    },
+    {
+      "nombre": "U+2028 en el MEDIO no es un salto de linea",
+      "actual": "a\u2028b",
+      "esperado": "a\nb",
+      "coincide": false,
+      "porque": "Los dos lados parten con split('\\n') y no con splitlines(): splitlines() de Python SI partiria en U+2028, U+2029 y U+0085, y usarlo del lado Python separaria los correctores en silencio. Este caso lo prohibe"
+    },
+    {
+      "nombre": "U+0085 (NEL) en el MEDIO no es un salto de linea",
+      "actual": "a\u0085b",
+      "esperado": "a\nb",
+      "coincide": false,
+      "porque": "Mismo motivo que U+2028: es blanco (se recorta en los bordes) pero NO es estructura de lineas"
+    },
+    {
+      "nombre": "CR suelto al FINAL",
+      "actual": "Hola\r",
+      "esperado": "Hola",
+      "coincide": true,
+      "porque": "El \\r suelto de Mac clasico como ultimo caracter: se unifica a \\n y la linea en blanco resultante se descarta. La normalize() vieja del docente solo reemplazaba \\r\\n"
+    },
+    {
+      "nombre": "dos CR seguidos son DOS saltos, no uno",
+      "actual": "a\r\rb",
+      "esperado": "a\n\nb",
+      "coincide": true,
+      "porque": "\\r\\n?  reemplaza de a un EOL por vez: colapsar los \\r consecutivos borraria una linea en blanco INTERMEDIA, que es contenido del alumno"
+    },
+    {
+      "nombre": "sangria de la primera linea DESPUES de lineas en blanco",
+      "actual": "\n\n  Hola",
+      "esperado": "Hola",
+      "coincide": true,
+      "porque": "El orden importa: primero se descartan las lineas en blanco de los extremos y recien despues se recorta la sangria de la que queda primera. Es lo que hacia el strip() viejo sobre el texto entero. Invertir los dos pasos deja el '  Hola' sin recortar y endurece la correccion"
+    },
+    {
+      "nombre": "una linea intermedia de solo blancos ES una linea en blanco",
+      "actual": "a\n \t\nb",
+      "esperado": "a\n\nb",
+      "coincide": true,
+      "porque": "El recorte por linea corre ANTES de contar lineas en blanco. Es la unica manera de que un print() que deja espacios cuente igual que un print() vacio"
+    },
+    {
+      "nombre": "un tab interno no equivale a un espacio",
+      "actual": "a\tb",
+      "esperado": "a b",
+      "coincide": false,
+      "porque": "Los blancos INTERNOS de una linea son contenido: el alumno eligio el separador y el enunciado del banco pide el texto tal cual"
+    },
+    {
+      "nombre": "tabulacion vertical INTERNA es contenido",
+      "actual": "a\u000bb",
+      "esperado": "ab",
+      "coincide": false,
+      "porque": "El U+000B se recorta en los bordes de la linea y NO en el medio. Un recorte que se aplique a toda la linea (un .trim() que se cuele, o un replace global) muere aca y no en los casos de borde"
+    },
+    {
       "nombre": "el orden de las lineas importa",
       "actual": "b\na",
       "esperado": "a\nb",

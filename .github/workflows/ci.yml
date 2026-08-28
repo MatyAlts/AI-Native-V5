@@ -326,6 +326,16 @@ jobs:
           # idempotencia, del aislamiento RLS y del derecho al olvido: todo eso
           # NO se verificaba en un PR.
           EVAL_TEST_DB_URL: postgresql+asyncpg://postgres:postgres@localhost:5432/academic_main
+        # `apps/academic-service/tests/integration/` NO entra entero (hay 4
+        # rojos viejos ahi, `test_tareas_practicas_templates_crud.py` mockea un
+        # `svc.tp_repo` que ya no existe). Se agregan de a un archivo, y
+        # `test_commit_sobre_http_real.py` tiene que estar: levanta uvicorn de
+        # verdad y es lo unico que verifica que el cliente NO se queda con un
+        # 201 sobre una escritura que no commiteo — un `ASGITransport` no puede
+        # mostrar esa mitad, porque re-levanta la excepcion en vez de devolver
+        # un status. Toma la DB de `ACADEMIC_DB_URL` o, en su defecto, de
+        # `EVAL_TEST_DB_URL` (que este job ya exporta); sin ninguna se skipea.
+        #
         # `apps/*/tests/*.py` ademas de `unit/`: los ~40 tests de scope de
         # comision del evaluation-service viven UN NIVEL ARRIBA de `tests/unit/`
         # y el glob viejo no los matcheaba, asi que un cambio de autorizacion
@@ -343,25 +353,23 @@ jobs:
         #   errors       3                3
         #   ejecutados 1908             2021
         #
-        # Quedan 4 rojos REALES. NO se apagan, NO llevan `continue-on-error` y
-        # NO se les afloja el assert: son verificaciones que nunca habian
-        # corrido y lo que dicen es cierto. Los 4 viven en `evaluation-service`
-        # y son bugs DE TEST, no de producto:
+        # Quedaban 4 rojos REALES. NO se apagaron, NO llevan `continue-on-error`
+        # y NO se les aflojo el assert: eran verificaciones que nunca habian
+        # corrido y lo que decian era cierto. Los 4 vivian en
+        # `evaluation-service` y eran bugs DE TEST, no de producto. CERRADOS:
         #
-        # 1) `test_olvido_db.py::test_no_queda_NADA_que_describa_el_codigo_del_alumno`
-        #    Assert vencido. El test exige `artefacto_sha256 == ""`, pero
-        #    `services/olvido.py:154` escribe `None` desde `44a20f9`, que hizo
-        #    la columna nullable justamente "para que el olvido no reviente".
-        #    NULL cumple la propiedad (no queda nada que describa el codigo)
-        #    igual o mejor que `""`. Fix: `assert fila[0] is None`.
+        # 1) [CERRADO] `test_olvido_db.py::test_no_queda_NADA_que_describa_el_codigo_del_alumno`
+        #    Assert vencido: exigia `artefacto_sha256 == ""` y
+        #    `services/olvido.py` escribe `None` desde `44a20f9`. Ahora pide
+        #    `is None` y NO `in (None, "")`: `""` rompe
+        #    `uq_correccion_ia_idempotencia` cuando el alumno tiene dos
+        #    correcciones sobre la misma entrega/orden/rubrica.
         #
-        # 2-4) `test_reconciliador_rls_db.py` — los 3 ERROR.
+        # 2-4) [CERRADO] `test_reconciliador_rls_db.py` — los 3 ERROR.
         #    `ForeignKeyViolationError` en `fk_correcciones_ia_entrega`: la
-        #    fixture `dos_tenants_colgados` inserta `correcciones_ia` con
-        #    `entrega_id = uuid.uuid4()`, una entrega que NO existe. NINGUN
-        #    seed puede arreglar esto — el id se inventa en cada corrida. Fix:
-        #    que la fixture cree la entrega (o lea una real) antes de insertar
-        #    la correccion.
+        #    fixture `dos_tenants_colgados` inventaba el `entrega_id`. Ahora crea
+        #    la entrega (colgada de una TP y una comision reales) antes de
+        #    insertar la correccion, y la borra al terminar.
         #
         # Los otros dos rojos que habia ANTES se arreglaron solos al sembrar,
         # y vale la pena mirarlos: eran los dos de `test_activeia_payload_db.py`
@@ -376,6 +384,7 @@ jobs:
           apps/*/tests/unit/
           apps/evaluation-service/tests/integration/
           apps/academic-service/tests/integration/test_casbin_matrix.py
+          apps/academic-service/tests/integration/test_commit_sobre_http_real.py
           packages/*/tests/
           -m "not integration" --cov --cov-report=xml --cov-fail-under=60
 

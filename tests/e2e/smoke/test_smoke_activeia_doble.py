@@ -245,6 +245,29 @@ class TestLosCaminosQueNoSePuedenProvocarContraElServicioReal:
         assert out["error_code"] == "HTTP_503"
         assert "nota_100" not in out
 
+    async def test_el_5xx_le_dice_al_docente_que_REINTENTE(self, doble: str) -> None:
+        """El `error_code` solo no distingue la rama que lo produjo.
+
+        Con `status >= 500` roto (probado: cambiandolo por `status >= 900`), un
+        503 cae a la rama de los 4xx y sale con el MISMO
+        `error_code == "HTTP_503"` — el assert de arriba pasa igual. Lo que
+        cambia es lo unico que el docente lee: el mensaje pasa de "Reintentar
+        puede servir" a "Reintentar sin cambiar nada va a devolver lo mismo",
+        sobre un motor que estaba saturado y que un minuto despues anda.
+
+        (El flag `es_infraestructura` que decide si la UI ofrece "Reintentar" lo
+        resuelve `mapear_error_activeia` por el prefijo `HTTP_5`, asi que ese
+        sigue bien; el que miente es el texto.)
+        """
+        GUION.update(corregir_status=503)
+
+        out = await _correr(doble)
+
+        assert "Reintentar puede servir" in out["error_detail"], out["error_detail"]
+        assert "rechaz" not in out["error_detail"].lower(), (
+            "un 503 no es un rechazo: el motor no dijo que no, dijo que no pudo"
+        )
+
     async def test_un_4xx_es_un_rechazo_definitivo(self, doble: str) -> None:
         """Un rechazo no se arregla esperando ni reintentando.
 

@@ -73,11 +73,42 @@ async def rol_sin_privilegios():
 
 @pytest_asyncio.fixture
 async def dos_tenants_colgados():
-    """Dos tenants distintos con una correccion `running` cada uno."""
+    """Dos tenants distintos con una correccion `running` cada uno.
+
+    La correccion cuelga de una entrega REAL. `correcciones_ia.entrega_id` tiene
+    FK a `entregas` (`fk_correcciones_ia_entrega`): inventar el UUID hace que el
+    INSERT muera con `ForeignKeyViolationError` en cada corrida, y ningun seed lo
+    puede arreglar porque el id se inventa de nuevo cada vez. La entrega a su vez
+    necesita una TP y una comision existentes (FKs `ON DELETE RESTRICT`), asi que
+    se toman de la base; si no hay, no hay nada que probar.
+    """
     admin = create_async_engine(_DSN)
     t1, t2 = uuid.uuid4(), uuid.uuid4()
+    entregas: list[uuid.UUID] = []
     async with admin.begin() as c:
+        tp = (await c.execute(text("SELECT id FROM tareas_practicas LIMIT 1"))).scalar_one_or_none()
+        com = (await c.execute(text("SELECT id FROM comisiones LIMIT 1"))).scalar_one_or_none()
+        if tp is None or com is None:
+            await admin.dispose()
+            pytest.skip("la base no tiene TPs/comisiones para colgar la entrega")
         for t in (t1, t2):
+            entrega_id = uuid.uuid4()
+            entregas.append(entrega_id)
+            await c.execute(
+                text(
+                    "INSERT INTO entregas "
+                    "(id, tenant_id, tarea_practica_id, student_pseudonym, comision_id, "
+                    " estado, ejercicio_estados) "
+                    "VALUES (:e, :t, :tp, :s, :c, 'submitted', '[]'::jsonb)"
+                ),
+                {
+                    "e": str(entrega_id),
+                    "t": str(t),
+                    "tp": str(tp),
+                    "s": str(uuid.uuid4()),
+                    "c": str(com),
+                },
+            )
             await c.execute(
                 text(
                     "INSERT INTO correcciones_ia "
@@ -85,12 +116,14 @@ async def dos_tenants_colgados():
                     " estado, artefacto_sha256) "
                     "VALUES (gen_random_uuid(), :t, :e, 1, :u, 'r1', 'running', :h)"
                 ),
-                {"t": str(t), "e": str(uuid.uuid4()), "u": str(uuid.uuid4()), "h": "f" * 64},
+                {"t": str(t), "e": str(entrega_id), "u": str(uuid.uuid4()), "h": "f" * 64},
             )
     yield t1, t2
     async with admin.begin() as c:
         for t in (t1, t2):
             await c.execute(text("DELETE FROM correcciones_ia WHERE tenant_id = :t"), {"t": str(t)})
+        for e in entregas:
+            await c.execute(text("DELETE FROM entregas WHERE id = :e"), {"e": str(e)})
     await admin.dispose()
 
 

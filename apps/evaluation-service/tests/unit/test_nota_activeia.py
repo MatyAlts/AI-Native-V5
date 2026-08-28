@@ -66,14 +66,24 @@ class TestLaNotaLlegaComoString:
         assert r["nota_100"] == Decimal("8.325")
         assert str(r["nota_100"]) == "8.325"
 
-    async def test_un_cero_es_una_nota(self) -> None:
+    @pytest.mark.parametrize("cero", ["0.00", "0", 0, 0.0, Decimal("0")])
+    async def test_un_cero_es_una_nota(self, cero: object) -> None:
         """El alumno que entrega el template vacio saca 0, y eso NO es un fallo.
 
         Ya paso una vez con `or`: el cero falsy caia a `SIN_NOTA`, que esta en
         el set de infraestructura, la UI ofrecia "Reintentar" y cada intento
         pagaba una corrida de Gemini sobre una correccion que termino bien.
+
+        **Los casos numericos son los que hacen que este test pruebe algo.** La
+        version anterior mandaba solo `{"nota": "0.00"}`, que es un string
+        TRUTHY en Python: con el bug puesto (`if nota_cruda:` en vez de
+        `if nota_cruda is not None:`) el archivo entero pasaba igual, y la
+        regresion que este test dice fijar quedaba sin cubrir. `0`, `0.0` y
+        `Decimal("0")` son las formas que el `if` falsy si distingue — y no son
+        hipoteticas: el propio `test_tambien_si_llega_como_numero` de abajo
+        existe porque ofrecieron mandar la nota como numero.
         """
-        r = await _correr({"nota": "0.00"})
+        r = await _correr({"nota": cero})
 
         assert r.get("error_code") is None, r
         assert r["nota_100"] == Decimal("0.00")
