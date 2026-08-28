@@ -42,8 +42,23 @@ export interface EditorFalso {
 export const editoresCreados: EditorFalso[] = []
 
 /** Limpia el registro entre tests (el modulo es singleton para todo el file). */
+/**
+ * Lenguajes para los que `CodeEditor` registro un proveedor de completions, en
+ * orden de registro.
+ *
+ * El mock descartaba el registro (`registerCompletionItemProvider: () => disposable`)
+ * y con eso el hecho de que `CodeEditor` conecta los snippets quedaba
+ * INOBSERVABLE: borrar la linea `registerPythonSnippets(monaco, ...)` desconecta
+ * ED-3 entero —el alumno pierde todo el autocompletado de Python— y ningun test
+ * se entera. Registrarlo acá abre el unico seam posible: la conexion es un
+ * efecto, no hay funcion pura que extraer, asi que lo que se puede anclar es
+ * que el efecto ocurrio.
+ */
+export const lenguajesConSnippets: string[] = []
+
 export function resetMonacoMock(): void {
   editoresCreados.length = 0
+  lenguajesConSnippets.length = 0
 }
 
 function create(_container: HTMLElement, opciones: Record<string, unknown>): EditorFalso {
@@ -93,7 +108,10 @@ export const KeyMod = { CtrlCmd: 2048 }
 export const KeyCode = { KeyV: 52, KeyC: 33, KeyX: 54, Enter: 3 }
 export const MarkerSeverity = { Error: 8 }
 export const languages = {
-  registerCompletionItemProvider: () => disposable,
+  registerCompletionItemProvider: (lenguaje: string) => {
+    lenguajesConSnippets.push(lenguaje)
+    return disposable
+  },
   CompletionItemKind: { Snippet: 27 },
   CompletionItemInsertTextRule: { InsertAsSnippet: 4 },
 }

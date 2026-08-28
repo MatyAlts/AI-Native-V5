@@ -128,6 +128,47 @@ export function resolverSiembra(
   return guardado.code
 }
 
+/** Lo que el episodio que se está dejando sabe de sí mismo. */
+export interface OrigenPersistencia {
+  /** `tarea_practica_id`. Nulo mientras la TP no terminó de hidratar. */
+  tareaId: string | null | undefined
+  /** Orden del ejercicio que se deja. `null` = TP monolítica. */
+  ejercicioOrden: number | null
+  language: string
+  /** Buffer actual del editor. */
+  code: string
+  /** Andamio del lenguaje, para reconocer que el alumno no escribió nada. */
+  placeholder: string
+}
+
+/**
+ * La otra mitad de `resolverSiembra`: decide QUÉ se guarda al dejar un
+ * ejercicio. Función pura — devuelve la entrada a persistir o `null`.
+ *
+ * Vive acá y no dentro de la página por la misma razón que su gemela: es todo
+ * criterio, no tiene nada de React, y desconectarla es invisible desde afuera
+ * (nadie ve una escritura que no ocurrió — se nota un ejercicio después, como
+ * un arrastre que no llegó).
+ *
+ * No se guarda si:
+ *  - todavía no hay TP hidratada (`tareaId` nulo);
+ *  - la TP es monolítica (`ejercicioOrden` nulo): no hay "próximo ejercicio"
+ *    al que arrastrarle nada;
+ *  - el buffer es exactamente el andamio del lenguaje. El alumno no escribió
+ *    código propio, y el siguiente ejercicio va a poner ese mismo andamio solo.
+ */
+export function resolverCodigoAPersistir(origen: OrigenPersistencia): CodigoPrevio | null {
+  if (!origen.tareaId) return null
+  if (origen.ejercicioOrden == null) return null
+  if (origen.code === origen.placeholder) return null
+  return {
+    tareaId: origen.tareaId,
+    ejercicioOrden: origen.ejercicioOrden,
+    language: origen.language,
+    code: origen.code,
+  }
+}
+
 /**
  * Guarda el buffer del ejercicio que el alumno está dejando.
  *

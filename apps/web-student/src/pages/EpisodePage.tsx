@@ -68,7 +68,11 @@ import {
 } from "../lib/api"
 import { MONOLITHIC_ORDEN, saveArtefactoDraft } from "../lib/artefactos"
 import { esPlaceholder, resolverCascadaDeCodigo } from "../lib/cascadaCodigo"
-import { guardarCodigoPrevio, leerCodigoPrevio } from "../lib/codigoPrevio"
+import {
+  guardarCodigoPrevio,
+  leerCodigoPrevio,
+  resolverCodigoAPersistir,
+} from "../lib/codigoPrevio"
 import { helpContent } from "../utils/helpContent"
 
 const ACTIVE_EPISODE_KEY = "active-episode-id"
@@ -685,23 +689,24 @@ export function EpisodeView({ episodeId, onExit, ejercicioContext, getToken }: E
    * son el momento en que el alumno abandona este ejercicio, y `code` ya es el
    * espejo vivo del buffer de Monaco (`onCodeChange`).
    *
-   * No escribe nada si el alumno no llego a escribir codigo propio: el andamio
-   * por omision del lenguaje no vale la pena arrastrarlo, y el siguiente
-   * ejercicio lo va a poner igual.
+   * El criterio de QUE se guarda vive en `resolverCodigoAPersistir`, la gemela
+   * pura de `resolverSiembra`: acá queda solo el acceso al almacen. Desconectar
+   * esta mitad es invisible desde afuera — nadie ve una escritura que no
+   * ocurrio, se nota un ejercicio despues como un arrastre que no llego.
    *
    * No toca el CTR. Es estado de navegacion, como `active-exercise-context`.
    */
   function persistirCodigoParaElProximoEjercicio() {
     if (typeof window === "undefined") return
-    const tareaId = tarea?.id
-    if (!tareaId || ejercicioOrdenEfectivo == null) return
-    if (code === LANGUAGE_PLACEHOLDER[language]) return
-    guardarCodigoPrevio(window.sessionStorage, {
-      tareaId,
+    const entrada = resolverCodigoAPersistir({
+      tareaId: tarea?.id,
       ejercicioOrden: ejercicioOrdenEfectivo,
       language,
       code,
+      placeholder: LANGUAGE_PLACEHOLDER[language],
     })
+    if (!entrada) return
+    guardarCodigoPrevio(window.sessionStorage, entrada)
   }
 
   async function handleClose() {
