@@ -53,8 +53,15 @@ describe("GovernanceEventsPage", () => {
 
     renderConQuery(<GovernanceEventsPage />)
 
+    // Se espera por el `pattern_id`, que SOLO existe en una fila de la tabla.
+    //
+    // Antes esperaba por "jailbreak_substitution", y eso es una trampa: ese
+    // texto tambien es una OPCION del desplegable de categorias, que esta desde
+    // el primer render. El `waitFor` pasaba de inmediato sin esperar los datos,
+    // y las aserciones de abajo corrian contra la tabla todavia vacia
+    // (`0 eventos | categorias: ninguna`). Un waitFor que no espera nada.
     await waitFor(() => {
-      expect(screen.getByText("jailbreak_substitution")).toBeInTheDocument()
+      expect(screen.getByText("jailbreak_substitution_v1_p2")).toBeInTheDocument()
     })
 
     expect(screen.getByText("jailbreak_substitution_v1_p2")).toBeInTheDocument()
@@ -87,8 +94,15 @@ describe("GovernanceEventsPage", () => {
 
     renderConQuery(<GovernanceEventsPage />)
 
+    // Se espera por el `pattern_id`, que SOLO existe en una fila de la tabla.
+    //
+    // Antes esperaba por "jailbreak_substitution", y eso es una trampa: ese
+    // texto tambien es una OPCION del desplegable de categorias, que esta desde
+    // el primer render. El `waitFor` pasaba de inmediato sin esperar los datos,
+    // y las aserciones de abajo corrian contra la tabla todavia vacia
+    // (`0 eventos | categorias: ninguna`). Un waitFor que no espera nada.
     await waitFor(() => {
-      expect(screen.getByText("jailbreak_substitution")).toBeInTheDocument()
+      expect(screen.getByText("jailbreak_substitution_v1_p2")).toBeInTheDocument()
     })
 
     const exportBtn = screen.getByRole("button", { name: /Exportar CSV/i })
@@ -159,8 +173,15 @@ describe("GovernanceEventsPage", () => {
     renderConQuery(<GovernanceEventsPage />)
 
     // Esperamos render inicial completo
+    // Se espera por el `pattern_id`, que SOLO existe en una fila de la tabla.
+    //
+    // Antes esperaba por "jailbreak_substitution", y eso es una trampa: ese
+    // texto tambien es una OPCION del desplegable de categorias, que esta desde
+    // el primer render. El `waitFor` pasaba de inmediato sin esperar los datos,
+    // y las aserciones de abajo corrian contra la tabla todavia vacia
+    // (`0 eventos | categorias: ninguna`). Un waitFor que no espera nada.
     await waitFor(() => {
-      expect(screen.getByText("jailbreak_substitution")).toBeInTheDocument()
+      expect(screen.getByText("jailbreak_substitution_v1_p2")).toBeInTheDocument()
     })
 
     // Setear severidad min y aplicar
