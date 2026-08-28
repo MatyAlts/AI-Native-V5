@@ -75,9 +75,16 @@ async def create_entrega(
     Race condition guard: si dos requests concurrentes pasan el SELECT y
     colisionan en el UNIQUE constraint, el perdedor reintenta el SELECT
     tras rollback del savepoint.
+
+    El `comision_id` del body se valida contra la TP ANTES de mirar si ya
+    existe la entrega: un body que declara una comisión que no es la de la TP
+    está mal armado, exista o no la entrega, y devolver 200 con la entrega
+    buena ante un body inválido esconde el error del cliente.
     """
     log = structlog.get_logger()
     student_id = user.id
+
+    await _assert_comision_de_la_tp(db, data.tarea_practica_id, data.comision_id)
 
     existing = await _find_existing_entrega(db, data.tarea_practica_id, student_id)
     if existing is not None:
@@ -745,6 +752,59 @@ async def _ejercicios_esperados(db: AsyncSession, tarea_practica_id: UUID) -> li
         {"tp": str(tarea_practica_id)},
     )
     return [{"orden": r[0], "ejercicio_id": str(r[1]) if r[1] else None} for r in rows.all()]
+
+
+async def _comision_de_la_tp(db: AsyncSession, tarea_practica_id: UUID) -> UUID | None:
+    """La comisión a la que pertenece la TP, o `None` si la TP no es visible.
+
+    `tareas_practicas` es propiedad de academic-service pero vive en la misma
+    DB (`academic_main`), así que se lee por SQL crudo — mismo criterio que
+    `_ejercicios_esperados` acá y que `_assert_tp_de_mi_comision` en
+    `activeia.py`.
+
+    "No visible" incluye la TP de otro tenant: la tabla tiene RLS y la sesión
+    entra con `app.current_tenant` seteado, así que una TP ajena no aparece y
+    el caller la trata igual que a una inexistente.
+    """
+    rows = await db.execute(
+        text("SELECT comision_id FROM tareas_practicas WHERE id = :tp"),
+        {"tp": str(tarea_practica_id)},
+    )
+    fila = rows.first()
+    return UUID(str(fila[0])) if fila is not None else None
+
+
+async def _assert_comision_de_la_tp(
+    db: AsyncSession, tarea_practica_id: UUID, comision_id: UUID
+) -> UUID:
+    """La comisión que el alumno declara tiene que ser la de la TP.
+
+    El FK de `entregas.comision_id` garantiza que la comisión EXISTE, no que
+    sea la de la tarea práctica. Sin este chequeo el alumno elegía a qué cola
+    de corrección iba su trabajo: `list_entregas` filtra por
+    `Entrega.comision_id`, así que declarar una comisión ajena mandaba la
+    entrega a los docentes equivocados, y declarar una comisión sin docentes
+    la escondía de la propia.
+
+    422 y no 500: es un body mal armado del cliente. Hasta acá una TP o una
+    comisión inexistente reventaban recién en el `IntegrityError` del FK, que
+    caía en la rama de recuperación del race del UNIQUE, no encontraba nada y
+    devolvía "Error inesperado al crear entrega".
+
+    Devuelve la comisión de la TP para que el caller no tenga que releerla.
+    """
+    de_la_tp = await _comision_de_la_tp(db, tarea_practica_id)
+    if de_la_tp is None:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="Trabajo practico no existe",
+        )
+    if de_la_tp != comision_id:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="La comision declarada no es la del trabajo practico",
+        )
+    return de_la_tp
 
 
 def _reconciliar_estados(

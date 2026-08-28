@@ -1114,6 +1114,22 @@ class RunTestsRequest(BaseModel):
     )
 
 
+def _es_rechazo_de_payload(mensaje: str) -> bool:
+    """True si el `ValueError` de `emit_tests_ejecutados` culpa al body (422).
+
+    `emit_tests_ejecutados` levanta `ValueError` por dos motivos distintos que
+    merecen respuestas distintas: la sesion Redis no esta (409, y recuperable
+    por el heal) o el body no cierra (422, definitivo). Esta es la unica pieza
+    que los separa, y lo hace por el mensaje porque el core no distingue el
+    tipo — funcion pura para poder fijarla con tests contra los mensajes
+    literales que ese metodo produce.
+
+    Los dos motivos de 422 son los guards de `TutorCore.emit_tests_ejecutados`:
+    `passed + failed != total`, y `tests_hidden != 0` sin emisor interno.
+    """
+    return "Conteos inconsistentes" in mensaje or "tests_hidden" in mensaje
+
+
 def _es_emisor_interno(token: str | None) -> bool:
     """True si la llamada viene de un servicio interno, probado por secreto.
 
@@ -1150,10 +1166,32 @@ async def emit_tests_ejecutados(
     """Emite tests_ejecutados al CTR con conteos del cliente Pyodide.
 
     Estados:
-      - 202: evento aceptado, devuelve seq.
-      - 409: episodio cerrado, expirado o inexistente.
+      - 202: evento aceptado, devuelve seq. Tambien cuando la sesion Redis no
+        estaba y el heal la reconstruyo (ver abajo) — antes eso era 409.
+      - 403: episodio de otro estudiante o de otro tenant (lo precisa el heal).
+      - 404: episodio inexistente (lo precisa el heal).
+      - 409: episodio cerrado, o sesion ausente que el heal no pudo reponer.
       - 422: payload invalido (conteos inconsistentes, tests_hidden!=0).
       - 503: reserva de secuencia en curso en otra replica (reintentar).
+
+    Auto-heal de la sesion: este era el UNICO emisor de eventos del servicio
+    que llamaba a `_idempotent_seq` pelado. Los otros ocho pasan por
+    `_emitir_con_heal`, que ante una sesion Redis ausente la reconstruye con
+    `resume_episode` y reintenta en vez de responder 409. La asimetria dolia
+    justo aca: si al alumno se le vencia el TTL de la sesion en el momento en
+    que corria los tests, ese evento se perdia donde los otros se recuperan —
+    y `tests_ejecutados` es del que el labeler v1.2.0 deriva N3 vs N4, asi que
+    el episodio quedaba mal nivelado en los datos de la tesis.
+
+    El heal compone limpio con la idempotencia: `_emitir_con_heal` reenvia la
+    clave tal cual la recibe (prefijo `tests:` incluido), y `reserve_or_get_seq`
+    libera el claim con HDEL cuando el emit falla, asi que el reintento
+    post-heal lo vuelve a ganar y emite UNA sola vez.
+
+    Los rechazos de payload NO gatillan el heal: `_emitir_tests` los convierte
+    en `HTTPException` 422 antes de que salgan como `ValueError`. Sanar un
+    payload invalido no arregla nada, y peor: sobre un episodio cerrado el
+    `resume_episode` del heal devolveria 409 tapando el 422 que corresponde.
 
     Idempotencia (P-17): el `ctr-client` manda el `event_uuid` del evento
     encolado en `Idempotency-Key` y lo conserva a traves de los reintentos. Este
@@ -1174,11 +1212,21 @@ async def emit_tests_ejecutados(
     ejecucion es del estudiante, su accion directa.
     """
     tutor = _get_tutor()
-    try:
-        seq = await _idempotent_seq(
-            episode_id,
-            (f"tests:{idempotency_key}" if idempotency_key else None),
-            lambda: tutor.emit_tests_ejecutados(
+
+    async def _emitir_tests() -> int:
+        """Emite el evento traduciendo los rechazos de payload a 422 en el acto.
+
+        La traduccion tiene que pasar ACA adentro y no en el `except` del
+        handler: si el `ValueError` de un conteo inconsistente sale del emit,
+        `_emitir_con_heal` lo confunde con "sesion ausente" y arranca el heal.
+
+        Un `HTTPException` no es `ValueError`, asi que atraviesa
+        `_emitir_con_heal` sin gatillarlo. `reserve_or_get_seq` igual hace el
+        HDEL del claim (captura `Exception`), que es lo que deja al cliente
+        corregir los conteos y reintentar con el mismo `Idempotency-Key`.
+        """
+        try:
+            return await tutor.emit_tests_ejecutados(
                 episode_id=episode_id,
                 user_id=user.id,
                 test_count_total=req.test_count_total,
@@ -1189,14 +1237,26 @@ async def emit_tests_ejecutados(
                 ejecucion_ms=req.ejecucion_ms,
                 chunks_used_hash=req.chunks_used_hash,
                 emisor_interno=_es_emisor_interno(x_internal_service_token),
-            ),
+            )
+        except ValueError as e:
+            msg = str(e)
+            if not _es_rechazo_de_payload(msg):
+                raise
+            raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=msg) from e
+
+    try:
+        seq = await _emitir_con_heal(
+            episode_id,
+            (f"tests:{idempotency_key}" if idempotency_key else None),
+            user,
+            _emitir_tests,
         )
     except ValueError as e:
-        msg = str(e)
-        # 422 si conteos inconsistentes; 409 si sesion no existe.
-        if "Conteos inconsistentes" in msg or "tests_hidden" in msg:
-            raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=msg)
-        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=msg)
+        # Lo unico que llega aca es la sesion ausente que el heal no pudo
+        # reponer: los rechazos de payload ya salieron como 422 desde
+        # `_emitir_tests`, y un episodio cerrado/ajeno sale como el
+        # HTTPException que devuelve `resume_episode`.
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(e))
     return {"status": "accepted", "seq": str(seq)}
 
 
