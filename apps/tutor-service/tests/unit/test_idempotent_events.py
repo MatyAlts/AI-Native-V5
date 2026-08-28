@@ -272,3 +272,114 @@ async def test_session_manager_seen_roundtrip(redis_client) -> None:
     assert await mgr.get_seen_seq(episode_id, str(uuid4())) is None
     # Otro episodio no comparte el registro.
     assert await mgr.get_seen_seq(uuid4(), key) is None
+
+
+# ── /run-tests: la ruta que se habia quedado afuera ────────────────────
+
+
+async def test_run_tests_retry_mismo_key_no_duplica_el_evento(
+    http_client, fake_ctr: FakeCTRClient
+) -> None:
+    """`tests_ejecutados` deduplica por Idempotency-Key como las otras ocho.
+
+    Era la UNICA ruta de evento sin el header, y desde que el evento viaja por
+    la cola durable del `ctr-client` eso dejo de ser cosmetico: la cola reintenta
+    hasta ocho veces cuando pierde el ACK de una request que el servidor SI
+    proceso. Sin dedup, una sola corrida de tests del alumno podia quedar
+    appendeada ocho veces en la cadena.
+
+    Importa mas que en las otras rutas porque es el evento del que el labeler
+    v1.2.0 deriva N3 vs N4: duplicarlo no pierde evidencia, la INVENTA.
+
+    Verificado por reversion: sacando `idempotency_key` de la firma de
+    `emit_tests_ejecutados`, o volviendo a llamar a `tutor.emit_tests_ejecutados`
+    directo en vez de envolverlo en `_idempotent_seq`, este test cae en el
+    segundo POST (seq "2" en vez de "1") y en el conteo de publicados.
+    """
+    client, tutor = http_client
+    tenant_id = uuid4()
+    student_id = uuid4()
+    episode_id = await tutor.open_episode(
+        tenant_id=tenant_id,
+        comision_id=uuid4(),
+        student_pseudonym=student_id,
+        problema_id=uuid4(),
+        curso_config_hash="c" * 64,
+        classifier_config_hash="b" * 64,
+    )
+    assert len(fake_ctr.published_events) == 1  # episodio_abierto, seq 0
+
+    cuerpo = {
+        "test_count_total": 3,
+        "test_count_passed": 2,
+        "test_count_failed": 1,
+        "tests_publicos": 3,
+        "tests_hidden": 0,
+        "ejecucion_ms": 120,
+    }
+    uuid_x = str(uuid4())
+
+    r1 = client.post(
+        f"/api/v1/episodes/{episode_id}/run-tests",
+        json=cuerpo,
+        headers=_student_headers(student_id, tenant_id, idempotency_key=uuid_x),
+    )
+    assert r1.status_code == 202
+    assert r1.json()["seq"] == "1"
+    assert len(fake_ctr.published_events) == 2
+
+    # El ACK se perdio y la cola reintenta con el MISMO event_uuid.
+    r2 = client.post(
+        f"/api/v1/episodes/{episode_id}/run-tests",
+        json=cuerpo,
+        headers=_student_headers(student_id, tenant_id, idempotency_key=uuid_x),
+    )
+    assert r2.status_code == 202
+    assert r2.json()["seq"] == "1", "el reintento tiene que devolver el MISMO seq"
+    assert len(fake_ctr.published_events) == 2, "no se re-publica al CTR"
+
+    # Y el siguiente evento real conserva la secuencia contigua.
+    r3 = client.post(
+        f"/api/v1/episodes/{episode_id}/events/edicion_codigo",
+        json={"snapshot": "x = 1", "diff_chars": 5, "language": "python"},
+        headers=_student_headers(student_id, tenant_id, idempotency_key=str(uuid4())),
+    )
+    assert r3.status_code == 202
+    seqs = [ev["seq"] for ev in fake_ctr.published_events]
+    assert seqs == [0, 1, 2], f"la cadena tiene que quedar contigua, quedo {seqs}"
+
+
+async def test_run_tests_sin_key_sigue_andando(http_client, fake_ctr: FakeCTRClient) -> None:
+    """Sin el header, el comportamiento es el de antes.
+
+    El `execution-service` emite este evento server-side y hoy no manda
+    `Idempotency-Key`. Si el dedup lo rompiera, el evento de mayor senal del
+    piloto dejaria de entrar — el fix tiene que ser aditivo.
+    """
+    client, tutor = http_client
+    tenant_id = uuid4()
+    student_id = uuid4()
+    episode_id = await tutor.open_episode(
+        tenant_id=tenant_id,
+        comision_id=uuid4(),
+        student_pseudonym=student_id,
+        problema_id=uuid4(),
+        curso_config_hash="c" * 64,
+        classifier_config_hash="b" * 64,
+    )
+    cuerpo = {
+        "test_count_total": 1,
+        "test_count_passed": 1,
+        "test_count_failed": 0,
+        "tests_publicos": 1,
+        "tests_hidden": 0,
+        "ejecucion_ms": 10,
+    }
+    r = client.post(
+        f"/api/v1/episodes/{episode_id}/run-tests",
+        json=cuerpo,
+        headers=_student_headers(student_id, tenant_id),  # sin Idempotency-Key
+    )
+    assert r.status_code == 202
+    assert r.json()["seq"] == "1"
+    assert len(fake_ctr.published_events) == 2

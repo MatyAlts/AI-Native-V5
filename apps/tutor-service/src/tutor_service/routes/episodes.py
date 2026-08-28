@@ -1143,6 +1143,7 @@ def _es_emisor_interno(token: str | None) -> bool:
 async def emit_tests_ejecutados(
     episode_id: UUID,
     req: RunTestsRequest,
+    idempotency_key: str | None = Header(default=None, alias="Idempotency-Key"),
     x_internal_service_token: str | None = Header(default=None),
     user: User = Depends(require_role("estudiante", "docente", "docente_admin", "superadmin")),
 ) -> dict[str, str]:
@@ -1155,20 +1156,38 @@ async def emit_tests_ejecutados(
 
     El user_id autoritativo es el del estudiante (header X-User-Id) — la
     ejecucion es del estudiante, su accion directa.
+
+    Idempotencia (P-17): dedup por header `Idempotency-Key`, igual que las otras
+    ocho rutas de evento. Era la UNICA que no lo tenia, y desde que este evento
+    viaja por la cola durable del `ctr-client` eso dejo de ser cosmetico: la cola
+    reintenta hasta `DEFAULT_MAX_ATTEMPTS` veces cuando pierde el ACK de una
+    request que el servidor SI proceso, y sin dedup cada reintento appendeaba
+    otro `tests_ejecutados`. El evento del que el labeler deriva N3 vs N4 pasaba
+    de perderse (visible) a duplicarse (silencioso) — que es peor.
+
+    Se envuelve en `_idempotent_seq` y NO en `_emitir_con_heal`: esta ruta
+    levanta `ValueError` tambien por payload invalido (conteos inconsistentes,
+    `tests_hidden != 0`), y el heal dispararia un `resume_episode` completo
+    —tres round-trips inter-servicio— ante un request malformado. El dedup es
+    lo que arregla el bug; el heal traeria un amplificador de carga.
     """
     tutor = _get_tutor()
     try:
-        seq = await tutor.emit_tests_ejecutados(
-            episode_id=episode_id,
-            user_id=user.id,
-            test_count_total=req.test_count_total,
-            test_count_passed=req.test_count_passed,
-            test_count_failed=req.test_count_failed,
-            tests_publicos=req.tests_publicos,
-            tests_hidden=req.tests_hidden,
-            ejecucion_ms=req.ejecucion_ms,
-            chunks_used_hash=req.chunks_used_hash,
-            emisor_interno=_es_emisor_interno(x_internal_service_token),
+        seq = await _idempotent_seq(
+            episode_id,
+            idempotency_key,
+            lambda: tutor.emit_tests_ejecutados(
+                episode_id=episode_id,
+                user_id=user.id,
+                test_count_total=req.test_count_total,
+                test_count_passed=req.test_count_passed,
+                test_count_failed=req.test_count_failed,
+                tests_publicos=req.tests_publicos,
+                tests_hidden=req.tests_hidden,
+                ejecucion_ms=req.ejecucion_ms,
+                chunks_used_hash=req.chunks_used_hash,
+                emisor_interno=_es_emisor_interno(x_internal_service_token),
+            ),
         )
     except ValueError as e:
         msg = str(e)
