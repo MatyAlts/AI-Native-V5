@@ -19,6 +19,7 @@ import {
   guardarCodigoPrevio,
   leerCodigoPrevio,
   parseCodigoPrevio,
+  resolverCodigoAPersistir,
   resolverSiembra,
 } from "../src/lib/codigoPrevio"
 
@@ -230,5 +231,116 @@ describe("leerCodigoPrevio", () => {
       [claveCodigoPrevio("tp-otra")]: JSON.stringify({ ...GUARDADO, tareaId: "tp-otra" }),
     })
     expect(leerCodigoPrevio(almacen, DESTINO_OK)).toBeNull()
+  })
+})
+
+/**
+ * La mitad de ESCRITURA de ED-4, que estaba sin cubrir.
+ *
+ * `resolverSiembra` (arriba) decide QUE se lee; `resolverCodigoAPersistir`
+ * decide QUE se guarda al dejar un ejercicio. Las dos mitades tienen que
+ * cerrar: una escritura que no ocurre es INVISIBLE — nadie ve el momento en que
+ * no se guardo nada, se nota un ejercicio despues como un arrastre que no
+ * llego, y para entonces ya no hay forma de saber de que lado se rompio.
+ *
+ * Por eso los tests de abajo cierran el circuito con `resolverSiembra` en vez
+ * de solo mirar el objeto devuelto: lo que importa no es el shape, es que lo
+ * que la escritura produce sea exactamente lo que la lectura acepta.
+ */
+
+/** Lo que el episodio que se esta dejando sabe de si mismo. */
+const ORIGEN_OK = {
+  tareaId: TAREA,
+  ejercicioOrden: 1,
+  language: "python",
+  code: GUARDADO.code,
+  placeholder: "# Escribi tu solucion aca\n",
+}
+
+describe("resolverCodigoAPersistir — cuando SI se guarda", () => {
+  it("guarda el buffer del ejercicio que se deja, con su TP, orden y lenguaje", () => {
+    expect(resolverCodigoAPersistir(ORIGEN_OK)).toEqual({
+      tareaId: TAREA,
+      ejercicioOrden: 1,
+      language: "python",
+      code: GUARDADO.code,
+    })
+  })
+
+  it("lo que produce es exactamente lo que `resolverSiembra` acepta", () => {
+    // El circuito cerrado: escritura -> lectura. Si la escritura guardara el
+    // orden del ejercicio DESTINO en vez del de origen, o el lenguaje
+    // equivocado, el objeto seguiria siendo valido y `resolverSiembra`
+    // devolveria `null` — el arrastre no llegaria y nada fallaria.
+    const entrada = resolverCodigoAPersistir(ORIGEN_OK)
+    expect(entrada).not.toBeNull()
+    expect(
+      resolverSiembra(entrada, { tareaId: TAREA, ejercicioOrden: 2, language: "python" }),
+    ).toBe(GUARDADO.code)
+  })
+
+  it("guarda el orden del ejercicio de ORIGEN, no un valor cualquiera", () => {
+    // Anclado contra el `>=` de `resolverSiembra`: guardar el orden de mas
+    // haria que el ejercicio siguiente se descarte a si mismo.
+    const entrada = resolverCodigoAPersistir({ ...ORIGEN_OK, ejercicioOrden: 3 })
+    expect(entrada?.ejercicioOrden).toBe(3)
+    expect(resolverSiembra(entrada, { ...DESTINO_OK, ejercicioOrden: 4 })).toBe(GUARDADO.code)
+    expect(resolverSiembra(entrada, { ...DESTINO_OK, ejercicioOrden: 3 })).toBeNull()
+  })
+
+  it("guarda el lenguaje del ejercicio de origen", () => {
+    // Si guardara siempre "python", un ejercicio Java se sembraria en uno
+    // Python y el editor abriria con el archivo roto — que es justo lo que la
+    // condicion de lenguaje de `resolverSiembra` existe para impedir.
+    const entrada = resolverCodigoAPersistir({
+      ...ORIGEN_OK,
+      language: "java",
+      code: "class Main {}",
+      placeholder: "// Escribi tu solucion aca\n",
+    })
+    expect(entrada?.language).toBe("java")
+    expect(resolverSiembra(entrada, { ...DESTINO_OK, language: "python" })).toBeNull()
+  })
+
+  it("guarda codigo que apenas se diferencia del andamio", () => {
+    // La condicion es igualdad EXACTA con el placeholder, no "se parece": una
+    // linea agregada al andamio ya es trabajo del alumno.
+    const entrada = resolverCodigoAPersistir({
+      ...ORIGEN_OK,
+      code: `${ORIGEN_OK.placeholder}print('hola')\n`,
+    })
+    expect(entrada).not.toBeNull()
+  })
+})
+
+describe("resolverCodigoAPersistir — cuando NO se guarda", () => {
+  it("no guarda si la TP todavia no hidrato", () => {
+    // `tarea?.id` es `undefined` mientras el GET de la TP esta en vuelo. Sin
+    // este recorte se guardaria una entrada con `tareaId: undefined`, que
+    // ademas rompe la clave del almacen.
+    expect(resolverCodigoAPersistir({ ...ORIGEN_OK, tareaId: undefined })).toBeNull()
+    expect(resolverCodigoAPersistir({ ...ORIGEN_OK, tareaId: null })).toBeNull()
+    expect(resolverCodigoAPersistir({ ...ORIGEN_OK, tareaId: "" })).toBeNull()
+  })
+
+  it("no guarda desde una TP monolitica", () => {
+    // No hay "proximo ejercicio" al que arrastrarle nada. Y si se guardara,
+    // `resolverSiembra` lo descartaria igual — pero dejaria basura en el
+    // almacen con la clave de la TP.
+    expect(resolverCodigoAPersistir({ ...ORIGEN_OK, ejercicioOrden: null })).toBeNull()
+  })
+
+  it("no guarda el andamio del lenguaje sin tocar", () => {
+    // El alumno no escribio nada propio, y el ejercicio siguiente va a poner
+    // ese mismo andamio solo. Guardarlo haria que el arrastre "funcione"
+    // trayendo exactamente lo que ya iba a estar ahi.
+    expect(resolverCodigoAPersistir({ ...ORIGEN_OK, code: ORIGEN_OK.placeholder })).toBeNull()
+  })
+
+  it("el orden 0 SI se guarda (no confundir con `null`)", () => {
+    // Anti-falsy: `if (!origen.ejercicioOrden)` en vez de `== null` dejaria
+    // afuera al ejercicio de orden 0. Hoy el banco empieza en 1, pero el
+    // recorte tiene que ser por nulidad, no por falsy.
+    expect(resolverCodigoAPersistir({ ...ORIGEN_OK, ejercicioOrden: 0 })?.ejercicioOrden).toBe(0)
   })
 })
