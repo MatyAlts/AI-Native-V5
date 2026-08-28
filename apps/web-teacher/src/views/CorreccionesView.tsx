@@ -28,8 +28,11 @@ import {
   SkipForward,
   X,
 } from "lucide-react"
-import { useEffect, useMemo, useRef, useState } from "react"
+import { useCallback, useEffect, useMemo, useRef, useState } from "react"
+import { CorreccionIAPanel } from "../components/CorreccionIAPanel"
+import { ResumenCorreccionIA } from "../components/ResumenCorreccionIA"
 import { useStudentProfiles } from "../hooks/useStudentProfiles"
+import { type CorreccionIA, listarCorreccionesIA } from "../lib/api"
 import {
   type CalificacionCreate,
   type EjercicioEstado,
@@ -47,6 +50,7 @@ import {
 } from "../lib/api"
 import { useTutorialDeVista } from "../tour/useTutorialDeVista"
 import { correccionesTour } from "../tour/vistas"
+import { ejerciciosParaResumen } from "../utils/correccionIA"
 import { studentShortLabel } from "../utils/docenteLabels"
 import { helpContent } from "../utils/helpContent"
 
@@ -1095,6 +1099,11 @@ function GradingFormView({
   const [calificacionError, setCalificacionError] = useState<string | null>(null)
   const [episodeResolveError, setEpisodeResolveError] = useState<string | null>(null)
   const [devolviendo, setDevolviendo] = useState(false)
+  // Las correcciones asistidas de esta entrega, para el resumen. Se cargan
+  // una vez y las refresca el panel de cada ejercicio al terminar.
+  const [correccionesIA, setCorreccionesIA] = useState<CorreccionIA[]>([])
+  const [descargando, setDescargando] = useState(false)
+  const [descargaError, setDescargaError] = useState<string | null>(null)
   const queueMode = !!queueControls
   // Reapertura del form para re-calificar una entrega ya calificada (BUG-3).
   // Mientras es `false`, los campos quedan `disabled` (solo lectura de la nota).
@@ -1123,6 +1132,26 @@ function GradingFormView({
   // cada ejercicio + su `ejercicio_id` estable. `getTareaPractica` no popula
   // `tarea.ejercicios`, por eso se carga aca aparte (best-effort).
   const [tpEjercicios, setTpEjercicios] = useState<TpEjercicio[]>([])
+
+  const fetchCorrecciones = useCallback(
+    () => listarCorreccionesIA(entrega.id, getToken),
+    [entrega.id, getToken],
+  )
+
+  useEffect(() => {
+    let cancelled = false
+    fetchCorrecciones()
+      .then((cs: CorreccionIA[]) => {
+        if (!cancelled) setCorreccionesIA(cs)
+      })
+      .catch(() => {
+        // Sin correcciones todavia es lo normal: la card no se muestra.
+        if (!cancelled) setCorreccionesIA([])
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [fetchCorrecciones])
 
   useEffect(() => {
     let cancelled = false
@@ -1335,6 +1364,64 @@ function GradingFormView({
     }
   }, [entrega.id, yaCalificada, getToken])
 
+  /**
+   * Descarga el código entregado como un .txt con un ejercicio por bloque.
+   *
+   * Un archivo y no N descargas: el navegador bloquea las descargas múltiples
+   * seguidas, y el docente quiere leer la entrega, no juntar archivos sueltos.
+   * Va el sha256 de cada bloque en la cabecera para que el archivo sirva como
+   * constancia de qué se corrigió.
+   */
+  async function handleDescargarEntrega() {
+    setDescargando(true)
+    setDescargaError(null)
+    try {
+      const art = await entregasDocenteApi.getArtefacto(entrega.id, getToken)
+      if (!art || art.artefactos.length === 0) {
+        setDescargaError(
+          entrega.legacy
+            ? "Esta entrega es anterior a que se guardara el código. No hay artefacto que descargar."
+            : "Esta entrega no tiene código guardado.",
+        )
+        return
+      }
+      const header = [
+        `# Entrega ${art.entrega_id}`,
+        `# Alumno ${art.student_pseudonym}`,
+        `# Entregada ${art.submitted_at ?? "(sin fecha)"}`,
+        `# sha256 del conjunto: ${art.artefacto_sha256 ?? "(sin hash)"}`,
+        "",
+      ].join("\n")
+      const cuerpo = art.artefactos
+        .map((a) =>
+          [
+            `${"=".repeat(70)}`,
+            `Ejercicio ${a.orden} (${a.language})`,
+            `sha256: ${a.sha256}`,
+            `${"=".repeat(70)}`,
+            "",
+            a.codigo,
+            "",
+          ].join("\n"),
+        )
+        .join("\n")
+
+      const blob = new Blob([header + cuerpo], { type: "text/plain;charset=utf-8" })
+      const url = URL.createObjectURL(blob)
+      const a = document.createElement("a")
+      a.href = url
+      a.download = `entrega_${entrega.id.slice(0, 8)}.txt`
+      document.body.appendChild(a)
+      a.click()
+      a.remove()
+      URL.revokeObjectURL(url)
+    } catch (e) {
+      setDescargaError(String(e))
+    } finally {
+      setDescargando(false)
+    }
+  }
+
   async function handleCalificar() {
     const notaNum = Number.parseFloat(nota)
     if (Number.isNaN(notaNum) || notaNum < 0 || notaNum > 10) {
@@ -1536,6 +1623,48 @@ function GradingFormView({
         </div>
       )}
 
+      {/* LEGACY: la entrega es anterior a que se guardara el código. Lo que
+          se muestre de código es una reconstrucción leyendo el CTR, y eso no
+          es lo que el alumno entregó: es lo último que el editor alcanzó a
+          reportar. Sin el aviso, el código reconstruido se lee con la misma
+          autoridad que el entregado, y no la tiene.
+
+          Va ACÁ y no dentro del bloque de ejercicios: una TP monolítica tiene
+          `ejercicio_estados` vacío, así que `ejercicioGrupos` queda vacío y el
+          aviso no renderizaba justo en las entregas más viejas — las que
+          siempre son legacy. */}
+      {entrega.legacy && (
+        <div
+          className="rounded-lg border border-warning/30 bg-warning-soft p-3 text-xs text-warning"
+          data-testid="entrega-legacy-banner"
+        >
+          <span className="font-mono uppercase tracking-wider">Legacy</span> — esta entrega es
+          anterior a que la plataforma guardara el código al entregar. No hay archivo entregado que
+          descargar; lo que se vea de código es una reconstrucción best-effort del registro de
+          actividad, y puede faltarle lo último que el alumno escribió.
+        </div>
+      )}
+
+      {/* Sugerencia de Active-IA. Va ARRIBA de las tarjetas porque es un
+          resumen de todas, y MUESTRA: no escribe la nota. */}
+      <ResumenCorreccionIA
+        // Los pesos salen de `tpEjercicios`, que es quien los tiene
+        // (`peso_en_tp`). `ejercicioGrupos` es la vista de la entrega y no
+        // los lleva — ponderar con un 1 por defecto daria un promedio simple
+        // disfrazado de ponderado.
+        ejercicios={ejerciciosParaResumen(tpEjercicios)}
+        correcciones={correccionesIA}
+        onUsarComoBase={(nota10) => {
+          // Rellena y deja el foco en el campo. NO guarda: el docente aprieta
+          // Calificar como siempre, y puede cambiar el numero antes.
+          setNota(String(nota10))
+          setReediting(true)
+          window.requestAnimationFrame(() => {
+            document.getElementById("nota-final")?.focus()
+          })
+        }}
+      />
+
       {/* Ejercicios (F17): una tarjeta colapsable por ejercicio, con el codigo
           del alumno + la rubrica de ESE ejercicio + su subtotal, juntos. */}
       {ejercicioGrupos.length > 0 && (
@@ -1606,6 +1735,24 @@ function GradingFormView({
                         orden={grupo.orden}
                         active={open}
                         getToken={getToken}
+                      />
+
+                      {/* Correccion asistida de ESTE ejercicio. Va por
+                          ejercicio y no por entrega porque cada uno se corrige
+                          contra su propia rubrica: una sola nota para el TP
+                          entero permitiria que una pieza del ejercicio 3
+                          cuente como cumplimiento de un criterio del 1. */}
+                      <CorreccionIAPanel
+                        entregaId={entrega.id}
+                        orden={grupo.orden}
+                        getToken={getToken}
+                        onCambio={(c) => {
+                          // Se reemplaza la del mismo ejercicio en vez de
+                          // apilar: si no, la card veria dos correcciones del
+                          // mismo `orden` y el promedio dependeria de cual
+                          // gana el desempate.
+                          setCorreccionesIA((prev) => [...prev.filter((p) => p.id !== c.id), c])
+                        }}
                       />
 
                       {tieneRub && (
@@ -1785,8 +1932,31 @@ function GradingFormView({
               </div>
             )}
 
+            {descargaError && (
+              <div className="rounded-lg border border-warning/30 bg-warning-soft p-3 text-xs text-warning">
+                {descargaError}
+              </div>
+            )}
+
             {/* Acciones */}
             <div className="flex items-center gap-3 pt-2 flex-wrap">
+              {/* Descargar lo que el alumno entregó. Deshabilitado en las
+                  entregas LEGACY: no tienen artefacto y nunca lo van a tener. */}
+              <button
+                type="button"
+                onClick={() => void handleDescargarEntrega()}
+                disabled={descargando || entrega.legacy}
+                data-testid="descargar-entrega-btn"
+                title={
+                  entrega.legacy
+                    ? "Entrega anterior a que se guardara el código"
+                    : "Descargar el código que entregó el alumno"
+                }
+                className="px-4 py-2 rounded text-sm font-medium border border-subtle text-secondary hover:bg-surface-hover disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                {descargando ? "Descargando..." : "Descargar entrega"}
+              </button>
+
               {/* Boton Calificar — solo si aun no fue calificada */}
               {entrega.estado === "submitted" && (
                 <button

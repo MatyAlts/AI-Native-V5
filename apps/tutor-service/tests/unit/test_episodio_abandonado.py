@@ -12,6 +12,7 @@ Cubre:
 
 from __future__ import annotations
 
+import asyncio
 import time
 from collections.abc import AsyncIterator
 from typing import Any
@@ -336,3 +337,243 @@ async def test_sweep_no_emite_si_publish_falla_continua_loop(
     assert result == 0
     # Y intento ambos episodios (no se corto en el primero)
     assert failing_ctr.attempts == 2
+
+
+# ── BUG-9: doble abandono por TOCTOU ─────────────────────────────────
+#
+# La idempotencia del ADR-025 G10-A estaba escrita como "la primera emision
+# borra la sesion, la segunda encuentra session=None y no emite". Eso vale solo
+# si las dos llamadas se serializan, y no se serializan: entre el
+# `sessions.get()` y el `sessions.delete()` hay un publish al CTR entero. Dos
+# POST concurrentes —`beforeunload` y `pagehide` del mismo cierre, dos pestanas,
+# el worker de timeout pisandose con el frontend— pasan los dos por el
+# `if state is None` antes de que ninguno borre, y la cadena termina con DOS
+# `episodio_abandonado`.
+#
+# El test de arriba (`..._no_duplica_doble_llamada`) cubre las llamadas EN
+# SERIE, que ya funcionaban. Estos cubren la carrera real.
+
+
+class _CTRConCompuerta:
+    """CTR que retiene el publish del abandono hasta que el test abra la compuerta.
+
+    Es la ventana TOCTOU hecha explicita: mientras el primer emisor esta adentro
+    del publish (que en produccion es un POST HTTP real, no una operacion
+    instantanea), el segundo llega y encuentra la sesion todavia viva.
+    """
+
+    def __init__(self, compuerta: asyncio.Event) -> None:
+        self.compuerta = compuerta
+        self.published_events: list[dict[str, Any]] = []
+        self.entradas_al_abandono = 0
+
+    async def publish_event(self, event: dict, tenant_id: UUID, caller_id: UUID) -> str:
+        if event["event_type"] == "episodio_abandonado":
+            self.entradas_al_abandono += 1
+            await self.compuerta.wait()
+        self.published_events.append(event)
+        return f"msg-{len(self.published_events)}"
+
+
+async def test_dos_abandonos_concurrentes_emiten_uno_solo(redis_client) -> None:
+    """`beforeunload` y `pagehide` en carrera: UN solo `episodio_abandonado`.
+
+    Sin el claim atomico los dos pasan el `if state is None` (nadie borro
+    todavia) y la cadena queda con dos eventos de abandono — evidencia
+    contradictoria sobre un mismo episodio.
+    """
+    compuerta = asyncio.Event()
+    ctr = _CTRConCompuerta(compuerta)
+    tutor = TutorCore(
+        governance=_FakeGov(),
+        content=_FakeContent(),
+        ai_gateway=_FakeAI(),
+        ctr=ctr,
+        sessions=SessionManager(redis_client),
+    )
+    student_id = uuid4()
+    episode_id = await tutor.open_episode(
+        tenant_id=uuid4(),
+        comision_id=uuid4(),
+        student_pseudonym=student_id,
+        problema_id=uuid4(),
+        curso_config_hash="c" * 64,
+        classifier_config_hash="b" * 64,
+    )
+
+    async def _abandonar(reason: str) -> int | None:
+        return await tutor.record_episodio_abandonado(
+            episode_id=episode_id,
+            reason=reason,
+            last_activity_seconds_ago=0.0,
+            user_id=student_id,
+        )
+
+    async def _abrir_compuerta() -> None:
+        # Dejar que ambas coroutines lleguen a donde vayan a llegar antes de
+        # soltar al que quedo esperando dentro del publish.
+        for _ in range(5):
+            await asyncio.sleep(0)
+        compuerta.set()
+
+    r1, r2, _ = await asyncio.gather(
+        _abandonar("beforeunload"), _abandonar("explicit"), _abrir_compuerta()
+    )
+
+    abandonos = [e for e in ctr.published_events if e["event_type"] == "episodio_abandonado"]
+    assert len(abandonos) == 1, f"doble episodio_abandonado en la cadena: {abandonos}"
+    assert ctr.entradas_al_abandono == 1, "el perdedor igual entro a publicar"
+    assert sorted([r1 is None, r2 is None]) == [False, True], (
+        f"exactamente uno debe emitir y el otro devolver None: {r1=} {r2=}"
+    )
+
+
+async def test_reabrir_el_episodio_habilita_un_abandono_nuevo(
+    tutor: TutorCore, sessions: SessionManager, fake_ctr: _FakeCTR
+) -> None:
+    """El claim no puede convertirse en un candado permanente.
+
+    Un episodio pausado que el alumno retoma tiene que poder volver a
+    abandonarse. `init_seq_counter` (que corre en open y en resume) libera el
+    claim del ciclo anterior.
+    """
+    episode_id = uuid4()
+
+    assert await sessions.claim_abandono(episode_id) is True
+    assert await sessions.claim_abandono(episode_id) is False, "el claim no es exclusivo"
+
+    # Reanudar el episodio arranca un ciclo nuevo (resume_episode llama a
+    # init_seq_counter con el events_count persistido).
+    await sessions.init_seq_counter(episode_id, 7)
+
+    assert await sessions.claim_abandono(episode_id) is True, (
+        "tras reanudar, el episodio quedo sin poder abandonarse de nuevo"
+    )
+
+
+async def test_publish_fallido_libera_el_claim_de_abandono(redis_client) -> None:
+    """Si el ganador no llega a emitir, el claim se suelta y un reintento emite.
+
+    Sin esto un CTR caido dejaria el episodio sin poder abandonarse nunca:
+    el claim tomado por un intento que no publico nada.
+    """
+
+    class _CTRQueFallaUnaVez:
+        def __init__(self) -> None:
+            self.published_events: list[dict[str, Any]] = []
+            self.fallos = 0
+
+        async def publish_event(self, event: dict, tenant_id: UUID, caller_id: UUID) -> str:
+            if event["event_type"] == "episodio_abandonado" and self.fallos == 0:
+                self.fallos += 1
+                raise RuntimeError("ctr-service caido")
+            self.published_events.append(event)
+            return f"msg-{len(self.published_events)}"
+
+    ctr = _CTRQueFallaUnaVez()
+    tutor = TutorCore(
+        governance=_FakeGov(),
+        content=_FakeContent(),
+        ai_gateway=_FakeAI(),
+        ctr=ctr,
+        sessions=SessionManager(redis_client),
+    )
+    student_id = uuid4()
+    episode_id = await tutor.open_episode(
+        tenant_id=uuid4(),
+        comision_id=uuid4(),
+        student_pseudonym=student_id,
+        problema_id=uuid4(),
+        curso_config_hash="c" * 64,
+        classifier_config_hash="b" * 64,
+    )
+
+    with pytest.raises(RuntimeError):
+        await tutor.record_episodio_abandonado(
+            episode_id=episode_id,
+            reason="beforeunload",
+            last_activity_seconds_ago=0.0,
+            user_id=student_id,
+        )
+
+    seq = await tutor.record_episodio_abandonado(
+        episode_id=episode_id,
+        reason="beforeunload",
+        last_activity_seconds_ago=0.0,
+        user_id=student_id,
+    )
+    assert seq is not None, "el claim quedo tomado por un intento que no emitio"
+    abandonos = [e for e in ctr.published_events if e["event_type"] == "episodio_abandonado"]
+    assert len(abandonos) == 1
+
+
+async def test_si_falla_next_seq_el_claim_de_abandono_NO_queda_tomado(redis_client) -> None:
+    """El claim se toma ANTES de reservar el seq. Si eso falla, hay que soltarlo.
+
+    `next_seq` toca Redis TRES veces (INCR, EXPIRE y el `set()` de la sesion), y
+    esas tres estaban FUERA del `try` que suelta el claim. Un hipo ahi dejaba el
+    claim tomado por un intento que no publico nada, con TTL de seis horas.
+
+    Y el modo de falla era MUDO: el `abandonment_worker` sigue barriendo esa
+    sesion cada tick, `claim_abandono` devuelve False, `record_...` devuelve
+    None, y el worker lo cuenta como "ya estaba abandonado". Ni un log de error.
+    El episodio queda `open` en el CTR para siempre.
+
+    Verificado por reversion: sacando `next_seq` y `_build_event` de adentro del
+    `try`, el claim queda tomado y el segundo intento devuelve None.
+    """
+    ctr = _CTRConCompuerta(asyncio.Event())
+    ctr.compuerta.set()  # sin espera: este test no prueba concurrencia
+    tutor = TutorCore(
+        governance=_FakeGov(),
+        content=_FakeContent(),
+        ai_gateway=_FakeAI(),
+        ctr=ctr,
+        sessions=SessionManager(redis_client),
+    )
+    student_id = uuid4()
+    episode_id = await tutor.open_episode(
+        tenant_id=uuid4(),
+        comision_id=uuid4(),
+        student_pseudonym=student_id,
+        problema_id=uuid4(),
+        curso_config_hash="c" * 64,
+        classifier_config_hash="b" * 64,
+    )
+
+    original = tutor.sessions.next_seq
+    tutor.sessions.next_seq = _tirar_una_vez(original)  # type: ignore[method-assign]
+
+    with pytest.raises(ConnectionError):
+        await tutor.record_episodio_abandonado(
+            episode_id=episode_id,
+            user_id=student_id,
+            reason="beforeunload",
+            last_activity_seconds_ago=0.0,
+        )
+
+    # El claim tiene que estar libre: el intento no publico nada.
+    tutor.sessions.next_seq = original  # type: ignore[method-assign]
+    seq = await tutor.record_episodio_abandonado(
+        episode_id=episode_id,
+        user_id=student_id,
+        reason="beforeunload",
+        last_activity_seconds_ago=0.0,
+    )
+    assert seq is not None, "el claim quedo tomado por un intento que no emitio"
+
+    abandonos = [e for e in ctr.published_events if e["event_type"] == "episodio_abandonado"]
+    assert len(abandonos) == 1
+
+
+def _tirar_una_vez(original):
+    """Envuelve `next_seq` para que falle la PRIMERA vez y despues ande."""
+    estado = {"fallo": False}
+
+    async def _wrapper(state):
+        if not estado["fallo"]:
+            estado["fallo"] = True
+            raise ConnectionError("redis se cayo justo al reservar")
+        return await original(state)
+
+    return _wrapper

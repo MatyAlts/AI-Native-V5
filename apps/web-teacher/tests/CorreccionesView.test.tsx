@@ -29,8 +29,18 @@ const mockEntregaSubmitted = {
   student_pseudonym: STUDENT_ID,
   estado: "submitted",
   ejercicio_estados: [
-    { orden: 1, completado: true, episode_id: "ep-0000001-abcd", completado_at: "2026-05-06T11:00:00Z" },
-    { orden: 2, completado: true, episode_id: "ep-0000002-abcd", completado_at: "2026-05-06T11:30:00Z" },
+    {
+      orden: 1,
+      completado: true,
+      episode_id: "ep-0000001-abcd",
+      completado_at: "2026-05-06T11:00:00Z",
+    },
+    {
+      orden: 2,
+      completado: true,
+      episode_id: "ep-0000002-abcd",
+      completado_at: "2026-05-06T11:30:00Z",
+    },
   ],
   submitted_at: "2026-05-06T12:00:00Z",
   created_at: "2026-05-06T10:00:00Z",
@@ -73,28 +83,52 @@ afterEach(() => {
 describe("CorreccionesView — EntregasListView", () => {
   it("muestra la tabla con una entrega submitted", async () => {
     setupFetchMock({
+      // Las sub-rutas van ARRIBA: `/api/v1/entregas` las matchea a todas por
+      // `includes`, y les devolveria el shape pageable donde el codigo espera
+      // una lista. El sintoma engana — el test dice "Unable to find
+      // [data-testid=...]" como si el componente no renderizara, y en realidad
+      // revento antes con "X is not iterable".
+      "/correccion-ia": () => ({ correcciones: [] }),
       "/api/v1/entregas": () => ({ data: [mockEntregaSubmitted], meta: { cursor_next: null } }),
+      // La ruta de ejercicios devuelve un ARRAY pelado, no el shape
+      // pageable del default. Sin declararla, `listTpEjercicios` recibe
+      // `{data:[],meta:{}}` y el componente muere en `tpEjercicios.slice`
+      // — con un sintoma que enganna: el test falla con "Unable to find
+      // [data-testid=...]" como si no renderizara, y en realidad revento antes.
+      "/ejercicios": () => [],
       "/api/v1/tareas-practicas/": () => mockTarea,
     })
-    renderWithRouter(
-      <CorreccionesView comisionId={COMISION_ID} getToken={getToken} />,
-    )
+    renderWithRouter(<CorreccionesView comisionId={COMISION_ID} getToken={getToken} />)
+    // Se espera por la TABLA, no por `entregas-list-view`: ese div es el
+    // contenedor de la vista y esta desde el primer render, asi que el
+    // `waitFor` volvia de inmediato y la asercion corria ANTES de que la data
+    // llegara. Desde que la vista pasa por react-query esa carrera es siempre
+    // perdida; antes andaba de casualidad.
     await waitFor(() => {
-      expect(screen.getByTestId("entregas-list-view")).toBeDefined()
+      expect(screen.getByTestId("entregas-table")).toBeDefined()
     })
-    expect(screen.getByTestId("entregas-table")).toBeDefined()
     const rows = screen.getAllByTestId("entrega-row")
     expect(rows.length).toBe(1)
   })
 
   it("muestra badge de estado 'Enviada' para submitted", async () => {
     setupFetchMock({
+      // Las sub-rutas van ARRIBA: `/api/v1/entregas` las matchea a todas por
+      // `includes`, y les devolveria el shape pageable donde el codigo espera
+      // una lista. El sintoma engana — el test dice "Unable to find
+      // [data-testid=...]" como si el componente no renderizara, y en realidad
+      // revento antes con "X is not iterable".
+      "/correccion-ia": () => ({ correcciones: [] }),
       "/api/v1/entregas": () => ({ data: [mockEntregaSubmitted], meta: { cursor_next: null } }),
+      // La ruta de ejercicios devuelve un ARRAY pelado, no el shape
+      // pageable del default. Sin declararla, `listTpEjercicios` recibe
+      // `{data:[],meta:{}}` y el componente muere en `tpEjercicios.slice`
+      // — con un sintoma que enganna: el test falla con "Unable to find
+      // [data-testid=...]" como si no renderizara, y en realidad revento antes.
+      "/ejercicios": () => [],
       "/api/v1/tareas-practicas/": () => mockTarea,
     })
-    renderWithRouter(
-      <CorreccionesView comisionId={COMISION_ID} getToken={getToken} />,
-    )
+    renderWithRouter(<CorreccionesView comisionId={COMISION_ID} getToken={getToken} />)
     await waitFor(() => {
       expect(screen.getByTestId("entrega-estado-submitted")).toBeDefined()
     })
@@ -107,23 +141,31 @@ describe("CorreccionesView — EntregasListView", () => {
     setupFetchMock({
       "/api/v1/entregas": () => ({ data: [], meta: { cursor_next: null } }),
     })
-    renderWithRouter(
-      <CorreccionesView comisionId={COMISION_ID} getToken={getToken} />,
-    )
+    renderWithRouter(<CorreccionesView comisionId={COMISION_ID} getToken={getToken} />)
+    // Mismo motivo que arriba: se espera por el MENSAJE, no por el contenedor.
     await waitFor(() => {
-      expect(screen.getByTestId("entregas-list-view")).toBeDefined()
+      expect(screen.getByText(/aun no tiene entregas/i)).toBeDefined()
     })
-    expect(screen.getByText(/aun no tiene entregas/i)).toBeDefined()
   })
 
   it("click en Corregir abre el GradingFormView", async () => {
     setupFetchMock({
+      // Las sub-rutas van ARRIBA: `/api/v1/entregas` las matchea a todas por
+      // `includes`, y les devolveria el shape pageable donde el codigo espera
+      // una lista. El sintoma engana — el test dice "Unable to find
+      // [data-testid=...]" como si el componente no renderizara, y en realidad
+      // revento antes con "X is not iterable".
+      "/correccion-ia": () => ({ correcciones: [] }),
       "/api/v1/entregas": () => ({ data: [mockEntregaSubmitted], meta: { cursor_next: null } }),
+      // La ruta de ejercicios devuelve un ARRAY pelado, no el shape
+      // pageable del default. Sin declararla, `listTpEjercicios` recibe
+      // `{data:[],meta:{}}` y el componente muere en `tpEjercicios.slice`
+      // — con un sintoma que enganna: el test falla con "Unable to find
+      // [data-testid=...]" como si no renderizara, y en realidad revento antes.
+      "/ejercicios": () => [],
       "/api/v1/tareas-practicas/": () => mockTarea,
     })
-    renderWithRouter(
-      <CorreccionesView comisionId={COMISION_ID} getToken={getToken} />,
-    )
+    renderWithRouter(<CorreccionesView comisionId={COMISION_ID} getToken={getToken} />)
     await waitFor(() => {
       expect(screen.getByTestId("entrega-drill-btn")).toBeDefined()
     })
@@ -137,12 +179,22 @@ describe("CorreccionesView — EntregasListView", () => {
 describe("CorreccionesView — GradingFormView", () => {
   it("muestra los ejercicios completados en la entrega", async () => {
     setupFetchMock({
+      // Las sub-rutas van ARRIBA: `/api/v1/entregas` las matchea a todas por
+      // `includes`, y les devolveria el shape pageable donde el codigo espera
+      // una lista. El sintoma engana — el test dice "Unable to find
+      // [data-testid=...]" como si el componente no renderizara, y en realidad
+      // revento antes con "X is not iterable".
+      "/correccion-ia": () => ({ correcciones: [] }),
       "/api/v1/entregas": () => ({ data: [mockEntregaSubmitted], meta: { cursor_next: null } }),
+      // La ruta de ejercicios devuelve un ARRAY pelado, no el shape
+      // pageable del default. Sin declararla, `listTpEjercicios` recibe
+      // `{data:[],meta:{}}` y el componente muere en `tpEjercicios.slice`
+      // — con un sintoma que enganna: el test falla con "Unable to find
+      // [data-testid=...]" como si no renderizara, y en realidad revento antes.
+      "/ejercicios": () => [],
       "/api/v1/tareas-practicas/": () => mockTarea,
     })
-    renderWithRouter(
-      <CorreccionesView comisionId={COMISION_ID} getToken={getToken} />,
-    )
+    renderWithRouter(<CorreccionesView comisionId={COMISION_ID} getToken={getToken} />)
     await waitFor(() => {
       expect(screen.getByTestId("entrega-drill-btn")).toBeDefined()
     })
@@ -156,12 +208,22 @@ describe("CorreccionesView — GradingFormView", () => {
 
   it("muestra el formulario de calificacion para entrega submitted", async () => {
     setupFetchMock({
+      // Las sub-rutas van ARRIBA: `/api/v1/entregas` las matchea a todas por
+      // `includes`, y les devolveria el shape pageable donde el codigo espera
+      // una lista. El sintoma engana — el test dice "Unable to find
+      // [data-testid=...]" como si el componente no renderizara, y en realidad
+      // revento antes con "X is not iterable".
+      "/correccion-ia": () => ({ correcciones: [] }),
       "/api/v1/entregas": () => ({ data: [mockEntregaSubmitted], meta: { cursor_next: null } }),
+      // La ruta de ejercicios devuelve un ARRAY pelado, no el shape
+      // pageable del default. Sin declararla, `listTpEjercicios` recibe
+      // `{data:[],meta:{}}` y el componente muere en `tpEjercicios.slice`
+      // — con un sintoma que enganna: el test falla con "Unable to find
+      // [data-testid=...]" como si no renderizara, y en realidad revento antes.
+      "/ejercicios": () => [],
       "/api/v1/tareas-practicas/": () => mockTarea,
     })
-    renderWithRouter(
-      <CorreccionesView comisionId={COMISION_ID} getToken={getToken} />,
-    )
+    renderWithRouter(<CorreccionesView comisionId={COMISION_ID} getToken={getToken} />)
     await waitFor(() => {
       expect(screen.getByTestId("entrega-drill-btn")).toBeDefined()
     })
@@ -184,13 +246,17 @@ describe("CorreccionesView — GradingFormView", () => {
       calificador_id: "docente-1",
     }
     setupFetchMock({
+      // Las sub-rutas van ARRIBA de `/api/v1/entregas`: ese prefijo las matchea
+      // a todas por `includes` y les devuelve el shape pageable donde el codigo
+      // espera otra cosa. El sintoma engana — el test dice "Unable to find
+      // [data-testid=...]" como si no renderizara, y en realidad revento antes.
+      "/calificacion": () => calificacion,
+      "/correccion-ia": () => ({ correcciones: [] }),
+      "/ejercicios": () => [],
       "/api/v1/entregas": () => ({ data: [mockEntregaGraded], meta: { cursor_next: null } }),
       "/api/v1/tareas-practicas/": () => mockTarea,
-      "/calificacion": () => calificacion,
     })
-    renderWithRouter(
-      <CorreccionesView comisionId={COMISION_ID} getToken={getToken} />,
-    )
+    renderWithRouter(<CorreccionesView comisionId={COMISION_ID} getToken={getToken} />)
     await waitFor(() => {
       expect(screen.getByTestId("entrega-drill-btn")).toBeDefined()
     })
@@ -203,12 +269,22 @@ describe("CorreccionesView — GradingFormView", () => {
 
   it("boton Volver regresa a la lista", async () => {
     setupFetchMock({
+      // Las sub-rutas van ARRIBA: `/api/v1/entregas` las matchea a todas por
+      // `includes`, y les devolveria el shape pageable donde el codigo espera
+      // una lista. El sintoma engana — el test dice "Unable to find
+      // [data-testid=...]" como si el componente no renderizara, y en realidad
+      // revento antes con "X is not iterable".
+      "/correccion-ia": () => ({ correcciones: [] }),
       "/api/v1/entregas": () => ({ data: [mockEntregaSubmitted], meta: { cursor_next: null } }),
+      // La ruta de ejercicios devuelve un ARRAY pelado, no el shape
+      // pageable del default. Sin declararla, `listTpEjercicios` recibe
+      // `{data:[],meta:{}}` y el componente muere en `tpEjercicios.slice`
+      // — con un sintoma que enganna: el test falla con "Unable to find
+      // [data-testid=...]" como si no renderizara, y en realidad revento antes.
+      "/ejercicios": () => [],
       "/api/v1/tareas-practicas/": () => mockTarea,
     })
-    renderWithRouter(
-      <CorreccionesView comisionId={COMISION_ID} getToken={getToken} />,
-    )
+    renderWithRouter(<CorreccionesView comisionId={COMISION_ID} getToken={getToken} />)
     await waitFor(() => {
       expect(screen.getByTestId("entrega-drill-btn")).toBeDefined()
     })

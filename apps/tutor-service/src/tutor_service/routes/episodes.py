@@ -1144,6 +1144,7 @@ async def emit_tests_ejecutados(
     episode_id: UUID,
     req: RunTestsRequest,
     x_internal_service_token: str | None = Header(default=None),
+    idempotency_key: str | None = Header(default=None, alias="Idempotency-Key"),
     user: User = Depends(require_role("estudiante", "docente", "docente_admin", "superadmin")),
 ) -> dict[str, str]:
     """Emite tests_ejecutados al CTR con conteos del cliente Pyodide.
@@ -1152,23 +1153,43 @@ async def emit_tests_ejecutados(
       - 202: evento aceptado, devuelve seq.
       - 409: episodio cerrado, expirado o inexistente.
       - 422: payload invalido (conteos inconsistentes, tests_hidden!=0).
+      - 503: reserva de secuencia en curso en otra replica (reintentar).
+
+    Idempotencia (P-17): el `ctr-client` manda el `event_uuid` del evento
+    encolado en `Idempotency-Key` y lo conserva a traves de los reintentos. Este
+    endpoint no lo leia, asi que un ACK perdido sobre una request que el
+    servidor SI persistio dejaba un `tests_ejecutados` DUPLICADO. No abre hueco
+    de seq —la cadena sigue verificando— pero mete un evento de mas, y este no
+    es cualquier evento: el labeler v1.2.0 deriva N3 vs N4 de `tests_ejecutados`
+    (tests pasados con >=60s desde el ultimo `tutor_respondio` -> N4). Un
+    duplicado puede cambiar como queda nivelado un episodio en los datos de la
+    tesis, que es un dano silencioso: nada falla, los numeros salen distintos.
+
+    El prefijo `tests:` aisla este espacio de claves del de la reflexion
+    (`reflexion:`) y del prompt (`prompt:`); los endpoints `/events/*` usan el
+    uuid pelado, que nunca puede contener `:`, asi que tampoco colisiona con
+    ellos. Sin header, comportamiento legacy: cada POST emite.
 
     El user_id autoritativo es el del estudiante (header X-User-Id) — la
     ejecucion es del estudiante, su accion directa.
     """
     tutor = _get_tutor()
     try:
-        seq = await tutor.emit_tests_ejecutados(
-            episode_id=episode_id,
-            user_id=user.id,
-            test_count_total=req.test_count_total,
-            test_count_passed=req.test_count_passed,
-            test_count_failed=req.test_count_failed,
-            tests_publicos=req.tests_publicos,
-            tests_hidden=req.tests_hidden,
-            ejecucion_ms=req.ejecucion_ms,
-            chunks_used_hash=req.chunks_used_hash,
-            emisor_interno=_es_emisor_interno(x_internal_service_token),
+        seq = await _idempotent_seq(
+            episode_id,
+            (f"tests:{idempotency_key}" if idempotency_key else None),
+            lambda: tutor.emit_tests_ejecutados(
+                episode_id=episode_id,
+                user_id=user.id,
+                test_count_total=req.test_count_total,
+                test_count_passed=req.test_count_passed,
+                test_count_failed=req.test_count_failed,
+                tests_publicos=req.tests_publicos,
+                tests_hidden=req.tests_hidden,
+                ejecucion_ms=req.ejecucion_ms,
+                chunks_used_hash=req.chunks_used_hash,
+                emisor_interno=_es_emisor_interno(x_internal_service_token),
+            ),
         )
     except ValueError as e:
         msg = str(e)
@@ -1211,6 +1232,7 @@ class ReflectionRequest(BaseModel):
 async def emit_reflexion_completada(
     episode_id: UUID,
     req: ReflectionRequest,
+    idempotency_key: str | None = Header(default=None, alias="Idempotency-Key"),
     user: User = Depends(require_role("estudiante", "docente", "docente_admin", "superadmin")),
 ) -> dict[str, str]:
     """Emite reflexion_completada al CTR DESPUES del cierre del episodio (ADR-035).
@@ -1229,21 +1251,42 @@ async def emit_reflexion_completada(
       - 404: episodio no encontrado o de otro tenant.
       - 409: episodio no esta cerrado (la reflexion solo se acepta post-cierre).
       - 422: payload invalido (campos > 500 chars o tiempo_completado_ms negativo).
+      - 503: reserva de secuencia en curso en otra replica (reintentar).
+
+    Idempotencia (`Idempotency-Key`): este endpoint era el unico emisor de
+    eventos del servicio que NO la tenia, y es donde mas duele. Post-cierre la
+    sesion Redis ya no existe, asi que `record_reflexion_completada` toma
+    `seq = events_count` leido del CTR, salteando el contador atomico. Dos POST
+    con el mismo contenido —el reintento de red que el alumno no ve— leen el
+    MISMO `events_count` y emiten los dos con ese seq: el segundo no matchea,
+    va a la DLQ y marca `integrity_compromised` un episodio ya cerrado y
+    completado, con todo su trabajo adentro.
+
+    El dedup va por la misma via atomica que el resto (`reserve_or_get_seq`,
+    claim HSETNX). El registro `tutor:seen:{episode_id}` sobrevive al cierre a
+    proposito —`SessionManager.delete` borra sesion y contador pero lo deja
+    vencer por TTL (6h)—, que es justo lo que permite deduplicar un evento
+    post-cierre. Sin header el comportamiento es el legacy: cada POST emite.
 
     El user_id autoritativo es el del estudiante (header X-User-Id) — la
     reflexion es del estudiante, su autoria.
     """
     tutor = _get_tutor()
     try:
-        seq = await tutor.record_reflexion_completada(
-            episode_id=episode_id,
-            tenant_id=user.tenant_id,
-            user_id=user.id,
-            que_aprendiste=req.que_aprendiste,
-            dificultad_encontrada=req.dificultad_encontrada,
-            que_haria_distinto=req.que_haria_distinto,
-            prompt_version=req.prompt_version,
-            tiempo_completado_ms=req.tiempo_completado_ms,
+        seq = await _idempotent_seq(
+            episode_id,
+            (f"reflexion:{idempotency_key}" if idempotency_key else None),
+            lambda: tutor.record_reflexion_completada(
+                episode_id=episode_id,
+                tenant_id=user.tenant_id,
+                user_id=user.id,
+                que_aprendiste=req.que_aprendiste,
+                dificultad_encontrada=req.dificultad_encontrada,
+                que_haria_distinto=req.que_haria_distinto,
+                prompt_version=req.prompt_version,
+                tiempo_completado_ms=req.tiempo_completado_ms,
+                idempotency_key=idempotency_key,
+            ),
         )
     except ValueError as e:
         msg = str(e)

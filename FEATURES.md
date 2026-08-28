@@ -56,4 +56,4 @@ CTR append-only con `next_seq` atómico (Redis INCR) + idempotencia — carrera 
 |----|---------|-----------|--------|
 | **F16** *(propuesta)* | Preview del episodio del alumno | El docente ve y **prueba** el episodio EXACTO que ve el alumno (chat con el tutor, editor, indicador N4) — en modo **sandbox** que NO contamina el CTR ni las analíticas. | 🔜 a diseñar |
 | **F2b/F5b…** | Perf del episodio | P-6/P-7/P-16 (re-render del chat, clasificación async, Pyodide en worker). | 🔜 opcional |
-| **F15** | Corrección asistida por IA | — | ⛔ vive en active-ia, fuera de scope |
+| **F15** | Corrección asistida por IA | El docente dispara la corrección de un ejercicio: se re-ejecutan los tests en el sandbox, se manda el código a Active-IA y vuelve una nota /100 con desglose y PDF de devolución. La plataforma **muestra la sugerencia y nunca escribe en calificaciones** — el botón «Usar como base» rellena el formulario y no guarda. | 🟡 epics 1–5 implementados, sin deployar |

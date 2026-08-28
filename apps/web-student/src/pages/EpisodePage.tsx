@@ -66,6 +66,7 @@ import {
   resumeEpisode,
   sendMessage,
 } from "../lib/api"
+import { MONOLITHIC_ORDEN, saveArtefactoDraft } from "../lib/artefactos"
 import { guardarCodigoPrevio, leerCodigoPrevio } from "../lib/codigoPrevio"
 import { helpContent } from "../utils/helpContent"
 
@@ -120,6 +121,16 @@ function resolveCodigoInicial(tarea: AvailableTarea): string | null {
 }
 
 export function EpisodeView({ episodeId, onExit, ejercicioContext, getToken }: EpisodeViewProps) {
+  // El editor deja acá su flush. Salir del episodio dispara, en la TP
+  // monolítica, la creación y el envío de la entrega — y eso pasa ANTES de
+  // que el editor se desmonte. Sin forzar el flush acá, lo que se entrega es
+  // lo que el alumno tenía hace hasta un segundo, no lo último que escribió.
+  const flushEditorRef = useRef<(() => void) | null>(null)
+  const salir = useCallback(() => {
+    flushEditorRef.current?.()
+    onExit()
+  }, [onExit])
+
   const [tarea, setTarea] = useState<AvailableTarea | null>(null)
   // Sale del estado del episodio, no de un selector: el alumno puede estar
   // inscripto en varias comisiones y la que manda es la del episodio abierto.
@@ -450,7 +461,7 @@ export function EpisodeView({ episodeId, onExit, ejercicioContext, getToken }: E
         setComisionId(state.comision_id ?? null)
         if (state.estado === "closed") {
           window.sessionStorage.removeItem(ACTIVE_EPISODE_KEY)
-          onExit()
+          salir()
           return
         }
         if (state.estado === "paused" || state.estado === "open") {
@@ -606,7 +617,7 @@ export function EpisodeView({ episodeId, onExit, ejercicioContext, getToken }: E
         if (cancelled) return
         if (e instanceof EpisodeStateError && (e.status === 404 || e.status === 403)) {
           window.sessionStorage.removeItem(ACTIVE_EPISODE_KEY)
-          onExit()
+          salir()
         } else {
           console.warn("Episode hydration failed:", e)
           setError("No se pudo cargar el episodio.")
@@ -618,7 +629,7 @@ export function EpisodeView({ episodeId, onExit, ejercicioContext, getToken }: E
     return () => {
       cancelled = true
     }
-  }, [episodeId, onExit, ejercicioOrden, applyLanguage])
+  }, [episodeId, salir, ejercicioOrden, applyLanguage])
 
   // UI-8: enviar un mensaje al tutor. Si el stream falla (LLM saturado, red,
   // sesion pausada), NO cerramos el episodio ni ofrecemos salir — un error
@@ -741,7 +752,7 @@ export function EpisodeView({ episodeId, onExit, ejercicioContext, getToken }: E
       const msg = String(e)
       if (msg.includes("404")) {
         window.sessionStorage.removeItem(ACTIVE_EPISODE_KEY)
-        onExit()
+        salir()
         return
       }
       setError(`Error cerrando: ${e}`)
@@ -808,7 +819,7 @@ export function EpisodeView({ episodeId, onExit, ejercicioContext, getToken }: E
     // si en el medio arranca el ejercicio siguiente, hereda igual.
     persistirCodigoParaElProximoEjercicio()
     window.sessionStorage.removeItem(ACTIVE_EPISODE_KEY)
-    onExit()
+    salir()
   }
 
   // Marca el ejercicio como completado UNA sola vez (NB-12). Serializa los dos
@@ -870,7 +881,7 @@ export function EpisodeView({ episodeId, onExit, ejercicioContext, getToken }: E
           setClassification(null)
           // NB-12: dedupe compartido con el camino del ReflectionModal.
           await markEjercicioCompletedOnce()
-          onExit()
+          salir()
         }}
       />
     )
@@ -880,7 +891,7 @@ export function EpisodeView({ episodeId, onExit, ejercicioContext, getToken }: E
   // un panel explícito que dejar al alumno en limbo viendo la UI del
   // episodio activo (con `closed=true` pero sin feedback ni CTA claro).
   if (classificationFailed && reflectionTargetId === null) {
-    return <ClassificationFallbackPanel onReset={onExit} />
+    return <ClassificationFallbackPanel onReset={salir} />
   }
 
   if (!tarea) {
@@ -892,7 +903,7 @@ export function EpisodeView({ episodeId, onExit, ejercicioContext, getToken }: E
           </p>
           <button
             type="button"
-            onClick={onExit}
+            onClick={salir}
             className="mt-4 px-4 py-2 rounded text-sm font-medium text-white"
             style={{ backgroundColor: "var(--color-accent-brand)" }}
           >
@@ -950,6 +961,7 @@ export function EpisodeView({ episodeId, onExit, ejercicioContext, getToken }: E
         initialCode={code}
         testCases={testCases}
         language={language}
+        flushRef={flushEditorRef}
         ejercicioId={ejercicioId ?? undefined}
         // Sin esto el execution-service no sabe a que cadena adjuntar
         // `tests_ejecutados`, y Java sigue sin emitirlo (ver `tutor_client.py`).
@@ -1012,6 +1024,28 @@ export function EpisodeView({ episodeId, onExit, ejercicioContext, getToken }: E
         }}
         onEditDebounced={(snapshot, diffChars, origin) => {
           setMaxActividad((a) => (a < 2 ? 2 : a))
+          // Guardamos el snapshot para poder mandarlo en el submit. El alumno
+          // entrega desde la lista de ejercicios, cuando ya salió de acá y el
+          // código no está en memoria de nadie. En la TP monolítica el scope
+          // es el episodio: la entrega recién se crea al salir, así que acá
+          // todavía no hay un `entregaId` con el que keyear.
+          if (ejercicioContext) {
+            saveArtefactoDraft(ejercicioContext.entregaId, {
+              orden: ejercicioContext.ejercicioOrden,
+              ejercicio_id: ejercicioContext.ejercicioId,
+              episode_id: episodeId,
+              codigo: snapshot,
+              language,
+            })
+          } else {
+            saveArtefactoDraft(episodeId, {
+              orden: MONOLITHIC_ORDEN,
+              ejercicio_id: null,
+              episode_id: episodeId,
+              codigo: snapshot,
+              language,
+            })
+          }
           const payloadEdicion = {
             snapshot,
             diff_chars: Math.abs(diffChars),
@@ -1368,7 +1402,7 @@ export function EpisodeView({ episodeId, onExit, ejercicioContext, getToken }: E
             type="button"
             onClick={() => {
               window.sessionStorage.removeItem(ACTIVE_EPISODE_KEY)
-              onExit()
+              salir()
             }}
             className="press-shrink ml-4 px-3 py-1 text-xs font-medium bg-danger text-white rounded hover:bg-danger/90"
           >
@@ -1502,7 +1536,7 @@ export function EpisodeView({ episodeId, onExit, ejercicioContext, getToken }: E
             // Best-effort: si falla, la TP queda con el ejercicio sin marcar
             // pero el alumno puede volver a entrar y completar.
             await markEjercicioCompletedOnce()
-            onExit()
+            salir()
           }
         }}
       />

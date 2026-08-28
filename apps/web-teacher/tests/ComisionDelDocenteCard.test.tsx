@@ -8,10 +8,7 @@
  */
 import { screen } from "@testing-library/react"
 import { describe, expect, test } from "vitest"
-import {
-  ComisionDelDocenteCard,
-  type ComisionKpis,
-} from "../src/components/ComisionDelDocenteCard"
+import { ComisionDelDocenteCard, type ComisionKpis } from "../src/components/ComisionDelDocenteCard"
 import type { Comision } from "../src/lib/api"
 import { renderWithRouter } from "./_mocks"
 
@@ -50,11 +47,7 @@ const partialKpis: ComisionKpis = {
 describe("ComisionDelDocenteCard", () => {
   test("renderiza kicker + headline + 4 KPIs + CTA", async () => {
     renderWithRouter(
-      <ComisionDelDocenteCard
-        comision={makeComision()}
-        displayName="A-Manana"
-        kpis={fullKpis}
-      />,
+      <ComisionDelDocenteCard comision={makeComision()} displayName="A-Manana" kpis={fullKpis} />,
     )
     expect(await screen.findByTestId("comision-card-kicker")).toHaveTextContent(/A/)
     // El horario vive en un span hermano del kicker dentro de la misma card
@@ -94,9 +87,7 @@ describe("ComisionDelDocenteCard", () => {
 
   test("CTA 'Abrir cohorte' apunta a /progression con comisionId", async () => {
     const c = makeComision()
-    renderWithRouter(
-      <ComisionDelDocenteCard comision={c} displayName="A-Manana" kpis={fullKpis} />,
-    )
+    renderWithRouter(<ComisionDelDocenteCard comision={c} displayName="A-Manana" kpis={fullKpis} />)
     const link = (await screen.findByTestId("comision-card-cohort-link")) as HTMLAnchorElement
     expect(link.getAttribute("href")).toMatch(/progression/)
     expect(link.getAttribute("href")).toContain(c.id)

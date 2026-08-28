@@ -41,6 +41,70 @@ class EntregaCreate(BaseModel):
     comision_id: UUID
 
 
+class ArtefactoItem(BaseModel):
+    """El código de UN ejercicio, tal como lo manda el cliente en el submit.
+
+    Las cotas de `orden` y `language` no son decorativas: sin ellas la
+    violación salta recién en el flush, como `DataError` o
+    `StringDataRightTruncation` sin capturar, o sea un 500 con stack trace
+    sobre un campo que manda el cliente. `orden` sin techo además desborda el
+    int32 de la columna. El resto del endpoint responde 422 a un body mal
+    armado; esto también.
+
+    `language` es un `Literal` y no un string con largo acotado porque el
+    Epic 3 lo va a usar para elegir el runtime del sandbox: un valor
+    desconocido ahí no es un rótulo feo, es ejecutar el código equivocado.
+    """
+
+    # 1000 ejercicios en una TP es absurdo y entra holgado en el int32.
+    orden: int = Field(ge=1, le=1000)
+    ejercicio_id: UUID | None = None
+    episode_id: UUID | None = None
+    codigo: str
+    language: Literal["python", "java"] = "python"
+
+
+class EntregaSubmitBody(BaseModel):
+    """Body del POST /entregas/{id}/submit.
+
+    Tiene que traer el código de cada ejercicio que la TP declara. El submit
+    sin body es un cliente sin actualizar y se rechaza con 422: aceptarlo
+    dejaría entregas `submitted` sin saber qué se entregó, que es
+    exactamente lo que este cambio viene a cerrar.
+
+    Una TP monolítica (sin `tp_ejercicios`) no tiene lista esperada contra la
+    cual exigir, así que ahí el body vacío pasa.
+    """
+
+    artefactos: list[ArtefactoItem] = Field(default_factory=list)
+
+
+class ArtefactoOut(BaseModel):
+    """Un artefacto persistido, para la descarga del docente."""
+
+    model_config = ConfigDict(from_attributes=True)
+
+    orden: int
+    ejercicio_id: UUID | None = None
+    episode_id: UUID | None = None
+    codigo: str
+    language: str
+    sha256: str
+    created_at: datetime
+
+
+class EntregaArtefactoOut(BaseModel):
+    """Lo que el alumno entregó, entero."""
+
+    entrega_id: UUID
+    tarea_practica_id: UUID
+    student_pseudonym: UUID
+    submitted_at: datetime | None = None
+    artefacto_sha256: str | None = None
+    legacy: bool = False
+    artefactos: list[ArtefactoOut] = Field(default_factory=list)
+
+
 class EntregaOut(BaseModel):
     """Respuesta de Entrega."""
 
@@ -54,6 +118,8 @@ class EntregaOut(BaseModel):
     estado: Literal["draft", "submitted", "graded", "returned"]
     ejercicio_estados: list[dict[str, Any]] = Field(default_factory=list)
     submitted_at: datetime | None = None
+    artefacto_sha256: str | None = None
+    legacy: bool = False
     created_at: datetime
     deleted_at: datetime | None = None
 

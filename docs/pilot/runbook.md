@@ -45,6 +45,9 @@ traducir, usá el equivalente directo.
 | I08 | LDAP no autentica a un usuario | 🟢 Normal | [§8](#i08) |
 | I09 | LLM budget agotado en un tenant | 🟡 Media | [§9](#i09) |
 | I10 | Backup diario falló | 🟠 Alta | [§10](#i10) |
+| I11 | Corrección con Active-IA: apagado de emergencia | 🟠 Alta | [§11](#i11) |
+| I12 | Correcciones colgadas en `running` | 🟡 Media | [§12](#i12) |
+| I13 | Rotación de `ACTIVEIA_MASTER_KEY` | 🟢 Normal | [§13](#i13) |
 
 ---
 
@@ -274,21 +277,48 @@ En todos los casos, documentar.
 1. Verificar identidad del solicitante (firma + DNI vs consentimiento
    archivado).
 
-2. Ejecutar anonimización:
-   ```python
-   from platform_ops.privacy import anonymize_student
-   report = anonymize_student(
-       student_pseudonym=UUID("..."),
-       data_source=academic_data_source,
-   )
+2. Ejecutar la anonimización con el script:
+
+   ```bash
+   # Primero en seco, para ver qué va a tocar. No escribe nada.
+   ACADEMIC_DB_URL=postgresql+asyncpg://... \
+       uv run python scripts/olvidar-alumno.py <student_pseudonym> <tenant_id> --dry-run
+
+   # Y después de verdad.
+   ACADEMIC_DB_URL=postgresql+asyncpg://... \
+       uv run python scripts/olvidar-alumno.py <student_pseudonym> <tenant_id>
    ```
+
+   > **Hasta el 2026-08-27 este paso decía** `data_source=academic_data_source`,
+   > y esa variable **no existe en el repo**: el protocolo `_DataSource` sólo lo
+   > implementan archivos de test. Quien siguiera el runbook al pie de la letra
+   > se comía un `NameError` — o peor, si armaba una fuente a mano sin los
+   > métodos de la corrección asistida, `anonymize_student` caía en su guard de
+   > `hasattr` y devolvía un informe **exitoso con todo en cero**, idéntico al de
+   > un alumno que no tenía correcciones, mientras su código y los PDF con su
+   > nombre seguían en la base. El script cablea el
+   > `OlvidoCorreccionAdapter` y **sale con código 1 cuando el olvido quedó
+   > incompleto**, así que no se puede leer un fallo como un éxito.
+
+   El script borra el código entregado, el hash del conjunto, el
+   `tests_snapshot` (que lleva la salida real de su programa), el `desglose` de
+   la devolución y los PDF; y rota el pseudónimo del episodio y de las
+   correcciones.
 
 3. La cadena CTR **se preserva** (los eventos siguen ahí con los hashes
    intactos), pero el pseudónimo nuevo no se liga a la identidad real.
    Esto cumple el derecho al olvido sin romper la trazabilidad del
    registro.
 
-4. Comunicar al estudiante por escrito:
+4. **Si el informe dice `ESTADO: INCOMPLETO`, cerrar lo que falta antes de
+   comunicar.** Hoy son dos cosas posibles:
+   - PDF que el storage no pudo borrar (el script los lista por key).
+   - La copia que quedó del lado de **Active-IA**: todavía no exponen borrado
+     por alumno (pedido 3.6 de `activeia-cambios-pedidos.md`), así que hay que
+     borrarla a mano desde su panel. El script imprime los `external_entrega_id`
+     con los que se la encuentra.
+
+5. Comunicar al estudiante por escrito:
    - Fecha de ejecución
    - Confirmación de anonimización
    - Aclaración de que los eventos agregados en análisis publicados
@@ -409,6 +439,134 @@ sudo systemctl start platform-backup.service
 # o equivalente directo:
 sudo -u ops PG_BACKUP_PASSWORD="..." bash scripts/backup.sh
 ```
+
+---
+
+## I11. Corrección con Active-IA: apagado de emergencia  <a id="i11"></a>
+
+**Síntomas**:
+- `activeia_correcciones_infra_failure_total` sube con causa `GEMINI_OVERLOADED`
+- Docentes reportan correcciones que nunca terminan
+- Sospecha de que se está gastando cuota de más
+
+**Severidad**: 🟠 Alta — cada corrección cuesta dinero de un tercero.
+
+**El kill switch**:
+
+```
+ACTIVEIA_ENABLED=false
+```
+
+Es el mismo criterio que `EXECUTION_ENABLED`: **falla cerrado**, y el default
+ya es `false`. Con el flag apagado los endpoints devuelven **503** («La corrección asistida
+está desactivada en este entorno») y **no se dispara ninguna corrección nueva**.
+
+**Lo que el kill switch NO hace**, y hay que saberlo antes de apretarlo:
+
+- **No corta las que ya están en vuelo.** Siguen su curso hasta terminar o
+  hasta que el presupuesto del poll (150s) las cierre solas. Eso es
+  deliberado: matarlas a mitad de camino las deja en `running` para siempre.
+- **No devuelve la cuota ya consumida.** Lo que se pagó, se pagó.
+- **No frena la validación del body.** Un 422 por payload inválido sale igual,
+  porque pydantic corre antes del cuerpo del endpoint. (Por eso el handler que
+  strippea el campo `input` vive a nivel de servicio y no del endpoint: si no,
+  el password del docente volvía en el 422 aunque el flag estuviera apagado.)
+
+**Para prenderlo de nuevo**: verificar primero que Active-IA responde
+(`GET /rubricas/?materia_id=N` con la cuenta del docente) antes de tocar el flag.
+
+**Bajar sólo el gasto sin apagar todo**: `ACTIVEIA_CUOTA_DIARIA_POR_DOCENTE`
+(default 100). La cuota **falla cerrada**: si no se puede leer el contador
+(Redis caído), se rechaza en vez de dejar pasar. Un pico de
+`activeia_cuota_rechazos_total{motivo="contador_caido"}` es Redis, no abuso.
+
+---
+
+## I12. Correcciones colgadas en `running`  <a id="i12"></a>
+
+**Síntomas**: `activeia_correcciones_in_flight` sube y no baja; el docente ve
+la corrección girando indefinidamente.
+
+**Severidad**: 🟡 Media.
+
+**Qué pasó, casi seguro**: el pod se reinició con correcciones en vuelo. El
+trabajo corre en `BackgroundTasks` del proceso — no hay cola durable, así que
+un deploy en caliente **mata lo que esté corriendo** y la fila queda en
+`running` sin nadie que la cierre.
+
+**Por eso `evaluation-service` se suma a la lista de "no redeployar en caliente
+con usuarios activos"**, junto a `ctr-service` y `tutor-service`. La diferencia
+es que acá el daño no es perder un evento: es dejar filas colgadas y una cuota
+consumida sin resultado.
+
+**Diagnóstico**:
+
+```sql
+SELECT id, estado, started_at, error_code
+FROM correcciones_ia
+WHERE estado = 'running'
+  AND COALESCE(started_at, created_at) < now() - interval '10 minutes';
+```
+
+`COALESCE` y no `started_at` a secas: una fila que quedó en `pending` nunca lo
+tiene seteado, y sin el `COALESCE` no aparece en esta consulta ni la reconcilia
+nadie.
+
+**Acción**: el reconciliador las cierra solo. Si hay que forzarlo:
+
+```sql
+UPDATE correcciones_ia
+SET estado = 'error', error_code = 'TIMEOUT', finished_at = now()
+WHERE estado = 'running' AND COALESCE(started_at, created_at) < now() - interval '1 hour';
+```
+
+`TIMEOUT` y no un código inventado: **`es_infraestructura` no es una columna**,
+se deriva del `error_code` con `mapear_error_activeia`. Un código que esa
+función no conoce cae en "rechazo" y la UI lo pinta de rojo con «el servicio lo
+rechazó» — que es exactamente lo contrario de lo que pasó.
+
+**Nunca** cerrarlas poniéndoles una nota. La fila tiene un CHECK que lo impide
+(`nota_100 IS NOT NULL` sólo si `estado = 'done'`), y ese CHECK está para que
+un error de operación no termine en el legajo de un alumno.
+
+---
+
+## I13. Rotación de `ACTIVEIA_MASTER_KEY`  <a id="i13"></a>
+
+**Severidad**: 🟢 Normal (planificada) / 🔴 Crítica (si se filtró).
+
+**Qué cifra**: las contraseñas de las cuentas de Active-IA **de cada docente**,
+en `activeia_credenciales`. AES-256-GCM, 32 bytes en base64
+(`openssl rand -base64 32`).
+
+**Es DISTINTA de `BYOK_MASTER_KEY`, a propósito.** No es duplicación: BYOK cifra
+API keys de proveedores de LLM y vive en el `ai-gateway`. Ésta cifra
+credenciales de terceros y vive en `evaluation-service`. Compartirlas
+ampliaría el blast radius de una a dos superficies — si se filtra la de BYOK,
+las cuentas de los docentes seguirían cifradas, y al revés. Ver design D5.
+
+**Si la clave está vacía**: no se pueden guardar ni leer credenciales, y el
+endpoint **lo dice explícitamente** en vez de fallar con un error de cifrado.
+
+**Si se perdió**: todas las credenciales guardadas quedan inservibles. No hay
+recuperación — cada docente tiene que volver a conectar su cuenta desde la UI.
+Es menos grave que perder la de BYOK (que obliga a rotar el catálogo entero),
+pero es trabajo de cada docente, no del equipo.
+
+**Procedimiento de rotación planificada**:
+
+1. Generar la nueva: `openssl rand -base64 32`.
+2. **Antes de tocar nada**: avisar a los docentes que van a tener que reconectar.
+3. Apagar el kill switch (`ACTIVEIA_ENABLED=false`) para que no haya
+   correcciones en vuelo usando credenciales a mitad de rotación.
+4. `TRUNCATE activeia_credenciales` — no se pueden re-cifrar sin la clave vieja
+   si la razón de la rotación es que se perdió. Con la clave vieja a mano, se
+   puede descifrar y volver a cifrar en un script; sin ella, no.
+5. Poner la nueva en el env del `evaluation-service` y reiniciar.
+6. Prender el flag y avisar que reconecten.
+
+**Nunca** en disco, en logs ni en una nota de Obsidian. En prod va en el gestor
+de secretos, igual que `BYOK_MASTER_KEY`.
 
 ---
 

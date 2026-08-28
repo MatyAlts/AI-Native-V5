@@ -666,6 +666,82 @@ export const helpContent: HelpContentMap = {
     </div>
   ),
 
+  correccionSugerida: (
+    <div className="space-y-4 text-sidebar-text-muted">
+      <p className="text-lg font-medium text-[var(--text-inverse)]">La sugerencia de Active-IA</p>
+      <p>
+        Es una <strong>sugerencia</strong>. La plataforma no guarda esa nota ni la escribe en la
+        calificacion: "Usar como base" rellena el campo y te deja el foco ahi para que la cambies.
+        La nota la decidis vos, siempre.
+      </p>
+      <ul className="list-disc list-inside space-y-2 ml-4">
+        <li>
+          <strong>El promedio muestra el calculo.</strong> Cada ejercicio pondera por su
+          `peso_en_tp`. Si falta la correccion de alguno, NO se promedia: un promedio sobre 3 de 4
+          se lee como la nota del TP y no lo es.
+        </li>
+        <li>
+          <strong>Una correccion fallida no cuenta como cero.</strong> Cuenta como faltante. Un cero
+          que en realidad significa "el servicio no respondio" no es una nota.
+        </li>
+        <li>
+          <strong>Si los criterios no suman el total, aparece un aviso.</strong> Paso de verdad: una
+          rubrica declaraba una reduccion del 30% y el motor devolvio la suma limpia (87 en vez de
+          ~61). Suma los criterios antes de dar el numero por bueno.
+        </li>
+        <li>
+          <strong>Los criterios de Active-IA van solos</strong>, no cruzados con tu rubrica.
+          Emparejarlos por nombre pondria el puntaje de uno en otro que se llama parecido, y eso no
+          se ve.
+        </li>
+      </ul>
+      <p>
+        Donde gana: hace cumplir reglas explicitas de la consigna que a ojo se pasan por alto. Donde
+        pierde: entender si el programa <em>responde la pregunta</em> — cuenta que las piezas
+        existan, no que funcionen juntas.
+      </p>
+    </div>
+  ),
+
+  activeIa: (
+    <div className="space-y-4 text-sidebar-text-muted">
+      <p className="text-lg font-medium text-[var(--text-inverse)]">Correccion asistida</p>
+      <p>
+        Active-IA corrige el codigo de un ejercicio contra su rubrica y devuelve una nota sobre 100.
+        La nota la decide siempre el docente: la plataforma nunca la guarda sola.
+      </p>
+      <ul className="list-disc list-inside space-y-2 ml-4">
+        <li>
+          <strong>La cuenta es tuya, no de la catedra:</strong> del lado de Active-IA las comisiones
+          y las rubricas salen de la cuenta con la que entras. Con la cuenta de otro docente los ids
+          no existen.
+        </li>
+        <li>
+          <strong>Sincronizado:</strong> la rubrica que tiene Active-IA es la misma que la de aca.
+        </li>
+        <li>
+          <strong>Desactualizado:</strong> editaste la rubrica del ejercicio despues de sincronizar.
+          Active-IA sigue con la vieja. Volve a sincronizar ANTES de corregir: una rubrica
+          equivocada no da una nota floja, corrige otra cosa.
+        </li>
+        <li>
+          <strong>Sin rubrica:</strong> el ejercicio no tiene rubrica cargada. No es un problema de
+          sincronizacion, no hay nada contra que corregir.
+        </li>
+        <li>
+          <strong>Modo simulado:</strong> si aparece el aviso amarillo, Active-IA todavia no recibe
+          rubricas y lo que ves no se envio. No dispares correcciones reales.
+        </li>
+      </ul>
+      <p>
+        Que hace bien y que no: hace cumplir reglas explicitas de la consigna que a ojo se pasan por
+        alto. Pierde donde hay que entender si el programa responde la pregunta — cuenta que las
+        piezas existan, no que funcionen juntas. Suma los criterios y comparalos con el total antes
+        de dar la nota por buena.
+      </p>
+    </div>
+  ),
+
   interraterCoding: (
     <div className="space-y-4 text-sidebar-text-muted">
       <p className="text-lg font-medium text-[var(--text-inverse)]">Codificacion a ciegas</p>

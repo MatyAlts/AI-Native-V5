@@ -7,6 +7,8 @@
  * El proxy de Vite (vite.config.ts) redirige /api/* al api-gateway.
  */
 
+import type { ArtefactoDraft } from "./artefactos"
+
 export interface OpenEpisodeRequest {
   comision_id: string
   problema_id: string
@@ -655,11 +657,19 @@ export async function submitReflection(
     prompt_version: string
     tiempo_completado_ms: number
   },
+  idempotencyKey?: string,
   getToken?: TokenGetter,
 ): Promise<EventEmitResponse> {
+  const headers = await authHeaders(getToken)
+  // Clave estable por apertura del modal. El reintento tras un error de red
+  // reusa el MISMO valor: sin eso, un POST que el server SI persistio y cuyo
+  // ACK se perdio termina emitiendo dos `reflexion_completada` con el mismo
+  // seq (post-cierre no hay sesion Redis, el seq sale de `events_count`), y el
+  // segundo manda a la DLQ un episodio ya cerrado y completado.
+  if (idempotencyKey) headers["Idempotency-Key"] = idempotencyKey
   const r = await fetch(`/api/v1/episodes/${episodeId}/reflection`, {
     method: "POST",
-    headers: await authHeaders(getToken),
+    headers,
     body: JSON.stringify(payload),
   })
   if (!r.ok) {
@@ -1175,10 +1185,15 @@ export async function createOrGetEntrega(
  * Envia la entrega (draft → submitted). Requiere que todos los ejercicios
  * esten completados. Emite CTR tp_entregada.
  */
-export async function submitEntrega(entregaId: string, getToken?: TokenGetter): Promise<Entrega> {
+export async function submitEntrega(
+  entregaId: string,
+  artefactos: ArtefactoDraft[] = [],
+  getToken?: TokenGetter,
+): Promise<Entrega> {
   const r = await fetch(`/api/v1/entregas/${entregaId}/submit`, {
     method: "POST",
-    headers: await authHeaders(getToken),
+    headers: { ...(await authHeaders(getToken)), "Content-Type": "application/json" },
+    body: JSON.stringify({ artefactos }),
   })
   if (!r.ok) {
     const body = await r.text()
@@ -1227,6 +1242,23 @@ export async function getCalificacion(
  * Backend devuelve envelope `{data, meta}`. Sin desempaquetar `data`, el
  * indexado `[0]` cae siempre en undefined → el alumno nunca ve su entrega.
  */
+/**
+ * Relee UNA entrega por su id, fresca del servidor.
+ *
+ * Existe para los guards que no pueden confiar en el estado que quedo en
+ * memoria. `ExerciseListView` monta su entrega con un `useEffect` que corre una
+ * sola vez y nunca repolla: una pestana vieja sigue diciendo "draft" horas
+ * despues de que el docente devolvio la entrega, y re-enviarla ahi le borra al
+ * alumno la devolucion que fue a leer.
+ */
+export async function getEntregaById(entregaId: string, getToken?: TokenGetter): Promise<Entrega> {
+  const r = await fetch(`/api/v1/entregas/${entregaId}`, {
+    headers: await authHeaders(getToken),
+  })
+  if (!r.ok) throw new Error(`get entrega failed: ${r.status}`)
+  return (await r.json()) as Entrega
+}
+
 export async function getEntregaForTp(
   tareaId: string,
   comisionId: string,
@@ -1298,6 +1330,7 @@ export const entregasApi = {
   createOrGet: createOrGetEntrega,
   submit: submitEntrega,
   getForTp: getEntregaForTp,
+  getById: getEntregaById,
   listMine: listMisEntregas,
   getCalificacion,
   listEjerciciosTp,

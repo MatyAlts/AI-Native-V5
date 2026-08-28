@@ -66,6 +66,10 @@ def pytest_configure(config: pytest.Config) -> None:
         "markers",
         "smoke: smoke E2E tests contra stack already-up (api-gateway:8000)",
     )
+    config.addinivalue_line(
+        "markers",
+        "sin_stack: el test levanta su propio doble y NO necesita los servicios up",
+    )
 
 
 # ── Auth + HTTP client ─────────────────────────────────────────────────
@@ -162,7 +166,7 @@ def seeded_episode_id() -> str:
 
 
 @pytest.fixture(scope="session", autouse=True)
-def _wait_for_health() -> None:
+def _wait_for_health(request: pytest.FixtureRequest) -> None:
     """Gate de health al arranque de la suite — verifica que los servicios responden /health.
 
     Comportamiento estándar (failfast):
@@ -179,6 +183,14 @@ def _wait_for_health() -> None:
       siguen fallando per-test si lo invocan; este flag sólo evita el
       pytest.exit() global que tira la suite entera.
     """
+    # Si TODO lo seleccionado se marcó `sin_stack`, no hay a quién esperar: son
+    # tests que levantan su propio doble en proceso. El gate sigue firme para
+    # cualquier corrida que incluya aunque sea un test que sí toca el stack —
+    # no se afloja, se saltea cuando es literalmente innecesario.
+    items = getattr(request.session, "items", [])
+    if items and all(i.get_closest_marker("sin_stack") for i in items):
+        return
+
     skip_attestation = _attestation_check_skipped()
     if skip_attestation:
         print(

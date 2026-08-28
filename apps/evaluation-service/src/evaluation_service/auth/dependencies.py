@@ -126,3 +126,24 @@ def require_permission(resource: str, action: str):
         )
 
     return checker
+
+
+# Quién puede conectar una cuenta de Active-IA y disparar correcciones.
+#
+# NO incluye `estudiante`: disparar una corrección manda el código de un alumno
+# a un servicio externo y gasta cuota que se paga. Es una acción docente.
+#
+# Constante propia y no una entrada en el seed de Casbin porque este servicio
+# no tiene enforcer (ver `require_permission` arriba): agregar la policy al
+# seed daría la impresión de que rige acá, y no rige.
+CORRECCION_IA_ROLES = frozenset({"superadmin", "docente_admin", "docente", "jtp"})
+
+
+def require_correccion_ia(user: User = Depends(get_current_user)) -> User:
+    """Gate de rol para los endpoints de Active-IA."""
+    if not (user.roles & CORRECCION_IA_ROLES):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Solo un docente puede operar la corrección asistida.",
+        )
+    return user

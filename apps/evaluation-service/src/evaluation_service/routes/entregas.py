@@ -17,6 +17,8 @@ Endpoints:
 
 from __future__ import annotations
 
+import copy
+import hashlib
 import uuid
 from datetime import UTC, datetime
 from typing import Any, Literal
@@ -27,22 +29,33 @@ from fastapi import APIRouter, Depends, HTTPException, Query, Response, status
 from sqlalchemy import and_, select, text
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import selectinload
 from sqlalchemy.sql.elements import ColumnElement
 
 from evaluation_service.auth import User, get_db, require_permission
-from evaluation_service.models.entregas import Calificacion, Entrega
+from evaluation_service.models.entregas import Calificacion, Entrega, EntregaArtefacto
 from evaluation_service.schemas.entrega import (
+    ArtefactoItem,
+    ArtefactoOut,
     CalificacionCreate,
     CalificacionOut,
     CalificacionUpdate,
+    EntregaArtefactoOut,
     EntregaCreate,
     EntregaListMeta,
     EntregaListResponse,
     EntregaOut,
+    EntregaSubmitBody,
     MarkEjercicioBody,
 )
 
 router = APIRouter(prefix="/api/v1/entregas", tags=["entregas"])
+
+_DOCENTE_ROLES = frozenset({"superadmin", "docente_admin", "docente", "jtp", "auxiliar"})
+_OVERSIGHT_ROLES = frozenset({"superadmin", "docente_admin"})
+# Quién puede leer el código de un alumno que no es él mismo. Es el mismo set
+# que ve la cola de corrección: leer la entrega es parte de corregirla.
+_READ_ARTEFACTO_ROLES = _DOCENTE_ROLES
 
 # ── Endpoints de Entregas ─────────────────────────────────────────────────
 
@@ -71,6 +84,23 @@ async def create_entrega(
         response.status_code = status.HTTP_200_OK
         return EntregaOut.model_validate(existing)
 
+    # Sembrar los ejercicios que la TP declara, todos incompletos. Antes esto
+    # nacía `[]`, y el submit sólo validaba `if estados:` — con la lista vacía
+    # NO validaba nada: entregar sin haber tocado un solo ejercicio pasaba.
+    # Sembrado, "falta el ejercicio 2" es un estado detectable en vez del
+    # estado inicial de toda entrega.
+    esperados = await _ejercicios_esperados(db, data.tarea_practica_id)
+    estados_iniciales: list[dict[str, Any]] = [
+        {
+            "ejercicio_id": e["ejercicio_id"],
+            "orden": e["orden"],
+            "episode_id": None,
+            "completado": False,
+            "completed_at": None,
+        }
+        for e in esperados
+    ]
+
     entrega = Entrega(
         id=uuid.uuid4(),
         tenant_id=user.tenant_id,
@@ -78,7 +108,7 @@ async def create_entrega(
         student_pseudonym=student_id,
         comision_id=data.comision_id,
         estado="draft",
-        ejercicio_estados=[],
+        ejercicio_estados=estados_iniciales,
     )
     try:
         db.add(entrega)
@@ -206,22 +236,32 @@ async def get_entrega(
 ) -> EntregaOut:
     entrega = await _get_or_404(db, entrega_id)
     _assert_can_read(entrega, user)
+    await _assert_comision_visible(db, entrega, user)
     return EntregaOut.model_validate(entrega)
 
 
 @router.post("/{entrega_id}/submit", response_model=EntregaOut)
 async def submit_entrega(
     entrega_id: UUID,
+    body: EntregaSubmitBody | None = None,
     user: User = Depends(require_permission("entrega", "create")),
     db: AsyncSession = Depends(get_db),
 ) -> EntregaOut:
     """Transicion draft -> submitted.
 
-    Valida que todos los ejercicios esten completados.
+    Valida que todos los ejercicios esperados esten completados Y que el
+    cliente mande el codigo de cada uno, y lo persiste como artefacto.
     Emite audit log tp_entregada (structlog, no CTR chain).
     """
-    entrega = await _get_or_404(db, entrega_id)
+    # Con los artefactos YA cargados. `Entrega.artefactos` es lazy por
+    # default, y tocar una relación no cargada desde una corrutina —fuera de
+    # `greenlet_spawn`— tira `MissingGreenlet`, no un lazy load silencioso.
+    # Es el único endpoint que la escribe, así que el eager load va acá y no
+    # en el modelo: ponerlo en la relación haría que el listado del docente
+    # (hasta 200 entregas) se traiga el código de todos los alumnos.
+    entrega = await _get_or_404(db, entrega_id, con_artefactos=True)
     _assert_can_write(entrega, user)
+    await _assert_comision_visible(db, entrega, user)
 
     if entrega.estado == "submitted":
         return EntregaOut.model_validate(entrega)
@@ -232,19 +272,80 @@ async def submit_entrega(
             detail=f"No se puede enviar una entrega en estado '{entrega.estado}'",
         )
 
-    # Validar que todos los ejercicios esten completados
-    estados: list[dict[str, Any]] = list(entrega.ejercicio_estados or [])
-    if estados:
-        incompletos = [e for e in estados if not e.get("completado")]
-        if incompletos:
-            ordenes = [e["orden"] for e in incompletos]
+    # Los ejercicios que la TP declara HOY. La entrega nace sembrada con
+    # ellos, pero una TP puede haber sumado ejercicios después: si nos
+    # quedamos con la lista guardada, un ejercicio agregado post-creación
+    # nunca sería exigido.
+    esperados = await _ejercicios_esperados(db, entrega.tarea_practica_id)
+    estados: list[dict[str, Any]] = _reconciliar_estados(
+        list(entrega.ejercicio_estados or []), esperados
+    )
+    entrega.ejercicio_estados = estados
+
+    incompletos = [e for e in estados if not e.get("completado")]
+    if incompletos:
+        ordenes = sorted(e["orden"] for e in incompletos)
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=f"Ejercicios incompletos: {ordenes}. Completa todos antes de entregar.",
+        )
+
+    # El código de CADA ejercicio esperado tiene que venir. Aceptar un submit
+    # sin código reabre el agujero que este cambio cierra: dejaría entregas
+    # `submitted` de las que no se sabe qué se entregó, y esas son
+    # indistinguibles de las buenas hasta el momento de corregirlas.
+    items = list(body.artefactos) if body is not None else []
+    if esperados:
+        recibidos = {i.orden for i in items}
+        ordenes_esperados = {e["orden"] for e in esperados}
+        faltantes = sorted(ordenes_esperados - recibidos)
+        if faltantes:
             raise HTTPException(
                 status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-                detail=f"Ejercicios incompletos: {ordenes}. Completa todos antes de entregar.",
+                detail=(
+                    f"Falta el código de los ejercicios: {faltantes}. "
+                    "Abrí cada ejercicio una vez antes de entregar."
+                ),
             )
+        # Y que no SOBRE ninguno. Un `orden` que la TP no declara se
+        # persistiría igual y entraría al hash del conjunto — el docente vería
+        # un "Ejercicio 9" inexistente, y la constancia de lo entregado
+        # dependería de una fila que ningún `tp_ejercicios` respalda.
+        sobrantes = sorted(recibidos - ordenes_esperados)
+        if sobrantes:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail=f"La TP no tiene los ejercicios: {sobrantes}.",
+            )
+    elif not items and entrega.artefactos:
+        # Re-entrega monolítica sin código. Dejar pasar movería `submitted_at`
+        # conservando el artefacto y el hash del envío anterior: el hash
+        # dejaría de certificar el momento que la entrega declara, que es
+        # justo la propiedad que esto viene a dar.
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="No mandaste código. Abrí el ejercicio antes de volver a entregar.",
+        )
+
+    # Un `orden` repetido violaría el UNIQUE recién en el flush, y ahí sale
+    # como 500 con stack trace. El resto del endpoint responde 422 a un body
+    # mal armado; esto también.
+    duplicados = sorted({i.orden for i in items if [x.orden for x in items].count(i.orden) > 1})
+    if duplicados:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=f"Hay más de un código para los ejercicios: {duplicados}.",
+        )
+
+    if items:
+        await _persistir_artefactos(db, entrega, items, estados, user.tenant_id)
 
     entrega.estado = "submitted"
     entrega.submitted_at = datetime.now(UTC)
+    # Los locales se leen ANTES del refresh: `refresh` expira la relación
+    # `artefactos`, y volver a tocarla después sería otro lazy load en async.
+    n_artefactos = len(items)
+    artefacto_sha256 = entrega.artefacto_sha256
     await db.flush()
     await db.refresh(entrega)
 
@@ -259,9 +360,54 @@ async def submit_entrega(
         student_pseudonym=str(entrega.student_pseudonym),
         n_ejercicios=len(estados),
         exercise_episode_ids=episode_ids,
+        artefacto_sha256=artefacto_sha256,
+        n_artefactos=n_artefactos,
     )
 
     return EntregaOut.model_validate(entrega)
+
+
+@router.get("/{entrega_id}/artefacto", response_model=EntregaArtefactoOut)
+async def get_entrega_artefacto(
+    entrega_id: UUID,
+    user: User = Depends(require_permission("entrega", "read")),
+    db: AsyncSession = Depends(get_db),
+) -> EntregaArtefactoOut:
+    """Devuelve el código que el alumno entregó.
+
+    El docente sólo puede leer entregas de SUS comisiones. Cuando no puede,
+    la respuesta es 404 y no 403: un 403 confirmaría que la entrega existe,
+    y con eso el `entrega_id` de una comisión ajena se vuelve un oráculo de
+    existencia. Mismo criterio de aislamiento por comisión que el listado.
+    """
+    entrega = await _get_or_404(db, entrega_id)
+
+    is_owner = entrega.student_pseudonym == user.id
+    if not is_owner and not (user.roles & _READ_ARTEFACTO_ROLES):
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Entrega no existe")
+    await _assert_comision_visible(db, entrega, user)
+
+    artefactos = (
+        (
+            await db.execute(
+                select(EntregaArtefacto)
+                .where(EntregaArtefacto.entrega_id == entrega.id)
+                .order_by(EntregaArtefacto.orden)
+            )
+        )
+        .scalars()
+        .all()
+    )
+
+    return EntregaArtefactoOut(
+        entrega_id=entrega.id,
+        tarea_practica_id=entrega.tarea_practica_id,
+        student_pseudonym=entrega.student_pseudonym,
+        submitted_at=entrega.submitted_at,
+        artefacto_sha256=entrega.artefacto_sha256,
+        legacy=entrega.legacy,
+        artefactos=[ArtefactoOut.model_validate(a) for a in artefactos],
+    )
 
 
 @router.patch("/{entrega_id}/ejercicio/{orden}", response_model=EntregaOut)
@@ -286,6 +432,7 @@ async def mark_ejercicio_completado(
     """
     entrega = await _get_or_404(db, entrega_id)
     _assert_can_write(entrega, user)
+    await _assert_comision_visible(db, entrega, user)
 
     if entrega.estado not in ("draft", "returned"):
         raise HTTPException(
@@ -298,13 +445,24 @@ async def mark_ejercicio_completado(
     ejercicio_id = body.ejercicio_id if body else None
 
     # ADR-047: match prefiere `ejercicio_id` (UUID estable) sobre `orden`
-    # cuando ambos están disponibles. Entregas legacy sin `ejercicio_id`
-    # caen al match por orden.
-    estados = list(entrega.ejercicio_estados or [])
+    # cuando ambos están disponibles. Si a CUALQUIERA de los dos lados le
+    # falta el UUID, cae al match por orden — no sólo cuando le falta al
+    # estado guardado. Desde que la entrega nace sembrada (con `ejercicio_id`
+    # ya cargado), un cliente que marca sin UUID no encontraba nada y
+    # appendeaba una fila duplicada para el mismo ejercicio.
+    # `deepcopy` y NO `list(...)`: `list()` copia la lista pero comparte los
+    # dicts, así que mutarlos acá muta también el valor cargado. Al reasignar,
+    # SQLAlchemy compara viejo contra nuevo, los ve iguales (son los mismos
+    # objetos, ya mutados) y NO emite el UPDATE. La columna es JSONB plano sin
+    # `MutableList`, así que nadie avisa: el flush pasa limpio y el cambio se
+    # pierde. Con `deepcopy` el valor nuevo es realmente distinto del viejo.
+    estados = copy.deepcopy(list(entrega.ejercicio_estados or []))
     found = False
     for est in estados:
         matches_by_uuid = ejercicio_id is not None and est.get("ejercicio_id") == str(ejercicio_id)
-        matches_by_orden = est.get("orden") == orden and est.get("ejercicio_id") is None
+        matches_by_orden = est.get("orden") == orden and (
+            est.get("ejercicio_id") is None or ejercicio_id is None
+        )
         if matches_by_uuid or matches_by_orden:
             est["completado"] = completado
             est["completed_at"] = datetime.now(UTC).isoformat() if completado else None
@@ -356,6 +514,7 @@ async def calificar_entrega(
     Emite audit log tp_calificada (structlog, no CTR chain).
     """
     entrega = await _get_or_404(db, entrega_id)
+    await _assert_comision_visible(db, entrega, user)
 
     if entrega.estado != "submitted":
         raise HTTPException(
@@ -431,6 +590,7 @@ async def recalificar_entrega(
       con la nota anterior y la nueva.
     """
     entrega = await _get_or_404(db, entrega_id)
+    await _assert_comision_visible(db, entrega, user)
 
     stmt = select(Calificacion).where(
         and_(
@@ -484,7 +644,15 @@ async def recalificar_entrega(
     # Normaliza el estado: una re-calificacion deja la entrega calificada.
     # Cubre el caso NB-4 de una entrega re-enviada (returned -> submitted) que
     # quedo en 'submitted' con la calificacion vieja adherida.
-    entrega.estado = "graded"
+    #
+    # EXCEPTO si ya esta 'returned': ahi la devolucion es intencional y el alumno
+    # tiene la pelota. `submit_entrega` solo acepta 'draft'/'returned', asi que
+    # pisarla con 'graded' le contesta 409 cuando intenta re-entregar — o sea que
+    # el docente que corrige un TYPO en la nota le traba el TP al alumno, sin
+    # enterarse. Y no hay perdida por no normalizar: no existe forma de llegar a
+    # `returned` sin una calificacion previa.
+    if entrega.estado != "returned":
+        entrega.estado = "graded"
 
     await db.flush()
     await db.refresh(cal)
@@ -510,9 +678,10 @@ async def get_calificacion(
     user: User = Depends(require_permission("calificacion", "read")),
     db: AsyncSession = Depends(get_db),
 ) -> CalificacionOut:
-    """Lee la calificacion. Docentes ven todas; estudiantes solo la suya."""
+    """Lee la calificacion. Docentes ven las de SUS comisiones; estudiantes la suya."""
     entrega = await _get_or_404(db, entrega_id)
     _assert_can_read(entrega, user)
+    await _assert_comision_visible(db, entrega, user)
 
     stmt = select(Calificacion).where(
         and_(
@@ -540,6 +709,7 @@ async def return_entrega(
     El alumno puede volver a enviarla (returned -> submitted).
     """
     entrega = await _get_or_404(db, entrega_id)
+    await _assert_comision_visible(db, entrega, user)
 
     if entrega.estado != "graded":
         raise HTTPException(
@@ -554,6 +724,134 @@ async def return_entrega(
 
 
 # ── Helpers privados ──────────────────────────────────────────────────────
+
+
+async def _ejercicios_esperados(db: AsyncSession, tarea_practica_id: UUID) -> list[dict[str, Any]]:
+    """Los ejercicios que la TP declara, en orden.
+
+    `tp_ejercicios` vive en la misma DB (academic_main) pero es propiedad de
+    academic-service, así que se lee por SQL y no importando su modelo —
+    mismo criterio que la consulta a `usuarios_comision` del listado.
+
+    Esto es la lista ESPERADA. Sin ella, `ejercicio_estados` nace vacío y
+    "falta un ejercicio" deja de ser un estado detectable para pasar a ser el
+    estado inicial de toda entrega.
+    """
+    rows = await db.execute(
+        text(
+            "SELECT orden, ejercicio_id FROM tp_ejercicios "
+            "WHERE tarea_practica_id = :tp ORDER BY orden"
+        ),
+        {"tp": str(tarea_practica_id)},
+    )
+    return [{"orden": r[0], "ejercicio_id": str(r[1]) if r[1] else None} for r in rows.all()]
+
+
+def _reconciliar_estados(
+    estados: list[dict[str, Any]], esperados: list[dict[str, Any]]
+) -> list[dict[str, Any]]:
+    """Suma los ejercicios de la TP que faltan en `ejercicio_estados`.
+
+    Nunca borra ni des-marca: un ejercicio que la TP ya no declara igual se
+    entregó, y quitarlo perdería la constancia de que el alumno lo hizo. Lo
+    que agrega es el ejercicio nuevo, incompleto — así el submit lo exige.
+
+    Con `esperados` vacío (TP monolítica sin `tp_ejercicios`) devuelve los
+    estados tal cual: sin lista esperada no hay nada contra qué reconciliar,
+    y exigir sobre una lista vacía bloquearía toda entrega monolítica.
+
+    Devuelve SIEMPRE una copia profunda: el caller reasigna el resultado a la
+    columna JSONB, y si compartiera los dicts con el valor cargado SQLAlchemy
+    no vería diferencia y no emitiría el UPDATE.
+    """
+    estados = copy.deepcopy(estados)
+    if not esperados:
+        return estados
+
+    por_uuid = {e["ejercicio_id"] for e in estados if e.get("ejercicio_id")}
+    # Los `orden` que ya figuran SIN UUID. Un esperado con UUID tiene que
+    # mirar acá también: si el estado guardado no tiene `ejercicio_id` (lo que
+    # escribe el PATCH cuando el cliente no lo manda), buscar sólo por UUID no
+    # lo encuentra y se agrega un SEGUNDO estado con el mismo `orden`. El
+    # duplicado nace incompleto y no se destraba nunca: el PATCH siguiente
+    # matchea el primero, y el submit exige el segundo para siempre.
+    ordenes_sin_uuid = {e["orden"] for e in estados if not e.get("ejercicio_id")}
+    todos_los_ordenes = {e["orden"] for e in estados}
+
+    out = list(estados)
+    for esp in esperados:
+        eid = esp["ejercicio_id"]
+        if eid:
+            ya_esta = eid in por_uuid or esp["orden"] in ordenes_sin_uuid
+        else:
+            ya_esta = esp["orden"] in todos_los_ordenes
+        if not ya_esta:
+            out.append(
+                {
+                    "ejercicio_id": eid,
+                    "orden": esp["orden"],
+                    "episode_id": None,
+                    "completado": False,
+                    "completed_at": None,
+                }
+            )
+    return out
+
+
+async def _persistir_artefactos(
+    db: AsyncSession,
+    entrega: Entrega,
+    items: list[ArtefactoItem],
+    estados: list[dict[str, Any]],
+    tenant_id: UUID,
+) -> None:
+    """Guarda el código del submit y sella el hash del conjunto.
+
+    Reemplaza los artefactos previos: un re-submit tras `returned` entrega
+    código nuevo, y conservar el viejo dejaría dos versiones sin decir cuál
+    es la entregada.
+
+    El `episode_id` que el cliente no manda se resuelve contra
+    `ejercicio_estados`, que ya lo tiene desde que el alumno cerró el
+    ejercicio (tarea 1.10).
+    """
+    por_uuid = {e["ejercicio_id"]: e for e in estados if e.get("ejercicio_id")}
+    por_orden = {e["orden"]: e for e in estados}
+
+    # El flush entre el clear y los append NO es opcional. En un solo flush,
+    # la unit of work de SQLAlchemy ordena los INSERT antes que los DELETE del
+    # `delete-orphan`, y el re-submit choca contra
+    # `uq_entrega_artefacto_orden` con un IntegrityError. Separándolos, el
+    # DELETE de la versión vieja va primero.
+    if entrega.artefactos:
+        entrega.artefactos.clear()
+        await db.flush()
+    for item in sorted(items, key=lambda i: i.orden):
+        est = por_uuid.get(str(item.ejercicio_id)) if item.ejercicio_id else None
+        if est is None:
+            est = por_orden.get(item.orden, {})
+        episode_id = item.episode_id
+        if episode_id is None and est.get("episode_id"):
+            episode_id = UUID(str(est["episode_id"]))
+
+        entrega.artefactos.append(
+            EntregaArtefacto(
+                id=uuid.uuid4(),
+                tenant_id=tenant_id,
+                orden=item.orden,
+                episode_id=episode_id,
+                ejercicio_id=item.ejercicio_id,
+                codigo=item.codigo,
+                language=item.language,
+                sha256=hashlib.sha256(item.codigo.encode("utf-8")).hexdigest(),
+            )
+        )
+
+    # Hash del CONJUNTO: mismo criterio que `chunks_used_hash` (RN-026) —
+    # join con separador sobre una lista ordenada, para que el mismo conjunto
+    # dé siempre el mismo hash sin depender del orden en que llegó.
+    canonical = "|".join(f"{a.orden}:{a.sha256}" for a in entrega.artefactos)
+    entrega.artefacto_sha256 = hashlib.sha256(canonical.encode("utf-8")).hexdigest()
 
 
 async def _find_existing_entrega(
@@ -571,15 +869,57 @@ async def _find_existing_entrega(
     return (await db.execute(stmt)).scalar_one_or_none()
 
 
-async def _get_or_404(db: AsyncSession, entrega_id: UUID) -> Entrega:
+async def _get_or_404(
+    db: AsyncSession, entrega_id: UUID, *, con_artefactos: bool = False
+) -> Entrega:
     stmt = select(Entrega).where(and_(Entrega.id == entrega_id, Entrega.deleted_at.is_(None)))
+    if con_artefactos:
+        stmt = stmt.options(selectinload(Entrega.artefactos))
     obj = (await db.execute(stmt)).scalar_one_or_none()
     if obj is None:
+        # Mismo texto que el rechazo por comisión de `_assert_comision_visible`,
+        # y sin el id adentro. Devolver dos mensajes distintos deja el oráculo
+        # de existencia abierto en el body aunque el status sea 404 en los dos
+        # casos: "no encontrada" diria que no existe y "no existe" que existe
+        # pero es de otra comision. Si se toca uno, se tocan los dos.
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
-            detail=f"Entrega {entrega_id} no encontrada",
+            detail="Entrega no existe",
         )
     return obj
+
+
+async def _assert_comision_visible(db: AsyncSession, entrega: Entrega, user: User) -> None:
+    """El docente sólo opera sobre entregas de SUS comisiones.
+
+    `_assert_can_read` cubre al ESTUDIANTE (sólo lo suyo), pero deja pasar a
+    cualquier docente sobre cualquier entrega. Sin esto, un docente de otra
+    comisión podía leer una entrega ajena, calificarla, re-calificarla y
+    devolverla: el `entrega_id` era la única credencial. Con el filtro puesto
+    en el listado pero no acá, además, alcanzaba con probar ids.
+
+    **404 y no 403**, mismo criterio que `GET /{id}/artefacto`: un 403
+    confirmaría que la entrega existe, y ahí el id de una comisión ajena se
+    vuelve un oráculo de existencia.
+
+    El dueño de la entrega no pasa por acá — a un estudiante lo gobierna
+    `_assert_can_read` / `_assert_can_write`, y su `student_pseudonym` ya es
+    un filtro más estrecho que la comisión.
+    """
+    if entrega.student_pseudonym == user.id:
+        return
+    if user.roles & _OVERSIGHT_ROLES:
+        return
+
+    rows = await db.execute(
+        text(
+            "SELECT 1 FROM usuarios_comision "
+            "WHERE user_id = :uid AND comision_id = :cid AND deleted_at IS NULL"
+        ),
+        {"uid": str(user.id), "cid": str(entrega.comision_id)},
+    )
+    if rows.first() is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Entrega no existe")
 
 
 def _assert_can_read(entrega: Entrega, user: User) -> None:

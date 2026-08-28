@@ -1,3 +1,12 @@
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query"
+import {
+  Outlet,
+  RouterProvider,
+  createMemoryHistory,
+  createRootRoute,
+  createRoute,
+  createRouter,
+} from "@tanstack/react-router"
 /**
  * Helper compartido para mockear fetch por path-prefix.
  *
@@ -18,15 +27,7 @@
  * properties of null (reading 'isServer')".
  */
 import { render } from "@testing-library/react"
-import { type ReactNode } from "react"
-import {
-  RouterProvider,
-  createRootRoute,
-  createRoute,
-  createRouter,
-  createMemoryHistory,
-  Outlet,
-} from "@tanstack/react-router"
+import type { ReactNode } from "react"
 import { vi } from "vitest"
 
 type Handler = () => unknown
@@ -38,6 +39,15 @@ export function setupFetchMock(
     "fetch",
     vi.fn((url: string | URL | Request) => {
       const urlStr = typeof url === "string" ? url : url.toString()
+      // El match es por `includes` y **gana el PRIMERO declarado**. El orden
+      // no es cosmetico: `/api/v1/tareas-practicas/` tambien matchea
+      // `/api/v1/tareas-practicas/{id}/ejercicios`, asi que la ruta mas
+      // especifica va ARRIBA o la generica se la come.
+      //
+      // Se probo ordenar por largo de clave y es PEOR: aca la clave especifica
+      // (`/ejercicios`) es mas CORTA que la generica, asi que "el mas largo
+      // gana" elige justo la equivocada. El orden lo decide quien escribe el
+      // test, que es el unico que sabe cual es cual.
       for (const [pathPrefix, handler] of Object.entries(handlers)) {
         if (urlStr.includes(pathPrefix)) {
           if (typeof handler === "function") {
@@ -88,5 +98,21 @@ export function renderWithRouter(node: ReactNode) {
     routeTree: rootRoute.addChildren([indexRoute]),
     history: createMemoryHistory({ initialEntries: ["/"] }),
   })
-  return render(<RouterProvider router={router} />)
+  // QueryClientProvider ADEMAS del router. `HomeView` y `CorreccionesView` ya
+  // usaban react-query en `main` y este helper solo montaba el router, asi que
+  // los dos archivos morian con "No QueryClient set" — 14 rojos que vivian en
+  // `main` sin que nadie los viera, porque hasta el 2026-08-27 el CI no corria
+  // vitest. Se arreglan aca y no test por test: el que agregue la proxima vista
+  // con react-query no tiene por que enterarse de esto.
+  //
+  // `retry: false` para que un fetch que el mock no cubre falle de una en vez
+  // de reintentar tres veces y agotar el timeout del test.
+  const queryClient = new QueryClient({
+    defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
+  })
+  return render(
+    <QueryClientProvider client={queryClient}>
+      <RouterProvider router={router} />
+    </QueryClientProvider>,
+  )
 }

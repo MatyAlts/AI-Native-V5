@@ -1,3 +1,6 @@
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query"
+import { render } from "@testing-library/react"
+import type { ReactNode } from "react"
 /**
  * Helper compartido para mockear fetch por path-prefix (espejo del helper de
  * web-teacher en `apps/web-teacher/tests/_mocks.ts`).
@@ -50,4 +53,22 @@ export function setupFetchMock(
       } as Response)
     }),
   )
+}
+
+/**
+ * Render con `QueryClientProvider`.
+ *
+ * `HomePage` y `GovernanceEventsPage` usan `useQuery`, y sin el provider mueren
+ * con "No QueryClient set" — 10 rojos que vivian en `main` sin que nadie los
+ * viera, porque el CI **no corria vitest en ningun frontend**. El mismo agujero
+ * que ya se cerro en `web-teacher`.
+ *
+ * `retry: false` para que un fetch que el mock no cubre falle de una en vez de
+ * reintentar y agotar el timeout del test.
+ */
+export function renderConQuery(node: ReactNode) {
+  const queryClient = new QueryClient({
+    defaultOptions: { queries: { retry: false } },
+  })
+  return render(<QueryClientProvider client={queryClient}>{node}</QueryClientProvider>)
 }

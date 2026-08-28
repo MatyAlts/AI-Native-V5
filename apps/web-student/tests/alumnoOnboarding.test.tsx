@@ -423,10 +423,7 @@ describe("alumnoOnboarding — declaracion de rutas y anclas", () => {
 
 /** Todo lo que el alumno LEE de un cartel: titulo, cuerpo renderizado y CTA. */
 function textoVisible(h: Hint): string {
-  // El fragment no sobra: `h.body` es un ReactNode (puede ser un string) y
-  // `renderToStaticMarkup` pide un ReactElement.
-  // biome-ignore lint/complexity/noUselessFragments: envuelve un ReactNode suelto.
-  return [h.title, h.ctaLabel ?? "", renderToStaticMarkup(<>{h.body}</>)].join(" ")
+  return [h.title, h.ctaLabel ?? "", renderToStaticMarkup(h.body)].join(" ")
 }
 
 const TILDES = /[À-ÿĀ-ſ]/g

@@ -22,6 +22,7 @@ el registro auditable de una interacción (art. 17.3.e GDPR).
 
 from __future__ import annotations
 
+import contextlib
 import hashlib
 import json
 import logging
@@ -70,7 +71,26 @@ class AnonymizationReport:
     episodes_updated: int
     classifications_preserved: int
     events_untouched: int  # cadena CTR inmutable
-    performed_at: datetime
+    # Lo que agrega la correccion asistida (Epic 5 de `correccion-activeia`):
+    # el codigo que el alumno entrego, y lo que se mando a un servicio externo.
+    # Cuentan aparte de los episodios porque la garantia es distinta: el CTR se
+    # disocia rotando el pseudonimo, esto se BORRA.
+    artefactos_borrados: int = 0
+    correcciones_rotadas: int = 0
+    pdfs_borrados: int = 0
+    # PDF que no se pudieron borrar del storage. Un olvido incompleto que se
+    # reporta como completo es peor que uno que falla: el dato sigue ahi y
+    # nadie lo sabe.
+    pdfs_con_error: list[str] = field(default_factory=list)
+    # Si se pidio el borrado del lado de Active-IA, y si contesto. `None` =
+    # no se intento (la integracion no expone el endpoint todavia).
+    borrado_externo_ok: bool | None = None
+    # Los identificadores que Active-IA le dio a las entregas de este alumno.
+    # Van en el informe porque mientras el borrado por API no exista, ESTO es
+    # lo unico con lo que alguien puede encontrar y borrar esa copia desde su
+    # panel — sin esto, "hay que borrarlo a mano" no es accionable.
+    ids_externos_a_borrar: list[str] = field(default_factory=list)
+    performed_at: datetime = field(default_factory=lambda: datetime.now(UTC))
 
 
 # ── Interfaces mínimas para testeo sin DB ──────────────────────────────
@@ -93,6 +113,45 @@ class _DataSource:
 
     async def update_episodes_pseudonym(self, original: UUID, new: UUID) -> int:
         """Actualiza el pseudónimo en los episodios y devuelve cuántos cambió."""
+        raise NotImplementedError
+
+    # ── Correccion asistida ────────────────────────────────────────────
+    #
+    # Estos tres son OPCIONALES: un `data_source` que no los implemente
+    # (los tests viejos, o un servicio que no tenga correcciones) deja el
+    # informe en cero en vez de romper. Pero si los implementa a medias, el
+    # informe lo dice — un olvido parcial reportado como completo es peor
+    # que uno que falla.
+
+    async def list_correcciones_by_student(self, pseudonym: UUID) -> list[dict]:
+        """Las correcciones del alumno, con su `pdf_storage_key`."""
+        raise NotImplementedError
+
+    async def delete_artefactos_by_student(self, pseudonym: UUID) -> int:
+        """Borra el codigo entregado. Devuelve cuantas filas borro.
+
+        Se BORRA y no se rota: el artefacto ES el dato personal (el codigo que
+        escribio esa persona), no una referencia a el. Rotar el pseudonimo lo
+        dejaria igual de legible.
+        """
+        raise NotImplementedError
+
+    async def update_correcciones_pseudonym(self, original: UUID, new: UUID) -> int:
+        """Rota el pseudonimo en las correcciones."""
+        raise NotImplementedError
+
+    async def delete_pdf(self, storage_key: str) -> bool:
+        """Borra un PDF del storage. `True` si quedo borrado."""
+        raise NotImplementedError
+
+    async def borrar_en_activeia(self, pseudonym: UUID) -> bool:
+        """Pide el borrado del alumno del lado de Active-IA.
+
+        Depende del pedido 3.6 de `activeia-cambios-pedidos.md`. Mientras el
+        endpoint no exista, el adaptador puede no implementarlo y el informe
+        queda con `borrado_externo_ok=None` — que significa "no se intento",
+        no "salio bien".
+        """
         raise NotImplementedError
 
 
@@ -182,6 +241,11 @@ async def anonymize_student(
     # 4. Los eventos CTR quedan sin tocar
     events = await data_source.list_events_by_episodes(episode_ids)
 
+    # 5. La correccion asistida. Va DESPUES de lo anterior y en su propio
+    #    bloque: si el `data_source` no la implementa, el resto del olvido ya
+    #    ocurrio y el informe lo dice con ceros, en vez de perderse entero.
+    extra = await _olvidar_correccion_asistida(student_pseudonym, new_pseudonym, data_source)
+
     return AnonymizationReport(
         original_pseudonym=student_pseudonym,
         new_pseudonym=new_pseudonym,
@@ -189,4 +253,120 @@ async def anonymize_student(
         classifications_preserved=len(classifications),
         events_untouched=len(events),
         performed_at=datetime.now(UTC),
+        **extra,
     )
+
+
+async def _borrar_pdfs(correcciones: list[dict], data_source: _DataSource) -> tuple[int, list[str]]:
+    """Borra los PDF y devuelve `(cuantos, cuales fallaron)`.
+
+    Un PDF que no se puede borrar se REPORTA, no se traga: un olvido
+    incompleto informado como completo es peor que uno que falla, porque el
+    dato sigue ahi y nadie lo sabe.
+    """
+    borrados = 0
+    con_error: list[str] = []
+    for c in correcciones:
+        key = c.get("pdf_storage_key")
+        if not key:
+            continue
+        try:
+            ok = await data_source.delete_pdf(str(key))
+        except NotImplementedError:
+            ok = False
+        except Exception:
+            ok = False
+        if ok:
+            borrados += 1
+        else:
+            con_error.append(str(key))
+    return borrados, con_error
+
+
+async def _olvidar_correccion_asistida(
+    original: UUID, nuevo: UUID, data_source: _DataSource
+) -> dict:
+    """Borra el artefacto y los PDF, y rota el pseudonimo en las correcciones.
+
+    **El artefacto y el PDF se BORRAN; el pseudonimo se rota.** No es
+    inconsistencia: el artefacto es el codigo que escribio esa persona y el
+    PDF lleva su nombre y la devolucion sobre su trabajo — son el dato
+    personal, no una referencia a el, y rotar un identificador los dejaria
+    igual de legibles. La fila de la correccion, en cambio, se conserva
+    disociada: que hubo una correccion es parte de la trazabilidad del
+    piloto, quien fue no.
+
+    Un PDF que no se puede borrar se REPORTA, no se traga. Un olvido
+    incompleto que se informa como completo es peor que uno que falla.
+    """
+    out: dict = {
+        "artefactos_borrados": 0,
+        "correcciones_rotadas": 0,
+        "pdfs_borrados": 0,
+        "pdfs_con_error": [],
+        "borrado_externo_ok": None,
+        "ids_externos_a_borrar": [],
+    }
+
+    # `hasattr` y NO `except AttributeError`. La diferencia importa: el
+    # `except` no distingue "este objeto no tiene el metodo" de "el metodo
+    # existe y adentro reventO". Con el catch, un typo en un atributo del
+    # modelo, un cambio de nombre de columna o un `None` inesperado producian
+    # un informe de olvido EXITOSO con ceros — identico al de un servicio que
+    # legitimamente no tiene correcciones — y el codigo seguia en la base.
+    #
+    # Con `hasattr`, un adaptador viejo se saltea (que es lo correcto) y un
+    # adaptador roto EXPLOTA, que es lo unico honesto: mejor un olvido que
+    # falla ruidosamente que uno que miente.
+    if not hasattr(data_source, "list_correcciones_by_student"):
+        return out
+
+    try:
+        correcciones = await data_source.list_correcciones_by_student(original)
+    except NotImplementedError:
+        return out
+
+    out["ids_externos_a_borrar"] = [
+        str(c["external_entrega_id"]) for c in correcciones if c.get("external_entrega_id")
+    ]
+
+    for c in correcciones:
+        key = c.get("pdf_storage_key")
+        if not key:
+            continue
+        try:
+            ok = await data_source.delete_pdf(str(key))
+        except NotImplementedError:
+            ok = False
+        except Exception:
+            # Se atrapa para poder LISTARLO, no para ignorarlo: el PDF entra
+            # en `pdfs_con_error` y el informe deja de ser un exito limpio.
+            ok = False
+        if ok:
+            out["pdfs_borrados"] += 1
+        else:
+            out["pdfs_con_error"].append(str(key))
+
+    if hasattr(data_source, "delete_artefactos_by_student"):
+        with contextlib.suppress(NotImplementedError):
+            out["artefactos_borrados"] = await data_source.delete_artefactos_by_student(original)
+
+    if hasattr(data_source, "update_correcciones_pseudonym"):
+        with contextlib.suppress(NotImplementedError):
+            out["correcciones_rotadas"] = await data_source.update_correcciones_pseudonym(
+                original, nuevo
+            )
+
+    # El borrado del otro lado depende de un endpoint que Active-IA todavia no
+    # expone. `None` significa "no se intento" y NO "salio bien": el informe
+    # tiene que poder distinguirlos, porque de eso depende si el olvido esta
+    # completo o si queda una copia afuera.
+    if hasattr(data_source, "borrar_en_activeia"):
+        try:
+            out["borrado_externo_ok"] = await data_source.borrar_en_activeia(original)
+        except NotImplementedError:
+            # "No se intento porque el endpoint no existe". Distinto de
+            # `False`, que seria "se pidio y dijo que no".
+            out["borrado_externo_ok"] = None
+
+    return out

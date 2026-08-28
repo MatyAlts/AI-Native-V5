@@ -1,7 +1,7 @@
-import { cleanup, render, screen, waitFor } from "@testing-library/react"
+import { cleanup, screen, waitFor } from "@testing-library/react"
 import { afterEach, describe, expect, it } from "vitest"
 import { HomePage } from "../src/pages/HomePage"
-import { setupFetchMock } from "./_mocks"
+import { renderConQuery, setupFetchMock } from "./_mocks"
 
 afterEach(() => {
   cleanup()
@@ -15,7 +15,7 @@ describe("HomePage KPI cards", () => {
       "/api/v1/comisiones": () => ({ data: [{}, {}, {}], meta: { cursor_next: null } }),
     })
 
-    render(<HomePage />)
+    renderConQuery(<HomePage />)
 
     await waitFor(() => {
       expect(screen.getByText("2")).toBeInTheDocument() // Universidades
@@ -40,7 +40,7 @@ describe("HomePage KPI cards", () => {
       "/api/v1/comisiones": () => ({ data: [{}], meta: { cursor_next: null } }),
     })
 
-    render(<HomePage />)
+    renderConQuery(<HomePage />)
 
     await waitFor(() => {
       // Comisiones renderiza count normal
@@ -59,7 +59,7 @@ describe("HomePage KPI cards", () => {
       "/api/v1/comisiones": () => ({ data: [], meta: { cursor_next: null } }),
     })
 
-    render(<HomePage />)
+    renderConQuery(<HomePage />)
 
     await waitFor(() => {
       expect(screen.getByText("Universidades")).toBeInTheDocument()

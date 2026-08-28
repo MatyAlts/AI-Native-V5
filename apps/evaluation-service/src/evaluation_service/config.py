@@ -52,7 +52,59 @@ class Settings(BaseSettings):
 
     # Servicios internos
     ctr_service_url: str = Field(default="http://127.0.0.1:8007")
+    execution_service_url: str = Field(default="http://127.0.0.1:8013")
     academic_service_url: str = Field(default="http://127.0.0.1:8002")
+
+    # ── Active-IA (correccion asistida) ───────────────────────────────────
+    #
+    # FALLA CERRADO (default `false`), mismo criterio que `execution_enabled`
+    # del execution-service: prendido, esto manda codigo de alumnos a un
+    # servicio externo y gasta cuota. Un default `true` encenderia eso para el
+    # piloto entero en el primer deploy que no tocara el flag. Un doc no frena
+    # un deploy; un default si. Es tambien el procedimiento de apagado.
+    activeia_enabled: bool = Field(default=False)
+
+    activeia_url: str = Field(default="https://api.active-ia.com/api/v1")
+
+    # 90s y no 30: medido contra la API en vivo, `GET /pendientes/moodle` tardo
+    # 25, 40 y 24 segundos en tres corridas. Con 30 fallaba una de cada tres.
+    activeia_timeout_seconds: float = Field(default=90.0)
+
+    # Master key PROPIA, no `BYOK_MASTER_KEY`: cifra passwords de cuentas de
+    # terceros y no queremos ampliar el blast radius de la key de BYOK a un
+    # segundo pod (design D5). 32 bytes en base64 — `openssl rand -base64 32`.
+    # Vacia = las credenciales no se pueden guardar ni leer, y el endpoint lo
+    # dice explicitamente en vez de fallar con un error de cifrado.
+    activeia_master_key: str = Field(default="")
+
+    # Correcciones por docente y por dia. La cuota FALLA CERRADA (503 si no se
+    # puede leer el contador): cada corrida cuesta computo y dinero.
+    activeia_cuota_diaria_por_docente: int = Field(default=100)
+
+    # El sincronizador de rubricas depende de endpoints de escritura que
+    # Active-IA todavia NO expone (`POST/PUT /rubricas/`), y de poder leerlas
+    # de vuelta para comparar el hash — hoy `GET /rubricas/{id}` devuelve 403
+    # con rol tutor.
+    activeia_sync_rubricas_enabled: bool = Field(default=False)
+
+    # Simula SOLO la escritura de rubricas, para poder construir y probar el
+    # circuito entero antes de que el endpoint exista. Lo que devuelve va
+    # marcado (`simulado: true`, `rubrica_id` con prefijo `MOCK-`) y cada
+    # llamada se loguea en WARNING: un mock silencioso en produccion es
+    # indistinguible de una integracion que anda.
+    #
+    # Default `false` y ademas la app se NIEGA a arrancar si esto esta
+    # prendido con `environment=production` (ver `main.py`). Un flag de
+    # simulacion que se puede dejar prendido en prod termina con una rubrica
+    # inexistente corrigiendo entregas reales.
+    activeia_mock_escritura: bool = Field(default=False)
+
+    # Cada cuánto reconcilia correcciones huérfanas, además de la pasada del
+    # arranque. Existe porque sólo con la del arranque, un deploy que reinicie
+    # en menos de 6 minutos (el umbral de "huérfana") deja colgadas todas las
+    # correcciones de esa ventana, sin nadie que las levante nunca.
+    # 300s: la mitad del umbral, para que ninguna espere más de un ciclo largo.
+    activeia_reconciliador_intervalo_s: float = Field(default=300.0)
 
 
 @lru_cache

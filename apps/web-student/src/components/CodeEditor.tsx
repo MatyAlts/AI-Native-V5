@@ -21,7 +21,14 @@ import { Modal } from "@platform/ui"
 import { FlaskConical, Maximize2, Minimize2, Minus, Plus, RotateCcw } from "lucide-react"
 import type * as Monaco from "monaco-editor"
 import type { editor as MonacoEditor } from "monaco-editor"
-import { type ReactNode, useCallback, useEffect, useRef, useState } from "react"
+import {
+  type MutableRefObject,
+  type ReactNode,
+  useCallback,
+  useEffect,
+  useRef,
+  useState,
+} from "react"
 import { Group, Panel, Separator } from "react-resizable-panels"
 import {
   DEFAULT_LANGUAGE,
@@ -95,6 +102,10 @@ export interface CodeEditorProps {
     diffChars: number,
     origin: "student_typed" | "pasted_external" | "snippet_expanded",
   ) => void
+  /** El editor deja acá una función para forzar la emisión del debounce
+   * pendiente. La llama el caller antes de entregar: sin eso, el submit sale
+   * con lo que el alumno tenía hace hasta un segundo, no con lo que escribió. */
+  flushRef?: MutableRefObject<(() => void) | null>
   /** Espejo del buffer en el caller, en CADA cambio (sin debounce).
    *
    * Monaco posee el buffer y este componente lo siembra UNA sola vez con
@@ -259,6 +270,7 @@ export function CodeEditor({
   episodeId,
   comisionId,
   getToken,
+  flushRef,
 }: CodeEditorProps): ReactNode {
   // Un solo lugar decide POR DONDE se ejecuta. Todo lo que dependa de eso
   // (carga de Pyodide, estado de los controles, rotulos accesibles) sale de
@@ -398,6 +410,16 @@ export function CodeEditor({
     snippetSinceLastFlushRef.current = false
     cb(pendiente.snapshot, pendiente.diffChars, pendiente.origin)
   }, [])
+
+  /**
+   * Emite la edición pendiente, si el contenido cambió desde la última.
+   *
+   * Se llama desde el timer del debounce y desde el flush forzado. Una sola
+   * definición para las dos: cuando el cálculo del `origin` y el reseteo de
+   * los flags viven duplicados, una de las dos copias se olvida y el evento
+   * sale con el origin equivocado — y `pasted_external` es la única señal que
+   * lleva override a N4 en el labeler.
+   */
 
   // 1. Cargar Monaco dinámicamente (evita tamaño inicial del bundle).
   // `code` se usa sólo como valor inicial del editor — Monaco luego posee
@@ -555,14 +577,28 @@ export function CodeEditor({
       })
 
       editorRef.current = editor
+      // Handle imperativo para que el caller fuerce la emisión antes de una
+      // acción que no puede esperar al debounce (entregar, sobre todo). Sin
+      // esto, en la TP monolítica el submit sale ANTES de que el editor se
+      // desmonte, así que el flush del unmount llega tarde: el último tramo
+      // que el alumno escribió no entraría en lo que entrega.
+      // Apunta a la MISMA implementacion que usa el debounce y las corridas.
+      // Habia dos: `flushPendingEdit` (para la entrega, del epic de Active-IA) y
+      // `flushEdicionPendiente` (para el orden causal, BUG-11). Hacian el mismo
+      // trabajo con reglas distintas — la segunda ademas arrastra las marcas de
+      // pegado y snippet, asi que dos flushes podian emitir el mismo cambio con
+      // `origin` distinto segun quien disparara primero.
+      if (flushRef) flushRef.current = flushEdicionPendiente
     })()
 
     return () => {
       disposed = true
-      if (editTimeoutRef.current !== null) {
-        window.clearTimeout(editTimeoutRef.current)
-        editTimeoutRef.current = null
-      }
+      // FLUSH, no cancel. Cancelar acá tiraba la última edición del alumno:
+      // si escribía y navegaba antes de que venciera el debounce, esos
+      // keystrokes nunca llegaban al CTR. Justo la ventana en la que más se
+      // edita — los retoques finales antes de entregar.
+      flushEdicionPendiente()
+      if (flushRef) flushRef.current = null
       // Cleanup de los listeners DOM de clipboard (instalados en el effect).
       const cleanup = (editorRef.current as unknown as { __clipboardListeners?: () => void } | null)
         ?.__clipboardListeners

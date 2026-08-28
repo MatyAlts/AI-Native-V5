@@ -60,9 +60,17 @@ export function ReflectionModal({ isOpen, episodeId, onClose }: ReflectionModalP
   // ocurra dentro del effect, no en cada render.
   const openedAtRef = useRef<number | null>(null)
 
+  // Clave de idempotencia estable por apertura del modal. El reintento tras un
+  // error de red reusa el MISMO valor y el backend devuelve el seq ya asignado
+  // en vez de emitir un segundo `reflexion_completada` — que post-cierre
+  // colisionaria en seq (sin sesion Redis el seq sale de `events_count`) y
+  // mandaria a la DLQ un episodio ya cerrado, marcandolo integrity_compromised.
+  const idempotencyKeyRef = useRef<string | null>(null)
+
   useEffect(() => {
     if (isOpen) {
       openedAtRef.current = Date.now()
+      idempotencyKeyRef.current = crypto.randomUUID()
       setQueAprendiste("")
       setDificultad("")
       setQueDistinto("")
@@ -70,6 +78,7 @@ export function ReflectionModal({ isOpen, episodeId, onClose }: ReflectionModalP
       setSubmitting(false)
     } else {
       openedAtRef.current = null
+      idempotencyKeyRef.current = null
     }
   }, [isOpen])
 
@@ -83,13 +92,17 @@ export function ReflectionModal({ isOpen, episodeId, onClose }: ReflectionModalP
     setError(null)
     const tiempoMs = Date.now() - openedAtRef.current
     try {
-      await submitReflection(episodeId, {
-        que_aprendiste: queAprendiste,
-        dificultad_encontrada: dificultad,
-        que_haria_distinto: queDistinto,
-        prompt_version: PROMPT_VERSION,
-        tiempo_completado_ms: Math.max(0, tiempoMs),
-      })
+      await submitReflection(
+        episodeId,
+        {
+          que_aprendiste: queAprendiste,
+          dificultad_encontrada: dificultad,
+          que_haria_distinto: queDistinto,
+          prompt_version: PROMPT_VERSION,
+          tiempo_completado_ms: Math.max(0, tiempoMs),
+        },
+        idempotencyKeyRef.current ?? undefined,
+      )
       onClose(true)
     } catch (e) {
       setError(`Error enviando reflexion: ${e}`)

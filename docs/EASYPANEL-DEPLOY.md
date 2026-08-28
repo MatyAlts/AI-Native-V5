@@ -98,7 +98,28 @@ Su paso 0 avisa si Docker corre **rootless** — en ese caso el runner sobra.
 `SERVICE_NAME, SERVICE_PORT, ENVIRONMENT, LOG_LEVEL, LOG_FORMAT, CORS_ORIGINS, OTEL_ENDPOINT, SENTRY_DSN, KEYCLOAK_URL, KEYCLOAK_REALM, ACADEMIC_DB_URL, DB_ECHO, GOVERNANCE_SERVICE_URL, AI_GATEWAY_URL, CONTENT_SERVICE_URL, CLASSIFIER_SERVICE_URL, TP_GENERATOR_PROMPT_VERSION, TP_GENERATOR_DEFAULT_MODEL, EJERCICIO_GENERATOR_PROMPT_VERSION, EJERCICIO_GENERATOR_DEFAULT_MODEL`
 
 ### evaluation-service
-`SERVICE_NAME, SERVICE_PORT, ENVIRONMENT, LOG_LEVEL, LOG_FORMAT, CORS_ORIGINS, OTEL_ENDPOINT, SENTRY_DSN, KEYCLOAK_URL, KEYCLOAK_REALM, ACADEMIC_DB_URL, CTR_SERVICE_URL, ACADEMIC_SERVICE_URL`
+`SERVICE_NAME, SERVICE_PORT, ENVIRONMENT, LOG_LEVEL, LOG_FORMAT, CORS_ORIGINS, OTEL_ENDPOINT, SENTRY_DSN, KEYCLOAK_URL, KEYCLOAK_REALM, ACADEMIC_DB_URL, CTR_SERVICE_URL, ACADEMIC_SERVICE_URL, ACTIVEIA_ENABLED, ACTIVEIA_MASTER_KEY, ACTIVEIA_URL, ACTIVEIA_SYNC_RUBRICAS_ENABLED`
+
+> **Corrección asistida por Active-IA — leer antes del primer deploy con esto adentro.**
+>
+> **`ACTIVEIA_ENABLED` va en `false`.** Mergear ≠ encender, igual que con `EXECUTION_ENABLED` en
+> la epic de Java. El código sube apagado y prenderlo es una decisión aparte, después de los
+> gates.
+>
+> **`ACTIVEIA_MASTER_KEY` hay que generarla y no puede quedar vacía**: `openssl rand -base64 32`.
+> Es la clave con la que se cifran las credenciales de Active-IA de cada docente (AES-256-GCM).
+> Sin ella el docente no puede conectar su cuenta, y el modo de falla es confuso — no explota al
+> arrancar, explota recién cuando alguien intenta guardar una credencial.
+>
+> Es **propia y distinta de `BYOK_MASTER_KEY`**, a propósito (design D5): compartirlas ampliaría
+> el blast radius de una superficie a dos. Nunca en disco ni en logs. Rotación: incidente I13 del
+> runbook.
+>
+> **La migración `20260818_0002_activeia_credenciales` NO está aplicada en producción**
+> (verificado el 2026-08-27: la tabla `activeia_rubrica_ejercicio` no existe). El deploy tiene
+> que correr las migraciones del evaluation-service o el servicio levanta y falla al primer
+> query. Consecuencia útil del mismo hecho: **nunca se sincronizó una rúbrica con Active-IA**, así
+> que la primera sincronización arranca limpia.
 
 ### analytics-service
 `SERVICE_NAME, SERVICE_PORT, ENVIRONMENT, LOG_LEVEL, LOG_FORMAT, CORS_ORIGINS, OTEL_ENDPOINT, SENTRY_DSN, KEYCLOAK_URL, KEYCLOAK_REALM, CTR_STORE_URL, CLASSIFIER_DB_URL, ACADEMIC_DB_URL`
