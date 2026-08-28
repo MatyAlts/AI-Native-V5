@@ -505,3 +505,75 @@ async def test_publish_fallido_libera_el_claim_de_abandono(redis_client) -> None
     assert seq is not None, "el claim quedo tomado por un intento que no emitio"
     abandonos = [e for e in ctr.published_events if e["event_type"] == "episodio_abandonado"]
     assert len(abandonos) == 1
+
+
+async def test_si_falla_next_seq_el_claim_de_abandono_NO_queda_tomado(redis_client) -> None:
+    """El claim se toma ANTES de reservar el seq. Si eso falla, hay que soltarlo.
+
+    `next_seq` toca Redis TRES veces (INCR, EXPIRE y el `set()` de la sesion), y
+    esas tres estaban FUERA del `try` que suelta el claim. Un hipo ahi dejaba el
+    claim tomado por un intento que no publico nada, con TTL de seis horas.
+
+    Y el modo de falla era MUDO: el `abandonment_worker` sigue barriendo esa
+    sesion cada tick, `claim_abandono` devuelve False, `record_...` devuelve
+    None, y el worker lo cuenta como "ya estaba abandonado". Ni un log de error.
+    El episodio queda `open` en el CTR para siempre.
+
+    Verificado por reversion: sacando `next_seq` y `_build_event` de adentro del
+    `try`, el claim queda tomado y el segundo intento devuelve None.
+    """
+    ctr = _CTRConCompuerta(asyncio.Event())
+    ctr.compuerta.set()  # sin espera: este test no prueba concurrencia
+    tutor = TutorCore(
+        governance=_FakeGov(),
+        content=_FakeContent(),
+        ai_gateway=_FakeAI(),
+        ctr=ctr,
+        sessions=SessionManager(redis_client),
+    )
+    student_id = uuid4()
+    episode_id = await tutor.open_episode(
+        tenant_id=uuid4(),
+        comision_id=uuid4(),
+        student_pseudonym=student_id,
+        problema_id=uuid4(),
+        curso_config_hash="c" * 64,
+        classifier_config_hash="b" * 64,
+    )
+
+    original = tutor.sessions.next_seq
+    tutor.sessions.next_seq = _tirar_una_vez(original)  # type: ignore[method-assign]
+
+    with pytest.raises(ConnectionError):
+        await tutor.record_episodio_abandonado(
+            episode_id=episode_id,
+            user_id=student_id,
+            reason="beforeunload",
+            last_activity_seconds_ago=0.0,
+        )
+
+    # El claim tiene que estar libre: el intento no publico nada.
+    tutor.sessions.next_seq = original  # type: ignore[method-assign]
+    seq = await tutor.record_episodio_abandonado(
+        episode_id=episode_id,
+        user_id=student_id,
+        reason="beforeunload",
+        last_activity_seconds_ago=0.0,
+    )
+    assert seq is not None, "el claim quedo tomado por un intento que no emitio"
+
+    abandonos = [e for e in ctr.published_events if e["event_type"] == "episodio_abandonado"]
+    assert len(abandonos) == 1
+
+
+def _tirar_una_vez(original):
+    """Envuelve `next_seq` para que falle la PRIMERA vez y despues ande."""
+    estado = {"fallo": False}
+
+    async def _wrapper(state):
+        if not estado["fallo"]:
+            estado["fallo"] = True
+            raise ConnectionError("redis se cayo justo al reservar")
+        return await original(state)
+
+    return _wrapper

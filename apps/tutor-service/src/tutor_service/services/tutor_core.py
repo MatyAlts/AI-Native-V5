@@ -923,24 +923,41 @@ class TutorCore:
         if not await self.sessions.claim_abandono(episode_id):
             return None
 
-        seq = await self.sessions.next_seq(state)
-        event = self._build_event(
-            state=state,
-            seq=seq,
-            event_type="episodio_abandonado",
-            payload={
-                "reason": reason,
-                "last_activity_seconds_ago": float(last_activity_seconds_ago),
-            },
-        )
+        # TODO lo que sigue va adentro del `try`. `next_seq` toca Redis TRES
+        # veces (INCR, EXPIRE y el `set()` de la sesion), asi que un hipo ahi
+        # dejaba el claim tomado por un intento que no publico nada — con TTL de
+        # seis horas.
+        #
+        # Y el modo de falla era mudo: el `abandonment_worker` sigue barriendo
+        # esa sesion cada tick, `claim_abandono` devuelve False, `record_...`
+        # devuelve None, y el worker lo cuenta como "ya estaba abandonado". Ni un
+        # log de error. El episodio queda `open` en el CTR para siempre.
+        #
+        # Peor con el `distraction_worker`: en el segundo sweep el claim pierde,
+        # `seq` sale None, pero `clear_distraction` SI se ejecuta y borra la
+        # marca. El abandono por distraccion se pierde y nadie lo reintenta.
+        #
+        # El docstring de `release_abandono` decia cubrir "un fallo del CTR".
+        # Cubria ese; el de Redis, que es el que TOMA el claim, no.
         try:
+            seq = await self.sessions.next_seq(state)
+            event = self._build_event(
+                state=state,
+                seq=seq,
+                event_type="episodio_abandonado",
+                payload={
+                    "reason": reason,
+                    "last_activity_seconds_ago": float(last_activity_seconds_ago),
+                },
+            )
             await self._publicar_evento(event, state, seq, user_id)
         except Exception:
-            # El ganador no llegó a emitir: soltamos el claim o el episodio se
-            # queda sin poder abandonarse nunca. El seq ya lo devolvió
-            # `_publicar_evento`.
+            # El ganador no llego a emitir: se suelta el claim o el episodio se
+            # queda sin poder abandonarse nunca. El seq, si se llego a reservar,
+            # ya lo devolvio `_publicar_evento` cuando correspondia.
             await self.sessions.release_abandono(episode_id)
             raise
+
         await self.sessions.delete(episode_id)
 
         # Métrica: sesión abandonada (cuenta junto a las cerradas).
