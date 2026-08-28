@@ -266,7 +266,7 @@ async def submit_entrega(
     # Es el único endpoint que la escribe, así que el eager load va acá y no
     # en el modelo: ponerlo en la relación haría que el listado del docente
     # (hasta 200 entregas) se traiga el código de todos los alumnos.
-    entrega = await _get_or_404(db, entrega_id, con_artefactos=True)
+    entrega = await _get_or_404(db, entrega_id, con_artefactos=True, para_escritura=True)
     _assert_can_write(entrega, user)
     await _assert_comision_visible(db, entrega, user)
 
@@ -437,7 +437,7 @@ async def mark_ejercicio_completado(
     Si el ejercicio ya existe en ejercicio_estados, lo actualiza.
     Si no existe y se marca completado, lo agrega.
     """
-    entrega = await _get_or_404(db, entrega_id)
+    entrega = await _get_or_404(db, entrega_id, para_escritura=True)
     _assert_can_write(entrega, user)
     await _assert_comision_visible(db, entrega, user)
 
@@ -520,7 +520,7 @@ async def calificar_entrega(
     Rechaza si ya tiene calificacion (v1 no permite re-correccion).
     Emite audit log tp_calificada (structlog, no CTR chain).
     """
-    entrega = await _get_or_404(db, entrega_id)
+    entrega = await _get_or_404(db, entrega_id, para_escritura=True)
     await _assert_comision_visible(db, entrega, user)
 
     if entrega.estado != "submitted":
@@ -596,7 +596,7 @@ async def recalificar_entrega(
     - Emite audit log `tp_recalificada` (structlog, NO va al CTR chain — ADR-010)
       con la nota anterior y la nueva.
     """
-    entrega = await _get_or_404(db, entrega_id)
+    entrega = await _get_or_404(db, entrega_id, para_escritura=True)
     await _assert_comision_visible(db, entrega, user)
 
     stmt = select(Calificacion).where(
@@ -715,7 +715,7 @@ async def return_entrega(
 
     El alumno puede volver a enviarla (returned -> submitted).
     """
-    entrega = await _get_or_404(db, entrega_id)
+    entrega = await _get_or_404(db, entrega_id, para_escritura=True)
     await _assert_comision_visible(db, entrega, user)
 
     if entrega.estado != "graded":
@@ -765,13 +765,56 @@ async def _comision_de_la_tp(db: AsyncSession, tarea_practica_id: UUID) -> UUID 
     "No visible" incluye la TP de otro tenant: la tabla tiene RLS y la sesión
     entra con `app.current_tenant` seteado, así que una TP ajena no aparece y
     el caller la trata igual que a una inexistente.
+
+    Y también incluye la TP BORRADA. `tareas_practicas` tiene `deleted_at`
+    (soft-delete del academic-service) y esta consulta no lo miraba: una TP que
+    el docente había borrado seguía devolviendo su comisión, así que
+    `create_entrega` la aceptaba, sembraba `ejercicio_estados` desde la TP
+    muerta, y el alumno podía completar, entregar y hacerse calificar sobre un
+    trabajo práctico que ya no existe. Borrada e inexistente devuelven lo mismo
+    (`None`) a propósito: el caller las trata igual y el mensaje no distingue
+    una de otra.
     """
     rows = await db.execute(
-        text("SELECT comision_id FROM tareas_practicas WHERE id = :tp"),
+        text("SELECT comision_id FROM tareas_practicas WHERE id = :tp AND deleted_at IS NULL"),
         {"tp": str(tarea_practica_id)},
     )
     fila = rows.first()
     return UUID(str(fila[0])) if fila is not None else None
+
+
+async def _assert_tp_viva(db: AsyncSession, tarea_practica_id: UUID) -> None:
+    """409 si la TP de la entrega fue borrada. Gate de ESCRITURA, no de lectura.
+
+    `_comision_de_la_tp` cierra la puerta de entrada (`create_entrega`) y nada
+    más. Los endpoints que operan sobre una entrega YA EXISTENTE —`submit`,
+    `mark_ejercicio_completado`, `calificar`, `recalificar`, `return`— arrancan
+    en `_get_or_404`, que filtra `Entrega.deleted_at` pero nunca mira la TP. Y
+    el camino realista ni siquiera necesita el agujero de la puerta: el alumno
+    que tenía la entrega abierta cuando el docente borró la TP podía enviarla
+    igual, y el docente terminaba poniéndole nota a un TP que él mismo borró
+    (`list_entregas` filtra `estado != "draft"`, así que le aparecía en la cola
+    de corrección como trabajo pendiente).
+
+    Del otro lado tampoco hay nada: `TareaPracticaService.soft_delete` tiene un
+    `# DEFERRED` explícito y cero guards — no avisa a nadie ni bloquea si hay
+    entregas en curso. Ese servicio es de otro dueño; acá se cierra el lado que
+    escribe.
+
+    **409 y no 404**: la entrega existe y el alumno tiene derecho a verla. Lo
+    que no se puede es seguir avanzando el ciclo. Por eso este guard NO se
+    aplica a los GET — cerrar la lectura le borraría al docente el trabajo
+    histórico del alumno de la vista, y eso es evidencia legítima: la entrega
+    existió y la TP existía cuando se hizo.
+    """
+    if await _comision_de_la_tp(db, tarea_practica_id) is None:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=(
+                "El trabajo practico ya no esta disponible. "
+                "Consulta con tu docente antes de seguir."
+            ),
+        )
 
 
 async def _assert_comision_de_la_tp(
@@ -930,8 +973,25 @@ async def _find_existing_entrega(
 
 
 async def _get_or_404(
-    db: AsyncSession, entrega_id: UUID, *, con_artefactos: bool = False
+    db: AsyncSession,
+    entrega_id: UUID,
+    *,
+    con_artefactos: bool = False,
+    para_escritura: bool = False,
 ) -> Entrega:
+    """La entrega, o 404.
+
+    `para_escritura=True` suma el gate de `_assert_tp_viva`: la entrega existe
+    pero su trabajo práctico fue borrado, así que el ciclo no puede seguir
+    (409). Va acá y no repetido en cada endpoint porque los cinco escritores
+    (`submit`, `mark_ejercicio_completado`, `calificar`, `recalificar`,
+    `return`) empiezan todos por esta función — un `if` copiado cinco veces es
+    cinco oportunidades de que el próximo endpoint nazca sin él, que es
+    exactamente cómo quedaron abiertos.
+
+    Default `False` porque las LECTURAS tienen que seguir pasando: el docente
+    necesita ver el trabajo histórico de una TP borrada. Ver `_assert_tp_viva`.
+    """
     stmt = select(Entrega).where(and_(Entrega.id == entrega_id, Entrega.deleted_at.is_(None)))
     if con_artefactos:
         stmt = stmt.options(selectinload(Entrega.artefactos))
@@ -946,6 +1006,8 @@ async def _get_or_404(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Entrega no existe",
         )
+    if para_escritura:
+        await _assert_tp_viva(db, obj.tarea_practica_id)
     return obj
 
 

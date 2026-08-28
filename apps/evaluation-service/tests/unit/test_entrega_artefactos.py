@@ -91,6 +91,17 @@ def _res_comision(asignado: bool) -> MagicMock:
     return MagicMock(first=MagicMock(return_value=(1,) if asignado else None))
 
 
+def _res_tp_viva(viva: bool = True) -> MagicMock:
+    """Respuesta de `_comision_de_la_tp`, el gate de TP borrada del submit.
+
+    `_get_or_404(..., para_escritura=True)` lo consulta ANTES de
+    `_ejercicios_esperados`: una entrega cuya TP fue borrada no puede seguir
+    avanzando el ciclo (409). Devuelve la comisión de la TP, o `None` si la TP
+    está borrada o no existe.
+    """
+    return MagicMock(first=MagicMock(return_value=(str(COMISION),) if viva else None))
+
+
 def _res_artefactos(artefactos: list) -> MagicMock:
     return MagicMock(
         scalars=MagicMock(return_value=MagicMock(all=MagicMock(return_value=artefactos)))
@@ -253,7 +264,7 @@ class TestSubmit:
             {"orden": 1, "ejercicio_id": str(EJ1)},
             {"orden": 2, "ejercicio_id": str(EJ2)},
         ]
-        db = _mock_db(_res_entrega(entrega), _res_esperados(esperados))
+        db = _mock_db(_res_entrega(entrega), _res_tp_viva(), _res_esperados(esperados))
         body = EntregaSubmitBody(
             artefactos=[
                 ArtefactoItem(orden=1, ejercicio_id=EJ1, codigo="a", language="java"),
@@ -278,7 +289,7 @@ class TestSubmit:
             {"orden": 1, "ejercicio_id": str(EJ1)},
             {"orden": 2, "ejercicio_id": str(EJ2)},
         ]
-        db = _mock_db(_res_entrega(entrega), _res_esperados(esperados))
+        db = _mock_db(_res_entrega(entrega), _res_tp_viva(), _res_esperados(esperados))
 
         with pytest.raises(HTTPException) as exc:
             await submit_entrega(entrega.id, EntregaSubmitBody(), _student(sid), db)
@@ -296,7 +307,7 @@ class TestSubmit:
             {"orden": 1, "ejercicio_id": str(EJ1)},
             {"orden": 2, "ejercicio_id": str(EJ2)},
         ]
-        db = _mock_db(_res_entrega(entrega), _res_esperados(esperados))
+        db = _mock_db(_res_entrega(entrega), _res_tp_viva(), _res_esperados(esperados))
         body = EntregaSubmitBody(artefactos=[ArtefactoItem(orden=1, ejercicio_id=EJ1, codigo="a")])
 
         with pytest.raises(HTTPException) as exc:
@@ -309,7 +320,9 @@ class TestSubmit:
         sid = uuid4()
         entrega = _entrega(sid, [_estado(1, EJ1, True)])
         db = _mock_db(
-            _res_entrega(entrega), _res_esperados([{"orden": 1, "ejercicio_id": str(EJ1)}])
+            _res_entrega(entrega),
+            _res_tp_viva(),
+            _res_esperados([{"orden": 1, "ejercicio_id": str(EJ1)}]),
         )
 
         with pytest.raises(HTTPException) as exc:
@@ -322,11 +335,30 @@ class TestSubmit:
         sobre una lista vacia bloquearia toda entrega monolitica."""
         sid = uuid4()
         entrega = _entrega(sid, [])
-        db = _mock_db(_res_entrega(entrega), _res_esperados([]))
+        db = _mock_db(_res_entrega(entrega), _res_tp_viva(), _res_esperados([]))
 
         await submit_entrega(entrega.id, EntregaSubmitBody(), _student(sid), db)
         assert entrega.estado == "submitted"
         assert entrega.legacy is False
+
+    async def test_tp_borrada_da_409_antes_de_leer_los_esperados(self) -> None:
+        """El gate corta ANTES de `_ejercicios_esperados`, y por eso el
+        `_mock_db` no declara esa respuesta: si el orden se invirtiera, el
+        endpoint pediría una respuesta que no está y el test rompe.
+
+        El caso real es el alumno que tenía la entrega abierta cuando el
+        docente borró la TP. Sin el gate el submit pasaba y la entrega
+        aparecía en la cola de corrección (`list_entregas` filtra
+        `estado != "draft"`) de un trabajo práctico que ya no existe.
+        """
+        sid = uuid4()
+        entrega = _entrega(sid, [_estado(1, EJ1, True)])
+        db = _mock_db(_res_entrega(entrega), _res_tp_viva(viva=False))
+
+        with pytest.raises(HTTPException) as exc:
+            await submit_entrega(entrega.id, EntregaSubmitBody(), _student(sid), db)
+        assert exc.value.status_code == 409
+        assert entrega.estado == "draft"
 
 
 # ── Lectura del artefacto ─────────────────────────────────────────────────
