@@ -677,6 +677,62 @@ class TestElEjecutorNoManda:
         assert "nota_100" not in r
         assert r["error_code"] == "SIN_NOTA"
 
+    async def test_un_CERO_legitimo_es_una_nota_y_no_un_fallo(self) -> None:
+        """El cero es falsy, y la cadena `a or b or c` lo trataba como ausente.
+
+        El alumno que entrega el template vacio saca 0, y Active-IA lo devuelve
+        honestamente. Con la cadena vieja eso caia a `None` -> `SIN_NOTA`, que
+        esta en el set de infraestructura, asi que la UI pintaba ambar con
+        "Reintentar". El docente reintentaba, la misma llamada devolvia el mismo
+        cero, y cada intento pagaba una corrida de Gemini.
+
+        Es la regla de oro del epic al reves: una nota real convertida en fallo
+        de infraestructura. Y cae justo en el camino que el PR declara abierto —
+        el nombre del campo de la nota en la respuesta de ellos.
+
+        Verificado por reversion: volviendo a
+        `cuerpo.get("nota") or cuerpo.get("nota_final") or ...`, los tres casos
+        de `nota=0` caen.
+        """
+        from evaluation_service.services.correccion_ejecutor import _corregir_ejercicio
+
+        for clave in ("nota_100", "nota", "nota_final", "calificacion"):
+
+            class _Cliente:
+                async def corregir_ejercicio(self, **kw: object) -> tuple[int, dict]:
+                    return 200, {clave: 0, "desglose": []}
+
+            r = await _corregir_ejercicio(
+                cliente=_Cliente(),
+                ejercicio_ref="EJ-1",
+                alumno_nombre="pseudo",
+                codigo="x",
+                tests={"compila": True, "passed": 0, "total": 1},
+            )
+
+            assert r.get("nota_100") == 0, f"un 0 en `{clave}` se perdio"
+            assert "error_code" not in r, f"un 0 en `{clave}` se reporto como fallo"
+
+    async def test_un_rechazo_de_credenciales_NO_se_pinta_como_infraestructura(self) -> None:
+        """`ACTIVEIA_ERROR` estaba en los dos lados de la clasificacion.
+
+        Como el flag no se persiste y la UI lo re-deriva del codigo guardado, el
+        `False` de la rama sin codigo era inalcanzable: el docente que cambio su
+        contrasena en Active-IA veia ambar y "reintentar puede servir",
+        indefinidamente, sobre algo que solo se arregla reconectando la cuenta.
+
+        `ACTIVEIA_ERROR` se queda en el set de infra por las filas historicas;
+        los rechazos nuevos usan codigos propios.
+        """
+        from evaluation_service.services.correccion_ia import mapear_error_activeia
+
+        assert mapear_error_activeia("ACTIVEIA_RECHAZO", "")[1] is False
+        assert mapear_error_activeia("SIN_CREDENCIAL", "")[1] is False
+        # Y lo que SI es infraestructura sigue siendolo.
+        assert mapear_error_activeia("HTTP_502", "")[1] is True
+        assert mapear_error_activeia("TIMEOUT", "")[1] is True
+        assert mapear_error_activeia("ACTIVEIA_ERROR", "")[1] is True
+
 
 class TestLaApiDistingueElTipoDeFallo:
     def test_infraestructura_y_rechazo_se_serializan_distinto(self) -> None:

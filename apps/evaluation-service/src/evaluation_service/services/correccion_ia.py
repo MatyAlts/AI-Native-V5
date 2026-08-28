@@ -302,6 +302,21 @@ def mapear_error_activeia(error_code: str | None, mensaje: str) -> tuple[str, bo
         # guardado, no sólo sobre lo que se escribe hoy.
         "SIN_ENTREGA_ID",
         "CONFLICTO_SIN_SALIDA",
+        # ── Deliberadamente FUERA del set (2026-08-27) ────────────────────
+        #
+        # `ACTIVEIA_RECHAZO` y `SIN_CREDENCIAL` son rechazos, no fallos de
+        # infraestructura, y por eso no figuran acá.
+        #
+        # Existen porque `ACTIVEIA_ERROR` estaba en los DOS lados: adentro de
+        # este set, y a la vez era lo que devolvía la rama sin código con
+        # `False`. Como el flag NO se persiste y la UI lo re-deriva del código
+        # guardado, ese `False` era inalcanzable: un docente que cambió su
+        # contraseña en Active-IA veía ámbar y "reintentar puede servir" sobre
+        # algo que sólo se arregla reconectando la cuenta.
+        #
+        # `ACTIVEIA_ERROR` se queda adentro por las filas históricas: sacarlo
+        # volvería "rechazo" correcciones viejas que se cerraron como
+        # infraestructura, y el docente vería cambiar de color algo que ya leyó.
     }
     # Todo 5xx de Active-IA es infraestructura: el servicio no pudo responder.
     # Se resuelve por prefijo y no enumerando, porque `_corregir_ejercicio` arma

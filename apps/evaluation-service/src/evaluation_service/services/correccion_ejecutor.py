@@ -103,7 +103,10 @@ async def ejecutar_correccion(
     lo cierra por construcción: el ejercicio va en la URL, que es su lugar, y
     de comisión se encarga la comisión de integración de ellos (§3.3).
     """
-    from evaluation_service.services.activeia_credenciales import cliente_para
+    from evaluation_service.services.activeia_credenciales import (
+        CredencialNoConfiguradaError,
+        cliente_para,
+    )
 
     async with tenant_session(tenant_id) as db:
         c = await db.get(CorreccionIA, correccion_id)
@@ -236,11 +239,26 @@ async def ejecutar_correccion(
         raise
     except PreEjecucionError as e:
         await _cerrar_con_error(tenant_id, correccion_id, e.error_code, e.mensaje, True)
+    except CredencialNoConfiguradaError as e:
+        # El docente nunca conectó su cuenta. NO es infraestructura: reintentar
+        # devuelve exactamente lo mismo hasta que la conecte. Antes caía al
+        # `except Exception` de abajo y se cerraba como `ERROR_INTERNO`, que sí
+        # está en el set de infra — o sea que la UI le ofrecía "Reintentar" al
+        # docente que lo único que tenía que hacer era ir a conectar su cuenta.
+        await _cerrar_con_error(tenant_id, correccion_id, "SIN_CREDENCIAL", str(e), False)
     except ActiveIAError as e:
         code, infra = mapear_error_activeia(None, e.mensaje)
-        await _cerrar_con_error(
-            tenant_id, correccion_id, code, e.mensaje, infra or e.es_infraestructura
-        )
+        es_infra = infra or e.es_infraestructura
+        # `ACTIVEIA_ERROR` está en el set de infraestructura por las filas
+        # históricas, así que guardarlo para un RECHAZO hacía que la UI lo
+        # re-derivara como infra y mostrara "reintentar puede servir". El caso
+        # que lo delata: el docente cambió su contraseña en Active-IA y no la
+        # actualizó acá — el panel le decía ámbar y "reintentá" indefinidamente
+        # sobre algo que sólo se arregla reconectando la cuenta. Es exactamente
+        # lo que el docstring de `marcar_error` dice haber costado dos días.
+        if not es_infra and code == "ACTIVEIA_ERROR":
+            code = "ACTIVEIA_RECHAZO"
+        await _cerrar_con_error(tenant_id, correccion_id, code, e.mensaje, es_infra)
     except Exception as e:
         log.exception("activeia_correccion_excepcion", correccion_id=str(correccion_id))
         await _cerrar_con_error(
@@ -539,12 +557,29 @@ async def _corregir_ejercicio(
             "error_detail": f"Active-IA respondió {status}, que no es un resultado.",
         }
 
-    nota = cuerpo.get("nota_100")
-    if nota is None:
-        # Se aceptan los nombres viejos porque el contrato del §3.4 no fija el
-        # de la nota y el flujo anterior ya leía estos tres. Lo que NO se hace
-        # es inventar una: sin nota, el estado terminal es `error`.
-        nota = cuerpo.get("nota") or cuerpo.get("nota_final") or cuerpo.get("calificacion")
+    # Se aceptan los nombres viejos porque el contrato del §3.4 no fija el de la
+    # nota y el flujo anterior ya leía estos tres. Lo que NO se hace es inventar
+    # una: sin nota, el estado terminal es `error`.
+    #
+    # **Se busca por `is not None` y no con `or`.** La cadena `a or b or c`
+    # trataba el CERO como ausente: un `{"nota": 0}` legítimo —el alumno que
+    # entrega el template vacío, o el código que no compila— caía a `None` y la
+    # corrección cerraba como `SIN_NOTA`, que está en el set de infraestructura.
+    # La UI pintaba ámbar con "Reintentar", el docente reintentaba, y la misma
+    # llamada devolvía el mismo cero: un bucle de reintentos que paga una corrida
+    # de Gemini cada vez, sobre una corrección que en realidad termino bien.
+    #
+    # Es la regla de oro del epic aplicada al revés: una nota real convertida en
+    # un fallo de infraestructura. Y cae justo en el camino que el propio PR
+    # declara abierto — el nombre del campo de la nota en la respuesta de ellos.
+    nota = next(
+        (
+            cuerpo[clave]
+            for clave in ("nota_100", "nota", "nota_final", "calificacion")
+            if cuerpo.get(clave) is not None
+        ),
+        None,
+    )
     if nota is None:
         return {
             "error_code": cuerpo.get("error_code") or "SIN_NOTA",
