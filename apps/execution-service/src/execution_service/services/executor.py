@@ -17,6 +17,7 @@ sobre el payload serializado, no sobre la estructura interna.
 
 from __future__ import annotations
 
+from dataclasses import dataclass
 from typing import Any
 
 from execution_service.services.academic_client import Ejercicio, TestCase
@@ -85,6 +86,70 @@ async def run_cases(
         return infrastructure_failure(str(exc))
 
     return RunResult(outcome=RunOutcome.COMPLETED, cases=cases)
+
+
+@dataclass(frozen=True)
+class CorridaLibre:
+    """Resultado de correr el codigo del alumno SIN casos de prueba.
+
+    Deliberadamente NO es un `RunResult`. Un `RunResult` lleva `total`,
+    `passed` y `failed`, y esos tres numeros son de los que el labeler v1.2.0
+    deriva N3 vs N4. Una corrida libre no tiene nada que contar: reusar el tipo
+    invitaria a alguien a pasarla por `should_emit` y a emitir un
+    `tests_ejecutados` con `failed=0` — que es exactamente el N4 falso que el
+    guard de la corrida vacia cerro el 2026-08-28.
+
+    El tipo distinto es la barrera: no hay forma de confundirlos.
+    """
+
+    stdout: str
+    stderr: str
+    exit_code: int
+    timed_out: bool
+    compile_failed: bool
+    ejecutado: bool
+    """`False` cuando no hay runtime para el lenguaje: no es un fallo del alumno."""
+
+
+async def run_libre(*, source_code: str, language: str, stdin: str = "") -> CorridaLibre:
+    """Compila y corre el codigo una sola vez, con el stdin que mando el alumno.
+
+    Es la contraparte de `run_cases` para el boton "Ejecutar" de un lenguaje
+    remoto. Hasta el 2026-08-28 ese boton POSTEABA a `/executions` igual que
+    "Probar": en Java las dos acciones eran la MISMA llamada, porque el
+    navegador no tiene runtime de Java y la unica corrida posible era contra
+    los casos. Con un ejercicio sin casos eso no ejecutaba nada y devolvia
+    `total=0, passed=0, failed=0` — una consola vacia para el alumno y un N4
+    para el labeler.
+
+    Acá la corrida es de verdad y no produce conteos, asi que las dos mitades
+    del problema desaparecen: el alumno ve su salida, y no hay nada que el
+    labeler pueda malinterpretar.
+
+    El stdin viaja completo y por adelantado, no interactivo. En Python el
+    `input()` se intercepta en el navegador y se le pregunta al alumno en el
+    momento; en un contenedor efimero eso no existe: el proceso corre hasta
+    terminar sin canal de vuelta.
+    """
+    if language not in LENGUAJES_SOPORTADOS:
+        return CorridaLibre(
+            stdout="",
+            stderr="No hay entorno de ejecucion para este lenguaje.",
+            exit_code=0,
+            timed_out=False,
+            compile_failed=False,
+            ejecutado=False,
+        )
+
+    crudo = await RunnerClient().run_java(source_code, stdin)
+    return CorridaLibre(
+        stdout=crudo.stdout,
+        stderr=crudo.stderr,
+        exit_code=crudo.exit_code,
+        timed_out=crudo.timed_out,
+        compile_failed=crudo.compile_failed,
+        ejecutado=True,
+    )
 
 
 def _skipped(tc: TestCase, index: int) -> CaseResult:

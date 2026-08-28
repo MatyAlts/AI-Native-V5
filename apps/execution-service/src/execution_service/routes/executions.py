@@ -11,7 +11,7 @@ deja el editor congelado sin poder distinguir "esta compilando" de "se colgo".
 from __future__ import annotations
 
 import logging
-from typing import Any
+from typing import Any, Literal
 from uuid import UUID, uuid4
 
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, status
@@ -27,7 +27,12 @@ from execution_service.services.academic_client import (
 )
 from execution_service.services.ctr_emitter import build_payload, should_emit
 from execution_service.services.execution_store import ExecutionState
-from execution_service.services.executor import run_cases, to_client_payload
+from execution_service.services.executor import (
+    CorridaLibre,
+    run_cases,
+    run_libre,
+    to_client_payload,
+)
 from execution_service.services.quotas import QuotaUnavailableError, check_and_consume
 from execution_service.services.result_mapper import RunResult, infrastructure_failure
 from execution_service.services.tutor_client import TutorClient
@@ -61,12 +66,125 @@ class ExecutionRequest(BaseModel):
     # episodio, y esa corrida no es actividad de ningun alumno — no debe generar
     # evento. `None` => no se emite.
     episode_id: UUID | None = None
+    # "tests" corre los casos del ejercicio; "libre" corre el programa una sola
+    # vez con `stdin` y devuelve su salida, sin evaluar nada.
+    #
+    # Existe porque en un lenguaje remoto "Ejecutar" y "Probar" eran la MISMA
+    # llamada: el navegador no tiene runtime de Java, asi que la unica corrida
+    # posible era contra los casos. El alumno de Python puede escribir, correr y
+    # ver que sale; el de Java no tenia ese ciclo. Ahora "Ejecutar" manda
+    # `libre` y "Probar" manda `tests`.
+    #
+    # Default `tests` para no cambiarle el significado a ningun cliente viejo:
+    # una request sin el campo se comporta EXACTAMENTE como antes.
+    modo: Literal["tests", "libre"] = "tests"
+    # Entrada por adelantado, no interactiva. En Python el `input()` se
+    # intercepta en el navegador y se le pregunta al alumno en el momento; un
+    # contenedor efimero no tiene canal de vuelta, asi que lo que el programa
+    # vaya a leer tiene que viajar entero con la request.
+    stdin: str = Field(default="", max_length=10_000)
 
 
 class ExecutionAccepted(BaseModel):
     execution_id: UUID
     state: str
     quota_remaining: int
+
+
+def datos_para_emitir(
+    *,
+    modo: str,
+    episode_id: UUID | None,
+    run: RunResult | None,
+    ejercicio: Ejercicio | None,
+) -> tuple[UUID, RunResult, Ejercicio] | None:
+    """Los datos para emitir `tests_ejecutados`, o `None` si no corresponde.
+
+    Devuelve la tupla en vez de un `bool` para que la decision y la prueba de
+    que los datos existen sean el MISMO acto. Con un booleano el llamador
+    quedaba sabiendo que puede emitir pero sin poder demostrarselo al type
+    checker —mypy no cruza el limite de la funcion— y la salida facil ahi es un
+    `assert` que calla al chequeador sin agregar garantia. Asi el `if` estrecha
+    los tipos de verdad.
+
+    Vive fuera de `_run_and_store` a proposito. Adentro, la decision dependia
+    de variables locales que ningun test podia armar, y eso tuvo una
+    consecuencia concreta: el 2026-08-28 se verifico con un mutante que sacar
+    el termino del modo **no mataba ningun test**. La propiedad se sostenia por
+    accidente —en modo libre `run` queda en `None` y el `run is not None`
+    cortaba primero— y no por decision. Un refactor que hiciera a `run_libre`
+    devolver un `RunResult` la habria borrado en silencio.
+
+    Los cuatro terminos, y que tapa cada uno:
+
+    - `modo != "libre"`: una corrida libre no evaluo nada. Su payload lleva
+      `failed=0` porque no hubo casos, no porque el alumno los haya pasado, y
+      el labeler v1.2.0 no distingue esas dos cosas: lee `failed == 0` y
+      etiqueta N4, el nivel mas alto del modelo.
+    - `episode_id is not None`: el panel del docente prueba ejercicios fuera de
+      todo episodio. Esa corrida no es actividad de ningun alumno.
+    - `run is not None`: sin corrida no hay conteos.
+    - `should_emit(run)`: el guard anti-inflacion. Cubre el sandbox caido y la
+      corrida vacia. Ver `ctr_emitter`.
+
+    Ninguno es redundante, aunque hoy dos de ellos se solapen. Cada uno tapa
+    una forma distinta de que un episodio quede mal nivelado en los datos de la
+    tesis, y el solapamiento es lo que hace que sacar uno no se note.
+    """
+    if modo == "libre":
+        return None
+    if episode_id is None or run is None or ejercicio is None:
+        return None
+    if not should_emit(run):
+        return None
+    return (episode_id, run, ejercicio)
+
+
+def _payload_libre(libre: CorridaLibre) -> dict[str, Any]:
+    """Payload de una corrida libre, con la MISMA forma que el de tests.
+
+    Comparte las claves (`outcome`, `total`, `passed`, `failed`, `cases`,
+    `compile_output`) para que el cliente no tenga que ramificar al leer el
+    GET, y los tres conteos van en cero **porque no se evaluo nada** — no
+    porque haya fallado. Esa distincion la lleva `modo`, no los numeros.
+
+    Nada de esto llega al labeler: la corrida libre no emite
+    `tests_ejecutados`. Si algun dia alguien cablea este payload a un emisor,
+    el `failed=0` de acá vuelve a significar "aprobo todo". Es el motivo por el
+    que el candado esta en la ruta y ademas el tipo es distinto.
+    """
+    if not libre.ejecutado:
+        return {
+            "outcome": "completed",
+            "total": 0,
+            "passed": 0,
+            "failed": 0,
+            "cases": [],
+            "compile_output": "",
+            "modo": "libre",
+            "stdout": "",
+            "stderr": libre.stderr,
+            "exit_code": 0,
+            "timed_out": False,
+            "sin_runtime": True,
+        }
+    return {
+        "outcome": "completed",
+        "total": 0,
+        "passed": 0,
+        "failed": 0,
+        "cases": [],
+        # El error de compilacion va en su campo de siempre: es donde el
+        # cliente ya lo busca, y una corrida libre que no compila es
+        # exactamente el caso en que el alumno mas necesita verlo.
+        "compile_output": libre.stderr if libre.compile_failed else "",
+        "modo": "libre",
+        "stdout": libre.stdout,
+        "stderr": libre.stderr,
+        "exit_code": libre.exit_code,
+        "timed_out": libre.timed_out,
+        "sin_runtime": False,
+    }
 
 
 async def _run_and_store(execution_id: UUID, *, req: ExecutionRequest, user: User) -> None:
@@ -93,9 +211,22 @@ async def _run_and_store(execution_id: UUID, *, req: ExecutionRequest, user: Use
             tenant_id=user.tenant_id,
         )
         ejercicio = await AcademicClient().get_ejercicio(req.ejercicio_id, user.tenant_id)
-        run = await run_cases(source_code=req.source_code, ejercicio=ejercicio)
-        payload = to_client_payload(run, ejercicio)
-        outcome = run.outcome.value
+        if req.modo == "libre":
+            # `run` queda en None a proposito: sin `RunResult` no hay conteos
+            # que puedan filtrarse al emisor, aunque alguien toque el `if` de
+            # mas abajo. El tipo distinto de `CorridaLibre` es la otra mitad de
+            # esa barrera.
+            libre = await run_libre(
+                source_code=req.source_code,
+                language=ejercicio.language,
+                stdin=req.stdin,
+            )
+            payload = _payload_libre(libre)
+            outcome = "completed"
+        else:
+            run = await run_cases(source_code=req.source_code, ejercicio=ejercicio)
+            payload = to_client_payload(run, ejercicio)
+            outcome = run.outcome.value
     except AcademicUnavailableError as exc:
         logger.warning("execution_academic_unavailable id=%s: %s", execution_id, exc)
         payload = {
@@ -134,20 +265,19 @@ async def _run_and_store(execution_id: UUID, *, req: ExecutionRequest, user: Use
     #
     # El alumno IGUAL ve el resultado: `to_client_payload` ya se calculo y se
     # guarda mas abajo. Lo unico que no ocurre es el evento CTR.
-    if (
-        req.episode_id is not None
-        and run is not None
-        and ejercicio is not None
-        and should_emit(run)
-    ):
+    a_emitir = datos_para_emitir(
+        modo=req.modo, episode_id=req.episode_id, run=run, ejercicio=ejercicio
+    )
+    if a_emitir is not None:
+        episodio_destino, run_emitido, ejercicio_emitido = a_emitir
         await TutorClient().emit_tests_ejecutados(
-            episode_id=req.episode_id,
+            episode_id=episodio_destino,
             execution_id=execution_id,
             user_id=user.id,
             tenant_id=user.tenant_id,
             payload=build_payload(
-                run,
-                hidden_case_ids={c.id for c in ejercicio.hidden_cases},
+                run_emitido,
+                hidden_case_ids={c.id for c in ejercicio_emitido.hidden_cases},
                 ejecucion_ms=ejecucion_ms,
                 engine="docker-java",
             ),
