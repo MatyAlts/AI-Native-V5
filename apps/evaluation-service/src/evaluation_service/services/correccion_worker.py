@@ -24,7 +24,7 @@ from datetime import UTC, datetime, timedelta
 from uuid import UUID
 
 import structlog
-from sqlalchemy import and_, func, select, update
+from sqlalchemy import and_, func, select, text, update
 
 from evaluation_service.db.session import tenant_session
 from evaluation_service.models.correcciones_ia import CorreccionIA
@@ -95,11 +95,28 @@ async def reconciliar_running(tenant_id: UUID) -> int:
 async def tenants_con_running() -> list[UUID]:
     """Los tenants que tienen correcciones en vuelo.
 
-    El reconciliador corre sin request, o sea sin `app.current_tenant`. Por eso
-    la RLS de `correcciones_ia` es sólo por tenant y el barrido se hace tenant
-    por tenant: una policy que dependiera de un `current_user_id` haría que
-    este barrido viera CERO filas sin tirar error — y una policy que no matchea
-    filtra en el SELECT, no falla. Fallo silencioso.
+    Es la ÚNICA query del servicio que tiene que cruzar tenants: corre sin
+    request, o sea sin `app.current_tenant`, para descubrir sobre qué tenants
+    hay que reconciliar.
+
+    **Hasta el 2026-08-27 devolvía cero filas, siempre, y sin tirar error.** El
+    comentario decía que "corre como owner para poder ver todos los tenants", y
+    era falso: las migraciones corren como `postgres` (así que `postgres` es el
+    owner) y el runtime conecta como `academic_user`, que no es owner y se creó
+    sin `SUPERUSER` ni `BYPASSRLS`. La policy pide `tenant_id =
+    current_setting('app.current_tenant', true)::uuid`; sin el setting eso es
+    `tenant_id = NULL`, que evalúa NULL, y la fila se filtra.
+
+    Es exactamente el modo de falla que el docstring de la migración
+    `20260818_0002` advierte: en Postgres una policy que no matchea filtra en el
+    SELECT, no falla. El reconciliador entero era código muerto en producción —
+    y el design D9 se apoya en él para justificar `BackgroundTasks` sin cola
+    durable.
+
+    Ahora se prende `app.reconciliador` con SET LOCAL, que habilita la policy
+    `correcciones_ia_reconciliador_lectura` (migración `20260827_0001`). Es
+    `FOR SELECT` y dura lo que la transacción: lo único que puede hacer alguien
+    que se cuele por ahí es LEER, y esta función lee `tenant_id` y nada más.
 
     Incluye las `pending` por la misma razón que `reconciliar_running`: una
     corrección que murió antes de arrancar es tan huérfana como una que murió a
@@ -109,9 +126,9 @@ async def tenants_con_running() -> list[UUID]:
 
     factory = get_session_factory()
     async with factory() as db:
-        # Sin `SET app.current_tenant`: esta query corre como owner para poder
-        # ver todos los tenants. Es la única de este módulo que lo hace, y por
-        # eso devuelve SÓLO ids, nunca contenido.
+        # SET LOCAL: vive lo que dura esta transacción. La policy que habilita
+        # es de SELECT y esta query devuelve SÓLO ids, nunca contenido.
+        await db.execute(text("SELECT set_config('app.reconciliador', 'on', true)"))
         rows = await db.execute(
             select(CorreccionIA.tenant_id)
             .where(CorreccionIA.estado.in_(("running", "pending")))

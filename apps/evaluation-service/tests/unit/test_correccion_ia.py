@@ -286,9 +286,7 @@ class TestContratoConElSandbox:
         from execution_service.services.result_mapper import RunOutcome
 
         ej = _ejercicio_real()
-        run = _corrida(
-            RunOutcome.COMPILATION_ERROR, [], compile_output="Main.java:3: ';' expected"
-        )
+        run = _corrida(RunOutcome.COMPILATION_ERROR, [], compile_output="Main.java:3: ';' expected")
         r = _mapear(to_client_payload(run, ej))
 
         assert r.compila is False, "un error de compilacion NO puede viajar como compila=true"
