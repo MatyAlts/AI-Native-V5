@@ -25,11 +25,19 @@ import {
 } from "../lib/api"
 import { MONOLITHIC_ORDEN, clearArtefactoDrafts, collectArtefactoDrafts } from "../lib/artefactos"
 import { type EjercicioContext, EpisodeView } from "../pages/EpisodePage"
+import { debeEnviarLaEntrega } from "../lib/entregaGuard"
 import { ACTIVE_EXERCISE_CONTEXT_KEY, type ActiveExerciseContext } from "./materia.$id"
+
+// Se re-exporta desde acá porque es donde vivía y donde lo importa su test.
+// La definición se mudó a `lib/` para que `ExerciseListView` —que también
+// necesita el guard— no tenga que importar una RUTA: eso cerraba un ciclo
+// (`ExerciseListView` -> `episodio.$id` -> `materia.$id` -> `ExerciseListView`).
+export { debeEnviarLaEntrega }
 
 export const Route = createFileRoute("/episodio/$id")({
   component: EpisodioPage,
 })
+
 
 function EpisodioPage() {
   const { id } = useParams({ from: "/episodio/$id" })
@@ -57,11 +65,11 @@ function EpisodioPage() {
       })
       return
     }
-    // BUG-1: TP monolitica (sin ejercicioContext). Cerrar el episodio ES la
-    // entrega. Si el episodio quedo "closed" (el alumno finalizo, no pauso),
-    // creamos+enviamos la Entrega para que la card del selector refleje
-    // "Entregada" en vez de seguir en "Empezar". El refetch lo hace el
-    // TareaSelector al remontar cuando el alumno vuelve a la materia.
+    // TP monolitica (sin ejercicioContext). Cerrar el episodio ES la entrega.
+    // Si el episodio quedo "closed" (el alumno finalizo, no pauso), creamos y
+    // enviamos la Entrega para que la card del selector refleje "Entregada" en
+    // vez de seguir en "Empezar". El refetch lo hace el TareaSelector al
+    // remontar cuando el alumno vuelve a la materia.
     // Best-effort: si algo falla, no bloqueamos la salida.
     try {
       const state = await getEpisodeState(id, getToken)
@@ -73,7 +81,7 @@ function EpisodioPage() {
           },
           getToken,
         )
-        if (entrega.estado === "draft" || entrega.estado === "returned") {
+        if (debeEnviarLaEntrega(entrega.estado)) {
           // El borrador de la TP monolítica está keyeado por episodio: cuando
           // el alumno lo escribió, esta entrega todavía no existía.
           //

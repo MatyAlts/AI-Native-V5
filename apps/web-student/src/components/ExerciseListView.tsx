@@ -30,6 +30,7 @@ import {
   clearArtefactoDrafts,
   collectArtefactoDrafts,
 } from "../lib/artefactos"
+import { debeEnviarLaEntrega } from "../lib/entregaGuard"
 
 export interface ExerciseListViewProps {
   tarea: AvailableTarea
@@ -172,6 +173,29 @@ export function ExerciseListView({
     setSubmitting(true)
     setSubmitError(null)
     try {
+      // Se relee el estado ANTES de enviar, y no se confia en el que quedo en
+      // memoria. `canSubmit` gatea el boton con `entrega.estado === "draft"`,
+      // pero ese valor lo trae un `useEffect` que corre UNA sola vez al montar
+      // y nunca repolla: una pestana vieja abierta en el celular sigue diciendo
+      // "draft" horas despues de que el docente devolvio la entrega.
+      //
+      // Y el backend no salva: `submit_entrega` acepta `returned` como estado
+      // de origen a proposito (es una feature legitima para cuando el alumno
+      // corrige). Asi que el guard del frontend es la UNICA defensa, y uno que
+      // mira estado cacheado es la mas debil de las dos que tiene la app —
+      // `handleExit` en `episodio.$id.tsx` si hace fetch fresco.
+      //
+      // Sin esto queda la misma perdida de la devolucion que este PR cierra,
+      // por otra puerta: `returned -> submitted` y el alumno deja de ver lo que
+      // su docente le escribio.
+      const fresca = await entregasApi.getById(entrega.id)
+      if (!debeEnviarLaEntrega(fresca.estado)) {
+        setEntrega(fresca)
+        setSubmitError(
+          "Esta entrega ya no esta en borrador. Actualiza la pagina para ver su estado.",
+        )
+        return
+      }
       const ordenes = ejercicios.map((e) => e.orden)
       const artefactos = await recuperarArtefactos(
         entrega,

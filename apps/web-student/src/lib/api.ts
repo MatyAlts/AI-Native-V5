@@ -1234,6 +1234,26 @@ export async function getCalificacion(
  * Backend devuelve envelope `{data, meta}`. Sin desempaquetar `data`, el
  * indexado `[0]` cae siempre en undefined → el alumno nunca ve su entrega.
  */
+/**
+ * Relee UNA entrega por su id, fresca del servidor.
+ *
+ * Existe para los guards que no pueden confiar en el estado que quedo en
+ * memoria. `ExerciseListView` monta su entrega con un `useEffect` que corre una
+ * sola vez y nunca repolla: una pestana vieja sigue diciendo "draft" horas
+ * despues de que el docente devolvio la entrega, y re-enviarla ahi le borra al
+ * alumno la devolucion que fue a leer.
+ */
+export async function getEntregaById(
+  entregaId: string,
+  getToken?: TokenGetter,
+): Promise<Entrega> {
+  const r = await fetch(`/api/v1/entregas/${entregaId}`, {
+    headers: await authHeaders(getToken),
+  })
+  if (!r.ok) throw new Error(`get entrega failed: ${r.status}`)
+  return (await r.json()) as Entrega
+}
+
 export async function getEntregaForTp(
   tareaId: string,
   comisionId: string,
@@ -1305,6 +1325,7 @@ export const entregasApi = {
   createOrGet: createOrGetEntrega,
   submit: submitEntrega,
   getForTp: getEntregaForTp,
+  getById: getEntregaById,
   listMine: listMisEntregas,
   getCalificacion,
   listEjerciciosTp,
