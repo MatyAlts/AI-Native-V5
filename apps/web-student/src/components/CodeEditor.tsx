@@ -472,6 +472,12 @@ export function CodeEditor({
         // vista lo que escriben fuera del viewport.
         wordWrap: "on",
         wrappingIndent: "indent",
+        // Arrastrar-y-soltar texto al editor entra por una via propia de
+        // Monaco que NO pasa por `onDidPaste`. Apagarla es la mitad del
+        // cierre; la otra mitad son los listeners `dragover`/`drop` de mas
+        // abajo, porque esto solo desactiva el widget de Monaco y no impide
+        // que el navegador inserte el texto por su cuenta.
+        dropIntoEditor: { enabled: false },
         ...SUGERENCIAS_OPTIONS,
       })
 
@@ -496,13 +502,18 @@ export function CodeEditor({
       // deliberadamente vacia. La linea se conserva porque si algun dia se
       // levanta el bloqueo, esta es la costura correcta.
       //
-      // NO derivar de aca que todo texto externo queda registrado: el
-      // arrastrar-y-soltar (`dropIntoEditor`, default `true` en Monaco) NO pasa
-      // por `onDidPaste` ni por ningun listener de este componente, asi que
-      // entra al buffer y sale como `origin: "student_typed"`. El valor
-      // `drag_drop` existe declarado en el contrato de `pega_intentada` y no lo
-      // emite nadie. Cerrar ese canal cambia que eventos entran al CTR, asi que
-      // es una decision del equipo, no del editor.
+      // El arrastrar-y-soltar era la puerta de al lado y estaba abierta:
+      // `dropIntoEditor` (default `true` en Monaco) NO pasa por `onDidPaste`
+      // ni por ningun listener de clipboard, asi que el texto arrastrado
+      // desde otra ventana entraba al buffer y salia rotulado
+      // `origin: "student_typed"` — la plataforma afirmando que el alumno
+      // tipeo codigo que no tipeo. Se cerro el 2026-08-28 (decision del
+      // equipo) con el MISMO criterio que el clipboard: se bloquea y se
+      // registra el intento, no se trackea y se deja pasar.
+      //
+      // No agrega un tipo de evento nuevo a la cadena: `drag_drop` ya estaba
+      // declarado en el `metodo` de `pega_intentada` (contrato, ruta del
+      // tutor y cliente) y simplemente no lo emitia nadie.
       editor.onDidPaste(() => {
         pasteSinceLastFlushRef.current = true
       })
@@ -588,11 +599,38 @@ export function CodeEditor({
           // que esta proximo a usarlo. Los listeners de paste/copy van a
           // capturar la accion final.
         }
+        // `drop` solo llega si `dragover` acepta el arrastre; cancelar
+        // `dragover` es lo que impide que el navegador inserte el texto.
+        // Se registran los dos, pero el evento se emite UNA sola vez (en el
+        // `drop`) para no inflar la cadena con un evento por cada pixel que
+        // el mouse se mueve sobre el editor.
+        const onDragOverDom = (ev: DragEvent) => {
+          ev.preventDefault()
+          ev.stopPropagation()
+          if (ev.dataTransfer) ev.dataTransfer.dropEffect = "none"
+        }
+        const onDropDom = (ev: DragEvent) => {
+          ev.preventDefault()
+          ev.stopPropagation()
+          const text = ev.dataTransfer?.getData("text") ?? ""
+          onPasteAttemptRef.current?.({
+            contenidoLongitud: text.length,
+            contenidoPreview: text.slice(0, 200),
+            metodo: "drag_drop",
+          })
+          flashClipboardWarning(
+            "Arrastrar código está bloqueado. Escribilo vos mismo. Quedó registrado.",
+          )
+        }
+        containerEl.addEventListener("dragover", onDragOverDom, true)
+        containerEl.addEventListener("drop", onDropDom, true)
         containerEl.addEventListener("paste", onPasteDom, true)
         containerEl.addEventListener("copy", onCopyDom, true)
         containerEl.addEventListener("cut", onCutDom, true)
         containerEl.addEventListener("contextmenu", onContextMenu)
         ;(editor as unknown as { __clipboardListeners?: () => void }).__clipboardListeners = () => {
+          containerEl.removeEventListener("dragover", onDragOverDom, true)
+          containerEl.removeEventListener("drop", onDropDom, true)
           containerEl.removeEventListener("paste", onPasteDom, true)
           containerEl.removeEventListener("copy", onCopyDom, true)
           containerEl.removeEventListener("cut", onCutDom, true)
