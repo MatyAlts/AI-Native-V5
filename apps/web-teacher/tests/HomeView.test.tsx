@@ -7,7 +7,7 @@
  *  - Error state: rate limit / fetch fallido renderiza mensaje + UUID truncado.
  *  - Drill-down: click "Abrir cohorte" navega a /progression?comisionId=X.
  */
-import { screen, waitFor } from "@testing-library/react"
+import { screen, waitFor, within } from "@testing-library/react"
 import { afterEach, describe, expect, test, vi } from "vitest"
 import { HomeView } from "../src/views/HomeView"
 import { renderWithRouter, setupFetchMock } from "./_mocks"
@@ -120,8 +120,13 @@ describe("HomeView", () => {
     })
     // Kicker codigo
     expect(screen.getByTestId("comision-card-kicker").textContent).toMatch(/A/)
-    // Display name (nombre del seed)
-    expect(screen.getByText("A-Manana")).toBeInTheDocument()
+    // Display name (nombre del seed), acotado A LA CARD.
+    // `screen.getByText` global tiraba "Found multiple elements": el nombre de
+    // la comision aparece tambien en el selector del header, que se monta en el
+    // mismo arbol. La intencion del test siempre fue "la card muestra el
+    // nombre", asi que se pregunta dentro de la card en vez de aflojar la
+    // asercion a `getAllByText` — que pasaria aunque la card no lo mostrara.
+    expect(within(screen.getByTestId("comision-card")).getByText("A-Manana")).toBeInTheDocument()
     // KPI alumnos visible (n_students=6)
     const kpiBlock = screen.getByTestId("comision-card-kpis")
     expect(kpiBlock).toHaveTextContent("alumnos")

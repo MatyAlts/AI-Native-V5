@@ -87,10 +87,14 @@ describe("CorreccionesView — EntregasListView", () => {
       "/api/v1/tareas-practicas/": () => mockTarea,
     })
     renderWithRouter(<CorreccionesView comisionId={COMISION_ID} getToken={getToken} />)
+    // Se espera por la TABLA, no por `entregas-list-view`: ese div es el
+    // contenedor de la vista y esta desde el primer render, asi que el
+    // `waitFor` volvia de inmediato y la asercion corria ANTES de que la data
+    // llegara. Desde que la vista pasa por react-query esa carrera es siempre
+    // perdida; antes andaba de casualidad.
     await waitFor(() => {
-      expect(screen.getByTestId("entregas-list-view")).toBeDefined()
+      expect(screen.getByTestId("entregas-table")).toBeDefined()
     })
-    expect(screen.getByTestId("entregas-table")).toBeDefined()
     const rows = screen.getAllByTestId("entrega-row")
     expect(rows.length).toBe(1)
   })
@@ -114,10 +118,10 @@ describe("CorreccionesView — EntregasListView", () => {
       "/api/v1/entregas": () => ({ data: [], meta: { cursor_next: null } }),
     })
     renderWithRouter(<CorreccionesView comisionId={COMISION_ID} getToken={getToken} />)
+    // Mismo motivo que arriba: se espera por el MENSAJE, no por el contenedor.
     await waitFor(() => {
-      expect(screen.getByTestId("entregas-list-view")).toBeDefined()
+      expect(screen.getByText(/aun no tiene entregas/i)).toBeDefined()
     })
-    expect(screen.getByText(/aun no tiene entregas/i)).toBeDefined()
   })
 
   it("click en Corregir abre el GradingFormView", async () => {

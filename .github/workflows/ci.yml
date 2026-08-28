@@ -149,31 +149,31 @@ jobs:
       - run: pnpm --filter @platform/ui test
       - run: pnpm --filter @platform/web-student test
 
-      # FALTA `@platform/web-teacher` (194 tests), y NO es un olvido.
+      # FALTA `@platform/web-teacher` (254 tests), y NO es un olvido.
       #
-      # Tiene 7 rojos REALES pre-existentes en `main`, que aparecieron recien
-      # ahora porque nadie corria esta suite. No los introduce ningun PR:
+      # Quedan 4 rojos REALES pre-existentes, todos en un mismo lugar:
       #
-      #   tests/CorreccionesView.test.tsx  (6)
-      #     - muestra la tabla con una entrega submitted
-      #     - muestra mensaje cuando no hay entregas
+      #   tests/CorreccionesView.test.tsx > GradingFormView
       #     - muestra los ejercicios completados en la entrega
       #     - muestra el formulario de calificacion para entrega submitted
       #     - muestra boton Devolver para entrega graded
       #     - boton Volver regresa a la lista
-      #   tests/HomeView.test.tsx  (1)
-      #     - con 1 comision asignada renderiza card con kpis y CTA
-      #       ("Found multiple elements with the text: A-Manana" -> es un
-      #        `getBy` que deberia ser `getAllBy`)
       #
-      # Los seis de CorreccionesView renderizan la vista pero caen en el estado
-      # vacio: los fixtures del fetch no cubren algo que la vista pide hoy.
-      # Arreglarlos toca `CorreccionesView`, que es un archivo que el PR #66
-      # modifica fuerte — por eso se hace DESPUES de ese merge y no acá.
+      # DIAGNOSTICO (2026-08-28, no confirmado): los cuatro pasan el primer
+      # `waitFor` —o sea que la lista carga y el drill-down encuentra su
+      # boton— y fallan DESPUES del click. Instrumentando el DOM justo tras
+      # ese `waitFor`, `document.body` tiene 587 caracteres y CERO elementos
+      # con `data-testid`: algo desmonta la vista entre una linea y la
+      # siguiente. Sospecha principal: `useTutorialDeVista(correccionesTour,
+      # !loading)`, que el epic de Active-IA agrego a esta vista.
       #
-      # Se deja afuera en vez de con `continue-on-error` a proposito: un job que
-      # se permite fallar es la misma enfermedad que este cambio viene a curar.
-      # Cuando los 7 esten en verde, agregar la linea y borrar este comentario:
+      # No se arreglaron a ciegas a proposito: tocan `GradingFormView`, que
+      # ese epic acaba de reescribir, y forzar el test hasta que pase verde
+      # sin entender por que se desmonta es fabricar cobertura.
+      #
+      # Se deja afuera en vez de con `continue-on-error`: un job que se
+      # permite fallar es la misma enfermedad que este cambio viene a curar.
+      # Cuando los 4 esten en verde, agregar la linea y borrar este comentario:
       #   - run: pnpm --filter @platform/web-teacher test
 
   build-frontend:
