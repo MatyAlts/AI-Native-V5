@@ -644,7 +644,15 @@ async def recalificar_entrega(
     # Normaliza el estado: una re-calificacion deja la entrega calificada.
     # Cubre el caso NB-4 de una entrega re-enviada (returned -> submitted) que
     # quedo en 'submitted' con la calificacion vieja adherida.
-    entrega.estado = "graded"
+    #
+    # EXCEPTO si ya esta 'returned': ahi la devolucion es intencional y el alumno
+    # tiene la pelota. `submit_entrega` solo acepta 'draft'/'returned', asi que
+    # pisarla con 'graded' le contesta 409 cuando intenta re-entregar — o sea que
+    # el docente que corrige un TYPO en la nota le traba el TP al alumno, sin
+    # enterarse. Y no hay perdida por no normalizar: no existe forma de llegar a
+    # `returned` sin una calificacion previa.
+    if entrega.estado != "returned":
+        entrega.estado = "graded"
 
     await db.flush()
     await db.refresh(cal)
