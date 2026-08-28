@@ -69,6 +69,12 @@ MAX_ATTEMPTS = 3  # después se envía a DLQ
 # DLQ, las N reposiciones escriben el mismo valor.
 TUTOR_SEQ_KEY_PREFIX = "tutor:seq:"
 
+# `SessionManager.SESSION_KEY_PREFIX`. Se usa SOLO en el camino de FALLO: si no
+# se pudo reponer el contador, borrar la sesion es lo que deja que el heal del
+# tutor lo reconstruya en el evento siguiente. Sin eso el episodio queda mudo
+# hasta que venza el TTL — seis horas.
+TUTOR_SESSION_KEY_PREFIX = "tutor:session:"
+
 # TTL del contador, espejado de `SessionManager.SESSION_TTL` (6 h). Si se
 # repusiera sin TTL la key quedaría para siempre; si se repusiera con uno más
 # corto, expiraría antes que la sesión que la acompaña.
@@ -258,7 +264,52 @@ class PartitionWorker:
         except Exception:
             logger.warning(
                 "No se pudo reponer el contador de seq del episodio %s; "
-                "queda bloqueado hasta la proxima reanudacion",
+                "se intenta borrar la sesion para que el tutor la reconstruya",
+                episode_id,
+                exc_info=True,
+            )
+            await self._forzar_reconstruccion_de_sesion(episode_id)
+
+    async def _forzar_reconstruccion_de_sesion(self, episode_id: UUID) -> None:
+        """Ultimo recurso cuando no se pudo reponer el contador.
+
+        **Sin esto, el episodio quedaba mudo seis horas.** El worker repone el
+        contador y NO toca `tutor:session:` — eso es correcto en el camino feliz
+        (borrar la sesion echaria al alumno de una sesion viva). Pero si la
+        reposicion falla —Postgres saturado, que es plausible: acabamos de
+        fallar tres veces contra la misma base— el resultado era:
+
+          - el contador queda adelantado y TODO evento posterior se rechaza;
+          - la sesion sigue viva, asi que `_emitir_con_heal` nunca dispara (solo
+            entra por `ValueError`, y ese `ValueError` sale de `sessions.get()`
+            devolviendo `None`);
+          - y aunque el alumno apriete "retomar", `resume_episode` tiene un
+            early-return idempotente ANTES de `init_seq_counter`: devuelve 200
+            sin tocar el contador.
+
+        O sea que el unico camino de salida era el TTL de la sesion: seis horas
+        con el alumno tipeando y nada guardandose.
+
+        Borrar la sesion invierte eso: el proximo evento encuentra `None`,
+        levanta `ValueError`, y el heal reconstruye la sesion Y el contador
+        desde `events_count`. El alumno pierde el estado en memoria de la
+        sesion —que es reconstruible— en vez de perder su trabajo.
+
+        Si esto tambien falla, el log sube a ERROR: ahi si el episodio queda
+        trabado y alguien tiene que enterarse.
+        """
+        try:
+            await self.redis.delete(f"{TUTOR_SESSION_KEY_PREFIX}{episode_id}")
+            logger.info(
+                "Sesion del episodio %s borrada: el proximo evento reconstruye "
+                "sesion y contador via el heal del tutor",
+                episode_id,
+            )
+        except Exception:
+            logger.error(
+                "El episodio %s quedo TRABADO: no se pudo reponer el contador de "
+                "seq ni borrar su sesion. Todo evento nuevo se va a rechazar "
+                "hasta que venza el TTL de la sesion.",
                 episode_id,
                 exc_info=True,
             )
