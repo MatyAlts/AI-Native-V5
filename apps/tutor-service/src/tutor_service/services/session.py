@@ -13,12 +13,16 @@ from __future__ import annotations
 
 import asyncio
 import json
+import logging
 import time
 from collections.abc import AsyncIterator, Awaitable, Callable
 from dataclasses import dataclass, field
 from uuid import UUID
 
 import redis.asyncio as redis
+from redis.exceptions import WatchError
+
+logger = logging.getLogger(__name__)
 
 SESSION_TTL = 6 * 3600  # 6 horas
 
@@ -42,6 +46,15 @@ DISTRACTION_TTL = 30 * 60  # 30 min sanity cap
 # devuelve el mismo seq SIN avanzar el contador ni re-publicar al CTR.
 SEEN_KEY_PREFIX = "tutor:seen:"
 SEEN_TTL = SESSION_TTL  # mismo horizonte que la sesión (6h)
+
+# Claim de abandono (ADR-025 G10-A, fix del TOCTOU). La idempotencia del
+# abandono estaba apoyada en el estado de sesión: el primero borra la sesión, el
+# segundo la encuentra ausente. Eso vale sólo si las dos llamadas se serializan,
+# y no se serializan — entre el `get()` y el `delete()` hay un publish al CTR
+# entero. Esta key elige al emisor con un `SET NX` atómico. Se libera al abrir o
+# reanudar el episodio (`init_seq_counter`), no al emitir: el claim acompaña el
+# ciclo de vida del episodio, no el de la request.
+ABANDONO_KEY_PREFIX = "tutor:abandono:"
 
 # FIX A (keystone) — contador de seq ATÓMICO por episodio.
 #
@@ -219,15 +232,115 @@ class SessionManager:
         return f"{SEQ_KEY_PREFIX}{episode_id}"
 
     async def init_seq_counter(self, episode_id: UUID, next_seq: int) -> None:
-        """Inicializa el contador atómico de seq del episodio.
+        """Inicializa el contador atómico de seq del episodio. **Nunca lo baja.**
 
         `next_seq` = cantidad de seqs ya reservados = próximo seq a asignar.
         `open_episode` lo llama con 0 (episodio nuevo); `resume_episode` con el
         `events_count` persistido (arranca del max seq ya en la cadena, NUNCA
-        resetea a 0). SET incondicional: el caller garantiza que este es el
-        punto de inicialización (apertura, o reanudación con la sesión ausente).
+        resetea a 0).
+
+        **Era un SET incondicional**, y su docstring decía que "el caller
+        garantiza" que éste es el punto de inicialización. Eso valía cuando los
+        callers eran dos y explícitos: abrir el episodio y un `POST /resume`. El
+        heal de sesión lo convirtió en OCHO callers implícitos y CONCURRENTES
+        —los siete `emit_*` más `send_message`, vía `_emitir_con_heal`— y
+        ninguno garantiza nada: el `existing is not None` de `resume_episode` es
+        un check-then-act con dos `await` de red en el medio.
+
+        La carrera, con la sesión vencida por TTL y `events_count = N`:
+
+            A: POST /message          -> get()=None -> arranca resume
+            B: POST /edicion_codigo   -> get()=None -> arranca resume
+            B: set(state); init(N)                      [contador = N]
+            B: next_seq -> INCR -> N+1 -> publica seq=N
+            A: set(state); init(N)          <- REGRESION del contador a N
+            A: next_seq -> INCR -> N+1 -> publica seq=N   <- DUPLICADO
+
+        Dos eventos distintos con el mismo seq: el worker persiste uno, el otro
+        va a la DLQ y marca el episodio `integrity_compromised`. El bug que este
+        epic viene a cerrar, reintroducido por su propio heal. Y no es un borde:
+        el frontend emite `edicion_codigo` con debounce mientras el alumno
+        charla con el tutor.
+
+        Ahora es un compare-and-set: escribe sólo si el contador está AUSENTE o
+        vale MENOS. Si vale más, alguien reservó en el medio y se respeta —
+        bajarlo es lo único que produce el duplicado. El TTL se refresca igual.
+
+        Acá también se libera el claim de abandono (ver `claim_abandono`): abrir
+        o reanudar el episodio empieza un ciclo nuevo, y un episodio pausado que
+        el alumno retoma tiene que poder volver a abandonarse. Ese borrado va
+        SIEMPRE, gane o pierda el CAS: es del ciclo de vida del episodio, no del
+        contador.
         """
-        await self.redis.set(self._seq_key(episode_id), next_seq, ex=SESSION_TTL)
+        key = self._seq_key(episode_id)
+        try:
+            async with self.redis.pipeline() as pipe:
+                await pipe.watch(key)
+                actual = await pipe.get(key)
+                if isinstance(actual, bytes):
+                    actual = actual.decode("utf-8")
+                ya_reservo_mas = actual is not None and int(actual) >= next_seq
+                pipe.multi()
+                if not ya_reservo_mas:
+                    pipe.set(key, next_seq, ex=SESSION_TTL)
+                else:
+                    pipe.expire(key, SESSION_TTL)
+                await pipe.execute()
+                if ya_reservo_mas:
+                    logger.info(
+                        "init_seq_counter del episodio %s NO baja el contador: "
+                        "vale %s y se pidio %s (hubo una reserva concurrente).",
+                        episode_id,
+                        actual,
+                        next_seq,
+                    )
+        except WatchError:
+            # Otro caller lo movio mientras mirabamos. Su valor es al menos tan
+            # nuevo como el nuestro; el unico daño posible seria pisarlo hacia
+            # abajo, asi que no se reintenta.
+            logger.info(
+                "init_seq_counter del episodio %s perdio el CAS; se respeta el "
+                "valor del otro caller.",
+                episode_id,
+            )
+        await self.redis.delete(self._abandono_key(episode_id))
+
+    # ── Claim de abandono (ADR-025, TOCTOU) ─────────────────────────────
+
+    def _abandono_key(self, episode_id: UUID) -> str:
+        return f"{ABANDONO_KEY_PREFIX}{episode_id}"
+
+    async def claim_abandono(self, episode_id: UUID) -> bool:
+        """Elige ATÓMICAMENTE quién emite el `episodio_abandonado` del episodio.
+
+        La idempotencia del abandono (ADR-025 G10-A) estaba escrita como «la
+        primera emisión borra la sesión, la segunda encuentra `session=None` y
+        no emite». Eso asume que las dos llamadas se serializan, y no se
+        serializan: entre el `sessions.get()` y el `sessions.delete()` hay una
+        publicación al CTR entera. Dos POST concurrentes —`beforeunload` y
+        `pagehide` del mismo cierre, dos pestañas, el worker de timeout pisándose
+        con el frontend— pasan los dos por el `if state is None` antes de que
+        ninguno borre, y la cadena termina con DOS `episodio_abandonado`.
+
+        `SET NX` resuelve la eleccion en una sola operación: gana uno solo, aun
+        entre réplicas distintas del tutor-service. El claim se libera al abrir
+        o reanudar el episodio (`init_seq_counter`), no al emitir — así el ciclo
+        de vida del claim acompaña al del episodio y no al de la request.
+
+        Es deliberado que esto NO dependa de un `Idempotency-Key` del cliente:
+        los dos emisores del ADR-025 son procesos distintos (frontend y worker
+        server-side) que jamás podrían coordinar una clave común.
+        """
+        ganado = await self.redis.set(self._abandono_key(episode_id), "1", nx=True, ex=SESSION_TTL)
+        return bool(ganado)
+
+    async def release_abandono(self, episode_id: UUID) -> None:
+        """Libera el claim de abandono (el emisor ganador no llegó a publicar).
+
+        Sin esto, un fallo del CTR dejaría el episodio sin poder abandonarse
+        nunca: el claim quedaría tomado por un intento que no emitió nada.
+        """
+        await self.redis.delete(self._abandono_key(episode_id))
 
     async def next_seq(self, state: SessionState) -> int:
         """Reserva ATÓMICAMENTE el próximo seq del episodio vía Redis INCR.
@@ -254,6 +367,66 @@ class SessionManager:
         state.seq = new_val  # espejo no-autoritativo (el contador Redis manda)
         await self.set(state)
         return new_val - 1
+
+    async def release_seq(self, episode_id: UUID, seq: int) -> bool:
+        """Devuelve al contador un seq reservado que NO llegó a publicarse.
+
+        `next_seq` reserva ANTES de que el evento salga hacia el ctr-service.
+        Si el publish falla (red, 5xx, timeout — `publish_event` hace
+        `raise_for_status`) el número quedaba quemado: nadie lo devolvía y el
+        próximo evento nacía en `reservado + 1`. El partition_worker espera
+        `seq == events_count`, no matchea, reintenta 3 veces, manda a la DLQ y
+        marca el episodio `integrity_compromised`. Un episodio SANO terminaba
+        etiquetado como adulterado y desaparecía de las vistas de docente y
+        alumno — para una tesis sobre trazabilidad criptográfica eso es
+        corrupción, no una molestia operativa.
+
+        La compensación es un DECR **condicionado** (compare-and-decrement con
+        WATCH/MULTI): sólo devolvemos el número si el contador sigue valiendo
+        `seq + 1`, es decir si somos el último que reservó. Un DECR incondicional
+        sería peor que el hueco: si otra coroutine reservó `seq + 1` mientras
+        publicábamos, bajar el contador haría que el evento siguiente naciera
+        con un seq YA usado → dos eventos con el mismo seq, que es exactamente
+        el defecto que FIX A vino a cerrar.
+
+        Cuando el CAS pierde (hubo una reserva concurrente) el hueco es real y
+        no se puede cerrar desde acá: lo logueamos en ERROR para que quede
+        rastro, y el `_reponer_contador_seq` del partition_worker sigue siendo
+        la red de abajo. Devuelve True si compensó, False si no pudo.
+        """
+        key = self._seq_key(episode_id)
+        esperado = str(seq + 1)
+        try:
+            async with self.redis.pipeline() as pipe:
+                await pipe.watch(key)
+                actual = await pipe.get(key)
+                if isinstance(actual, bytes):
+                    actual = actual.decode("utf-8")
+                if actual != esperado:
+                    await pipe.unwatch()
+                    logger.error(
+                        "no se pudo devolver el seq %s del episodio %s: el contador "
+                        "vale %r y no %r (hubo una reserva concurrente). Queda un "
+                        "hueco en la cadena; lo repone el partition_worker.",
+                        seq,
+                        episode_id,
+                        actual,
+                        esperado,
+                    )
+                    return False
+                pipe.multi()
+                pipe.decr(key)
+                pipe.expire(key, SESSION_TTL)
+                await pipe.execute()
+                return True
+        except WatchError:
+            logger.error(
+                "no se pudo devolver el seq %s del episodio %s: el contador cambió "
+                "durante la compensación. Queda un hueco en la cadena.",
+                seq,
+                episode_id,
+            )
+            return False
 
     async def reserve_or_get_seq(
         self,

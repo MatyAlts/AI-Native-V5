@@ -245,7 +245,9 @@ async def verify_episode_chain(
             "prompt_system_version": e.prompt_system_version,
             "classifier_config_hash": e.classifier_config_hash,
         }
-        tuples.append((event_dict, e.self_hash, e.chain_hash))
+        # 4º campo: prev_chain_hash persistido → el verificador coteja que cada
+        # eslabón declare como anterior el chain_hash real del evento previo.
+        tuples.append((event_dict, e.self_hash, e.chain_hash, e.prev_chain_hash))
 
     valid, failing = verify_chain_integrity(tuples)
     message = (

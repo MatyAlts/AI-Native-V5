@@ -14,124 +14,11 @@ from datetime import UTC, datetime
 from uuid import UUID, uuid4
 
 import pytest
-from sqlalchemy import text
-from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
+from sqlalchemy import select, text
 
 from .conftest import requires_docker
 
 pytestmark = [pytest.mark.integration, requires_docker]
-
-
-@pytest.fixture(scope="module")
-def pg_container():
-    from testcontainers.postgres import PostgresContainer
-
-    with PostgresContainer("postgres:16-alpine") as pg:
-        yield pg
-
-
-@pytest.fixture(scope="module")
-def redis_container():
-    from testcontainers.redis import RedisContainer
-
-    with RedisContainer("redis:7-alpine") as r:
-        yield r
-
-
-@pytest.fixture(scope="module")
-def pg_app_url(pg_container) -> str:
-    """Setup one-shot del schema + función RLS + app_user. Devuelve la URL
-    asyncpg del `app_user` (NOSUPERUSER NOBYPASSRLS).
-
-    Es **sync** y usa psycopg2 internamente vía SQLAlchemy: así no toca
-    el event loop async y no choca con la fixture function-scoped que
-    crea el engine asyncpg para cada test.
-
-    El user del testcontainer (`test`) es bootstrap superuser → exempt
-    de RLS aun con FORCE. Por eso los tests deben conectar como `app_user`.
-    """
-    from sqlalchemy import create_engine
-
-    superuser_url = pg_container.get_connection_url()  # postgresql+psycopg2
-    su_engine = create_engine(superuser_url, future=True)
-    with su_engine.begin() as conn:
-        conn.execute(text('CREATE EXTENSION IF NOT EXISTS "uuid-ossp"'))
-        conn.execute(
-            text("""
-            CREATE OR REPLACE FUNCTION apply_tenant_rls(tbl regclass)
-            RETURNS void AS $$
-            BEGIN
-                EXECUTE format('ALTER TABLE %s ENABLE ROW LEVEL SECURITY', tbl);
-                EXECUTE format('ALTER TABLE %s FORCE ROW LEVEL SECURITY', tbl);
-                EXECUTE format('DROP POLICY IF EXISTS tenant_isolation ON %s', tbl);
-                EXECUTE format('
-                    CREATE POLICY tenant_isolation ON %s
-                    USING (tenant_id = current_setting(''app.current_tenant'')::uuid)
-                ', tbl);
-            END;
-            $$ LANGUAGE plpgsql;
-        """)
-        )
-        conn.execute(
-            text("""
-            DO $$ BEGIN
-                IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'app_user') THEN
-                    CREATE ROLE app_user WITH LOGIN PASSWORD 'app_pass'
-                        NOSUPERUSER NOBYPASSRLS;
-                END IF;
-            END $$;
-        """)
-        )
-        conn.execute(text("GRANT ALL ON SCHEMA public TO app_user"))
-
-    from ctr_service.models import Base
-
-    with su_engine.begin() as conn:
-        Base.metadata.create_all(conn)
-        for table in ("episodes", "events", "dead_letters"):
-            conn.execute(text(f"ALTER TABLE {table} OWNER TO app_user"))
-            conn.execute(text(f"SELECT apply_tenant_rls('{table}')"))
-        conn.execute(
-            text("GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA public TO app_user")
-        )
-        conn.execute(text("GRANT USAGE, SELECT ON ALL SEQUENCES IN SCHEMA public TO app_user"))
-    su_engine.dispose()
-
-    return superuser_url.replace("postgresql+psycopg2://", "postgresql+asyncpg://").replace(
-        "test:test@", "app_user:app_pass@"
-    )
-
-
-@pytest.fixture
-async def pg_engine(pg_app_url):
-    """Engine asyncpg per-test. Function-scoped para no chocar con el
-    event loop closed entre tests.
-
-    También patchea el `get_engine()` / `get_session_factory()` globales
-    de `ctr_service.db.session` para que `tenant_session()` (usado por el
-    worker) apunte al testcontainer en vez de a `settings.ctr_db_url`.
-    """
-    engine = create_async_engine(pg_app_url, echo=False)
-    factory = async_sessionmaker(engine, expire_on_commit=False)
-
-    from ctr_service.db import session as db_session_module
-
-    prev_engine = db_session_module._engine
-    prev_factory = db_session_module._session_factory
-    db_session_module._engine = engine
-    db_session_module._session_factory = factory
-
-    try:
-        yield engine
-    finally:
-        db_session_module._engine = prev_engine
-        db_session_module._session_factory = prev_factory
-        await engine.dispose()
-
-
-@pytest.fixture
-async def session_factory(pg_engine):
-    return async_sessionmaker(pg_engine, expire_on_commit=False)
 
 
 # ── Tests ──────────────────────────────────────────────────────────────
@@ -460,5 +347,487 @@ async def test_abandono_pausa_y_actividad_posterior_reanuda(
         assert [e.seq for e in events] == [0, 1, 2, 3]
         for prev, curr in itertools.pairwise(events):
             assert curr.prev_chain_hash == prev.chain_hash
+
+    await r.aclose()
+
+
+# ── Desincronizacion de seq (incidente 2026-08-24) ─────────────────────
+#
+# Produccion mostro este patron repetido durante horas sobre un mismo
+# episodio, con el `recibido` creciendo y el `esperado` clavado:
+#
+#   ValueError: Seq inesperado: recibido=85 esperado=43 ...
+#   ValueError: Seq inesperado: recibido=86 esperado=43 ...
+#
+# El sintoma para el alumno: pausa el ejercicio, vuelve, y el codigo que
+# habia escrito no esta. Los tests que siguen caracterizan el
+# comportamiento ACTUAL — documentan que hace hoy el sistema, no que
+# deberia hacer. Sobre esa base se decide el arreglo.
+
+
+def _aislado(r, session_factory, **cfg):
+    """(producer, worker) sobre un stream propio, sin compartir nada.
+
+    El consumer group se crea con `id="0"`, asi que un grupo nuevo sobre el
+    stream compartido veria todos los mensajes historicos de los demas tests.
+    Aislar el STREAM es lo unico que separa de verdad: cada test tiene su
+    `ctr.p*`, su PEL y su DLQ. Sin esto un test que deja un pendiente a
+    proposito se lo contagia al siguiente que reclame con umbral cero.
+    """
+    from ctr_service.services.producer import EventProducer
+    from ctr_service.workers.partition_worker import PartitionConfig, PartitionWorker
+
+    prefijo = f"ctr.test.{uuid4().hex[:8]}."
+    producer = EventProducer(r, stream_prefix=prefijo, num_partitions=1)
+    worker = PartitionWorker(
+        config=PartitionConfig(
+            partition=0,
+            block_ms=500,
+            stream_prefix=prefijo,
+            dlq_stream=f"{prefijo}dead",
+            **cfg,
+        ),
+        redis_client=r,
+        session_factory=session_factory,
+    )
+    return producer, worker
+
+
+def _seq_event(episode_id, tenant, seq: int, event_type: str, payload: dict) -> dict:
+    """Evento CTR minimo valido para los tests de desincronizacion."""
+    return {
+        "event_uuid": str(uuid4()),
+        "episode_id": str(episode_id),
+        "tenant_id": str(tenant),
+        "seq": seq,
+        "event_type": event_type,
+        "ts": datetime.now(UTC).isoformat().replace("+00:00", "Z"),
+        "payload": payload,
+        "prompt_system_hash": "a" * 64,
+        "prompt_system_version": "v1.0.0",
+        "classifier_config_hash": "b" * 64,
+    }
+
+
+def _apertura_payload() -> dict:
+    return {
+        "student_pseudonym": str(uuid4()),
+        "problema_id": str(uuid4()),
+        "comision_id": str(uuid4()),
+        "curso_config_hash": "c" * 64,
+    }
+
+
+async def test_seq_adelantado_se_reintenta_y_termina_en_dlq(
+    pg_engine, session_factory, redis_container
+) -> None:
+    """Un evento que no puede persistirse se reintenta y termina en la DLQ,
+    marcando el episodio como `integrity_compromised`.
+
+    Antes del reclamo de pendientes esto no ocurria: `_process_batch` lee el
+    stream con ">" (solo mensajes nuevos), asi que un mensaje que fallaba
+    quedaba en la PEL sin que ninguna lectura posterior lo alcanzara.
+    `_get_attempts` nunca superaba 1, MAX_ATTEMPTS era inalcanzable y el
+    episodio afectado seguia figurando como sano.
+
+    `claim_min_idle_ms=0` hace que el reclamo ocurra en el ciclo siguiente
+    en vez de esperar el umbral de produccion.
+    """
+    import redis.asyncio as redis
+    from ctr_service.models import Episode, Event
+    from ctr_service.workers.partition_worker import (
+        MAX_ATTEMPTS,
+    )
+
+    redis_url = (
+        f"redis://{redis_container.get_container_host_ip()}:"
+        f"{redis_container.get_exposed_port(6379)}/0"
+    )
+    r = redis.from_url(redis_url, decode_responses=False)
+    tenant, episode_id = uuid4(), uuid4()
+    producer, worker = _aislado(r, session_factory, claim_min_idle_ms=0)
+    await worker.ensure_consumer_group()
+
+    await producer.publish(
+        _seq_event(episode_id, tenant, 0, "episodio_abierto", _apertura_payload())
+    )
+    await worker._process_batch()
+
+    # Contador del tutor adelantado respecto de la cadena: asi queda tras un
+    # evento que no pudo persistirse.
+    from ctr_service.workers.partition_worker import TUTOR_SEQ_KEY_PREFIX
+
+    seq_key = f"{TUTOR_SEQ_KEY_PREFIX}{episode_id}"
+    await r.set(seq_key, 5)
+
+    # seq=5 con la cadena en 1: hueco, no puede persistirse.
+    await producer.publish(
+        _seq_event(
+            episode_id, tenant, 5, "edicion_codigo", {"snapshot": "x = 1", "origin": "typed"}
+        )
+    )
+    await worker._process_batch()
+
+    # Cada ciclo reclama el pendiente y suma un intento. Al alcanzar
+    # MAX_ATTEMPTS el mensaje se mueve a la DLQ y se ackea.
+    for _ in range(MAX_ATTEMPTS + 1):
+        await worker._process_batch()
+
+    async with session_factory() as s:
+        await s.execute(
+            text("SELECT set_config('app.current_tenant', :t, true)"),
+            {"t": str(tenant)},
+        )
+        events = (
+            (await s.execute(select(Event).where(Event.episode_id == episode_id))).scalars().all()
+        )
+        ep = (await s.execute(select(Episode).where(Episode.id == episode_id))).scalar_one()
+
+    # El evento sigue sin persistirse — la cadena no se falsea para aceptarlo.
+    assert [e.seq for e in events] == [0]
+
+    # Pero ahora deja rastro: DLQ + episodio marcado, y nada colgado en la PEL.
+    assert await r.xlen(worker.cfg.dlq_stream) == 1, "el mensaje debe terminar en la DLQ"
+    pending = await r.xpending(worker.stream_key, worker.cfg.consumer_group)
+    assert int(pending.get("pending", 0)) == 0, "no debe quedar nada pendiente"
+    assert ep.integrity_compromised is True
+    assert ep.estado == "integrity_compromised"
+
+    # Y el contador del tutor quedo repuesto al valor que la cadena espera.
+    # Sin esto el episodio queda mudo: todo evento nuevo nace con un seq que
+    # ya no puede entrar. `events_count` es 1 (solo entro la apertura), asi
+    # que el proximo `next_seq` del tutor entregara 1.
+    assert int(await r.get(seq_key)) == 1
+
+    # Idempotente: el mismo episodio puede mandar decenas de eventos a la DLQ
+    # y cada reposicion escribe el mismo valor.
+    for _ in range(3):
+        await worker._reponer_contador_seq(episode_id, tenant)
+    assert int(await r.get(seq_key)) == 1
+
+    await r.aclose()
+
+
+async def test_episodio_marcado_vuelve_a_open_con_el_evento_siguiente(
+    pg_engine, session_factory, redis_container
+) -> None:
+    """`integrity_compromised` no es terminal: el primer evento que entra
+    despues repone `estado=open`, y la bandera del episodio queda puesta.
+
+    Importa mas de lo que parece. Hay consultas que filtran por
+    `estado IN ('closed','paused')`, asi que un episodio pegado en
+    `integrity_compromised` desaparece de la vista del docente y del progreso
+    del alumno — no aparece marcado con un error: no aparece. Que llegue un
+    evento posterior significa que el contador volvio a alinearse y el
+    episodio esta operativo.
+
+    Lo que NO se limpia es `integrity_compromised`: ahi queda registrado que
+    la cadena tuvo un hueco, que es justamente la evidencia a preservar.
+    """
+    import redis.asyncio as redis
+    from ctr_service.models import Episode
+
+    redis_url = (
+        f"redis://{redis_container.get_container_host_ip()}:"
+        f"{redis_container.get_exposed_port(6379)}/0"
+    )
+    r = redis.from_url(redis_url, decode_responses=False)
+    tenant, episode_id = uuid4(), uuid4()
+    producer, worker = _aislado(r, session_factory, claim_min_idle_ms=0)
+    await worker.ensure_consumer_group()
+
+    await producer.publish(
+        _seq_event(episode_id, tenant, 0, "episodio_abierto", _apertura_payload())
+    )
+    await worker._process_batch()
+
+    # Un evento que no entra: se agota en reintentos y marca el episodio.
+    await producer.publish(
+        _seq_event(episode_id, tenant, 6, "edicion_codigo", {"snapshot": "x", "origin": "typed"})
+    )
+    for _ in range(5):
+        await worker._process_batch()
+
+    async def _episodio() -> tuple[str, bool]:
+        async with session_factory() as sess:
+            await sess.execute(
+                text("SELECT set_config('app.current_tenant', :t, true)"),
+                {"t": str(tenant)},
+            )
+            ep = (await sess.execute(select(Episode).where(Episode.id == episode_id))).scalar_one()
+            return ep.estado, ep.integrity_compromised
+
+    estado, marcado = await _episodio()
+    assert estado == "integrity_compromised"
+    assert marcado is True
+
+    # El alumno sigue trabajando con el contador ya repuesto: entra el seq 1.
+    await producer.publish(
+        _seq_event(episode_id, tenant, 1, "edicion_codigo", {"snapshot": "y", "origin": "typed"})
+    )
+    await worker._process_batch()
+
+    estado, marcado = await _episodio()
+    assert estado == "open", "el episodio vuelve a ser visible para el docente"
+    assert marcado is True, "pero el hueco en la cadena queda registrado"
+
+    await r.aclose()
+
+
+async def test_dlq_tardio_no_descierra_un_episodio_cerrado(
+    pg_engine, session_factory, redis_container
+) -> None:
+    """Un mensaje viejo que llega a la DLQ despues del cierre marca la
+    bandera pero NO pisa `estado="closed"`.
+
+    Con el reclamo de pendientes activo esto dejo de ser hipotetico: los
+    mensajes viejos ahora si se reprocesan, y tardan un par de ciclos en
+    agotar intentos. Si el UPDATE pisara el estado, el episodio quedaria con
+    `closed_at` seteado y otro estado, y la reflexion final —que exige
+    `estado == "closed"`— dejaria de poder registrarse.
+    """
+    import redis.asyncio as redis
+    from ctr_service.models import Episode
+
+    redis_url = (
+        f"redis://{redis_container.get_container_host_ip()}:"
+        f"{redis_container.get_exposed_port(6379)}/0"
+    )
+    r = redis.from_url(redis_url, decode_responses=False)
+    tenant, episode_id = uuid4(), uuid4()
+    producer, worker = _aislado(r, session_factory, claim_min_idle_ms=0)
+    await worker.ensure_consumer_group()
+
+    await producer.publish(
+        _seq_event(episode_id, tenant, 0, "episodio_abierto", _apertura_payload())
+    )
+    await worker._process_batch()
+    await producer.publish(
+        _seq_event(episode_id, tenant, 1, "episodio_cerrado", {"reason": "student_closed"})
+    )
+    await worker._process_batch()
+
+    async def _episodio() -> tuple[str, bool, object]:
+        async with session_factory() as sess:
+            await sess.execute(
+                text("SELECT set_config('app.current_tenant', :t, true)"),
+                {"t": str(tenant)},
+            )
+            ep = (await sess.execute(select(Episode).where(Episode.id == episode_id))).scalar_one()
+            return ep.estado, ep.integrity_compromised, ep.closed_at
+
+    estado, _, closed_at = await _episodio()
+    assert estado == "closed"
+    assert closed_at is not None
+
+    # Mensaje rezagado que ya no puede entrar en la cadena.
+    await producer.publish(
+        _seq_event(episode_id, tenant, 9, "edicion_codigo", {"snapshot": "z", "origin": "typed"})
+    )
+    for _ in range(5):
+        await worker._process_batch()
+
+    estado, marcado, closed_at = await _episodio()
+    assert estado == "closed", "un DLQ tardio no debe des-cerrar el episodio"
+    assert closed_at is not None
+    assert marcado is True, "pero la bandera del hueco si se pone"
+
+    await r.aclose()
+
+
+async def test_pendiente_reciente_no_se_reclama_antes_del_umbral(
+    pg_engine, session_factory, redis_container
+) -> None:
+    """El reclamo respeta `claim_min_idle_ms`: un mensaje que acaba de fallar
+    no se reprocesa en el ciclo inmediato.
+
+    Sin ese umbral el worker giraria sobre el mismo mensaje fallido a la
+    velocidad del loop, gastando intentos y CPU antes de que la condicion
+    transitoria que lo hizo fallar tenga chance de resolverse.
+    """
+    import redis.asyncio as redis
+
+    redis_url = (
+        f"redis://{redis_container.get_container_host_ip()}:"
+        f"{redis_container.get_exposed_port(6379)}/0"
+    )
+    r = redis.from_url(redis_url, decode_responses=False)
+    tenant, episode_id = uuid4(), uuid4()
+    producer, worker = _aislado(r, session_factory, claim_min_idle_ms=60_000)
+    await worker.ensure_consumer_group()
+
+    await producer.publish(
+        _seq_event(episode_id, tenant, 0, "episodio_abierto", _apertura_payload())
+    )
+    await worker._process_batch()
+
+    _baseline = await r.xpending(worker.stream_key, worker.cfg.consumer_group)
+    antes = int(_baseline.get("pending", 0)) if _baseline else 0
+
+    await producer.publish(
+        _seq_event(
+            episode_id, tenant, 4, "edicion_codigo", {"snapshot": "y = 2", "origin": "typed"}
+        )
+    )
+    await worker._process_batch()
+
+    for _ in range(3):
+        await worker._process_batch()
+
+    # Sigue pendiente y todavia no fue a la DLQ: el umbral no se cumplio.
+    # El stream es compartido por el modulo, asi que comparamos el delta.
+    pending = await r.xpending(worker.stream_key, worker.cfg.consumer_group)
+    assert int(pending.get("pending", 0)) == antes + 1
+    assert await r.xlen(worker.cfg.dlq_stream) == 0
+
+    await r.aclose()
+
+
+async def test_el_worker_acepta_el_seq_correcto_despues_de_rechazar_uno_adelantado(
+    pg_engine, session_factory, redis_container
+) -> None:
+    """CARACTERIZACION: el rechazo no envenena la cadena del lado del worker.
+
+    Si despues del seq adelantado llega el seq que la cadena espera, se
+    persiste normalmente. Esto acota donde vive el problema: NO en la
+    validacion del worker (que se comporta bien), sino aguas arriba, en
+    quien asigna los seq — el contador Redis del tutor-service, que sigue
+    incrementando sin enterarse de que Postgres los rechazo.
+    """
+    import redis.asyncio as redis
+    from ctr_service.models import Event
+
+    redis_url = (
+        f"redis://{redis_container.get_container_host_ip()}:"
+        f"{redis_container.get_exposed_port(6379)}/0"
+    )
+    r = redis.from_url(redis_url, decode_responses=False)
+    tenant, episode_id = uuid4(), uuid4()
+    producer, worker = _aislado(r, session_factory)
+    await worker.ensure_consumer_group()
+
+    await producer.publish(
+        _seq_event(episode_id, tenant, 0, "episodio_abierto", _apertura_payload())
+    )
+    await worker._process_batch()
+
+    # seq=9: adelantado, se rechaza.
+    await producer.publish(
+        _seq_event(episode_id, tenant, 9, "edicion_codigo", {"snapshot": "a", "origin": "typed"})
+    )
+    await worker._process_batch()
+
+    # seq=1: el que la cadena espera. Debe entrar sin problema.
+    await producer.publish(
+        _seq_event(episode_id, tenant, 1, "edicion_codigo", {"snapshot": "b", "origin": "typed"})
+    )
+    await worker._process_batch()
+
+    async with session_factory() as s:
+        await s.execute(
+            text("SELECT set_config('app.current_tenant', :t, true)"),
+            {"t": str(tenant)},
+        )
+        events = (
+            (
+                await s.execute(
+                    select(Event).where(Event.episode_id == episode_id).order_by(Event.seq)
+                )
+            )
+            .scalars()
+            .all()
+        )
+
+    assert [e.seq for e in events] == [0, 1], "el worker acepta el seq correcto tras el rechazo"
+    for prev, curr in itertools.pairwise(events):
+        assert curr.prev_chain_hash == prev.chain_hash
+
+    await r.aclose()
+
+
+async def test_el_codigo_del_alumno_desaparece_cuando_la_cadena_se_desincroniza(
+    pg_engine, session_factory, redis_container
+) -> None:
+    """CARACTERIZACION del daño observable — el caso reportado en el piloto.
+
+    El alumno escribe, la cadena se desincroniza, sigue escribiendo. Cada
+    `edicion_codigo` recibe 202 Accepted, asi que el front cree que se
+    guardo. Al pausar y retomar, el estado se reconstruye desde los
+    eventos persistidos: el ultimo snapshot que sobrevive es el previo a
+    la desincronizacion. Todo lo escrito despues no existe.
+    """
+    import redis.asyncio as redis
+    from ctr_service.models import Event
+
+    redis_url = (
+        f"redis://{redis_container.get_container_host_ip()}:"
+        f"{redis_container.get_exposed_port(6379)}/0"
+    )
+    r = redis.from_url(redis_url, decode_responses=False)
+    tenant, episode_id = uuid4(), uuid4()
+    producer, worker = _aislado(r, session_factory)
+    await worker.ensure_consumer_group()
+
+    await producer.publish(
+        _seq_event(episode_id, tenant, 0, "episodio_abierto", _apertura_payload())
+    )
+    await worker._process_batch()
+
+    # Lo ultimo que el alumno alcanzo a guardar antes de la desincronizacion.
+    await producer.publish(
+        _seq_event(
+            episode_id,
+            tenant,
+            1,
+            "edicion_codigo",
+            {"snapshot": "def resolver():\n    pass", "origin": "student_typed"},
+        )
+    )
+    await worker._process_batch()
+
+    # A partir de aca el contador quedo adelantado: todo lo que sigue se
+    # rechaza aunque el front reciba 202.
+    for seq in (7, 8, 9):
+        await producer.publish(
+            _seq_event(
+                episode_id,
+                tenant,
+                seq,
+                "edicion_codigo",
+                {
+                    "snapshot": f"def resolver():\n    return {seq}  # trabajo real del alumno",
+                    "origin": "student_typed",
+                },
+            )
+        )
+        await worker._process_batch()
+
+    async with session_factory() as s:
+        await s.execute(
+            text("SELECT set_config('app.current_tenant', :t, true)"),
+            {"t": str(tenant)},
+        )
+        events = (
+            (
+                await s.execute(
+                    select(Event).where(Event.episode_id == episode_id).order_by(Event.seq)
+                )
+            )
+            .scalars()
+            .all()
+        )
+
+    # Reconstruccion equivalente a la de tutor-service `_build_episode_state`:
+    # ultimo payload.snapshot entre los eventos de codigo persistidos.
+    last_snapshot = None
+    for e in events:
+        if e.event_type in ("edicion_codigo", "codigo_ejecutado"):
+            last_snapshot = (e.payload or {}).get("snapshot")
+
+    assert [e.seq for e in events] == [0, 1], "los tres eventos posteriores no se persistieron"
+    assert last_snapshot == "def resolver():\n    pass"
+    assert "trabajo real del alumno" not in (last_snapshot or ""), (
+        "el trabajo posterior a la desincronizacion no llega al estado reconstruido"
+    )
 
     await r.aclose()

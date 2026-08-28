@@ -29,6 +29,7 @@ from uuid import UUID
 import redis.asyncio as redis
 from sqlalchemy import select, update
 from sqlalchemy.dialects.postgresql import insert
+from sqlalchemy.exc import DBAPIError, InterfaceError, OperationalError
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from ctr_service.config import settings
@@ -47,6 +48,38 @@ logger = logging.getLogger(__name__)
 
 MAX_ATTEMPTS = 3  # después se envía a DLQ
 
+# Contador atómico de seq del tutor-service (`SessionManager.SEQ_KEY_PREFIX`).
+# El CTR normalmente no conoce keys de otro servicio; la excepción es
+# deliberada, está acotada a un SET y se documenta acá.
+#
+# Cuando un evento no puede persistirse, ese contador queda adelantado
+# respecto de `events_count` y TODO evento posterior del episodio se rechaza:
+# el alumno sigue trabajando y nada se guarda. El worker es el único que sabe
+# cuál es el valor correcto —lo tiene en `events_count`— así que lo repone
+# directamente.
+#
+# Se repone el contador y NO se toca `tutor:session:`. El `seq` del JSON de
+# sesión es un espejo no autoritativo (ver `SessionManager.next_seq`): el
+# contador manda. Borrar la sesión sería peor por tres razones: dependería de
+# que el frontend reanude (no lo hace para este estado), echaría al alumno de
+# una sesión viva, y una request en vuelo la recrearía dejando el contador
+# igual de desalineado.
+#
+# Reponer es además idempotente: si el mismo episodio manda N eventos a la
+# DLQ, las N reposiciones escriben el mismo valor.
+TUTOR_SEQ_KEY_PREFIX = "tutor:seq:"
+
+# `SessionManager.SESSION_KEY_PREFIX`. Se usa SOLO en el camino de FALLO: si no
+# se pudo reponer el contador, borrar la sesion es lo que deja que el heal del
+# tutor lo reconstruya en el evento siguiente. Sin eso el episodio queda mudo
+# hasta que venza el TTL — seis horas.
+TUTOR_SESSION_KEY_PREFIX = "tutor:session:"
+
+# TTL del contador, espejado de `SessionManager.SESSION_TTL` (6 h). Si se
+# repusiera sin TTL la key quedaría para siempre; si se repusiera con uno más
+# corto, expiraría antes que la sesión que la acompaña.
+TUTOR_SEQ_TTL_SECONDS = 6 * 3600
+
 # El stub de redis-py tipa xreadgroup() con un Union que cubre variantes de
 # respuesta (dict-shaped) que XREADGROUP nunca produce en la practica; con
 # decode_responses=False la forma real es siempre esta lista de tuplas
@@ -63,6 +96,11 @@ class PartitionConfig:
     dlq_stream: str = "ctr.dead"
     block_ms: int = 2000
     batch_size: int = 32
+    # Idle minimo (ms) que debe acumular un mensaje pendiente para que otro
+    # ciclo lo reclame via XAUTOCLAIM. Sin este reclamo, un mensaje que
+    # falla queda PENDING para siempre: XREADGROUP con ">" solo entrega
+    # mensajes nuevos. Los tests lo bajan a 0 para no esperar.
+    claim_min_idle_ms: int = 60_000
 
 
 class PartitionWorker:
@@ -159,7 +197,14 @@ class PartitionWorker:
             await asyncio.sleep(30)
 
     async def _process_batch(self) -> None:
-        """Lee un batch del stream y procesa cada mensaje."""
+        """Lee un batch del stream y procesa cada mensaje.
+
+        Antes de pedir mensajes nuevos, reclama los que quedaron pendientes
+        de un intento anterior: sin eso el retry con DLQ que documenta este
+        modulo no llega a ocurrir nunca.
+        """
+        await self._reclaim_stale_pending()
+
         # XREADGROUP con block: espera hasta block_ms si no hay mensajes
         messages = cast(
             _XReadGroupMessages,
@@ -179,6 +224,185 @@ class PartitionWorker:
         for _, entries in messages:
             for message_id, fields in entries:
                 await self._process_message(message_id, fields)
+
+    async def _reponer_contador_seq(self, episode_id: UUID, tenant_id: UUID) -> None:
+        """Repone el contador de seq del tutor al `events_count` del episodio.
+
+        Es el heal del incidente de desincronización: el tutor asigna el seq
+        con `INCR tutor:seq:{episode_id}` y el worker lo valida contra
+        `episodes.events_count`. Cuando un evento no entra, el contador ya lo
+        contó y la cadena no, y desde ahí todo lo que el alumno escriba se
+        rechaza. El worker es el único de los dos que sabe cuál es el valor
+        correcto.
+
+        Escribe `events_count` — el próximo `INCR` devolverá `events_count + 1`
+        y `next_seq` entregará `events_count`, que es exactamente lo que la
+        cadena espera a continuación.
+
+        Fail-soft y sin excepciones hacia afuera: llega desde `_move_to_dlq`,
+        donde el evento ya está archivado y el episodio marcado. Un fallo acá
+        deja el episodio bloqueado —el estado previo al fix— pero no debe
+        frenar la ingesta del resto.
+        """
+        try:
+            async with tenant_session(tenant_id) as session:
+                ep = await session.get(Episode, episode_id)
+                if ep is None:
+                    return
+                events_count = int(ep.events_count)
+
+            await self.redis.set(
+                f"{TUTOR_SEQ_KEY_PREFIX}{episode_id}",
+                events_count,
+                ex=TUTOR_SEQ_TTL_SECONDS,
+            )
+            logger.info(
+                "Contador de seq repuesto a %d para episodio %s",
+                events_count,
+                episode_id,
+            )
+        except Exception:
+            logger.warning(
+                "No se pudo reponer el contador de seq del episodio %s; "
+                "se intenta borrar la sesion para que el tutor la reconstruya",
+                episode_id,
+                exc_info=True,
+            )
+            await self._forzar_reconstruccion_de_sesion(episode_id)
+
+    async def _forzar_reconstruccion_de_sesion(self, episode_id: UUID) -> None:
+        """Ultimo recurso cuando no se pudo reponer el contador.
+
+        **Sin esto, el episodio quedaba mudo seis horas.** El worker repone el
+        contador y NO toca `tutor:session:` — eso es correcto en el camino feliz
+        (borrar la sesion echaria al alumno de una sesion viva). Pero si la
+        reposicion falla —Postgres saturado, que es plausible: acabamos de
+        fallar tres veces contra la misma base— el resultado era:
+
+          - el contador queda adelantado y TODO evento posterior se rechaza;
+          - la sesion sigue viva, asi que `_emitir_con_heal` nunca dispara (solo
+            entra por `ValueError`, y ese `ValueError` sale de `sessions.get()`
+            devolviendo `None`);
+          - y aunque el alumno apriete "retomar", `resume_episode` tiene un
+            early-return idempotente ANTES de `init_seq_counter`: devuelve 200
+            sin tocar el contador.
+
+        O sea que el unico camino de salida era el TTL de la sesion: seis horas
+        con el alumno tipeando y nada guardandose.
+
+        Borrar la sesion invierte eso: el proximo evento encuentra `None`,
+        levanta `ValueError`, y el heal reconstruye la sesion Y el contador
+        desde `events_count`. El alumno pierde el estado en memoria de la
+        sesion —que es reconstruible— en vez de perder su trabajo.
+
+        Si esto tambien falla, el log sube a ERROR: ahi si el episodio queda
+        trabado y alguien tiene que enterarse.
+        """
+        try:
+            await self.redis.delete(f"{TUTOR_SESSION_KEY_PREFIX}{episode_id}")
+            logger.info(
+                "Sesion del episodio %s borrada: el proximo evento reconstruye "
+                "sesion y contador via el heal del tutor",
+                episode_id,
+            )
+        except Exception:
+            logger.error(
+                "El episodio %s quedo TRABADO: no se pudo reponer el contador de "
+                "seq ni borrar su sesion. Todo evento nuevo se va a rechazar "
+                "hasta que venza el TTL de la sesion.",
+                episode_id,
+                exc_info=True,
+            )
+
+    async def _reclaim_stale_pending(self) -> None:
+        """Reclama mensajes pendientes que superaron `claim_min_idle_ms`.
+
+        `_process_batch` lee el stream con ">" y eso entrega unicamente
+        mensajes nuevos. Un mensaje que falla no se ackea y queda en la PEL
+        del grupo, donde ninguna lectura posterior lo alcanza: sin este
+        reclamo `_get_attempts` nunca supera 1, MAX_ATTEMPTS es inalcanzable
+        y `_move_to_dlq` — junto con el `integrity_compromised` que marca —
+        no llega a ejecutarse. El mensaje se pierde en silencio.
+
+        XAUTOCLAIM reasigna esos mensajes a este consumer e incrementa su
+        contador de entregas, que es lo que `_get_attempts` consulta. El
+        umbral de idle evita reprocesar en bucle apretado un mensaje que
+        acaba de fallar.
+
+        Fail-soft: si el reclamo falla, se registra y el ciclo sigue con los
+        mensajes nuevos — un problema reclamando no debe frenar la ingesta.
+        """
+        cursor: Any = "0-0"
+        reclaimed = 0
+        try:
+            while reclaimed < self.cfg.batch_size:
+                result = await self.redis.xautoclaim(
+                    name=self.stream_key,
+                    groupname=self.cfg.consumer_group,
+                    consumername=self.consumer_name,
+                    min_idle_time=self.cfg.claim_min_idle_ms,
+                    start_id=cursor,
+                    count=self.cfg.batch_size,
+                )
+                cursor, entries = result[0], result[1]
+                if not entries:
+                    break
+                for message_id, fields in entries:
+                    await self._process_message(message_id, fields)
+                    reclaimed += 1
+                if not cursor or cursor in ("0-0", b"0-0"):
+                    break
+        except Exception:
+            logger.exception("Error reclamando pendientes en partition=%d", self.cfg.partition)
+            return
+
+        if reclaimed:
+            logger.info(
+                "Reclamados %d mensajes pendientes en partition=%d",
+                reclaimed,
+                self.cfg.partition,
+            )
+
+    @staticmethod
+    def _es_transitorio(exc: BaseException) -> bool:
+        """¿El fallo es de INFRAESTRUCTURA, o del contenido del mensaje?
+
+        La diferencia decide si el mensaje puede ir a la DLQ, y no es un matiz:
+        **un evento que va a la DLQ sale de la cadena para siempre**, y su lugar
+        lo termina ocupando otro (el heal repone el contador al `events_count`).
+
+        - **Permanente** — `ValueError` de `_persist_event` (seq inesperado,
+          episodio inexistente), JSON roto, campos que faltan. Reintentar
+          devuelve exactamente lo mismo. La DLQ es la respuesta correcta.
+        - **Transitorio** — Postgres cortado, pool agotado, DNS, Redis caído.
+          El mensaje es VÁLIDO; lo único que pasa es que ahora no se puede
+          escribir.
+
+        Por qué importa tanto acá: hasta que se agregó el reclamo de pendientes,
+        `MAX_ATTEMPTS` era inalcanzable y la DLQ por fallo de procesamiento era
+        código muerto. Al encenderla, el presupuesto total pasó a ser
+        `1 entrega + 2 reclamos × 60s de idle ≈ 120 segundos`, plano y sin
+        backoff. Un failover de Postgres de tres minutos —que pasa— mandaba a
+        la DLQ TODOS los eventos de esa ventana y marcaba decenas de episodios
+        como adulterados. Eventos perfectamente válidos, de alumnos que estaban
+        trabajando bien.
+
+        Antes del reclamo esos mensajes se quedaban en la PEL, intactos y
+        recuperables con un `XCLAIM` manual cuando la base volvía. El fix del
+        retry no puede costar eso.
+
+        Ante un transitorio se reintenta SIN TOPE. Es deliberado: la alternativa
+        es tirar evidencia de la tesis porque la base tardó en volver. El
+        mensaje queda en la PEL —visible en `XPENDING`, que es donde un
+        operador lo busca— y el log lo dice en cada vuelta.
+        """
+        if isinstance(exc, OperationalError | InterfaceError):
+            return True
+        if isinstance(exc, DBAPIError) and exc.connection_invalidated:
+            return True
+        # `redis.RedisError` y los `OSError` de red (incluye `ConnectionError`
+        # y `TimeoutError`, que en Python 3.11+ heredan de `OSError`).
+        return isinstance(exc, redis.RedisError | OSError)
 
     async def _process_message(self, message_id: str, fields: dict[bytes, bytes]) -> None:
         """Procesa un mensaje con retry + DLQ."""
@@ -203,6 +427,18 @@ class PartitionWorker:
         except Exception as exc:
             # Contar intentos por mensaje usando XPENDING
             attempts = await self._get_attempts(message_id)
+            if self._es_transitorio(exc):
+                # NO consume presupuesto. El mensaje es valido; lo que fallo es
+                # la infraestructura, y mandarlo a la DLQ seria tirar un evento
+                # bueno porque la base tardo en volver.
+                logger.warning(
+                    "Mensaje %s: fallo TRANSITORIO (intento %d). Queda en la PEL "
+                    "y se reintenta sin tope; no cuenta para la DLQ.",
+                    message_id,
+                    attempts,
+                    exc_info=exc,
+                )
+                return
             if attempts >= MAX_ATTEMPTS:
                 logger.error(
                     "Mensaje %s falló %d veces; moviendo a DLQ",
@@ -341,11 +577,23 @@ class PartitionWorker:
                 # proyeccion de estado se sigue resolviendo bien (no rompe verify).
                 ep.estado = "open"
                 ep.closed_at = None
-            elif ep.estado == "paused":
+            elif ep.estado in ("paused", "integrity_compromised"):
                 # ADR-055: cualquier actividad posterior a un abandono reanuda
                 # el episodio (el estudiante retomo via resume). No requiere
                 # evento dedicado — la reanudacion es derivable de la cadena
                 # (episodio_abandonado seguido de mas eventos).
+                #
+                # `integrity_compromised` se repone por el mismo criterio: lo
+                # pone `_move_to_dlq` cuando un evento no entro en la cadena, y
+                # que llegue un evento posterior significa que el contador de
+                # seq volvio a alinearse y el episodio esta operativo otra vez.
+                #
+                # Dejarlo pegado en ese estado tiene un costo que no se ve: hay
+                # consultas que filtran por `estado IN ('closed','paused')`, asi
+                # que el episodio DESAPARECE de la vista del docente y del
+                # progreso del alumno — no aparece marcado, no aparece. La
+                # bandera `integrity_compromised` del episodio NO se toca: ahi
+                # queda registrado el hueco, que es lo que hay que preservar.
                 ep.estado = "open"
 
         # Salir del context manager → tenant_session hace commit. Si hubo
@@ -446,19 +694,40 @@ class PartitionWorker:
                     )
                     session.add(dl)
 
-                    # Marcar episodio afectado (integrity_compromised = TRUE)
+                    # Marcar episodio afectado (integrity_compromised = TRUE).
+                    #
+                    # La bandera se pone siempre — el hueco en la cadena
+                    # ocurrio y hay que registrarlo. El `estado`, en cambio,
+                    # NO se pisa si el episodio ya cerro: un mensaje viejo que
+                    # llega tarde a la DLQ lo des-cerraria, dejando
+                    # `closed_at` seteado con otro estado y rompiendo la
+                    # reflexion final, que exige `estado == "closed"`. Con el
+                    # reclamo de pendientes activo esto dejo de ser
+                    # improbable: los mensajes viejos ahora si se reprocesan.
                     await session.execute(
                         update(Episode)
                         .where(Episode.id == episode_id)
-                        .values(
-                            integrity_compromised=True,
-                            estado="integrity_compromised",
-                        )
+                        .values(integrity_compromised=True)
+                    )
+                    await session.execute(
+                        update(Episode)
+                        .where(Episode.id == episode_id, Episode.estado != "closed")
+                        .values(estado="integrity_compromised")
                     )
 
                 # Métrica: incremento del counter post-commit. tenant_id como
                 # único label (episode_id prohibido por cardinalidad).
                 ctr_episodes_integrity_compromised_total.add(1, {"tenant_id": str(tenant_id)})
+
+                # Desbloquear al alumno reponiendo el contador de seq al
+                # valor que la cadena espera. Sin esto el episodio queda mudo:
+                # cada evento nuevo nace con un seq que ya no puede entrar, y
+                # el alumno escribe sin que nada se guarde.
+                #
+                # Fail-soft: el evento ya está en la DLQ y el episodio quedó
+                # marcado; no poder reponer el contador no debe frenar al
+                # worker.
+                await self._reponer_contador_seq(episode_id, tenant_id)
             except Exception:
                 logger.exception("Error guardando dead-letter en DB")
 

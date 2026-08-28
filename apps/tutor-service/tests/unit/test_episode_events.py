@@ -71,11 +71,17 @@ class FakeCTRClient:
     def __init__(self) -> None:
         self.published_events: list[dict] = []
         self.captured_callers: list[UUID] = []
+        self.episodes: dict[str, dict] = {}
 
     async def publish_event(self, event: dict, tenant_id: UUID, caller_id: UUID) -> str:
         self.published_events.append(event)
         self.captured_callers.append(caller_id)
         return f"fake-msg-id-{len(self.published_events)}"
+
+    async def get_episode(self, episode_id: UUID, tenant_id: UUID, caller_id: UUID) -> dict | None:
+        """Lo consulta `resume_episode`, que es lo que corre cuando el handler
+        de un evento no encuentra la sesión y tiene que reconstruirla."""
+        return self.episodes.get(str(episode_id))
 
 
 # ── Fixtures ────────────────────────────────────────────────────────
@@ -217,6 +223,30 @@ def http_client(monkeypatch, fake_ctr: FakeCTRClient, redis_client):
     yield TestClient(main.app), fake_tutor
 
 
+def _episodio_en_ctr(episode_id, tenant_id, student_id, estado: str, events_count: int = 1) -> dict:
+    """Lo que `resume_episode` consulta al CTR antes de reconstruir la sesión.
+
+    Sin esto el fake devuelve `None` y todo cae en «episodio no encontrado»
+    (404), sin distinguir un episodio CERRADO de uno INEXISTENTE — que es lo
+    que estos tests dicen probar.
+    """
+    return {
+        "id": str(episode_id),
+        "tenant_id": str(tenant_id),
+        "comision_id": str(uuid4()),
+        "student_pseudonym": str(student_id),
+        "problema_id": str(uuid4()),
+        "estado": estado,
+        "events_count": events_count,
+        "prompt_system_hash": "a" * 64,
+        "prompt_system_version": "v1.0.0",
+        "classifier_config_hash": "b" * 64,
+        "curso_config_hash": "c" * 64,
+        "model": "fake-model",
+        "events": [],
+    }
+
+
 def _student_headers(user_id: UUID, tenant_id: UUID) -> dict[str, str]:
     return {
         "X-User-Id": str(user_id),
@@ -263,7 +293,7 @@ async def test_edicion_codigo_happy_path_returns_202(http_client, fake_ctr: Fake
     assert payload["language"] == "python"
 
 
-async def test_edicion_codigo_episode_closed_falla_409(http_client) -> None:
+async def test_edicion_codigo_episode_closed_falla_409(http_client, fake_ctr) -> None:
     """POST después de cerrar el episodio devuelve 409 Conflict."""
     client, tutor = http_client
     tenant_id = uuid4()
@@ -277,6 +307,11 @@ async def test_edicion_codigo_episode_closed_falla_409(http_client) -> None:
         classifier_config_hash="b" * 64,
     )
     await tutor.close_episode(episode_id)
+    # El CTR lo conoce y lo reporta CERRADO: asi el 409 sale del estado
+    # del episodio y no de que la sesion no exista.
+    fake_ctr.episodes[str(episode_id)] = _episodio_en_ctr(
+        episode_id, tenant_id, student_id, estado="closed"
+    )
 
     response = client.post(
         f"/api/v1/episodes/{episode_id}/events/edicion_codigo",
@@ -284,13 +319,14 @@ async def test_edicion_codigo_episode_closed_falla_409(http_client) -> None:
         headers=_student_headers(student_id, tenant_id),
     )
     assert response.status_code == 409
-    assert (
-        "no existe" in response.json()["detail"].lower()
-        or "cerrado" in response.json()["detail"].lower()
-    )
+    # El motivo ahora es el ESTADO del episodio, no que falte la sesion: el
+    # handler intento reconstruirla y `resume_episode` se nego porque esta
+    # cerrado. Es la distincion que antes no se hacia.
+    detalle = response.json()["detail"].lower()
+    assert "closed" in detalle or "cerrado" in detalle
 
 
-async def test_edicion_codigo_episode_inexistente_falla_409(http_client) -> None:
+async def test_edicion_codigo_episode_inexistente_falla_404(http_client) -> None:
     """POST a un episode_id que nunca se abrió también devuelve 409."""
     client, _tutor = http_client
     response = client.post(
@@ -298,7 +334,7 @@ async def test_edicion_codigo_episode_inexistente_falla_409(http_client) -> None
         json={"snapshot": "x = 1", "diff_chars": 5, "language": "python"},
         headers=_student_headers(uuid4(), uuid4()),
     )
-    assert response.status_code == 409
+    assert response.status_code == 404
 
 
 async def test_edicion_codigo_snapshot_too_large_422(http_client) -> None:
@@ -577,7 +613,7 @@ async def test_anotacion_demasiado_larga_falla_422(http_client) -> None:
     assert response.status_code == 422
 
 
-async def test_anotacion_episode_closed_falla_409(http_client) -> None:
+async def test_anotacion_episode_closed_falla_409(http_client, fake_ctr) -> None:
     """POST después de cerrar el episodio devuelve 409 Conflict."""
     client, tutor = http_client
     tenant_id = uuid4()
@@ -591,6 +627,11 @@ async def test_anotacion_episode_closed_falla_409(http_client) -> None:
         classifier_config_hash="b" * 64,
     )
     await tutor.close_episode(episode_id)
+    # El CTR lo conoce y lo reporta CERRADO: asi el 409 sale del estado
+    # del episodio y no de que la sesion no exista.
+    fake_ctr.episodes[str(episode_id)] = _episodio_en_ctr(
+        episode_id, tenant_id, student_id, estado="closed"
+    )
 
     response = client.post(
         f"/api/v1/episodes/{episode_id}/events/anotacion_creada",
@@ -719,7 +760,7 @@ async def test_lectura_enunciado_happy_path(http_client, fake_ctr: FakeCTRClient
     assert fake_ctr.captured_callers[idx] != TUTOR_SERVICE_USER_ID
 
 
-async def test_lectura_enunciado_episodio_cerrado_409(http_client) -> None:
+async def test_lectura_enunciado_episodio_cerrado_409(http_client, fake_ctr) -> None:
     """POST después de cerrar el episodio devuelve 409."""
     client, tutor = http_client
     tenant_id = uuid4()
@@ -733,6 +774,11 @@ async def test_lectura_enunciado_episodio_cerrado_409(http_client) -> None:
         classifier_config_hash="b" * 64,
     )
     await tutor.close_episode(episode_id)
+    # El CTR lo conoce y lo reporta CERRADO: asi el 409 sale del estado
+    # del episodio y no de que la sesion no exista.
+    fake_ctr.episodes[str(episode_id)] = _episodio_en_ctr(
+        episode_id, tenant_id, student_id, estado="closed"
+    )
 
     response = client.post(
         f"/api/v1/episodes/{episode_id}/events/lectura_enunciado",
@@ -786,3 +832,74 @@ async def test_lectura_enunciado_duration_demasiado_grande_422(
         headers=_student_headers(student_id, tenant_id),
     )
     assert response.status_code == 422
+
+
+async def test_evento_reconstruye_la_sesion_ausente_en_vez_de_rechazar(
+    http_client, fake_ctr: FakeCTRClient
+) -> None:
+    """Si la sesión no está pero el episodio vive, el handler la reconstruye y
+    el evento entra. No devuelve 409.
+
+    Es la pieza que sostiene todo el heal, y la distinción importa más de lo
+    que parece: el `ctr-client` trata cualquier 4xx que no sea 408/429 como
+    definitivo y **descarta el evento de su cola**. Un 409 acá no sería «te
+    aviso»: sería tirar el trabajo del alumno justo cuando el sistema está
+    recuperándose de una desincronización.
+
+    La sesión puede faltar por TTL vencido o porque el `partition_worker`
+    intervino tras un evento que no entró en la cadena. En los dos casos el
+    episodio sigue vivo y el alumno sigue escribiendo.
+    """
+    client, tutor = http_client
+    tenant_id, student_id = uuid4(), uuid4()
+    comision_id, problema_id = uuid4(), uuid4()
+
+    episode_id = await tutor.open_episode(
+        tenant_id=tenant_id,
+        comision_id=comision_id,
+        student_pseudonym=student_id,
+        problema_id=problema_id,
+        curso_config_hash="c" * 64,
+        classifier_config_hash="b" * 64,
+    )
+
+    # El CTR conoce el episodio: sigue abierto, con la apertura persistida.
+    fake_ctr.episodes[str(episode_id)] = {
+        "id": str(episode_id),
+        "tenant_id": str(tenant_id),
+        "comision_id": str(comision_id),
+        "student_pseudonym": str(student_id),
+        "problema_id": str(problema_id),
+        "estado": "open",
+        "events_count": 1,
+        "prompt_system_hash": "a" * 64,
+        "prompt_system_version": "v1.0.0",
+        "classifier_config_hash": "b" * 64,
+        "curso_config_hash": "c" * 64,
+        "model": "fake-model",
+        "events": [],
+    }
+
+    # Desaparece la sesión: TTL vencido, o el worker la dejó sin contador
+    # válido tras mandar un evento a la DLQ.
+    await tutor.sessions.delete(episode_id)
+    assert await tutor.sessions.get(episode_id) is None
+
+    response = client.post(
+        f"/api/v1/episodes/{episode_id}/events/edicion_codigo",
+        json={"snapshot": "print('sigo trabajando')", "diff_chars": 22, "language": "python"},
+        headers=_student_headers(student_id, tenant_id),
+    )
+
+    assert response.status_code == 202, (
+        "sin el heal esto seria 409 y el ctr-client descartaria el evento"
+    )
+
+    # Y la sesión quedó reconstruida desde el `events_count` persistido, así
+    # que el seq que se asignó es el que la cadena espera a continuación.
+    assert response.json()["seq"] == "1"
+    assert await tutor.sessions.get(episode_id) is not None
+
+    edicion = [e for e in fake_ctr.published_events if e["event_type"] == "edicion_codigo"]
+    assert len(edicion) == 1
+    assert edicion[0]["payload"]["snapshot"] == "print('sigo trabajando')"

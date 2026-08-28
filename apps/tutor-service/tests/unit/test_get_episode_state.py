@@ -138,7 +138,12 @@ async def test_get_episode_state_happy_path(client: AsyncClient, ctr_mock: Async
                 "duration_ms": 12.5,
             },
         ),
-        _ev(5, "nota_personal", {"contenido": "Recordar usar print() siempre"}),
+        # El shape REAL que emite `record_anotacion_creada` y que define
+        # `AnotacionCreadaPayload`. Antes este fixture inventaba
+        # `nota_personal` / `contenido`, que no existen en produccion: el
+        # test pasaba porque el dato fabricado coincidia con un filtro roto,
+        # mientras las notas de los alumnos nunca se reconstruian.
+        _ev(5, "anotacion_creada", {"content": "Recordar usar print() siempre", "words": 4}),
     ]
     ctr_mock.get_episode.return_value = _make_ctr_episode(
         episode_id=episode_id,

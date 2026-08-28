@@ -12,6 +12,7 @@ POST /api/v1/episodes/{id}/run-tests     ADR-033/034: emite TestsEjecutados (con
 
 from __future__ import annotations
 
+import contextlib
 import json
 import secrets
 from collections.abc import Awaitable, Callable
@@ -250,6 +251,56 @@ async def open_episode(
     return OpenEpisodeResponse(episode_id=episode_id)
 
 
+async def _emitir_con_heal(
+    episode_id: UUID,
+    idempotency_key: str | None,
+    user: User,
+    emit: Callable[[], Awaitable[int]],
+) -> int:
+    """Emite un evento CTR; si la sesión no existe, la reconstruye y reintenta.
+
+    La sesión Redis puede faltar por dos motivos bien distintos: venció su TTL,
+    o el `partition_worker` la invalidó al mandar un evento a la DLQ (el heal
+    del contador de seq). En los dos casos el episodio puede seguir vivo y el
+    alumno seguir trabajando.
+
+    Sin este reintento el handler responde 409 y el `ctr-client` lo trata como
+    definitivo — un 4xx que no sea 408/429 se descarta sin reintentar. El
+    trabajo del alumno se perdería justo en el momento en que el sistema está
+    intentando recuperarse de una desincronización, que es exactamente el
+    incidente que el heal viene a resolver.
+
+    `resume_episode` valida dueño, tenant y estado, así que un episodio
+    realmente cerrado sigue devolviendo 409. Eso separa dos casos que hasta
+    ahora compartían código de respuesta: «sesión ausente pero episodio vivo»
+    (recuperable) y «episodio cerrado» (definitivo).
+
+    Reintentar con el mismo `Idempotency-Key` es seguro: si el primer intento
+    falló, `reserve_or_get_seq` liberó el claim con HDEL y el reintento lo
+    vuelve a ganar.
+    """
+    try:
+        return await _idempotent_seq(episode_id, idempotency_key, emit)
+    except ValueError as sin_sesion:
+        try:
+            await _get_tutor().resume_episode(
+                episode_id=episode_id,
+                tenant_id=user.tenant_id,
+                user_id=user.id,
+            )
+        except HTTPException:
+            # El episodio esta cerrado, es de otro alumno o de otro tenant.
+            # El codigo que devuelve `resume_episode` YA es la respuesta
+            # correcta (409/403/404) y es mas preciso que el 409 generico.
+            raise
+        except Exception:
+            # El heal no pudo correr (CTR caido, Redis caido, lo que sea).
+            # Degradamos al comportamiento previo en vez de convertir un
+            # 409 conocido en un 500 nuevo.
+            raise sin_sesion from None
+        return await _idempotent_seq(episode_id, idempotency_key, emit)
+
+
 def _build_episode_state(episode_id: UUID, ep: dict[str, Any]) -> EpisodeStateResponse:
     """Reduce el `EpisodeWithEvents` del CTR al subset que la UI necesita.
 
@@ -259,7 +310,7 @@ def _build_episode_state(episode_id: UUID, ep: dict[str, Any]) -> EpisodeStateRe
       - messages: pares (prompt_enviado, tutor_respondio) en orden de seq.
         prompt_enviado.payload.content → role="user".
         tutor_respondio.payload.content → role="assistant".
-      - notes: eventos `nota_personal` con payload.contenido.
+      - notes: eventos `anotacion_creada` con payload.content.
 
     Eventos sin los campos esperados se ignoran silenciosamente — la UI
     debe ser tolerante a versiones viejas del schema.
@@ -302,8 +353,19 @@ def _build_episode_state(episode_id: UUID, ep: dict[str, Any]) -> EpisodeStateRe
             content = payload.get("content")
             if isinstance(content, str):
                 messages.append({"role": "assistant", "content": content, "ts": ts})
-        elif et in ("nota_personal", "nota_estudiante"):
-            contenido = payload.get("contenido") or payload.get("content")
+        elif et in ("anotacion_creada", "nota_personal", "nota_estudiante"):
+            # El evento real es `anotacion_creada` con `payload.content` — asi
+            # lo emite `record_anotacion_creada` y asi lo define el contrato
+            # (`AnotacionCreadaPayload`). Este filtro buscaba `nota_personal`
+            # y `nota_estudiante`, dos literales que no existen en ninguna
+            # parte del codigo: las notas del alumno nunca se reconstruian.
+            # Escribia su reflexion, refrescaba, y el panel aparecia vacio —
+            # el dato seguia intacto en la cadena, pero el no volvia a verlo.
+            #
+            # Los dos nombres viejos se conservan por el criterio del
+            # docstring (tolerar versiones anteriores del schema); no cuestan
+            # nada y cubren cualquier evento historico que los usara.
+            contenido = payload.get("content") or payload.get("contenido")
             if isinstance(contenido, str):
                 notes.append({"contenido": contenido, "ts": ts})
 
@@ -411,6 +473,26 @@ async def send_message(
     """
     await _enforce_message_rate_limit(user.id)
     tutor = _get_tutor()
+
+    # Curar la sesion ANTES de abrir el stream. `interact()` es un generador:
+    # si falla en el primer paso, el error ya viaja como evento SSE y no queda
+    # forma limpia de reintentar sin arriesgar duplicar lo emitido.
+    #
+    # La sesion puede faltar por TTL o porque el `partition_worker` intervino
+    # tras un evento que no entro en la cadena. En los dos casos el episodio
+    # puede seguir vivo, y sin esto la conversacion con el tutor se pierde —
+    # que para la trazabilidad pesa igual que el codigo: es lo que distingue
+    # haber pensado de haber copiado.
+    #
+    # Fail-safe: si el heal no puede correr, seguimos igual y `interact()`
+    # falla como antes. No convertimos un error conocido en uno nuevo.
+    if await tutor.sessions.get(episode_id) is None:
+        with contextlib.suppress(Exception):
+            await tutor.resume_episode(
+                episode_id=episode_id,
+                tenant_id=user.tenant_id,
+                user_id=user.id,
+            )
 
     async def event_stream():
         try:
@@ -585,9 +667,10 @@ async def emit_codigo_ejecutado(
     """
     tutor = _get_tutor()
     try:
-        seq = await _idempotent_seq(
+        seq = await _emitir_con_heal(
             episode_id,
             idempotency_key,
+            user,
             lambda: tutor.emit_codigo_ejecutado(
                 episode_id=episode_id,
                 user_id=user.id,
@@ -675,9 +758,10 @@ async def emit_edicion_codigo(
     """
     tutor = _get_tutor()
     try:
-        seq = await _idempotent_seq(
+        seq = await _emitir_con_heal(
             episode_id,
             idempotency_key,
+            user,
             lambda: tutor.record_edicion_codigo(
                 episode_id=episode_id,
                 snapshot=req.snapshot,
@@ -739,9 +823,10 @@ async def emit_lectura_enunciado(
     """
     tutor = _get_tutor()
     try:
-        seq = await _idempotent_seq(
+        seq = await _emitir_con_heal(
             episode_id,
             idempotency_key,
+            user,
             lambda: tutor.record_lectura_enunciado(
                 episode_id=episode_id,
                 duration_seconds=req.duration_seconds,
@@ -803,9 +888,10 @@ async def emit_anotacion_creada(
             detail="contenido no puede ser vacío o sólo whitespace",
         )
     try:
-        seq = await _idempotent_seq(
+        seq = await _emitir_con_heal(
             episode_id,
             idempotency_key,
+            user,
             lambda: tutor.record_anotacion_creada(
                 episode_id=episode_id,
                 contenido=req.contenido,
@@ -855,9 +941,10 @@ async def emit_pestana_perdida(
     """
     tutor = _get_tutor()
     try:
-        seq = await _idempotent_seq(
+        seq = await _emitir_con_heal(
             episode_id,
             idempotency_key,
+            user,
             lambda: tutor.record_pestana_perdida(
                 episode_id=episode_id,
                 user_id=user.id,
@@ -890,9 +977,10 @@ async def emit_pestana_recuperada(
     """
     tutor = _get_tutor()
     try:
-        seq = await _idempotent_seq(
+        seq = await _emitir_con_heal(
             episode_id,
             idempotency_key,
+            user,
             lambda: tutor.record_pestana_recuperada(
                 episode_id=episode_id,
                 user_id=user.id,
@@ -926,9 +1014,10 @@ async def emit_copia_intentada(
     """
     tutor = _get_tutor()
     try:
-        seq = await _idempotent_seq(
+        seq = await _emitir_con_heal(
             episode_id,
             idempotency_key,
+            user,
             lambda: tutor.record_copia_intentada(
                 episode_id=episode_id,
                 user_id=user.id,
@@ -964,9 +1053,10 @@ async def emit_pega_intentada(
     """
     tutor = _get_tutor()
     try:
-        seq = await _idempotent_seq(
+        seq = await _emitir_con_heal(
             episode_id,
             idempotency_key,
+            user,
             lambda: tutor.record_pega_intentada(
                 episode_id=episode_id,
                 user_id=user.id,
@@ -1054,6 +1144,7 @@ async def emit_tests_ejecutados(
     episode_id: UUID,
     req: RunTestsRequest,
     x_internal_service_token: str | None = Header(default=None),
+    idempotency_key: str | None = Header(default=None, alias="Idempotency-Key"),
     user: User = Depends(require_role("estudiante", "docente", "docente_admin", "superadmin")),
 ) -> dict[str, str]:
     """Emite tests_ejecutados al CTR con conteos del cliente Pyodide.
@@ -1062,23 +1153,43 @@ async def emit_tests_ejecutados(
       - 202: evento aceptado, devuelve seq.
       - 409: episodio cerrado, expirado o inexistente.
       - 422: payload invalido (conteos inconsistentes, tests_hidden!=0).
+      - 503: reserva de secuencia en curso en otra replica (reintentar).
+
+    Idempotencia (P-17): el `ctr-client` manda el `event_uuid` del evento
+    encolado en `Idempotency-Key` y lo conserva a traves de los reintentos. Este
+    endpoint no lo leia, asi que un ACK perdido sobre una request que el
+    servidor SI persistio dejaba un `tests_ejecutados` DUPLICADO. No abre hueco
+    de seq —la cadena sigue verificando— pero mete un evento de mas, y este no
+    es cualquier evento: el labeler v1.2.0 deriva N3 vs N4 de `tests_ejecutados`
+    (tests pasados con >=60s desde el ultimo `tutor_respondio` -> N4). Un
+    duplicado puede cambiar como queda nivelado un episodio en los datos de la
+    tesis, que es un dano silencioso: nada falla, los numeros salen distintos.
+
+    El prefijo `tests:` aisla este espacio de claves del de la reflexion
+    (`reflexion:`) y del prompt (`prompt:`); los endpoints `/events/*` usan el
+    uuid pelado, que nunca puede contener `:`, asi que tampoco colisiona con
+    ellos. Sin header, comportamiento legacy: cada POST emite.
 
     El user_id autoritativo es el del estudiante (header X-User-Id) — la
     ejecucion es del estudiante, su accion directa.
     """
     tutor = _get_tutor()
     try:
-        seq = await tutor.emit_tests_ejecutados(
-            episode_id=episode_id,
-            user_id=user.id,
-            test_count_total=req.test_count_total,
-            test_count_passed=req.test_count_passed,
-            test_count_failed=req.test_count_failed,
-            tests_publicos=req.tests_publicos,
-            tests_hidden=req.tests_hidden,
-            ejecucion_ms=req.ejecucion_ms,
-            chunks_used_hash=req.chunks_used_hash,
-            emisor_interno=_es_emisor_interno(x_internal_service_token),
+        seq = await _idempotent_seq(
+            episode_id,
+            (f"tests:{idempotency_key}" if idempotency_key else None),
+            lambda: tutor.emit_tests_ejecutados(
+                episode_id=episode_id,
+                user_id=user.id,
+                test_count_total=req.test_count_total,
+                test_count_passed=req.test_count_passed,
+                test_count_failed=req.test_count_failed,
+                tests_publicos=req.tests_publicos,
+                tests_hidden=req.tests_hidden,
+                ejecucion_ms=req.ejecucion_ms,
+                chunks_used_hash=req.chunks_used_hash,
+                emisor_interno=_es_emisor_interno(x_internal_service_token),
+            ),
         )
     except ValueError as e:
         msg = str(e)
@@ -1121,6 +1232,7 @@ class ReflectionRequest(BaseModel):
 async def emit_reflexion_completada(
     episode_id: UUID,
     req: ReflectionRequest,
+    idempotency_key: str | None = Header(default=None, alias="Idempotency-Key"),
     user: User = Depends(require_role("estudiante", "docente", "docente_admin", "superadmin")),
 ) -> dict[str, str]:
     """Emite reflexion_completada al CTR DESPUES del cierre del episodio (ADR-035).
@@ -1139,21 +1251,42 @@ async def emit_reflexion_completada(
       - 404: episodio no encontrado o de otro tenant.
       - 409: episodio no esta cerrado (la reflexion solo se acepta post-cierre).
       - 422: payload invalido (campos > 500 chars o tiempo_completado_ms negativo).
+      - 503: reserva de secuencia en curso en otra replica (reintentar).
+
+    Idempotencia (`Idempotency-Key`): este endpoint era el unico emisor de
+    eventos del servicio que NO la tenia, y es donde mas duele. Post-cierre la
+    sesion Redis ya no existe, asi que `record_reflexion_completada` toma
+    `seq = events_count` leido del CTR, salteando el contador atomico. Dos POST
+    con el mismo contenido —el reintento de red que el alumno no ve— leen el
+    MISMO `events_count` y emiten los dos con ese seq: el segundo no matchea,
+    va a la DLQ y marca `integrity_compromised` un episodio ya cerrado y
+    completado, con todo su trabajo adentro.
+
+    El dedup va por la misma via atomica que el resto (`reserve_or_get_seq`,
+    claim HSETNX). El registro `tutor:seen:{episode_id}` sobrevive al cierre a
+    proposito —`SessionManager.delete` borra sesion y contador pero lo deja
+    vencer por TTL (6h)—, que es justo lo que permite deduplicar un evento
+    post-cierre. Sin header el comportamiento es el legacy: cada POST emite.
 
     El user_id autoritativo es el del estudiante (header X-User-Id) — la
     reflexion es del estudiante, su autoria.
     """
     tutor = _get_tutor()
     try:
-        seq = await tutor.record_reflexion_completada(
-            episode_id=episode_id,
-            tenant_id=user.tenant_id,
-            user_id=user.id,
-            que_aprendiste=req.que_aprendiste,
-            dificultad_encontrada=req.dificultad_encontrada,
-            que_haria_distinto=req.que_haria_distinto,
-            prompt_version=req.prompt_version,
-            tiempo_completado_ms=req.tiempo_completado_ms,
+        seq = await _idempotent_seq(
+            episode_id,
+            (f"reflexion:{idempotency_key}" if idempotency_key else None),
+            lambda: tutor.record_reflexion_completada(
+                episode_id=episode_id,
+                tenant_id=user.tenant_id,
+                user_id=user.id,
+                que_aprendiste=req.que_aprendiste,
+                dificultad_encontrada=req.dificultad_encontrada,
+                que_haria_distinto=req.que_haria_distinto,
+                prompt_version=req.prompt_version,
+                tiempo_completado_ms=req.tiempo_completado_ms,
+                idempotency_key=idempotency_key,
+            ),
         )
     except ValueError as e:
         msg = str(e)
