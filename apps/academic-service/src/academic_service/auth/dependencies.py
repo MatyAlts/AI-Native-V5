@@ -112,10 +112,75 @@ async def get_current_user(
     )
 
 
-async def get_db(user: User = Depends(get_current_user)) -> AsyncIterator[AsyncSession]:
-    """Sesión DB con tenant del user activo seteado en RLS."""
+async def _tenant_db(user: User = Depends(get_current_user)) -> AsyncIterator[AsyncSession]:
+    """Sesión DB con tenant del user activo seteado en RLS.
+
+    NO se usa directo desde las rutas: se consume via `get_db`, que la pide con
+    `scope="function"`. Ver el docstring de `get_db` — ahí está el porqué.
+    """
     async with tenant_session(user.tenant_id) as session:
         yield session
+
+
+async def get_db(
+    session: AsyncSession = Depends(_tenant_db, scope="function"),
+) -> AsyncSession:
+    """Sesión DB del request. El commit pasa ANTES de que salga la respuesta.
+
+    Hasta el 2026-08-28 esto era, directamente::
+
+        async def get_db(user=Depends(get_current_user)):
+            async with tenant_session(user.tenant_id) as session:
+                yield session
+
+    y ahí estaba el bug. `tenant_session` tiene el `await session.commit()` en
+    el teardown del generador, y FastAPI corre el teardown de una dependencia
+    con `yield` en el `AsyncExitStack` de la REQUEST, que se cierra **después**
+    de emitir la respuesta. Se ve literal en el fuente de la versión instalada
+    (`fastapi/routing.py::request_response`, FastAPI 0.139.2)::
+
+        async with AsyncExitStack() as request_stack:       # teardown "request"
+            async with AsyncExitStack() as function_stack:  # teardown "function"
+                response = await f(request)
+            # cierra function_stack
+            await response(scope, receive, send)            # SALE LA RESPUESTA
+        # cierra request_stack  <- el commit corría ACÁ
+
+    Y ningún handler de ejercicios/TPs commitea por su cuenta —los únicos
+    `commit()` explícitos del servicio están en `routes/instrumentos.py` y
+    `routes/student_profiles.py`— así que el 100% de las escrituras dependía de
+    ese commit tardío. Un cliente que escribía y leía enseguida podía no ver lo
+    que acababa de escribir:
+
+        POST ejercicio         -> 201
+        POST TP                -> 201
+        POST /{tp}/ejercicios  -> 201
+        POST /{tp}/publish     -> 422 "Una TP no se puede publicar vacia"
+
+    (smoke E2E, misma corrida, mismo commit). No es flaky: es el orden de
+    operaciones. `web-teacher/.../TareasPracticasView.tsx:1352-1362` hace esa
+    misma secuencia contra un docente real.
+
+    **El fix.** La sesión pasa a pedirse con `scope="function"`, que es
+    exactamente para esto — la doc de `Depends` lo dice así: «end the dependency
+    after the *path operation function* ends, but **before** the response is
+    sent back to the client». El teardown se muda al `function_stack`, que cierra
+    una línea ANTES de `await response(...)`.
+
+    Se hace acá y no en los 95 `Depends(get_db)` de las rutas a propósito: el
+    scope se declara en el sitio de llamada, así que ponerlo en cada ruta lo
+    volvería un detalle que alguien puede olvidar en la ruta 96. Acá es
+    imposible equivocarse: `get_db` ya no es un generador —no tiene teardown
+    propio— y todo el que lo pida hereda el orden correcto sin escribir nada.
+
+    **Cambia el manejo de errores, y es deliberado.** Si el commit falla, ahora
+    la excepción sale antes de emitir la respuesta y el cliente recibe un 500.
+    Antes recibía el `201` con el id de una fila que no existía, y la excepción
+    se perdía en el log del servidor. Está cubierto por
+    `tests/unit/test_commit_antes_de_la_respuesta.py`, que verifica el orden
+    contra `http.response.start` (no con un `sleep`).
+    """
+    return session
 
 
 def require_role(*allowed_roles: str):
