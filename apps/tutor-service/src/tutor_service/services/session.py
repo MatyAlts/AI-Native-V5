@@ -13,12 +13,16 @@ from __future__ import annotations
 
 import asyncio
 import json
+import logging
 import time
 from collections.abc import AsyncIterator, Awaitable, Callable
 from dataclasses import dataclass, field
 from uuid import UUID
 
 import redis.asyncio as redis
+from redis.exceptions import WatchError
+
+logger = logging.getLogger(__name__)
 
 SESSION_TTL = 6 * 3600  # 6 horas
 
@@ -219,15 +223,75 @@ class SessionManager:
         return f"{SEQ_KEY_PREFIX}{episode_id}"
 
     async def init_seq_counter(self, episode_id: UUID, next_seq: int) -> None:
-        """Inicializa el contador atómico de seq del episodio.
+        """Inicializa el contador atómico de seq del episodio. **Nunca lo baja.**
 
         `next_seq` = cantidad de seqs ya reservados = próximo seq a asignar.
         `open_episode` lo llama con 0 (episodio nuevo); `resume_episode` con el
         `events_count` persistido (arranca del max seq ya en la cadena, NUNCA
-        resetea a 0). SET incondicional: el caller garantiza que este es el
-        punto de inicialización (apertura, o reanudación con la sesión ausente).
+        resetea a 0).
+
+        **Era un SET incondicional, y su docstring decía que "el caller
+        garantiza" que éste es el punto de inicialización.** Eso valía cuando los
+        callers eran dos y los dos eran explícitos: abrir el episodio y un
+        `POST /resume` del usuario. El heal de sesión lo convirtió en ocho
+        callers implícitos y CONCURRENTES —los siete `emit_*` más `send_message`,
+        todos vía `_emitir_con_heal`— y ninguno garantiza nada. El chequeo
+        `existing is not None` de `resume_episode` es un check-then-act con dos
+        `await` de red en el medio.
+
+        La carrera, con la sesión vencida por TTL y `events_count = N`:
+
+            A: POST /message          -> get()=None -> arranca resume
+            B: POST /edicion_codigo   -> get()=None -> arranca resume
+            B: set(state); init(N)                      [contador = N]
+            B: next_seq -> INCR -> N+1 -> publica seq=N
+            A: set(state); init(N)          <- REGRESION del contador a N
+            A: next_seq -> INCR -> N+1 -> publica seq=N   <- DUPLICADO
+
+        Dos eventos distintos con el mismo seq: el worker persiste uno, el otro
+        no matchea `expected_seq`, va a la DLQ y marca el episodio
+        `integrity_compromised`. O sea, el bug que este PR viene a cerrar,
+        reintroducido por su propio heal. Y el frontend emite `edicion_codigo`
+        con debounce mientras el alumno charla con el tutor, así que esa
+        concurrencia es la norma, no el borde.
+
+        Ahora es un compare-and-set: sólo escribe si el contador está AUSENTE o
+        vale MENOS de lo que se le pide. Si vale más, alguien reservó en el
+        medio y se respeta — bajarlo es lo único que produce el duplicado.
+        Refrescar el TTL sí se hace siempre: la sesión que acaba de reanudarse
+        necesita que el contador la acompañe.
         """
-        await self.redis.set(self._seq_key(episode_id), next_seq, ex=SESSION_TTL)
+        key = self._seq_key(episode_id)
+        try:
+            async with self.redis.pipeline() as pipe:
+                await pipe.watch(key)
+                actual = await pipe.get(key)
+                if isinstance(actual, bytes):
+                    actual = actual.decode("utf-8")
+                ya_reservo_mas = actual is not None and int(actual) >= next_seq
+                pipe.multi()
+                if not ya_reservo_mas:
+                    pipe.set(key, next_seq, ex=SESSION_TTL)
+                else:
+                    pipe.expire(key, SESSION_TTL)
+                await pipe.execute()
+                if ya_reservo_mas:
+                    logger.info(
+                        "init_seq_counter del episodio %s NO baja el contador: "
+                        "vale %s y se pidio %s (hubo una reserva concurrente).",
+                        episode_id,
+                        actual,
+                        next_seq,
+                    )
+        except WatchError:
+            # Otro caller lo movio mientras mirabamos. Su valor es al menos tan
+            # nuevo como el nuestro, asi que no reintentamos: el unico daño
+            # posible seria pisarlo hacia abajo.
+            logger.info(
+                "init_seq_counter del episodio %s perdio el CAS; se respeta el "
+                "valor del otro caller.",
+                episode_id,
+            )
 
     async def next_seq(self, state: SessionState) -> int:
         """Reserva ATÓMICAMENTE el próximo seq del episodio vía Redis INCR.
