@@ -72,9 +72,7 @@ TENANT = UUID("aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa")
 # El literal que produce `_assert_tp_viva`. Se compara contra esto y no contra
 # el status a secas: `return_entrega` contesta 409 tambien por estado, y los
 # dos 409 son indistinguibles si el test solo mira el numero.
-TP_MUERTA = (
-    "El trabajo practico ya no esta disponible. Consulta con tu docente antes de seguir."
-)
+TP_MUERTA = "El trabajo practico ya no esta disponible. Consulta con tu docente antes de seguir."
 
 COMISION: UUID
 

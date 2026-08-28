@@ -167,9 +167,7 @@ class TestQueCuentaElContador:
 
         assert await consumidas_hoy(db, TENANT, docente) == 1
 
-    async def test_la_ventana_es_de_24h_y_no_del_catalogo_entero(
-        self, db: AsyncSession
-    ) -> None:
+    async def test_la_ventana_es_de_24h_y_no_del_catalogo_entero(self, db: AsyncSession) -> None:
         """Sin el `created_at >= desde` la cuota se agota para siempre.
 
         La de hace 25h esta fuera; la de hace 23 esta adentro. Los dos lados del

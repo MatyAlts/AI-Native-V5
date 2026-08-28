@@ -107,9 +107,7 @@ def _validator(par_rsa: dict[str, Any], *, admin_emails: frozenset[str] = frozen
             issuer=ISSUER, audience="", jwks_uri=f"{ISSUER}/.well-known/jwks.json"
         ),
         fixed_tenant_id=TENANT,
-        base_roles=frozenset(
-            r.strip() for r in settings.clerk_base_roles.split(",") if r.strip()
-        ),
+        base_roles=frozenset(r.strip() for r in settings.clerk_base_roles.split(",") if r.strip()),
         admin_emails=admin_emails,
         jwks_cache=_CacheFalsa(par_rsa["public_pem"]),
     )
@@ -124,9 +122,7 @@ class TestTodoUsuarioLogueadoTraeLosDosRoles:
 
         assert principal.roles == frozenset({"estudiante", "docente"}), principal.roles
 
-    async def test_el_docente_tambien_llega_con_estudiante(
-        self, par_rsa: dict[str, Any]
-    ) -> None:
+    async def test_el_docente_tambien_llega_con_estudiante(self, par_rsa: dict[str, Any]) -> None:
         """Y la otra mitad: por eso `"estudiante" in roles` tampoco identifica a nadie."""
         principal = await _validator(par_rsa).validate(
             _token(par_rsa["private_pem"], sub="user_docente", email="titular@utn.edu.ar")
@@ -164,9 +160,7 @@ class TestTodoUsuarioLogueadoTraeLosDosRoles:
 
 
 class TestElAllowlistDeAdminsEsLoUnicoQueDiferencia:
-    async def test_un_email_del_allowlist_suma_oversight(
-        self, par_rsa: dict[str, Any]
-    ) -> None:
+    async def test_un_email_del_allowlist_suma_oversight(self, par_rsa: dict[str, Any]) -> None:
         """`admin_emails` es el UNICO camino a `superadmin`/`docente_admin`.
 
         Importa porque `_OVERSIGHT` (evaluation-service) y varios guards
@@ -183,15 +177,11 @@ class TestElAllowlistDeAdminsEsLoUnicoQueDiferencia:
             {"estudiante", "docente", "superadmin", "docente_admin"}
         ), principal.roles
 
-    async def test_fuera_del_allowlist_NO_hay_oversight(
-        self, par_rsa: dict[str, Any]
-    ) -> None:
+    async def test_fuera_del_allowlist_NO_hay_oversight(self, par_rsa: dict[str, Any]) -> None:
         """Sin esto el test de arriba pasaria aunque el allowlist se ignorara."""
         principal = await _validator(
             par_rsa, admin_emails=frozenset({"coordinacion@utn.edu.ar"})
-        ).validate(
-            _token(par_rsa["private_pem"], sub="user_x", email="otro@utn.edu.ar")
-        )
+        ).validate(_token(par_rsa["private_pem"], sub="user_x", email="otro@utn.edu.ar"))
 
         assert not (principal.roles & {"superadmin", "docente_admin"}), principal.roles
 

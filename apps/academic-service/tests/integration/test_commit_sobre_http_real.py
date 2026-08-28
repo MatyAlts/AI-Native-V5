@@ -126,9 +126,7 @@ def _app() -> FastAPI:
     @app.get("/contar")
     async def contar(marca: str, db: AsyncSession = Depends(get_db)) -> dict[str, int]:
         n = (
-            await db.execute(
-                text(f"SELECT count(*) FROM {TABLA} WHERE marca = :m"), {"m": marca}
-            )
+            await db.execute(text(f"SELECT count(*) FROM {TABLA} WHERE marca = :m"), {"m": marca})
         ).scalar_one()
         return {"n": int(n)}
 
@@ -210,9 +208,7 @@ class TestLoQueVeUnClienteDeVerdad:
         # Cliente nuevo = conexion nueva, como la hace un frontend.
         assert await _get_json(f"{servidor}/contar", marca=marca) == {"n": 1}
 
-    async def test_un_commit_que_explota_NO_le_deja_al_cliente_un_201(
-        self, servidor: str
-    ) -> None:
+    async def test_un_commit_que_explota_NO_le_deja_al_cliente_un_201(self, servidor: str) -> None:
         """La variante grave, y la que el transporte in-process no puede mostrar.
 
         El `UNIQUE` es `DEFERRABLE INITIALLY DEFERRED`: el `INSERT` del handler

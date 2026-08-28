@@ -376,7 +376,12 @@ def test_atacante_de_otro_tenant_es_403(
 
 @pytest.mark.parametrize("ruta,body,esperado", _ESCRITORES, ids=_IDS)
 def test_el_dueño_con_sesion_viva_sigue_pasando(
-    http: TestClient, fake_ctr: _FakeCTR, escenario: _Escenario, ruta: str, body: dict, esperado: int
+    http: TestClient,
+    fake_ctr: _FakeCTR,
+    escenario: _Escenario,
+    ruta: str,
+    body: dict,
+    esperado: int,
 ) -> None:
     """La otra mitad: un 403 universal tambien pasa los dos tests de arriba."""
     resp = http.post(
@@ -391,9 +396,7 @@ def test_el_dueño_con_sesion_viva_sigue_pasando(
 # ── 2. El auto-heal legitimo, para los NUEVE emisores con heal ────────
 
 
-@pytest.mark.parametrize(
-    "ruta,body", _EMISORES_CON_HEAL, ids=[r for r, _ in _EMISORES_CON_HEAL]
-)
+@pytest.mark.parametrize("ruta,body", _EMISORES_CON_HEAL, ids=[r for r, _ in _EMISORES_CON_HEAL])
 async def test_sesion_vencida_y_dueño_correcto_sigue_sanando(
     http: TestClient,
     tutor: TutorCore,
@@ -431,9 +434,7 @@ async def test_sesion_vencida_y_dueño_correcto_sigue_sanando(
     )
 
 
-@pytest.mark.parametrize(
-    "ruta,body", _EMISORES_CON_HEAL, ids=[r for r, _ in _EMISORES_CON_HEAL]
-)
+@pytest.mark.parametrize("ruta,body", _EMISORES_CON_HEAL, ids=[r for r, _ in _EMISORES_CON_HEAL])
 async def test_sesion_vencida_y_atacante_no_resucita_la_sesion_de_la_victima(
     http: TestClient,
     tutor: TutorCore,
@@ -466,9 +467,7 @@ async def test_sesion_vencida_y_atacante_no_resucita_la_sesion_de_la_victima(
     assert fake_ctr.published_events == []
 
 
-@pytest.mark.parametrize(
-    "ruta,body", _EMISORES_CON_HEAL, ids=[r for r, _ in _EMISORES_CON_HEAL]
-)
+@pytest.mark.parametrize("ruta,body", _EMISORES_CON_HEAL, ids=[r for r, _ in _EMISORES_CON_HEAL])
 async def test_el_episodio_ajeno_NO_gatilla_el_heal(
     http: TestClient,
     tutor: TutorCore,
@@ -555,9 +554,7 @@ def test_el_403_no_es_un_oraculo_sobre_el_dueño(
 # ── 3. Episodio inexistente: 404/409, nunca 403 (no es un oraculo) ────
 
 
-@pytest.mark.parametrize(
-    "ruta,body", _EMISORES_CON_HEAL, ids=[r for r, _ in _EMISORES_CON_HEAL]
-)
+@pytest.mark.parametrize("ruta,body", _EMISORES_CON_HEAL, ids=[r for r, _ in _EMISORES_CON_HEAL])
 def test_episodio_inexistente_no_es_403(
     http: TestClient, fake_ctr: _FakeCTR, ruta: str, body: dict
 ) -> None:
@@ -582,7 +579,12 @@ def test_episodio_inexistente_no_es_403(
 
 @pytest.mark.parametrize("ruta,body,esperado", _ESCRITORES, ids=_IDS)
 def test_el_service_account_atraviesa_el_gate_en_TODOS_los_emisores(
-    http: TestClient, fake_ctr: _FakeCTR, escenario: _Escenario, ruta: str, body: dict, esperado: int
+    http: TestClient,
+    fake_ctr: _FakeCTR,
+    escenario: _Escenario,
+    ruta: str,
+    body: dict,
+    esperado: int,
 ) -> None:
     """Documenta el alcance REAL de la excepcion `TUTOR_SERVICE_USER_ID`.
 
@@ -770,8 +772,7 @@ async def test_el_replay_de_idempotency_key_ya_pasa_por_el_gate(
     )
 
     assert r_atacante.status_code == 403, (
-        f"el replay de un ajeno paso el gate: {r_atacante.status_code} "
-        f"{r_atacante.text[:200]}"
+        f"el replay de un ajeno paso el gate: {r_atacante.status_code} {r_atacante.text[:200]}"
     )
     # Lo que se filtraba no era el evento —nunca entro uno— sino el seq: o sea
     # cuantos eventos tenia la cadena de la victima en ese momento.
@@ -824,9 +825,7 @@ def test_el_GET_del_episodio_ajeno_ya_no_devuelve_el_codigo_de_la_victima(
     assert "SECRETO_DE_LA_VICTIMA" not in resp.text
 
 
-def test_el_GET_de_otro_tenant_si_esta_cortado(
-    http: TestClient, escenario: _Escenario
-) -> None:
+def test_el_GET_de_otro_tenant_si_esta_cortado(http: TestClient, escenario: _Escenario) -> None:
     """La mitad que si funciona, para no confundir "no hay gate" con "hay uno parcial"."""
     resp = http.get(
         f"/api/v1/episodes/{escenario.episode_id}",
