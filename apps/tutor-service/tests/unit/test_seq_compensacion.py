@@ -29,6 +29,7 @@ from collections.abc import AsyncIterator
 from uuid import UUID, uuid4
 
 import fakeredis.aioredis
+import httpx
 import pytest
 from tutor_service.services.clients import PromptConfig, RetrievalResult
 from tutor_service.services.session import SessionManager
@@ -69,10 +70,16 @@ class FakeAIGatewayClient:
 
 
 class CTRQueRechaza:
-    """CTR que rechaza los `event_type` listados (simula 5xx / red caida).
+    """CTR caido: la conexion NUNCA se establece (simula red caida / servicio abajo).
 
-    `publish_event` real hace `raise_for_status()`, asi que un ctr-service caido
-    llega al caller como excepcion — exactamente esto.
+    Levanta `httpx.ConnectError`, que es lo que produce de verdad un
+    ctr-service que no esta escuchando — antes tiraba un `RuntimeError`
+    generico. La diferencia importa desde que la compensacion del seq
+    distingue el fallo PRE-ENTREGA del AMBIGUO: un `RuntimeError` pelado no
+    dice de que lado murio la request, y el fix (correctamente) no compensa
+    ante la duda. Un test que simula el fallo con un tipo que produccion nunca
+    emite deja de probar el contrato — es la misma trampa que los tests de
+    autorizacion con un usuario de un solo rol.
     """
 
     def __init__(self, rechazar: set[str]) -> None:
@@ -83,8 +90,31 @@ class CTRQueRechaza:
     async def publish_event(self, event: dict, tenant_id: UUID, caller_id: UUID) -> str:
         if event["event_type"] in self.rechazar:
             self.rechazados.append(event)
-            raise RuntimeError(f"ctr-service rechazo {event['event_type']}")
+            raise httpx.ConnectError(f"ctr-service no responde ({event['event_type']})")
         self.published_events.append(event)
+        return f"msg-{len(self.published_events)}"
+
+
+class CTRQuePersisteYPierdeElACK:
+    """El caso AMBIGUO, y el mas peligroso: el evento SI entro, el ACK no volvio.
+
+    Es lo que produce un `ReadTimeout`: `POST /api/v1/events` del ctr-service
+    hace el `XADD` al stream y RECIEN DESPUES responde 202, asi que un timeout a
+    los 5s no significa "no se entrego" — significa "no se".
+
+    Este doble persiste el evento y despues tira, que es exactamente lo que pasa
+    del otro lado del cable.
+    """
+
+    def __init__(self, fallar_en: set[str]) -> None:
+        self.fallar_en = fallar_en
+        self.published_events: list[dict] = []
+
+    async def publish_event(self, event: dict, tenant_id: UUID, caller_id: UUID) -> str:
+        # El orden es el punto: primero entra, despues falla.
+        self.published_events.append(event)
+        if event["event_type"] in self.fallar_en:
+            raise httpx.ReadTimeout("el ACK no volvio")
         return f"msg-{len(self.published_events)}"
 
 
@@ -161,7 +191,7 @@ async def test_publish_fallido_devuelve_el_seq_al_contador(redis_client) -> None
         "runtime": "pyodide-0.26",
     }
 
-    with pytest.raises(RuntimeError):
+    with pytest.raises(httpx.ConnectError):
         await tutor.emit_codigo_ejecutado(episode_id=episode_id, user_id=user_id, payload=payload)
 
     # El episodio_abierto ocupo el 0; el codigo_ejecutado fallido reservo el 1 y
@@ -241,7 +271,132 @@ async def test_publish_fallido_bajo_concurrencia_no_duplica_seq(redis_client) ->
         )
 
     resultados = await asyncio.gather(_codigo(), _edicion(), return_exceptions=True)
-    assert isinstance(resultados[0], RuntimeError)
+    assert isinstance(resultados[0], httpx.ConnectError)
 
     seqs = [e["seq"] for e in ctr.published_events]
     assert len(seqs) == len(set(seqs)), f"dos eventos con el mismo seq: {seqs}"
+
+
+# ── El fallo AMBIGUO: compensar ahi es PEOR que el hueco ──────────────────
+#
+# `POST /api/v1/events` del ctr-service hace el `XADD` al stream y RECIEN
+# DESPUES responde 202. Entonces un `ReadTimeout` a los 5s no significa "no se
+# entrego": significa "no se". El evento puede estar en el stream.
+#
+# Y la asimetria es total: sin compensar, ese escenario es INOCUO — el contador
+# queda adelantado, el evento siguiente nace donde la cadena lo espera y cierra
+# perfecta. Compensando, dos eventos nacen con el mismo seq y el segundo termina
+# en la DLQ marcando el episodio como adulterado.
+
+
+async def test_un_timeout_TRAS_persistir_no_produce_dos_eventos_con_el_mismo_seq(
+    redis_client,
+) -> None:
+    """La regresion que el fix de compensacion introducia.
+
+    Con `except Exception` a secas, este escenario deja la cadena en [0, 1, 1].
+    Verificado por reversion: compensando ante cualquier excepcion, la ultima
+    asercion cae con dos seq iguales.
+    """
+    ctr = CTRQuePersisteYPierdeElACK({"codigo_ejecutado"})
+    tutor = _tutor(redis_client, ctr)
+    episode_id = await _abrir(tutor)
+    user_id = uuid4()
+
+    with pytest.raises(httpx.ReadTimeout):
+        await tutor.emit_codigo_ejecutado(
+            episode_id=episode_id,
+            user_id=user_id,
+            payload={
+                "code": "print('hola')",
+                "stdout": "hola\n",
+                "stderr": "",
+                "duration_ms": 12.0,
+                "runtime": "pyodide-0.26",
+            },
+        )
+
+    # El evento SI entro al stream con seq 1. El siguiente NO puede reusarlo.
+    await tutor.record_edicion_codigo(
+        episode_id=episode_id,
+        user_id=user_id,
+        snapshot="print('chau')",
+        diff_chars=13,
+        language="python",
+    )
+
+    seqs = [e["seq"] for e in ctr.published_events]
+    assert len(seqs) == len(set(seqs)), f"dos eventos con el mismo seq en la cadena: {seqs}"
+    assert seqs == [0, 1, 2], f"la cadena quedo {seqs}"
+
+
+async def test_un_5xx_tampoco_compensa() -> None:
+    """Un 5xx puede venir de un proxy DESPUES de que el CTR hizo el XADD.
+
+    Es la misma ambiguedad que el timeout, por otra puerta.
+    """
+    from tutor_service.services.tutor_core import _seguro_compensar
+
+    req = httpx.Request("POST", "http://ctr/api/v1/events")
+    for code in (500, 502, 503, 504):
+        r = httpx.Response(code, request=req)
+        assert not _seguro_compensar(httpx.HTTPStatusError("x", request=req, response=r)), (
+            f"un {code} no puede considerarse pre-entrega"
+        )
+
+
+async def test_un_4xx_SI_compensa() -> None:
+    """Un rechazo explicito del CTR ocurre ANTES del XADD.
+
+    El gate de tenant y la validacion de pydantic corren antes de tocar el
+    stream, asi que ahi si sabemos que el evento no entro — y no compensar
+    dejaria un hueco gratis.
+    """
+    from tutor_service.services.tutor_core import _seguro_compensar
+
+    req = httpx.Request("POST", "http://ctr/api/v1/events")
+    for code in (400, 403, 422):
+        r = httpx.Response(code, request=req)
+        assert _seguro_compensar(httpx.HTTPStatusError("x", request=req, response=r))
+
+
+async def test_tres_eventos_tras_un_fallo_ambiguo_siguen_contiguos(redis_client) -> None:
+    """Reemplaza la garantia que el test de concurrencia decia dar y no daba.
+
+    `test_publish_fallido_bajo_concurrencia_no_duplica_seq` solo emite DOS
+    eventos y assertea que los publicados son unicos — y como el que falla nunca
+    llega a `published_events`, la lista tiene <=2 elementos distintos SIEMPRE.
+    Nunca pudo detectar un seq duplicado. Con el `DECR` ingenuo pasaba igual.
+
+    Este emite un TERCERO despues del fallo, que es lo unico que lo delata.
+    """
+    ctr = CTRQuePersisteYPierdeElACK({"codigo_ejecutado"})
+    tutor = _tutor(redis_client, ctr)
+    episode_id = await _abrir(tutor)
+    user_id = uuid4()
+
+    with pytest.raises(httpx.ReadTimeout):
+        await tutor.emit_codigo_ejecutado(
+            episode_id=episode_id,
+            user_id=user_id,
+            payload={
+                "code": "x",
+                "stdout": "",
+                "stderr": "",
+                "duration_ms": 1.0,
+                "runtime": "pyodide-0.26",
+            },
+        )
+
+    for i in range(3):
+        await tutor.record_edicion_codigo(
+            episode_id=episode_id,
+            user_id=user_id,
+            snapshot=f"v{i}",
+            diff_chars=2,
+            language="python",
+        )
+
+    seqs = [e["seq"] for e in ctr.published_events]
+    assert seqs == sorted(set(seqs)), f"la cadena tiene huecos o repetidos: {seqs}"
+    assert seqs == [0, 1, 2, 3, 4]

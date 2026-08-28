@@ -20,6 +20,7 @@ from datetime import UTC, datetime
 from typing import Any, Literal, NoReturn
 from uuid import UUID, uuid4
 
+import httpx
 from fastapi import HTTPException, status
 from platform_contracts.academic.ejercicio import DEFAULT_LANGUAGE
 
@@ -86,6 +87,57 @@ _REINFORCEMENT_SYSTEM_MESSAGE = (
     "hacé preguntas que guíen al estudiante a pensar críticamente. Si insiste, "
     "explicá brevemente que tu rol es ayudarle a aprender, no resolver por él."
 )
+
+
+def _seguro_compensar(exc: BaseException) -> bool:
+    """¿Sabemos con CERTEZA que el evento NO llegó al CTR?
+
+    Compensar el seq —devolverlo al contador— sólo es seguro si el fallo es
+    determinísticamente pre-entrega. Ante la duda NO se compensa, y esa
+    asimetría no es prudencia genérica: **devolver el número ante un fallo
+    ambiguo es peor que el hueco**.
+
+    El motivo está en la forma del endpoint. `POST /api/v1/events` del
+    ctr-service hace el `XADD` al stream y RECIÉN DESPUÉS responde 202
+    (`ctr_service/routes/events.py`). Entonces un `ReadTimeout` a los 5s no
+    significa "no se entregó": significa "no sé". El evento puede estar en el
+    stream, esperando que el worker lo drene.
+
+    Qué pasa si compensamos ahí, con `events_count = 1`:
+
+        1. next_seq -> seq 1, contador = 2
+        2. el CTR hace el XADD; el ACK se pierde (timeout)
+        3. release_seq(1): el contador vale 2 == esperado -> DECR -> 1
+        4. el evento siguiente -> next_seq -> seq 1 OTRA VEZ, event_uuid nuevo
+        5. el worker: expected_seq = 2, recibe 1, uuid desconocido -> ValueError
+           -> 3 reintentos -> DLQ -> integrity_compromised
+
+    Y lo grave: **ese mismo escenario, sin compensar, es INOCUO.** El contador
+    queda en 2, el evento siguiente nace en 2, el worker esperaba 2, la cadena
+    cierra perfecta. El worker dedupea por `event_uuid` y `_build_event` genera
+    un `uuid4()` nuevo en cada llamada, así que el reintento nunca matchea la
+    idempotencia del CTR.
+
+    PRE-ENTREGA (se compensa):
+      - `ConnectError` / `ConnectTimeout`: nunca se establecio la conexion.
+      - 4xx: el CTR rechazo la request ANTES del XADD (el gate de tenant y la
+        validacion de pydantic corren antes).
+
+    AMBIGUO (NO se compensa):
+      - `ReadTimeout` / `WriteTimeout` / `PoolTimeout`: la request salio.
+      - 5xx: puede venir de un proxy DESPUES de que el CTR hizo el XADD.
+      - `RemoteProtocolError` y cualquier otra cosa.
+
+    El hueco que queda ante un ambiguo no es gratis, pero es RECUPERABLE: lo
+    cierra `_reponer_contador_seq` del partition_worker. Un seq duplicado, no.
+    """
+    if isinstance(exc, httpx.ConnectError | httpx.ConnectTimeout):
+        return True
+    if isinstance(exc, httpx.HTTPStatusError):
+        # 4xx = rechazo explicito del CTR, antes del XADD. 5xx puede ser un
+        # proxy respondiendo despues.
+        return 400 <= exc.response.status_code < 500
+    return False
 
 
 class TutorCore:
@@ -1908,13 +1960,28 @@ class TutorCore:
         emisión de este servicio pasa por acá para que la propiedad valga
         siempre y no dependa de que cada call-site se acuerde.
 
+        **Sólo se compensa si el fallo es determinísticamente PRE-ENTREGA.** Ver
+        `_seguro_compensar`: devolver el número ante un fallo ambiguo es peor que
+        el hueco, y esa asimetría es todo el diseño de esta función.
+
         La excepción se re-propaga tal cual: quién puede seguir sin el evento y
         quién no es decisión de cada caller, no de este helper.
         """
         try:
             await self.ctr.publish_event(event, state.tenant_id, caller_id)
-        except Exception:
-            await self.sessions.release_seq(state.episode_id, seq)
+        except Exception as exc:
+            if _seguro_compensar(exc):
+                await self.sessions.release_seq(state.episode_id, seq)
+            else:
+                logger.warning(
+                    "publish del episodio %s fallo de forma AMBIGUA (%s): el seq %s "
+                    "NO se devuelve. Puede que el evento haya entrado al stream; "
+                    "bajarlo produciria dos eventos con el mismo seq. El hueco lo "
+                    "cierra el partition_worker.",
+                    state.episode_id,
+                    type(exc).__name__,
+                    seq,
+                )
             raise
 
     def _build_event(
