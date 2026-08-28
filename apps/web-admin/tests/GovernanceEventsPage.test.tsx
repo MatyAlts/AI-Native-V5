@@ -9,10 +9,10 @@
  *   - HelpButton presente (PageContainer pattern obligatorio).
  *   - Empty state: "Sin eventos para los filtros actuales" cuando no hay data.
  */
-import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react"
+import { cleanup, fireEvent, screen, waitFor } from "@testing-library/react"
 import { afterEach, describe, expect, it } from "vitest"
 import { GovernanceEventsPage } from "../src/pages/GovernanceEventsPage"
-import { setupFetchMock } from "./_mocks"
+import { renderConQuery, setupFetchMock } from "./_mocks"
 
 afterEach(() => {
   cleanup()
@@ -51,7 +51,7 @@ describe("GovernanceEventsPage", () => {
       "/api/v1/analytics/governance/events": () => SAMPLE_RESPONSE,
     })
 
-    render(<GovernanceEventsPage />)
+    renderConQuery(<GovernanceEventsPage />)
 
     await waitFor(() => {
       expect(screen.getByText("jailbreak_substitution")).toBeInTheDocument()
@@ -73,7 +73,7 @@ describe("GovernanceEventsPage", () => {
       }),
     })
 
-    render(<GovernanceEventsPage />)
+    renderConQuery(<GovernanceEventsPage />)
 
     await waitFor(() => {
       expect(screen.getByText(/Sin eventos para los filtros actuales/i)).toBeInTheDocument()
@@ -85,7 +85,7 @@ describe("GovernanceEventsPage", () => {
       "/api/v1/analytics/governance/events": () => SAMPLE_RESPONSE,
     })
 
-    render(<GovernanceEventsPage />)
+    renderConQuery(<GovernanceEventsPage />)
 
     await waitFor(() => {
       expect(screen.getByText("jailbreak_substitution")).toBeInTheDocument()
@@ -104,7 +104,7 @@ describe("GovernanceEventsPage", () => {
       }),
     })
 
-    render(<GovernanceEventsPage />)
+    renderConQuery(<GovernanceEventsPage />)
 
     await waitFor(() => {
       expect(screen.getByText(/2 eventos/)).toBeInTheDocument()
@@ -117,7 +117,7 @@ describe("GovernanceEventsPage", () => {
       "/api/v1/analytics/governance/events": () => SAMPLE_RESPONSE,
     })
 
-    render(<GovernanceEventsPage />)
+    renderConQuery(<GovernanceEventsPage />)
 
     await waitFor(() => {
       // PageContainer renderiza HelpButton con aria-label "Ayuda"
@@ -134,7 +134,7 @@ describe("GovernanceEventsPage", () => {
       },
     })
 
-    render(<GovernanceEventsPage />)
+    renderConQuery(<GovernanceEventsPage />)
 
     await waitFor(() => {
       expect(screen.getByText(/Error al cargar/i)).toBeInTheDocument()
@@ -156,7 +156,7 @@ describe("GovernanceEventsPage", () => {
     const fetchSpy = global.fetch as ReturnType<typeof vi.fn>
     fetchSpy.mockClear()
 
-    render(<GovernanceEventsPage />)
+    renderConQuery(<GovernanceEventsPage />)
 
     // Esperamos render inicial completo
     await waitFor(() => {

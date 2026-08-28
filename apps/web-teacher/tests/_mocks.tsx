@@ -1,3 +1,4 @@
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query"
 import {
   Outlet,
   RouterProvider,
@@ -26,7 +27,6 @@ import {
  * properties of null (reading 'isServer')".
  */
 import { render } from "@testing-library/react"
-import { QueryClient, QueryClientProvider } from "@tanstack/react-query"
 import type { ReactNode } from "react"
 import { vi } from "vitest"
 
@@ -39,6 +39,15 @@ export function setupFetchMock(
     "fetch",
     vi.fn((url: string | URL | Request) => {
       const urlStr = typeof url === "string" ? url : url.toString()
+      // El match es por `includes` y **gana el PRIMERO declarado**. El orden
+      // no es cosmetico: `/api/v1/tareas-practicas/` tambien matchea
+      // `/api/v1/tareas-practicas/{id}/ejercicios`, asi que la ruta mas
+      // especifica va ARRIBA o la generica se la come.
+      //
+      // Se probo ordenar por largo de clave y es PEOR: aca la clave especifica
+      // (`/ejercicios`) es mas CORTA que la generica, asi que "el mas largo
+      // gana" elige justo la equivocada. El orden lo decide quien escribe el
+      // test, que es el unico que sabe cual es cual.
       for (const [pathPrefix, handler] of Object.entries(handlers)) {
         if (urlStr.includes(pathPrefix)) {
           if (typeof handler === "function") {
