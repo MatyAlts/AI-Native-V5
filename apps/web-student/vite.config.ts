@@ -17,6 +17,15 @@ const vitestConfig = {
     environment: "jsdom",
     globals: true,
     setupFiles: ["./tests/setup.ts"],
+    // `monaco-editor` no resuelve como entry de paquete bajo Vitest (su
+    // package.json no declara main/module/exports utilizables en SSR) y de
+    // todos modos no arranca en jsdom. Lo aliasamos a un doble que expone la
+    // superficie minima que usa `CodeEditor` — sin esto, la logica del editor
+    // (debounce de `edicion_codigo`, reseed del buffer, config de sugerencias)
+    // no es testeable. SOLO afecta a los tests: el bundle usa el real.
+    alias: {
+      "monaco-editor": path.resolve(__dirname, "./tests/_monacoMock.ts"),
+    },
   },
 } as const
 

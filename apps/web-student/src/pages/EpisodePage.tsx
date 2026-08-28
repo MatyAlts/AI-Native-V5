@@ -40,6 +40,7 @@ import { CodeEditor } from "../components/CodeEditor"
 import { NotesPanel } from "../components/NotesPanel"
 import { ReflectionModal } from "../components/ReflectionModal"
 import { useMediaQuery } from "../hooks/useMediaQuery"
+import { type LatchAbandono, crearLatchAbandono } from "../lib/abandonLatch"
 import {
   type AvailableTarea,
   type Classification,
@@ -277,7 +278,11 @@ export function EpisodeView({ episodeId, onExit, ejercicioContext, getToken }: E
   // Guard de idempotencia local del abandono: el backend ya es idempotente por
   // estado de sesion (ADR-025), pero esto evita spamear el endpoint cuando
   // beforeunload y visibilitychange→hidden disparan en sucesion (fix QA #9).
-  const abandonEmittedRef = useRef(false)
+  //
+  // NO es un booleano: `beforeunload` dispara ANTES de saber si el alumno se va
+  // o se queda, asi que un guard plano se envenenaba con el primer "Quedarse" y
+  // el cierre real ya no emitia nunca. Ver `lib/abandonLatch.ts`.
+  const [abandonLatch] = useState<LatchAbandono>(crearLatchAbandono)
   // Guard de idempotencia del marcado de ejercicio completado (NB-12): el
   // cierre del episodio puede llegar por dos caminos que corren en carrera —
   // el ClassificationPanel (onReset) cuando la clasificacion resuelve, y el
@@ -380,20 +385,19 @@ export function EpisodeView({ episodeId, onExit, ejercicioContext, getToken }: E
       // fetch(keepalive) con Bearer (sobrevive el unload y lleva el token);
       // sin el, caia a sendBeacon → sin Authorization → 401 en prod → el
       // evento nunca se appendea (fix QA #9). Guard local para no spamear.
-      if (!abandonEmittedRef.current) {
-        abandonEmittedRef.current = true
+      abandonLatch.intentarPorUnload(() => {
         void emitEpisodioAbandonado(
           episodeId,
           { reason: "beforeunload", last_activity_seconds_ago: 0 },
           getToken,
         )
-      }
+      })
       event.preventDefault()
       event.returnValue = ""
     }
     window.addEventListener("beforeunload", handler)
     return () => window.removeEventListener("beforeunload", handler)
-  }, [episodeId, closed, getToken])
+  }, [episodeId, closed, getToken, abandonLatch])
 
   // Integridad de pestaña: detecta cuando el alumno deja de ver el episodio
   // y vuelve. Usamos SOLO `visibilitychange` (NO `window blur`): blur se
@@ -699,7 +703,9 @@ export function EpisodeView({ episodeId, onExit, ejercicioContext, getToken }: E
     actionInFlightRef.current = true
     setSubmitting(true)
     setError(null)
-    abandonEmittedRef.current = true
+    // Definitivo, a diferencia del `beforeunload`: el episodio se pauso de
+    // verdad y el unload posterior no debe volver a emitir.
+    abandonLatch.marcarDefinitivo()
     try {
       await emitEpisodioAbandonado(
         episodeId,
@@ -870,19 +876,34 @@ export function EpisodeView({ episodeId, onExit, ejercicioContext, getToken }: E
         onTestsRun={(result) => {
           // F1: correr tests es actividad de EJECUCION (N3), igual que "Ejecutar".
           setMaxActividad((a) => (a < 3 ? 3 : a))
-          // Emitir tests_ejecutados al CTR (conteos agregados; el labeler v1.2.0
-          // deriva N3/N4 de esto). Best-effort: un fallo de red / 409 (sesion
-          // cerrada) NO rompe la UI ni el flujo — mismo criterio que codigo_ejecutado.
-          void emitTestsEjecutados(episodeId, {
+          // Emitir tests_ejecutados al CTR (conteos agregados). Va por la cola
+          // durable como el resto de los eventos de codigo: es el de MAYOR
+          // señal de todos — el labeler v1.2.0 deriva N3 vs N4 de aca — y era
+          // justo el que quedaba por fetch pelado, sin reintentos ni
+          // Idempotency-Key. Un fallo de red lo perdia en un console.warn y el
+          // episodio quedaba mal nivelado en la tesis.
+          const payloadTests = {
             test_count_total: result.total,
             test_count_passed: result.passed,
             test_count_failed: result.failed,
             tests_publicos: result.total,
             ejecucion_ms: Math.round(result.durationMs),
-          }).catch((e) => {
-            console.warn("emit tests_ejecutados failed:", e)
-          })
+          }
+          emitirConCola(
+            (c) => c.testsEjecutados(payloadTests),
+            () => emitTestsEjecutados(episodeId, payloadTests),
+            "tests_ejecutados",
+          )
         }}
+        // El buffer de Monaco es del editor; este espejo existe para que el
+        // re-montaje del panel (cruzar el breakpoint mobile desmonta y vuelve a
+        // montar `CodeEditor`, porque vive en dos subarboles distintos) lo
+        // re-siembre con lo ultimo que el alumno escribio. Antes se
+        // actualizaba solo al hidratar y al Ejecutar: un cambio de zoom en el
+        // medio de un ejercicio le borraba todo lo tipeado desde la ultima
+        // corrida. NO emite nada al CTR — `edicion_codigo` sigue saliendo por
+        // `onEditDebounced`.
+        onCodeChange={setCode}
         onCodeExecuted={(result) => {
           setCode(result.code)
           setMaxActividad((a) => (a < 3 ? 3 : a))

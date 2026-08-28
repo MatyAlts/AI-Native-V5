@@ -1251,10 +1251,7 @@ export async function getCalificacion(
  * despues de que el docente devolvio la entrega, y re-enviarla ahi le borra al
  * alumno la devolucion que fue a leer.
  */
-export async function getEntregaById(
-  entregaId: string,
-  getToken?: TokenGetter,
-): Promise<Entrega> {
+export async function getEntregaById(entregaId: string, getToken?: TokenGetter): Promise<Entrega> {
   const r = await fetch(`/api/v1/entregas/${entregaId}`, {
     headers: await authHeaders(getToken),
   })

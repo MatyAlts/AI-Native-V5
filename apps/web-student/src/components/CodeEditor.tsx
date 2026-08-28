@@ -41,6 +41,7 @@ import {
   type TestCasePublic,
   type TokenGetter,
 } from "../lib/api"
+import { resolverEdicionPendiente } from "../lib/edicionPendiente"
 import { parseJavaError } from "../lib/javaError"
 import { registerJavaSnippets } from "../lib/javaSnippets"
 import { extractPyodideErrorLine, extractPyodideErrorLineNumber } from "../lib/pyodideError"
@@ -103,6 +104,17 @@ export interface CodeEditorProps {
    * pendiente. La llama el caller antes de entregar: sin eso, el submit sale
    * con lo que el alumno tenía hace hasta un segundo, no con lo que escribió. */
   flushRef?: MutableRefObject<(() => void) | null>
+  /** Espejo del buffer en el caller, en CADA cambio (sin debounce).
+   *
+   * Monaco posee el buffer y este componente lo siembra UNA sola vez con
+   * `initialCode`. Si el caller no sigue el buffer, todo re-montaje re-siembra
+   * con un valor viejo y el alumno pierde lo tipeado — pasa al cruzar el
+   * breakpoint mobile, porque el editor vive en dos subarboles distintos.
+   *
+   * NO es un evento de trazabilidad: no dispara nada al CTR. El evento
+   * `edicion_codigo` sigue saliendo por `onEditDebounced`, con su debounce.
+   */
+  onCodeChange?: (code: string) => void
   /** Disparado cuando el alumno intenta pegar. La accion fue bloqueada
    * por el editor — solo registrar en CTR + mostrar feedback. */
   onPasteAttempt?: (payload: {
@@ -174,6 +186,30 @@ const LANGUAGES_RUNTIME_REMOTO: readonly Language[] = ["java"]
 
 const EDIT_DEBOUNCE_MS = 1000
 
+/**
+ * Config de autocompletado del editor. No es cosmetica: con los defaults de
+ * Monaco no se puede escribir un f-string de Python.
+ *
+ * `acceptSuggestionOnCommitCharacter` viene en `true` por default y hace que
+ * cualquier "caracter de commit" acepte la sugerencia resaltada. El alumno
+ * tipea `f`, Monaco abre la lista de sugerencias con alguna palabra que empieza
+ * con f (`for`, `float`, `filter`) resaltada, y la comilla siguiente commitea
+ * esa sugerencia en vez de insertarse: la `f` se convierte en otra cosa y el
+ * f-string nunca se escribe. Es el primer formateo de strings que se ensena en
+ * la cursada, asi que el editor volvia inusable justo el ejercicio tipico.
+ *
+ * `quickSuggestions` apagado dentro de strings y comentarios por el mismo
+ * motivo: prosa en castellano no debe disparar la lista. Se deja prendido en
+ * `other` (codigo) y se conserva `suggestOnTriggerCharacters` para que el
+ * autocompletado siga existiendo donde ayuda — el fix no es "apagar
+ * IntelliSense", es que deje de robar teclas.
+ */
+export const SUGERENCIAS_OPTIONS = {
+  acceptSuggestionOnCommitCharacter: false,
+  quickSuggestions: { other: true, comments: false, strings: false },
+  suggestOnTriggerCharacters: true,
+} as const
+
 // ED-3: control de tamano de fuente del editor. Persistido en localStorage
 // para que el alumno no lo re-ajuste en cada episodio.
 const FONT_SIZE_KEY = "web-student.editor.fontSize"
@@ -220,6 +256,7 @@ export function CodeEditor({
   initialCode = LANGUAGE_PLACEHOLDER[DEFAULT_LANGUAGE],
   onCodeExecuted,
   onEditDebounced,
+  onCodeChange,
   onPasteAttempt,
   onCopyAttempt,
   testCases,
@@ -327,6 +364,50 @@ export function CodeEditor({
   useEffect(() => {
     onEditDebouncedRef.current = onEditDebounced
   }, [onEditDebounced])
+  const onCodeChangeRef = useRef<typeof onCodeChange>(onCodeChange)
+  useEffect(() => {
+    onCodeChangeRef.current = onCodeChange
+  }, [onCodeChange])
+  // Plantilla original del ejercicio, congelada al montar. Con `onCodeChange`
+  // cableado, `initialCode` deja de ser "la plantilla" y pasa a ser el ultimo
+  // buffer conocido: sin esta copia, "Restaurar plantilla inicial" restauraria
+  // el codigo del alumno sobre si mismo, o sea nada.
+  const plantillaRef = useRef<string>(initialCode)
+
+  /**
+   * Emite YA la edicion que el debounce tiene pendiente, y cancela el timer.
+   *
+   * Existe por el ORDEN de la cadena CTR. `codigo_ejecutado` /
+   * `tests_ejecutados` salen en el instante en que el alumno aprieta el boton,
+   * pero el `edicion_codigo` del MISMO snapshot puede seguir esperando hasta un
+   * segundo en el debounce — y llegar despues. La linea de tiempo del episodio
+   * queda entonces mostrando una ejecucion antes de la edicion que la produjo,
+   * que es una imposibilidad causal, y es sobre esa linea de tiempo que se
+   * calculan CCD (codigo-discurso) y CII (inter-iteracion).
+   *
+   * Solo toca refs, asi que es estable: se puede llamar desde el efecto de
+   * montaje sin re-crear el editor.
+   */
+  const flushEdicionPendiente = useCallback(() => {
+    if (editTimeoutRef.current !== null) {
+      window.clearTimeout(editTimeoutRef.current)
+      editTimeoutRef.current = null
+    }
+    const editor = editorRef.current
+    const cb = onEditDebouncedRef.current
+    if (!editor || !cb) return
+    const pendiente = resolverEdicionPendiente(editor.getValue(), lastFiredSnapshotRef.current, {
+      paste: pasteSinceLastFlushRef.current,
+      snippet: snippetSinceLastFlushRef.current,
+    })
+    // Sin nada que emitir NO se limpian las marcas: siguen describiendo la
+    // ventana en curso (mismo criterio que tenia el debounce).
+    if (!pendiente) return
+    lastFiredSnapshotRef.current = pendiente.snapshot
+    pasteSinceLastFlushRef.current = false
+    snippetSinceLastFlushRef.current = false
+    cb(pendiente.snapshot, pendiente.diffChars, pendiente.origin)
+  }, [])
 
   /**
    * Emite la edición pendiente, si el contenido cambió desde la última.
@@ -337,37 +418,6 @@ export function CodeEditor({
    * sale con el origin equivocado — y `pasted_external` es la única señal que
    * lleva override a N4 en el labeler.
    */
-  const emitirEdicion = useCallback(() => {
-    const cb = onEditDebouncedRef.current
-    const snapshot = editorRef.current?.getValue()
-    if (!cb || snapshot === undefined) return
-    // Si el contenido no cambió respecto a la última emisión (p.ej. tecla →
-    // undo dentro del debounce), no disparamos.
-    if (snapshot === lastFiredSnapshotRef.current) return
-
-    const diffChars = snapshot.length - lastFiredSnapshotRef.current.length
-    // Precedencia: paste > snippet > tipeo. Si en la misma ventana de debounce
-    // hubo las dos cosas gana el paste, que es la señal más fuerte.
-    const origin: "pasted_external" | "snippet_expanded" | "student_typed" =
-      pasteSinceLastFlushRef.current
-        ? "pasted_external"
-        : snippetSinceLastFlushRef.current
-          ? "snippet_expanded"
-          : "student_typed"
-    lastFiredSnapshotRef.current = snapshot
-    pasteSinceLastFlushRef.current = false
-    snippetSinceLastFlushRef.current = false
-    cb(snapshot, diffChars, origin)
-  }, [])
-
-  /** Cancela el debounce en vuelo y emite ya. Idempotente. */
-  const flushPendingEdit = useCallback(() => {
-    if (editTimeoutRef.current !== null) {
-      window.clearTimeout(editTimeoutRef.current)
-      editTimeoutRef.current = null
-    }
-    emitirEdicion()
-  }, [emitirEdicion])
 
   // 1. Cargar Monaco dinámicamente (evita tamaño inicial del bundle).
   // `code` se usa sólo como valor inicial del editor — Monaco luego posee
@@ -400,6 +450,7 @@ export function CodeEditor({
         // vista lo que escriben fuera del viewport.
         wordWrap: "on",
         wrappingIndent: "indent",
+        ...SUGERENCIAS_OPTIONS,
       })
 
       // F6: detectar paste del clipboard. Monaco dispara onDidPaste *antes*
@@ -504,6 +555,11 @@ export function CodeEditor({
       editor.onDidChangeModelContent(() => {
         const value = editor.getValue()
         setCode(value)
+        // Espejo en el caller para que un re-montaje re-siembre con ESTE buffer
+        // y no con el de hace media hora. Se dispara SOLO desde un cambio real
+        // del modelo: la siembra de `editor.create` no pasa por aca, asi que un
+        // re-montaje no puede inventar un `edicion_codigo` que el alumno no hizo.
+        onCodeChangeRef.current?.(value)
 
         // Reseteamos el timer en cada keystroke; emitimos sólo cuando el
         // alumno hizo una pausa de EDIT_DEBOUNCE_MS. Capturamos el snapshot
@@ -512,8 +568,9 @@ export function CodeEditor({
           window.clearTimeout(editTimeoutRef.current)
         }
         editTimeoutRef.current = window.setTimeout(() => {
-          editTimeoutRef.current = null
-          emitirEdicion()
+          // Mismas reglas que el flush forzado antes de una corrida — una sola
+          // implementacion, en `resolverEdicionPendiente`.
+          flushEdicionPendiente()
         }, EDIT_DEBOUNCE_MS)
       })
 
@@ -523,7 +580,13 @@ export function CodeEditor({
       // esto, en la TP monolítica el submit sale ANTES de que el editor se
       // desmonte, así que el flush del unmount llega tarde: el último tramo
       // que el alumno escribió no entraría en lo que entrega.
-      if (flushRef) flushRef.current = flushPendingEdit
+      // Apunta a la MISMA implementacion que usa el debounce y las corridas.
+      // Habia dos: `flushPendingEdit` (para la entrega, del epic de Active-IA) y
+      // `flushEdicionPendiente` (para el orden causal, BUG-11). Hacian el mismo
+      // trabajo con reglas distintas — la segunda ademas arrastra las marcas de
+      // pegado y snippet, asi que dos flushes podian emitir el mismo cambio con
+      // `origin` distinto segun quien disparara primero.
+      if (flushRef) flushRef.current = flushEdicionPendiente
     })()
 
     return () => {
@@ -532,7 +595,7 @@ export function CodeEditor({
       // si escribía y navegaba antes de que venciera el debounce, esos
       // keystrokes nunca llegaban al CTR. Justo la ventana en la que más se
       // edita — los retoques finales antes de entregar.
-      flushPendingEdit()
+      flushEdicionPendiente()
       if (flushRef) flushRef.current = null
       // Cleanup de los listeners DOM de clipboard (instalados en el effect).
       const cleanup = (editorRef.current as unknown as { __clipboardListeners?: () => void } | null)
@@ -540,7 +603,7 @@ export function CodeEditor({
       cleanup?.()
       editorRef.current?.dispose?.()
     }
-  }, [language])
+  }, [language, flushEdicionPendiente])
 
   // Snippets de ceremonia para Java (System.out.println, getters/setters,
   // import del Scanner). Effect propio con deps vacías a propósito: el
@@ -1008,6 +1071,10 @@ def __tutor_run_tests(student_code, cases_json):
     // local: cada corrida consume cuota y dinero, y el alumno que no ve
     // respuesta inmediata tiende a apretar de nuevo.
     if (running || testing) return
+    // La edicion que produjo ESTA corrida tiene que estar en la cadena ANTES
+    // que la corrida. Sincrono y previo a cualquier await: el evento de edicion
+    // se encola primero y la cola del CTR es FIFO.
+    flushEdicionPendiente()
     if (isRemoto) {
       await runCodeRemoto()
       return
@@ -1132,6 +1199,9 @@ def __tutor_run_tests(student_code, cases_json):
       return
     }
     if (running || testing || !hasTests) return
+    // Igual que en "Ejecutar": `tests_ejecutados` no puede preceder al
+    // `edicion_codigo` del snapshot que se esta probando.
+    flushEdicionPendiente()
     // Lenguaje remoto: los casos los corre el servidor. Antes esta funcion era
     // Pyodide-only y salia en silencio — el boton quedaba habilitado (hasRuntime
     // es true para Java) y no pasaba absolutamente nada al apretarlo.
@@ -1194,12 +1264,14 @@ def __tutor_run_tests(student_code, cases_json):
 
   // ED-5: restaurar la plantilla inicial (destructivo — pisa el buffer actual).
   function restoreTemplate() {
+    // `plantillaRef`, no `initialCode`: ver el comentario donde se declara.
+    const plantilla = plantillaRef.current
     const editor = editorRef.current
     if (editor) {
-      editor.setValue(initialCode)
+      editor.setValue(plantilla)
       editor.focus()
     }
-    setCode(initialCode)
+    setCode(plantilla)
     clearErrorMarkers()
     setShowResetConfirm(false)
   }

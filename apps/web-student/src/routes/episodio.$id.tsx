@@ -24,8 +24,8 @@ import {
   submitEntrega,
 } from "../lib/api"
 import { MONOLITHIC_ORDEN, clearArtefactoDrafts, collectArtefactoDrafts } from "../lib/artefactos"
-import { type EjercicioContext, EpisodeView } from "../pages/EpisodePage"
 import { debeEnviarLaEntrega } from "../lib/entregaGuard"
+import { type EjercicioContext, EpisodeView } from "../pages/EpisodePage"
 import { ACTIVE_EXERCISE_CONTEXT_KEY, type ActiveExerciseContext } from "./materia.$id"
 
 // Se re-exporta desde acá porque es donde vivía y donde lo importa su test.
@@ -37,7 +37,6 @@ export { debeEnviarLaEntrega }
 export const Route = createFileRoute("/episodio/$id")({
   component: EpisodioPage,
 })
-
 
 function EpisodioPage() {
   const { id } = useParams({ from: "/episodio/$id" })
