@@ -29,6 +29,7 @@ import {
 import {
   BarChart3,
   BookOpen,
+  Bot,
   CheckSquare,
   ClipboardList,
   Compass,
@@ -69,7 +70,12 @@ export interface RouterContext {
   getToken: () => Promise<string | null>
 }
 
-const NAV_GROUPS: NavGroup[] = [
+// Exportado SOLO para que un test pueda verificarlo. Ver
+// `navegacionAlcanzable.test.ts`: hasta el 2026-08-28 la ruta /activeia
+// existia completa y no estaba en ninguno de los 16 items, asi que solo se
+// llegaba escribiendo la URL a mano. Un menu es de las pocas cosas que se
+// verifican mirando, y por eso nadie lo miro.
+export const NAV_GROUPS: NavGroup[] = [
   {
     label: "Inicio",
     items: [{ id: "/", label: "Mis comisiones", icon: Home }],
@@ -82,6 +88,20 @@ const NAV_GROUPS: NavGroup[] = [
       { id: "/tareas-practicas", label: "Trabajos Prácticos", icon: ClipboardList },
       { id: "/materiales", label: "Materiales", icon: FolderOpen },
       { id: "/correcciones", label: "Correcciones", icon: CheckSquare },
+      // Va DEBAJO de Correcciones porque es su continuacion: acá el docente
+      // conecta su cuenta de Active-IA y sincroniza las rubricas, que es lo
+      // que habilita el boton "Corregir con IA" de esa pantalla.
+      //
+      // La ruta existia y estaba completa desde que se armo el epic, pero no
+      // figuraba en ninguno de los 16 items del menu: solo se llegaba
+      // escribiendo la URL. Por eso nadie la habia usado nunca — y por eso la
+      // doc decia que jamas se habia sincronizado una rubrica. No estaba
+      // rota: no tenia puerta.
+      //
+      // El `comisionId` no hace falta declararlo acá: el sidebar lo arrastra
+      // entre rutas (ver `carry` mas abajo), que es lo que evita que esta
+      // ruta —que lo exige en el `beforeLoad`— rebote al home.
+      { id: "/activeia", label: "Active-IA", icon: Bot },
     ],
   },
   {
