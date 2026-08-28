@@ -187,3 +187,4 @@ _monitoring/
 
 # remanente local del wrapper colapsado en 6528732: no es fuente de verdad
 AI-NativeV3-main/
+.claude/worktrees/
