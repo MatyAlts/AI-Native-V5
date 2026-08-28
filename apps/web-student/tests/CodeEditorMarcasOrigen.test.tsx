@@ -24,7 +24,7 @@
 import { act, render, screen, waitFor } from "@testing-library/react"
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 import { CodeEditor } from "../src/components/CodeEditor"
-import type { ExecutionResult } from "../src/lib/api"
+import type { ExecutionResult, TestCasePublic } from "../src/lib/api"
 import type { OrigenEdicion } from "../src/lib/edicionPendiente"
 import { runRemote } from "../src/lib/runRemote"
 import { aceptarSnippet, editoresCreados, resetMonacoMock } from "./_monacoMock"
@@ -73,12 +73,19 @@ async function esperarEditor() {
   return ed
 }
 
+/** Un ejercicio realista tiene al menos un caso publico; sin eso, "Ejecutar"
+ * en remoto queda deshabilitado a proposito (ver `CodeEditorSinCasos`). */
+const CASOS_PUBLICOS: TestCasePublic[] = [
+  { id: "c1", name: "caso 1", type: "stdin_stdout", code: "", expected: "ok", is_public: true },
+]
+
 function montar(origenes: OrigenEdicion[], language: "python" | "java" = "python") {
   render(
     <CodeEditor
       initialCode="x = 0"
       language={language}
       ejercicioId="ej-1"
+      testCases={CASOS_PUBLICOS}
       onEditDebounced={(_s, _d, origin) => origenes.push(origin)}
     />,
   )

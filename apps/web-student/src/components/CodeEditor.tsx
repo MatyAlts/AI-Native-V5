@@ -313,6 +313,28 @@ export function CodeEditor({
   }, [onTestsRun])
   const publicTestCases = (testCases ?? []).filter((tc) => tc.is_public !== false)
   const hasTests = publicTestCases.length > 0
+  /**
+   * En un lenguaje REMOTO, "Ejecutar" y "Probar" son la MISMA llamada: las dos
+   * postean a `/executions` con `{ejercicio_id, source_code}` y el servidor
+   * corre los casos (publicos + ocultos, que el navegador no ve). O sea que en
+   * remoto "Ejecutar" es una corrida de tests con otro nombre, y el
+   * `tests_ejecutados` que emite el execution-service sale igual.
+   *
+   * Con CERO casos, esa corrida no ejecuta nada —el servidor itera sobre la
+   * lista de casos— y devuelve `total=0, passed=0, failed=0`. El labeler lee
+   * `failed == 0` como "paso todo" y etiqueta N4 un episodio donde el codigo
+   * del alumno nunca corrio. El alumno, del otro lado, ve la consola vacia: no
+   * pierde nada al no poder apretar el boton, porque hoy apretarlo no le
+   * devuelve nada.
+   *
+   * Por eso "Ejecutar" pide lo mismo que "Probar" **solo en remoto**. En local
+   * (Pyodide) no aplica: ahi "Ejecutar" corre el codigo suelto del alumno y le
+   * muestra su stdout, sin tests de por medio y sin emitir conteo ninguno.
+   *
+   * El backend cierra el mismo agujero del lado del servidor; esto evita que
+   * la peticion salga siquiera.
+   */
+  const puedeEjecutar = hasRuntime && (!isRemoto || hasTests)
   // Toast naranja cuando el alumno intenta copiar/pegar; auto-oculta en 4s.
   const [clipboardWarning, setClipboardWarning] = useState<string | null>(null)
   // Refs estables para los callbacks de clipboard (evita re-mount del editor).
@@ -1108,6 +1130,17 @@ def __tutor_run_tests(student_code, cases_json):
       setOutputTab("consola")
       return
     }
+    // Mismo motivo que el guard de arriba: el atajo de teclado no pasa por el
+    // boton. Sin esto, Ctrl+Enter en un ejercicio remoto sin casos manda igual
+    // la corrida que emite el `tests_ejecutados` con `failed == 0` sobre codigo
+    // que nunca se ejecuto. Ver el comentario de `puedeEjecutar`.
+    if (!puedeEjecutar) {
+      setError(
+        `Este ejercicio todavia no tiene casos de prueba, y en ${languageLabel} el codigo se corre contra ellos en el servidor. Avisale a tu docente. Podes seguir escribiendo codigo y consultando al tutor: tus ediciones se registran igual.`,
+      )
+      setOutputTab("consola")
+      return
+    }
     // Candado contra doble envio (tarea 6.3). En remoto importa mas que en
     // local: cada corrida consume cuota y dinero, y el alumno que no ve
     // respuesta inmediata tiende a apretar de nuevo.
@@ -1447,18 +1480,24 @@ def __tutor_run_tests(student_code, cases_json):
           <button
             type="button"
             onClick={runCode}
-            disabled={!hasRuntime || loading || running || testing}
+            disabled={!puedeEjecutar || loading || running || testing}
             data-tour="ejecutar-codigo"
             aria-keyshortcuts="Control+Enter Meta+Enter"
             title={
-              hasRuntime ? undefined : `No hay entorno de ejecucion de ${languageLabel} todavia`
+              !hasRuntime
+                ? `No hay entorno de ejecucion de ${languageLabel} todavia`
+                : puedeEjecutar
+                  ? undefined
+                  : "Este ejercicio todavia no tiene casos de prueba"
             }
             aria-label={
               !hasRuntime
                 ? `Ejecutar no disponible: no hay entorno de ejecucion de ${languageLabel} todavia`
-                : running
-                  ? `Ejecutando codigo ${languageLabel}`
-                  : `Ejecutar codigo ${languageLabel}`
+                : !puedeEjecutar
+                  ? "Ejecutar no disponible: este ejercicio todavia no tiene casos de prueba"
+                  : running
+                    ? `Ejecutando codigo ${languageLabel}`
+                    : `Ejecutar codigo ${languageLabel}`
             }
             className="inline-flex items-center gap-2 px-4 py-2 text-sm font-semibold rounded-md bg-emerald-600 hover:bg-emerald-700 disabled:bg-border-strong disabled:cursor-not-allowed text-white shadow-sm transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500 focus-visible:ring-offset-1"
           >
