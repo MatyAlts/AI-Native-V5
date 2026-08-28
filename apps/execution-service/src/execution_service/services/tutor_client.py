@@ -122,8 +122,16 @@ class TutorClient:
             )
             return False
 
-        # 409 = episodio cerrado o expirado. Es esperable (el alumno cerro la
-        # pestana antes de que terminara la corrida) y no amerita el mismo ruido.
+        # 409 = episodio cerrado, o sesion ausente que el heal no pudo reponer.
+        # "Expirado" YA NO da 409: el `_emitir_con_heal` del tutor-service
+        # reconstruye la sesion vencida con `resume_episode` y reintenta, asi
+        # que el TTL vencido con episodio vivo termina en 202. Es esperable (el
+        # alumno cerro la pestana antes de que terminara la corrida) y no
+        # amerita el mismo ruido que un rechazo real.
+        #
+        # 403 —episodio de otro alumno— sale por la rama `rejected_other`, a
+        # proposito: un execution-service pidiendole al tutor que escriba en la
+        # cadena de otro estudiante NO es esperable, es un bug de cableo.
         es_esperable = resp.status_code == 409
         metrics.record_ctr_emission_failed(
             reason="rejected_409" if es_esperable else "rejected_other"

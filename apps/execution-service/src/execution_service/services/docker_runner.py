@@ -236,11 +236,26 @@ async def _run_java_sin_techo(source_code: str, stdin: str = "") -> DockerRunRes
 # conteos `passed`/`failed` que viajan al CTR dejan de ser comparables entre
 # cohortes. Cualquier cambio acá va tambien allá, y al reves.
 
-# Blancos horizontales que se recortan al final de cada linea. Set explicito y
-# no `str.rstrip()` sin argumentos: el `\s` de JavaScript y el `rstrip()` de
-# Python no cubren los mismos code points (nbsp, \x85, separadores unicode), y
-# una diferencia ahi seria justo la asimetria Java/Python que esto evita.
-_BLANCOS_FINALES = " \t\f\v"
+# Los blancos que se recortan al final de cada linea son los de `str.rstrip()`
+# sin argumentos, o sea `str.isspace()`. ESTE LADO ES LA REFERENCIA: el gemelo
+# de JavaScript enumera a mano ese mismo set (`CLASE_BLANCOS` en
+# `comparacionSalida.ts`) porque el `\s` de JS NO es `isspace()` de Python —
+# `\s` incluye `﻿`, que Python no considera blanco, y le faltan `\x1c-\x1f`
+# y `\x85`, que Python si.
+#
+# Y es `isspace()` y no un set mas chico porque el corrector viejo era
+# `str.strip()` en los dos runners: recortar menos ENDURECE, hace fallar casos
+# que pasaban, sobre conteos que ya viajaron al CTR. El caso realista no es
+# teorico — el docente pega el `expected_output` desde Word y le entra un
+# espacio duro (` `).
+#
+# Aca vivia una constante `_BLANCOS_FINALES = " \t\f\v"` de un intento anterior
+# que quedo MUERTA (cero referencias) cuando la paridad se resolvio al reves:
+# alineando el JS a `isspace()` en vez de achicar los dos. Su comentario decia
+# "no `str.rstrip()` sin argumentos" justo al lado del `rstrip()` sin argumentos
+# de abajo, o sea que prohibia exactamente lo que el codigo hace y lo que hoy es
+# correcto. Se borro; si volves a necesitar un set explicito de este lado,
+# ordenalo con el gemelo primero.
 
 
 def normalize_output(text: str) -> str:
