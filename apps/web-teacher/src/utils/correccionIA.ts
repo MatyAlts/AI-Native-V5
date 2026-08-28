@@ -82,7 +82,38 @@ export function resumirCorrecciones(
   const terminos: TerminoDelPromedio[] = []
   const faltantes: string[] = []
   for (const ej of ejercicios) {
-    const c = (ej.ejercicioId ? porId.get(ej.ejercicioId) : undefined) ?? porOrden.get(ej.orden)
+    // El `??` de antes caia al emparejamiento por `orden` INCLUSO cuando el
+    // ejercicio tiene identidad estable y lo unico que le falta es la
+    // correccion. Era justo el bug que el comentario de arriba dice evitar.
+    //
+    // El caso: TP con A (dificil, peso 0.1) y B (facil, peso 0.9). El docente
+    // corrige solo A, cuando A era `orden 1`. Despues se reordena la TP y B
+    // pasa a ser `orden 1`. Para B, `porId` no encuentra nada y el fallback
+    // devolvia la correccion de A: el panel mostraba el TP como COMPLETO,
+    // proponia la nota de A para los dos, y el "calculo a la vista" imprimia
+    // una linea perfectamente coherente y falsa, con el titulo equivocado al
+    // lado. `faltantes` salia vacio y tapaba que faltaba una correccion.
+    //
+    // Con identidad estable, la ausencia en `porId` significa que ESE ejercicio
+    // no esta corregido — y eso es un faltante, no una invitacion a adivinar.
+    // El emparejamiento por `orden` queda solo para los ejercicios que no
+    // tienen `ejercicioId`, que es para lo que existia.
+    const porIdentidad = ej.ejercicioId ? porId.get(ej.ejercicioId) : undefined
+    const porPosicion = porOrden.get(ej.orden)
+    // El fallback por `orden` NO puede tomar una correccion que se declara de
+    // OTRO ejercicio. Si trae `tp_ejercicio_id`, ya sabemos a quien pertenece:
+    // no matchear por identidad significa que no es de este, y eso es un
+    // FALTANTE, no una invitacion a adivinar por posicion.
+    //
+    // Sin esa condicion, el `??` tomaba la nota del vecino en cuanto la TP se
+    // reordenaba entre la correccion y la lectura. El panel mostraba el TP
+    // como completo, proponia una nota, e imprimia el "calculo a la vista" con
+    // el titulo equivocado al lado — coherente y falso.
+    //
+    // El fallback sigue vivo para lo que existia: la TP monolitica y las
+    // correcciones viejas, que no tienen `tp_ejercicio_id` y por lo tanto no
+    // pueden ser de otro.
+    const c = porIdentidad ?? (porPosicion?.tp_ejercicio_id ? undefined : porPosicion)
     if (!c || c.nota_100 === null) {
       faltantes.push(ej.titulo)
       continue

@@ -15,6 +15,7 @@ from uuid import UUID
 
 import structlog
 from fastapi import APIRouter, Depends, HTTPException, status
+from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from evaluation_service.auth import User, get_db
@@ -38,6 +39,10 @@ from evaluation_service.services.activeia_sync import (
     estado_de_sincronizacion,
     sincronizar_tp,
 )
+
+# Mismo conjunto que `correccion_ia.py`: coordinacion opera cross-comision a
+# proposito, igual que ve toda la cola en `list_entregas`.
+_OVERSIGHT = frozenset({"superadmin", "docente_admin"})
 
 router = APIRouter(prefix="/api/v1/activeia", tags=["activeia"])
 
@@ -125,6 +130,46 @@ async def estado_cuenta(
     )
 
 
+async def _assert_tp_de_mi_comision(db: AsyncSession, tarea_practica_id: UUID, user: User) -> None:
+    """El docente sólo opera sobre TPs de SUS comisiones. 404 y no 403.
+
+    Todo el epic se construye sobre que en producción los docentes comparten
+    tenant, así que la RLS aísla tenants pero NO comisiones. El resto de los
+    endpoints cerró ese agujero (`es_de_mi_comision` en `correccion_ia.py`,
+    `_assert_comision_visible` en `entregas.py`); estos dos quedaron con
+    chequeo de ROL solamente.
+
+    Con el `tarea_practica_id` de otra comisión en la mano, un docente ajeno
+    podía leer los títulos de sus ejercicios y sus `rubrica_id`, y —peor—
+    empujar ese TP **con su propia cuenta de Active-IA**, pisando las filas de
+    `activeia_rubrica_ejercicio`, que son únicas por `(tenant_id, ejercicio_id)`
+    y no llevan comisión ni docente. El docente legítimo quedaba con un vínculo
+    apuntando a la rúbrica de una cuenta ajena, y como `rubrica_id` entra en la
+    clave de idempotencia, la corrección previa dejaba de encontrarse y se
+    pagaba otra corrida sobre el mismo código.
+
+    404 y no 403, mismo criterio que el resto: un 403 confirmaría que la TP
+    existe, y ahí el id de una comisión ajena se vuelve un oráculo.
+    """
+    if user.roles & _OVERSIGHT:
+        return
+    fila = (
+        await db.execute(
+            text(
+                "SELECT 1 FROM tareas_practicas tp "
+                "JOIN usuarios_comision uc ON uc.comision_id = tp.comision_id "
+                "WHERE tp.id = :tp AND uc.user_id = :u AND uc.deleted_at IS NULL "
+                "LIMIT 1"
+            ),
+            {"tp": str(tarea_practica_id), "u": str(user.id)},
+        )
+    ).first()
+    if fila is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="Trabajo practico no existe"
+        )
+
+
 @router.get("/tp/{tarea_practica_id}/sincronizacion", response_model=SincronizacionOut)
 async def estado_sincronizacion(
     tarea_practica_id: UUID,
@@ -138,6 +183,7 @@ async def estado_sincronizacion(
     algo quedó desactualizado tiene que poder verse aunque la integración esté
     apagada.
     """
+    await _assert_tp_de_mi_comision(db, tarea_practica_id, user)
     estados = await estado_de_sincronizacion(db, user.tenant_id, tarea_practica_id)
     return SincronizacionOut(
         ejercicios=[
@@ -168,6 +214,7 @@ async def sincronizar(
     estado de todos, así que el que no se sincronizó se ve.
     """
     _assert_habilitado()
+    await _assert_tp_de_mi_comision(db, tarea_practica_id, user)
     try:
         cliente = await cliente_para(db, user.tenant_id, user.id)
         estados = await sincronizar_tp(db, cliente, user.tenant_id, tarea_practica_id)

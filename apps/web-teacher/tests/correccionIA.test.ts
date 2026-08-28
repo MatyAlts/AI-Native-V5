@@ -47,8 +47,8 @@ describe("resumirCorrecciones", () => {
   test("promedia ponderando por peso", () => {
     const r = resumirCorrecciones(
       [
-        { ejercicioId: "a", orden: 1, titulo: "E1", peso: 0.75 },
-        { ejercicioId: "b", orden: 2, titulo: "E2", peso: 0.25 },
+        { ejercicioId: "ej-1", orden: 1, titulo: "E1", peso: 0.75 },
+        { ejercicioId: "ej-2", orden: 2, titulo: "E2", peso: 0.25 },
       ],
       [correccion(1, 100), correccion(2, 0)],
     )
@@ -95,7 +95,7 @@ describe("resumirCorrecciones", () => {
 
   test("con varias del mismo ejercicio usa la mas nueva", () => {
     const r = resumirCorrecciones(
-      [{ ejercicioId: "a", orden: 1, titulo: "E1", peso: 1 }],
+      [{ ejercicioId: "ej-1", orden: 1, titulo: "E1", peso: 1 }],
       [
         correccion(1, 40, { created_at: "2026-08-18T09:00:00Z" }),
         correccion(1, 80, { created_at: "2026-08-18T11:00:00Z" }),
@@ -117,8 +117,8 @@ describe("resumirCorrecciones", () => {
     // suma de 1 exacto.
     const r = resumirCorrecciones(
       [
-        { ejercicioId: "a", orden: 1, titulo: "E1", peso: 3 },
-        { ejercicioId: "b", orden: 2, titulo: "E2", peso: 1 },
+        { ejercicioId: "ej-1", orden: 1, titulo: "E1", peso: 3 },
+        { ejercicioId: "ej-2", orden: 2, titulo: "E2", peso: 1 },
       ],
       [correccion(1, 100), correccion(2, 0)],
     )
@@ -131,7 +131,7 @@ describe("resumirCorrecciones", () => {
 
   test("con todos los pesos en cero no divide por cero", () => {
     const r = resumirCorrecciones(
-      [{ ejercicioId: "a", orden: 1, titulo: "E1", peso: 0 }],
+      [{ ejercicioId: "ej-1", orden: 1, titulo: "E1", peso: 0 }],
       [correccion(1, 90)],
     )
     expect(r.promedio100).toBeNull()
@@ -233,8 +233,8 @@ describe("los tipos que cruzan el cable", () => {
     // nada: un TP donde uno saco 0/100 daba 100/100 de sugerencia.
     const r = resumirCorrecciones(
       [
-        { ejercicioId: "a", orden: 1, titulo: "E1", peso: 1 },
-        { ejercicioId: "b", orden: 2, titulo: "E2", peso: Number.NaN },
+        { ejercicioId: "ej-1", orden: 1, titulo: "E1", peso: 1 },
+        { ejercicioId: "ej-2", orden: 2, titulo: "E2", peso: Number.NaN },
       ],
       [correccion(1, 100), correccion(2, 0)],
     )
@@ -245,8 +245,8 @@ describe("los tipos que cruzan el cable", () => {
   test("un peso negativo tampoco pasa", () => {
     const r = resumirCorrecciones(
       [
-        { ejercicioId: "a", orden: 1, titulo: "E1", peso: 2 },
-        { ejercicioId: "b", orden: 2, titulo: "E2", peso: -1 },
+        { ejercicioId: "ej-1", orden: 1, titulo: "E1", peso: 2 },
+        { ejercicioId: "ej-2", orden: 2, titulo: "E2", peso: -1 },
       ],
       [correccion(1, 100), correccion(2, 0)],
     )
@@ -332,5 +332,54 @@ describe("con los payloads que la API produce de verdad", () => {
 
   test("el mapeo conserva la identidad estable", () => {
     expect(ejerciciosParaResumen(TP_EJERCICIOS)[0]?.ejercicioId).toBe("ej-a")
+  })
+})
+
+describe("un ejercicio con identidad estable no toma la nota de otro", () => {
+  // El bug: el `??` caia al emparejamiento por `orden` aunque el ejercicio
+  // tuviera `ejercicioId`. Si la TP se reordeno entre la correccion y la
+  // lectura, el ejercicio SIN corregir tomaba la del que ocupaba su lugar.
+  //
+  // El test viejo ("si la TP se reordena, cada nota va con SU peso") corregia
+  // los DOS ejercicios, asi que `porId` siempre pegaba y el fallback nunca se
+  // ejercia. Este corrige UNO SOLO, que es la unica forma de verlo.
+  const DIFICIL = { ejercicioId: "dificil", orden: 2, titulo: "A (dificil)", peso: 0.1 }
+  const FACIL = { ejercicioId: "facil", orden: 1, titulo: "B (facil)", peso: 0.9 }
+
+  // La correccion de A quedo guardada con `orden: 1`, que es el lugar que A
+  // ocupaba cuando se corrigio. Hoy ese lugar es de B.
+  const SOLO_A = [
+    {
+      id: "c1",
+      tp_ejercicio_id: "dificil",
+      orden: 1,
+      estado: "done",
+      nota_100: 100,
+      created_at: "2026-08-20T10:00:00Z",
+    },
+  ] as unknown as CorreccionIA[]
+
+  test("el ejercicio sin corregir sale como FALTANTE y no con la nota del otro", () => {
+    const r = resumirCorrecciones([FACIL, DIFICIL], SOLO_A)
+
+    expect(r.faltantes).toContain("B (facil)")
+    expect(r.terminos.map((t) => t.titulo)).not.toContain("B (facil)")
+  })
+
+  test("y por lo tanto NO se propone una nota", () => {
+    const r = resumirCorrecciones([FACIL, DIFICIL], SOLO_A)
+
+    // Falta una correccion: la regla numero 1 del modulo dice que ahi no se
+    // promedia. Antes daba 100/100 y proponia 10 — con el 90% del peso
+    // sostenido por una nota que era de otro ejercicio.
+    expect(r.promedio100).toBeNull()
+    expect(r.propuesta10).toBeNull()
+  })
+
+  test("A si conserva su nota, emparejada por su identidad estable", () => {
+    const r = resumirCorrecciones([FACIL, DIFICIL], SOLO_A)
+
+    const a = r.terminos.find((t) => t.titulo === "A (dificil)")
+    expect(a?.nota100).toBe(100)
   })
 })
