@@ -313,6 +313,28 @@ export function CodeEditor({
   }, [onTestsRun])
   const publicTestCases = (testCases ?? []).filter((tc) => tc.is_public !== false)
   const hasTests = publicTestCases.length > 0
+  /**
+   * En un lenguaje REMOTO, "Ejecutar" y "Probar" son la MISMA llamada: las dos
+   * postean a `/executions` con `{ejercicio_id, source_code}` y el servidor
+   * corre los casos (publicos + ocultos, que el navegador no ve). O sea que en
+   * remoto "Ejecutar" es una corrida de tests con otro nombre, y el
+   * `tests_ejecutados` que emite el execution-service sale igual.
+   *
+   * Con CERO casos, esa corrida no ejecuta nada —el servidor itera sobre la
+   * lista de casos— y devuelve `total=0, passed=0, failed=0`. El labeler lee
+   * `failed == 0` como "paso todo" y etiqueta N4 un episodio donde el codigo
+   * del alumno nunca corrio. El alumno, del otro lado, ve la consola vacia: no
+   * pierde nada al no poder apretar el boton, porque hoy apretarlo no le
+   * devuelve nada.
+   *
+   * Por eso "Ejecutar" pide lo mismo que "Probar" **solo en remoto**. En local
+   * (Pyodide) no aplica: ahi "Ejecutar" corre el codigo suelto del alumno y le
+   * muestra su stdout, sin tests de por medio y sin emitir conteo ninguno.
+   *
+   * El backend cierra el mismo agujero del lado del servidor; esto evita que
+   * la peticion salga siquiera.
+   */
+  const puedeEjecutar = hasRuntime && (!isRemoto || hasTests)
   // Toast naranja cuando el alumno intenta copiar/pegar; auto-oculta en 4s.
   const [clipboardWarning, setClipboardWarning] = useState<string | null>(null)
   // Refs estables para los callbacks de clipboard (evita re-mount del editor).
@@ -389,12 +411,23 @@ export function CodeEditor({
       paste: pasteSinceLastFlushRef.current,
       snippet: snippetSinceLastFlushRef.current,
     })
-    // Sin nada que emitir NO se limpian las marcas: siguen describiendo la
-    // ventana en curso (mismo criterio que tenia el debounce).
-    if (!pendiente) return
-    lastFiredSnapshotRef.current = pendiente.snapshot
+    // Las marcas se limpian acá, ANTES del early return: describen UNA ventana
+    // de debounce, y la ventana se cierra en este punto — emita o no.
+    //
+    // Antes se limpiaban solo al emitir, y entonces un Ctrl+Z dentro del
+    // segundo del debounce las dejaba vivas indefinidamente: el pegado se
+    // deshacia, no habia nada que emitir, y el PROXIMO tramo —tipeado a mano,
+    // sin tocar el clipboard— salia con `origin: "pasted_external"`. Esa marca
+    // lleva override a N4 en el labeler, o sea que la plataforma afirmaba que
+    // el alumno pego codigo que en realidad escribio, justo sobre la señal que
+    // decide su nivel de apropiacion.
+    //
+    // Empeoro cuando "Ejecutar"/"Probar" pasaron a llamar a este mismo flush:
+    // cada corrida es otra oportunidad de cerrar la ventana sin emitir.
     pasteSinceLastFlushRef.current = false
     snippetSinceLastFlushRef.current = false
+    if (!pendiente) return
+    lastFiredSnapshotRef.current = pendiente.snapshot
     cb(pendiente.snapshot, pendiente.diffChars, pendiente.origin)
   }, [])
 
@@ -444,6 +477,32 @@ export function CodeEditor({
 
       // F6: detectar paste del clipboard. Monaco dispara onDidPaste *antes*
       // de onDidChangeModelContent, así marcamos el flag y lo lee el flush.
+      //
+      // ⚠ HOY ESTE CALLBACK NO SE DISPARA NUNCA, y es a proposito. Es el UNICO
+      // setter de `pasteSinceLastFlushRef`, o sea la unica fuente de
+      // `origin: "pasted_external"`, y el componente bloquea el pegado por dos
+      // vias independientes que corren ANTES:
+      //
+      //   1. el `addCommand(Ctrl+V)` de abajo, que reemplaza el keybinding de
+      //      Monaco (y con el, su `preventDefault`, asi que el navegador ni
+      //      llega a generar un evento `paste` nativo);
+      //   2. el listener DOM `paste` en fase de CAPTURA sobre el contenedor,
+      //      con `preventDefault()` + `stopPropagation()`: el evento se corta
+      //      bajando, antes de llegar al textarea oculto que Monaco escucha.
+      //
+      // El pegado no se "trackea", se PROHIBE: en su lugar sale un evento CTR
+      // `pega_intentada`. Eso hace que la rama `pasted_external` del override a
+      // N4 del labeler sea inalcanzable DESDE ESTE EDITOR — no rota, sino
+      // deliberadamente vacia. La linea se conserva porque si algun dia se
+      // levanta el bloqueo, esta es la costura correcta.
+      //
+      // NO derivar de aca que todo texto externo queda registrado: el
+      // arrastrar-y-soltar (`dropIntoEditor`, default `true` en Monaco) NO pasa
+      // por `onDidPaste` ni por ningun listener de este componente, asi que
+      // entra al buffer y sale como `origin: "student_typed"`. El valor
+      // `drag_drop` existe declarado en el contrato de `pega_intentada` y no lo
+      // emite nadie. Cerrar ese canal cambia que eventos entran al CTR, asi que
+      // es una decision del equipo, no del editor.
       editor.onDidPaste(() => {
         pasteSinceLastFlushRef.current = true
       })
@@ -1071,6 +1130,17 @@ def __tutor_run_tests(student_code, cases_json):
       setOutputTab("consola")
       return
     }
+    // Mismo motivo que el guard de arriba: el atajo de teclado no pasa por el
+    // boton. Sin esto, Ctrl+Enter en un ejercicio remoto sin casos manda igual
+    // la corrida que emite el `tests_ejecutados` con `failed == 0` sobre codigo
+    // que nunca se ejecuto. Ver el comentario de `puedeEjecutar`.
+    if (!puedeEjecutar) {
+      setError(
+        `Este ejercicio todavia no tiene casos de prueba, y en ${languageLabel} el codigo se corre contra ellos en el servidor. Avisale a tu docente. Podes seguir escribiendo codigo y consultando al tutor: tus ediciones se registran igual.`,
+      )
+      setOutputTab("consola")
+      return
+    }
     // Candado contra doble envio (tarea 6.3). En remoto importa mas que en
     // local: cada corrida consume cuota y dinero, y el alumno que no ve
     // respuesta inmediata tiende a apretar de nuevo.
@@ -1410,18 +1480,24 @@ def __tutor_run_tests(student_code, cases_json):
           <button
             type="button"
             onClick={runCode}
-            disabled={!hasRuntime || loading || running || testing}
+            disabled={!puedeEjecutar || loading || running || testing}
             data-tour="ejecutar-codigo"
             aria-keyshortcuts="Control+Enter Meta+Enter"
             title={
-              hasRuntime ? undefined : `No hay entorno de ejecucion de ${languageLabel} todavia`
+              !hasRuntime
+                ? `No hay entorno de ejecucion de ${languageLabel} todavia`
+                : puedeEjecutar
+                  ? undefined
+                  : "Este ejercicio todavia no tiene casos de prueba"
             }
             aria-label={
               !hasRuntime
                 ? `Ejecutar no disponible: no hay entorno de ejecucion de ${languageLabel} todavia`
-                : running
-                  ? `Ejecutando codigo ${languageLabel}`
-                  : `Ejecutar codigo ${languageLabel}`
+                : !puedeEjecutar
+                  ? "Ejecutar no disponible: este ejercicio todavia no tiene casos de prueba"
+                  : running
+                    ? `Ejecutando codigo ${languageLabel}`
+                    : `Ejecutar codigo ${languageLabel}`
             }
             className="inline-flex items-center gap-2 px-4 py-2 text-sm font-semibold rounded-md bg-emerald-600 hover:bg-emerald-700 disabled:bg-border-strong disabled:cursor-not-allowed text-white shadow-sm transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500 focus-visible:ring-offset-1"
           >

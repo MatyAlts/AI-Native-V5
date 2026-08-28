@@ -75,6 +75,7 @@ describe("orden de eventos: edicion antes que ejecucion (BUG-11)", () => {
         initialCode="class Main {}"
         language="java"
         ejercicioId="ej-1"
+        testCases={CASOS_PUBLICOS}
         onEditDebounced={() => orden.push("edicion_codigo")}
         onCodeExecuted={() => orden.push("codigo_ejecutado")}
       />,
@@ -145,6 +146,7 @@ describe("orden de eventos: edicion antes que ejecucion (BUG-11)", () => {
           initialCode="class Main {}"
           language="java"
           ejercicioId="ej-1"
+          testCases={CASOS_PUBLICOS}
           onEditDebounced={onEditDebounced}
         />,
       )
@@ -171,6 +173,7 @@ describe("orden de eventos: edicion antes que ejecucion (BUG-11)", () => {
         initialCode="class Main {}"
         language="java"
         ejercicioId="ej-1"
+        testCases={CASOS_PUBLICOS}
         onEditDebounced={onEditDebounced}
       />,
     )

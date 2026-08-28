@@ -373,3 +373,123 @@ describe("CTRClient — tests_ejecutados (el evento de mayor señal)", () => {
     ])
   })
 })
+
+describe("CTRClient — 429 y 408 son transitorios, no rechazos", () => {
+  // La linea `status >= 400 && status < 500 && status !== 408 && status !== 429`
+  // sobrevivia intacta a que le sacaran las dos excepciones: los 15 tests
+  // pasaban igual. Con esa mutacion un 429 del rate limiter manda el evento a
+  // dead-letter PERMANENTE — sin reintento y sin ruido, porque `onDrop` es
+  // opcional y nadie lo cablea en produccion. El evento se pierde y la cadena
+  // CTR queda con un hueco que nadie ve.
+  //
+  // Y el escenario no es hipotetico: `CLAUDE.md` documenta que estos frontends
+  // llegaron a ~36 req/s contra el rate limiter por un `useEffect` con una dep
+  // que cambiaba en cada render. O sea que el 429 ya paso acá.
+
+  it("un 429 (rate limiter) se REINTENTA, no se descarta", async () => {
+    const storage = memStorage()
+    const dropped: DropReason[] = []
+    // Primer intento 429, segundo OK: el evento tiene que llegar.
+    const { impl, calls } = mockFetch((_call, i) =>
+      i === 0 ? { ok: false, status: 429 } : okResponse(),
+    )
+    const client = new CTRClient({
+      ...baseOpts(storage, impl),
+      onDrop: (_e, reason) => dropped.push(reason),
+    })
+    client.emit({ event_type: "edicion_codigo", payload: { n: 1 } })
+
+    await client.flush()
+    expect(dropped).toEqual([])
+    expect(client.pendingCount()).toBe(1) // sigue en la cola, esperando
+
+    await client.flush()
+    expect(calls).toHaveLength(2)
+    expect(dropped).toEqual([])
+    expect(client.pendingCount()).toBe(0)
+  })
+
+  it("un 408 (timeout) se REINTENTA, no se descarta", async () => {
+    const storage = memStorage()
+    const dropped: DropReason[] = []
+    const { impl, calls } = mockFetch((_call, i) =>
+      i === 0 ? { ok: false, status: 408 } : okResponse(),
+    )
+    const client = new CTRClient({
+      ...baseOpts(storage, impl),
+      onDrop: (_e, reason) => dropped.push(reason),
+    })
+    client.emit({ event_type: "codigo_ejecutado", payload: { n: 1 } })
+
+    await client.flush()
+    expect(client.pendingCount()).toBe(1)
+
+    await client.flush()
+    expect(calls).toHaveLength(2)
+    expect(dropped).toEqual([])
+    expect(client.pendingCount()).toBe(0)
+  })
+
+  it("el 429 reintenta con el MISMO Idempotency-Key", async () => {
+    // Si el reintento cambiara la clave, el backend le asignaria un `seq`
+    // nuevo y avanzaria el contador de la sesion: hueco en la cadena y
+    // episodio `integrity_compromised` (P-17).
+    const storage = memStorage()
+    const keys: (string | undefined)[] = []
+    const impl = vi.fn(async (_input: unknown, init?: { headers?: Record<string, string> }) => {
+      keys.push(init?.headers?.["Idempotency-Key"])
+      return { ok: keys.length > 1, status: keys.length > 1 ? 202 : 429 } as Response
+    }) as unknown as CTRFetch
+    const client = new CTRClient(baseOpts(storage, impl))
+    client.emit({ event_type: "edicion_codigo", payload: { n: 1 } })
+
+    await client.flush()
+    await client.flush()
+
+    expect(keys).toHaveLength(2)
+    expect(keys[0]).toBeTruthy()
+    expect(keys[1]).toBe(keys[0])
+  })
+
+  it("un 429 persistente termina en dead-letter por agotamiento, no por rechazo", async () => {
+    // La distincion importa: "exhausted" dice "lo intentamos N veces y no
+    // entro"; "rejected" dice "el servidor lo rechazo, no lo mandes mas". Sobre
+    // un 429 lo segundo es mentira.
+    const storage = memStorage()
+    const dropped: DropReason[] = []
+    const { impl, calls } = mockFetch(() => ({ ok: false, status: 429 }))
+    const client = new CTRClient({
+      ...baseOpts(storage, impl),
+      maxAttempts: 3,
+      onDrop: (_e, reason) => dropped.push(reason),
+    })
+    client.emit({ event_type: "edicion_codigo", payload: { n: 1 } })
+    await client.flush()
+    await client.flush()
+    await client.flush()
+
+    expect(calls).toHaveLength(3)
+    expect(dropped).toEqual(["exhausted"])
+  })
+
+  it("los 4xx de negocio vecinos SIGUEN siendo dead-letter inmediato", async () => {
+    // La otra mitad del guard: ensanchar la excepcion a todo 4xx tampoco puede
+    // pasar en silencio. 400/401/403/404/409/422 son rechazos definitivos —
+    // reintentarlos es martillar al servidor con algo que nunca va a entrar.
+    for (const status of [400, 401, 403, 404, 409, 422]) {
+      const storage = memStorage()
+      const dropped: DropReason[] = []
+      const { impl, calls } = mockFetch(() => ({ ok: false, status }))
+      const client = new CTRClient({
+        ...baseOpts(storage, impl),
+        onDrop: (_e, reason) => dropped.push(reason),
+      })
+      client.emit({ event_type: "edicion_codigo", payload: { n: 1 } })
+      await client.flush()
+      await client.flush()
+
+      expect(calls, `status ${status}`).toHaveLength(1)
+      expect(dropped, `status ${status}`).toEqual(["rejected"])
+    }
+  })
+})

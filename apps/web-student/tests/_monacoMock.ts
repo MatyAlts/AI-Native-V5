@@ -24,6 +24,14 @@ export interface EditorFalso {
   __opciones: Record<string, unknown>
   /** Simula tipeo del alumno: setea el buffer y notifica a los listeners. */
   __tipear(texto: string): void
+  /**
+   * Simula un pegado: dispara `onDidPaste` y DESPUES cambia el buffer, en ese
+   * orden — es el orden de Monaco real, y de el depende que la marca de origen
+   * este puesta cuando el debounce arranca. El mock descartaba el callback
+   * (`onDidPaste: () => {}`), asi que `origin: "pasted_external"` —la unica
+   * marca que lleva override a N4 en el labeler— era inobservable.
+   */
+  __pegar(texto: string): void
   /** Comandos registrados con `addCommand`, por keybinding. */
   __comandos: Map<number, () => void>
   getValue(): string
@@ -56,13 +64,34 @@ export const editoresCreados: EditorFalso[] = []
  */
 export const lenguajesConSnippets: string[] = []
 
+/**
+ * Handlers registrados con `monaco.editor.registerCommand`, por id.
+ *
+ * El unico que hay es el que los registradores de snippets disparan al ACEPTAR
+ * una sugerencia, y es lo que marca la edicion como `snippet_expanded`. El mock
+ * lo descartaba (`registerCommand: () => disposable`), asi que la marca era
+ * inobservable: una expansion de 8 lineas podia entrar al CTR como tipeada por
+ * el alumno y ningun test se enteraba.
+ */
+export const comandosRegistrados = new Map<string, () => void>()
+
+/** Simula que el alumno acepto una sugerencia de snippet. Hay un id por
+ * lenguaje: `aiNative.pythonSnippetAccepted` / `aiNative.javaSnippetAccepted`. */
+export function aceptarSnippet(id = "aiNative.pythonSnippetAccepted"): void {
+  const handler = comandosRegistrados.get(id)
+  if (!handler) throw new Error(`no se registro el comando ${id}`)
+  handler()
+}
+
 export function resetMonacoMock(): void {
   editoresCreados.length = 0
   lenguajesConSnippets.length = 0
+  comandosRegistrados.clear()
 }
 
 function create(_container: HTMLElement, opciones: Record<string, unknown>): EditorFalso {
   const listeners: (() => void)[] = []
+  const pasteListeners: (() => void)[] = []
   let valor = String(opciones.value ?? "")
   const editor: EditorFalso = {
     __opciones: opciones,
@@ -70,6 +99,11 @@ function create(_container: HTMLElement, opciones: Record<string, unknown>): Edi
     __tipear(texto: string) {
       valor = texto
       for (const l of [...listeners]) l()
+    },
+    __pegar(texto: string) {
+      // Monaco dispara `onDidPaste` ANTES de `onDidChangeModelContent`.
+      for (const l of [...pasteListeners]) l()
+      editor.__tipear(texto)
     },
     getValue: () => valor,
     // Monaco real dispara `onDidChangeModelContent` tambien cuando el cambio
@@ -79,7 +113,9 @@ function create(_container: HTMLElement, opciones: Record<string, unknown>): Edi
     setValue: (v: string) => {
       editor.__tipear(v)
     },
-    onDidPaste: () => {},
+    onDidPaste: (cb: () => void) => {
+      pasteListeners.push(cb)
+    },
     onDidChangeModelContent: (cb: () => void) => {
       listeners.push(cb)
     },
@@ -101,7 +137,10 @@ const disposable = { dispose: () => {} }
 export const editor = {
   create,
   setModelMarkers: () => {},
-  registerCommand: () => disposable,
+  registerCommand: (id: string, handler: () => void) => {
+    comandosRegistrados.set(id, handler)
+    return disposable
+  },
 }
 
 export const KeyMod = { CtrlCmd: 2048 }

@@ -13,6 +13,18 @@
  * alumno es que aca corremos N test_cases en namespaces frescos y comparamos el
  * resultado contra el `expected` — el alumno solo corre su propio codigo suelto.
  *
+ * La UNICA excepcion a ese "replica lo minimo" es la comparacion de la salida,
+ * que se importa de `@platform/contracts/comparacion-salida`. Ahi el
+ * desacoplamiento costaba caro: este archivo tenia su propia `normalize()` con
+ * el `\s` de JavaScript, que el corrector canonico prohibe con nombre y
+ * apellido. Recortaba 24 code points contra los 28 del alumno y del servidor, y
+ * no unificaba el `\r` suelto. El camino que abria: el docente pega el
+ * `expected_output` desde un archivo con BOM (`U+FEFF`, que `\s` recorta y
+ * `str.isspace()` de Python no) → "Probar" da VERDE → asigna el ejercicio → la
+ * cohorte entera recibe WRONG_ANSWER con codigo correcto, en silencio, y eso
+ * mueve el `test_count_passed/failed` que alimenta la clasificacion N1–N4.
+ * Un corrector de docente que no es el corrector del alumno no valida nada.
+ *
  * Semantica de los dos tipos de test_case (contrato TestCaseSchema, ADR-034):
  *  - "pytest_assert": `code` son lineas de assert que referencian las
  *    clases/funciones definidas por la solucion (mismo archivo). Se ejecuta
@@ -26,6 +38,8 @@
  * Python (sys.settrace por opcode), pero una unica llamada C larga no es
  * interrumpible. Aceptable para un preview del docente.
  */
+
+import { salidaCoincide } from "@platform/contracts/comparacion-salida"
 
 const PYODIDE_VERSION = "0.26.3"
 const PYODIDE_URL = `https://cdn.jsdelivr.net/pyodide/v${PYODIDE_VERSION}/full/`
@@ -208,18 +222,15 @@ export function loadPyodideRuntime(): Promise<PyodideAPI> {
   return runtimePromise
 }
 
-// Normaliza salida para comparar: line endings, trailing whitespace por linea y
-// bordes. Un espacio final o un \r\n no deberian marcar un test como fallado.
-function normalize(s: string): string {
-  return s
-    .replace(/\r\n/g, "\n")
-    .split("\n")
-    .map((l) => l.replace(/\s+$/g, ""))
-    .join("\n")
-    .trim()
-}
-
-function evaluateCase(
+/**
+ * Traduce la corrida cruda de UN caso al veredicto que ve el docente.
+ *
+ * Exportada para poder correrla contra la tabla compartida
+ * `tests/fixtures/paridad-salida.json` sin cargar Pyodide. Testear
+ * `salidaCoincide` sola no alcanzaria: lo que hay que demostrar es que ESTE
+ * camino —el que decide el verde del docente— pasa por el corrector canonico.
+ */
+export function evaluateCase(
   tc: TestCaseLike,
   parsed: { stdout: string; error: string | null },
 ): TestCaseRunResult {
@@ -238,8 +249,9 @@ function evaluateCase(
     // Sin excepcion => todos los asserts pasaron.
     return { ...base, status: "pass", got: parsed.stdout, error: null }
   }
-  // stdin_stdout: comparar stdout normalizado contra expected.
-  const pass = normalize(parsed.stdout) === normalize(tc.expected ?? "")
+  // stdin_stdout: comparar stdout normalizado contra expected, con el MISMO
+  // corrector que usan el alumno y el servidor (ver el comentario del import).
+  const pass = salidaCoincide(parsed.stdout, tc.expected)
   return { ...base, status: pass ? "pass" : "fail", got: parsed.stdout, error: null }
 }
 

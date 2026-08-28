@@ -8,7 +8,8 @@
   "exports": {
     ".": "./src/index.ts",
     "./ctr": "./src/ctr/index.ts",
-    "./academic": "./src/academic/index.ts"
+    "./academic": "./src/academic/index.ts",
+    "./comparacion-salida": "./src/comparacionSalida.ts"
   },
   "scripts": {
     "lint": "biome check src",
