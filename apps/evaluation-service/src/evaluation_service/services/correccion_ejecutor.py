@@ -29,6 +29,7 @@ from __future__ import annotations
 import asyncio
 import time
 from datetime import UTC, datetime
+from decimal import Decimal, InvalidOperation
 from typing import Any
 from uuid import UUID
 
@@ -592,14 +593,31 @@ async def _corregir_ejercicio(
     # Es la regla de oro del epic aplicada al revés: una nota real convertida en
     # un fallo de infraestructura. Y cae justo en el camino que el propio PR
     # declara abierto — el nombre del campo de la nota en la respuesta de ellos.
-    nota = next(
-        (
-            cuerpo[clave]
-            for clave in ("nota_100", "nota", "nota_final", "calificacion")
-            if cuerpo.get(clave) is not None
-        ),
-        None,
-    )
+    # El campo es `nota`, confirmado por ellos el 27/08: no existe `nota_100`,
+    # ni `nota_final`, ni `calificacion`. La cascada que probaba los cuatro se
+    # baja — funcionaba hasta el dia que devolviera el equivocado.
+    #
+    # **Y viaja como STRING**: `"85.50"`, con comillas. Es el default de
+    # Pydantic v2 para `Decimal` y lo dejaron a proposito, porque una nota no
+    # deberia pasar por un float en ningun tramo. Se castea EXPLICITO acá:
+    # `float("85.50")` anda por accidente, y ese es el problema — un parser
+    # asi funciona meses y revienta el dia que alguien agrega una comparacion
+    # de tipos o un `if not nota`. Es el mismo mecanismo silencioso que hizo
+    # que `salida_obtenida` se perdiera sin un solo error.
+    nota_cruda = cuerpo.get("nota")
+    nota: Decimal | None = None
+    if nota_cruda is not None:
+        try:
+            nota = Decimal(str(nota_cruda))
+        except (InvalidOperation, ValueError):
+            # Una nota ilegible NO es una nota. Cae a `SIN_NOTA`, que es
+            # infraestructura y reintentable, en vez de escribir basura en la
+            # fila o dejar que el CHECK de la base explote despues.
+            log.error(
+                "activeia_nota_ilegible",
+                nota_cruda=repr(nota_cruda)[:120],
+                detalle="La respuesta trajo `nota` pero no se pudo interpretar como numero.",
+            )
     if nota is None:
         return {
             "error_code": cuerpo.get("error_code") or "SIN_NOTA",

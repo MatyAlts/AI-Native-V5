@@ -691,12 +691,19 @@ class TestElEjecutorNoManda:
         el nombre del campo de la nota en la respuesta de ellos.
 
         Verificado por reversion: volviendo a
-        `cuerpo.get("nota") or cuerpo.get("nota_final") or ...`, los tres casos
-        de `nota=0` caen.
+        `cuerpo.get("nota") or cuerpo.get("nota_final") or ...`, el caso de
+        `nota=0` cae.
+
+        **Actualizado el 2026-08-28**: este test recorria los cuatro nombres que
+        leia la cascada. Active-IA confirmo por escrito que el campo es `nota` y
+        que los otros tres **no existen**, asi que la cascada se bajo y esto
+        recorre uno solo. Lo que el test prueba no cambio — el cero falsy sigue
+        siendo la trampa; lo que cambio es contra que campo hay que probarla.
+        El contrato del campo lo fija `test_nota_activeia.py`.
         """
         from evaluation_service.services.correccion_ejecutor import _corregir_ejercicio
 
-        for clave in ("nota_100", "nota", "nota_final", "calificacion"):
+        for clave in ("nota",):
 
             class _Cliente:
                 # `clave=clave` liga el valor de ESTA vuelta: sin eso el closure
