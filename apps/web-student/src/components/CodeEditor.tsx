@@ -389,12 +389,23 @@ export function CodeEditor({
       paste: pasteSinceLastFlushRef.current,
       snippet: snippetSinceLastFlushRef.current,
     })
-    // Sin nada que emitir NO se limpian las marcas: siguen describiendo la
-    // ventana en curso (mismo criterio que tenia el debounce).
-    if (!pendiente) return
-    lastFiredSnapshotRef.current = pendiente.snapshot
+    // Las marcas se limpian acá, ANTES del early return: describen UNA ventana
+    // de debounce, y la ventana se cierra en este punto — emita o no.
+    //
+    // Antes se limpiaban solo al emitir, y entonces un Ctrl+Z dentro del
+    // segundo del debounce las dejaba vivas indefinidamente: el pegado se
+    // deshacia, no habia nada que emitir, y el PROXIMO tramo —tipeado a mano,
+    // sin tocar el clipboard— salia con `origin: "pasted_external"`. Esa marca
+    // lleva override a N4 en el labeler, o sea que la plataforma afirmaba que
+    // el alumno pego codigo que en realidad escribio, justo sobre la señal que
+    // decide su nivel de apropiacion.
+    //
+    // Empeoro cuando "Ejecutar"/"Probar" pasaron a llamar a este mismo flush:
+    // cada corrida es otra oportunidad de cerrar la ventana sin emitir.
     pasteSinceLastFlushRef.current = false
     snippetSinceLastFlushRef.current = false
+    if (!pendiente) return
+    lastFiredSnapshotRef.current = pendiente.snapshot
     cb(pendiente.snapshot, pendiente.diffChars, pendiente.origin)
   }, [])
 
