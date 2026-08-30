@@ -263,6 +263,42 @@ describe("H3 — un puntaje_max ilegible se vuelve 0 en silencio", () => {
   })
 })
 
+describe("H7 — un ejercicio sin rubrica desaparece del progreso y de la nota", () => {
+  it("la TP se declara 100% corregida con la mitad sin evaluar, y sugiere 10", async () => {
+    // TP de dos ejercicios donde el segundo no tiene rubrica cargada — algo que
+    // el gate de publicacion permite (`validar_tp_no_vacia` cuenta ejercicios,
+    // no mira su contenido).
+    const ejercicios = tpEjercicios("0.50", "0.50")
+    ejercicios[1]!.ejercicio.rubrica = null
+    setupFetchMock({
+      "/correccion-ia": () => ({ correcciones: [] }),
+      "/ejercicios": () => ejercicios,
+      "/api/v1/entregas": () => ({ data: [entregaSubmitted], meta: { cursor_next: null } }),
+      "/api/v1/tareas-practicas/": () => mockTarea,
+    })
+    await abrirCorreccion()
+
+    // El docente puntua al maximo el UNICO ejercicio que tiene rubrica.
+    fireEvent.change(await screen.findByTestId(`criterio-puntaje-${EJ_A}#0`), {
+      target: { value: "1" },
+    })
+
+    // La pantalla declara la TP entera corregida: `totalCalificables` sólo
+    // cuenta los ejercicios CON rubrica. El de al lado, que vale la mitad del
+    // TP, no figura ni como pendiente.
+    await waitFor(() => {
+      expect(screen.getByTestId("correccion-progreso").textContent).toContain(
+        "1 de 1 ejercicios corregidos",
+      )
+    })
+
+    // Y propone un 10 sobre la mitad del trabajo. Es exactamente lo que el
+    // camino de Active-IA se niega a hacer (`correccionIA.ts`: "Falta alguno ->
+    // NO se promedia"); el camino manual no tiene ese guard.
+    expect(screen.getByText(/Nota sugerida:/).textContent).toContain("10.0")
+  })
+})
+
 describe("H6 — la cola en lote solo abarca la primera pagina", () => {
   it("con mas entregas de las cargadas, el boton anuncia el subconjunto como si fuera el total", async () => {
     // El backend pagina de a 50 (`limit` default de `GET /entregas`). Con 30
