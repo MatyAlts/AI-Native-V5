@@ -14,9 +14,13 @@ import { Modal } from "@platform/ui"
  *  - Network calls bloqueadas (Pyodide corre en worker aislado)
  *  - Stdlib completa, pero paquetes PyPI requieren micropip
  *  - Ejecución sincrónica en el main thread: un bucle infinito congela la
- *    pestaña, pero el watchdog (sys.settrace + deadline de 3s) lo corta con
+ *    pestaña, pero el watchdog (sys.settrace + deadline) lo corta con
  *    TimeoutError. Solo cubre loops a nivel Python — una única llamada C
  *    larga (ej. 10**10**8) no dispara trace events y no es interrumpible.
+ *
+ * El Python que hospeda al alumno —watchdog, override de input(), sandbox de
+ * imports y runner de casos— vive en `lib/arnesPython/arnes.py`, con sus
+ * tests en `tests/unit/test_arnes_python.py`. Acá queda solo el cableado.
  */
 import { FlaskConical, Maximize2, Minimize2, Minus, Plus, RotateCcw } from "lucide-react"
 import type * as Monaco from "monaco-editor"
@@ -41,6 +45,7 @@ import {
   type TestCasePublic,
   type TokenGetter,
 } from "../lib/api"
+import { ARNES_PYTHON } from "../lib/arnesPython"
 import { resolverEdicionPendiente } from "../lib/edicionPendiente"
 import { parseJavaError } from "../lib/javaError"
 import { registerJavaSnippets } from "../lib/javaSnippets"
@@ -67,19 +72,6 @@ declare global {
 
 const PYODIDE_VERSION = "0.26.3"
 const PYODIDE_URL = `https://cdn.jsdelivr.net/pyodide/v${PYODIDE_VERSION}/full/`
-
-// Fix plataforma 2026-06-10 #1: presupuesto de ejecución del código del
-// alumno. Pasado este tiempo, el watchdog Python (sys.settrace) aborta la
-// corrida con TimeoutError — protege contra bucles infinitos sin mover
-// Pyodide a un Web Worker (que rompería input() vía window.prompt y
-// exigiría COOP/COEP para SharedArrayBuffer).
-//
-// IMPORTANTE: es presupuesto de CÓMPUTO, no de tiempo real. Mientras el
-// programa espera input() (tiempo humano), el watchdog se pausa por completo
-// y al volver arranca un presupuesto fresco (ver __tutor_input). Antes el
-// reloj corría durante el input y, si el alumno tardaba > timeout en tipear,
-// lo mataba con un falso "bucle infinito" (bug reportado por alumnos 2026-06).
-const EXECUTION_TIMEOUT_SECONDS = 5
 
 export interface CodeEditorProps {
   initialCode?: string
@@ -811,196 +803,20 @@ export function CodeEditor({
       }
       py.globals.set("__tutor_ask_input", askForInput)
 
-      // Watchdog de ejecución (fix 2026-06-10 #1, endurecido 2026-06-19):
-      // sys.settrace chequea un deadline en cada trace event y aborta con una
-      // BaseException propia (un `except Exception:` del alumno no la traga).
-      // El límite es de 5s de cómputo CONTINUO entre inputs (NO acumulado en
-      // toda la sesión): mientras el programa espera input() —que bloquea en
-      // window.prompt, tiempo humano— el watchdog se pausa (deadline=None) y al
-      // volver arranca un presupuesto fresco. Así una sesión interactiva larga
-      // (muchos input, el alumno tardando lo que quiera en tipear) NO da falso
-      // positivo; solo se corta una ráfaga de cómputo ininterrumpida > 5s.
+      // El arnes Python —watchdog de ejecucion, override de input(), sandbox de
+      // imports y runner de casos publicos— vive en `lib/arnesPython/arnes.py`,
+      // no aca. Hasta 2026-08-30 eran cuatro literales de plantilla en este
+      // archivo, y para ejercitar una sola de esas lineas con un test habia que
+      // montar el componente entero con Pyodide real: no lo ejercitaba nadie.
+      // Ahora el MISMO texto lo corre CPython en `tests/unit/test_arnes_python.py`.
       //
-      // Refuerzo 2026-06-19: tracing por OPCODE (f_trace_opcodes). Sin esto
-      // settrace solo dispara al CAMBIAR de línea, y un loop apretado de una
-      // sola línea (ej. `while True: pass`) nunca re-invocaba el watchdog → no
-      // cortaba. Con opcodes dispara en cada bytecode y corta igual.
-      // (Sigue sin cubrir una única llamada C eterna —ej. time.sleep(1e9)—:
-      // eso requeriría mover Pyodide a un Web Worker con terminate().)
-      // `exec(..., globals())` preserva que las variables persistan entre corridas.
-      await py.runPythonAsync(`
-import sys as _tutor_wd_sys
-import time as _tutor_time
-
-_TUTOR_TIMEOUT_SECONDS = ${EXECUTION_TIMEOUT_SECONDS}.0
-
-
-class _TutorTimeout(BaseException):
-    pass
-
-
-_tutor_watchdog = {"deadline": None}
-
-
-def _tutor_trace(frame, event, arg):
-    # Tracing por opcode: dispara en cada bytecode, no solo al cambiar de
-    # línea, para cortar también loops apretados de una sola línea.
-    frame.f_trace_opcodes = True
-    deadline = _tutor_watchdog["deadline"]
-    if deadline is not None and _tutor_time.monotonic() > deadline:
-        raise _TutorTimeout()
-    return _tutor_trace
-
-
-def _tutor_pause_deadline():
-    # Suspende el watchdog mientras input() bloquea en window.prompt (tiempo
-    # humano): con deadline=None, _tutor_trace nunca aborta.
-    _tutor_watchdog["deadline"] = None
-
-
-def _tutor_reset_deadline():
-    # Presupuesto de cómputo fresco. Se llama al volver de un input(): el tiempo
-    # que el alumno tardó en tipear no cuenta, y el tramo de cómputo siguiente
-    # arranca con _TUTOR_TIMEOUT_SECONDS completos.
-    _tutor_watchdog["deadline"] = _tutor_time.monotonic() + _TUTOR_TIMEOUT_SECONDS
-
-
-def __tutor_run_student_code(code):
-    _tutor_watchdog["deadline"] = _tutor_time.monotonic() + _TUTOR_TIMEOUT_SECONDS
-    _tutor_wd_sys.settrace(_tutor_trace)
-    try:
-        exec(compile(code, "<editor>", "exec"), globals())
-    except _TutorTimeout:
-        raise TimeoutError(
-            f"La ejecucion supero los {int(_TUTOR_TIMEOUT_SECONDS)} segundos y fue interrumpida. "
-            "Revisa si tenes un bucle infinito (por ejemplo, un while cuya condicion nunca cambia)."
-        ) from None
-    finally:
-        _tutor_wd_sys.settrace(None)
-        _tutor_watchdog["deadline"] = None
-`)
-
-      await py.runPythonAsync(
-        "import builtins as __tutor_builtins\n" +
-          "def __tutor_input(prompt=''):\n" +
-          "    # Pausamos el watchdog mientras el alumno tipea (tiempo humano):\n" +
-          "    # sin esto, si tardaba mas que el timeout lo mataba con un falso\n" +
-          "    # 'bucle infinito'. Al volver, presupuesto de computo fresco.\n" +
-          "    _tutor_pause_deadline()\n" +
-          "    try:\n" +
-          "        return __tutor_ask_input(str(prompt))\n" +
-          "    finally:\n" +
-          "        _tutor_reset_deadline()\n" +
-          "__tutor_builtins.input = __tutor_input\n",
-      )
+      // Van en UNA sola llamada: `runPythonAsync` exec'ea siempre sobre los
+      // mismos globals, asi que partirlo en cuatro no hacia nada mas que
+      // repetir el `import sys`. `__tutor_ask_input` (arriba, `py.globals.set`)
+      // lo consume el arnes recien cuando el alumno llama a input().
+      await py.runPythonAsync(ARNES_PYTHON)
       // Fallback para sys.stdin.read() crudo (sin prompt inline).
       py.setStdin({ stdin: () => askForInput("") })
-
-      // FIX-22 (F-13): sandbox del editor. En Pyodide `import js` le da al
-      // código del alumno acceso al navegador (DOM, cookies, localStorage).
-      // Lo cerramos con un finder que rechaza js / pyodide_js + lo sacamos de
-      // sys.modules (sino `import js` devuelve la copia cacheada sin pasar por
-      // el finder). Los imports normales (math, random, etc.) no se tocan.
-      await py.runPythonAsync(`
-import sys as _tutor_sys
-
-_TUTOR_BLOCKED = {"js", "pyodide_js"}
-
-
-class _TutorImportGuard:
-    def find_spec(self, name, path=None, target=None):
-        if name.split(".")[0] in _TUTOR_BLOCKED:
-            raise ImportError("El acceso al navegador esta bloqueado en este editor")
-        return None
-
-
-_tutor_sys.meta_path.insert(0, _TutorImportGuard())
-for _m in [k for k in list(_tutor_sys.modules) if k.split(".")[0] in _TUTOR_BLOCKED]:
-    del _tutor_sys.modules[_m]
-`)
-
-      // F1: runner de test cases publicos. Corre el codigo del alumno contra
-      // cada caso en un NAMESPACE FRESCO (aislado entre casos) capturando su
-      // propia stdout (no toca la terminal interactiva) y alimentando input()
-      // desde el `code` del caso (NO window.prompt). Reusa el mismo watchdog de
-      // computo (_tutor_trace) que la corrida interactiva. Dos tipos:
-      //   - stdin_stdout: compara stdout (trim) contra `expected`.
-      //   - pytest_assert: corre el snippet de asercion tras el codigo; pasa si
-      //     no levanta excepcion.
-      // Devuelve JSON (lista de dicts) para que el lado JS lo parsee.
-      await py.runPythonAsync(`
-import io as _tutor_io
-import json as _tutor_json
-import contextlib as _tutor_contextlib
-
-
-def __tutor_run_tests(student_code, cases_json):
-    cases = _tutor_json.loads(cases_json)
-    results = []
-    for case in cases:
-        ctype = case.get("type") or "stdin_stdout"
-        stdin_text = (case.get("code") or "") if ctype == "stdin_stdout" else ""
-        assert_code = (case.get("code") or "") if ctype == "pytest_assert" else ""
-        expected = case.get("expected")
-        _lines = iter(stdin_text.split("\\n"))
-
-        def _feed(prompt="", _it=_lines):
-            try:
-                return next(_it)
-            except StopIteration:
-                raise EOFError(
-                    "El programa pidio mas datos (input) de los que este test provee."
-                )
-
-        buf = _tutor_io.StringIO()
-        ns = {"__name__": "__main__", "input": _feed}
-        error = None
-        passed = False
-        actual = ""
-        _tutor_watchdog["deadline"] = _tutor_time.monotonic() + _TUTOR_TIMEOUT_SECONDS
-        _tutor_wd_sys.settrace(_tutor_trace)
-        try:
-            with _tutor_contextlib.redirect_stdout(buf):
-                exec(compile(student_code, "<editor>", "exec"), ns)
-                if ctype == "pytest_assert":
-                    exec(compile(assert_code, "<test>", "exec"), ns)
-            actual = buf.getvalue()
-            if ctype == "stdin_stdout":
-                # JAVA-1: la comparacion NO se decide aca. La resuelve
-                # salidaCoincide() de comparacionSalida.ts, del lado JS, que es
-                # el gemelo exacto de la que aplica el execution-service para
-                # Java. Un solo criterio por runtime: dos implementaciones de
-                # la misma regla se separan con el tiempo y el mismo codigo
-                # termina aprobando en un lenguaje y fallando en el otro.
-                # Este False es un placeholder que el lado JS pisa.
-                passed = False
-            else:
-                passed = True
-        except _TutorTimeout:
-            actual = buf.getvalue()
-            error = "La ejecucion supero el limite de tiempo (posible bucle infinito)."
-        except AssertionError as _e:
-            actual = buf.getvalue()
-            _msg = str(_e)
-            error = "La comprobacion no se cumplio" + (": " + _msg if _msg else "")
-        except BaseException as _e:
-            actual = buf.getvalue()
-            error = type(_e).__name__ + ": " + str(_e)
-        finally:
-            _tutor_wd_sys.settrace(None)
-            _tutor_watchdog["deadline"] = None
-        results.append({
-            "id": case.get("id"),
-            "name": case.get("name"),
-            "type": ctype,
-            "passed": passed,
-            "expected": expected,
-            "actual": actual,
-            "stdin": stdin_text,
-            "error": error,
-        })
-    return _tutor_json.dumps(results)
-`)
 
       pyodideRef.current = py
       setLoading(false)
@@ -1217,7 +1033,7 @@ def __tutor_run_tests(student_code, cases_json):
 
     try {
       // La corrida pasa por el watchdog Python (deadline de
-      // EXECUTION_TIMEOUT_SECONDS). El código viaja por globals para no
+      // _TUTOR_TIMEOUT_SECONDS de arnes.py). El código viaja por globals para no
       // tener que escapar el string dentro de un literal Python.
       pyodideRef.current.globals.set("__tutor_student_code", code)
       await pyodideRef.current.runPythonAsync("__tutor_run_student_code(__tutor_student_code)")

@@ -27,6 +27,10 @@ export interface ResultadoCasoFalso {
 export interface PyodideFake {
   /** Resultados que devolvera la proxima llamada a `__tutor_run_tests`. */
   resultadosDeTests: ResultadoCasoFalso[]
+  /** Todo lo que el componente le mando a `runPythonAsync`, en orden.
+   * Lo usa `arnesPythonCableado.test.tsx` para verificar que al editor le
+   * sigue llegando el arnes entero despues de que se mudo a su `.py`. */
+  codigosEjecutados: string[]
   /** Deshace el parcheo de `window.loadPyodide`. */
   desinstalar(): void
 }
@@ -35,6 +39,7 @@ export function instalarPyodideFake(): PyodideFake {
   const anterior = window.loadPyodide
   const control: PyodideFake = {
     resultadosDeTests: [],
+    codigosEjecutados: [],
     desinstalar() {
       if (anterior) {
         window.loadPyodide = anterior
@@ -48,6 +53,7 @@ export function instalarPyodideFake(): PyodideFake {
 
   const api = {
     runPythonAsync: async (code: string): Promise<unknown> => {
+      control.codigosEjecutados.push(code)
       if (code.includes("__tutor_run_tests(")) {
         return JSON.stringify(control.resultadosDeTests)
       }
