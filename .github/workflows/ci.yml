@@ -180,6 +180,49 @@ jobs:
       # Web Storage nativo le gana al de jsdom y aparecen ~144 rojos FALSOS.
       - run: pnpm -r test
 
+  test-pyodide:
+    name: Editor del alumno con Pyodide real
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+
+      # Sin `version:` a proposito, mismo motivo que `lint-frontend`.
+      - uses: pnpm/action-setup@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: pnpm
+          cache-dependency-path: pnpm-lock.yaml
+
+      - run: pnpm install --frozen-lockfile
+
+      # Job aparte y NO dentro de `pnpm -r test`, por dos razones:
+      #
+      # 1. Estos tests levantan el interprete Python real (WASM) y dos de ellos
+      #    esperan reloj de verdad — el watchdog del editor corta a los 5 s y
+      #    verificar que corta (y que NO corta cuando hay un input() de por
+      #    medio) cuesta 12 s de los ~24 s de la suite. Sumarlos a la suite
+      #    normal la duplica larga, y una suite lenta es una suite que la gente
+      #    deja de correr en local. El repo ya pago ese precio: los tests de
+      #    front vivieron fuera del CI hasta el 2026-08-27 y llegaron a haber 14
+      #    rojos en `main` sin que nadie se enterara.
+      # 2. Corren de a un archivo (`fileParallelism: false`): varios interpretes
+      #    WASM simultaneos compiten por memoria y el watchdog, que mide tiempo
+      #    de RELOJ, empieza a dar falsos positivos.
+      #
+      # NO depende de la red. Pyodide sale del paquete npm
+      # (`node_modules/pyodide`, 14 MB con el .wasm y el stdlib), no del CDN
+      # `cdn.jsdelivr.net` que usa produccion. Es a proposito: el repo ya tiene
+      # el gotcha de la imagen de Java, donde un test dependiente de un servicio
+      # externo se vuelve un rojo que no es del codigo. El precio es que el
+      # indexURL del CDN es lo unico de la carga que estos tests no ejercitan.
+      #
+      # La version del paquete npm tiene que coincidir con `PYODIDE_VERSION` de
+      # `CodeEditor.tsx`; hay un test que lo verifica y falla si divergen.
+      - run: pnpm --filter @platform/web-student test:pyodide
+
   build-frontend:
     name: Build frontends (Vite)
     # Gate que faltaba: `lint-frontend` corre `turbo lint typecheck` (tsc --noEmit),
@@ -597,6 +640,7 @@ jobs:
         typecheck-python,
         lint-frontend,
         test-frontend,
+        test-pyodide,
         test-unit,
         test-sin-stack,
       ]

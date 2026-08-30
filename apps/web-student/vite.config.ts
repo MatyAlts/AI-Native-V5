@@ -17,6 +17,12 @@ const vitestConfig = {
     environment: "jsdom",
     globals: true,
     setupFiles: ["./tests/setup.ts"],
+    // `tests/pyodide/` corre Pyodide DE VERDAD (paquete npm, sin red) y tiene
+    // su propia config: `vitest.pyodide.config.ts`, via `pnpm test:pyodide`.
+    // Queda fuera de esta suite porque cada archivo levanta un interprete WASM
+    // (~1,5 s) y el test del watchdog espera 5 s de reloj — el precio de correr
+    // eso en cada push es que la gente deje de correr los tests.
+    exclude: ["node_modules/**", "dist/**", "tests/pyodide/**"],
     // `monaco-editor` no resuelve como entry de paquete bajo Vitest (su
     // package.json no declara main/module/exports utilizables en SSR) y de
     // todos modos no arranca en jsdom. Lo aliasamos a un doble que expone la

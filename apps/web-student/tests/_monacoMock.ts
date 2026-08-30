@@ -123,7 +123,23 @@ function create(_container: HTMLElement, opciones: Record<string, unknown>): Edi
       editor.__comandos.set(keybinding, cb)
     },
     getSelection: () => null,
-    getModel: () => ({}),
+    // El modelo tiene que saber contar lineas. `setErrorMarkerAtLine` (ED-4)
+    // llama a `getLineCount()` / `getLineMaxColumn()` para no marcar una linea
+    // que ya no existe, y con un `{}` vacio eso explota con "getLineCount is
+    // not a function" — pero SOLO cuando la corrida falla con un traceback que
+    // trae numero de linea. Los tests con el doble de Pyodide nunca producian
+    // uno, asi que el agujero vivio invisible hasta que los tests de Pyodide
+    // real empezaron a generar tracebacks de verdad.
+    //
+    // Importa mas de lo que parece: en `runCode` el `catch` llama a
+    // `setErrorMarker` ANTES de `pushRunHistory` / `onCodeExecuted`. Si esa
+    // llamada tira, la corrida fallida nunca llega al historial ni al evento
+    // CTR `codigo_ejecutado`. Un mock que no puede reproducirlo tampoco puede
+    // avisar si eso se rompe.
+    getModel: () => ({
+      getLineCount: () => valor.split("\n").length,
+      getLineMaxColumn: (linea: number) => (valor.split("\n")[linea - 1] ?? "").length + 1,
+    }),
     updateOptions: () => {},
     focus: () => {},
     dispose: () => {},
