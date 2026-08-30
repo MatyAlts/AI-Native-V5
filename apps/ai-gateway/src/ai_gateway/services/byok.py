@@ -171,9 +171,38 @@ def _get_master_key_bytes() -> bytes | None:
         logger.error("byok_master_key_invalid_base64: %s", exc)
         return None
     if len(decoded) != 32:
-        logger.error("byok_master_key_wrong_size: got %d bytes (expected 32)", len(decoded))
+        # El tamaño equivocado es casi siempre un copiado incompleto: los 44
+        # caracteres de `openssl rand -base64 32` pierden el final y quedan 30
+        # bytes. El mensaje dice como arreglarlo porque el sintoma NO es
+        # ruidoso: el resolver degrada al fallback de entorno y el servicio
+        # sigue andando con BYOK apagado de hecho.
+        logger.error(
+            "byok_master_key_wrong_size: got %d bytes (expected 32) — "
+            "regenerala con `openssl rand -base64 32` y pegala COMPLETA "
+            "(44 caracteres). Mientras tanto BYOK queda inactivo y todo usa "
+            "la key de entorno.",
+            len(decoded),
+        )
         return None
     return decoded
+
+
+# Proveedores que `byok_keys` acepta. TIENE que coincidir con el check
+# `ck_byok_provider` de la tabla, y esta como constante para que un test pueda
+# compararlos — antes era un literal suelto acá adentro y las dos listas se
+# desincronizaron sin que nadie lo viera.
+#
+# Paso con `openrouter`: se agrego al codigo y el constraint de la base quedo
+# con los cuatro originales del 2026-05-04. El ai-gateway siembra la key desde
+# la variable de entorno en cada arranque, la base la rechazaba con
+# `CheckViolationError`, se logueaba el traceback y el servicio seguia andando.
+# OpenRouter quedo configurado, con pinta de funcionar, y sin una sola key
+# guardada. Se descubrio el 2026-08-28 leyendo logs de produccion por otro
+# motivo — cuatro meses despues.
+#
+# Agregar uno acá SIN la migracion que actualiza el constraint reproduce ese
+# bug exacto. `test_providers_sincronizados_con_la_migracion` lo impide.
+PROVIDERS_VALIDOS = ("anthropic", "gemini", "mistral", "openai", "openrouter")
 
 
 # ── Resolver ───────────────────────────────────────────────────────────
@@ -419,7 +448,7 @@ async def create_byok_key(
         raise ValueError("scope_type=tenant requiere scope_id=None")
     if scope_type in ("facultad", "materia") and scope_id is None:
         raise ValueError(f"scope_type={scope_type} requiere scope_id NOT NULL")
-    if provider not in ("anthropic", "gemini", "mistral", "openai", "openrouter"):
+    if provider not in PROVIDERS_VALIDOS:
         raise ValueError(f"provider invalido: {provider!r}")
     if len(plaintext_value) < 8:
         raise ValueError("plaintext_value demasiado corto (probablemente invalido)")
