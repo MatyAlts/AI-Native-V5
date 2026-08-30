@@ -343,7 +343,9 @@ def test_el_runner_alimenta_input_desde_el_caso_no_desde_window_prompt(arnes: Ar
         [{"id": "1", "type": "stdin_stdout", "code": "Juan\n25", "expected": "Juan tiene 25"}],
     )
     assert caso["error"] is None
-    assert caso["actual"] == "Juan tiene 25\n"
+    # Los prompts SI van en `actual`: es lo que hace CPython y lo que el
+    # runner del docente escribe en el `expected` (2026-08-30).
+    assert caso["actual"] == "Nombre: Edad: Juan tiene 25\n"
     # El host interactivo no se toco: window.prompt no participa de las pruebas.
     assert arnes.prompts_vistos == []
 
@@ -506,26 +508,10 @@ def test_el_guard_se_instala_primero_en_el_meta_path(arnes: Arnes) -> None:
     """Si quedara ultimo, el finder de siempre resolveria `js` antes que el."""
     assert type(sys.meta_path[0]).__name__ == "_TutorImportGuard"
 
+    # ---------------------------------------------------------------------------
+    # HALLAZGOS — bugs del arnes. Documentados en rojo, NO arreglados aca.
+    # ---------------------------------------------------------------------------
 
-# ---------------------------------------------------------------------------
-# HALLAZGOS — bugs del arnes. Documentados en rojo, NO arreglados aca.
-# ---------------------------------------------------------------------------
-
-
-@pytest.mark.xfail(
-    strict=True,
-    reason=(
-        "HALLAZGO 1 (candidato al bug reportado: 'las validaciones fallan cuando "
-        "escribe un input'). El runner del ALUMNO no escribe el prompt de input() a "
-        "stdout; el del DOCENTE (apps/web-teacher/src/lib/pyodideRunner.ts, _fake_input) "
-        "si lo escribe, replicando a CPython. El docente valida su `expected` con SU "
-        "runner —- y ese expected queda con el prompt adentro -—, el alumno corre el "
-        "mismo caso y su `actual` viene sin el. salidaCoincide() los ve distintos y el "
-        "caso falla, con el codigo del alumno correcto. Solo pasa en ejercicios con "
-        "input(): es justo el sintoma reportado. Decide otro agente."
-    ),
-)
-def test_HALLAZGO_el_runner_del_alumno_no_imprime_el_prompt_como_CPython(arnes: Arnes) -> None:
     [caso] = arnes.correr_tests(
         CODIGO_QUE_PIDE_DOS_DATOS,
         [{"id": "1", "type": "stdin_stdout", "code": "Juan\n25", "expected": None}],
@@ -534,18 +520,6 @@ def test_HALLAZGO_el_runner_del_alumno_no_imprime_el_prompt_como_CPython(arnes: 
     # forman parte de la salida del programa.
     assert caso["actual"] == "Nombre: Edad: Juan tiene 25\n"
 
-
-@pytest.mark.xfail(
-    strict=True,
-    reason=(
-        "HALLAZGO 2. `_feed` parte el stdin con split('\\n') pelado: si el caso viene "
-        "con finales de linea CRLF (importado de un archivo, pegado desde Windows), "
-        "cada valor vuelve con un '\\r' colgado. `'Juan\\r'.isalpha()` es False y la "
-        "validacion del alumno falla sin motivo visible — el '\\r' no se ve en pantalla. "
-        "CPython usa universal newlines y nunca devuelve el '\\r'. Decide otro agente."
-    ),
-)
-def test_HALLAZGO_el_runner_deja_el_retorno_de_carro_de_un_stdin_CRLF(arnes: Arnes) -> None:
     [caso] = arnes.correr_tests(
         "print(input().isalpha())",
         [{"id": "1", "type": "stdin_stdout", "code": "Juan\r\n25", "expected": None}],
@@ -572,18 +546,6 @@ def test_HALLAZGO_un_except_pelado_desarma_el_watchdog_para_el_resto_de_la_corri
     # Tras tragarse el timeout, el watchdog deberia seguir de pie.
     assert sys.gettrace() is not None
 
-
-@pytest.mark.xfail(
-    strict=True,
-    reason=(
-        "HALLAZGO 4. Un caso cuyo stdin termina en '\\n' (lo natural al escribirlo) "
-        "produce una linea vacia de mas: split('\\n') sobre 'Juan\\n' da ['Juan', '']. "
-        "El tercer input() del alumno recibe '' en vez del EOFError que le corresponde, "
-        "y el programa sigue con un dato vacio en vez de fallar donde el docente espera. "
-        "Decide otro agente."
-    ),
-)
-def test_HALLAZGO_un_stdin_terminado_en_salto_regala_una_linea_vacia(arnes: Arnes) -> None:
     [caso] = arnes.correr_tests(
         "input()\nprint('pidiendo el segundo')\ninput()",
         [{"id": "1", "type": "stdin_stdout", "code": "Juan\n", "expected": None}],
@@ -631,3 +593,98 @@ def test_HALLAZGO_sin_tracing_por_opcode_el_bucle_de_una_linea_igual_se_corta() 
     finally:
         sys.settrace(trace_previo)
     pytest.fail("el bucle se corto sin tracing por opcode: la premisa del comentario no aplica")
+
+
+# ── Paridad con el runner del DOCENTE ──────────────────────────────────────
+#
+# El alumno y el docente corren el MISMO caso de prueba por caminos
+# distintos: el docente con `web-teacher/src/lib/pyodideRunner.ts::_fake_input`
+# para validar su ejercicio, el alumno con `_feed` de este arnes al apretar
+# "Probar". Lo que producen tiene que ser identico o el alumno resuelve bien y
+# el caso le falla.
+#
+# Hasta el 2026-08-30 no lo era: el docente escribia el prompt de `input()` a
+# stdout —replicando a CPython— y el alumno no. El `expected` que guardaba el
+# docente traia los prompts adentro; el `actual` del alumno no. Afectaba a
+# TODO ejercicio con `input()`.
+#
+# Estos tests comparan contra CPython, que es el arbitro: es lo que el alumno
+# ve si corre su codigo en su maquina, y es lo que el runner del docente dice
+# replicar en su propio comentario.
+
+
+def _cpython_dice(codigo: str, stdin: str) -> str:
+    """Lo que CPython escribe a stdout con ese stdin. El arbitro."""
+    import subprocess
+
+    r = subprocess.run(
+        [sys.executable, "-c", codigo],
+        input=stdin,
+        capture_output=True,
+        text=True,
+        timeout=20,
+    )
+    assert r.returncode == 0, f"el codigo de prueba fallo en CPython: {r.stderr}"
+    return r.stdout
+
+
+def _salida_del_caso(arnes, codigo: str, *, stdin: str) -> str:
+    """Lo que el runner de "Probar" del ALUMNO produce como `actual`."""
+    casos = [{"id": "c1", "name": "caso", "type": "stdin_stdout", "code": stdin}]
+    r = arnes.correr_tests(codigo, casos)
+    assert len(r) == 1, r
+    assert r[0].get("error") in (None, ""), f"el caso reventó: {r[0].get('error')!r}"
+    return r[0]["actual"]
+
+
+def test_el_prompt_de_input_va_a_stdout_como_en_CPython(arnes):
+    """El bug del 2026-08-30, fijado contra el arbitro."""
+    codigo = 'nombre = input("Ingrese su nombre: ")\nprint(f"Hola {nombre}")\n'
+    esperado = _cpython_dice(codigo, "Juani\n")
+
+    salida = _salida_del_caso(arnes, codigo, stdin="Juani")
+
+    assert salida == esperado, (
+        f"el runner del alumno no coincide con CPython.\n"
+        f"  CPython: {esperado!r}\n"
+        f"  alumno : {salida!r}\n"
+        "Si el prompt no va a stdout, el `expected` que guardo el docente "
+        "—que SI lo incluye— no matchea y el alumno resuelve bien para nada."
+    )
+
+
+def test_el_valor_tipeado_NO_va_a_stdout(arnes):
+    """La otra mitad: escribir de mas rompe igual que escribir de menos.
+
+    En una terminal real, lo que se ve tipeado es el echo del SISTEMA, no
+    salida del proceso. Si el runner lo escribiera, el `actual` tendria el
+    dato dos veces y volveria a no matchear.
+    """
+    codigo = 'x = input("Dato: ")\n'
+    salida = _salida_del_caso(arnes, codigo, stdin="secreto")
+    assert salida == "Dato: ", f"se filtro el valor tipeado: {salida!r}"
+    assert "secreto" not in salida
+
+
+def test_varios_input_seguidos_mantienen_el_orden(arnes):
+    """El caso real: la Caja del Kiosco pide dato tras dato."""
+    codigo = 'a = input("Nombre: ")\nb = input("Precio: ")\nprint(f"{a} cuesta {b}")\n'
+    esperado = _cpython_dice(codigo, "lapiz\n100\n")
+    salida = _salida_del_caso(arnes, codigo, stdin="lapiz\n100")
+    assert salida == esperado, f"CPython={esperado!r} alumno={salida!r}"
+
+
+def test_input_sin_prompt_no_escribe_nada(arnes):
+    """`input()` pelado no imprime: no se puede agregar un separador de mas."""
+    codigo = 'x = input()\nprint(f"[{x}]")\n'
+    esperado = _cpython_dice(codigo, "hola\n")
+    salida = _salida_del_caso(arnes, codigo, stdin="hola")
+    assert salida == esperado, f"CPython={esperado!r} alumno={salida!r}"
+
+
+def test_print_e_input_intercalados_salen_en_orden(arnes):
+    """El prompt no puede adelantarse ni atrasarse respecto de los print."""
+    codigo = 'print("Bienvenido")\nn = input("Cuantos? ")\nprint(f"Van a ser {n}")\n'
+    esperado = _cpython_dice(codigo, "3\n")
+    salida = _salida_del_caso(arnes, codigo, stdin="3")
+    assert salida == esperado, f"CPython={esperado!r} alumno={salida!r}"

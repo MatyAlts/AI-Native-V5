@@ -182,15 +182,52 @@ def __tutor_run_tests(student_code, cases_json):
         stdin_text = (case.get("code") or "") if ctype == "stdin_stdout" else ""
         assert_code = (case.get("code") or "") if ctype == "pytest_assert" else ""
         expected = case.get("expected")
-        _lines = iter(stdin_text.split("\n"))
+        # `splitlines()` y no `split("\n")`: CPython usa universal newlines y
+        # nunca le entrega un "\r" al programa. Con el split pelado, un caso
+        # escrito en Windows —o pegado desde un archivo— dejaba un "\r" colgado
+        # en cada valor, y `"Juan\r".isalpha()` da False. La validacion del
+        # alumno fallaba por un caracter que NO SE VE en pantalla.
+        #
+        # El `or [""]` conserva el caso del stdin vacio: `"".splitlines()` da
+        # `[]` y el primer `input()` tiene que recibir el EOFError, no quedarse
+        # sin iterador.
+        _lines = iter(stdin_text.splitlines() or [""] if stdin_text else [])
+        # `buf` se declara ANTES de `_feed` porque el closure lo captura para
+        # escribir el prompt (ver el comentario de abajo).
+        buf = _tutor_io.StringIO()
 
-        def _feed(prompt="", _it=_lines):
+        def _feed(prompt="", _it=_lines, _out=None):
+            # El prompt VA a stdout, el valor tipeado NO.
+            #
+            # Es lo que hace CPython: `input("Nombre: ")` escribe "Nombre: " a
+            # stdout —es salida del programa— y lo que el usuario tipea no
+            # aparece ahi (en una terminal real eso es el echo del sistema, no
+            # del proceso).
+            #
+            # Hasta el 2026-08-30 esta funcion NO lo escribia, y el runner del
+            # DOCENTE si (`web-teacher/src/lib/pyodideRunner.ts::_fake_input`,
+            # con ese mismo razonamiento en un comentario). La consecuencia era
+            # que el alumno resolvia bien y el caso fallaba igual:
+            #
+            #   1. el docente prueba su ejercicio  -> su salida INCLUYE los prompts
+            #   2. guarda esa salida como `expected`
+            #   3. el alumno corre el mismo caso   -> su salida NO los incluye
+            #   4. `salidaCoincide(expected, actual)` -> distintas -> INCORRECTO
+            #
+            # Afectaba a TODO ejercicio con `input()`, o sea casi toda
+            # Programacion 1. Es el bug que el docente reporto como "las
+            # validaciones fallan cuando el alumno escribe un input".
+            #
+            # Se alinea el alumno al docente y no al reves porque el docente es
+            # el que replica a CPython: si el alumno corre su codigo en su
+            # maquina tiene que ver lo mismo que ve acá.
+            if prompt:
+                (_out if _out is not None else buf).write(str(prompt))
             try:
                 return next(_it)
             except StopIteration:
                 raise EOFError("El programa pidio mas datos (input) de los que este test provee.")
 
-        buf = _tutor_io.StringIO()
         ns = {"__name__": "__main__", "input": _feed}
         error = None
         passed = False
