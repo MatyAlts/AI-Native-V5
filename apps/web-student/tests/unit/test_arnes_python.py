@@ -617,7 +617,10 @@ def _cpython_dice(codigo: str, stdin: str) -> str:
     """Lo que CPython escribe a stdout con ese stdin. El arbitro."""
     import subprocess
 
-    r = subprocess.run(
+    # S603: el comando es una constante del test y el  lo escribe este
+    # mismo archivo. Es CPython corriendo el mismo programa que corre el arnes:
+    # es el arbitro de la comparacion, no una entrada externa.
+    r = subprocess.run(  # noqa: S603
         [sys.executable, "-c", codigo],
         input=stdin,
         capture_output=True,
@@ -688,3 +691,33 @@ def test_print_e_input_intercalados_salen_en_orden(arnes):
     esperado = _cpython_dice(codigo, "3\n")
     salida = _salida_del_caso(arnes, codigo, stdin="3")
     assert salida == esperado, f"CPython={esperado!r} alumno={salida!r}"
+
+
+def test_cada_caso_escribe_en_SU_buffer_y_no_en_el_del_ultimo(arnes: Arnes) -> None:
+    """El prompt de cada caso queda en la salida de ESE caso, y sin mezclarse.
+
+    Todos los demas tests de prompt usan UN caso. Este usa dos, que es donde
+    aparecerian los cruces: un prompt que se filtra al caso siguiente, o el
+    iterador de stdin compartido entre casos.
+
+    Nota honesta sobre el `_out=buf` de `_feed`: pasarlo por default-arg es
+    defensa contra un refactor, no un arreglo de un bug activo. Se probo el
+    mutante (volver a capturar `buf` por closure) y este test NO lo distingue,
+    porque hoy `_feed` se consume dentro de su misma iteracion. Queda dicho
+    para que nadie crea que esta linea esta cubierta.
+    """
+    codigo = 'x = input("Dame un dato: ")\nprint(x)\n'
+    casos = [
+        {"id": "1", "name": "primero", "type": "stdin_stdout", "code": "uno"},
+        {"id": "2", "name": "segundo", "type": "stdin_stdout", "code": "dos"},
+    ]
+    r = arnes.correr_tests(codigo, casos)
+
+    assert len(r) == 2
+    # Cada uno con SU prompt y SU dato — ni de menos ni de mas.
+    assert r[0]["actual"] == "Dame un dato: uno\n", (
+        f"el primer caso perdio su prompt (se lo llevo el ultimo): {r[0]['actual']!r}"
+    )
+    assert r[1]["actual"] == "Dame un dato: dos\n", (
+        f"el segundo caso quedo con prompts de mas: {r[1]['actual']!r}"
+    )

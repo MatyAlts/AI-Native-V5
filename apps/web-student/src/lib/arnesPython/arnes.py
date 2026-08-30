@@ -196,7 +196,7 @@ def __tutor_run_tests(student_code, cases_json):
         # escribir el prompt (ver el comentario de abajo).
         buf = _tutor_io.StringIO()
 
-        def _feed(prompt="", _it=_lines, _out=None):
+        def _feed(prompt="", _it=_lines, _out=buf):
             # El prompt VA a stdout, el valor tipeado NO.
             #
             # Es lo que hace CPython: `input("Nombre: ")` escribe "Nombre: " a
@@ -221,8 +221,17 @@ def __tutor_run_tests(student_code, cases_json):
             # Se alinea el alumno al docente y no al reves porque el docente es
             # el que replica a CPython: si el alumno corre su codigo en su
             # maquina tiene que ver lo mismo que ve acá.
+            # `_out` es un default-arg y no una captura del closure. HOY las
+            # dos formas se comportan igual —`_feed` se define y se consume
+            # dentro de la misma vuelta del bucle, asi que `buf` todavia es la
+            # de este caso cuando se llama— y por eso ningun test distingue una
+            # de la otra. Es defensa contra un refactor, no un bug activo: el
+            # dia que `_feed` sobreviva a su iteracion (una corrida diferida,
+            # un `async`), la captura escribiria en el buffer del ULTIMO caso y
+            # los demas perderian sus prompts. Es el mismo motivo por el que
+            # `_it` esta escrito asi desde antes. Lo marca ruff con B023.
             if prompt:
-                (_out if _out is not None else buf).write(str(prompt))
+                _out.write(str(prompt))
             try:
                 return next(_it)
             except StopIteration:
