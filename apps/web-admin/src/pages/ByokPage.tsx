@@ -413,6 +413,7 @@ function CreateKeyModal({
               <option value="openai">OpenAI</option>
               <option value="gemini">Gemini</option>
               <option value="mistral">Mistral</option>
+              <option value="openrouter">OpenRouter</option>
             </select>
           </Field>
 

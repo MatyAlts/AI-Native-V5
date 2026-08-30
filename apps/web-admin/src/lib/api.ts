@@ -496,7 +496,16 @@ export interface ByokKey {
 export interface ByokKeyCreate {
   scope_type: "tenant" | "materia" | "facultad"
   scope_id?: string
-  provider: "anthropic" | "gemini" | "mistral" | "openai"
+  /** Los mismos cinco que acepta el backend.
+   *
+   * Hay CUATRO lugares que enumeran esto: este tipo, el `<select>` de
+   * `ByokPage`, el `Literal` de `routes/byok.py` y el check
+   * `ck_byok_provider` de la tabla. Se mueven juntos o el proveedor queda
+   * inalcanzable por algun lado — `openrouter` estuvo cuatro meses afuera del
+   * constraint y el costo de ese proveedor quedo sin auditar.
+   *
+   * `apps/web-admin/tests/providersByok.test.ts` los compara. */
+  provider: "anthropic" | "gemini" | "mistral" | "openai" | "openrouter"
   plaintext_value: string
   monthly_budget_usd?: number
 }
