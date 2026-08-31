@@ -34,6 +34,39 @@ EMBEDDING_DIM = 1024
 # del content-service (config.py) se alimenta de la env var ENVIRONMENT.
 _NON_DEV_ENVIRONMENTS = frozenset({"production", "prod", "staging"})
 
+# Reintento del embedder de Gemini (QA 2026-08-31).
+#
+# 429 es cuota por minuto y 503 es el modelo saturado: los dos son temporales
+# por definicion, y sin reintento salian por `/retrieve` como un 500 al alumno.
+# 500/502/504 quedan AFUERA a proposito: un 500 de Google puede ser un request
+# mal armado de nuestro lado, y reintentarlo tres veces solo tarda mas en
+# darnos la misma mala noticia.
+_GEMINI_STATUS_REINTENTABLES = frozenset({429, 503})
+_GEMINI_MAX_INTENTOS = 3
+_GEMINI_BACKOFF_BASE = 1.0
+# Techo del sleep. Google puede mandar un `Retry-After` de minutos cuando la
+# cuota DIARIA se agoto; dormir eso adentro de un request HTTP deja al alumno
+# mirando una pantalla colgada hasta que el timeout del proxy lo corte. Mejor
+# fallar rapido y que el 503 diga la verdad.
+_GEMINI_ESPERA_MAX = 8.0
+
+
+def _retry_after_segundos(valor: str | None) -> float | None:
+    """`Retry-After` -> segundos, o None si no vino o no se entiende.
+
+    El RFC admite dos formatos: segundos ("30") o una fecha HTTP. Google
+    manda el primero, pero el segundo no puede hacer estallar el reintento:
+    ante cualquier cosa que no parsee, se devuelve None y manda el backoff
+    propio. Un header raro no puede ser peor que no tener header.
+    """
+    if not valor:
+        return None
+    try:
+        segundos = float(valor.strip())
+    except ValueError:
+        return None
+    return segundos if segundos >= 0 else None
+
 
 class BaseEmbedder(ABC):
     """Interfaz común de embedders."""
@@ -96,6 +129,15 @@ class GeminiEmbedder(BaseEmbedder):
 
     Usa httpx directo contra la REST API v1beta para evitar problemas
     de compatibilidad del SDK google-genai con versiones de API.
+
+    LA KEY VIAJA EN UN HEADER, NUNCA EN LA QUERY STRING (QA 2026-08-31).
+    Google acepta las dos formas. Con `params={"key": ...}` la key queda
+    DENTRO de la URL, y una URL no es un lugar privado: httpx la imprime
+    entera al armar el texto de `HTTPStatusError`, asi que cada 429 o cada
+    500 contra Google escribia `GEMINI_API_KEY` en texto plano en los logs
+    de produccion. Nadie decidio loguear el secreto — se logueaba solo, y
+    despues viaja a donde vayan los logs. Con `x-goog-api-key` la key no
+    forma parte de la URL y no hay nada que imprimir.
     """
 
     model_name = "gemini-embedding-001"
@@ -107,7 +149,9 @@ class GeminiEmbedder(BaseEmbedder):
         if not self._api_key:
             msg = "GEMINI_API_KEY env var is required for GeminiEmbedder"
             raise ValueError(msg)
-        self._http = httpx.AsyncClient(timeout=30)
+        # La key va en el header del CLIENTE, no en cada request: asi no hay
+        # un solo call-site desde el que se pueda volver a colar en la URL.
+        self._http = httpx.AsyncClient(timeout=30, headers={"x-goog-api-key": self._api_key})
         self._url = f"https://generativelanguage.googleapis.com/v1beta/models/{self.model_name}:embedContent"
 
     def _pad(self, vector: list[float]) -> list[float]:
@@ -116,18 +160,61 @@ class GeminiEmbedder(BaseEmbedder):
         return vector + [0.0] * (EMBEDDING_DIM - len(vector))
 
     async def _embed_one(self, text: str, task_type: str) -> list[float]:
-        resp = await self._http.post(
-            self._url,
-            params={"key": self._api_key},
-            json={
-                "model": f"models/{self.model_name}",
-                "content": {"parts": [{"text": text}]},
-                "taskType": task_type,
-            },
-        )
-        resp.raise_for_status()
-        values = resp.json()["embedding"]["values"]
-        return self._pad(values)
+        """Un embed, reintentando el 429 en vez de convertirlo en un 500.
+
+        Google devuelve 429 cuando se pasa la cuota por minuto. Es, por
+        definicion, TEMPORAL — y hasta manda `Retry-After` diciendo cuanto
+        esperar. Sin reintento, ese limite de tasa salia por `/retrieve` como
+        un 500 al alumno: el tutor sin material, por algo que se resolvia
+        solo esperando un segundo.
+
+        Se respeta el `Retry-After` de Google por sobre el backoff propio: el
+        que sabe cuando se libera la cuota es el servidor, no nosotros. El
+        ultimo intento NO duerme — dormir despues del ultimo reintento es
+        tiempo de espera que no compra nada.
+        """
+        import httpx
+
+        ultimo: Exception | None = None
+        for intento in range(_GEMINI_MAX_INTENTOS):
+            resp = await self._http.post(
+                self._url,
+                json={
+                    "model": f"models/{self.model_name}",
+                    "content": {"parts": [{"text": text}]},
+                    "taskType": task_type,
+                },
+            )
+            if resp.status_code not in _GEMINI_STATUS_REINTENTABLES:
+                resp.raise_for_status()
+                values = resp.json()["embedding"]["values"]
+                return self._pad(values)
+
+            ultimo = httpx.HTTPStatusError(
+                f"Gemini respondio {resp.status_code}", request=resp.request, response=resp
+            )
+            if intento == _GEMINI_MAX_INTENTOS - 1:
+                break
+            espera = _retry_after_segundos(resp.headers.get("Retry-After"))
+            if espera is None:
+                espera = _GEMINI_BACKOFF_BASE * (2**intento)
+            logger.warning(
+                "gemini_rate_limited status=%s intento=%s/%s espera=%.1fs",
+                resp.status_code,
+                intento + 1,
+                _GEMINI_MAX_INTENTOS,
+                espera,
+            )
+            await asyncio.sleep(min(espera, _GEMINI_ESPERA_MAX))
+
+        # El loop siempre lo setea antes de salir del `for`, pero un `assert` que
+        # se compila fuera con -O no es garantia de nada: si algun dia alguien
+        # reordena el loop, esto tira un error legible en vez de un TypeError
+        # sobre None.
+        if ultimo is None:
+            msg = "reintento de Gemini termino sin respuesta ni error"
+            raise RuntimeError(msg)
+        raise ultimo
 
     async def embed_documents(self, texts: list[str]) -> list[list[float]]:
         return [await self._embed_one(t, "RETRIEVAL_DOCUMENT") for t in texts]
