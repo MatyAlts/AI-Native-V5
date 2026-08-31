@@ -24,13 +24,14 @@ import {
   entregasApi,
   getEpisodeState,
   listEjerciciosTp,
+  reabrirEjercicio,
 } from "../lib/api"
 import {
   type ArtefactoDraft,
   clearArtefactoDrafts,
   collectArtefactoDrafts,
 } from "../lib/artefactos"
-import { debeEnviarLaEntrega } from "../lib/entregaGuard"
+import { puedeEditarLaEntrega } from "../lib/entregaGuard"
 
 export interface ExerciseListViewProps {
   tarea: AvailableTarea
@@ -135,6 +136,10 @@ export function ExerciseListView({
   const [error, setError] = useState<string | null>(null)
   const [submitting, setSubmitting] = useState(false)
   const [submitError, setSubmitError] = useState<string | null>(null)
+  // `orden` del ejercicio que se esta reabriendo, o null. Se guarda el orden y
+  // no un booleano para que el spinner quede en SU boton: con un flag global,
+  // apretar uno pone "Abriendo..." en los cinco.
+  const [reabriendo, setReabriendo] = useState<number | null>(null)
 
   // ADR-047: cargar entrega + composicion de ejercicios (tabla intermedia)
   // en paralelo. tarea.ejercicios ya no viene embebido — lo resolvemos via
@@ -164,6 +169,35 @@ export function ExerciseListView({
     }
   }, [tarea.id, comisionId])
 
+  /**
+   * Devuelve un ejercicio completado al estado pendiente para que el alumno
+   * pueda volver a entrar.
+   *
+   * Es la salida del callejon de BUG-1 (QA 2026-08-31) y no necesita ni al
+   * docente ni un deploy: el endpoint existe desde junio. Al reabrir, el
+   * alumno aprieta el boton normal y `openEpisodeAndNavigate` abre un episodio
+   * NUEVO — el viejo esta `closed` y sigue cerrado, firmado y atestado. No se
+   * reabre ningun episodio: se reabre el ejercicio, que es un flag de
+   * progreso, no un hecho firmado.
+   *
+   * Se relee la entrega del server en vez de mutar la de memoria: el PATCH
+   * devuelve la entrega entera y ese es el estado autoritativo, incluida la
+   * reconciliacion que el backend pueda haber hecho de paso.
+   */
+  async function handleReabrir(ejercicio: { ejercicio_id: string; orden: number }) {
+    if (!entrega) return
+    setReabriendo(ejercicio.orden)
+    setSubmitError(null)
+    try {
+      const actualizada = await reabrirEjercicio(entrega.id, ejercicio.orden, ejercicio.ejercicio_id)
+      setEntrega(actualizada)
+    } catch (e) {
+      setSubmitError(`No se pudo reabrir el ejercicio ${ejercicio.orden}: ${String(e)}`)
+    } finally {
+      setReabriendo(null)
+    }
+  }
+
   async function handleSubmit() {
     if (!entrega) return
     const confirmed = window.confirm(
@@ -188,11 +222,18 @@ export function ExerciseListView({
       // Sin esto queda la misma perdida de la devolucion que este PR cierra,
       // por otra puerta: `returned -> submitted` y el alumno deja de ver lo que
       // su docente le escribio.
+      // `puedeEditarLaEntrega` y NO `debeEnviarLaEntrega`: son dos preguntas
+      // distintas y difieren justo en `returned`. Aquella contesta "¿la mando
+      // SOLO porque el alumno salio del episodio?" —y ahi `returned` tiene que
+      // dar false, porque el envio automatico le borraria la devolucion. Esta
+      // contesta "¿el alumno puede entregar?", y un TP devuelto se re-entrega:
+      // es todo el punto de devolverlo. Usar aquella para las dos dejaba el
+      // boton "Entregar TP" muerto justo despues de una devolucion (QA 31/08).
       const fresca = await entregasApi.getById(entrega.id)
-      if (!debeEnviarLaEntrega(fresca.estado)) {
+      if (!puedeEditarLaEntrega(fresca.estado)) {
         setEntrega(fresca)
         setSubmitError(
-          "Esta entrega ya no esta en borrador. Actualiza la pagina para ver su estado.",
+          "Esta entrega ya no admite cambios. Actualiza la pagina para ver su estado.",
         )
         return
       }
@@ -227,7 +268,11 @@ export function ExerciseListView({
   const totalEjercicios = ejercicios.length
   const todosCompletos = completados === totalEjercicios && totalEjercicios > 0
 
-  const canSubmit = todosCompletos && entrega?.estado === "draft"
+  // `draft` Y `returned`. Antes solo `draft`, y eso hacia que devolver un TP
+  // le sacara al alumno el boton de entregar (QA 2026-08-31): el docente le
+  // pedia que corrigiera y le tapaba la unica forma de devolverlo corregido.
+  const editable = puedeEditarLaEntrega(entrega?.estado ?? "")
+  const canSubmit = todosCompletos && editable
 
   const isLocked = (orden: number): boolean => {
     if (orden === 1) return false
@@ -358,7 +403,15 @@ export function ExerciseListView({
           {ejercicios.map((ejercicio, idx) => {
             const locked = isLocked(ejercicio.orden)
             const completed = isCompleted(ejercicio.orden)
-            const canStart = !locked && !completed && entrega?.estado === "draft"
+            const canStart = !locked && !completed && editable
+            // La puerta de vuelta. Marcar completado era de una sola direccion:
+            // `canStart` no DESHABILITA el boton de un ejercicio completado, no
+            // lo renderiza — y un alumno cuyo codigo no quedo guardado se comia
+            // "Falta el codigo de los ejercicios: [2,3,4,5]. Abri cada ejercicio
+            // una vez antes de entregar", que le pide justo lo que la pantalla
+            // le hizo imposible. El backend siempre supo des-marcar; no habia
+            // ninguna puerta que llevara ahi.
+            const canReopen = completed && editable
             const isFirst = idx === 0
 
             return (
@@ -432,6 +485,17 @@ export function ExerciseListView({
                   )}
                   {completed && (
                     <span className="shrink-0 text-xs text-success font-medium">Completado</span>
+                  )}
+                  {canReopen && (
+                    <button
+                      type="button"
+                      onClick={() => void handleReabrir(ejercicio)}
+                      disabled={reabriendo === ejercicio.orden}
+                      data-testid={`ejercicio-reabrir-${ejercicio.orden}`}
+                      className="shrink-0 rounded border border-border bg-surface px-3 py-1.5 text-xs font-medium text-body hover:bg-surface-alt disabled:opacity-60"
+                    >
+                      {reabriendo === ejercicio.orden ? "Abriendo..." : "Volver a abrir"}
+                    </button>
                   )}
                 </div>
               </li>

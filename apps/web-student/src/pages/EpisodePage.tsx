@@ -66,7 +66,7 @@ import {
   resumeEpisode,
   sendMessage,
 } from "../lib/api"
-import { MONOLITHIC_ORDEN, saveArtefactoDraft } from "../lib/artefactos"
+import { MONOLITHIC_ORDEN, collectArtefactoDrafts, saveArtefactoDraft } from "../lib/artefactos"
 import { esPlaceholder, resolverCascadaDeCodigo } from "../lib/cascadaCodigo"
 import {
   guardarCodigoPrevio,
@@ -800,6 +800,42 @@ export function EpisodeView({ episodeId, onExit, ejercicioContext, getToken }: E
   async function markEjercicioCompletedOnce() {
     if (!ejercicioContext) return
     if (markedCompletedRef.current) return
+
+    // FLUSH ANTES DE MARCAR (QA 2026-08-31). El borrador solo se guarda desde
+    // `onEditDebounced`, que tiene 1s de debounce. Un alumno que termina de
+    // tipear y cierra el ejercicio dentro de ese segundo cerraba SIN borrador:
+    // el ejercicio quedaba `completado: true` y sin codigo en ninguna parte.
+    //
+    // `salir()` tambien flushea, pero corre DESPUES de esta funcion en los dos
+    // call-sites. Llegaba tarde: para cuando el editor volcaba el buffer, el
+    // ejercicio ya estaba marcado.
+    flushEditorRef.current?.()
+
+    // Y si despues del flush TODAVIA no hay codigo, no se marca completado.
+    //
+    // Marcarlo era el primer paso del callejon de BUG-1: con el ejercicio en
+    // "Completado" y sin codigo, `submit_entrega` responde
+    //
+    //   "Falta el codigo de los ejercicios: [2,3,4,5]. Abri cada ejercicio una
+    //    vez antes de entregar."
+    //
+    // ...un mensaje que pide justo lo que la pantalla acaba de hacer imposible,
+    // porque `canStart` esconde el boton de un ejercicio completado.
+    //
+    // No marcarlo NO deja al alumno peor: el ejercicio queda pendiente, con su
+    // boton "Continuar" funcionando, y puede volver a entrar. Marcarlo si lo
+    // dejaba peor. Ante la duda, el estado del que se puede salir.
+    //
+    // Ojo con leerlo al reves: esto NO es "el alumno pierde el trabajo si el
+    // localStorage falla". Si no hay borrador, `recuperarArtefactos` tampoco lo
+    // va a encontrar y el submit iba a rechazarlo igual — pero mas tarde y en
+    // el estado del que no se sale. Esto adelanta el fallo a donde todavia hay
+    // arreglo.
+    const hayCodigo =
+      collectArtefactoDrafts(ejercicioContext.entregaId, [ejercicioContext.ejercicioOrden]).length >
+      0
+    if (!hayCodigo) return
+
     markedCompletedRef.current = true
     try {
       await markEjercicioCompleted(

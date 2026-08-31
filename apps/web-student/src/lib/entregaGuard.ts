@@ -22,3 +22,28 @@
 export function debeEnviarLaEntrega(estadoEntrega: string): boolean {
   return estadoEntrega === "draft"
 }
+
+/**
+ * Si el alumno todavia puede TRABAJAR sobre la entrega: abrir un ejercicio,
+ * reabrir uno completado, y apretar "Entregar TP".
+ *
+ * Es otra pregunta que `debeEnviarLaEntrega`, y usar aquella para las dos era
+ * un bug esperando (QA 2026-08-31). Las dos preguntas se parecen y la respuesta
+ * difiere justo en `returned`:
+ *
+ *   - "¿mando la entrega SOLO porque el alumno salio del episodio?" -> `draft`.
+ *     En `returned` NO, porque el envio automatico le borraria la devolucion
+ *     que vino a leer.
+ *   - "¿el alumno puede seguir laburando?" -> `draft` Y `returned`. Devolver un
+ *     TP es justamente pedirle que lo retome; si `returned` no cuenta, el
+ *     boton "Devolver al estudiante" le muestra un cartel que lo invita a
+ *     revisar y le saca todas las herramientas para revisar.
+ *
+ * El backend ya validaba las dos por separado y bien: `submit_entrega` acepta
+ * `draft` y `returned` como estados de origen, y `mark_ejercicio_completado`
+ * tambien. El unico que las confundia era el frontend — y como el frontend es
+ * el que dibuja los botones, era el que decidia.
+ */
+export function puedeEditarLaEntrega(estadoEntrega: string): boolean {
+  return estadoEntrega === "draft" || estadoEntrega === "returned"
+}
