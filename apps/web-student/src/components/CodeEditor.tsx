@@ -42,9 +42,9 @@ import {
   type TokenGetter,
 } from "../lib/api"
 import { resolverEdicionPendiente } from "../lib/edicionPendiente"
+import { armarMensajeDeInput } from "../lib/inputDialogo"
 import { parseJavaError } from "../lib/javaError"
 import { registerJavaSnippets } from "../lib/javaSnippets"
-import { armarMensajeDeInput } from "../lib/inputDialogo"
 import { extractPyodideErrorLine, extractPyodideErrorLineNumber } from "../lib/pyodideError"
 import { registerPythonSnippets } from "../lib/pythonSnippets"
 import { runRemote } from "../lib/runRemote"

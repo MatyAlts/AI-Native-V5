@@ -37,10 +37,14 @@ function erroresDeIndentacion(codigo: string): string[] {
   // los argumentos de un `raise TimeoutError(...)` partido en tres renglones
   // no son un bloque. Sin esto el chequeo denuncia codigo perfectamente valido.
   let profundidad = 0
+  // `noUncheckedIndexedAccess` hace que todo acceso por indice sea
+  // `T | undefined`. El tope siempre existe —`niveles` nace con [0] y nunca se
+  // vacia del todo— pero se declara explicito en vez de sembrar `!`.
+  const tope = (): number => niveles[niveles.length - 1] ?? 0
 
   const lineas = codigo.split("\n")
   for (let i = 0; i < lineas.length; i++) {
-    const linea = lineas[i]
+    const linea = lineas[i] ?? ""
     const sinComillas = linea.replace(/"(?:[^"\\]|\\.)*"|'(?:[^'\\]|\\.)*'/g, '""')
     const delta =
       (sinComillas.match(/[([{]/g)?.length ?? 0) - (sinComillas.match(/[)\]}]/g)?.length ?? 0)
@@ -58,11 +62,11 @@ function erroresDeIndentacion(codigo: string): string[] {
         niveles.push(sangria)
       }
       esperaCuerpo = false
-    } else if (sangria > niveles[niveles.length - 1]) {
+    } else if (sangria > tope()) {
       errores.push(`linea ${i + 1}: indentacion inesperada — ${linea.trim()}`)
     } else {
-      while (niveles.length > 1 && sangria < niveles[niveles.length - 1]) niveles.pop()
-      if (sangria !== niveles[niveles.length - 1]) {
+      while (niveles.length > 1 && sangria < tope()) niveles.pop()
+      if (sangria !== tope()) {
         errores.push(`linea ${i + 1}: la indentacion no cierra contra ningun nivel abierto`)
       }
     }
@@ -80,15 +84,17 @@ function erroresDeIndentacion(codigo: string): string[] {
 /** El bootstrap del watchdog: el template literal grande. */
 function bloqueDelWatchdog(): string {
   const m = FUENTE.match(/runPythonAsync\(`\n(import sys as _tutor_wd_sys[\s\S]*?)`\)/)
-  if (!m) throw new Error("no se encontro el bootstrap del watchdog en CodeEditor.tsx")
-  return m[1]
+  const bloque = m?.[1]
+  if (!bloque) throw new Error("no se encontro el bootstrap del watchdog en CodeEditor.tsx")
+  return bloque
 }
 
 /** El override de `input()`: el string armado con `+`. */
 function bloqueDelInput(): string {
   const m = FUENTE.match(/"import builtins as __tutor_builtins\\n" \+\n([\s\S]*?)\n\s*\)/)
-  if (!m) throw new Error("no se encontro el override de input() en CodeEditor.tsx")
-  const trozos = m[1].match(/"((?:[^"\\]|\\.)*)"/g) ?? []
+  const cuerpo = m?.[1]
+  if (!cuerpo) throw new Error("no se encontro el override de input() en CodeEditor.tsx")
+  const trozos = cuerpo.match(/"((?:[^"\\]|\\.)*)"/g) ?? []
   return `import builtins as __tutor_builtins\n${trozos
     .map((t) => JSON.parse(t) as string)
     .join("")}`
@@ -121,9 +127,13 @@ describe("el chequeo detecta lo que dice detectar", () => {
   it("NO se queja de una llamada partida en varios renglones", () => {
     // El falso positivo que este heuristico tuvo primero: los argumentos de un
     // `raise X(...)` en tres renglones no son un bloque indentado.
-    const codigo = ["def f():", "    raise ValueError(", '        "una",', '        "dos",', "    )"].join(
-      "\n",
-    )
+    const codigo = [
+      "def f():",
+      "    raise ValueError(",
+      '        "una",',
+      '        "dos",',
+      "    )",
+    ].join("\n")
     expect(erroresDeIndentacion(codigo)).toEqual([])
   })
 

@@ -189,7 +189,11 @@ export function ExerciseListView({
     setReabriendo(ejercicio.orden)
     setSubmitError(null)
     try {
-      const actualizada = await reabrirEjercicio(entrega.id, ejercicio.orden, ejercicio.ejercicio_id)
+      const actualizada = await reabrirEjercicio(
+        entrega.id,
+        ejercicio.orden,
+        ejercicio.ejercicio_id,
+      )
       setEntrega(actualizada)
     } catch (e) {
       setSubmitError(`No se pudo reabrir el ejercicio ${ejercicio.orden}: ${String(e)}`)
@@ -232,9 +236,7 @@ export function ExerciseListView({
       const fresca = await entregasApi.getById(entrega.id)
       if (!puedeEditarLaEntrega(fresca.estado)) {
         setEntrega(fresca)
-        setSubmitError(
-          "Esta entrega ya no admite cambios. Actualiza la pagina para ver su estado.",
-        )
+        setSubmitError("Esta entrega ya no admite cambios. Actualiza la pagina para ver su estado.")
         return
       }
       const ordenes = ejercicios.map((e) => e.orden)

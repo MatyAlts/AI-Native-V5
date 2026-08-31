@@ -83,7 +83,9 @@ function makePairs(): TpEjercicio[] {
     enunciado_md: titulo,
     inicial_codigo: null,
     unidad_tematica: "funciones",
-    dificultad: "basica",
+    // `as const` para que TypeScript lo vea como el literal del union y no
+    // como `string`: sin esto el helper no tipa contra `Ejercicio`.
+    dificultad: "basica" as const,
     test_cases: [],
   })
   return [
@@ -165,7 +167,10 @@ describe("BUG-1: la puerta de vuelta", () => {
       "/ejercicios": () => makePairs(),
       "/api/v1/entregas": () => makeEntrega({ ejercicio_estados: estados([true, true]) }),
     })
-    const original = globalThis.fetch as unknown as (u: string, i?: RequestInit) => Promise<Response>
+    const original = globalThis.fetch as unknown as (
+      u: string,
+      i?: RequestInit,
+    ) => Promise<Response>
     vi.stubGlobal(
       "fetch",
       vi.fn((u: string, init?: RequestInit) => {
@@ -179,7 +184,7 @@ describe("BUG-1: la puerta de vuelta", () => {
     fireEvent.click(screen.getByTestId("ejercicio-reabrir-1"))
 
     await waitFor(() => expect(cuerpos.length).toBe(1))
-    const body = JSON.parse(cuerpos[0])
+    const body = JSON.parse(cuerpos[0] ?? "{}")
     expect(body.completado).toBe(false)
     expect(body.ejercicio_id).toBe(EJ1)
     expect(body.episode_id).toBeUndefined()
