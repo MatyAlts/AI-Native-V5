@@ -404,6 +404,41 @@ class PartitionWorker:
         # y `TimeoutError`, que en Python 3.11+ heredan de `OSError`).
         return isinstance(exc, redis.RedisError | OSError)
 
+    @staticmethod
+    def _causa_del_hueco(error: str) -> str:
+        """Por que este evento no entro en la cadena.
+
+        POR QUE HACE FALTA (QA 2026-08-31)
+        ----------------------------------
+        `_move_to_dlq` marca `integrity_compromised=True`. Como registro tecnico
+        es correcto —el hueco en la cadena existio— pero la palabra se lee como
+        **"este alumno hizo trampa"**, y en el piloto eso es una acusacion sobre
+        una persona real.
+
+        Y NINGUNA de las causas que llegan hasta aca es adulteracion. La
+        adulteracion la detecta el integrity-checker comparando hashes ya
+        persistidos, no el worker de ingesta. Ademas, `_es_transitorio` ya
+        garantiza que un fallo de infraestructura NO llegue a la DLQ. Lo que
+        queda es siempre un problema NUESTRO: un evento cuyo `seq` no encaja, un
+        episodio que no existe, un payload mal armado.
+
+        O sea que hoy el flag se prende exclusivamente por fallas propias, y se
+        lee como sospecha sobre el alumno. Esto no cambia el flag —es un
+        invariante documentado (RN-039/RN-040) y el hueco realmente ocurrio—
+        pero deja escrito, en la fila de la DLQ y en el log, de que familia es.
+
+        No adivina: se apoya en el texto del error que ya se guardaba en
+        `error_reason` y solo lo rotula.
+        """
+        e = error.lower()
+        if "seq" in e or "expected" in e or "esperado" in e:
+            # El caso tipico: la cadena esperaba N y llego otro. Es una perdida
+            # de evento aguas arriba, o una carrera del contador — nuestra.
+            return "hueco_de_ingesta"
+        if "episode" in e or "episodio" in e or "not found" in e or "no existe" in e:
+            return "episodio_ausente"
+        return "evento_no_procesable"
+
     async def _process_message(self, message_id: str, fields: dict[bytes, bytes]) -> None:
         """Procesa un mensaje con retry + DLQ."""
         try:
@@ -653,7 +688,14 @@ class PartitionWorker:
         error: str,
         attempts: int,
     ) -> None:
-        """Mueve el mensaje a DLQ y marca el episodio como integrity_compromised."""
+        """Mueve el mensaje a DLQ y marca el episodio como integrity_compromised.
+
+        `integrity_compromised` NO significa que el alumno haya adulterado nada.
+        Ver `_causa_del_hueco`: todo lo que llega hasta aca es una falla de
+        ingesta nuestra, y la causa concreta queda rotulada en la fila de la DLQ
+        y en el log para que nadie tenga que deducirla de la palabra.
+        """
+        causa = self._causa_del_hueco(error)
         raw = fields.get(b"payload") or fields.get(b"event") or b"{}"
         try:
             event_data = json.loads(raw)
@@ -666,6 +708,7 @@ class PartitionWorker:
             {
                 "original_stream": self.stream_key,
                 "original_id": message_id,
+                "causa": causa,
                 "error": error,
                 "attempts": str(attempts),
                 "payload": raw,
@@ -688,7 +731,10 @@ class PartitionWorker:
                         episode_id=episode_id,
                         seq=int(event_data.get("seq", 0)),
                         raw_payload=event_data,
-                        error_reason=error[:1000],
+                        # El rotulo va PRIMERO y en el mismo campo que ya
+                        # existia: sin migracion, y visible para quien lea la
+                        # fila sin tener que interpretar un stack trace.
+                        error_reason=f"[{causa}] {error}"[:1000],
                         failed_attempts=attempts,
                         first_seen_at=utc_now(),
                     )
@@ -717,7 +763,21 @@ class PartitionWorker:
 
                 # Métrica: incremento del counter post-commit. tenant_id como
                 # único label (episode_id prohibido por cardinalidad).
-                ctr_episodes_integrity_compromised_total.add(1, {"tenant_id": str(tenant_id)})
+                # `causa` como label junto al tenant: sin ella, el dashboard
+                # muestra un contador de "episodios comprometidos" que no
+                # distingue nada y se lee como cantidad de sospechosos.
+                # `episode_id` sigue prohibido por cardinalidad; `causa` es un
+                # enum de tres valores.
+                ctr_episodes_integrity_compromised_total.add(
+                    1, {"tenant_id": str(tenant_id), "causa": causa}
+                )
+                logger.error(
+                    "ctr_hueco_en_la_cadena episodio=%s causa=%s intentos=%s — "
+                    "NO es adulteracion del alumno: es una falla de ingesta nuestra",
+                    episode_id,
+                    causa,
+                    attempts,
+                )
 
                 # Desbloquear al alumno reponiendo el contador de seq al
                 # valor que la cadena espera. Sin esto el episodio queda mudo:
