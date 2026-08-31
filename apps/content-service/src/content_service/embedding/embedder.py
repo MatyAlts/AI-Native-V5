@@ -307,6 +307,44 @@ def _guard_non_semantic(embedder: BaseEmbedder, *, which: str, fell_back: bool) 
     )
 
 
+def _exigir_sentence_transformers() -> None:
+    """`EMBEDDER=local` sin la libreria instalada tiene que fallar ACA (QA 31/08).
+
+    El import de `sentence_transformers` es perezoso: vive adentro de
+    `_ensure_model()`, que corre en la PRIMERA consulta real. Con la libreria
+    ausente, el content-service arrancaba verde, pasaba el health check, y
+    recien moria cuando un alumno preguntaba algo — como un 500 en
+    `POST /retrieve` sin ninguna pista de que el problema era de despliegue.
+
+    Y la libreria estaba ausente de verdad: `sentence-transformers` es un extra
+    opcional (`local-models`) y el Dockerfile hace `uv sync --all-packages
+    --no-dev`, sin `--extra`. O sea que la imagen de produccion NUNCA lo tuvo.
+
+    Lo curioso es que el camino por DEFAULT (sin `EMBEDDER` seteado) si
+    chequeaba —hace `import sentence_transformers` y cae a mock si falla— y el
+    camino EXPLICITO no. El descuidado era el que alguien elige a proposito.
+
+    Se usa `find_spec` y no un `import`: importar `sentence_transformers`
+    arrastra torch y tarda segundos. Para saber si esta, con mirar el spec
+    alcanza.
+    """
+    from importlib.util import find_spec
+
+    faltan = [m for m in ("sentence_transformers", "torch") if find_spec(m) is None]
+    if not faltan:
+        return
+    msg = (
+        f"EMBEDDER=local pero falta {', '.join(faltan)}. Es un extra opcional "
+        "('local-models') y el Dockerfile corre `uv sync --all-packages --no-dev` "
+        "sin `--extra`, asi que la imagen no lo trae. Instalalo con "
+        "`uv sync --extra local-models`, o pone EMBEDDER=gemini. "
+        "Se aborta el arranque a proposito: sin esto el servicio queda verde y "
+        "muere en la primera consulta de un alumno."
+    )
+    logger.error(msg)
+    raise RuntimeError(msg)
+
+
 @lru_cache(maxsize=1)
 def get_embedder() -> BaseEmbedder:
     """Factory: elige el embedder según config de entorno.
@@ -326,6 +364,7 @@ def get_embedder() -> BaseEmbedder:
     elif which == "gemini":
         embedder = GeminiEmbedder()
     elif which == "local":
+        _exigir_sentence_transformers()
         embedder = SentenceTransformerEmbedder()
     else:
         # Default: intentar local, fallback a mock si falta sentence-transformers
