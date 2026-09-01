@@ -115,6 +115,55 @@ class DockerRunResult:
     compile_failed: bool
 
 
+def _acotar(crudo: bytes) -> str:
+    """Corta la salida en `execution_max_output_bytes` y lo AVISA.
+
+    POR QUE EXISTE (reporte de una alumna de Prog 2, 2026-09-01)
+    -----------------------------------------------------------
+    Nada acotaba la salida. `proc.communicate()` acumula todo lo que el programa
+    escriba, y el modo de falla mas comun de quien recien arranca —un bucle que
+    imprime— produce cientos de MB en los 10 segundos de wall-time. Esa cadena
+    despues viaja entera: a Redis con TTL de 600s, de ahi al navegador, y el
+    navegador la mete en el DOM.
+
+    O sea que un `while(true)` de un alumno podia:
+      - inflar Redis en el mismo VPS que ya corre al 82,8% en reposo;
+      - y colgarle la pestaña al alumno al renderizarla.
+
+    Lo segundo importa para el sintoma reportado: la pestaña colgada se ve
+    exactamente como "la plataforma se quedo en un bucle infinito", aunque el
+    bucle sea del programa y ya lo hayamos matado.
+
+    La marca NO es decorativa. Una salida cortada en silencio se lee como
+    completa, y el alumno buscaria el error en la logica de su programa en vez
+    de en la cantidad que imprime.
+
+    LO QUE ESTO **NO** ARREGLA
+    --------------------------
+    El pico de memoria del proceso HOST durante la corrida sigue sin techo:
+    `communicate()` ya leyo todo antes de que esta funcion vea un byte. Acotarlo
+    de verdad pide leer el pipe de a pedazos, o cortar adentro del contenedor
+    (`| head -c N`), que cambia el codigo de salida que ve `to_sandbox_result` y
+    merece su propio cambio, medido contra Docker real. Queda anotado, no
+    resuelto: esto acota lo que SALE del servicio, que es lo que llega al alumno
+    y a Redis.
+    """
+    limite = settings.execution_max_output_bytes
+    if len(crudo) <= limite:
+        return crudo.decode("utf-8", errors="replace")
+    # Se corta sobre los BYTES y se decodifica con `replace`: partir a la mitad
+    # un caracter multibyte es normal aca, y `replace` lo vuelve un simbolo en
+    # vez de una excepcion.
+    texto = crudo[:limite].decode("utf-8", errors="replace")
+    kb = len(crudo) // 1024
+    return (
+        f"{texto}\n\n"
+        f"[... salida cortada: tu programa imprimio {kb} KB y solo se muestran "
+        f"los primeros {limite // 1024} KB. Si no esperabas tanta salida, "
+        f"probablemente tengas un bucle que imprime y nunca termina.]"
+    )
+
+
 def _docker_args(source_code: str) -> list[str]:
     return [
         "docker",
@@ -217,8 +266,8 @@ async def _run_java_sin_techo(source_code: str, stdin: str = "") -> DockerRunRes
     code = proc.returncode or 0
     return DockerRunResult(
         exit_code=code,
-        stdout=out.decode("utf-8", errors="replace"),
-        stderr=err.decode("utf-8", errors="replace"),
+        stdout=_acotar(out),
+        stderr=_acotar(err),
         timed_out=False,
         # 101 es el codigo que el comando reserva para fallo de compilacion.
         compile_failed=code == 101,
