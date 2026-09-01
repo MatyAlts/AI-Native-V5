@@ -25,6 +25,32 @@ RN-040) y el hueco realmente ocurrio— pero rotula de que familia es, en la fil
 de la DLQ, en el log y en el label de la metrica.
 
 Es una funcion pura y estatica: no necesita worker, Redis ni Postgres.
+
+QUE **NO** ARREGLA ESTO — leer antes de citarlo
+-----------------------------------------------
+El nombre del archivo puede hacer creer que cierra el hallazgo de la PERDIDA de
+eventos. No lo cierra, y conviene que quede escrito porque hay un paper que
+depende de esa distincion.
+
+Medido sobre el almacen de produccion el 2026-09-01:
+
+    eventos en dead_letters      10.061   (535 episodios)
+    huecos de secuencia               0
+    seq duplicados                    0
+
+Diez mil eventos fuera de la cadena y la secuencia perfectamente contigua. La
+causa sigue intacta: `_reponer_contador_seq` repone el contador al
+`events_count` vigente, asi que el numero del evento perdido lo ocupa uno
+posterior y el agujero se cierra sobre si mismo. El Algoritmo 1 devuelve OK.
+
+Corolario incomodo: **la comprobacion de contigüidad de `seq` —la correccion
+"obvia"— no habria detectado ninguna de las 10.061.** No hay huecos que
+encontrar. Detectar perdida en ingreso exige un contador de emision separado
+del de persistencia, o el ancla externa de la atestacion.
+
+Lo que este cambio arregla es otra cosa, real y mas chica: que la fila de la
+DLQ diga de que familia es el hueco en vez de dejar que `integrity_compromised`
+se lea como una acusacion.
 """
 
 from __future__ import annotations

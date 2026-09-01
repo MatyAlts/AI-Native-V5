@@ -239,6 +239,15 @@ class PartitionWorker:
         y `next_seq` entregará `events_count`, que es exactamente lo que la
         cadena espera a continuación.
 
+        EFECTO SECUNDARIO MEDIDO (2026-09-01), no resuelto acá: al reponer el
+        contador, el número del evento perdido lo ocupa un evento posterior. La
+        secuencia queda contigua y la pérdida no deja rastro. Sobre producción:
+        10.061 eventos en `dead_letters` y CERO huecos de `seq` en 507.330
+        eventos. Una comprobación de contigüidad en el verificador no detectaría
+        ninguno — haría falta un contador de emisión separado del de
+        persistencia, o el ancla externa de la atestación (ADR-021). Desbloquear
+        al alumno sigue siendo lo correcto; que sea invisible, no.
+
         Fail-soft y sin excepciones hacia afuera: llega desde `_move_to_dlq`,
         donde el evento ya está archivado y el episodio marcado. Un fallo acá
         deja el episodio bloqueado —el estado previo al fix— pero no debe
