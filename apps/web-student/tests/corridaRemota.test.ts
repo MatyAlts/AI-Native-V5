@@ -36,7 +36,7 @@
  * aprieta mientras se escribe el programa.
  */
 import { describe, expect, it } from "vitest"
-import { MENSAJE_TIMEOUT, mensajeDeCorrida } from "../src/lib/corridaRemota"
+import { MENSAJE_TIMEOUT, PISTA_ENTRADA_VACIA, mensajeDeCorrida } from "../src/lib/corridaRemota"
 
 describe("mensajeDeCorrida", () => {
   it("un timeout SIN error de Java produce mensaje", () => {
@@ -82,7 +82,7 @@ describe("el mensaje sirve para actuar", () => {
     expect(MENSAJE_TIMEOUT.toLowerCase()).toContain("bucle")
   })
 
-  it("nombra la ENTRADA, que es la causa que nadie sospecha", () => {
+  it("la pista de la ENTRADA nombra la causa que nadie sospecha", () => {
     // En Java el stdin viaja entero y por adelantado: no hay `input()`
     // interactivo, porque un contenedor efímero no tiene canal de vuelta.
     //
@@ -94,8 +94,35 @@ describe("el mensaje sirve para actuar", () => {
     // Con la caja "Entrada" vacía, `hasNextInt()` devuelve false para siempre y
     // el bucle gira sin leer nada. Sin esta pista el alumno busca el error en la
     // condición del while —que está bien— en vez de en la entrada, que falta.
-    expect(MENSAJE_TIMEOUT).toContain("Entrada")
-    expect(MENSAJE_TIMEOUT).toContain("Scanner")
+    expect(PISTA_ENTRADA_VACIA).toContain("Entrada")
+    expect(PISTA_ENTRADA_VACIA).toContain("Scanner")
+  })
+
+  it("con la entrada VACIA, el mensaje trae la pista", () => {
+    const m = mensajeDeCorrida({ timed_out: true, stdinVacio: true })
+
+    expect(m).toContain("bucle")
+    expect(m).toContain("Entrada")
+  })
+
+  it("con la entrada LLENA, NO la trae — una pista falsa cuesta mas que ninguna", () => {
+    // El alumno con datos en la caja se iria a revisar su entrada, que está
+    // bien, mientras el bucle de verdad sigue en otro lado. Es el mismo defecto
+    // que el "Abrí cada ejercicio una vez antes de entregar" del PR #86: una
+    // instrucción precisa, dicha con seguridad, sobre algo que nadie verificó.
+    const m = mensajeDeCorrida({ timed_out: true, stdinVacio: false })
+
+    expect(m).toContain("bucle")
+    expect(m).not.toContain("Entrada")
+    expect(m).not.toContain("Scanner")
+  })
+
+  it("si no se sabe si la entrada estaba vacia, tampoco adivina", () => {
+    // `undefined` es "no lo sé". Ante la duda, el mensaje que siempre es cierto.
+    const m = mensajeDeCorrida({ timed_out: true })
+
+    expect(m).toBe(MENSAJE_TIMEOUT)
+    expect(m).not.toContain("Entrada")
   })
 
   it("no culpa al alumno de algo que no hizo", () => {

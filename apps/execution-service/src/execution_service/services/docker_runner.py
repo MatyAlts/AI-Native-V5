@@ -180,6 +180,21 @@ def _docker_args(source_code: str) -> list[str]:
         "-i",
         # C2 del ADR-059: el codigo del alumno NO tiene salida de red.
         "--network=none",
+        # El daemon de Docker escribe TODO el stdout del contenedor a
+        # `/var/lib/docker/containers/<id>/<id>-json.log`, sin techo y en disco.
+        # `_acotar` no lo toca: corta lo que sale de ESTE proceso, no lo que el
+        # daemon persiste por su cuenta.
+        #
+        # No es hipotetico. El 2026-09-01, sobre la maquina de desarrollo del
+        # equipo, ese directorio tenia 336 GB en `*-json.log` —dos archivos
+        # sueltos de 18 GB— y habia llenado un disco de 460 GB. Peor: el
+        # `docker system df` reportaba 26 GB, porque NO cuenta los logs de
+        # contenedores. La herramienta que deberia avisar tiene el punto ciego
+        # justo donde esta el problema.
+        #
+        # Aca no perdemos nada: la salida del alumno viaja por el pipe, que es
+        # de donde la leemos. El log del daemon es una copia que nadie consulta.
+        "--log-driver=none",
         f"--memory={settings.execution_memory_limit_kb}k",
         # CPUs por contenedor, explicito. NO derivado del limite de tiempo: eso
         # acoplaba dos cosas independientes y hacia que subir el timeout

@@ -31,7 +31,7 @@ from __future__ import annotations
 
 import pytest
 from execution_service.config import settings
-from execution_service.services.docker_runner import _acotar
+from execution_service.services.docker_runner import _acotar, _docker_args
 
 LIMITE = settings.execution_max_output_bytes
 
@@ -111,3 +111,36 @@ class TestNoRompeConAcentos:
     @pytest.mark.parametrize("texto", ["áéíóú", "ñandú", "日本語", "🙂"])
     def test_una_salida_corta_con_no_ascii_pasa_intacta(self, texto: str) -> None:
         assert _acotar(texto.encode("utf-8")) == texto
+
+
+class TestElDaemonTampocoGuardaLaSalida:
+    """El techo de `_acotar` no alcanza: el daemon guarda su propia copia.
+
+    `docker run` escribe TODO el stdout del contenedor a
+    `/var/lib/docker/containers/<id>/<id>-json.log`, sin techo, en disco, por
+    fuera del pipe que este proceso lee. `_acotar` corta lo que SALE de aca —
+    a Redis, al navegador, al CTR— y no toca esa copia.
+
+    NO ES HIPOTETICO. El 2026-09-01, sobre la maquina de desarrollo del equipo,
+    ese directorio tenia 336 GB en `*-json.log`, con dos archivos sueltos de
+    18 GB, y habia llenado un disco de 460 GB al 100 %.
+
+    El detalle que lo hace peligroso: `docker system df` reportaba 26 GB. NO
+    cuenta los logs de contenedores. La herramienta que deberia avisar es
+    exactamente ciega donde esta el problema — asi que el disco se llena sin
+    que ninguna metrica se mueva.
+
+    En el VPS del piloto el que imprime no es un experimento: son alumnos con
+    bucles infinitos, hasta 8 en paralelo por el semaforo de concurrencia.
+    """
+
+    def test_el_contenedor_corre_SIN_log_driver(self) -> None:
+        """Verificado por reversion: sacar el flag deja el log del daemon
+        creciendo sin techo, y no hay nada mas en el sistema que lo acote."""
+        assert "--log-driver=none" in _docker_args("class Main {}")
+
+    def test_no_perdemos_la_salida_del_alumno(self) -> None:
+        """El flag es seguro porque la salida viaja por el PIPE, que es de donde
+        la leemos. El log del daemon era una copia que nadie consulta: no hay
+        ningun `docker logs` en el camino de lectura de este servicio."""
+        assert "-i" in _docker_args("class Main {}")

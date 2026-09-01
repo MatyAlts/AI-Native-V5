@@ -1283,6 +1283,9 @@ def __tutor_run_tests(student_code, cases_json):
     const mensaje = mensajeDeCorrida({
       timed_out: result.timed_out,
       errorJava: javaErr?.message ?? null,
+      // La pista del Scanner solo sirve si la caja esta vacia. Con datos
+      // adentro manda al alumno a revisar su entrada, que esta bien.
+      stdinVacio: stdinLibre.trim() === "",
     })
 
     if (mensaje) setError(mensaje)

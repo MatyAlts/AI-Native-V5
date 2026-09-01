@@ -31,6 +31,35 @@
  *
  * El único mudo era "Ejecutar" en un lenguaje remoto — justo el botón que se
  * aprieta mientras se escribe el programa.
+ *
+ * CAMBIO DE SEMÁNTICA SOBRE DATOS YA GRABADOS — leer antes de analizar el CTR
+ * ---------------------------------------------------------------------------
+ * `CodigoEjecutadoPayload` NO tiene campo de éxito: el éxito se infiere aguas
+ * abajo de si `stderr` viene vacío. Este arreglo cambia qué significa vacío:
+ *
+ *     ANTES:    timeout de Java  →  stderr = ""   (idéntico a una corrida limpia)
+ *     DESPUÉS:  timeout de Java  →  stderr = mensaje
+ *
+ * La cadena es append-only. Los eventos `codigo_ejecutado` emitidos ANTES de
+ * este deploy, con timeout, quedan con `stderr = ""` para siempre: no hay
+ * migración posible y son indistinguibles de una ejecución exitosa.
+ *
+ * Y hay consumidores reales, no hipotéticos, en `classifier-service`:
+ *
+ *   - `subgrupo.py::dim_persistencia` cuenta fallos con `stderr != ""`. Un
+ *     timeout NUNCA contó como fallo.
+ *   - `subgrupo.py::dim_experimentacion` lee "resolvió limpio" como
+ *     `stdout != "" and stderr == ""`. Un timeout con salida parcial se leía
+ *     como que resolvió bien.
+ *
+ * Las dos alimentan el eje de apropiación. O sea que un alumno cuyo programa
+ * entró en bucle infinito y fue matado a los 10 s quedó registrado como alguien
+ * que ejecutó su código sin errores — y si esa señal alimentó una clasificación,
+ * lo clasificó con un dato falso.
+ *
+ * Re-clasificar hoy NO lo arregla: el código de `subgrupo.py` está bien, el dato
+ * de entrada quedó mal grabado. Cualquier análisis longitudinal que cruce el
+ * antes y el después de este deploy tiene que declararlo.
  */
 
 /** La parte del resultado que esta decisión mira. */
@@ -38,6 +67,13 @@ export interface CorridaRemotaResumen {
   timed_out?: boolean | undefined
   /** Ya viene traducido por `parseJavaError`; `null` si no hubo. */
   errorJava?: string | null | undefined
+  /**
+   * ¿La caja "Entrada" estaba vacía? Decide si se da la pista del Scanner.
+   *
+   * `undefined` significa "no lo sé", y ahí NO se da: una pista específica
+   * equivocada es peor que ninguna, porque manda a revisar lo que está bien.
+   */
+  stdinVacio?: boolean | undefined
 }
 
 /**
@@ -51,26 +87,37 @@ export interface CorridaRemotaResumen {
  */
 export function mensajeDeCorrida(r: CorridaRemotaResumen): string | null {
   if (r.errorJava) return r.errorJava
-  if (r.timed_out) return MENSAJE_TIMEOUT
-  return null
+  if (!r.timed_out) return null
+  return r.stdinVacio === true ? `${MENSAJE_TIMEOUT} ${PISTA_ENTRADA_VACIA}` : MENSAJE_TIMEOUT
 }
 
-/**
- * Se menciona la entrada a propósito.
- *
- * En Java el stdin viaja entero y por adelantado: no hay `input()` interactivo
- * como en Python, porque un contenedor efímero no tiene canal de vuelta. El
- * bucle infinito más común de quien recién arranca es el que valida la entrada
- * sin consumirla:
- *
- *     while (!sc.hasNextInt()) { System.out.println("Ingresá un número"); }
- *
- * Con la caja "Entrada" vacía, `hasNextInt()` devuelve false para siempre y el
- * bucle gira sin leer nada. Sin esta pista el alumno busca el error en la
- * condición del while —que está bien— y no en la entrada, que es lo que falta.
- */
+/** Lo que siempre es cierto de un timeout, sin adivinar la causa. */
 export const MENSAJE_TIMEOUT =
   "Tu programa supero el limite de tiempo y se interrumpio. Suele ser un bucle que nunca " +
-  "termina: revisa si la condicion del while llega a cambiar alguna vez. Si tu programa lee " +
-  'datos con Scanner, fijate que la caja "Entrada" tenga los valores que espera — sin ellos, ' +
-  "un bucle que valida la entrada gira para siempre."
+  "termina: revisa si la condicion del while llega a cambiar alguna vez."
+
+/**
+ * La pista del Scanner, y por que va SEPARADA y condicionada.
+ *
+ * En Java el stdin viaja entero y por adelantado: no hay `input()` interactivo
+ * como en Python, porque un contenedor efimero no tiene canal de vuelta. El
+ * bucle infinito mas comun de quien recien arranca es el que valida la entrada
+ * sin consumirla:
+ *
+ *     while (!sc.hasNextInt()) { System.out.println("Ingresa un numero"); }
+ *
+ * Con la caja "Entrada" VACIA, `hasNextInt()` devuelve false para siempre y el
+ * bucle gira sin leer nada. Ahi la pista vale oro.
+ *
+ * Con la caja LLENA no vale nada, y cuesta: el alumno se va a revisar su
+ * entrada, que esta bien, mientras el bucle de verdad sigue en otro lado. Un
+ * mensaje que manda a la persona en la direccion equivocada es peor que uno
+ * generico — el generico te hace preguntar, este te hace perder la tarde.
+ *
+ * Es el mismo defecto que el "Abri cada ejercicio una vez antes de entregar"
+ * del PR #86: una instruccion precisa, dicha con seguridad, sobre algo que el
+ * sistema no verifico.
+ */
+export const PISTA_ENTRADA_VACIA =
+  'La caja "Entrada" esta vacia: si tu programa lee datos con Scanner, un bucle que valida ' +
+  "la entrada gira para siempre cuando no hay nada que leer."
