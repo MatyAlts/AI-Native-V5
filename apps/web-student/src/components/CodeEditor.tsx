@@ -41,6 +41,7 @@ import {
   type TestCasePublic,
   type TokenGetter,
 } from "../lib/api"
+import { mensajeDeCorrida } from "../lib/corridaRemota"
 import { resolverEdicionPendiente } from "../lib/edicionPendiente"
 import { armarMensajeDeInput } from "../lib/inputDialogo"
 import { parseJavaError } from "../lib/javaError"
@@ -1234,6 +1235,38 @@ def __tutor_run_tests(student_code, cases_json):
     outputMostradoRef.current = 0
     setOutput(salida)
 
+    // EL TIMEOUT TIENE QUE HABLAR (reporte de una alumna de Prog 2, 2026-09-01).
+    //
+    // `timed_out` existia en el tipo desde siempre y NO LO LEIA NADIE: el
+    // backend lo medía, lo mandaba, y el frontend lo tiraba. Con lo cual, en un
+    // lenguaje remoto, un bucle infinito del alumno terminaba asi:
+    //
+    //   - el contenedor se mata a los 10s;
+    //   - el payload de modo libre manda `outcome: "completed"` SIEMPRE, asi
+    //     que no entra por la rama de `infrastructure_failure`;
+    //   - `stderr` viene vacio (lo matamos nosotros, no tiro una excepcion
+    //     Java), asi que `parseJavaError` no encuentra nada y no se setea error;
+    //   - y el alumno ve su salida parcial, sin un solo mensaje.
+    //
+    // Desde su lado el programa "anduvo". Entonces vuelve a apretar Ejecutar. Y
+    // otra vez. Eso es lo que se reporta como "se queda en un bucle infinito y
+    // no puede avanzar": el bucle es el de los intentos.
+    //
+    // Lo que mas duele es que la plataforma YA SABE decirlo, en los otros dos
+    // caminos:
+    //   - Python: el watchdog levanta "La ejecucion supero los 5 segundos...
+    //     Revisa si tenes un bucle infinito".
+    //   - Java modo "Probar": `_ERROR_MESSAGE[TIME_LIMIT_EXCEEDED]` dice
+    //     "posible bucle infinito".
+    // El unico mudo era "Ejecutar" en un lenguaje remoto — que es justo el
+    // boton que se aprieta mientras se escribe el programa.
+    //
+    // Se menciona la entrada a proposito: en Java el stdin viaja entero y por
+    // adelantado, no hay `input()` interactivo. El bucle infinito mas comun de
+    // quien recien arranca es el `while (!sc.hasNextInt())` que no consume
+    // nada: con la caja de entrada vacia, `hasNextInt()` da false para siempre
+    // y el bucle gira sin leer. Sin esta pista el alumno busca el error en su
+    // condicion, que esta bien; lo que falta es la entrada.
     // La compilacion fallida viaja en `compile_output` en los dos modos. El
     // error de EJECUCION sale de `stderr` en libre (no hay caso que lo lleve) y
     // de `cases[0].error` en tests.
@@ -1242,18 +1275,42 @@ def __tutor_run_tests(student_code, cases_json):
       ? parseJavaError(result.compile_output, "")
       : parseJavaError("", errorDeEjecucion)
 
-    if (javaErr) {
-      setError(javaErr.message)
-      // Tarea 6.5: se marca la linea SOLO si el error la trae. Un marcador en
-      // la linea equivocada manda al alumno a buscar donde no esta.
-      if (javaErr.line !== null) setErrorMarkerAtLine(javaErr.line, javaErr.message)
-    }
+    // `mensajeDeCorrida` decide entre el error de Java y el timeout. Vive en
+    // `lib/` y no aca porque adentro de este handler `async` no hay forma de
+    // ejercitarla sin montar Monaco y mockear tres llamadas de red — que es
+    // exactamente como `timed_out` llego a existir en el tipo, viajar en cada
+    // respuesta, y no tener un solo lector (reporte de Prog 2, 2026-09-01).
+    const mensaje = mensajeDeCorrida({
+      timed_out: result.timed_out,
+      errorJava: javaErr?.message ?? null,
+      // La pista del Scanner solo sirve si la caja esta vacia. Con datos
+      // adentro manda al alumno a revisar su entrada, que esta bien.
+      stdinVacio: stdinLibre.trim() === "",
+    })
 
-    pushRunHistory(!javaErr, elapsed, salida, javaErr?.message ?? null)
+    if (mensaje) setError(mensaje)
+    // Tarea 6.5: se marca la linea SOLO si el error la trae. Un marcador en la
+    // linea equivocada manda al alumno a buscar donde no esta. El timeout no
+    // trae linea: no hay una sola linea culpable de un bucle.
+    if (javaErr?.line != null) setErrorMarkerAtLine(javaErr.line, javaErr.message)
+
+    // UNA CORRIDA CORTADA NO ES UNA CORRIDA EXITOSA.
+    //
+    // Aca decia `pushRunHistory(!javaErr, ...)` y `error: javaErr?.message ?? null`.
+    // Con un timeout, `javaErr` es null —el contenedor lo matamos nosotros, no
+    // hubo excepcion Java que parsear— asi que la corrida entraba al historial
+    // con el tilde verde Y viajaba al CTR como `codigo_ejecutado` sin error.
+    //
+    // O sea que el registro decia que el alumno ejecuto su programa con exito
+    // en el momento exacto en que su programa no termino. Para una plataforma
+    // cuyo producto es la traza, eso no es un detalle de UI: `codigo_ejecutado`
+    // es una de las señales que el etiquetador mira.
+    const exito = mensaje === null
+    pushRunHistory(exito, elapsed, salida, mensaje)
     onCodeExecuted?.({
       code,
       output: salida,
-      error: javaErr?.message ?? null,
+      error: mensaje,
       durationMs: elapsed,
     })
     setRunning(false)

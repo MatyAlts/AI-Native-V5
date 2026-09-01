@@ -59,6 +59,19 @@ class Settings(BaseSettings):
     # subirlo sin medir sobre el hardware real es como se llega al precipicio.
     execution_max_concurrent_runs: int = Field(default=8, gt=0)
     execution_max_processes: int = Field(default=60, gt=0)
+    # Techo de la salida que una corrida puede devolver, por flujo.
+    #
+    # No existia. `proc.communicate()` se traga TODO lo que el programa imprima,
+    # y un bucle que escribe —el modo de falla mas comun de un alumno que
+    # arranca— produce cientos de MB en los 10s de wall-time. Eso despues viaja
+    # entero a Redis (TTL 600s), de ahi al navegador, y el navegador lo mete en
+    # el DOM. Con 8 corridas concurrentes es una via directa a quedarse sin RAM
+    # en un VPS que ya corre al 82,8% en reposo.
+    #
+    # 256 KiB alcanza de sobra para cualquier salida que un alumno vaya a LEER,
+    # y lo que se corta se avisa con una marca visible: una salida truncada en
+    # silencio es peor que una larga, porque el alumno la lee como completa.
+    execution_max_output_bytes: int = Field(default=262_144, gt=0)
     # CPUs por contenedor. ANTES se derivaba de `execution_cpu_time_limit_seconds
     # / 5`, que daba 1.00 de casualidad con el default y era una trampa: subir el
     # limite de tiempo a 10s "para dar mas aire" repartia 2 CPUs por contenedor,
