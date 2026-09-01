@@ -711,9 +711,50 @@ async def return_entrega(
     user: User = Depends(require_permission("calificacion", "create")),
     db: AsyncSession = Depends(get_db),
 ) -> EntregaOut:
-    """Devuelve la entrega al alumno (graded -> returned).
+    """Devuelve la entrega al alumno (graded -> returned) y le reabre los ejercicios.
 
-    El alumno puede volver a enviarla (returned -> submitted).
+    Las DOS cosas, en la MISMA transaccion. Hasta el 2026-08-31 esto solo
+    cambiaba el estado, y ahi el boton "Devolver al estudiante" era una promesa
+    vacia: al alumno le aparecia el cartel
+
+        "Devuelta para revisar. Tu docente devolvio la entrega con observaciones."
+
+    y ningun boton para revisar nada, porque `ExerciseListView` gateaba tanto el
+    boton de cada ejercicio como el de entregar con `estado === "draft"`. El
+    docente podia pasarse semanas devolviendo TP creyendo que llegaban.
+
+    POR QUE ACA Y NO EN EL FRONTEND
+    -------------------------------
+    La alternativa era que el frontend, al ver `returned`, disparara N llamadas
+    al PATCH de ejercicio. Eso hace que "devolver" deje de ser atomico: si la
+    tercera de cinco falla —o el docente cierra la pestana— la entrega queda
+    `returned` con dos ejercicios abiertos y tres cerrados, un estado que nadie
+    diseno y del que no se sale. Aca es una sola transaccion: o vuelve entera o
+    no vuelve.
+
+    QUE **NO** SE REABRE: EL EPISODIO
+    ---------------------------------
+    Se evaluo pasar el episodio de `closed` a `open` y se DESCARTO. Queda
+    escrito para que no se vuelva a proponer:
+
+      - `resume_episode` ya devuelve 409 sobre un episodio cerrado, y no es un
+        olvido: esta documentado.
+      - Cerrar dispara `episodio_cerrado` -> `attestation_producer` (ADR-021).
+        El episodio queda sellado y firmado criptograficamente.
+      - Reabrirlo dejaria una cadena append-only donde el evento de cierre ya no
+        es el ultimo, y una atestacion certificando un estado que dejo de
+        existir. Si "cerrado" se puede deshacer, cerrado no significa nada — y
+        esa irreversibilidad es la premisa de la tesis, no un detalle tecnico.
+
+    Lo que se reabre es el EJERCICIO, que es otra cosa: `completado` es un flag
+    de progreso en la entrega, no un hecho firmado. Y el sistema ya sabe hacer
+    lo correcto con el episodio viejo: `openEpisodeAndNavigate` solo retoma
+    episodios `paused` u `open`, y ante uno `closed` abre uno NUEVO.
+
+    De yapa, y no es menor: con un episodio nuevo el docente termina viendo los
+    DOS intentos, antes y despues de la devolucion, y puede comparar que cambio
+    el alumno cuando le senalaron el error. Para una plataforma cuyo producto es
+    la traza cognitiva, eso es evidencia del ciclo de correccion.
     """
     entrega = await _get_or_404(db, entrega_id, para_escritura=True)
     await _assert_comision_visible(db, entrega, user)
@@ -725,12 +766,41 @@ async def return_entrega(
         )
 
     entrega.estado = "returned"
+    entrega.ejercicio_estados = _reabrir_ejercicios(entrega.ejercicio_estados)
     await db.flush()
     await db.refresh(entrega)
     return EntregaOut.model_validate(entrega)
 
 
 # ── Helpers privados ──────────────────────────────────────────────────────
+
+
+def _reabrir_ejercicios(estados: list[dict[str, Any]] | None) -> list[dict[str, Any]]:
+    """Des-marca todos los ejercicios para que el alumno pueda volver a entrar.
+
+    `deepcopy` y NO `list(...)`: `list()` copia la lista pero comparte los
+    dicts, asi que mutarlos aca muta tambien el valor cargado. Al reasignar,
+    SQLAlchemy compara viejo contra nuevo, los ve iguales (son los mismos
+    objetos, ya mutados) y NO emite el UPDATE. La columna es JSONB plano sin
+    `MutableList`, asi que nadie avisa: el flush pasa limpio y el cambio se
+    pierde en silencio. Es la misma trampa que ya documenta
+    `mark_ejercicio_completado`, y muerde igual.
+
+    `completed_at` se pone en None junto con el flag. Dejarlo con la fecha
+    vieja hace que el par diga dos cosas incompatibles —"no completado, el
+    martes a las 14:03"— y despues alguien lo lee como si fuera la fecha de
+    entrega. Es exactamente lo que hace el PATCH al des-marcar.
+
+    Lo que NO se toca es `episode_id`: apunta al episodio del intento anterior,
+    que sigue cerrado, firmado y siendo la evidencia de lo que el alumno hizo
+    la primera vez. Se pisa solo cuando el alumno abre el episodio NUEVO, y en
+    el medio es lo unico que permite recuperar el codigo del intento viejo.
+    """
+    reabiertos = copy.deepcopy(list(estados or []))
+    for est in reabiertos:
+        est["completado"] = False
+        est["completed_at"] = None
+    return reabiertos
 
 
 async def _ejercicios_esperados(db: AsyncSession, tarea_practica_id: UUID) -> list[dict[str, Any]]:

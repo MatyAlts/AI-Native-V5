@@ -15,6 +15,7 @@ referencia pertenece a la materia, no a una comisión particular.
 from __future__ import annotations
 
 import hashlib
+import logging
 import time
 from uuid import UUID
 
@@ -27,6 +28,8 @@ from content_service.schemas import (
     RetrievalResponse,
     RetrievedChunk,
 )
+
+logger = logging.getLogger(__name__)
 
 # Cuántos candidatos traer del vector search antes de re-rankear
 VECTOR_TOP_N = 20
@@ -69,12 +72,14 @@ class RetrievalService:
                     c.position,
                     c.chunk_type,
                     c.meta,
+                    c.embedding_model,
                     1 - (c.embedding <=> CAST(:q AS vector)) AS score_vector
                 FROM chunks c
                 JOIN materiales m ON m.id = c.material_id
                 WHERE {scope_column} = :scope_id
                   AND c.embedding IS NOT NULL
                   AND m.deleted_at IS NULL
+                  AND (c.embedding_model IS NULL OR c.embedding_model = :modelo)
                 ORDER BY c.embedding <=> CAST(:q AS vector)
                 LIMIT :limit
             """),
@@ -82,10 +87,18 @@ class RetrievalService:
                 "q": str(q_vec),
                 "scope_id": scope_id,
                 "limit": VECTOR_TOP_N,
+                "modelo": embedder.model_name,
             },
         )
 
         candidates = rows.mappings().all()
+
+        # Si el filtro dejo afuera chunks de OTRO espacio de embedding, hay que
+        # decirlo fuerte: es la unica senal de que el corpus se indexo con un
+        # embedder distinto del que consulta.
+        await self._avisar_si_hay_corpus_de_otro_embedder(
+            scope_column, scope_id, embedder.model_name, encontrados=len(candidates)
+        )
 
         # Sin resultados: respuesta vacía pero coherente
         if not candidates:
@@ -142,6 +155,63 @@ class RetrievalService:
             latency_ms=(time.perf_counter() - start) * 1000,
             rerank_applied=not isinstance(reranker.__class__.__name__, str)
             or reranker.model_name != "identity",
+        )
+
+    async def _avisar_si_hay_corpus_de_otro_embedder(
+        self, scope_column: str, scope_id: UUID, modelo: str, *, encontrados: int
+    ) -> None:
+        """Grita cuando el corpus esta indexado con un embedder distinto.
+
+        POR QUE ESTE CHEQUEO EXISTE (QA 2026-08-31)
+        -------------------------------------------
+        Cambiar `EMBEDDER` de `local` a `gemini` —o al reves— NO da error.
+        Los dos producen vectores de 1024 dims (Gemini rellena con ceros hasta
+        llegar), asi que el `<=>` de pgvector compara felizmente dos espacios
+        que no tienen nada que ver y devuelve **200 OK con resultados sin
+        sentido**: chunks que no hablan del tema, ordenados por una distancia
+        que no significa nada.
+
+        Y eso es PEOR que el 500 que estabamos arreglando. El 500 se ve. Un
+        retrieval silenciosamente malo se ve como un tutor que responde
+        cualquier cosa, y eso se le atribuye al modelo, no a la configuracion.
+
+        El `WHERE` de arriba ya deja afuera los chunks de otro espacio, asi que
+        el fallo se convierte en "no hay material" — legible, y honesto. Esto
+        de aca es la explicacion de por que no lo hay.
+
+        Los chunks con `embedding_model IS NULL` SI entran: son de antes de que
+        existiera la columna, y excluirlos romperia corpus historicos por una
+        sospecha que no podemos confirmar.
+        """
+        fila = (
+            await self.session.execute(
+                text(f"""
+                    SELECT c.embedding_model, COUNT(*) AS n
+                    FROM chunks c
+                    JOIN materiales m ON m.id = c.material_id
+                    WHERE {scope_column} = :scope_id
+                      AND c.embedding IS NOT NULL
+                      AND m.deleted_at IS NULL
+                      AND c.embedding_model IS NOT NULL
+                      AND c.embedding_model <> :modelo
+                    GROUP BY c.embedding_model
+                    ORDER BY n DESC
+                    LIMIT 1
+                """),
+                {"scope_id": scope_id, "modelo": modelo},
+            )
+        ).first()
+        if fila is None:
+            return
+        logger.error(
+            "rag_corpus_de_otro_embedder scope=%s consultando_con=%r "
+            "indexado_con=%r chunks_ignorados=%s chunks_usables=%s — "
+            "reindexar el material o volver al embedder con el que se indexo",
+            scope_id,
+            modelo,
+            fila[0],
+            fila[1],
+            encontrados,
         )
 
 

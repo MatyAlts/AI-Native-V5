@@ -306,11 +306,30 @@ function VerificationResultCard({ result }: { result: ChainVerificationResult })
       </dl>
 
       {compromisedNotFailingNow && (
-        <p className="text-xs mt-4 italic opacity-80">
-          La verificacion on-demand paso, pero el integrity-checker en background marco este
-          episodio como comprometido en algun momento (ADR-021). Investigar el log historico antes
-          de descartar.
-        </p>
+        <div className="text-xs mt-4 space-y-2 opacity-80">
+          <p className="italic">
+            La verificacion on-demand paso, pero este episodio quedo marcado como comprometido en
+            algun momento (ADR-021). Investigar el log historico antes de descartar.
+          </p>
+          {/*
+            El aclarador existe porque la palabra "comprometido" se lee como una acusacion
+            sobre el alumno, y en el piloto es una persona real (QA 2026-08-31).
+
+            El flag lo prende `_move_to_dlq` del ctr-service cuando un evento no entra en la
+            cadena, y NINGUNA de las causas que llegan ahi es adulteracion: la adulteracion la
+            detecta el integrity-checker comparando hashes ya persistidos, y `_es_transitorio`
+            ya impide que un fallo de infraestructura llegue a la DLQ. Lo que queda es siempre
+            una falla de ingesta NUESTRA — un seq que no encaja, un episodio ausente, un
+            payload mal armado — rotulada en `dead_letters.error_reason`.
+          */}
+          <p className="rounded border border-border-soft bg-surface-alt px-3 py-2 not-italic">
+            <strong>Que significa esta marca.</strong> Que hubo un hueco en la cadena de eventos, no
+            que el alumno haya adulterado nada. La adulteracion se detecta comparando hashes ya
+            guardados; esta marca la prende el ingestor cuando un evento no entra en la cadena, y
+            eso hasta hoy siempre fue una falla nuestra. La causa concreta esta en{" "}
+            <code className="font-mono">dead_letters.error_reason</code>, rotulada al principio.
+          </p>
+        </div>
       )}
     </div>
   )

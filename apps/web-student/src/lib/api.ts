@@ -1349,6 +1349,50 @@ export async function markEjercicioCompleted(
   return (await r.json()) as Entrega
 }
 
+/**
+ * Vuelve a abrir un ejercicio ya completado (`completado: false`).
+ *
+ * El backend acepta esto desde el 2026-06-19 —"reapertura docente: el docente
+ * reabrio el episodio para que el alumno lo retome"— y hasta el 2026-08-31
+ * NADIE lo llamaba: ni el alumno, ni el docente, ni un admin. La unica funcion
+ * del frontend mandaba `completado: true` fijo, sin parametro.
+ *
+ * O sea que la salida de emergencia estaba construida y no habia ninguna puerta
+ * que llevara a ella. Y hacia falta, porque marcar completado es una puerta de
+ * una sola direccion: `canStart` esconde el boton de un ejercicio completado
+ * (no lo deshabilita — no lo RENDERIZA), asi que un alumno con los cinco en
+ * "Completado" pero sin codigo guardado recibia del submit
+ *
+ *   "Falta el codigo de los ejercicios: [2,3,4,5]. Abri cada ejercicio una vez
+ *    antes de entregar."
+ *
+ * ...un mensaje que le pide exactamente lo unico que la pantalla le hizo
+ * imposible. Esta funcion es la puerta que faltaba.
+ *
+ * No manda `episode_id`: el que ya esta guardado apunta al episodio del intento
+ * anterior, que sigue cerrado y firmado, y es lo unico con lo que se puede
+ * recuperar el codigo viejo si el borrador local no esta. Pisarlo aca lo
+ * perderia. El `episode_id` nuevo lo escribe el PATCH de cierre del episodio
+ * NUEVO, que es cuando de verdad cambia.
+ */
+export async function reabrirEjercicio(
+  entregaId: string,
+  orden: number,
+  ejercicioId: string,
+  getToken?: TokenGetter,
+): Promise<Entrega> {
+  const r = await fetch(`/api/v1/entregas/${entregaId}/ejercicio/${orden}`, {
+    method: "PATCH",
+    headers: await authHeaders(getToken),
+    body: JSON.stringify({
+      completado: false,
+      ejercicio_id: ejercicioId,
+    }),
+  })
+  if (!r.ok) throw new Error(`reabrir ejercicio failed: ${r.status}`)
+  return (await r.json()) as Entrega
+}
+
 export const entregasApi = {
   createOrGet: createOrGetEntrega,
   submit: submitEntrega,
@@ -1358,6 +1402,7 @@ export const entregasApi = {
   getCalificacion,
   listEjerciciosTp,
   markEjercicioCompleted,
+  reabrirEjercicio,
 }
 
 // ============================================================================

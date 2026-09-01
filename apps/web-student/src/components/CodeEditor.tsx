@@ -42,6 +42,7 @@ import {
   type TokenGetter,
 } from "../lib/api"
 import { resolverEdicionPendiente } from "../lib/edicionPendiente"
+import { armarMensajeDeInput } from "../lib/inputDialogo"
 import { parseJavaError } from "../lib/javaError"
 import { registerJavaSnippets } from "../lib/javaSnippets"
 import { extractPyodideErrorLine, extractPyodideErrorLineNumber } from "../lib/pyodideError"
@@ -284,6 +285,11 @@ export function CodeEditor({
   // aparezca la ventanita de input(). Leemos de este ref para mostrarle al
   // alumno los mensajes que orientan qué dato ingresar.
   const outputBufferRef = useRef<string>("")
+  // Cuánto del buffer ya se le mostró al alumno dentro de un diálogo de
+  // `input()`. Sin esto, cada `window.prompt` repetiría la salida ENTERA del
+  // programa y el mensaje que importa —el `print(e)` del `except` de esta
+  // vuelta— quedaría sepultado bajo las diez iteraciones anteriores.
+  const outputMostradoRef = useRef<number>(0)
 
   const [code, setCode] = useState(initialCode)
   const [output, setOutput] = useState<string>("")
@@ -792,21 +798,73 @@ export function CodeEditor({
       // no llega a la ventanita a tiempo. Para no depender de stdout,
       // interceptamos input() en Python (override de builtins.input) y recibimos
       // el texto del prompt como argumento, explícito.
-      const askForInput = (promptText: string): string => {
+      const askForInput = (promptText: string): string | null => {
         const raw = promptText ?? ""
         const inline = raw.trim()
-        // El prompt inline de input("...") manda; si no hay, mostramos lo que el
-        // programa ya imprimió con print() (los mensajes que orientan al alumno).
-        const guia = inline || outputBufferRef.current.trim()
-        const mensaje = guia
-          ? `${guia}\n\n↳ Ingresá el dato que pide el programa:`
-          : "El programa pide un dato de entrada (input):"
-        const value = window.prompt(mensaje) ?? ""
+        // Lo que el programa imprimió DESDE EL ÚLTIMO input, no todo el buffer:
+        // repetir la salida entera en cada diálogo sepulta el mensaje que
+        // importa bajo las diez iteraciones anteriores.
+        const pendiente = outputBufferRef.current.slice(outputMostradoRef.current).trim()
+        // CONCATENAR, NO ALTERNAR (QA 2026-08-31). Acá había un `||`, o sea una
+        // ALTERNATIVA: `inline || pendiente`. Y `inline` es el texto de
+        // `input("...")` — que TODO alumno pasa; nadie escribe `input()` pelado.
+        // Así que `inline` siempre ganaba el cortocircuito y `pendiente` no se
+        // mostraba NUNCA. La mitigación estaba escrita, era la correcta, y sólo
+        // funcionaba en el único caso que no ocurre.
+        //
+        // Y hace falta, porque `window.prompt` es SÍNCRONO: congela el event
+        // loop, React no repinta el panel SALIDA, y los `print()` del programa
+        // —incluidos los mensajes de error de un `except`— son invisibles hasta
+        // que la corrida termina. Sobre el patrón que enseña la cátedra
+        //
+        //     while True:
+        //         try:
+        //             nombre = input("Ingrese su nombre: ")
+        //             if nombre == "": raise ValueError("no puede quedar vacio")
+        //             break
+        //         except ValueError as e:
+        //             print(e); continue
+        //
+        // el try/except corría PERFECTO y el alumno no veía un solo mensaje.
+        // Se reportó como "pide todos los inputs de una y se saltea el try".
+        const mensaje = armarMensajeDeInput(pendiente, inline)
+
+        const value = window.prompt(mensaje)
+
+        // `null` = el alumno canceló o apretó Escape. Acá había un `?? ""`, que
+        // volvía CANCELAR y "acepté sin escribir nada" indistinguibles para
+        // Python. La intención de abandonar se perdía en dos caracteres.
+        //
+        // Y no era cosmético: con el patrón de arriba, cancelar devolvía "", el
+        // `raise ValueError` saltaba, el `except` hacía `continue` y el bucle
+        // REINICIABA en vez de romperse. El watchdog no rescataba: se pausa
+        // durante `input()` por diseño (para no matar al alumno que tarda en
+        // tipear), así que un ciclo prompt→cancelar→prompt nunca acumula
+        // cómputo y la única protección contra bucles infinitos está
+        // estructuralmente ciega justo a éste. La única salida era cerrar la
+        // pestaña — que dispara `beforeunload` → `POST /episodes/{id}/abandoned`
+        // → episodio cerrado sin código guardado, que es la materia prima de
+        // BUG-1. Los dos bugs eran uno produciendo al otro.
+        //
+        // Devolvemos `null` y `__tutor_input` lo convierte en la BaseException
+        // del watchdog: aborta la corrida y NINGÚN `except` del alumno la traga.
+        // Con un `EOFError` normal, un `except Exception` la tragaría y el
+        // bucle seguiría girando igual.
+        if (value === null) {
+          const aviso = `${raw}\n[Cancelaste el pedido de dato. La ejecución se detuvo.]\n`
+          outputBufferRef.current += aviso
+          setOutput((prev) => `${prev}${aviso}`)
+          outputMostradoRef.current = outputBufferRef.current.length
+          return null
+        }
+
         // Echo del prompt inline (que no pasó por stdout) + el valor, para que la
         // terminal muestre la interacción completa, como una consola real.
         const echo = `${raw}${value}\n`
         outputBufferRef.current += echo
         setOutput((prev) => `${prev}${echo}`)
+        // Todo lo de arriba ya se mostró: el próximo diálogo arranca de acá.
+        outputMostradoRef.current = outputBufferRef.current.length
         return value
       }
       py.globals.set("__tutor_ask_input", askForInput)
@@ -837,6 +895,17 @@ _TUTOR_TIMEOUT_SECONDS = ${EXECUTION_TIMEOUT_SECONDS}.0
 
 class _TutorTimeout(BaseException):
     pass
+
+
+class _TutorCancelado(BaseException):
+    """El alumno canceló el diálogo de input().
+
+    Hereda de BaseException y NO de Exception a propósito: el patrón que
+    enseña la cátedra envuelve el input() en un try/except dentro de un
+    while True, y con una excepción normal el except la traga, hace continue
+    y el bucle vuelve a pedir el dato. Cancelar dejaría de cancelar — que es
+    exactamente el bug que esto viene a cerrar.
+    """
 
 
 _tutor_watchdog = {"deadline": None}
@@ -870,6 +939,11 @@ def __tutor_run_student_code(code):
     _tutor_wd_sys.settrace(_tutor_trace)
     try:
         exec(compile(code, "<editor>", "exec"), globals())
+    except _TutorCancelado:
+        raise KeyboardInterrupt(
+            "Cancelaste el pedido de dato, asi que la ejecucion se detuvo. "
+            "Volve a apretar Ejecutar cuando quieras correrlo de nuevo."
+        ) from None
     except _TutorTimeout:
         raise TimeoutError(
             f"La ejecucion supero los {int(_TUTOR_TIMEOUT_SECONDS)} segundos y fue interrumpida. "
@@ -888,12 +962,21 @@ def __tutor_run_student_code(code):
           "    # 'bucle infinito'. Al volver, presupuesto de computo fresco.\n" +
           "    _tutor_pause_deadline()\n" +
           "    try:\n" +
-          "        return __tutor_ask_input(str(prompt))\n" +
+          "        valor = __tutor_ask_input(str(prompt))\n" +
           "    finally:\n" +
           "        _tutor_reset_deadline()\n" +
+          "    # None = el alumno cancelo o apreto Escape en window.prompt.\n" +
+          "    # Antes JS lo convertia en '' con un `?? \"\"`, y para Python\n" +
+          "    # cancelar y 'acepte sin escribir nada' eran lo mismo.\n" +
+          "    if valor is None:\n" +
+          "        raise _TutorCancelado()\n" +
+          "    return valor\n" +
           "__tutor_builtins.input = __tutor_input\n",
       )
       // Fallback para sys.stdin.read() crudo (sin prompt inline).
+      // `null` acá es EOF para Pyodide, que es la semántica correcta de un
+      // `sys.stdin.read()` cancelado. No pasa por `__tutor_input`, así que no
+      // aborta la corrida: levanta el `EOFError` normal de Python.
       py.setStdin({ stdin: () => askForInput("") })
 
       // FIX-22 (F-13): sandbox del editor. En Pyodide `import js` le da al
@@ -1083,6 +1166,10 @@ def __tutor_run_tests(student_code, cases_json):
     setRunning(true)
     setOutput("")
     outputBufferRef.current = ""
+    // Junto con el buffer: si no, el cursor queda apuntando mas alla del final
+    // del buffer nuevo, `slice()` devuelve "" y el output pendiente deja de
+    // mostrarse en los dialogos de input de la SEGUNDA corrida en adelante.
+    outputMostradoRef.current = 0
     setError(null)
     setViewingRunId(null)
     setOutputTab("consola")
@@ -1144,6 +1231,7 @@ def __tutor_run_tests(student_code, cases_json):
     const primero = result.cases[0]
     const salida = result.stdout ?? primero?.got ?? ""
     outputBufferRef.current = salida
+    outputMostradoRef.current = 0
     setOutput(salida)
 
     // La compilacion fallida viaja en `compile_output` en los dos modos. El
@@ -1209,6 +1297,10 @@ def __tutor_run_tests(student_code, cases_json):
     setRunning(true)
     setOutput("")
     outputBufferRef.current = ""
+    // Junto con el buffer: si no, el cursor queda apuntando mas alla del final
+    // del buffer nuevo, `slice()` devuelve "" y el output pendiente deja de
+    // mostrarse en los dialogos de input de la SEGUNDA corrida en adelante.
+    outputMostradoRef.current = 0
     setError(null)
     setViewingRunId(null) // volver a la corrida viva
     setOutputTab("consola")
