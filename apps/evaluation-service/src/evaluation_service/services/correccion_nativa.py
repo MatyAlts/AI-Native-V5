@@ -40,17 +40,26 @@ evaluó.
 
 from __future__ import annotations
 
+import hashlib
 import json
 from dataclasses import dataclass
 from decimal import ROUND_HALF_UP, Decimal
 from typing import Any
+from uuid import UUID
 
 import structlog
+from sqlalchemy import text
+from sqlalchemy.ext.asyncio import AsyncSession
 
 log = structlog.get_logger()
 
 PROMPT_NAME = "correccion"
 PROMPT_VERSION = "v1.0.0"
+
+# El valor de `settings.correccion_motor` que enciende este camino. El default
+# es `activeia`: prender un motor nuevo por omision cambiaria notas de alumnos
+# sin que nadie lo decida.
+MOTOR = "nativa"
 
 # Cuánto se le permite al modelo. Un desglose de 4-8 criterios con
 # justificaciones cortas entra holgado; el techo existe para que una respuesta
@@ -324,3 +333,207 @@ def parsear_respuesta(content: str) -> list[dict[str, Any]]:
     if not isinstance(criterios, list):
         raise ValueError("La respuesta del modelo no trae una lista de criterios.")
     return criterios
+
+
+def hash_de_rubrica(rubrica: Any) -> str:
+    """SHA-256 de la rúbrica, con la fórmula canónica del repo.
+
+    Misma que `activeia_sync._rubrica_hash` y que el `classifier_config_hash`:
+    `sort_keys`, `separators` compactos, `ensure_ascii=False`. No se reusa la
+    de `activeia_sync` para no atar este camino a un módulo del otro.
+    """
+    canonical = json.dumps(rubrica, sort_keys=True, ensure_ascii=False, separators=(",", ":"))
+    return hashlib.sha256(canonical.encode("utf-8")).hexdigest()
+
+
+def rubrica_id_nativa(rubrica: Any) -> str:
+    """Qué se escribe en `correcciones_ia.rubrica_id` en este camino.
+
+    Esa columna significa «contra qué rúbrica se corrigió esto», y en el camino
+    de Active-IA lleva el id de la rúbrica de ellos. Acá la rúbrica no tiene id:
+    vive dentro del ejercicio. Su identidad ES su contenido, así que va el hash.
+
+    Y no es sólo un nombre: la columna entra en `uq_correccion_ia_idempotencia`.
+    Con el hash adentro, **editar la rúbrica invalida la corrección anterior** y
+    el docente puede volver a disparar. Con una constante fija —`"nativa"`— la
+    corrección vieja seguiría matcheando y el botón devolvería la nota calculada
+    con la rúbrica que ya no existe.
+    """
+    return f"nativa:{hash_de_rubrica(rubrica)[:32]}"
+
+
+@dataclass(frozen=True)
+class EjercicioParaCorregir:
+    """Lo del ejercicio que el corrector necesita ver. Nada más."""
+
+    id: UUID
+    titulo: str
+    enunciado_md: str
+    rubrica: Any
+    prerequisitos: dict[str, Any]
+    # Propaga el scope BYOK: el ai-gateway resuelve con qué key cobrar según la
+    # materia. Nullable en el banco histórico, que era global por tenant.
+    materia_id: UUID | None
+
+
+async def leer_ejercicio(db: AsyncSession, ejercicio_id: UUID) -> EjercicioParaCorregir | None:
+    """El ejercicio, por SQL.
+
+    Por SQL y no importando el modelo del `academic-service`: la tabla vive en
+    la misma base pero es de otro servicio. Mismo criterio que
+    `activeia_sync._ejercicios_de_tp` y que la consulta a `usuarios_comision`.
+
+    NO se traen los `test_cases`: el resultado de correrlos ya viene del
+    sandbox, y leer los casos acá sería traer el `expected` de los ocultos a un
+    lugar que no lo necesita.
+    """
+    row = await db.execute(
+        text(
+            "SELECT id, titulo, enunciado_md, rubrica, prerequisitos, materia_id "
+            "FROM ejercicios WHERE id = :i"
+        ),
+        {"i": str(ejercicio_id)},
+    )
+    r = row.first()
+    if r is None:
+        return None
+    return EjercicioParaCorregir(
+        id=r[0],
+        titulo=r[1] or "",
+        enunciado_md=r[2] or "",
+        rubrica=r[3],
+        prerequisitos=r[4] or {},
+        materia_id=r[5],
+    )
+
+
+async def corregir_con_ia_nativa(
+    *,
+    tenant_id: UUID,
+    ejercicio: EjercicioParaCorregir,
+    codigo: str,
+    tests: dict[str, Any],
+    gateway: Any | None = None,
+    governance: Any | None = None,
+) -> dict[str, Any]:
+    """La corrección completa. Devuelve LA MISMA FORMA que el camino de Active-IA.
+
+    O sea: `{"nota_100", "desglose", ...}` cuando hay nota, o
+    `{"error_code", "error_detail"}` cuando no. Esa simetría es lo que permite
+    que el ejecutor, el panel del docente y el CHECK de la base no se enteren de
+    qué motor corrigió.
+
+    **Nunca levanta.** Todo fallo sale como `error_code`, porque el que llama
+    corre en background y una excepción que escape deja la corrección `running`
+    para siempre, girando en la pantalla del docente.
+
+    Los clientes se inyectan para poder probar el circuito sin red. En
+    producción se construyen acá con la config.
+    """
+    from evaluation_service.config import settings
+    from evaluation_service.services.clients import (
+        AIGatewayClient,
+        AIGatewayError,
+        GovernanceClient,
+        PromptNoDisponibleError,
+    )
+
+    # La procedencia se va llenando a medida que se sabe, y viaja TAMBIÉN en
+    # los errores. Si el modelo devolvió un desglose que no respeta la rúbrica,
+    # saber con qué prompt y qué modelo pasó eso es justamente lo que hace falta
+    # para arreglarlo — y es el momento en que menos se tiene a mano.
+    procedencia: dict[str, Any] = {"motor": MOTOR}
+
+    try:
+        rubrica = leer_rubrica(ejercicio.rubrica)
+    except RubricaInvalidaError as e:
+        # Rechazo, NO infraestructura: reintentar sin cargar la rúbrica
+        # devuelve exactamente lo mismo.
+        return {**procedencia, "error_code": "SIN_RUBRICA", "error_detail": str(e)}
+
+    gw = gateway or AIGatewayClient(settings.ai_gateway_url)
+    gov = governance or GovernanceClient(settings.governance_service_url)
+
+    try:
+        prompt = await gov.get_prompt(PROMPT_NAME, PROMPT_VERSION)
+    except PromptNoDisponibleError as e:
+        return {**procedencia, "error_code": "SIN_PROMPT", "error_detail": str(e)}
+
+    procedencia["prompt_version"] = f"{prompt.name}/{prompt.version}"
+    procedencia["prompt_hash"] = prompt.hash
+
+    mensaje = armar_mensaje_usuario(
+        enunciado=ejercicio.enunciado_md,
+        rubrica=rubrica,
+        tests=tests,
+        codigo=codigo,
+        prerequisitos=ejercicio.prerequisitos,
+    )
+
+    try:
+        salida = await gw.complete(
+            messages=[
+                {"role": "system", "content": prompt.content},
+                {"role": "user", "content": mensaje},
+            ],
+            model=settings.correccion_model,
+            feature="correccion",
+            tenant_id=tenant_id,
+            materia_id=ejercicio.materia_id,
+            temperature=TEMPERATURE,
+            max_tokens=MAX_TOKENS,
+            response_format=esquema_de_salida(rubrica),
+        )
+    except AIGatewayError as e:
+        return {
+            **procedencia,
+            "modelo": settings.correccion_model,
+            "error_code": "GATEWAY_ERROR",
+            "error_detail": str(e),
+        }
+
+    procedencia["modelo"] = salida.model
+
+    # Desde acá, todo lo que falle es "el modelo no respetó la rúbrica", y eso
+    # NO se completa con ceros: ponerle un número a un criterio que nadie
+    # evaluó es peor que no corregir. Sale como error, con `nota_100 IS NULL`.
+    try:
+        puntuados = parsear_respuesta(salida.content)
+        nota, desglose = nota_desde_criterios(rubrica, puntuados)
+    except Exception as e:
+        log.warning(
+            "correccion_nativa_respuesta_invalida",
+            ejercicio_id=str(ejercicio.id),
+            modelo=salida.model,
+            motivo=str(e)[:300],
+        )
+        return {
+            **procedencia,
+            "error_code": "MODELO_NO_RESPETO_RUBRICA",
+            "error_detail": (
+                f"El corrector no devolvió un puntaje válido para cada criterio: {e} "
+                "No se emitió nota. Reintentar puede servir."
+            ),
+        }
+
+    log.info(
+        "correccion_nativa_ok",
+        ejercicio_id=str(ejercicio.id),
+        modelo=salida.model,
+        proveedor=salida.provider,
+        criterios=len(desglose),
+        costo_usd=salida.cost_usd,
+    )
+    return {
+        "nota_100": nota,
+        "desglose": desglose,
+        # No existen en este camino: nadie cierra un criterio en 0 por no haber
+        # podido ejecutar. Cuando el código no compila, el prompt le pide al
+        # modelo que lo diga en la justificación del criterio que corresponda.
+        "criterios_sin_ejecucion": [],
+        "external_entrega_id": None,
+        "external_correccion_id": None,
+        # Con qué se corrigió. Sin esto, «¿por qué le puso 6?» tres meses
+        # después no tiene respuesta reconstruible.
+        **procedencia,
+    }

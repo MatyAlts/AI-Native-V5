@@ -31,6 +31,7 @@ from evaluation_service.schemas.activeia import (
     CorreccionIAOut,
     CorreccionPreviewOut,
 )
+from evaluation_service.services import correccion_nativa
 from evaluation_service.services.activeia_sync import EstadoSync, estado_de_sincronizacion
 from evaluation_service.services.correccion_cuota import (
     CuotaExcedidaError,
@@ -45,7 +46,7 @@ from evaluation_service.services.correccion_ia import (
     es_de_mi_comision,
     mapear_error_activeia,
     reabrir_para_reintento,
-    resolver_rubrica,
+    resolver_rubrica_del_motor,
 )
 from evaluation_service.services.correccion_pdf import get_storage as get_storage_pdf
 from evaluation_service.services.correccion_worker import con_semaforo_y_presupuesto
@@ -122,7 +123,14 @@ async def disparar_correccion(
     El preview NO ejecuta, NO contacta a Active-IA y NO consume cuota. Es el
     default a propósito: la operación cuesta plata y tiempo de cómputo.
     """
-    if not settings.activeia_enabled:
+    # El gate es por MOTOR. `activeia_enabled` falla cerrado y sigue gobernando
+    # el camino de Active-IA —prendido, manda código de alumnos a un servicio
+    # externo— pero no puede gobernar el propio: son dos decisiones distintas y
+    # atarlas obligaría a prender Active-IA para no usarlo.
+    #
+    # El motor propio se enciende con `CORRECCION_MOTOR=nativa`, que ya es una
+    # decisión explícita: el default es `activeia`.
+    if settings.correccion_motor != correccion_nativa.MOTOR and not settings.activeia_enabled:
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
             detail="La corrección asistida está desactivada en este entorno.",
@@ -139,12 +147,12 @@ async def disparar_correccion(
 
     try:
         artefacto = await assert_puede_dispararse(db, entrega, orden)
-        vinculo = await resolver_rubrica(db, user.tenant_id, artefacto.ejercicio_id)
+        rubrica = await resolver_rubrica_del_motor(db, user.tenant_id, artefacto.ejercicio_id)
     except CorreccionRechazadaError as e:
         raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(e)) from e
 
     existente = await buscar_existente(
-        db, user.tenant_id, entrega.id, orden, vinculo.rubrica_id, artefacto.sha256
+        db, user.tenant_id, entrega.id, orden, rubrica.rubrica_id, artefacto.sha256
     )
 
     # La cuota se lee incluso para el preview: mostrarle al docente cuántas le
@@ -165,9 +173,15 @@ async def disparar_correccion(
         return CorreccionPreviewOut(
             orden=orden,
             ejercicio_titulo=este.titulo if este else f"Ejercicio {orden}",
-            rubrica_id=vinculo.rubrica_id,
-            rubrica_estado=(este.estado.value if este else EstadoSync.SIN_SINCRONIZAR.value),
-            rubrica_simulada=bool(vinculo.rubrica_id.startswith("MOCK-")),
+            rubrica_id=rubrica.rubrica_id,
+            # El estado de sincronización es del camino de Active-IA. En el
+            # propio la rúbrica es local y no hay nada que sincronizar, así que
+            # el resolvedor trae su propio estado en vez de que la pantalla
+            # muestre "sin_sincronizar" sobre algo que no se sincroniza.
+            rubrica_estado=(
+                rubrica.estado or (este.estado.value if este else EstadoSync.SIN_SINCRONIZAR.value)
+            ),
+            rubrica_simulada=rubrica.simulada,
             n_test_cases=n_test_cases,
             codigo_bytes=len(artefacto.codigo.encode("utf-8")),
             ya_corregido=existente is not None,
@@ -200,7 +214,7 @@ async def disparar_correccion(
             tp_ejercicio_id=artefacto.ejercicio_id,
             orden=orden,
             disparado_por=user.id,
-            rubrica_id=vinculo.rubrica_id,
+            rubrica_id=rubrica.rubrica_id,
             estado="pending",
             artefacto_sha256=artefacto.sha256,
         )
@@ -230,7 +244,7 @@ async def disparar_correccion(
             # viajaba como `comision_id` en el formulario, así que Active-IA
             # recibía un id de ejercicio donde esperaba una comisión. El
             # endpoint nuevo lo lleva en la URL, que es su lugar.
-            ejercicio_ref=str(vinculo.external_ref or ""),
+            ejercicio_ref=rubrica.external_ref,
             headers_sandbox={
                 "X-Tenant-Id": str(user.tenant_id),
                 "X-User-Id": str(user.id),
@@ -247,9 +261,10 @@ async def disparar_correccion(
         correccion_id=str(correccion.id),
         entrega_id=str(entrega.id),
         orden=orden,
-        rubrica_id=vinculo.rubrica_id,
+        motor=settings.correccion_motor,
+        rubrica_id=rubrica.rubrica_id,
         disparado_por=str(user.id),
-        simulada=vinculo.rubrica_id.startswith("MOCK-"),
+        simulada=rubrica.simulada,
     )
     return _out(correccion)
 

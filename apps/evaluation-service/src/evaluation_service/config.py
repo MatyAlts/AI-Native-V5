@@ -65,6 +65,9 @@ class Settings(BaseSettings):
     # Namespaced a proposito: la regla del gateway es que un modelo con "/" se
     # rutea por OpenRouter. Sin namespace se va al proveedor nativo.
     correccion_model: str = Field(default="google/gemini-2.5-flash-lite")
+    # El prompt de correccion NO vive como string en el codigo: se pide
+    # versionado, con su hash, igual que los del tutor.
+    governance_service_url: str = Field(default="http://127.0.0.1:8010")
     execution_service_url: str = Field(default="http://127.0.0.1:8013")
     academic_service_url: str = Field(default="http://127.0.0.1:8002")
 

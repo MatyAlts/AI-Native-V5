@@ -70,6 +70,17 @@ class CorreccionIA(Base, TenantMixin):
     # Donde quedo el PDF de devolucion. La KEY, no el contenido: un PDF en una
     # columna infla la tabla que el docente consulta en cada apertura del form.
     pdf_storage_key: Mapped[str | None] = mapped_column(String(500), nullable=True)
+    # ── Con qué se corrigió (reproducibilidad) ────────────────────────────
+    #
+    # Una nota es una decisión sobre una persona, y «¿por qué le puso 6?» tres
+    # meses después sólo tiene respuesta si quedó registrado con qué texto y
+    # qué modelo se produjo. Los cuatro son NULL en las filas de Active-IA, que
+    # es la respuesta correcta para ellas: el prompt y el modelo son de ellos y
+    # nosotros no los vemos.
+    motor: Mapped[str | None] = mapped_column(String(20), nullable=True)
+    prompt_version: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    prompt_hash: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    modelo: Mapped[str | None] = mapped_column(String(100), nullable=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, server_default=sa.text("now()")
     )

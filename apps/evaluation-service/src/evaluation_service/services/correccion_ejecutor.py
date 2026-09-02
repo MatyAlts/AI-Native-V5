@@ -35,14 +35,17 @@ from uuid import UUID
 
 import structlog
 
+from evaluation_service.config import settings
 from evaluation_service.db.session import tenant_session
 from evaluation_service.models.correcciones_ia import CorreccionIA
 from evaluation_service.services import correccion_metrics as metrics
+from evaluation_service.services import correccion_nativa
 from evaluation_service.services.activeia_client import ActiveIAError
 from evaluation_service.services.correccion_ia import mapear_error_activeia, marcar_error
 from evaluation_service.services.correccion_pdf import bajar_y_guardar
 from evaluation_service.services.correccion_pre_ejecucion import (
     PreEjecucionError,
+    ResultadoTests,
     correr_tests,
 )
 
@@ -104,10 +107,7 @@ async def ejecutar_correccion(
     lo cierra por construcción: el ejercicio va en la URL, que es su lugar, y
     de comisión se encarga la comisión de integración de ellos (§3.3).
     """
-    from evaluation_service.services.activeia_credenciales import (
-        CredencialNoConfiguradaError,
-        cliente_para,
-    )
+    from evaluation_service.services.activeia_credenciales import CredencialNoConfiguradaError
 
     async with tenant_session(tenant_id) as db:
         c = await db.get(CorreccionIA, correccion_id)
@@ -141,8 +141,6 @@ async def ejecutar_correccion(
         else:
             # TP monolítica: no hay ejercicio del banco contra el cual correr
             # test cases. Se sigue sin ellos, y el snapshot lo dice.
-            from evaluation_service.services.correccion_pre_ejecucion import ResultadoTests
-
             tests = ResultadoTests(compila=True)
 
         # Que no compile YA NO CORTA (decisión de Juani, 19/08). Un punto y coma
@@ -165,66 +163,35 @@ async def ejecutar_correccion(
                 detalle=(tests.error_compilacion or "")[:300],
             )
 
-        # ── 2. Active-IA, en una sola llamada ─────────────────────────────
-        async with tenant_session(tenant_id) as db:
-            cliente = await cliente_para(db, tenant_id, user_id)
-
-        rubrica_id = await _rubrica_de(tenant_id, correccion_id)
-        if not rubrica_id:
-            # Sin rúbrica no hay contra qué corregir. Antes se enviaba igual
-            # con `rubrica_id=""` y se pagaba la llamada para que Active-IA la
-            # rechazara después.
-            await _cerrar_con_error(
-                tenant_id,
-                correccion_id,
-                "SIN_RUBRICA",
-                "La corrección no tiene rúbrica asociada. No se envió nada.",
-                False,
-                tests.as_dict(),
+        # ── 2. La corrección ──────────────────────────────────────────────
+        #
+        # ACÁ se elige el motor, y es el ÚNICO lugar donde se elige. Los pasos
+        # 1 a 4 —las cuotas que fallan cerradas, la idempotencia, el sandbox, la
+        # regla de que un fallo de infraestructura no es una nota— son comunes a
+        # los dos: duplicarlos es garantizar que dentro de seis meses uno tenga
+        # un arreglo que el otro no.
+        #
+        # El default es `activeia`. Prender el motor nuevo por omisión cambiaría
+        # notas de alumnos sin que nadie lo decida.
+        if settings.correccion_motor == correccion_nativa.MOTOR:
+            resultado = await _corregir_nativo(
+                tenant_id=tenant_id,
+                ejercicio_id=ejercicio_id,
+                codigo=codigo,
+                tests=tests.as_dict(),
             )
+            await _cerrar_con_resultado(tenant_id, correccion_id, resultado, tests.as_dict())
+            # No hay PDF que bajar: el de devolución lo genera Active-IA.
             return
 
-        if not ejercicio_ref:
-            # El endpoint nuevo corrige POR EJERCICIO: sin referencia no hay a
-            # qué apuntar. Antes esto no se notaba porque el ejercicio no
-            # viajaba en la URL sino como un campo más del formulario, así que
-            # un ref vacío se mandaba igual y el rechazo venía de allá.
-            #
-            # NO es infraestructura: reintentar sin sincronizar el TP devuelve
-            # exactamente lo mismo.
-            await _cerrar_con_error(
-                tenant_id,
-                correccion_id,
-                "SIN_EJERCICIO_REF",
-                (
-                    "Este ejercicio no tiene referencia sincronizada con Active-IA. "
-                    "Sincronizá el trabajo práctico y volvé a disparar."
-                ),
-                False,
-                tests.as_dict(),
-            )
-            return
-
-        resultado = await _corregir_ejercicio(
-            cliente=cliente,
+        await _correr_activeia(
+            tenant_id=tenant_id,
+            user_id=user_id,
+            correccion_id=correccion_id,
             ejercicio_ref=ejercicio_ref,
             alumno_nombre=alumno_nombre,
             codigo=codigo,
-            tests=tests.as_dict(),
-        )
-
-        entrega_id = await _cerrar_con_resultado(
-            tenant_id, correccion_id, resultado, tests.as_dict()
-        )
-        if entrega_id is None:
-            return
-
-        await _guardar_pdf(
-            cliente=cliente,
-            tenant_id=tenant_id,
-            entrega_id=entrega_id,
-            correccion_id=correccion_id,
-            external_correccion_id=resultado.get("external_correccion_id"),
+            tests=tests,
         )
 
     except asyncio.CancelledError:
@@ -255,6 +222,128 @@ async def ejecutar_correccion(
         # siempre en cuanto algo fallara — y el indicador de saturación
         # mentiría justo cuando hace falta leerlo.
         await _registrar_desenlace(tenant_id, correccion_id, time.monotonic() - arranque)
+
+
+async def _correr_activeia(
+    *,
+    tenant_id: UUID,
+    user_id: UUID,
+    correccion_id: UUID,
+    ejercicio_ref: str,
+    alumno_nombre: str,
+    codigo: str,
+    tests: ResultadoTests,
+) -> None:
+    """El camino de Active-IA, entero. NO CAMBIÓ: se movió.
+
+    Se extrajo del cuerpo de `ejecutar_correccion` cuando entró el segundo
+    motor, para que los dos queden simétricos y la elección se lea en una sola
+    línea. Levanta lo mismo que levantaba adentro (`ActiveIAError`,
+    `CredencialNoConfiguradaError`) y lo agarra el mismo `except` de allá.
+    """
+    from evaluation_service.services.activeia_credenciales import cliente_para
+
+    async with tenant_session(tenant_id) as db:
+        cliente = await cliente_para(db, tenant_id, user_id)
+
+    rubrica_id = await _rubrica_de(tenant_id, correccion_id)
+    if not rubrica_id:
+        # Sin rúbrica no hay contra qué corregir. Antes se enviaba igual
+        # con `rubrica_id=""` y se pagaba la llamada para que Active-IA la
+        # rechazara después.
+        await _cerrar_con_error(
+            tenant_id,
+            correccion_id,
+            "SIN_RUBRICA",
+            "La corrección no tiene rúbrica asociada. No se envió nada.",
+            False,
+            tests.as_dict(),
+        )
+        return
+
+    if not ejercicio_ref:
+        # El endpoint nuevo corrige POR EJERCICIO: sin referencia no hay a
+        # qué apuntar. Antes esto no se notaba porque el ejercicio no
+        # viajaba en la URL sino como un campo más del formulario, así que
+        # un ref vacío se mandaba igual y el rechazo venía de allá.
+        #
+        # NO es infraestructura: reintentar sin sincronizar el TP devuelve
+        # exactamente lo mismo.
+        await _cerrar_con_error(
+            tenant_id,
+            correccion_id,
+            "SIN_EJERCICIO_REF",
+            (
+                "Este ejercicio no tiene referencia sincronizada con Active-IA. "
+                "Sincronizá el trabajo práctico y volvé a disparar."
+            ),
+            False,
+            tests.as_dict(),
+        )
+        return
+
+    resultado = await _corregir_ejercicio(
+        cliente=cliente,
+        ejercicio_ref=ejercicio_ref,
+        alumno_nombre=alumno_nombre,
+        codigo=codigo,
+        tests=tests.as_dict(),
+    )
+
+    entrega_id = await _cerrar_con_resultado(tenant_id, correccion_id, resultado, tests.as_dict())
+    if entrega_id is None:
+        return
+
+    await _guardar_pdf(
+        cliente=cliente,
+        tenant_id=tenant_id,
+        entrega_id=entrega_id,
+        correccion_id=correccion_id,
+        external_correccion_id=resultado.get("external_correccion_id"),
+    )
+
+
+async def _corregir_nativo(
+    *,
+    tenant_id: UUID,
+    ejercicio_id: UUID | None,
+    codigo: str,
+    tests: dict[str, Any],
+) -> dict[str, Any]:
+    """El camino propio: la rúbrica del docente y la suma de este lado.
+
+    Devuelve la MISMA forma que `_corregir_ejercicio`, así que `_cerrar_con_resultado`
+    no se entera de qué motor corrigió. Esa simetría es lo que hace que el panel
+    del docente, el PDF y el CHECK de la base sigan valiendo para los dos.
+
+    Sin `ejercicio_id` no hay corrección: la rúbrica vive DENTRO del ejercicio.
+    Es el caso de la TP monolítica, y es un rechazo —no infraestructura—: sin
+    ejercicios cargados, reintentar devuelve lo mismo.
+    """
+    if ejercicio_id is None:
+        return {
+            "error_code": "SIN_EJERCICIO",
+            "error_detail": (
+                "Este trabajo práctico no tiene ejercicios del banco, así que no hay "
+                "rúbrica contra la cual corregir. Cargá los ejercicios y volvé a disparar."
+            ),
+        }
+
+    async with tenant_session(tenant_id) as db:
+        ejercicio = await correccion_nativa.leer_ejercicio(db, ejercicio_id)
+
+    if ejercicio is None:
+        return {
+            "error_code": "SIN_EJERCICIO",
+            "error_detail": f"El ejercicio {ejercicio_id} ya no existe.",
+        }
+
+    return await correccion_nativa.corregir_con_ia_nativa(
+        tenant_id=tenant_id,
+        ejercicio=ejercicio,
+        codigo=codigo,
+        tests=tests,
+    )
 
 
 def _clasificar_fallo(e: Exception) -> tuple[str, str, bool]:
@@ -436,6 +525,15 @@ async def _cerrar_con_resultado(
         c.tests_snapshot = tests
         c.external_entrega_id = resultado.get("external_entrega_id")
         c.external_correccion_id = resultado.get("external_correccion_id")
+        # Con qué se corrigió. Se escribe ANTES del branch de la nota, y a
+        # propósito: si el modelo devolvió un desglose que no respeta la
+        # rúbrica, saber con qué prompt y qué modelo pasó eso es justamente lo
+        # que hace falta para arreglarlo. Vacío en el camino de Active-IA, que
+        # no expone ninguna de las cuatro cosas.
+        c.motor = resultado.get("motor")
+        c.prompt_version = resultado.get("prompt_version")
+        c.prompt_hash = resultado.get("prompt_hash")
+        c.modelo = resultado.get("modelo")
 
         nota = resultado.get("nota_100")
         if nota is None:

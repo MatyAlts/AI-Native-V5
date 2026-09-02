@@ -122,6 +122,75 @@ async def resolver_rubrica(
     return vinculo
 
 
+@dataclass(frozen=True)
+class RubricaElegida:
+    """Contra qué rúbrica va a corregir ESTE disparo, según el motor activo.
+
+    Existe para que la ruta no tenga un `if motor` adentro. La ruta pregunta
+    "¿con qué rúbrica?" y recibe siempre la misma forma; qué significa cada
+    campo depende del motor, y eso vive acá.
+    """
+
+    rubrica_id: str
+    # El `external_ref` del ejercicio del otro lado. Vacío en el camino propio:
+    # no hay otro lado.
+    external_ref: str
+    estado: str
+    simulada: bool
+
+
+async def resolver_rubrica_del_motor(
+    db: AsyncSession, tenant_id: UUID, ejercicio_id: UUID | None
+) -> RubricaElegida:
+    """La rúbrica del motor activo, o un rechazo que dice qué falta.
+
+    **El camino propio no consulta el vínculo con Active-IA.** No es un atajo:
+    es la corrección del problema que el propio panel del docente advierte —los
+    criterios de Active-IA van SOLOS, no cruzados con la rúbrica local— y que
+    dejó registrado el caso de una rúbrica con una reducción del 30 % contra la
+    que el motor devolvió la suma limpia, 87 donde correspondía ~61.
+
+    Acá el `rubrica_id` es el hash de la rúbrica que el docente escribió y ve.
+    """
+    from evaluation_service.config import settings
+    from evaluation_service.services import correccion_nativa
+
+    if settings.correccion_motor != correccion_nativa.MOTOR:
+        vinculo = await resolver_rubrica(db, tenant_id, ejercicio_id)
+        return RubricaElegida(
+            rubrica_id=vinculo.rubrica_id,
+            external_ref=str(vinculo.external_ref or ""),
+            estado="",
+            simulada=vinculo.rubrica_id.startswith("MOCK-"),
+        )
+
+    if ejercicio_id is None:
+        raise CorreccionRechazadaError(
+            "Este trabajo práctico no tiene ejercicios del banco, así que no hay "
+            "rúbrica contra la cual corregir."
+        )
+
+    ejercicio = await correccion_nativa.leer_ejercicio(db, ejercicio_id)
+    if ejercicio is None:
+        raise CorreccionRechazadaError("El ejercicio de esta entrega ya no existe.")
+    try:
+        # Se valida ACÁ y no sólo al corregir: rechazar antes de disparar no
+        # consume cuota, y el docente se entera de que falta la rúbrica cuando
+        # todavía puede cargarla, no después de que la corrección falló.
+        correccion_nativa.leer_rubrica(ejercicio.rubrica)
+    except correccion_nativa.RubricaInvalidaError as e:
+        raise CorreccionRechazadaError(str(e)) from e
+
+    return RubricaElegida(
+        rubrica_id=correccion_nativa.rubrica_id_nativa(ejercicio.rubrica),
+        external_ref="",
+        # No hay sincronización que reportar: la rúbrica es local. Decir
+        # "sin_sincronizar" leería como un fallo de algo que no aplica.
+        estado="local",
+        simulada=False,
+    )
+
+
 async def buscar_existente(
     db: AsyncSession,
     tenant_id: UUID,
@@ -288,6 +357,21 @@ def mapear_error_activeia(error_code: str | None, mensaje: str) -> tuple[str, bo
         "ERROR_INTERNO",
         "SIN_NOTA",
         "ACTIVEIA_ERROR",
+        # ── Del corrector propio ───────────────────────────────────────────
+        #
+        # Los tres son reintentables, cada uno por su motivo:
+        #
+        # - `GATEWAY_ERROR`: el ai-gateway no respondio, o el proveedor esta
+        #   caido / sin cupo. Se destraba solo o lo destraba un humano; en los
+        #   dos casos el mismo boton sirve despues.
+        # - `SIN_PROMPT`: el governance-service no esta arriba. Es infra pura.
+        # - `MODELO_NO_RESPETO_RUBRICA`: el modelo devolvio un desglose que no
+        #   empareja con la rubrica. Reintentar PUEDE servir —la temperatura es
+        #   0 pero el proveedor no garantiza identidad— y lo que NO se hace es
+        #   completar el criterio faltante con un cero. Ver `correccion_nativa`.
+        "GATEWAY_ERROR",
+        "SIN_PROMPT",
+        "MODELO_NO_RESPETO_RUBRICA",
         # ── Códigos que el flujo YA NO EMITE (2026-08-27) ──────────────────
         #
         # Salían del camino de tres pasos: `SIN_ENTREGA_ID` de un 201 sin id y
