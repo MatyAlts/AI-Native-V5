@@ -1,0 +1,21 @@
+# Manifest del prompt correccion v1.0.0 (primera version).
+# El governance-service verifica fail-loud que sha256(system.md) == este hash.
+# Si el archivo se modifica sin re-firmar este manifest, el servicio falla al
+# cargar — que es exactamente lo que le falto a tutor/v1.2.0, editado in-place
+# dos dias despues de activarse sin que nada avisara.
+#
+# El hash ademas se persiste en `correcciones_ia.prompt_hash` en cada
+# correccion: una nota es una decision sobre una persona, y reconstruir el
+# porque exige saber con que texto se produjo.
+version: v1.0.0
+parent_version: null
+bump_kind: initial
+files:
+  system.md: 840bc0a4ecc78e4ccb0f6737ccc7da647b5ea05dec836416dc9ebf6f828979fb
+notas:
+  - Corrige contra la rubrica del DOCENTE (Ejercicio.rubrica), no contra una rubrica externa.
+  - Regla 3 - el modelo NO calcula la nota final. La suma la hace nota_desde_criterios() en Python.
+  - Regla 4 - los resultados de los tests son hechos. El test manda sobre la lectura del codigo.
+  - Regla 5 - no se penaliza lo que no esta en `prerequisitos`. Es corregir contra el programa de la materia y no contra el gusto del modelo.
+  - El esquema de salida NO admite un campo de nota total. Lo que el esquema no admite, el modelo no lo manda.
+  - Los casos de prueba OCULTOS viajan sin su salida esperada. Es la solucion.
