@@ -26,6 +26,7 @@ from decimal import Decimal
 import pytest
 from evaluation_service.services.correccion_nativa import (
     RubricaInvalidaError,
+    _casos_para_el_prompt,
     armar_mensaje_usuario,
     esquema_de_salida,
     leer_rubrica,
@@ -203,6 +204,24 @@ class TestElEsquemaNoDejaMandarLaNota:
 
 
 class TestElPromptNoFiltraLaSolucion:
+    """El fixture usa la forma que `_mapear` produce DE VERDAD.
+
+    Antes usaba `name` / `is_public` / `passed` / `expected` / `got`, que son
+    las claves del SANDBOX. Entre el sandbox y este módulo está `_mapear`, que
+    las traduce a `nombre` / `es_publico` / `paso` / `salida_obtenida` — y lo
+    que llega acá, vía `ResultadoTests.as_dict()`, es la forma traducida.
+
+    Con las claves del sandbox, `_casos_para_el_prompt` devolvía `None` en
+    todo y el test seguía verde: probaba que los ocultos no filtran sobre una
+    forma que el sistema nunca produce.
+
+    Las cadenas del fixture son deliberadamente ajenas al código y al enunciado
+    (`SALIDA-PUBLICA-42`, `SOLUCION-SECRETA-99`). La versión anterior buscaba
+    `"HOLA"`, que también estaba en `codigo="print('HOLA')"`: el assert pasaba
+    por el bloque de código, no por el caso, así que la aserción positiva no
+    probaba nada.
+    """
+
     TESTS = {
         "compila": True,
         "total": 3,
@@ -211,18 +230,23 @@ class TestElPromptNoFiltraLaSolucion:
         "error_compilacion": None,
         "casos": [
             {
-                "name": "publico",
-                "is_public": True,
-                "passed": True,
-                "expected": "HOLA",
-                "got": "HOLA",
+                "id": "c1",
+                "nombre": "CASO-PUBLICO-UNO",
+                "paso": True,
+                "salida_obtenida": "SALIDA-PUBLICA-42",
+                "es_publico": True,
             },
             {
-                "name": "oculto",
-                "is_public": False,
-                "passed": False,
-                "expected": "SECRETO",
-                "got": "x",
+                "id": "c2",
+                "nombre": "CASO-OCULTO-DOS",
+                "paso": False,
+                "salida_obtenida": "SALIDA-DEL-OCULTO-7",
+                "es_publico": False,
+                # `_mapear` NO emite esta clave: se pone acá a propósito, para
+                # que el guard del oculto se ejercite contra un dato que existe
+                # y no contra una ausencia. Sin esto, el test verifica que no
+                # se filtre algo que nunca estuvo.
+                "salida_esperada": "SOLUCION-SECRETA-99",
             },
         ],
     }
@@ -238,12 +262,32 @@ class TestElPromptNoFiltraLaSolucion:
 
     def test_el_esperado_de_un_caso_OCULTO_no_viaja(self) -> None:
         """Es la solución. Lo mismo que ya aplica al enunciado aplica acá."""
-        assert "SECRETO" not in self._mensaje()
+        assert "SOLUCION-SECRETA-99" not in self._mensaje()
 
-    def test_el_de_un_caso_publico_SI_viaja(self) -> None:
-        """El alumno ya lo ve; ocultárselo al corrector no protege nada y le
-        saca contexto para juzgar el criterio de formato."""
-        assert "HOLA" in self._mensaje()
+    def test_el_nombre_de_cada_caso_SI_viaja(self) -> None:
+        """Sin el nombre, el modelo no puede citar QUÉ caso falló al justificar
+        un descuento — y la justificación es el producto de este corrector."""
+        mensaje = self._mensaje()
+
+        assert "CASO-PUBLICO-UNO" in mensaje
+        assert "CASO-OCULTO-DOS" in mensaje
+
+    def test_si_cada_caso_paso_o_no_SI_viaja(self) -> None:
+        """La regla 4 del prompt le dice al modelo que los tests son HECHOS que
+        mandan sobre su lectura del código. Si llegan vacíos, le estamos
+        ordenando confiar en una evidencia que no está."""
+        vistos = _casos_para_el_prompt(self.TESTS)
+
+        assert [c["paso"] for c in vistos] == [True, False]
+
+    def test_la_salida_REAL_del_alumno_viaja_en_los_dos(self) -> None:
+        """Es su código, no el enunciado — mismo criterio explícito que
+        `_mapear`, que la incluye para todos los casos. Es lo que el modelo
+        necesita para justificar un descuento sobre un caso que falló."""
+        mensaje = self._mensaje()
+
+        assert "SALIDA-PUBLICA-42" in mensaje
+        assert "SALIDA-DEL-OCULTO-7" in mensaje
 
     def test_van_los_prerequisitos(self) -> None:
         """Sin esta lista el modelo penaliza por lo que todavía no se enseñó."""

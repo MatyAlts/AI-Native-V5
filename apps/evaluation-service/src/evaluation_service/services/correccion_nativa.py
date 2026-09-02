@@ -230,21 +230,59 @@ def esquema_de_salida(rubrica: list[Criterio]) -> dict[str, Any]:
 def _casos_para_el_prompt(tests: dict[str, Any]) -> list[dict[str, Any]]:
     """Los casos, SIN la salida esperada de los ocultos.
 
-    Lo mismo que ya aplica al enunciado aplica acá: un caso oculto revela la
-    solución. El modelo ve que existe, cómo le fue, y nada más.
+    LAS CLAVES SON LAS QUE `_mapear` PRODUCE, NO LAS DEL SANDBOX
+    -----------------------------------------------------------
+    Esta distinción cuesta cara y ya se pagó una vez. El `execution-service`
+    emite `name` / `status` / `got` / `is_public`, pero entre él y este módulo
+    está `correccion_pre_ejecucion._mapear`, que las traduce a `nombre` /
+    `paso` / `salida_obtenida` / `es_publico`. Lo que llega acá —vía
+    `ResultadoTests.as_dict()`— es la forma TRADUCIDA.
+
+    Leer las del sandbox devolvía `None` en todas: el modelo recibía
+    `{"name": null, "publico": false, "paso": null}` por cada caso. Y como
+    `bool(None)` es `False`, TODO caso se trataba como oculto, así que los
+    públicos también perdían su salida.
+
+    El efecto es peor de lo que parece por la regla 4 del prompt: le dice al
+    modelo que los resultados de los tests son HECHOS que mandan sobre su
+    lectura del código. Le estábamos ordenando confiar en una evidencia que
+    llegaba vacía. Sobrevivían los conteos agregados (`total`, `passed`,
+    `failed`), así que el modelo sabía "3 de 5" pero no cuáles ni qué
+    produjeron.
+
+    Es exactamente el bug que el docstring de `_mapear` documenta —ahí la
+    función leía `passed` por caso, entre otras cuatro claves inexistentes— y
+    volvió a entrar por la puerta de al lado, una capa más arriba.
+
+    `test_forma_real_de_los_casos` lo ata: construye la entrada con el
+    `ResultadoTests` de verdad, así que si `_mapear` cambia de forma, el test
+    se cae en vez de que el modelo deje de ver los hechos en silencio.
     """
     limpios = []
     for caso in tests.get("casos") or []:
         if not isinstance(caso, dict):
             continue
-        publico = bool(caso.get("is_public"))
+        # `is not False` y no `bool(...)`: mismo criterio que `_mapear`, donde
+        # la ausencia de la marca significa PÚBLICO. Que las dos capas
+        # discrepen sobre el caso ausente es cómo se llega a que una proteja
+        # algo que la otra ya dejó pasar.
+        publico = caso.get("es_publico", True) is not False
         limpios.append(
             {
-                "name": caso.get("name"),
+                "nombre": caso.get("nombre"),
                 "publico": publico,
-                "paso": caso.get("passed"),
-                **({"esperado": caso.get("expected")} if publico else {}),
-                **({"obtenido": caso.get("got")} if publico else {}),
+                "paso": caso.get("paso"),
+                # La salida REAL del alumno va SIEMPRE, oculto o no: es lo que
+                # su código produjo, no la solución. Mismo criterio explícito
+                # que `_mapear`, que la incluye para todos los casos — y es
+                # justo lo que el modelo necesita para justificar un descuento
+                # sobre un caso que falló.
+                "obtenido": caso.get("salida_obtenida"),
+                # La ESPERADA de un oculto no viaja. Hoy `_mapear` ni siquiera
+                # la emite, así que este guard no filtra nada que exista: se
+                # conserva a propósito, para que el día que alguien la agregue
+                # aguas arriba no entre por acá sin que nadie lo note.
+                **({"esperado": caso.get("salida_esperada")} if publico else {}),
             }
         )
     return limpios
