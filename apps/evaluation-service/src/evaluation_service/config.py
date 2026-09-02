@@ -52,6 +52,19 @@ class Settings(BaseSettings):
 
     # Servicios internos
     ctr_service_url: str = Field(default="http://127.0.0.1:8007")
+
+    # ── Corrección con IA: qué motor la resuelve ────────────────────────────
+    #
+    # `activeia` es lo de siempre y es el DEFAULT: prender un motor nuevo por
+    # omisión cambiaría notas de alumnos sin que nadie lo decida.
+    #
+    # `nativo` corrige contra `Ejercicio.rubrica` —la que el docente escribió—
+    # pasando por el ai-gateway. Ver `correccion_nativa.py` para el porqué.
+    correccion_motor: str = Field(default="activeia")
+    ai_gateway_url: str = Field(default="http://127.0.0.1:8011")
+    # Namespaced a proposito: la regla del gateway es que un modelo con "/" se
+    # rutea por OpenRouter. Sin namespace se va al proveedor nativo.
+    correccion_model: str = Field(default="google/gemini-2.5-flash-lite")
     execution_service_url: str = Field(default="http://127.0.0.1:8013")
     academic_service_url: str = Field(default="http://127.0.0.1:8002")
 
