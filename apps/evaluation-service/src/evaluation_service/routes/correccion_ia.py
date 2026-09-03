@@ -222,6 +222,35 @@ async def disparar_correccion(
         await db.flush()
         await db.refresh(correccion)
 
+    # ── COMMIT ANTES DE ENTREGAR EL ID ───────────────────────────────────
+    #
+    # La tarea de fondo abre **su propia sesión** —otra transacción, otra
+    # conexión— y lo primero que hace es `db.get(CorreccionIA, correccion_id)`.
+    # Un `flush()` manda el INSERT pero NO commitea: la fila existe dentro de
+    # ESTA transacción y en ningún otro lado. Sin este commit se le pasa a otro
+    # proceso el id de algo que todavía no es durable.
+    #
+    # No es teórico. En producción, el 2026-09-03: la ruta logeaba
+    # `activeia_correccion_disparada` y **89 ms después** la tarea de fondo
+    # logeaba `activeia_correccion_desaparecida` y se iba. La fila quedaba
+    # `pending` para siempre, el panel giraba, y seis minutos más tarde el
+    # reconciliador la cerraba con "quedó a medias, probablemente por un
+    # reinicio del servicio" — un mensaje que apuntaba al lugar equivocado.
+    #
+    # **Toda corrección nueva moría acá**, antes del sandbox y antes del motor.
+    # No se notó durante meses porque este camino nunca corrió en producción:
+    # Active-IA estuvo siempre apagado y sin una sola rúbrica sincronizada. Se
+    # destapó al encender el corrector propio.
+    #
+    # El `reintento` no lo necesita —esa fila está commiteada hace rato— y por
+    # eso los reintentos sí llegaban al sandbox: dos síntomas distintos de la
+    # misma pantalla, con causas distintas.
+    #
+    # La regla, que vale para cualquier `BackgroundTask` de este repo: **si le
+    # pasás el id de una fila a otro proceso, la fila tiene que estar
+    # commiteada primero.**
+    await db.commit()
+
     # El trabajo va a background con SU PROPIA sesión: la del request se cierra
     # apenas sale el 202, y sostenerla los 180s que puede durar agotaría el
     # pool (que es de 8) con cuatro docentes disparando a la vez.

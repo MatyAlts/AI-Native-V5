@@ -52,6 +52,8 @@ export function CorreccionIAPanel({ entregaId, orden, getToken, onCambio }: Prop
   // `setTimeout` recursivo y no `setInterval`: con interval, una respuesta
   // lenta se solapa con el tick siguiente y se acumulan requests.
   const timerRef = useRef<number | null>(null)
+  // Cuantas consultas seguidas fallaron. El poll las tragaba en silencio.
+  const [fallosDeConsulta, setFallosDeConsulta] = useState(0)
   // `onCambio` por ref y no en las deps: el padre lo define inline, o sea
   // referencia nueva en cada render. En las deps de un `useEffect` eso es el
   // loop infinito con 429 que el repo ya documenta.
@@ -84,12 +86,16 @@ export function CorreccionIAPanel({ entregaId, orden, getToken, onCambio }: Prop
     timerRef.current = window.setTimeout(async () => {
       try {
         const fresca = await getCorreccionIA(entregaId, id, getToken)
+        setFallosDeConsulta(0)
         setCorreccion(fresca)
         // El padre se entera en cada tick del poll, no solo al final: asi la
         // card aparece en cuanto la primera correccion termina.
         onCambioRef.current?.(fresca)
       } catch {
-        // idem
+        // NO se puede seguir en silencio: sin esto el panel se queda con el
+        // estado viejo y finge que la correccion sigue en curso. Se cuenta y a
+        // partir del tercero se avisa — uno suelto es una hipo de red.
+        setFallosDeConsulta((n) => n + 1)
       }
     }, POLL_MS)
     return () => {
@@ -134,9 +140,27 @@ export function CorreccionIAPanel({ entregaId, orden, getToken, onCambio }: Prop
   }
 
   if (correccion) {
+    // `pending` y `running` NO son lo mismo, y mostrarlos igual costo dos dias
+    // de diagnostico en produccion (2026-09-03). `pending` = el trabajo todavia
+    // no arranco: esta esperando un cupo, o murio antes de empezar. `running` =
+    // esta trabajando de verdad. Con un solo cartel, "hace cola" y "corrige"
+    // eran indistinguibles, y el docente no tenia forma de saber que mirar.
+    const enCola = correccion.estado === "pending"
     return (
       <p className="text-xs text-muted" data-testid="correccion-ia-en-curso">
-        Corrigiendo... esto puede tardar un par de minutos.
+        {enCola
+          ? "En cola... esperando turno para corregir."
+          : "Corrigiendo... esto puede tardar un par de minutos."}
+        {fallosDeConsulta >= 3 && (
+          // El poll se tragaba los fallos en silencio: si el GET de estado
+          // fallaba, el panel se quedaba con el estado viejo y mostraba
+          // "Corrigiendo..." para siempre, sin un solo cartel. Una correccion
+          // podia haber cerrado con error diez minutos antes.
+          <span className="block text-danger" data-testid="correccion-ia-sin-contacto">
+            No se pudo consultar el estado. Lo de arriba puede estar
+            desactualizado — recarga la pagina.
+          </span>
+        )}
       </p>
     )
   }

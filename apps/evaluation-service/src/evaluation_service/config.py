@@ -58,7 +58,8 @@ class Settings(BaseSettings):
     # `activeia` es lo de siempre y es el DEFAULT: prender un motor nuevo por
     # omisión cambiaría notas de alumnos sin que nadie lo decida.
     #
-    # `nativo` corrige contra `Ejercicio.rubrica` —la que el docente escribió—
+    # `nativa` —con A, es el valor EXACTO que compara el código— corrige
+    # contra `Ejercicio.rubrica` —la que el docente escribió—
     # pasando por el ai-gateway. Ver `correccion_nativa.py` para el porqué.
     correccion_motor: str = Field(default="activeia")
     ai_gateway_url: str = Field(default="http://127.0.0.1:8011")

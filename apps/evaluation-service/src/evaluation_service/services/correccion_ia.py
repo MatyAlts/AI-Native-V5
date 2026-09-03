@@ -372,6 +372,9 @@ def mapear_error_activeia(error_code: str | None, mensaje: str) -> tuple[str, bo
         "GATEWAY_ERROR",
         "SIN_PROMPT",
         "MODELO_NO_RESPETO_RUBRICA",
+        # El servicio estaba saturado y esta corrección no consiguió turno.
+        # Nada malo en la entrega: reintentar más tarde es LO correcto.
+        "SIN_CUPO",
         # ── Códigos que el flujo YA NO EMITE (2026-08-27) ──────────────────
         #
         # Salían del camino de tres pasos: `SIN_ENTREGA_ID` de un 201 sin id y

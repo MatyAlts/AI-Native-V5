@@ -39,6 +39,12 @@ _semaforo = asyncio.Semaphore(_MAX_CONCURRENTES)
 # Presupuesto TOTAL de una corrección, de punta a punta.
 PRESUPUESTO_TOTAL_S = 180.0
 
+# Cuánto se espera un cupo libre antes de rendirse. Dos presupuestos completos:
+# con 3 cupos, si en 360s no se liberó ninguno es que las de adelante están
+# rotas, y hacer esperar más al docente no mejora nada. Rendirse con un mensaje
+# es infinitamente mejor que quedarse en `pending` sin decir por qué.
+ESPERA_MAX_CUPO_S = PRESUPUESTO_TOTAL_S * 2
+
 # Una `running` más vieja que esto es de un proceso que ya no existe.
 _UMBRAL_HUERFANA = timedelta(seconds=PRESUPUESTO_TOTAL_S * 2)
 
@@ -178,7 +184,32 @@ async def con_semaforo_y_presupuesto(coro_factory, *, tenant_id: UUID, correccio
     Nada de esto se propaga hacia afuera: corre en un `BackgroundTask`, la
     respuesta 202 ya salió y no hay quién atrape una excepción acá.
     """
-    async with _semaforo:
+    # **La espera del cupo tiene techo, y se logea.** El `async with` va antes
+    # del `try`, antes del reloj y antes de cualquier log: un trabajo sin cupo
+    # es COMPLETAMENTE invisible —no arranca, no falla, no avisa— y su fila se
+    # queda en `pending`, que en el panel del docente se ve idéntico a "está
+    # trabajando". Con sólo 3 cupos y 180s cada uno, el cuarto click de una
+    # tanda espera nueve minutos sin que nada lo diga.
+    #
+    # El presupuesto de 180s sigue arrancando DESPUÉS del cupo, a propósito: la
+    # espera no le puede comer el tiempo al trabajo. Lo que se agrega es un
+    # techo para la espera en sí.
+    try:
+        await asyncio.wait_for(_semaforo.acquire(), timeout=ESPERA_MAX_CUPO_S)
+    except TimeoutError:
+        log.warning(
+            "activeia_correccion_sin_cupo",
+            correccion_id=str(correccion_id),
+            espera_s=ESPERA_MAX_CUPO_S,
+            detalle=(
+                "No consiguió turno para correr. Las otras correcciones en vuelo "
+                "están tardando más de lo previsto."
+            ),
+        )
+        await _cerrar_sin_cupo(tenant_id, correccion_id)
+        return None
+
+    try:
         try:
             return await asyncio.wait_for(coro_factory(), timeout=PRESUPUESTO_TOTAL_S)
         except TimeoutError:
@@ -195,6 +226,36 @@ async def con_semaforo_y_presupuesto(coro_factory, *, tenant_id: UUID, correccio
             log.exception("activeia_correccion_escapo", correccion_id=str(correccion_id))
             await _cerrar_sin_escapar(tenant_id, correccion_id)
         return None
+    finally:
+        _semaforo.release()
+
+
+async def _cerrar_sin_cupo(tenant_id: UUID, correccion_id: UUID) -> None:
+    """Cierra una corrección que nunca consiguió turno.
+
+    `SIN_CUPO` es infraestructura: no hay nada mal en la entrega ni en el
+    ejercicio, simplemente el servicio estaba saturado. Reintentar más tarde es
+    exactamente lo correcto, y por eso el código está en el set de infra de
+    `mapear_error_activeia` — ese flag es lo único que decide si la UI muestra
+    el botón.
+    """
+    from evaluation_service.services.correccion_ia import marcar_error
+
+    try:
+        async with tenant_session(tenant_id) as db:
+            c = await db.get(CorreccionIA, correccion_id)
+            if c is not None and c.estado in ("pending", "running"):
+                marcar_error(
+                    c,
+                    error_code="SIN_CUPO",
+                    detalle=(
+                        "El servicio estaba corrigiendo otras entregas y esta no consiguió "
+                        "turno a tiempo. No se llegó a ninguna nota. Probá de nuevo en un rato."
+                    ),
+                    es_infraestructura=True,
+                )
+    except Exception:
+        log.exception("activeia_no_se_pudo_cerrar_sin_cupo", correccion_id=str(correccion_id))
 
 
 async def _cerrar_sin_escapar(tenant_id: UUID, correccion_id: UUID) -> None:

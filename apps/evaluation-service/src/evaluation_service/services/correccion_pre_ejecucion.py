@@ -20,6 +20,7 @@ funciona" necesita algo objetivo detrás.
 from __future__ import annotations
 
 import asyncio
+import time
 from dataclasses import dataclass, field
 from typing import Any
 from uuid import UUID
@@ -121,20 +122,40 @@ async def correr_tests(
 async def _esperar_resultado(
     base: str, execution_id: str, headers: dict[str, str]
 ) -> ResultadoTests:
-    """Poletea hasta que el sandbox termine, con un presupuesto TOTAL.
+    """Poletea hasta que el sandbox termine, con un presupuesto de RELOJ.
 
     Total y no por intento: N intentos de 30s son 30s o son diez minutos según
     cuántos hagan falta, y un docente esperando no puede depender de eso.
+
+    **Se mide contra el reloj, no descontando la siesta.** Hasta el 2026-09-03
+    esto hacía `restante -= _POLL_INTERVAL_S`, o sea que sólo contaba el
+    `sleep` y no lo que tardaba el request — que puede llegar a los 15s de su
+    propio timeout. Con las consultas lentas, el bucle daba 80 vueltas de 16,5
+    segundos reales cada una (veintidós minutos de reloj) mientras el contador
+    creía haber gastado 120.
+
+    El efecto no era "tarda un poco más": el que terminaba cortando era el
+    presupuesto de 180s de `con_semaforo_y_presupuesto`, que **cancela sin
+    logear el motivo**. Así que un sandbox lento se veía igual que un sandbox
+    colgado, y en los dos casos el docente leía "quedó a medias".
     """
-    restante = _POLL_TIMEOUT_S
-    while restante > 0:
+    limite = time.monotonic() + _POLL_TIMEOUT_S
+    while time.monotonic() < limite:
         await asyncio.sleep(_POLL_INTERVAL_S)
-        restante -= _POLL_INTERVAL_S
         try:
             async with httpx.AsyncClient(timeout=15.0) as http:
                 r = await http.get(f"{base}/api/v1/executions/{execution_id}", headers=headers)
-        except httpx.HTTPError:
-            continue  # un fallo de red suelto no cancela; el presupuesto manda
+        except httpx.HTTPError as e:
+            # Un fallo de red suelto no cancela; el presupuesto manda. Pero se
+            # LOGEA: tragárselo en silencio hacía que un sandbox inalcanzable
+            # se viera exactamente igual que uno que tarda, y las dos cosas se
+            # arreglan de formas distintas.
+            log.warning(
+                "correccion_sandbox_consulta_fallo",
+                execution_id=execution_id,
+                error=type(e).__name__,
+            )
+            continue
         if r.status_code != 200:
             continue
         cuerpo = r.json()
