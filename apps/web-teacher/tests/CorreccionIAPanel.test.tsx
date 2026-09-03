@@ -166,3 +166,33 @@ describe("el PDF de devolucion", () => {
     expect(screen.queryByTestId("correccion-ia-pdf")).not.toBeInTheDocument()
   })
 })
+
+describe("«en cola» y «corrigiendo» no son lo mismo", () => {
+  /**
+   * Mostrarlos con el mismo cartel costo dos dias de diagnostico en produccion
+   * (2026-09-03). `pending` significa que el trabajo TODAVIA NO ARRANCO: esta
+   * esperando un cupo del semaforo, o murio antes de empezar y su fila quedo
+   * huerfana. `running` significa que esta trabajando de verdad.
+   *
+   * Con un solo cartel, "hace cola" y "corrige" eran indistinguibles — y
+   * tambien lo era "esto se rompio hace diez minutos y nadie te lo dijo".
+   *
+   * Verificado por reversion colapsando los dos estados a un solo texto: los
+   * dos tests de abajo caen en rojo por assert.
+   */
+  test("pending dice que esta esperando turno, no que esta corrigiendo", async () => {
+    render([correccion({ estado: "pending", nota_100: null, finished_at: null })])
+
+    const cartel = await screen.findByTestId("correccion-ia-en-curso")
+    expect(cartel).toHaveTextContent(/en cola/i)
+    expect(cartel).not.toHaveTextContent(/Corrigiendo/i)
+  })
+
+  test("running si dice que esta corrigiendo", async () => {
+    render([correccion({ estado: "running", nota_100: null, finished_at: null })])
+
+    const cartel = await screen.findByTestId("correccion-ia-en-curso")
+    expect(cartel).toHaveTextContent(/Corrigiendo/i)
+    expect(cartel).not.toHaveTextContent(/en cola/i)
+  })
+})
