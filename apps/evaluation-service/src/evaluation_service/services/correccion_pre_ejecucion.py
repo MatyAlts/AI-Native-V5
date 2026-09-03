@@ -20,6 +20,7 @@ funciona" necesita algo objetivo detrás.
 from __future__ import annotations
 
 import asyncio
+import time
 from dataclasses import dataclass, field
 from typing import Any
 from uuid import UUID
@@ -32,8 +33,21 @@ from evaluation_service.config import settings
 log = structlog.get_logger()
 
 # Cuánto esperamos a que el sandbox termine. El wall time por corrida es de
-# 10s (ADR-060); con N casos y la cola, 120s es holgado sin ser eterno.
-_POLL_TIMEOUT_S = 120.0
+# 10s (ADR-060); con N casos y la cola, 90s es holgado sin ser eterno.
+#
+# **Bajado de 120 a 90 el 2026-09-03, y es aritmética, no gusto.** El paso 1 de
+# una corrección puede consumir, en el peor caso: 30s del POST inicial + este
+# presupuesto + una última consulta de 15s. Con 120 eso daba 166,5s de un
+# `PRESUPUESTO_TOTAL_S` de 180 — o sea que un sandbox lento se comía el
+# presupuesto entero y la corrección moría por cancelación ANTES de pedirle
+# nada al motor, sin logear el motivo. Que es exactamente el síntoma que el
+# arreglo del presupuesto por reloj vino a cerrar.
+#
+# Con 90 quedan ~43s para el motor. Sigue siendo justo: la llamada al gateway
+# tiene su propio timeout de 90s, así que el peor caso teórico todavía supera
+# los 180. Cerrar eso del todo es subir `PRESUPUESTO_TOTAL_S`, y esa es una
+# decisión aparte — cambia cuánto espera un docente frente a la pantalla.
+_POLL_TIMEOUT_S = 90.0
 _POLL_INTERVAL_S = 1.5
 
 
@@ -121,20 +135,47 @@ async def correr_tests(
 async def _esperar_resultado(
     base: str, execution_id: str, headers: dict[str, str]
 ) -> ResultadoTests:
-    """Poletea hasta que el sandbox termine, con un presupuesto TOTAL.
+    """Poletea hasta que el sandbox termine, con un presupuesto de RELOJ.
 
     Total y no por intento: N intentos de 30s son 30s o son diez minutos según
     cuántos hagan falta, y un docente esperando no puede depender de eso.
+
+    **Se mide contra el reloj, no descontando la siesta.** Hasta el 2026-09-03
+    esto hacía `restante -= _POLL_INTERVAL_S`, o sea que sólo contaba el
+    `sleep` y no lo que tardaba el request — que puede llegar a los 15s de su
+    propio timeout. Con las consultas lentas, el bucle daba 80 vueltas de 16,5
+    segundos reales cada una (veintidós minutos de reloj) mientras el contador
+    creía haber gastado 120.
+
+    El efecto no era "tarda un poco más": el que terminaba cortando era el
+    presupuesto de 180s de `con_semaforo_y_presupuesto`, que **cancela sin
+    logear el motivo**. Así que un sandbox lento se veía igual que un sandbox
+    colgado, y en los dos casos el docente leía "quedó a medias".
     """
-    restante = _POLL_TIMEOUT_S
-    while restante > 0:
+    limite = time.monotonic() + _POLL_TIMEOUT_S
+    fallos = 0
+    while time.monotonic() < limite:
         await asyncio.sleep(_POLL_INTERVAL_S)
-        restante -= _POLL_INTERVAL_S
         try:
             async with httpx.AsyncClient(timeout=15.0) as http:
                 r = await http.get(f"{base}/api/v1/executions/{execution_id}", headers=headers)
-        except httpx.HTTPError:
-            continue  # un fallo de red suelto no cancela; el presupuesto manda
+        except httpx.HTTPError as e:
+            # Un fallo de red suelto no cancela; el presupuesto manda. Pero se
+            # LOGEA: tragárselo en silencio hacía que un sandbox inalcanzable
+            # se viera exactamente igual que uno que tarda, y las dos cosas se
+            # arreglan de formas distintas.
+            #
+            # **Sólo el primero.** Un `connection refused` falla en
+            # milisegundos, así que logear cada vuelta serían ~80 warnings por
+            # corrección × 3 concurrentes. El resumen con el total va al salir.
+            fallos += 1
+            if fallos == 1:
+                log.warning(
+                    "correccion_sandbox_consulta_fallo",
+                    execution_id=execution_id,
+                    error=type(e).__name__,
+                )
+            continue
         if r.status_code != 200:
             continue
         cuerpo = r.json()
@@ -147,6 +188,12 @@ async def _esperar_resultado(
             # `_mapear`. Se conserva por si el contrato del otro lado crece.
             raise PreEjecucionError("El sandbox terminó con error.", error_code="SANDBOX_ERROR")
 
+    if fallos:
+        log.warning(
+            "correccion_sandbox_inalcanzable",
+            execution_id=execution_id,
+            consultas_fallidas=fallos,
+        )
     raise PreEjecucionError(
         "El sandbox no devolvió resultado a tiempo.", error_code="SANDBOX_TIMEOUT"
     )

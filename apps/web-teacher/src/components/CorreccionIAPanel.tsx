@@ -52,6 +52,8 @@ export function CorreccionIAPanel({ entregaId, orden, getToken, onCambio }: Prop
   // `setTimeout` recursivo y no `setInterval`: con interval, una respuesta
   // lenta se solapa con el tick siguiente y se acumulan requests.
   const timerRef = useRef<number | null>(null)
+  // Cuantas consultas seguidas fallaron. El poll las tragaba en silencio.
+  const [fallosDeConsulta, setFallosDeConsulta] = useState(0)
   // `onCambio` por ref y no en las deps: el padre lo define inline, o sea
   // referencia nueva en cada render. En las deps de un `useEffect` eso es el
   // loop infinito con 429 que el repo ya documenta.
@@ -81,24 +83,47 @@ export function CorreccionIAPanel({ entregaId, orden, getToken, onCambio }: Prop
       return
     }
     const id = correccion.id
+    // Backoff al fallar: 3s, 6s, 9s, y de ahí 12s como techo. Si el servicio no
+    // está, martillarlo cada 3 segundos no lo trae de vuelta — y multiplica el
+    // ruido justo cuando alguien está mirando los logs para entender qué pasa.
+    const espera = POLL_MS * (1 + Math.min(fallosDeConsulta, 3))
     timerRef.current = window.setTimeout(async () => {
       try {
         const fresca = await getCorreccionIA(entregaId, id, getToken)
+        setFallosDeConsulta(0)
         setCorreccion(fresca)
         // El padre se entera en cada tick del poll, no solo al final: asi la
         // card aparece en cuanto la primera correccion termina.
         onCambioRef.current?.(fresca)
       } catch {
-        // idem
+        // NO se puede seguir en silencio: sin esto el panel se queda con el
+        // estado viejo y finge que la correccion sigue en curso. Se cuenta y a
+        // partir del tercero se avisa — uno suelto es una hipo de red.
+        setFallosDeConsulta((n) => n + 1)
       }
-    }, POLL_MS)
+    }, espera)
+    // `fallosDeConsulta` VA en las deps, y no es cosmetico: es lo unico que
+    // reagenda el poll cuando la consulta falla. (Y se LEE, para el backoff:
+    // biome tenia razon en que una dep que no se usa se ve como sobrante, y la
+    // respuesta correcta no era silenciar la regla sino que el dato sirviera.)
+    //
+    // El bucle se sostiene porque cada tick exitoso hace `setCorreccion(fresca)`
+    // —objeto nuevo, dep distinta, effect de nuevo, timer de nuevo—. En el
+    // camino de error no se toca `correccion`, asi que sin esta dep NINGUNA dep
+    // cambia: el effect no vuelve a correr, no se agenda otro timer, y **el
+    // poll muere en el primer fallo**. El contador queda clavado en 1 y el
+    // cartel de abajo (que pide 3) es codigo muerto.
+    //
+    // Es exactamente el mismo mecanismo que el gotcha de `useEffect` que el
+    // repo ya documenta, visto del otro lado: alla una dep inestable hacia
+    // girar el effect para siempre; aca una dep faltante lo mata.
     return () => {
       if (timerRef.current !== null) {
         window.clearTimeout(timerRef.current)
         timerRef.current = null
       }
     }
-  }, [correccion, entregaId, getToken])
+  }, [correccion, entregaId, getToken, fallosDeConsulta])
 
   async function pedir(confirmado: boolean) {
     setCargando(true)
@@ -134,9 +159,27 @@ export function CorreccionIAPanel({ entregaId, orden, getToken, onCambio }: Prop
   }
 
   if (correccion) {
+    // `pending` y `running` NO son lo mismo, y mostrarlos igual costo dos dias
+    // de diagnostico en produccion (2026-09-03). `pending` = el trabajo todavia
+    // no arranco: esta esperando un cupo, o murio antes de empezar. `running` =
+    // esta trabajando de verdad. Con un solo cartel, "hace cola" y "corrige"
+    // eran indistinguibles, y el docente no tenia forma de saber que mirar.
+    const enCola = correccion.estado === "pending"
     return (
       <p className="text-xs text-muted" data-testid="correccion-ia-en-curso">
-        Corrigiendo... esto puede tardar un par de minutos.
+        {enCola
+          ? "En cola... esperando turno para corregir."
+          : "Corrigiendo... esto puede tardar un par de minutos."}
+        {fallosDeConsulta >= 3 && (
+          // El poll se tragaba los fallos en silencio: si el GET de estado
+          // fallaba, el panel se quedaba con el estado viejo y mostraba
+          // "Corrigiendo..." para siempre, sin un solo cartel. Una correccion
+          // podia haber cerrado con error diez minutos antes.
+          <span className="block text-danger" data-testid="correccion-ia-sin-contacto">
+            No se pudo consultar el estado. Lo de arriba puede estar desactualizado — recarga la
+            pagina.
+          </span>
+        )}
       </p>
     )
   }

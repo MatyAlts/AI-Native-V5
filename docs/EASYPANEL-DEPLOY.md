@@ -98,7 +98,29 @@ Su paso 0 avisa si Docker corre **rootless** — en ese caso el runner sobra.
 `SERVICE_NAME, SERVICE_PORT, ENVIRONMENT, LOG_LEVEL, LOG_FORMAT, CORS_ORIGINS, OTEL_ENDPOINT, SENTRY_DSN, KEYCLOAK_URL, KEYCLOAK_REALM, ACADEMIC_DB_URL, DB_ECHO, GOVERNANCE_SERVICE_URL, AI_GATEWAY_URL, CONTENT_SERVICE_URL, CLASSIFIER_SERVICE_URL, TP_GENERATOR_PROMPT_VERSION, TP_GENERATOR_DEFAULT_MODEL, EJERCICIO_GENERATOR_PROMPT_VERSION, EJERCICIO_GENERATOR_DEFAULT_MODEL`
 
 ### evaluation-service
-`SERVICE_NAME, SERVICE_PORT, ENVIRONMENT, LOG_LEVEL, LOG_FORMAT, CORS_ORIGINS, OTEL_ENDPOINT, SENTRY_DSN, KEYCLOAK_URL, KEYCLOAK_REALM, ACADEMIC_DB_URL, CTR_SERVICE_URL, ACADEMIC_SERVICE_URL, ACTIVEIA_ENABLED, ACTIVEIA_MASTER_KEY, ACTIVEIA_URL, ACTIVEIA_SYNC_RUBRICAS_ENABLED`
+`SERVICE_NAME, SERVICE_PORT, ENVIRONMENT, LOG_LEVEL, LOG_FORMAT, CORS_ORIGINS, OTEL_ENDPOINT, SENTRY_DSN, KEYCLOAK_URL, KEYCLOAK_REALM, ACADEMIC_DB_URL, CTR_SERVICE_URL, ACADEMIC_SERVICE_URL, EXECUTION_SERVICE_URL, AI_GATEWAY_URL, GOVERNANCE_SERVICE_URL, CORRECCION_MOTOR, CORRECCION_MODEL, ACTIVEIA_ENABLED, ACTIVEIA_MASTER_KEY, ACTIVEIA_URL, ACTIVEIA_SYNC_RUBRICAS_ENABLED`
+
+> **Las tres URL de servicios internos NO son opcionales, aunque el codigo tenga default.**
+> `EXECUTION_SERVICE_URL`, `AI_GATEWAY_URL` y `GOVERNANCE_SERVICE_URL` defaultean a
+> `http://127.0.0.1:<puerto>` — que **adentro del contenedor apunta a si mismo**. El servicio
+> arranca igual, contesta `/health` igual, y falla recien cuando alguien dispara una correccion.
+>
+> Es el mismo modo de falla que costo el incidente del 2026-08-03 con el api-gateway (sin
+> `EXECUTION_SERVICE_URL` apuntaba a `127.0.0.1:8013`, o sea a si mismo) y se repitio en
+> septiembre con el evaluation-service. **Copiar los valores del `tutor-service`**, que ya los
+> tiene resueltos contra la red interna. No inventarlos.
+
+> **`CORRECCION_MOTOR` elige quien corrige, y el valor es `nativa` — con A.**
+> Default `activeia` (el camino de siempre). `nativa` corrige contra `Ejercicio.rubrica`, la que
+> el docente escribio, pasando por el ai-gateway.
+>
+> Un valor que el codigo no reconoce **cae a `activeia` en silencio**: `pydantic-settings` ignora
+> las extras y la comparacion es por igualdad exacta. Un `CORRECCION_MOTOR=nativo` mal tipeado no
+> da error — corrige con el motor equivocado.
+>
+> Y para que `nativa` funcione hacen falta DOS deploys, no uno: el `evaluation-service` (el
+> codigo) y el `governance-service` (el prompt `correccion/v1.0.0` viaja **adentro de su imagen**,
+> via `COPY . /app`). Sin el segundo, toda correccion cierra con `SIN_PROMPT`.
 
 > **Corrección asistida por Active-IA — leer antes del primer deploy con esto adentro.**
 >

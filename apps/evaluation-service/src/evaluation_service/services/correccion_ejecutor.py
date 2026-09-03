@@ -86,6 +86,7 @@ async def ejecutar_correccion(
     alumno_nombre: str,
     ejercicio_ref: str,
     headers_sandbox: dict[str, str],
+    es_reintento: bool = False,
 ) -> None:
     """El trabajo completo. NUNCA levanta: todo fallo termina en la fila.
 
@@ -114,7 +115,14 @@ async def ejecutar_correccion(
         if c is None:
             log.error("activeia_correccion_desaparecida", correccion_id=str(correccion_id))
             return
-        es_reintento = c.started_at is not None
+        # `es_reintento` VIENE de la ruta, que es la única que sabe si esto
+        # entró por la rama `existente`. Antes se infería con
+        # `c.started_at is not None`, y esa inferencia se rompió al commitear
+        # antes de entregar el id: `reabrir_para_reintento` deja `started_at`
+        # en NULL, así que ahora la tarea lee el NULL ya commiteado y todo
+        # reintento se contaba como primera vez. No cambia ninguna nota —
+        # ensucia `correcciones_disparadas_total{tipo}` y el log, que son
+        # justamente lo que se mira cuando algo se reintenta en loop.
         c.estado = "running"
         c.started_at = datetime.now(UTC)
 
