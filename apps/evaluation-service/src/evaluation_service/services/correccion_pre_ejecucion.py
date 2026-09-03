@@ -33,8 +33,21 @@ from evaluation_service.config import settings
 log = structlog.get_logger()
 
 # Cuánto esperamos a que el sandbox termine. El wall time por corrida es de
-# 10s (ADR-060); con N casos y la cola, 120s es holgado sin ser eterno.
-_POLL_TIMEOUT_S = 120.0
+# 10s (ADR-060); con N casos y la cola, 90s es holgado sin ser eterno.
+#
+# **Bajado de 120 a 90 el 2026-09-03, y es aritmética, no gusto.** El paso 1 de
+# una corrección puede consumir, en el peor caso: 30s del POST inicial + este
+# presupuesto + una última consulta de 15s. Con 120 eso daba 166,5s de un
+# `PRESUPUESTO_TOTAL_S` de 180 — o sea que un sandbox lento se comía el
+# presupuesto entero y la corrección moría por cancelación ANTES de pedirle
+# nada al motor, sin logear el motivo. Que es exactamente el síntoma que el
+# arreglo del presupuesto por reloj vino a cerrar.
+#
+# Con 90 quedan ~43s para el motor. Sigue siendo justo: la llamada al gateway
+# tiene su propio timeout de 90s, así que el peor caso teórico todavía supera
+# los 180. Cerrar eso del todo es subir `PRESUPUESTO_TOTAL_S`, y esa es una
+# decisión aparte — cambia cuánto espera un docente frente a la pantalla.
+_POLL_TIMEOUT_S = 90.0
 _POLL_INTERVAL_S = 1.5
 
 
@@ -140,6 +153,7 @@ async def _esperar_resultado(
     colgado, y en los dos casos el docente leía "quedó a medias".
     """
     limite = time.monotonic() + _POLL_TIMEOUT_S
+    fallos = 0
     while time.monotonic() < limite:
         await asyncio.sleep(_POLL_INTERVAL_S)
         try:
@@ -150,11 +164,17 @@ async def _esperar_resultado(
             # LOGEA: tragárselo en silencio hacía que un sandbox inalcanzable
             # se viera exactamente igual que uno que tarda, y las dos cosas se
             # arreglan de formas distintas.
-            log.warning(
-                "correccion_sandbox_consulta_fallo",
-                execution_id=execution_id,
-                error=type(e).__name__,
-            )
+            #
+            # **Sólo el primero.** Un `connection refused` falla en
+            # milisegundos, así que logear cada vuelta serían ~80 warnings por
+            # corrección × 3 concurrentes. El resumen con el total va al salir.
+            fallos += 1
+            if fallos == 1:
+                log.warning(
+                    "correccion_sandbox_consulta_fallo",
+                    execution_id=execution_id,
+                    error=type(e).__name__,
+                )
             continue
         if r.status_code != 200:
             continue
@@ -168,6 +188,12 @@ async def _esperar_resultado(
             # `_mapear`. Se conserva por si el contrato del otro lado crece.
             raise PreEjecucionError("El sandbox terminó con error.", error_code="SANDBOX_ERROR")
 
+    if fallos:
+        log.warning(
+            "correccion_sandbox_inalcanzable",
+            execution_id=execution_id,
+            consultas_fallidas=fallos,
+        )
     raise PreEjecucionError(
         "El sandbox no devolvió resultado a tiempo.", error_code="SANDBOX_TIMEOUT"
     )

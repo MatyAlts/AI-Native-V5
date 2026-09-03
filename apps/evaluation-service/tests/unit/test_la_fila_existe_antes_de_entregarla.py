@@ -191,6 +191,116 @@ class TestElOrdenDeLasOperaciones:
         assert self.orden == ["flush", "commit", "add_task"], self.orden
 
 
+class TestLaRamaDeReintentoTambien:
+    """El commit tiene que cubrir las DOS ramas, y por motivos distintos.
+
+    La rama de INSERT lo necesita para que la fila exista. La de **reintento**
+    lo necesita todavía más: `reabrir_para_reintento` hace un `UPDATE ... SET
+    estado='pending'` que sin commit deja la fila **lockeada por la transacción
+    del request**. El `estado='running'` de la tarea de fondo es otro UPDATE
+    sobre esa misma fila: espera el lock. Y el request no commitea hasta que la
+    tarea termine. Espera circular, sin `lock_timeout` en ningún lado.
+
+    Si alguien mueve el `await db.commit()` adentro del `else`, los tests de la
+    clase de arriba siguen todos en verde y esta rama vuelve a colgarse.
+    """
+
+    @pytest.fixture
+    def client(self):
+        from evaluation_service.auth import get_db as _get_db
+        from evaluation_service.auth.dependencies import User, get_current_user
+        from evaluation_service.main import app
+        from fastapi.testclient import TestClient
+
+        self.docente = User(
+            id=uuid4(),
+            tenant_id=TENANT,
+            email="d@utn.edu.ar",
+            roles=frozenset({"docente"}),
+            realm="utn",
+        )
+        self.orden: list[str] = []
+        self.db = MagicMock()
+        self.db.add = MagicMock()
+        self.db.flush = AsyncMock()
+        self.db.refresh = AsyncMock(side_effect=_como_la_base)
+        self.db.commit = AsyncMock(side_effect=lambda: self.orden.append("commit"))
+
+        app.dependency_overrides[get_current_user] = lambda: self.docente
+        app.dependency_overrides[_get_db] = lambda: self.db
+        with TestClient(app) as c:
+            yield c
+        app.dependency_overrides.clear()
+
+    def test_un_reintento_tambien_commitea_antes_de_entregar_el_id(self, client) -> None:
+        from evaluation_service.models.correcciones_ia import CorreccionIA
+
+        entrega = _entrega()
+        art = EntregaArtefacto(
+            tenant_id=TENANT,
+            entrega_id=entrega.id,
+            orden=1,
+            codigo="print('hola')",
+            sha256="sha-del-codigo",
+            ejercicio_id=uuid4(),
+        )
+        art.language = "python"
+        # Una corrección que ya falló: es lo que habilita el reintento.
+        vieja = CorreccionIA(
+            tenant_id=TENANT,
+            entrega_id=entrega.id,
+            orden=1,
+            disparado_por=self.docente.id,
+            rubrica_id="nativa:abc",
+            artefacto_sha256="sha-del-codigo",
+        )
+        vieja.id = uuid4()
+        vieja.estado = "error"
+        _como_la_base(vieja)
+
+        self.db.execute = AsyncMock(
+            side_effect=[
+                _scalar(entrega),
+                MagicMock(first=MagicMock(return_value=(1,))),
+                _scalar(art),
+                _scalar(vieja),  # buscar_existente la encuentra
+                MagicMock(rowcount=1),  # el UPDATE de reabrir_para_reintento
+            ]
+        )
+
+        def _anotar_add_task(_self, *a, **k):
+            self.orden.append("add_task")
+
+        with (
+            patch("evaluation_service.routes.correccion_ia.settings") as st,
+            patch(
+                "evaluation_service.routes.correccion_ia.resolver_rubrica_del_motor",
+                AsyncMock(
+                    return_value=RubricaElegida(
+                        rubrica_id="nativa:abc", external_ref="", estado="local", simulada=False
+                    )
+                ),
+            ),
+            patch(
+                "evaluation_service.routes.correccion_ia.assert_cuota_disponible",
+                AsyncMock(return_value=99),
+            ),
+            patch.object(BackgroundTasks, "add_task", autospec=True, side_effect=_anotar_add_task),
+        ):
+            st.correccion_motor = "nativa"
+            st.activeia_enabled = False
+            r = client.post(
+                f"/api/v1/entregas/{entrega.id}/correccion-ia",
+                json={"ejercicio_orden": 1, "confirmado": True},
+            )
+
+        assert r.status_code == 202, r.text
+        assert self.orden == ["commit", "add_task"], (
+            f"el UPDATE del reintento se entrega sin commitear: la tarea de fondo "
+            f"va a esperar un lock que nadie suelta. Orden real: {self.orden}"
+        )
+
+
 class TestLaRegla:
     """La regla general, escrita donde se lee.
 

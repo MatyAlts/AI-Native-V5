@@ -34,7 +34,14 @@ log = structlog.get_logger()
 # El pool es de 8. Tres correcciones concurrentes dejan margen para que el
 # resto del servicio siga respondiendo.
 _MAX_CONCURRENTES = 3
-_semaforo = asyncio.Semaphore(_MAX_CONCURRENTES)
+# **Bounded** y no el pelado: desde que el release es MANUAL (`try/finally` en
+# vez de `async with`), un `release()` de más en un refactor futuro subiría
+# `_value` por encima de 3 **en silencio** y el techo de concurrencia
+# desaparecería sin un solo error. `BoundedSemaphore` tira `ValueError`.
+#
+# El `async with` hacía esto estructuralmente imposible; al sacarlo hay que
+# recuperar la garantía por otro lado.
+_semaforo = asyncio.BoundedSemaphore(_MAX_CONCURRENTES)
 
 # Presupuesto TOTAL de una corrección, de punta a punta.
 PRESUPUESTO_TOTAL_S = 180.0
@@ -184,12 +191,22 @@ async def con_semaforo_y_presupuesto(coro_factory, *, tenant_id: UUID, correccio
     Nada de esto se propaga hacia afuera: corre en un `BackgroundTask`, la
     respuesta 202 ya salió y no hay quién atrape una excepción acá.
     """
-    # **La espera del cupo tiene techo, y se logea.** El `async with` va antes
-    # del `try`, antes del reloj y antes de cualquier log: un trabajo sin cupo
-    # es COMPLETAMENTE invisible —no arranca, no falla, no avisa— y su fila se
-    # queda en `pending`, que en el panel del docente se ve idéntico a "está
-    # trabajando". Con sólo 3 cupos y 180s cada uno, el cuarto click de una
-    # tanda espera nueve minutos sin que nada lo diga.
+    # **La espera del cupo tiene techo, y se logea.**
+    #
+    # Hasta el 2026-09-03 esto era un `async with _semaforo:` que envolvía todo,
+    # o sea que la espera ocurría antes del `try`, antes del reloj y antes de
+    # cualquier log. Un trabajo sin cupo era COMPLETAMENTE invisible —no
+    # arranca, no falla, no avisa— y su fila se quedaba en `pending`, que en el
+    # panel del docente se ve idéntico a "está trabajando". Con 3 cupos y 180s
+    # cada uno, el cuarto click de una tanda esperaba nueve minutos sin que nada
+    # lo dijera.
+    #
+    # El `acquire()` explícito con `try/finally` es lo que permite ponerle
+    # techo. Sobre la seguridad del patrón: si el `wait_for` cancela un
+    # `acquire()` al que ya se le había otorgado el permiso, **Python 3.12 lo
+    # devuelve** (`asyncio/locks.py`, el `if not fut.cancelled()` del
+    # `except CancelledError`). El proyecto está pineado a `>=3.12,<3.13`; en
+    # versiones anteriores ese permiso se fugaba.
     #
     # El presupuesto de 180s sigue arrancando DESPUÉS del cupo, a propósito: la
     # espera no le puede comer el tiempo al trabajo. Lo que se agrega es un

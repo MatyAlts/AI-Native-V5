@@ -8,14 +8,25 @@
  *  - Que el preview no gaste nada y muestre con que rubrica se va a corregir.
  *  - Que el resultado se presente como SUGERENCIA, no como nota puesta.
  */
-import { screen, waitFor } from "@testing-library/react"
-import { describe, expect, test } from "vitest"
+import { act, screen, waitFor } from "@testing-library/react"
+import { afterEach, beforeEach, describe, expect, test, vi } from "vitest"
 import { CorreccionIAPanel } from "../src/components/CorreccionIAPanel"
 import type { CorreccionIA } from "../src/lib/api"
 import { renderWithRouter, setupFetchMock } from "./_mocks"
 
 const ENTREGA = "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee"
 const getToken = async () => null
+// El mismo valor que el componente. Con timers falsos, esperar 3s de verdad por
+// cada vuelta convertiria estos tests en diez segundos de reloj.
+const POLL_MS = 3000
+
+beforeEach(() => {
+  vi.useFakeTimers({ shouldAdvanceTime: true })
+})
+afterEach(() => {
+  vi.useRealTimers()
+  vi.unstubAllGlobals()
+})
 
 function correccion(over: Partial<CorreccionIA> = {}): CorreccionIA {
   return {
@@ -177,8 +188,9 @@ describe("«en cola» y «corrigiendo» no son lo mismo", () => {
    * Con un solo cartel, "hace cola" y "corrige" eran indistinguibles — y
    * tambien lo era "esto se rompio hace diez minutos y nadie te lo dijo".
    *
-   * Verificado por reversion colapsando los dos estados a un solo texto: los
-   * dos tests de abajo caen en rojo por assert.
+   * Verificado por reversion colapsando los dos estados a un solo texto:
+   * colapsando a "Corrigiendo..." cae el primero, colapsando al otro cae el
+   * segundo. Uno por reversion, no los dos juntos.
    */
   test("pending dice que esta esperando turno, no que esta corrigiendo", async () => {
     render([correccion({ estado: "pending", nota_100: null, finished_at: null })])
@@ -194,5 +206,91 @@ describe("«en cola» y «corrigiendo» no son lo mismo", () => {
     const cartel = await screen.findByTestId("correccion-ia-en-curso")
     expect(cartel).toHaveTextContent(/Corrigiendo/i)
     expect(cartel).not.toHaveTextContent(/en cola/i)
+  })
+})
+
+describe("el poll no puede morirse en silencio", () => {
+  /**
+   * El `catch` del poll no hacia nada. Si el GET de estado fallaba, el panel se
+   * quedaba con el estado viejo y seguia mostrando "Corrigiendo..." — una
+   * correccion podia haber cerrado con error diez minutos antes y el docente
+   * miraba una pantalla que le mentia.
+   *
+   * Y hay una segunda mitad, mas sutil, que es la que rompio el primer intento
+   * de arreglo: el poll se sostiene porque cada tick exitoso cambia
+   * `correccion`, y ESO reagenda el effect. En el camino de ERROR no se toca
+   * `correccion`, asi que si el contador de fallos no esta en las deps, ninguna
+   * dep cambia: el effect no vuelve a correr, no se agenda otro timer, y **el
+   * poll muere en el primer fallo**. El contador queda clavado en 1 y el cartel
+   * (que pide 3) nunca aparece — codigo muerto con cobertura en verde.
+   *
+   * Por eso el primer test cuenta REQUESTS y no mira el DOM: es lo unico que
+   * distingue "el poll sigue vivo" de "el poll murio calladito".
+   *
+   * Verificado por reversion sacando `fallosDeConsulta` de las deps del effect:
+   * los dos caen en rojo.
+   */
+  const EN_CURSO = correccion({ estado: "running", nota_100: null, finished_at: null })
+
+  function conElDetalleCaido(): { detalles: () => number } {
+    let detalles = 0
+    vi.stubGlobal(
+      "fetch",
+      vi.fn((url: string | URL | Request) => {
+        const u = typeof url === "string" ? url : url.toString()
+        // El detalle —el que poletea— falla SIEMPRE.
+        if (/\/correccion-ia\/[0-9a-f-]+/.test(u)) {
+          detalles += 1
+          return Promise.reject(new Error("sin contacto"))
+        }
+        // El listado inicial anda: hace falta para que el panel entre en el
+        // estado "en curso" y arranque a poletear.
+        if (u.includes("/correccion-ia")) {
+          return Promise.resolve({
+            ok: true,
+            status: 200,
+            json: () => Promise.resolve({ correcciones: [EN_CURSO] }),
+          } as Response)
+        }
+        return Promise.resolve({
+          ok: true,
+          status: 200,
+          json: () => Promise.resolve({ data: [], meta: { cursor_next: null } }),
+        } as Response)
+      }),
+    )
+    renderWithRouter(<CorreccionIAPanel entregaId={ENTREGA} orden={1} getToken={getToken} />)
+    return { detalles: () => detalles }
+  }
+
+  test("sigue reintentando despues de un fallo, no se muere en el primero", async () => {
+    const { detalles } = conElDetalleCaido()
+    await screen.findByTestId("correccion-ia-en-curso")
+
+    // Reloj de sobra para varias vueltas, contando el backoff (3s, 6s, 9s,
+    // 12s). Con el poll vivo se acumulan; con el poll muerto el contador se
+    // queda en 1 para siempre.
+    for (let i = 0; i < 6; i++) {
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(POLL_MS * 5)
+      })
+    }
+
+    expect(detalles()).toBeGreaterThanOrEqual(3)
+  })
+
+  test("a partir del tercer fallo avisa que lo que se ve puede estar viejo", async () => {
+    conElDetalleCaido()
+    await screen.findByTestId("correccion-ia-en-curso")
+
+    expect(screen.queryByTestId("correccion-ia-sin-contacto")).not.toBeInTheDocument()
+
+    for (let i = 0; i < 6; i++) {
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(POLL_MS * 5)
+      })
+    }
+
+    expect(screen.getByTestId("correccion-ia-sin-contacto")).toBeInTheDocument()
   })
 })

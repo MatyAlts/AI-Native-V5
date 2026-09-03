@@ -202,6 +202,7 @@ async def disparar_correccion(
         # nuevo chocaría y el docente recibiría un 500 sobre el botón que
         # existe para esto.
         correccion = existente
+        es_reintento = True
         structlog.get_logger().info(
             "activeia_correccion_reintentada",
             correccion_id=str(correccion.id),
@@ -218,6 +219,7 @@ async def disparar_correccion(
             estado="pending",
             artefacto_sha256=artefacto.sha256,
         )
+        es_reintento = False
         db.add(correccion)
         await db.flush()
         await db.refresh(correccion)
@@ -242,18 +244,35 @@ async def disparar_correccion(
     # Active-IA estuvo siempre apagado y sin una sola rúbrica sincronizada. Se
     # destapó al encender el corrector propio.
     #
-    # El `reintento` no lo necesita —esa fila está commiteada hace rato— y por
-    # eso los reintentos sí llegaban al sandbox: dos síntomas distintos de la
-    # misma pantalla, con causas distintas.
+    # **Y el reintento lo necesita todavía más, por otro motivo.**
+    # `reabrir_para_reintento` hace un `UPDATE ... SET estado='pending'` que sin
+    # commit deja la fila **lockeada por la transacción del request**. El
+    # `db.get` de la tarea no bloquea (Postgres es MVCC), pero su
+    # `estado='running'` es otro UPDATE sobre esa misma fila: espera el lock. Y
+    # la transacción del request no commitea hasta que la tarea de fondo
+    # termine. **Espera circular**, y sin `lock_timeout` configurado en ningún
+    # lado, para siempre — colgando el task, su conexión y su cupo del semáforo.
+    #
+    # O sea que los dos caminos estaban rotos, de formas distintas: la fila
+    # nueva moría al instante con `desaparecida`, y el reintento se colgaba en
+    # un abrazo mortal. Dos síntomas idénticos en pantalla.
     #
     # La regla, que vale para cualquier `BackgroundTask` de este repo: **si le
     # pasás el id de una fila a otro proceso, la fila tiene que estar
     # commiteada primero.**
     await db.commit()
 
-    # El trabajo va a background con SU PROPIA sesión: la del request se cierra
-    # apenas sale el 202, y sostenerla los 180s que puede durar agotaría el
-    # pool (que es de 8) con cuatro docentes disparando a la vez.
+    # El trabajo va a background con SU PROPIA sesión.
+    #
+    # **Y no porque la del request se cierre antes** —eso decía acá y es falso:
+    # con este FastAPI el teardown de las dependencias con `yield` corre DESPUÉS
+    # de los background tasks, verificado contra 0.139.2. La razón real es el
+    # pool, que es de 8 (`pool_size=2, max_overflow=6`): sostener la conexión del
+    # request durante todo el trabajo lo agotaría con cuatro docentes disparando
+    # a la vez.
+    #
+    # El `commit()` de arriba, además de hacer durable la fila, **devuelve esa
+    # conexión al pool** en vez de retenerla hasta que la tarea termine.
     #
     # Los headers del sandbox se arman ACÁ, con la identidad de este request:
     # en background no hay request del cual sacarlos.
@@ -274,6 +293,7 @@ async def disparar_correccion(
             # recibía un id de ejercicio donde esperaba una comisión. El
             # endpoint nuevo lo lleva en la URL, que es su lugar.
             ejercicio_ref=rubrica.external_ref,
+            es_reintento=es_reintento,
             headers_sandbox={
                 "X-Tenant-Id": str(user.tenant_id),
                 "X-User-Id": str(user.id),

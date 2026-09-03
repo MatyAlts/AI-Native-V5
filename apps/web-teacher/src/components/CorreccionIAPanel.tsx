@@ -83,6 +83,10 @@ export function CorreccionIAPanel({ entregaId, orden, getToken, onCambio }: Prop
       return
     }
     const id = correccion.id
+    // Backoff al fallar: 3s, 6s, 9s, y de ahí 12s como techo. Si el servicio no
+    // está, martillarlo cada 3 segundos no lo trae de vuelta — y multiplica el
+    // ruido justo cuando alguien está mirando los logs para entender qué pasa.
+    const espera = POLL_MS * (1 + Math.min(fallosDeConsulta, 3))
     timerRef.current = window.setTimeout(async () => {
       try {
         const fresca = await getCorreccionIA(entregaId, id, getToken)
@@ -97,14 +101,29 @@ export function CorreccionIAPanel({ entregaId, orden, getToken, onCambio }: Prop
         // partir del tercero se avisa — uno suelto es una hipo de red.
         setFallosDeConsulta((n) => n + 1)
       }
-    }, POLL_MS)
+    }, espera)
+    // `fallosDeConsulta` VA en las deps, y no es cosmetico: es lo unico que
+    // reagenda el poll cuando la consulta falla. (Y se LEE, para el backoff:
+    // biome tenia razon en que una dep que no se usa se ve como sobrante, y la
+    // respuesta correcta no era silenciar la regla sino que el dato sirviera.)
+    //
+    // El bucle se sostiene porque cada tick exitoso hace `setCorreccion(fresca)`
+    // —objeto nuevo, dep distinta, effect de nuevo, timer de nuevo—. En el
+    // camino de error no se toca `correccion`, asi que sin esta dep NINGUNA dep
+    // cambia: el effect no vuelve a correr, no se agenda otro timer, y **el
+    // poll muere en el primer fallo**. El contador queda clavado en 1 y el
+    // cartel de abajo (que pide 3) es codigo muerto.
+    //
+    // Es exactamente el mismo mecanismo que el gotcha de `useEffect` que el
+    // repo ya documenta, visto del otro lado: alla una dep inestable hacia
+    // girar el effect para siempre; aca una dep faltante lo mata.
     return () => {
       if (timerRef.current !== null) {
         window.clearTimeout(timerRef.current)
         timerRef.current = null
       }
     }
-  }, [correccion, entregaId, getToken])
+  }, [correccion, entregaId, getToken, fallosDeConsulta])
 
   async function pedir(confirmado: boolean) {
     setCargando(true)
