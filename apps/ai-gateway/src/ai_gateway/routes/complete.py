@@ -13,6 +13,7 @@ import logging
 import time
 from dataclasses import dataclass, replace
 from datetime import UTC, datetime
+from typing import Any
 from uuid import UUID
 
 import redis.asyncio as redis
@@ -219,7 +220,23 @@ class CompleteRequest(BaseModel):
     # callers viejos siguen funcionando, solo no se benefician del scope
     # materia para BYOK.
     materia_id: UUID | None = Field(default=None)
-    response_format: dict[str, str] | None = Field(default=None)
+    # `dict[str, Any]` y no `dict[str, str]`: la salida estructurada por
+    # esquema (`{"type": "json_schema", "json_schema": {...}}`) lleva un objeto
+    # anidado, y con el tipo viejo Pydantic la rechazaba con un 422 —
+    # *"Input should be a valid string"* sobre `body.response_format.json_schema`.
+    #
+    # El gateway no interpreta este campo: lo pasa TAL CUAL al SDK del
+    # proveedor (ver `providers/base.py`), que sí entiende las dos formas. O
+    # sea que el tipo estrecho no protegía nada: sólo prohibía, del lado
+    # nuestro, una capacidad que el proveedor ya tiene.
+    #
+    # Backwards-compatible por construcción: todo `{"type": "json_object"}` que
+    # se manda hoy sigue validando igual.
+    #
+    # Lo destapó el corrector propio (2026-09-03), que pide un esquema con los
+    # nombres de los criterios como `enum` para que el modelo no pueda devolver
+    # uno que después no empareje con la rúbrica del docente.
+    response_format: dict[str, Any] | None = Field(default=None)
 
 
 class CompleteResponse(BaseModel):
