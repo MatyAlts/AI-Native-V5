@@ -157,8 +157,8 @@ export function CorreccionIAPanel({ entregaId, orden, getToken, onCambio }: Prop
           // "Corrigiendo..." para siempre, sin un solo cartel. Una correccion
           // podia haber cerrado con error diez minutos antes.
           <span className="block text-danger" data-testid="correccion-ia-sin-contacto">
-            No se pudo consultar el estado. Lo de arriba puede estar
-            desactualizado — recarga la pagina.
+            No se pudo consultar el estado. Lo de arriba puede estar desactualizado — recarga la
+            pagina.
           </span>
         )}
       </p>
