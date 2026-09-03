@@ -22,7 +22,9 @@ class CompletionRequest:
     temperature: float = 0.7
     max_tokens: int = 1024
     stream: bool = False
-    response_format: dict[str, str] | None = None
+    # Objeto anidado admitido: la salida por esquema lo necesita. Ver el
+    # porqué completo en `routes/complete.py`.
+    response_format: dict[str, Any] | None = None
 
 
 @dataclass
@@ -370,7 +372,19 @@ class GeminiProvider(BaseProvider):
         }
         if system_instruction:
             config["system_instruction"] = system_instruction
-        if request.response_format and request.response_format.get("type") == "json_object":
+        # Las DOS formas piden JSON. Antes sólo se miraba `json_object`, así que
+        # un `json_schema` se ignoraba **en silencio**: el modelo devolvía prosa
+        # y el parseo fallaba aguas abajo con un error que no nombraba la causa.
+        #
+        # El SDK nativo de Google no toma el esquema de OpenAI tal cual (usa
+        # `response_schema`, con su propio dialecto), así que acá se honra lo
+        # único que se puede honrar sin traducir: que la salida sea JSON. La
+        # validación fuerte del esquema la hace igual quien llama — en el
+        # corrector, `nota_desde_criterios()` rechaza cualquier desvío.
+        if request.response_format and request.response_format.get("type") in (
+            "json_object",
+            "json_schema",
+        ):
             config["response_mime_type"] = "application/json"
 
         result = await client.aio.models.generate_content(
