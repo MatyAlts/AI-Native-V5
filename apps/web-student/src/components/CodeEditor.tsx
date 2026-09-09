@@ -784,7 +784,7 @@ export function CodeEditor({
       // no llega a la ventanita a tiempo. Para no depender de stdout,
       // interceptamos input() en Python (override de builtins.input) y recibimos
       // el texto del prompt como argumento, explícito.
-      const askForInput = (promptText: string): string => {
+      const askForInput = (promptText: string): string | null => {
         const raw = promptText ?? ""
         const inline = raw.trim()
         // El prompt inline de input("...") manda; si no hay, mostramos lo que el
@@ -793,7 +793,23 @@ export function CodeEditor({
         const mensaje = guia
           ? `${guia}\n\n↳ Ingresá el dato que pide el programa:`
           : "El programa pide un dato de entrada (input):"
-        const value = window.prompt(mensaje) ?? ""
+        const value = window.prompt(mensaje)
+        // `null` (Cancelar / Esc) viaja TAL CUAL a Python, que lo convierte en
+        // `_TutorCancelado` y corta la corrida.
+        //
+        // Hasta el 2026-08-30 acá había un `?? ""` y eso dejaba al alumno
+        // atrapado: cancelar era indistinguible de no escribir nada, así que el
+        // `while True` que enseña la cátedra volvía a preguntar. Para siempre.
+        // Reproducido con 3000 ventanitas seguidas — ni Cancelar, ni Esc, ni el
+        // watchdog (que se pausa justamente mientras espera el input), y no hay
+        // ningún botón de Detener. La única salida era cerrar la pestaña y
+        // perder la corrida entera.
+        if (value === null) {
+          const aviso = `${raw}\n[cancelaste la entrada — la ejecución se detuvo]\n`
+          outputBufferRef.current += aviso
+          setOutput((prev) => `${prev}${aviso}`)
+          return null
+        }
         // Echo del prompt inline (que no pasó por stdout) + el valor, para que la
         // terminal muestre la interacción completa, como una consola real.
         const echo = `${raw}${value}\n`

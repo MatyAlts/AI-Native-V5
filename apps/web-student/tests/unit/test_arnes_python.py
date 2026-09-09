@@ -60,6 +60,9 @@ class Arnes:
     prompts_vistos: list[str] = field(default_factory=list)
     #: Hook opcional para simular al humano tardando en tipear.
     antes_de_responder: Callable[[], None] | None = None
+    #: `True` simula el boton Cancelar / Esc de la ventanita: el host devuelve
+    #: `None` cuando se agotan las `respuestas`, igual que `window.prompt`.
+    cancela: bool = False
 
     def con_timeout(self, segundos: float) -> None:
         """Achica el presupuesto de computo.
@@ -97,11 +100,15 @@ def arnes() -> Iterator[Arnes]:
 
     control = Arnes(ns={})
 
-    def ask_input(prompt: str) -> str:
+    def ask_input(prompt: str) -> str | None:
         control.prompts_vistos.append(prompt)
         if control.antes_de_responder is not None:
             control.antes_de_responder()
         if not control.respuestas:
+            if control.cancela:
+                # `window.prompt` devuelve `null` al cancelar; Pyodide lo
+                # entrega como `None`. El arnes lo convierte en _TutorCancelado.
+                return None
             raise AssertionError("el programa pidio mas inputs de los que el test preparo")
         return control.respuestas.pop(0)
 
@@ -721,3 +728,105 @@ def test_cada_caso_escribe_en_SU_buffer_y_no_en_el_del_ultimo(arnes: Arnes) -> N
     assert r[1]["actual"] == "Dame un dato: dos\n", (
         f"el segundo caso quedo con prompts de mas: {r[1]['actual']!r}"
     )
+
+
+# ── Cancelar la ventanita de input() ───────────────────────────────────────
+#
+# Hasta el 2026-08-30 cancelar NO levantaba nada: `window.prompt` devuelve
+# `null`, el host lo aplastaba con un `?? ""`, y para el programa cancelar era
+# indistinguible de no escribir nada. Con el `while True` de revalidacion que
+# ensena la catedra eso era un bucle sin salida — reproducido con 3000
+# ventanitas seguidas. Ni Cancelar, ni Esc, ni el watchdog (que se pausa
+# justamente mientras espera el input), y el editor no tiene boton de Detener.
+# La unica salida era cerrar la pestana y perder la corrida.
+
+
+CICLO_DE_LA_CATEDRA = """\
+while True:
+    try:
+        n = int(input("Numero: "))
+        break
+    except ValueError:
+        print("Eso no es un numero")
+print(f"Ingresaste {n}")
+"""
+
+
+def test_cancelar_corta_el_bucle_que_ensena_la_catedra(arnes: Arnes) -> None:
+    """EL caso. Sin esto el alumno queda encerrado.
+
+    `respuestas` vacia hace que el doble del host devuelva None, que es lo que
+    manda `window.prompt` al cancelar.
+    """
+    arnes.respuestas = []
+    arnes.cancela = True
+
+    with pytest.raises(RuntimeError) as exc:
+        arnes.correr(CICLO_DE_LA_CATEDRA)
+
+    assert "cancelaste" in str(exc.value).lower()
+    # Y le dice que no es culpa suya: el alumno que cancela no cometio un error.
+    assert "no es un error de tu codigo" in str(exc.value).lower()
+    # UNA sola ventanita: si el bucle siguiera, habria muchas mas.
+    assert len(arnes.prompts_vistos) == 1, (
+        f"el programa siguio pidiendo datos despues del Cancelar: "
+        f"{len(arnes.prompts_vistos)} ventanitas"
+    )
+
+
+def test_un_except_pelado_del_alumno_igual_termina_saliendo(arnes: Arnes) -> None:
+    """El caso que casi se me escapa, y por que el fix tiene DOS mitades.
+
+    Heredar de `BaseException` frena el `except ValueError:` de la catedra,
+    pero NO un `except:` desnudo — en Python ese atrapa TODO, `BaseException`
+    incluida. Con solo esa mitad, el alumno que escribe `except: pass`
+    quedaria igual de atrapado que antes.
+
+    La segunda mitad: despues de un Cancelar el watchdog NO se vuelve a
+    pausar. El host ya no abre ventanitas (devuelve `None` al instante), asi
+    que el bucle gira a velocidad de maquina y el watchdog lo corta a los
+    segundos. Peor mensaje que el del Cancelar —habla de bucle infinito— pero
+    SALE, que es lo unico que importa.
+    """
+    arnes.respuestas = []
+    arnes.cancela = True
+    arnes.con_timeout(0.3)  # el presupuesto real son 5s; acá alcanza con menos
+    codigo = "while True:\n    try:\n        x = input('Dato: ')\n    except:\n        pass\n"
+
+    with pytest.raises((RuntimeError, TimeoutError)):
+        arnes.correr(codigo)
+
+    # Lo que se afirma es que TERMINA. Con el bug, esto no volvia nunca.
+    assert len(arnes.prompts_vistos) >= 1
+
+
+def test_una_cadena_vacia_NO_es_un_cancelar(arnes: Arnes) -> None:
+    """La otra mitad: el alumno que aprieta Aceptar sin escribir nada.
+
+    Ese SI tiene que recibir `""` y que su `while True` le vuelva a preguntar
+    — es la validacion del ejercicio funcionando. Si el fix confundiera los dos
+    casos, romperia todos los ejercicios que validan campos vacios.
+    """
+    arnes.respuestas = ["", "", "42"]
+    salida = arnes.correr(CICLO_DE_LA_CATEDRA)
+
+    assert "Ingresaste 42" in salida
+    assert salida.count("Eso no es un numero") == 2, (
+        "las dos entradas vacias tenian que fallar la validacion y volver a preguntar"
+    )
+    assert len(arnes.prompts_vistos) == 3
+
+
+def test_cancelar_en_el_medio_conserva_lo_que_ya_se_imprimio(arnes: Arnes) -> None:
+    """El alumno tiene que poder ver lo que su programa alcanzo a hacer."""
+    arnes.respuestas = ["Juani"]
+    arnes.cancela = True
+    codigo = (
+        'nombre = input("Nombre: ")\n'
+        'print(f"Hola {nombre}")\n'
+        'edad = input("Edad: ")\n'
+        'print("nunca llego aca")\n'
+    )
+    with pytest.raises(RuntimeError):
+        arnes.correr(codigo)
+    assert len(arnes.prompts_vistos) == 2

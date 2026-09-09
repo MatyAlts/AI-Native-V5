@@ -67,6 +67,35 @@ class _TutorTimeout(BaseException):
     pass
 
 
+class _TutorCancelado(BaseException):
+    """El alumno cancelo la ventanita de `input()`.
+
+    Hereda de `BaseException` y NO de `Exception`, por el mismo motivo que
+    `_TutorTimeout`: el patron que ensena la catedra es
+
+        while True:
+            try:
+                n = int(input("Numero: "))
+                break
+            except ValueError:
+                print("Eso no es un numero")
+
+    Si esto fuera una `Exception`, ese `except` la atraparia, imprimiria el
+    mensaje y volveria a preguntar — que es exactamente el bucle sin salida
+    que este cambio viene a cerrar.
+
+    Hasta el 2026-08-30 cancelar no levantaba NADA: `window.prompt` devuelve
+    `null`, el host lo aplastaba a `""` con un `?? ""`, y para el programa
+    cancelar era indistinguible de no escribir nada. Reproducido: 3000
+    ventanitas seguidas, sin forma de salir. Ni Cancelar, ni Esc, ni el
+    watchdog (que se pausa justamente mientras espera el input), y no hay
+    ningun boton de Detener en el editor. La unica salida era cerrar la
+    pestana y perder la corrida.
+    """
+
+    pass
+
+
 _tutor_watchdog = {"deadline": None}
 
 
@@ -104,6 +133,16 @@ def __tutor_run_student_code(code):
             f"La ejecucion supero los {int(_TUTOR_TIMEOUT_SECONDS)} segundos y fue interrumpida. "
             "Revisa si tenes un bucle infinito (por ejemplo, un while cuya condicion nunca cambia)."
         ) from None
+    except _TutorCancelado:
+        # Se traduce a una excepcion normal recien acá, con el mismo criterio
+        # que el timeout: adentro del codigo del alumno viaja como
+        # BaseException para que su `except` no la atrape, y afuera se vuelve
+        # un mensaje. `from None` corta el traceback interno del arnes: el
+        # alumno no tiene por que ver `_TutorCancelado`.
+        raise RuntimeError(
+            "Cancelaste la entrada de datos, asi que el programa se detuvo. "
+            "No es un error de tu codigo: volve a apretar Ejecutar cuando quieras."
+        ) from None
     finally:
         _tutor_wd_sys.settrace(None)
         _tutor_watchdog["deadline"] = None
@@ -125,9 +164,15 @@ def __tutor_input(prompt=""):
     # Al volver, presupuesto de computo fresco.
     _tutor_pause_deadline()
     try:
-        return __tutor_ask_input(str(prompt))  # noqa: F821  (lo inyecta el host)
+        valor = __tutor_ask_input(str(prompt))  # noqa: F821  (lo inyecta el host)
     finally:
         _tutor_reset_deadline()
+    # `None` = el alumno cancelo (o apreto Esc). El host lo manda tal cual:
+    # aplastarlo a `""` acá seria volver al bug, porque el programa no podria
+    # distinguir "cancele" de "no escribi nada".
+    if valor is None:
+        raise _TutorCancelado
+    return valor
 
 
 __tutor_builtins.input = __tutor_input
