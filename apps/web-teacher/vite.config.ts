@@ -65,7 +65,12 @@ export default defineConfig({
   },
   build: {
     outDir: "dist",
-    sourcemap: true,
+    // Los sourcemaps eran el 78% del dist (18 MB de 23 en el student) y nginx
+    // los sirve publicos con `immutable, max-age=1 anio` — o sea que cualquiera
+    // se bajaba el codigo fuente entero. Y no los consumia nadie: ningun
+    // frontend tiene error tracker que los suba. Se apagan por default; para
+    // debuggear un build de prod, `VITE_SOURCEMAP=1 pnpm build`.
+    sourcemap: process.env.VITE_SOURCEMAP === "1",
   },
   ...vitestConfig,
 })
