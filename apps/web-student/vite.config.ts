@@ -23,9 +23,18 @@ const vitestConfig = {
     // superficie minima que usa `CodeEditor` — sin esto, la logica del editor
     // (debounce de `edicion_codigo`, reseed del buffer, config de sugerencias)
     // no es testeable. SOLO afecta a los tests: el bundle usa el real.
-    alias: {
-      "monaco-editor": path.resolve(__dirname, "./tests/_monacoMock.ts"),
-    },
+    //
+    // La regex cubre TAMBIEN los subpaths (`monaco-editor/esm/vs/...`), que es
+    // por donde entra `lib/monaco.ts` desde que se dejo de importar el barrel
+    // `editor.main` con sus ~80 gramaticas. Con el alias de string exacto que
+    // habia antes, esos subpaths se resolvian al paquete real y los tests del
+    // editor se caian.
+    alias: [
+      {
+        find: /^monaco-editor(\/.*)?$/,
+        replacement: path.resolve(__dirname, "./tests/_monacoMock.ts"),
+      },
+    ],
   },
 } as const
 

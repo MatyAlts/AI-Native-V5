@@ -49,6 +49,7 @@ import { ARNES_PYTHON } from "../lib/arnesPython"
 import { resolverEdicionPendiente } from "../lib/edicionPendiente"
 import { parseJavaError } from "../lib/javaError"
 import { registerJavaSnippets } from "../lib/javaSnippets"
+import { cargarMonaco } from "../lib/monaco"
 import { extractPyodideErrorLine, extractPyodideErrorLineNumber } from "../lib/pyodideError"
 import { registerPythonSnippets } from "../lib/pythonSnippets"
 import { runRemote } from "../lib/runRemote"
@@ -451,7 +452,7 @@ export function CodeEditor({
 
     let disposed = false
     ;(async () => {
-      const monaco = await import(/* @vite-ignore */ "monaco-editor")
+      const monaco = await cargarMonaco()
       if (disposed || !editorContainerRef.current) return
       monacoRef.current = monaco
 
@@ -706,7 +707,7 @@ export function CodeEditor({
     const disposables: { dispose: () => void }[] = []
     let cancelled = false
     ;(async () => {
-      const monaco = await import(/* @vite-ignore */ "monaco-editor")
+      const monaco = await cargarMonaco()
       if (cancelled) return
       const marcarSnippet = () => {
         snippetSinceLastFlushRef.current = true
