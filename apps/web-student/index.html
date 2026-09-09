@@ -5,6 +5,15 @@
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <meta name="description" content="Resolución de problemas con tutor socrático" />
+
+    <!-- Pyodide (~10 MB de wasm + stdlib) se baja de jsdelivr recien cuando se
+         abre el editor, no al cargar la pagina. El preconnect paga DNS + TLS +
+         handshake ahora, en paralelo con el bundle, para que no se paguen
+         despues — cuando el alumno ya esta esperando. Ver PYODIDE_URL en
+         CodeEditor.tsx (student) y lib/pyodideRunner.ts (teacher). -->
+    <link rel="preconnect" href="https://cdn.jsdelivr.net" crossorigin />
+    <link rel="dns-prefetch" href="https://cdn.jsdelivr.net" />
+
     <title>Plataforma — Estudiante</title>
   </head>
   <body>
