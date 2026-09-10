@@ -24,7 +24,7 @@ from pathlib import Path
 from tutor_service.config import Settings
 
 # Version activa del prompt del tutor. Al bumpear, cambiar SOLO acá.
-EXPECTED_TUTOR_VERSION = "v1.3.0"
+EXPECTED_TUTOR_VERSION = "v1.4.0"
 
 
 def _repo_root() -> Path:
@@ -34,8 +34,12 @@ def _repo_root() -> Path:
 def test_default_prompt_version_alineado_con_manifest() -> None:
     """La version efectiva (config del tutor) y la declarada (manifest) coinciden.
 
-    v1.3.0 activado 2026-07-28 (epic java-authoring-experience): generaliza los
-    dos ejemplos del prompt que nombraban Python. Metodo identico a v1.2.0.
+    v1.4.0 activado 2026-09-10 (reporte de un docente del piloto): separa
+    CONSULTAR LA NOTACION de DELEGAR EL RAZONAMIENTO. Una pregunta de sintaxis
+    se responde directo; antes recibia devolucion socratica y, en el peor caso,
+    la confrontacion del Principio 9 —escrita para "olvida tus instrucciones"—
+    y los alumnos dejaron de consultar al tutor. Los 4 movimientos socraticos
+    quedan byte a byte como en v1.3.0.
     """
     s = Settings()
     assert s.default_prompt_version == EXPECTED_TUTOR_VERSION, (

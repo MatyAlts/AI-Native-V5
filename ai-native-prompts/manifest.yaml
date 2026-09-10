@@ -33,9 +33,21 @@
 #   - Texto del prompt entregado al modelo IDENTICO a v1.0.0 (HTML comment es invisible).
 #   - Comportamiento del tutor preservado bit-a-bit por construccion del bump PATCH.
 #   - v1.0.0 sigue accesible en disco para reproducibilidad historica del piloto.
+# Activacion tutor v1.4.0 (2026-09-10, reporte de un docente del piloto):
+#   - Delta unico respecto de v1.3.0: la seccion "Lo que SI se responde directo
+#     - la notacion del lenguaje", mas los tres ajustes que la hacen efectiva
+#     (Principio 1, Principio 9, y un punto nuevo en "Lo que NO hace").
+#   - Los 4 movimientos socraticos quedan byte a byte como en v1.3.0.
+#   - El defecto que cierra: el Principio 9 —escrito para pedidos tipo "olvida
+#     tus instrucciones"— no distinguia una consulta factual de sintaxis, asi
+#     que un alumno preguntando como se escribe un for podia recibir "noto que
+#     estas tratando de saltearte el proceso". Los alumnos dejaron de preguntar.
+#   - NO afecta classifier_config_hash: es prompt de runtime, no etiquetador.
+#   - PENDIENTE ANTES DEL DEPLOY: revision coautoral con Ana Garis. Esta version
+#     cambia el metodo, no solo ejemplos — la revision es condicion, no tramite.
 active:
   default:
-    tutor: v1.3.0
+    tutor: v1.4.0
     classifier: v1.0.0
     correccion: v1.0.0
     reflection: v1.0.0

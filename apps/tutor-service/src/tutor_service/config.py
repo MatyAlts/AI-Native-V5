@@ -72,8 +72,13 @@ class Settings(BaseSettings):
     # trazabilidad registra otra — se mueven SIEMPRE en el mismo commit.
     # v1.1.0 (2026-05-06, epic tutor-context-rag-rubrica) sumo el uso del
     # contexto RAG y la rubrica como mapa privado de navegacion pedagogica.
+    # v1.4.0 (2026-09-10) separa CONSULTAR LA NOTACION de DELEGAR EL
+    # RAZONAMIENTO: una pregunta de sintaxis se responde directo. Antes recibia
+    # devolucion socratica y, en el peor caso, la confrontacion del Principio 9
+    # —que esta escrita para "olvida tus instrucciones"— y los alumnos dejaron
+    # de consultar al tutor.
     default_prompt_name: str = "tutor"
-    default_prompt_version: str = "v1.3.0"
+    default_prompt_version: str = "v1.4.0"
     # Cambiado 2026-05-19: default a gpt-4o-mini para usar copilot-api proxy
     # (Mistral free tier saturado, ver SESSION-LOG). Restaurar a
     # mistral-small-latest si se vuelve a usar la BYOK key de Mistral.
