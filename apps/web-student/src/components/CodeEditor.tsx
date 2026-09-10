@@ -1027,8 +1027,41 @@ def __tutor_run_tests(student_code, cases_json):
         assert_code = (case.get("code") or "") if ctype == "pytest_assert" else ""
         expected = case.get("expected")
         _lines = iter(stdin_text.split("\\n"))
+        buf = _tutor_io.StringIO()
 
-        def _feed(prompt="", _it=_lines):
+        def _feed(prompt="", _it=_lines, _out=buf):
+            # EL PROMPT DE input() ES SALIDA DEL PROGRAMA, Y VA A stdout.
+            #
+            # CPython lo escribe: \`python p.py < entrada\` sobre
+            # \`input("Nombre: ")\` imprime "Nombre: " y NO hace eco del valor
+            # tipeado (eso lo hace la terminal, no el programa).
+            #
+            # Esta funcion lo TIRABA, y era el unico de los tres runners que lo
+            # hacia. Reportado por un docente el 2026-09-10: "tenia todo bien y
+            # me daba mal las pruebas".
+            #
+            #   - \`web-teacher/lib/pyodideRunner.ts::_fake_input\` — donde el
+            #     docente valida el ejercicio ANTES de asignarlo — SI lo escribe,
+            #     con un comentario que explica exactamente esto.
+            #   - El \`execution-service\` de Java devuelve \`result.stdout\` crudo
+            #     del contenedor, asi que el \`System.out.print("Nombre: ")\` VA.
+            #   - Este lo descartaba.
+            #
+            # O sea que el docente validaba en VERDE, el \`expected_output\`
+            # quedaba guardado CON los prompts, y despues el alumno apretaba el
+            # frasco y le daba ROJO con el mismo codigo correcto. Y en silencio:
+            # nadie ve la diferencia mirando la pantalla, porque lo que falta es
+            # justo el texto que el alumno da por sentado que esta.
+            #
+            # Es la MISMA falla que \`comparacionSalida.ts\` documenta —"Probar da
+            # verde, la cohorte entera recibe WRONG_ANSWER con codigo correcto"—
+            # una capa mas arriba: ahi se unifico el COMPARADOR y quedo sin
+            # unificar lo que se compara.
+            #
+            # Y no es solo UI: mueve \`test_count_passed/failed\`, que es la senal
+            # con la que el labeler v1.2.0 separa N3 de N4.
+            if prompt:
+                _out.write(str(prompt))
             try:
                 return next(_it)
             except StopIteration:
@@ -1036,7 +1069,6 @@ def __tutor_run_tests(student_code, cases_json):
                     "El programa pidio mas datos (input) de los que este test provee."
                 )
 
-        buf = _tutor_io.StringIO()
         ns = {"__name__": "__main__", "input": _feed}
         error = None
         passed = False
