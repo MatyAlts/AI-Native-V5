@@ -23,7 +23,21 @@ from pathlib import Path
 
 from tutor_service.config import Settings
 
-# Version activa del prompt del tutor. Al bumpear, cambiar SOLO acá.
+# Version activa del prompt del tutor.
+#
+# OJO: NO es "cambiar SOLO aca". El pin vive en CUATRO lugares y el invariante
+# de CLAUDE.md solo nombra dos (manifest + config). Los otros dos son tests que
+# pinean la version a mano, en servicios distintos:
+#
+#   1. `ai-native-prompts/manifest.yaml`                        (declarativo)
+#   2. `apps/tutor-service/src/tutor_service/config.py`         (efectivo)
+#   3. ESTE archivo
+#   4. `apps/governance-service/tests/unit/test_prompt_v1_0_1_bump.py`
+#      -> `ACTIVE_TUTOR_VERSION`
+#
+# El cuarto se descubrio en CI durante el bump a v1.4.0: correr solo la suite
+# del tutor-service da verde y el de governance queda rojo. Si bumpeas, corre
+# `uv run pytest apps -q` y no el servicio suelto.
 EXPECTED_TUTOR_VERSION = "v1.4.0"
 
 
