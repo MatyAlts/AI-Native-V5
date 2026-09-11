@@ -178,3 +178,95 @@ class TestLaParidadEsLaPropiedad:
         ).read_text(encoding="utf-8")
 
         assert "got=result.stdout," in mapper
+
+
+# ── El "" fantasma al final del stdin ────────────────────────────────────────
+#
+# Segunda mitad de la misma paridad, y la que no se ve. El bloque de arriba
+# cubre lo que el runner ESCRIBE; esto cubre lo que el runner LEE.
+#
+# `"1\n2\n".split("\n")` da `["1","2",""]`. Ese "" de regalo se le entregaba a
+# un tercer `input()` que en CPython habria recibido EOFError, asi que un
+# programa que lee de mas —un `for` con un rango de mas, un `while` que no
+# corta— seguia de largo con un string vacio en vez de fallar. El caso podia
+# dar verde por una razon que no existe fuera del frasco.
+#
+# Con el stdin vacio es peor todavia: `"".split("\n")` da `[""]`, o sea que el
+# PRIMER `input()` recibia "" en lugar del EOFError.
+#
+# NOTA sobre el "\r", porque es la trampa de este archivo: `splitlines()` seria
+# lo obvio y esta MAL. Se come el "\r" de un caso escrito en Windows, y CPython
+# SI se lo entrega al programa — verificado contra `python p.py < archivo-crlf`,
+# donde `input()` devuelve "Juan\r". El frasco ya replicaba eso bien. Por eso el
+# fix es quitar el ultimo "" y nada mas.
+
+
+def _lineas_que_arma_el_alumno(stdin_text: str) -> list[str]:
+    """Corre el codigo del frontend que parte el stdin, extraido del fuente.
+
+    Mismo criterio que `_extraer`: se ejecuta el codigo real en vez de mirar si
+    el texto dice `splitlines`. Un test que leyera el texto se vacia el dia que
+    alguien lo escriba distinto pero equivalente.
+    """
+    texto = _EDITOR_ALUMNO.read_text(encoding="utf-8")
+    m = re.search(
+        r"^(        _partes = stdin_text\.split.*?\n        _lines = iter\(_partes\))$",
+        texto,
+        re.M | re.S,
+    )
+    if not m:
+        pytest.fail("no se encontro el codigo que parte el stdin en CodeEditor.tsx")
+    # Vive en un template literal de JS: los `\n` estan escapados.
+    codigo = "\n".join(l[8:] for l in m.group(1).split("\n")).replace("\\\\n", "\\n")
+    scope: dict = {"stdin_text": stdin_text}
+    exec(compile(codigo, "<lines>", "exec"), scope)  # noqa: S102
+    return list(scope["_lines"])
+
+
+def _lineas_que_ve_cpython(stdin_text: str) -> list[str]:
+    """La referencia: lo que `input()` devuelve leyendo ese stdin de verdad.
+
+    `io.StringIO` con el `newline` por default replica un stdin real: NO aplica
+    universal newlines, asi que un "\r\n" le llega al programa con su "\r".
+    Comprobado contra `python p.py < archivo` y contra un pipe: los dos dan
+    "Juan\r".
+    """
+    vistas: list[str] = []
+    viejo = sys.stdin
+    sys.stdin = io.StringIO(stdin_text)
+    try:
+        while True:
+            try:
+                vistas.append(input())
+            except EOFError:
+                break
+    finally:
+        sys.stdin = viejo
+    return vistas
+
+
+class TestElStdinQueLeeElFrasco:
+    """Lo que el frasco le entrega a `input()`, contra lo que entrega CPython."""
+
+    def test_no_regala_una_linea_vacia_cuando_el_stdin_termina_en_salto(self) -> None:
+        """EL caso: ese "" iba a un input() que debia recibir EOFError."""
+        assert _lineas_que_arma_el_alumno("1\n2\n") == ["1", "2"]
+
+    def test_el_stdin_vacio_no_entrega_un_dato_fantasma(self) -> None:
+        """`"".split("\n")` da `[""]`: el PRIMER input() recibia "" y no EOFError."""
+        assert _lineas_que_arma_el_alumno("") == []
+
+    def test_conserva_el_retorno_de_carro_igual_que_cpython(self) -> None:
+        """La trampa. `splitlines()` se lo comeria y romperia la paridad."""
+        assert _lineas_que_arma_el_alumno("Juan\r\nPerez\r\n") == ["Juan\r", "Perez\r"]
+
+    def test_coincide_con_lo_que_ve_cpython(self) -> None:
+        """La propiedad, sobre las cuatro formas de terminar un stdin.
+
+        Este es el que vale: los tres de arriba son ejemplos y podrian estar
+        todos de acuerdo en algo equivocado. Este compara contra el arbitro.
+        """
+        for stdin_text in ("Juan\r\nPerez\r\n", "1\n2\n", "1\n2", "", "solo\n"):
+            assert _lineas_que_arma_el_alumno(stdin_text) == _lineas_que_ve_cpython(stdin_text), (
+                f"difiere de CPython para {stdin_text!r}"
+            )

@@ -1026,7 +1026,24 @@ def __tutor_run_tests(student_code, cases_json):
         stdin_text = (case.get("code") or "") if ctype == "stdin_stdout" else ""
         assert_code = (case.get("code") or "") if ctype == "pytest_assert" else ""
         expected = case.get("expected")
-        _lines = iter(stdin_text.split("\\n"))
+        # El ultimo "" que regala el split NO se le entrega a nadie.
+        #
+        # \`"1\\n2\\n".split("\\n")\` da \`["1","2",""]\`, y ese "" terminaba en un
+        # tercer \`input()\` que en CPython habria recibido EOFError. O sea que un
+        # programa que lee de mas —un \`for\` con un rango de mas, un \`while\` que
+        # no corta— seguia de largo con un string vacio en vez de fallar, y el
+        # caso podia dar verde por una razon que no existe fuera del frasco.
+        # Con el stdin vacio es peor: \`"".split("\\n")\` da \`[""]\`, asi que el
+        # PRIMER \`input()\` recibia "" en lugar del EOFError.
+        #
+        # NO se usa \`splitlines()\`, que seria lo obvio: ese ademas se come el
+        # "\\r" de un caso escrito en Windows, y CPython SI se lo entrega al
+        # programa (verificado contra \`python p.py < archivo-crlf\`: \`input()\`
+        # devuelve "Juan\\r"). Cambiarlo romperia la paridad en vez de arreglarla.
+        _partes = stdin_text.split("\\n")
+        if _partes and _partes[-1] == "":
+            _partes.pop()
+        _lines = iter(_partes)
         buf = _tutor_io.StringIO()
 
         def _feed(prompt="", _it=_lines, _out=buf):
