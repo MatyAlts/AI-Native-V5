@@ -23,8 +23,22 @@ from pathlib import Path
 
 from tutor_service.config import Settings
 
-# Version activa del prompt del tutor. Al bumpear, cambiar SOLO acá.
-EXPECTED_TUTOR_VERSION = "v1.3.0"
+# Version activa del prompt del tutor.
+#
+# OJO: NO es "cambiar SOLO aca". El pin vive en CUATRO lugares y el invariante
+# de CLAUDE.md solo nombra dos (manifest + config). Los otros dos son tests que
+# pinean la version a mano, en servicios distintos:
+#
+#   1. `ai-native-prompts/manifest.yaml`                        (declarativo)
+#   2. `apps/tutor-service/src/tutor_service/config.py`         (efectivo)
+#   3. ESTE archivo
+#   4. `apps/governance-service/tests/unit/test_prompt_v1_0_1_bump.py`
+#      -> `ACTIVE_TUTOR_VERSION`
+#
+# El cuarto se descubrio en CI durante el bump a v1.4.0: correr solo la suite
+# del tutor-service da verde y el de governance queda rojo. Si bumpeas, corre
+# `uv run pytest apps -q` y no el servicio suelto.
+EXPECTED_TUTOR_VERSION = "v1.4.0"
 
 
 def _repo_root() -> Path:
@@ -34,8 +48,12 @@ def _repo_root() -> Path:
 def test_default_prompt_version_alineado_con_manifest() -> None:
     """La version efectiva (config del tutor) y la declarada (manifest) coinciden.
 
-    v1.3.0 activado 2026-07-28 (epic java-authoring-experience): generaliza los
-    dos ejemplos del prompt que nombraban Python. Metodo identico a v1.2.0.
+    v1.4.0 activado 2026-09-10 (reporte de un docente del piloto): separa
+    CONSULTAR LA NOTACION de DELEGAR EL RAZONAMIENTO. Una pregunta de sintaxis
+    se responde directo; antes recibia devolucion socratica y, en el peor caso,
+    la confrontacion del Principio 9 —escrita para "olvida tus instrucciones"—
+    y los alumnos dejaron de consultar al tutor. Los 4 movimientos socraticos
+    quedan byte a byte como en v1.3.0.
     """
     s = Settings()
     assert s.default_prompt_version == EXPECTED_TUTOR_VERSION, (

@@ -112,15 +112,23 @@ def test_v101_corrige_cuenta_de_guardarrailes(loader: PromptLoader) -> None:
     )
 
 
-# Version activa del prompt del tutor. Al bumpear, cambiar SOLO acá — el nombre
+# Version activa del prompt del tutor. Gemelo de `ACTIVE_TUTOR_VERSION` en
+# `apps/tutor-service/tests/unit/test_config_prompt_version.py`, que lista los
+# CUATRO lugares donde vive el pin. Bumpear los cuatro o el CI se pone rojo en
+# el servicio que no corriste.
+#
+# El nombre
 # del test NO lleva la version a proposito: antes se llamaba `..._activa_v101_...`
 # mientras asserteaba v1.2.0, y el nombre quedo mintiendo dos bumps seguidos.
-ACTIVE_TUTOR_VERSION = "v1.3.0"
+ACTIVE_TUTOR_VERSION = "v1.4.0"
 
 
 def test_manifest_global_activa_la_version_vigente_del_tutor(loader: PromptLoader) -> None:
     """El manifest global del repo declara la version activa del `tutor` para el
-    tenant `default`. Hoy: v1.3.0 (epic java-authoring-experience, 2026-07-28).
+    tenant `default`. Hoy: v1.4.0 (2026-09-10) — separa consultar la NOTACION de
+    delegar el RAZONAMIENTO, tras el reporte de un docente sobre alumnos que
+    dejaron de consultar al tutor porque una pregunta de sintaxis recibia
+    devolucion socratica.
 
     Si este test falla:
       - Se borro/movio `ai-native-prompts/manifest.yaml`, o

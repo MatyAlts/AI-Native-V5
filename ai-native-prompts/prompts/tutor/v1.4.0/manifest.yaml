@@ -1,0 +1,19 @@
+# Manifest del prompt tutor v1.4.0 (bump MINOR: notacion vs razonamiento).
+# El governance-service verifica fail-loud que sha256(system.md) == hash declarado.
+# Si el archivo se modifica sin re-firmar este manifest, el servicio falla al cargar.
+version: v1.4.0
+parent_version: v1.3.0
+bump_kind: minor_notacion_vs_razonamiento
+files:
+  system.md: 98b2dce06ae9c35c95f9c0ba3fca6e045737baab5c5f19ed794c6d17f9931cfe
+notas:
+  - Origen - reporte de un docente del piloto (2026-09-10) sobre alumnos que evitaban el tutor. Cita textual del alumno - "prefiero buscar en ejercicios anteriores a preguntar en el bot, y no es la idea esa porque el sistema te penaliza".
+  - Delta unico - la seccion "Lo que SI se responde directo - la notacion del lenguaje", mas los tres ajustes que la hacen efectiva (Principio 1, Principio 9, y un punto nuevo en "Lo que NO hace el tutor").
+  - Metodo INTACTO - los 4 movimientos socraticos (ironia, mayeutica, elenchos, aporia) quedan byte a byte como en v1.3.0.
+  - El defecto concreto - el Principio 9 esta escrito para pedidos tipo "olvida tus instrucciones" y no distinguia una consulta factual. Un alumno preguntando como se escribe un for podia recibir "noto que estas tratando de saltearte el proceso".
+  - Por que NO debilita GP1 - GP1 protege el RAZONAMIENTO, no la notacion. La seccion nueva enumera explicitamente lo que NO entra (que estructura conviene, como resolver, por que no anda), que es donde GP1 sigue operando sin cambios.
+  - Regla de desempate declarada - ante la duda entre consulta factual y pedido de solucion disfrazado, responder como factual. El costo de responder de mas una sintaxis es cero; el de acusar de mas es que el estudiante no vuelve.
+  - Amenaza a la validez que esto cierra - un episodio con prompts = 0 se clasifica `autonomo` por el prefiltro mecanico, asi que un tutor que hace costoso preguntarle podia inflar la prevalencia de `autonomo` con alumnos que lo evitaron por miedo. Declarado como amenaza, NO como hallazgo medido.
+  - No afecta classifier_config_hash - es prompt de runtime, no etiquetador (ADR-020).
+  - v1.3.0 y anteriores siguen en disco para reproducibilidad historica del piloto.
+  - PENDIENTE ANTES DEL DEPLOY - revision coautoral con Ana Garis. Todas las versiones activas del tutor la declaran; esta cambia el metodo (no solo ejemplos), asi que la revision es condicion y no formalidad.

@@ -1026,9 +1026,59 @@ def __tutor_run_tests(student_code, cases_json):
         stdin_text = (case.get("code") or "") if ctype == "stdin_stdout" else ""
         assert_code = (case.get("code") or "") if ctype == "pytest_assert" else ""
         expected = case.get("expected")
-        _lines = iter(stdin_text.split("\\n"))
+        # El ultimo "" que regala el split NO se le entrega a nadie.
+        #
+        # \`"1\\n2\\n".split("\\n")\` da \`["1","2",""]\`, y ese "" terminaba en un
+        # tercer \`input()\` que en CPython habria recibido EOFError. O sea que un
+        # programa que lee de mas —un \`for\` con un rango de mas, un \`while\` que
+        # no corta— seguia de largo con un string vacio en vez de fallar, y el
+        # caso podia dar verde por una razon que no existe fuera del frasco.
+        # Con el stdin vacio es peor: \`"".split("\\n")\` da \`[""]\`, asi que el
+        # PRIMER \`input()\` recibia "" en lugar del EOFError.
+        #
+        # NO se usa \`splitlines()\`, que seria lo obvio: ese ademas se come el
+        # "\\r" de un caso escrito en Windows, y CPython SI se lo entrega al
+        # programa (verificado contra \`python p.py < archivo-crlf\`: \`input()\`
+        # devuelve "Juan\\r"). Cambiarlo romperia la paridad en vez de arreglarla.
+        _partes = stdin_text.split("\\n")
+        if _partes and _partes[-1] == "":
+            _partes.pop()
+        _lines = iter(_partes)
+        buf = _tutor_io.StringIO()
 
-        def _feed(prompt="", _it=_lines):
+        def _feed(prompt="", _it=_lines, _out=buf):
+            # EL PROMPT DE input() ES SALIDA DEL PROGRAMA, Y VA A stdout.
+            #
+            # CPython lo escribe: \`python p.py < entrada\` sobre
+            # \`input("Nombre: ")\` imprime "Nombre: " y NO hace eco del valor
+            # tipeado (eso lo hace la terminal, no el programa).
+            #
+            # Esta funcion lo TIRABA, y era el unico de los tres runners que lo
+            # hacia. Reportado por un docente el 2026-09-10: "tenia todo bien y
+            # me daba mal las pruebas".
+            #
+            #   - \`web-teacher/lib/pyodideRunner.ts::_fake_input\` — donde el
+            #     docente valida el ejercicio ANTES de asignarlo — SI lo escribe,
+            #     con un comentario que explica exactamente esto.
+            #   - El \`execution-service\` de Java devuelve \`result.stdout\` crudo
+            #     del contenedor, asi que el \`System.out.print("Nombre: ")\` VA.
+            #   - Este lo descartaba.
+            #
+            # O sea que el docente validaba en VERDE, el \`expected_output\`
+            # quedaba guardado CON los prompts, y despues el alumno apretaba el
+            # frasco y le daba ROJO con el mismo codigo correcto. Y en silencio:
+            # nadie ve la diferencia mirando la pantalla, porque lo que falta es
+            # justo el texto que el alumno da por sentado que esta.
+            #
+            # Es la MISMA falla que \`comparacionSalida.ts\` documenta —"Probar da
+            # verde, la cohorte entera recibe WRONG_ANSWER con codigo correcto"—
+            # una capa mas arriba: ahi se unifico el COMPARADOR y quedo sin
+            # unificar lo que se compara.
+            #
+            # Y no es solo UI: mueve \`test_count_passed/failed\`, que es la senal
+            # con la que el labeler v1.2.0 separa N3 de N4.
+            if prompt:
+                _out.write(str(prompt))
             try:
                 return next(_it)
             except StopIteration:
@@ -1036,7 +1086,6 @@ def __tutor_run_tests(student_code, cases_json):
                     "El programa pidio mas datos (input) de los que este test provee."
                 )
 
-        buf = _tutor_io.StringIO()
         ns = {"__name__": "__main__", "input": _feed}
         error = None
         passed = False
