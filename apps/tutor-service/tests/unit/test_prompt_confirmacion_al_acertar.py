@@ -69,6 +69,36 @@ def _prompt_activo() -> str:
     return re.sub(r"\s+", " ", ruta.read_text(encoding="utf-8"))
 
 
+def _movimientos(version: str) -> dict[str, str]:
+    """Los cuatro movimientos de una version, cada uno como bloque de texto.
+
+    Se parsea por los `###` de la seccion "Movimientos del metodo". Devuelve el
+    texto normalizado, igual que `_prompt_activo`, para que un reflow cosmetico
+    no cuente como cambio de metodo.
+    """
+    raiz = Path(__file__).resolve().parents[4]
+    ruta = raiz / "ai-native-prompts/prompts/tutor" / version / "system.md"
+    if not ruta.exists():
+        pytest.fail(f"el prompt {version} no existe en {ruta}")
+    seccion, dentro = [], False
+    for linea in ruta.read_text(encoding="utf-8").splitlines():
+        if linea.startswith("## Movimientos del metodo"):
+            dentro = True
+            continue
+        if dentro and linea.startswith("## "):
+            break
+        if dentro:
+            seccion.append(linea)
+    bloques, actual = {}, None
+    for linea in seccion:
+        if linea.startswith("### "):
+            actual = linea[4:].split("—")[0].strip().lower()
+            bloques[actual] = []
+        elif actual:
+            bloques[actual].append(linea)
+    return {k: re.sub(r"\s+", " ", "\n".join(v)).strip() for k, v in bloques.items()}
+
+
 class TestElMetodoTieneSalida:
     def test_declara_el_cierre_como_movimiento(self) -> None:
         """El corazon del fix.
@@ -213,3 +243,55 @@ class TestElFixDeV140NoSePierde:
 
     def test_la_consulta_de_sintaxis_sigue_sin_ser_un_salteo(self) -> None:
         assert "Una consulta de sintaxis NO es un intento de salteo" in _prompt_activo()
+
+
+class TestElDeltaDelMetodoEsElDeclarado:
+    """Lo que el manifest afirma sobre el metodo, verificado contra v1.4.0.
+
+    El manifest de una version es el registro que queda: quien dentro de seis
+    meses quiera saber que cambio entre v1.4.0 y v1.5.0 lo lee a el, no al PR.
+    Una nota que dice "byte a byte" sobre algo que cambio es peor que no tener
+    nota, porque se lee con autoridad y nadie vuelve a chequearla.
+
+    `test_los_cuatro_movimientos_siguen_declarados` no alcanza para esto: busca
+    la PALABRA del movimiento, de modo que pasa aunque el bloque entero cambie.
+    """
+
+    PADRE = "v1.4.0"
+
+    @pytest.mark.parametrize("movimiento", ["mayeutica", "elenchos", "aporia"])
+    def test_los_tres_movimientos_intactos_son_identicos_a_v140(self, movimiento: str) -> None:
+        """Verificado por reversion: si alguien edita uno de estos, esto se cae."""
+        version = Settings().default_prompt_version
+        assert _movimientos(version)[movimiento] == _movimientos(self.PADRE)[movimiento], (
+            f"{movimiento} cambio respecto de {self.PADRE}; el manifest declara "
+            f"que los tres quedan byte a byte. Actualizar la nota o revertir el cambio."
+        )
+
+    def test_la_ironia_si_cambia_y_el_cambio_es_el_declarado(self) -> None:
+        """El delta que el manifest SI declara: la ironia acotada al caso sin razon.
+
+        Se afirma en los dos sentidos —que difiere de v1.4.0 y que la diferencia
+        es la condicion nueva— para que un cambio distinto en la ironia tampoco
+        pase silencioso.
+        """
+        version = Settings().default_prompt_version
+        ironia_nueva = _movimientos(version)["ironia"]
+        ironia_vieja = _movimientos(self.PADRE)["ironia"]
+        assert ironia_nueva != ironia_vieja, (
+            "la ironia quedo igual a v1.4.0: sin el acote al caso sin razon, "
+            "le pelea a 'Cerrar el lazo' y la seccion nueva no tiene efecto."
+        )
+        assert "sin decirte por que le parece que podria estarlo" in ironia_nueva
+        assert "negarle la confirmacion a quien ya te dio la razon" in ironia_nueva
+
+    def test_el_manifest_no_afirma_que_los_cuatro_quedan_intactos(self) -> None:
+        """La nota que este fix corrige, para que no vuelva por copiar-y-editar."""
+        raiz = Path(__file__).resolve().parents[4]
+        version = Settings().default_prompt_version
+        manifest = raiz / "ai-native-prompts/prompts/tutor" / version / "manifest.yaml"
+        texto = re.sub(r"\s+", " ", manifest.read_text(encoding="utf-8")).lower()
+        assert "los 4 movimientos socraticos" not in texto or "byte a byte" not in texto, (
+            "el manifest vuelve a afirmar que los cuatro movimientos quedan byte a "
+            "byte; la ironia cambia y esa nota es lo que queda como trazabilidad."
+        )
