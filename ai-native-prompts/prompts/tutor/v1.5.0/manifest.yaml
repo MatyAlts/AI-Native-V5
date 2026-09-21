@@ -1,0 +1,23 @@
+# Manifest del prompt tutor v1.5.0 (bump MINOR: el metodo tiene salida).
+# El governance-service verifica fail-loud que sha256(system.md) == hash declarado.
+# Si el archivo se modifica sin re-firmar este manifest, el servicio falla al cargar.
+version: v1.5.0
+parent_version: v1.4.0
+bump_kind: minor_cierre_del_lazo
+files:
+  system.md: 576574a24adf0cccb401e67af384054caaac9f2d7051565102839a002f86f646
+notas:
+  - Origen - la critica mas repetida del piloto. El estudiante razona, llega a una conclusion correcta, se la trae al tutor, y en vez de un "si, eso es lo que pasa" recibe otra pregunta.
+  - Delta unico - la seccion "Cerrar el lazo - cuando el estudiante acierta", mas los tres ajustes que la hacen efectiva (Ironia acotada al caso sin razon, Principio 5 reescrito como "Confirmar cuando acierta", y dos puntos reformulados en "Lo que NO hace el tutor").
+  - Metodo INTACTO - los 4 movimientos socraticos (ironia, mayeutica, elenchos, aporia) quedan byte a byte como en v1.4.0, y la seccion de notacion de v1.4.0 tambien.
+  - El defecto estructural - los cuatro movimientos son TODOS de apertura. La ironia suspende, la mayeutica pregunta, el elenchos contradice, la aporia sostiene el bloqueo. Ninguno cierra. En Platon la aporia terminal es deliberada; en una cursada con un TP que entregar deja al estudiante sin saber nunca si penso bien.
+  - Lo que lo vuelve indefendible - el cierre YA estaba modelado en los datos del ejercicio (heuristica_cierre y senal_comprension del banco socratico, ADR-048, los dos inyectados al system message). La plataforma sabia detectar que el estudiante entendio y el prompt no tenia ninguna accion asociada a detectarlo.
+  - Por que NO debilita GP1 - GP1 protege el RAZONAMIENTO, no el CIERRE. Confirmar una conclusion que el estudiante ya razono no le entrega nada que no tuviera. La seccion enumera lo que NO entra (conclusion sin razon, resultado copiado o adivinado, codigo con errores por corregir).
+  - Por que NO debilita GP2 - el Principio 2 gobierna lo que el estudiante todavia no penso; la confirmacion gobierna lo que ya penso bien. Dominios disjuntos, y la seccion lo dice.
+  - Regla de desempate declarada - ante la duda sobre si el razonamiento alcanza, si el camino es valido, confirmalo. Confirmar de mas cuesta una oracion; no confirmar cuando correspondia le ensena al estudiante que con este tutor no se termina nunca de pensar.
+  - Interaccion con el contexto por ejercicio - 10 de los 25 ejercicios del piloto tienen tutor_rules.forzar_pregunta_antes_de_hint en true, que inyecta "antes de dar cualquier pista, hace al menos una pregunta socratica". La seccion declara explicitamente que confirmar NO es dar una pista; sin esa frase el bloque por ejercicio le pelea al prompt global. Se resuelve en el prompt, no editando los 10 ejercicios.
+  - Amenaza a la validez - un tutor que nunca confirma empuja al estudiante a buscar el cierre afuera, y ese episodio queda con menos prompts (o cero) y el prefiltro mecanico lo clasifica autonomo. Igual que en v1.4.0, declarado como amenaza y NO como hallazgo medido.
+  - Pendiente separado - postprocess_socratic.py define la violacion no_question_in_response (peso 0,3), que codifica el supuesto que esta version corrige - "una respuesta sin pregunta es incumplimiento del metodo". Hoy esta OFF y no afecta runtime, pero prenderlo sin reponderar ese patron castigaria exactamente este fix. Condicion previa a la activacion de la Fase B (ADR-044 / ADR-046).
+  - No afecta classifier_config_hash - es prompt de runtime, no etiquetador (ADR-020).
+  - v1.4.0 y anteriores siguen en disco para reproducibilidad historica del piloto.
+  - PENDIENTE ANTES DEL DEPLOY - revision coautoral con Ana Garis. Esta version cambia el metodo (le agrega el cierre), no solo ejemplos, asi que la revision es condicion y no formalidad.

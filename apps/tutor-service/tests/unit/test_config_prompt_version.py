@@ -38,7 +38,7 @@ from tutor_service.config import Settings
 # El cuarto se descubrio en CI durante el bump a v1.4.0: correr solo la suite
 # del tutor-service da verde y el de governance queda rojo. Si bumpeas, corre
 # `uv run pytest apps -q` y no el servicio suelto.
-EXPECTED_TUTOR_VERSION = "v1.4.0"
+EXPECTED_TUTOR_VERSION = "v1.5.0"
 
 
 def _repo_root() -> Path:
@@ -48,12 +48,18 @@ def _repo_root() -> Path:
 def test_default_prompt_version_alineado_con_manifest() -> None:
     """La version efectiva (config del tutor) y la declarada (manifest) coinciden.
 
+    v1.5.0 activado 2026-09-21 (la critica mas repetida del piloto): le da
+    SALIDA al metodo. Los cuatro movimientos son todos de apertura y ninguno
+    cerraba, asi que el estudiante que traia una conclusion con su razon —y la
+    razon era correcta— recibia otra pregunta en vez de una confirmacion. Ahora
+    se confirma en la primera oracion. Los 4 movimientos socraticos quedan byte
+    a byte como en v1.4.0, y la seccion de notacion de v1.4.0 tambien.
+
     v1.4.0 activado 2026-09-10 (reporte de un docente del piloto): separa
     CONSULTAR LA NOTACION de DELEGAR EL RAZONAMIENTO. Una pregunta de sintaxis
     se responde directo; antes recibia devolucion socratica y, en el peor caso,
     la confrontacion del Principio 9 —escrita para "olvida tus instrucciones"—
-    y los alumnos dejaron de consultar al tutor. Los 4 movimientos socraticos
-    quedan byte a byte como en v1.3.0.
+    y los alumnos dejaron de consultar al tutor.
     """
     s = Settings()
     assert s.default_prompt_version == EXPECTED_TUTOR_VERSION, (

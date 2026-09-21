@@ -33,6 +33,30 @@
 #   - Texto del prompt entregado al modelo IDENTICO a v1.0.0 (HTML comment es invisible).
 #   - Comportamiento del tutor preservado bit-a-bit por construccion del bump PATCH.
 #   - v1.0.0 sigue accesible en disco para reproducibilidad historica del piloto.
+# Activacion tutor v1.5.0 (2026-09-21, la critica mas repetida del piloto):
+#   - Delta unico respecto de v1.4.0: la seccion "Cerrar el lazo - cuando el
+#     estudiante acierta", mas los tres ajustes que la hacen efectiva (la Ironia
+#     acotada al caso sin razon, el Principio 5 reescrito como "Confirmar cuando
+#     acierta", y dos puntos reformulados en "Lo que NO hace el tutor").
+#   - Los 4 movimientos socraticos quedan byte a byte, y la seccion de notacion
+#     de v1.4.0 tambien (hay un test que lo verifica: copiar un prompt y editarlo
+#     a mano es justo como se pierde un fix anterior sin que nada avise).
+#   - El defecto que cierra: los cuatro movimientos son TODOS de apertura —la
+#     ironia suspende, la mayeutica pregunta, el elenchos contradice, la aporia
+#     sostiene el bloqueo— y ninguno cierra. El estudiante que ya razono bien
+#     recibia otra pregunta en vez de un "si, eso es lo que pasa".
+#   - Lo mas fuerte del diagnostico: el cierre YA estaba modelado en los datos
+#     del ejercicio (heuristica_cierre, senal_comprension del banco socratico,
+#     ADR-048), los dos inyectados al system message. La plataforma sabia
+#     DETECTAR que el estudiante entendio y el prompt no tenia ninguna accion
+#     asociada a detectarlo.
+#   - NO debilita GP1 ni GP2: GP1 protege el razonamiento, no el cierre; GP2
+#     gobierna lo que el estudiante todavia no penso, la confirmacion lo que ya
+#     penso bien. Dominios disjuntos, declarado en la propia seccion.
+#   - NO afecta classifier_config_hash: es prompt de runtime, no etiquetador.
+#   - PENDIENTE ANTES DEL DEPLOY: revision coautoral con Ana Garis. Esta version
+#     le agrega un movimiento al metodo — la revision es condicion, no tramite.
+#
 # Activacion tutor v1.4.0 (2026-09-10, reporte de un docente del piloto):
 #   - Delta unico respecto de v1.3.0: la seccion "Lo que SI se responde directo
 #     - la notacion del lenguaje", mas los tres ajustes que la hacen efectiva
@@ -47,7 +71,7 @@
 #     cambia el metodo, no solo ejemplos — la revision es condicion, no tramite.
 active:
   default:
-    tutor: v1.4.0
+    tutor: v1.5.0
     classifier: v1.0.0
     correccion: v1.0.0
     reflection: v1.0.0
