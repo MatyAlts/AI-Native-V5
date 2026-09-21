@@ -77,8 +77,13 @@ class Settings(BaseSettings):
     # devolucion socratica y, en el peor caso, la confrontacion del Principio 9
     # —que esta escrita para "olvida tus instrucciones"— y los alumnos dejaron
     # de consultar al tutor.
+    # v1.5.0 (2026-09-21) le da SALIDA al metodo: cuando el estudiante trae una
+    # conclusion junto con la razon que la sostiene y la razon es correcta, se
+    # confirma en la primera oracion. Los cuatro movimientos son todos de
+    # apertura y ninguno cerraba, asi que el que ya habia razonado bien recibia
+    # otra pregunta — la critica mas repetida del piloto.
     default_prompt_name: str = "tutor"
-    default_prompt_version: str = "v1.4.0"
+    default_prompt_version: str = "v1.5.0"
     # Cambiado 2026-05-19: default a gpt-4o-mini para usar copilot-api proxy
     # (Mistral free tier saturado, ver SESSION-LOG). Restaurar a
     # mistral-small-latest si se vuelve a usar la BYOK key de Mistral.

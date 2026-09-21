@@ -120,15 +120,16 @@ def test_v101_corrige_cuenta_de_guardarrailes(loader: PromptLoader) -> None:
 # El nombre
 # del test NO lleva la version a proposito: antes se llamaba `..._activa_v101_...`
 # mientras asserteaba v1.2.0, y el nombre quedo mintiendo dos bumps seguidos.
-ACTIVE_TUTOR_VERSION = "v1.4.0"
+ACTIVE_TUTOR_VERSION = "v1.5.0"
 
 
 def test_manifest_global_activa_la_version_vigente_del_tutor(loader: PromptLoader) -> None:
     """El manifest global del repo declara la version activa del `tutor` para el
-    tenant `default`. Hoy: v1.4.0 (2026-09-10) — separa consultar la NOTACION de
-    delegar el RAZONAMIENTO, tras el reporte de un docente sobre alumnos que
-    dejaron de consultar al tutor porque una pregunta de sintaxis recibia
-    devolucion socratica.
+    tenant `default`. Hoy: v1.5.0 (2026-09-21) — le da SALIDA al metodo: cuando
+    el estudiante trae una conclusion junto con la razon que la sostiene y la
+    razon es correcta, se confirma en la primera oracion. Los cuatro movimientos
+    socraticos son todos de apertura y ninguno cerraba, asi que el que ya habia
+    razonado bien recibia otra pregunta — la critica mas repetida del piloto.
 
     Si este test falla:
       - Se borro/movio `ai-native-prompts/manifest.yaml`, o
