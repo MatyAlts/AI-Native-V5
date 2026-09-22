@@ -54,6 +54,16 @@ class Settings(BaseSettings):
     # URLs de los servicios dependientes
     governance_service_url: str = "http://127.0.0.1:8010"
     content_service_url: str = "http://127.0.0.1:8009"
+    # `RAG_ENABLED=false` corta la consulta de bibliografia de catedra: el tutor
+    # ni llama al content-service. Existe porque la API de embeddings se corto
+    # dos veces (429 el 2026-08-28, 402 el 2026-09-22) y el fail-soft, aunque
+    # salva el turno, sigue pagando ~3s de backoff por mensaje esperando una API
+    # que ya sabemos muerta.
+    #
+    # Apagarlo pierde las CITAS, no la clase: enunciado, rubrica, test_cases,
+    # banco socratico N1-N4 y misconceptions llegan al modelo por otras vias.
+    # Default `True` — el que despliega sin enterarse queda como estaba.
+    rag_enabled: bool = True
     ai_gateway_url: str = "http://127.0.0.1:8011"
     ctr_service_url: str = "http://127.0.0.1:8007"
     academic_service_url: str = "http://127.0.0.1:8002"
