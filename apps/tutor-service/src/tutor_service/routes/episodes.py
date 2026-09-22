@@ -81,6 +81,7 @@ def _get_tutor() -> TutorCore:
             # inyectaba → self.overuse_detector quedaba None y el bloque de
             # deteccion (tutor_core.py) no corria. Cero eventos overuse en prod.
             overuse_detector=OveruseDetector(_get_redis()),
+            rag_enabled=settings.rag_enabled,
         )
     return _tutor
 

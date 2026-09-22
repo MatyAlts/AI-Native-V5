@@ -188,9 +188,29 @@ def _seguro_compensar(exc: BaseException) -> bool:
 # colisionar, y se reconoce leyendolo.
 RAG_NO_DISPONIBLE = "rag_no_disponible"
 
+# Y este es el OTRO motivo por el que un turno puede no tener material: que no
+# lo hayamos consultado. Centinela aparte, y no por prolijidad.
+#
+# Los dos turnos se ven identicos desde afuera —el alumno recibe su respuesta
+# sin bibliografia— pero uno dice "hay algo roto" y el otro dice "asi esta
+# configurado". `chunks_used_hash` se persiste en cada `prompt_enviado`, y es
+# la columna con la que despues se afirma como se comporto el sistema.
+#
+# Compartir valor ahorraria una constante y costaria la unica manera de separar
+# despues "se nos cayo Google tres dias" de "lo apagamos en septiembre". Peor:
+# quien lea la columna no va a saber que no puede distinguirlas, va a leer
+# `rag_no_disponible` y va a concluir una falla que nunca ocurrio.
+RAG_DESACTIVADO = "rag_desactivado"
+
 _RETRIEVAL_CAIDO = RetrievalResult(
     chunks=[],
     chunks_used_hash=RAG_NO_DISPONIBLE,
+    latency_ms=0.0,
+)
+
+_RETRIEVAL_APAGADO = RetrievalResult(
+    chunks=[],
+    chunks_used_hash=RAG_DESACTIVADO,
     latency_ms=0.0,
 )
 
@@ -209,6 +229,7 @@ class TutorCore:
         default_model: str = "claude-sonnet-4-6",
         detect_adversarial: Callable[[str], list[Match]] | None = None,
         overuse_detector: OveruseDetector | None = None,
+        rag_enabled: bool = True,
     ) -> None:
         self.governance = governance
         self.content = content
@@ -226,6 +247,9 @@ class TutorCore:
         # (modo backwards-compat para tests legacy). Producción inyecta uno con el
         # mismo redis_client que SessionManager.
         self.overuse_detector = overuse_detector
+        # Default `True`: el que despliega sin enterarse de esta variable queda
+        # como estaba. Un flag que se apaga solo no es un flag, es un apagon.
+        self.rag_enabled = rag_enabled
 
     # ── Abrir episodio ─────────────────────────────────────────────────
 
@@ -605,27 +629,40 @@ class TutorCore:
         # El `if rag_context` de mas abajo ya sabia manejar el vacio, igual que
         # `_format_rag_context` y `_build_citations`. Lo unico que faltaba era
         # no morirse antes de llegar.
-        try:
-            retrieval = await self.content.retrieve(
-                query=user_message,
-                top_k=5,
-                tenant_id=state.tenant_id,
-                caller_id=TUTOR_SERVICE_USER_ID,
-                materia_id=getattr(state, "materia_id", None),
-                comision_id=state.comision_id,
-            )
-        except Exception:
-            # `Exception` a proposito y no una lista de tipos: lo que llega acá
-            # es un servicio de tercer nivel (tutor -> content -> Google), y
-            # enumerar sus modos de falla es apostar a conocerlos todos. La
-            # regla es simple: NINGUN fallo del RAG puede dejar al alumno sin
-            # tutor.
-            logger.warning(
-                "rag_no_disponible episode_id=%s — el tutor responde sin material de catedra",
-                episode_id,
-                exc_info=True,
-            )
-            retrieval = _RETRIEVAL_CAIDO
+        #
+        # Y desde el 2026-09-22 la llamada ademas se puede NO hacer. Ese dia la
+        # API de embeddings volvio a cortarse —402 esta vez, 429 la anterior— y
+        # el fail-soft de arriba funciono: el tutor siguio respondiendo. Pero
+        # seguia pagando el intento. Cada mensaje disparaba tutor -> content ->
+        # Google con el backoff del embedder de por medio (1s, 2s, se rinde):
+        # tres segundos por turno esperando una API que ya sabiamos muerta, y el
+        # alumno esperando los tres segundos.
+        #
+        # `rag_enabled=False` no es un fail-soft mas rapido. Es no salir.
+        if not self.rag_enabled:
+            retrieval = _RETRIEVAL_APAGADO
+        else:
+            try:
+                retrieval = await self.content.retrieve(
+                    query=user_message,
+                    top_k=5,
+                    tenant_id=state.tenant_id,
+                    caller_id=TUTOR_SERVICE_USER_ID,
+                    materia_id=getattr(state, "materia_id", None),
+                    comision_id=state.comision_id,
+                )
+            except Exception:
+                # `Exception` a proposito y no una lista de tipos: lo que llega
+                # acá es un servicio de tercer nivel (tutor -> content ->
+                # Google), y enumerar sus modos de falla es apostar a conocerlos
+                # todos. La regla es simple: NINGUN fallo del RAG puede dejar al
+                # alumno sin tutor.
+                logger.warning(
+                    "rag_no_disponible episode_id=%s — el tutor responde sin material de catedra",
+                    episode_id,
+                    exc_info=True,
+                )
+                retrieval = _RETRIEVAL_CAIDO
 
         # 2. Armar contexto RAG para el LLM
         rag_context = self._format_rag_context(retrieval.chunks)
