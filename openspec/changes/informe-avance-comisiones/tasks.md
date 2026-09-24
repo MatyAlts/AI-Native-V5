@@ -17,13 +17,13 @@ cambio y pasa con él). La presentación imprimible se verifica con test de rend
       estable.
 
 ## Lote 2 — presentación imprimible
-- [ ] IAC-03 · Componente `InformeAvanceComision` (web-teacher) que renderiza
+- [x] IAC-03 · Componente `InformeAvanceComision` (web-teacher) que renderiza
       portada (resumen) + detalle por alumno. Print CSS (`@media print`) — nueva en
       el repo, scoped al informe. El bloque de detalle lleva rótulo visible "uso
       interno de la cátedra — datos personales, no publicar". Test RTL: renderiza
       nombres del map; muestra el rótulo de privacidad; muestra "datos
       insuficientes" cuando corresponde.
-- [ ] IAC-04 · Wiring en `ExportView`: acción "Informe de avance (imprimible)"
+- [x] IAC-04 · Wiring en `ExportView`: acción "Informe de avance (imprimible)"
       junto al export JSON existente. Arma el informe para la comisión seleccionada
       (reusa `getCohortProgression`, `getCohortCIIQuartiles`,
       `getCohortAlertsSummary`, `useStudentProfiles`/`listStudentProfiles`) y
