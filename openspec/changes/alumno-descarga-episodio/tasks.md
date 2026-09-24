@@ -4,7 +4,7 @@ Frontend-only (web-student). Helper puro con TDD; la descarga en sí se verifica
 con test del helper + verificación manual del click.
 
 ## Lote 1 — armado del archivo (helper puro, TDD)
-- [ ] ADE-01 · `buildEpisodioSourceFile({ code, messages, language, meta })` —
+- [x] ADE-01 · `buildEpisodioSourceFile({ code, messages, language, meta })` —
       función pura que devuelve `{ filename, content }`.
       - Extensión y estilo de comentario según `language` ("python" → `.py`, `#`;
         "java" → `.java`, `//`). Default python si falta.
