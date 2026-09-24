@@ -58,3 +58,42 @@ def test_audit_alias_routes_resolve() -> None:
     response = client.get("/api/v1/audit/episodes/99999999-9999-9999-9999-999999999999")
     assert response.status_code != 404 or response.status_code == 401
     # Si llegó al handler aunque no tenga auth, no es 404 método/no-found de fastapi
+
+
+def _all_route_paths() -> list[str]:
+    """Aplana `app.routes` en orden de registro.
+
+    Esta versión de FastAPI envuelve cada `include_router` en un
+    `_IncludedRouter` (inclusión perezosa) en vez de aplanar los sub-routes
+    directo en `app.routes` — `app.routes` solo trae `/openapi.json`, `/docs`,
+    etc. + un `_IncludedRouter` opaco por cada router incluido. Bajamos un
+    nivel a `original_router.routes` para poder listar los paths reales.
+    """
+    paths: list[str] = []
+    for route in app.routes:
+        original_router = getattr(route, "original_router", None)
+        sub_routes = original_router.routes if original_router is not None else [route]
+        for sub in sub_routes:
+            path = getattr(sub, "path", None)
+            if path is not None:
+                paths.append(path)
+    return paths
+
+
+def test_closed_match_route_esta_registrada_antes_del_path_generico() -> None:
+    """GET /episodes/closed-match (REAPERTURA, Mejora 2, fix-pdf-auditoria-qa).
+
+    FastAPI matchea rutas en orden de registro. Si "closed-match" quedara
+    registrada DESPUÉS de /episodes/{episode_id}, ese path genérico la
+    capturaría primero e intentaría parsear "closed-match" como UUID —
+    inalcanzable en la práctica. Mismo patrón que ya resuelve /open-match,
+    registrada antes en este mismo archivo.
+
+    Introspección pura sobre `app.routes` — no requiere DB ni auth real, así
+    que corre igual sin Postgres/Redis levantados.
+    """
+    paths = _all_route_paths()
+    assert "/api/v1/episodes/closed-match" in paths
+    assert paths.index("/api/v1/episodes/closed-match") < paths.index(
+        "/api/v1/episodes/{episode_id}"
+    )

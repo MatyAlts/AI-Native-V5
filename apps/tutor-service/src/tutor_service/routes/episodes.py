@@ -323,6 +323,26 @@ async def _emitir_con_heal(
         return await _idempotent_seq(episode_id, idempotency_key, emit)
 
 
+def _last_code_from_events(events: list[dict[str, Any]]) -> str | None:
+    """Extrae el snapshot de código más reciente entre `edicion_codigo` y
+    `codigo_ejecutado`, ordenando por `seq`.
+
+    Aislado de `_build_episode_state` (REAPERTURA, Mejora 2,
+    fix-pdf-auditoria-qa) para reusarse también al sembrar el código del
+    episodio CERRADO anterior en un episodio recién reabierto, sin duplicar
+    el criterio de extracción.
+    """
+    ordered = sorted(events, key=lambda e: e.get("seq", 0))
+    last_code: str | None = None
+    for ev in ordered:
+        if ev.get("event_type") in ("edicion_codigo", "codigo_ejecutado"):
+            payload = ev.get("payload") or {}
+            code = payload.get("snapshot") or payload.get("code")
+            if isinstance(code, str):
+                last_code = code
+    return last_code
+
+
 def _build_episode_state(episode_id: UUID, ep: dict[str, Any]) -> EpisodeStateResponse:
     """Reduce el `EpisodeWithEvents` del CTR al subset que la UI necesita.
 
@@ -355,7 +375,7 @@ def _build_episode_state(episode_id: UUID, ep: dict[str, Any]) -> EpisodeStateRe
         orden_raw = abierto.get("ejercicio_orden")
         ejercicio_orden = orden_raw if isinstance(orden_raw, int) else None
 
-    last_code: str | None = None
+    last_code = _last_code_from_events(events)
     messages: list[dict[str, Any]] = []
     notes: list[dict[str, Any]] = []
 
@@ -363,11 +383,9 @@ def _build_episode_state(episode_id: UUID, ep: dict[str, Any]) -> EpisodeStateRe
         et = ev.get("event_type")
         payload = ev.get("payload") or {}
         ts = ev.get("ts")
-        if et in ("edicion_codigo", "codigo_ejecutado"):
-            code = payload.get("snapshot") or payload.get("code")
-            if isinstance(code, str):
-                last_code = code
-        elif et == "prompt_enviado":
+        # `edicion_codigo`/`codigo_ejecutado` ya se resolvieron arriba, en
+        # `_last_code_from_events` — no necesitan rama acá.
+        if et == "prompt_enviado":
             content = payload.get("content")
             if isinstance(content, str):
                 messages.append({"role": "user", "content": content, "ts": ts})
@@ -475,7 +493,41 @@ async def get_episode_state(
             detail="Solo el estudiante dueño del episodio puede leerlo",
         )
 
-    return _build_episode_state(episode_id, ep)
+    state = _build_episode_state(episode_id, ep)
+
+    # REAPERTURA (Mejora 2, fix-pdf-auditoria-qa, 2026-09-23): al reabrir un
+    # ejercicio ya cerrado ("Volver a abrir"/"Empezar" sobre uno cerrado), el
+    # tutor_core crea un episodio NUEVO sin eventos propios — antes de este
+    # fix el editor abría con el scaffold vacío, perdiendo el código que el
+    # alumno tenía. La pausa nunca tuvo este bug porque reanuda el MISMO
+    # episodio; la reapertura no. Fix de SOLO LECTURA: si el episodio actual
+    # (estado `open`) todavía no trajo código propio, buscamos el último
+    # código del episodio CERRADO más reciente del MISMO alumno (el gate de
+    # ownership de arriba ya validó que `user.id` es el dueño de `ep`, y
+    # `find_closed_episode` filtra server-side por ese mismo
+    # `student_pseudonym`) + mismo problema + mismo ejercicio, y lo usamos
+    # para sembrar la respuesta. No emite ningún evento CTR nuevo (no hay
+    # `edicion_codigo` fantasma) — el write path queda intacto.
+    if state.last_code_snapshot is None and state.estado == "open":
+        closed_match = await ctr.find_closed_episode(
+            tenant_id=user.tenant_id,
+            caller_id=TUTOR_SERVICE_USER_ID,
+            student_pseudonym=user.id,
+            problema_id=state.tarea_practica_id,
+            ejercicio_id=state.ejercicio_id,
+        )
+        if closed_match is not None:
+            prev_ep = await ctr.get_episode(
+                episode_id=UUID(str(closed_match["episode_id"])),
+                tenant_id=user.tenant_id,
+                caller_id=TUTOR_SERVICE_USER_ID,
+            )
+            if prev_ep is not None:
+                prev_code = _last_code_from_events(prev_ep.get("events") or [])
+                if prev_code is not None:
+                    state = state.model_copy(update={"last_code_snapshot": prev_code})
+
+    return state
 
 
 async def _enforce_message_rate_limit(user_id: UUID) -> None:

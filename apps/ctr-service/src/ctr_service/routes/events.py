@@ -34,6 +34,7 @@ from ctr_service.config import settings
 from ctr_service.models import Episode, Event
 from ctr_service.schemas import (
     ChainVerificationResult,
+    ClosedEpisodeMatch,
     EpisodeWithEvents,
     EventOut,
     EventPublishRequest,
@@ -146,6 +147,53 @@ async def find_open_episode(
         ep_ejercicio = meta.get("ejercicio_id")
         if ep_ejercicio == target:
             return OpenEpisodeMatch(
+                episode_id=ep.id,
+                estado=ep.estado,
+                problema_id=ep.problema_id,
+                ejercicio_id=UUID(ep_ejercicio) if ep_ejercicio else None,
+            )
+    return None
+
+
+@router.get("/episodes/closed-match", response_model=ClosedEpisodeMatch | None)
+async def find_closed_episode(
+    student_pseudonym: UUID,
+    problema_id: UUID,
+    ejercicio_id: UUID | None = None,
+    user: User = Depends(require_role(*READ_ROLES)),
+    db: AsyncSession = Depends(get_db),
+) -> ClosedEpisodeMatch | None:
+    """Busca el episodio CERRADO más reciente del mismo contexto de apertura.
+
+    Read-only (Mejora 2 · REAPERTURA, fix-pdf-auditoria-qa, 2026-09-23): el
+    tutor-service consulta este endpoint cuando un episodio recién reabierto
+    todavía no tiene código propio, para heredar el último snapshot del
+    episodio cerrado anterior del mismo (alumno, problema, ejercicio) — el
+    mismo comportamiento que ya tiene la pausa (que reanuda el MISMO episodio
+    en vez de crear uno nuevo). No emite eventos ni escribe nada: es SELECT.
+
+    Mismo criterio de matcheo que `find_open_episode` (`ejercicio_id` contra
+    `Episode.meta['ejercicio_id']`), pero filtrando `estado == "closed"` y
+    ordenando por `closed_at` descendente — el cierre más reciente gana.
+    Devuelve `null` si no hay match.
+    """
+    stmt = (
+        select(Episode)
+        .where(Episode.tenant_id == user.tenant_id)
+        .where(Episode.student_pseudonym == student_pseudonym)
+        .where(Episode.problema_id == problema_id)
+        .where(Episode.estado == "closed")
+        .order_by(Episode.closed_at.desc())
+    )
+    result = await db.execute(stmt)
+    candidates = list(result.scalars().all())
+
+    target = str(ejercicio_id) if ejercicio_id is not None else None
+    for ep in candidates:
+        meta = ep.meta or {}
+        ep_ejercicio = meta.get("ejercicio_id")
+        if ep_ejercicio == target:
+            return ClosedEpisodeMatch(
                 episode_id=ep.id,
                 estado=ep.estado,
                 problema_id=ep.problema_id,

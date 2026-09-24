@@ -28,7 +28,7 @@ pura, verificación manual descrita). Marcar [x] al completar.
       editable de verdad (agregarlo al schema del academic-service). Decidir y cerrar.
 
 ## Lote 4 — Mejora 2 · reapertura con código previo
-- [ ] REAPERTURA · al reabrir un ejercicio cerrado, el episodio nuevo abre con el
+- [x] REAPERTURA · al reabrir un ejercicio cerrado, el episodio nuevo abre con el
       código del último episodio cerrado del mismo (alumno, tarea, ejercicio_orden),
       igual que la pausa. Fix en el read path del CTR (get_episode_state).
       Test: reabrir con código X → el episodio nuevo trae X, no el scaffold.

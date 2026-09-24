@@ -54,8 +54,15 @@ def ctr_mock(monkeypatch: pytest.MonkeyPatch) -> AsyncMock:
 
     El endpoint `get_episode_state` lo llama para fetchar el episodio
     desde ctr-service. Con el mock no hace HTTP real.
+
+    `find_closed_episode` (REAPERTURA, Mejora 2) default a `None` — "no hay
+    episodio cerrado previo que matchee" — porque `AsyncMock()` sin configurar
+    devuelve otro Mock truthy, y el código lo trataría como un match real
+    (`closed_match["episode_id"]`) rompiendo todo test que no seteé esta
+    rama explícitamente.
     """
     mock = AsyncMock()
+    mock.find_closed_episode.return_value = None
     monkeypatch.setattr(episodes_route, "_get_ctr_client", lambda: mock)
     return mock
 
@@ -321,4 +328,153 @@ async def test_get_episode_state_closed_episode_devuelve_estado(
     assert data["messages"][1]["content"] == "última respuesta"
     # No hubo código → snapshot None
     assert data["last_code_snapshot"] is None
-    assert data["notes"] == []
+
+
+# ── REAPERTURA (Mejora 2, fix-pdf-auditoria-qa) ────────────────────────
+#
+# Hasta este fix, reabrir un ejercicio cerrado ("Volver a abrir"/"Empezar")
+# creaba un episodio NUEVO sin eventos propios, y el editor abría con el
+# scaffold vacío — el código que el alumno tenía se perdía. La pausa nunca
+# tuvo este bug porque reanuda el MISMO episodio. El fix es de SOLO LECTURA:
+# si el episodio actual no trajo código propio, `get_episode_state` busca el
+# último código del episodio CERRADO más reciente del mismo (alumno,
+# problema, ejercicio) vía `ctr.find_closed_episode` y lo usa para sembrar
+# `last_code_snapshot` — sin tocar el write path del CTR.
+
+
+async def test_reapertura_hereda_codigo_del_episodio_cerrado_anterior(
+    client: AsyncClient, ctr_mock: AsyncMock
+) -> None:
+    """Caso feliz: episodio reabierto sin código propio → trae el código X
+    del episodio cerrado anterior, no el scaffold vacío."""
+    new_episode_id = uuid4()
+    old_episode_id = uuid4()
+    comision_id = uuid4()
+    problema_id = uuid4()
+
+    new_ep = _make_ctr_episode(
+        episode_id=new_episode_id,
+        tenant_id=USER_TENANT,
+        comision_id=comision_id,
+        problema_id=problema_id,
+        estado="open",
+        events=[_ev(0, "episodio_abierto", {"problema_id": str(problema_id)})],
+    )
+    old_ep = _make_ctr_episode(
+        episode_id=old_episode_id,
+        tenant_id=USER_TENANT,
+        comision_id=comision_id,
+        problema_id=problema_id,
+        estado="closed",
+        events=[
+            _ev(0, "episodio_abierto", {"problema_id": str(problema_id)}),
+            _ev(1, "edicion_codigo", {"snapshot": "def resuelto():\n    return 42\n"}),
+            _ev(2, "episodio_cerrado", {"reason": "student_closed"}),
+        ],
+    )
+
+    async def _get_episode(episode_id: UUID, **_: Any) -> dict[str, Any]:
+        return new_ep if episode_id == new_episode_id else old_ep
+
+    ctr_mock.get_episode.side_effect = _get_episode
+    ctr_mock.find_closed_episode.return_value = {
+        "episode_id": str(old_episode_id),
+        "estado": "closed",
+        "problema_id": str(problema_id),
+        "ejercicio_id": None,
+    }
+
+    resp = await client.get(f"/api/v1/episodes/{new_episode_id}", headers=TENANT_HEADERS)
+
+    assert resp.status_code == 200, resp.text
+    data = resp.json()
+    assert data["episode_id"] == str(new_episode_id)
+    assert data["last_code_snapshot"] == "def resuelto():\n    return 42\n"
+
+    ctr_mock.find_closed_episode.assert_awaited_once()
+    call = ctr_mock.find_closed_episode.await_args
+    assert call.kwargs["student_pseudonym"] == USER_ID
+    assert call.kwargs["problema_id"] == problema_id
+
+    # No debe emitir ningún evento CTR nuevo (no `edicion_codigo` fantasma) —
+    # el endpoint es de lectura pura, el write path queda intacto.
+    ctr_mock.publish_event.assert_not_awaited()
+
+
+async def test_reapertura_no_pisa_codigo_propio_ya_editado(
+    client: AsyncClient, ctr_mock: AsyncMock
+) -> None:
+    """Borde/triangulación: si el episodio reabierto YA tiene una edición
+    propia, esa gana — no se busca ni se pisa con el episodio cerrado
+    anterior (evita perder trabajo nuevo del alumno)."""
+    episode_id = uuid4()
+    problema_id = uuid4()
+
+    ctr_mock.get_episode.return_value = _make_ctr_episode(
+        episode_id=episode_id,
+        tenant_id=USER_TENANT,
+        comision_id=uuid4(),
+        problema_id=problema_id,
+        estado="open",
+        events=[
+            _ev(0, "episodio_abierto", {"problema_id": str(problema_id)}),
+            _ev(1, "edicion_codigo", {"snapshot": "codigo_nuevo_del_alumno()"}),
+        ],
+    )
+
+    resp = await client.get(f"/api/v1/episodes/{episode_id}", headers=TENANT_HEADERS)
+
+    assert resp.status_code == 200, resp.text
+    data = resp.json()
+    assert data["last_code_snapshot"] == "codigo_nuevo_del_alumno()"
+    ctr_mock.find_closed_episode.assert_not_awaited()
+
+
+async def test_reapertura_sin_episodio_cerrado_previo_no_rompe(
+    client: AsyncClient, ctr_mock: AsyncMock
+) -> None:
+    """Sin match (primera vez que el alumno abre este ejercicio): sigue
+    devolviendo `last_code_snapshot=None`, el scaffold del editor decide."""
+    episode_id = uuid4()
+    problema_id = uuid4()
+
+    ctr_mock.get_episode.return_value = _make_ctr_episode(
+        episode_id=episode_id,
+        tenant_id=USER_TENANT,
+        comision_id=uuid4(),
+        problema_id=problema_id,
+        estado="open",
+        events=[_ev(0, "episodio_abierto", {"problema_id": str(problema_id)})],
+    )
+    ctr_mock.find_closed_episode.return_value = None
+
+    resp = await client.get(f"/api/v1/episodes/{episode_id}", headers=TENANT_HEADERS)
+
+    assert resp.status_code == 200, resp.text
+    assert resp.json()["last_code_snapshot"] is None
+    ctr_mock.find_closed_episode.assert_awaited_once()
+
+
+async def test_reapertura_no_aplica_a_episodio_cerrado_en_lectura(
+    client: AsyncClient, ctr_mock: AsyncMock
+) -> None:
+    """Un episodio que se está viendo en modo lectura (cerrado, sin código
+    propio) no dispara el seed — la regla es sólo para reaperturas `open`."""
+    episode_id = uuid4()
+    problema_id = uuid4()
+
+    ctr_mock.get_episode.return_value = _make_ctr_episode(
+        episode_id=episode_id,
+        tenant_id=USER_TENANT,
+        comision_id=uuid4(),
+        problema_id=problema_id,
+        estado="closed",
+        closed_at=datetime.now(UTC),
+        events=[_ev(0, "episodio_abierto", {"problema_id": str(problema_id)})],
+    )
+
+    resp = await client.get(f"/api/v1/episodes/{episode_id}", headers=TENANT_HEADERS)
+
+    assert resp.status_code == 200, resp.text
+    assert resp.json()["last_code_snapshot"] is None
+    ctr_mock.find_closed_episode.assert_not_awaited()

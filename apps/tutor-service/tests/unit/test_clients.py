@@ -409,6 +409,57 @@ async def test_ctr_get_episode_raises_on_5xx() -> None:
         await client.get_episode(episode_id=eid, tenant_id=uuid4(), caller_id=uuid4())
 
 
+@pytest.mark.asyncio
+@respx.mock
+async def test_ctr_find_closed_episode_returns_match() -> None:
+    """REAPERTURA (Mejora 2): el read-path usa este método para encontrar el
+    episodio cerrado más reciente del mismo (alumno, problema, ejercicio)."""
+    problema_id = uuid4()
+    student_pseudonym = uuid4()
+    matched_id = uuid4()
+    route = respx.get(f"{CTR}/api/v1/episodes/closed-match").mock(
+        return_value=httpx.Response(
+            200,
+            json={
+                "episode_id": str(matched_id),
+                "estado": "closed",
+                "problema_id": str(problema_id),
+                "ejercicio_id": None,
+            },
+        )
+    )
+    client = CTRClient(CTR)
+    data = await client.find_closed_episode(
+        tenant_id=uuid4(),
+        caller_id=uuid4(),
+        student_pseudonym=student_pseudonym,
+        problema_id=problema_id,
+    )
+    assert data is not None
+    assert data["episode_id"] == str(matched_id)
+    sent_params = route.calls.last.request.url.params
+    assert sent_params["student_pseudonym"] == str(student_pseudonym)
+    assert sent_params["problema_id"] == str(problema_id)
+
+
+@pytest.mark.asyncio
+@respx.mock
+async def test_ctr_find_closed_episode_returns_none_sin_match() -> None:
+    """Sin episodio cerrado previo (alumno nuevo en el ejercicio): el
+    ctr-service responde `null` y el client debe devolver `None`, no `{}`."""
+    respx.get(f"{CTR}/api/v1/episodes/closed-match").mock(
+        return_value=httpx.Response(200, content=b"null")
+    )
+    client = CTRClient(CTR)
+    data = await client.find_closed_episode(
+        tenant_id=uuid4(),
+        caller_id=uuid4(),
+        student_pseudonym=uuid4(),
+        problema_id=uuid4(),
+    )
+    assert data is None
+
+
 # --- Guards defensivos de ContentClient.retrieve ---------------------------
 # Regresion: ambos guards construian `RetrievalResult(..., rerank_applied=False)`,
 # pero la dataclass de `clients.py` NO tiene ese campo (si lo tiene la de
