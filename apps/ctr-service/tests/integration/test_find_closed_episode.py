@@ -17,11 +17,10 @@ from datetime import UTC, datetime, timedelta
 from uuid import UUID, uuid4
 
 import pytest
-from sqlalchemy import text
-
 from ctr_service.auth import User
 from ctr_service.models import Episode
 from ctr_service.routes.events import find_closed_episode
+from sqlalchemy import text
 
 from .conftest import requires_docker
 
@@ -152,9 +151,7 @@ async def test_ownership_no_devuelve_el_episodio_cerrado_de_otro_alumno(
 # ── 2. Más reciente por closed_at DESC ──────────────────────────────────
 
 
-async def test_devuelve_el_cierre_mas_reciente_del_mismo_alumno(
-    pg_engine, session_factory
-) -> None:
+async def test_devuelve_el_cierre_mas_reciente_del_mismo_alumno(pg_engine, session_factory) -> None:
     tenant = uuid4()
     problema = uuid4()
     ejercicio = uuid4()
@@ -233,9 +230,7 @@ async def test_no_devuelve_episodios_open_o_paused(pg_engine, session_factory) -
 # ── 4. Matcheo correcto de ejercicio_id dentro de la misma tarea ────────
 
 
-async def test_no_cruza_ejercicios_distintos_de_la_misma_tarea(
-    pg_engine, session_factory
-) -> None:
+async def test_no_cruza_ejercicios_distintos_de_la_misma_tarea(pg_engine, session_factory) -> None:
     tenant = uuid4()
     problema = uuid4()
     alumno = uuid4()

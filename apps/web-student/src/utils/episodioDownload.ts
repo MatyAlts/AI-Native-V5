@@ -101,7 +101,8 @@ export function buildEpisodioSourceFile(input: BuildEpisodioSourceFileInput): Ep
     comentarLinea(comentario, meta.fecha),
   ].join("\n")
 
-  const cuerpo = code && code.length > 0 ? code : comentarLinea(comentario, "(sin codigo entregado)")
+  const cuerpo =
+    code && code.length > 0 ? code : comentarLinea(comentario, "(sin codigo entregado)")
 
   const partes = [header, "", cuerpo]
 
