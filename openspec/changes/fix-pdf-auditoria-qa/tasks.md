@@ -44,5 +44,5 @@ pura, verificación manual descrita). Marcar [x] al completar.
       el poll a /audit/.../verify corra y el pie deje de estar muerto.
 
 ## Cosméticos (si sobra)
-- [ ] BUG-04 · "Tu episodio:" sin valor colgando en Vencidas del alumno.
-- [ ] BUG-20 · contador de cabecera de Evolución por estudiante vs el detalle.
+- [x] BUG-04 · "Tu episodio:" sin valor colgando en Vencidas del alumno.
+- [x] BUG-20 · contador de cabecera de Evolución por estudiante vs el detalle.

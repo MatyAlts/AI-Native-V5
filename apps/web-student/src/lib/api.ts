@@ -46,7 +46,14 @@ export interface Classification {
   episode_id: string
   comision_id: string
   classifier_config_hash: string
-  appropriation: "delegacion_pasiva" | "apropiacion_superficial" | "apropiacion_reflexiva"
+  // "autonomo" (eje ORTOGONAL, v4.0.0): brazo sin-tutor (prompts == 0). Ver
+  // `Classification.appropriation` en classifier-service — no es parte del
+  // continuo delegacion<->reflexiva, es su propio valor persistido.
+  appropriation:
+    | "delegacion_pasiva"
+    | "apropiacion_superficial"
+    | "apropiacion_reflexiva"
+    | "autonomo"
   appropriation_reason: string
   ct_summary: number | null
   ccd_mean: number | null
@@ -912,7 +919,12 @@ export interface StudentEpisode {
   opened_at: string | null
   closed_at: string | null
   events_count: number
-  appropriation: "delegacion_pasiva" | "apropiacion_superficial" | "apropiacion_reflexiva" | null
+  appropriation:
+    | "delegacion_pasiva"
+    | "apropiacion_superficial"
+    | "apropiacion_reflexiva"
+    | "autonomo"
+    | null
   classified_at: string | null
 }
 

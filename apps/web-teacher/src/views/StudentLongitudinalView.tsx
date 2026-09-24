@@ -22,6 +22,7 @@ import {
   slopeToDocente,
   studentShortLabel,
 } from "../utils/docenteLabels"
+import { computeDocenteWorkSummary } from "../utils/docenteWorkSummary"
 import { helpContent } from "../utils/helpContent"
 
 interface Props {
@@ -263,7 +264,13 @@ export function StudentLongitudinalView({ getToken, initialComisionId, initialSt
         {data && (
           <div className="space-y-4">
             {isDocente
-              ? docenteSlope && <DocenteSummary data={data} docenteSlope={docenteSlope} />
+              ? docenteSlope && (
+                  <DocenteSummary
+                    data={data}
+                    docenteSlope={docenteSlope}
+                    episodes={episodesData?.episodes ?? null}
+                  />
+                )
               : meanLabel && <InvestigadorSummary data={data} meanLabel={meanLabel} />}
 
             {alertsData && alertsData.alerts.length > 0 && (
@@ -411,10 +418,17 @@ export function StudentLongitudinalView({ getToken, initialComisionId, initialSt
 function DocenteSummary({
   data,
   docenteSlope,
+  episodes,
 }: {
   data: CIIEvolutionLongitudinal
   docenteSlope: ReturnType<typeof slopeToDocente>
+  episodes: StudentEpisode[] | null
 }) {
+  const workSummary = computeDocenteWorkSummary(
+    data.n_episodes_total,
+    data.n_groups_evaluated,
+    episodes,
+  )
   return (
     <div className="rounded-xl border border-border bg-surface px-6 py-5">
       <div className="flex items-center gap-4 mb-3">
@@ -439,6 +453,11 @@ function DocenteSummary({
           {data.n_groups_evaluated !== 1 ? "s" : ""} de trabajo
         </div>
       </div>
+      {workSummary.caption && (
+        <p className="mt-2 text-xs text-muted-soft" data-testid="docente-work-summary-caption">
+          {workSummary.caption}
+        </p>
+      )}
     </div>
   )
 }
