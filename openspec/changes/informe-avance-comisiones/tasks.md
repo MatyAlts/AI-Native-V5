@@ -5,12 +5,12 @@ cambio y pasa con él). La presentación imprimible se verifica con test de rend
 (RTL) donde aplique + verificación manual del print.
 
 ## Lote 1 — modelo de datos del informe (helpers puros, TDD)
-- [ ] IAC-01 · `buildResumenComision(progression, quartiles, alertsSummary)` —
+- [x] IAC-01 · `buildResumenComision(progression, quartiles, alertsSummary)` —
       función pura que arma el view-model de la PORTADA desde los responses ya
       existentes. Debe manejar `insufficient_data` (N<5) devolviendo un estado
       "datos insuficientes por privacidad", NO ceros. Test: caso normal, caso N<5,
       caso sin datos.
-- [ ] IAC-02 · `buildDetallePorAlumno(progression.trajectories, profilesMap, alerts?)`
+- [x] IAC-02 · `buildDetallePorAlumno(progression.trajectories, profilesMap, alerts?)`
       — función pura que arma la TABLA por alumno cruzando las trayectorias con el
       Map de nombres (patrón `studentShortLabel`: nombre real, fallback "Est.
       xxxxxx"). Test: alumno con nombre, alumno sin profile (fallback), orden
