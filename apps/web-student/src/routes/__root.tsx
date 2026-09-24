@@ -1,6 +1,6 @@
 import { SignInButton, SignUpButton, UserButton, useAuth, useUser } from "@clerk/clerk-react"
 import { AuditFooter, HelpButton } from "@platform/ui"
-import { Outlet, createRootRouteWithContext } from "@tanstack/react-router"
+import { Outlet, createRootRouteWithContext, useRouterState } from "@tanstack/react-router"
 import { type ReactNode, useCallback, useEffect, useState } from "react"
 import { DEV_NO_CLERK, DEV_STUDENT_UUID, clearClerkUserId, setClerkUserId } from "../auth"
 import { TenantSelector } from "../components/TenantSelector"
@@ -8,6 +8,24 @@ import { OnboardingAlumno } from "../onboarding/OnboardingAlumno"
 import { helpContent } from "../utils/helpContent"
 
 const ENROLLED_COMISION_KEY = "enrolledComisionId"
+
+// BUG-08 (QA 2026-09-23): el pie de auditoria vive en el layout RAIZ, pero el
+// episodio activo del alumno vive en la ruta hija `/episodio/$id`. Sin esto,
+// `episodeId` llegaba hardcodeado a `null` y el poll a
+// `/api/v1/audit/episodes/{id}/verify` nunca corria — el pie quedaba muerto
+// ("cadena: sin verificacion previa") aun con un episodio abierto.
+//
+// Funcion pura y EXPORTADA para poder testearla sin montar un RouterProvider
+// (mismo patron que `MateriaContextLine` en `materia.$id.tsx`): recibe los
+// `matches` del router y devuelve el `id` del match de `/episodio/$id`, si el
+// alumno esta ahi.
+export function activeEpisodeIdFromMatches(
+  matches: readonly { routeId: string; params: Record<string, unknown> }[],
+): string | null {
+  const match = matches.find((m) => m.routeId === "/episodio/$id")
+  const id = match?.params.id
+  return typeof id === "string" ? id : null
+}
 
 export interface RouterContext {
   getToken: () => Promise<string | null>
@@ -198,6 +216,12 @@ function LayoutShell({
   // Solo se muestra a usuarios autenticados, no en la pantalla de login.
   showAudit?: boolean
 }) {
+  // BUG-08: episodio activo real (si el alumno esta en /episodio/$id), para
+  // que el AuditFooter dispare el poll de verificacion de cadena en vez de
+  // quedar con episodeId={null} para siempre.
+  const activeEpisodeId = useRouterState({
+    select: (s) => activeEpisodeIdFromMatches(s.matches),
+  })
   return (
     <div className="h-dvh bg-surface-alt text-ink flex flex-col overflow-hidden">
       <header className="border-b border-border-soft px-6 py-3 flex items-center justify-between gap-4">
@@ -216,7 +240,7 @@ function LayoutShell({
 
       {children}
 
-      {showAudit && <AuditFooter episodeId={null} classifierHash={null} />}
+      {showAudit && <AuditFooter episodeId={activeEpisodeId} classifierHash={null} />}
     </div>
   )
 }

@@ -40,7 +40,7 @@ pura, verificación manual descrita). Marcar [x] al completar.
       no ve "0 / NaN" (leer puntaje_max con fallback). Test del render de criterios.
 
 ## Lote 6 — pie de auditoría vivo
-- [ ] BUG-08 · pasar el episodeId real (y classifierHash) al AuditFooter para que
+- [x] BUG-08 · pasar el episodeId real (y classifierHash) al AuditFooter para que
       el poll a /audit/.../verify corra y el pie deje de estar muerto.
 
 ## Cosméticos (si sobra)
