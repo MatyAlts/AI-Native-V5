@@ -9,10 +9,10 @@ pura, verificación manual descrita). Marcar [x] al completar.
 - [x] BUG-05 · versión del prompt en el pie de auditoría (bump v1.5.0)
 
 ## Lote 1 — UX del formulario de TP (docente)
-- [ ] BUG-18 · `formatApiError` puro que traduce el 422 de FastAPI a mensaje por
+- [x] BUG-18 · `formatApiError` puro que traduce el 422 de FastAPI a mensaje por
       campo; usarlo en el submit del form de TP. Nunca mostrar "[object Object]".
       Test: unit de `formatApiError` (422 array, detail string, error genérico).
-- [ ] BUG-03 · auto-scroll al mensaje de error del modal de TP cuando se setea
+- [x] BUG-03 · auto-scroll al mensaje de error del modal de TP cuando se setea
       `formError` (respetar prefers-reduced-motion). Verificación manual.
 
 ## Lote 2 — analítica y correcciones (docente)

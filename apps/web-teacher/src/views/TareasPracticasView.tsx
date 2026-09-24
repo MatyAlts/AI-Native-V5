@@ -34,7 +34,7 @@ import {
   Send,
   Trash2,
 } from "lucide-react"
-import { useCallback, useEffect, useState } from "react"
+import { useCallback, useEffect, useRef, useState } from "react"
 import { useComisionLabel } from "../components/ComisionSelector"
 import {
   DEFAULT_LANGUAGE,
@@ -55,11 +55,26 @@ import {
 } from "../lib/api"
 import { useTutorialDeVista } from "../tour/useTutorialDeVista"
 import { tareasPracticasTour } from "../tour/vistas"
+import { formatApiError } from "../utils/errorApi"
 import { helpContent } from "../utils/helpContent"
 
 interface Props {
   comisionId: string
   getToken: () => Promise<string | null>
+}
+
+// BUG-03: el mensaje de error del form de TP se renderiza arriba del modal
+// scrolleable, pero el boton de submit vive al fondo — con un form largo el
+// docente ve "algo fallo" sin ver el detalle. `block: "nearest"` evita mover
+// la pantalla si el bloque ya es visible; `prefers-reduced-motion` se respeta
+// sin animar el scroll.
+function scrollAlErrorDelForm(el: HTMLElement | null) {
+  if (!el) return
+  const prefiereMenosMovimiento =
+    typeof window !== "undefined" &&
+    typeof window.matchMedia === "function" &&
+    window.matchMedia("(prefers-reduced-motion: reduce)").matches
+  el.scrollIntoView({ block: "nearest", behavior: prefiereMenosMovimiento ? "auto" : "smooth" })
 }
 
 const ESTADO_LABEL: Record<TareaEstado, string> = {
@@ -776,6 +791,10 @@ function TareaFormModal({
 
   const [submitting, setSubmitting] = useState(false)
   const [formError, setFormError] = useState<string | null>(null)
+  const formErrorRef = useRef<HTMLDivElement>(null)
+  useEffect(() => {
+    if (formError) scrollAlErrorDelForm(formErrorRef.current)
+  }, [formError])
 
   const showDriftBanner = Boolean(mode === "edit" && initial?.template_id && !initial.has_drift)
   const [driftAck, setDriftAck] = useState(false)
@@ -857,7 +876,7 @@ function TareaFormModal({
         ...(mode === "create" ? { language } : {}),
       })
     } catch (e) {
-      setFormError(String(e))
+      setFormError(formatApiError(e))
     } finally {
       setSubmitting(false)
     }
@@ -885,7 +904,10 @@ function TareaFormModal({
         )}
 
         {formError && (
-          <div className="rounded border border-danger/30 bg-danger-soft p-2 text-xs text-danger">
+          <div
+            ref={formErrorRef}
+            className="rounded border border-danger/30 bg-danger-soft p-2 text-xs text-danger"
+          >
             {formError}
           </div>
         )}
@@ -1122,6 +1144,10 @@ function FechaFinModal({
   const [fechaFin, setFechaFin] = useState(isoToLocalInput(tarea.fecha_fin))
   const [submitting, setSubmitting] = useState(false)
   const [formError, setFormError] = useState<string | null>(null)
+  const formErrorRef = useRef<HTMLDivElement>(null)
+  useEffect(() => {
+    if (formError) scrollAlErrorDelForm(formErrorRef.current)
+  }, [formError])
 
   const willDrift = Boolean(tarea.template_id && !tarea.has_drift)
   const [driftAck, setDriftAck] = useState(false)
@@ -1145,7 +1171,7 @@ function FechaFinModal({
     try {
       await onSubmit(iso)
     } catch (e) {
-      setFormError(String(e))
+      setFormError(formatApiError(e))
     } finally {
       setSubmitting(false)
     }
@@ -1183,7 +1209,10 @@ function FechaFinModal({
         )}
 
         {formError && (
-          <div className="rounded border border-danger/30 bg-danger-soft p-2 text-xs text-danger">
+          <div
+            ref={formErrorRef}
+            className="rounded border border-danger/30 bg-danger-soft p-2 text-xs text-danger"
+          >
             {formError}
           </div>
         )}

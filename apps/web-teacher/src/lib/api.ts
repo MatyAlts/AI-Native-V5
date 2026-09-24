@@ -120,14 +120,26 @@ async function authHeaders(getToken?: TokenGetter): Promise<Record<string, strin
 async function throwIfNotOk(r: Response): Promise<void> {
   if (r.ok) return
   const raw = await r.text()
-  let detail = raw
+  let detail: unknown = raw
   try {
     const body = JSON.parse(raw)
     detail = body.detail ?? body.title ?? raw
   } catch {
     /* not JSON, use raw text */
   }
-  throw new Error(`${r.status}: ${detail}`)
+  // BUG-18: `detail` puede ser un array de errores de validacion de FastAPI
+  // (422). Interpolarlo directo en el template string lo colapsaba a
+  // "[object Object]" y perdia toda la info util. Serializamos para el
+  // mensaje legible y adjuntamos el valor crudo como `.detail` para que
+  // consumidores como `formatApiError` puedan armar un mensaje por campo.
+  const mensaje =
+    Array.isArray(detail) || (detail && typeof detail === "object")
+      ? JSON.stringify(detail)
+      : String(detail)
+  const err = new Error(`${r.status}: ${mensaje}`) as Error & { detail?: unknown; status?: number }
+  err.detail = detail
+  err.status = r.status
+  throw err
 }
 
 // ── Progression ───────────────────────────────────────────────────────
