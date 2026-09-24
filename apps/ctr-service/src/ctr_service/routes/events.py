@@ -183,7 +183,12 @@ async def find_closed_episode(
         .where(Episode.student_pseudonym == student_pseudonym)
         .where(Episode.problema_id == problema_id)
         .where(Episode.estado == "closed")
-        .order_by(Episode.closed_at.desc())
+        # `closed_at` es nullable (models/event.py) y en Postgres `DESC` ordena
+        # NULLS FIRST por default: un episodio `closed` sin `closed_at` (legacy,
+        # backfill o seed) ganaria el orden y el alumno heredaria el codigo del
+        # episodio equivocado. `nullslast()` lo manda al final: si hay algun
+        # cierre con fecha, ese gana siempre.
+        .order_by(Episode.closed_at.desc().nullslast())
     )
     result = await db.execute(stmt)
     candidates = list(result.scalars().all())

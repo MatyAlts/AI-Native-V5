@@ -97,3 +97,65 @@ def test_closed_match_route_esta_registrada_antes_del_path_generico() -> None:
     assert paths.index("/api/v1/episodes/closed-match") < paths.index(
         "/api/v1/episodes/{episode_id}"
     )
+
+
+def test_closed_match_ordena_con_nulls_last() -> None:
+    """GET /episodes/closed-match ordena `closed_at DESC NULLS LAST`.
+
+    `Episode.closed_at` es nullable (`models/event.py`) y en Postgres un
+    `ORDER BY ... DESC` pone los NULL PRIMERO por default. Un episodio en
+    estado `closed` con `closed_at` NULL (legacy, backfill o seed) ganaria
+    entonces el orden y la reapertura sembraria en el editor el codigo del
+    episodio EQUIVOCADO — un dato que despues entra a la cadena del episodio
+    nuevo. `nullslast()` manda esos al final: si hay algun cierre fechado,
+    ese gana siempre.
+
+    Captura el statement con un `db` falso y lo compila al dialecto de
+    Postgres: no toca DB ni red, corre sin stack levantado.
+    """
+    import asyncio
+    from uuid import uuid4
+
+    from ctr_service.auth import User
+    from ctr_service.routes.events import find_closed_episode
+    from sqlalchemy.dialects import postgresql
+
+    class _FakeResult:
+        def scalars(self):
+            return self
+
+        def all(self):
+            return []
+
+    class _CapturingDB:
+        def __init__(self) -> None:
+            self.stmt = None
+
+        async def execute(self, stmt):
+            self.stmt = stmt
+            return _FakeResult()
+
+    tenant_id = uuid4()
+    user = User(
+        id=uuid4(),
+        tenant_id=tenant_id,
+        email="tutor-service@platform.internal",
+        roles=frozenset({"tutor_service"}),
+        realm=str(tenant_id),
+    )
+    db = _CapturingDB()
+
+    asyncio.run(
+        find_closed_episode(
+            student_pseudonym=uuid4(),
+            problema_id=uuid4(),
+            ejercicio_id=None,
+            user=user,
+            db=db,
+        )
+    )
+
+    assert db.stmt is not None, "el endpoint no ejecuto ningun SELECT"
+    sql = str(db.stmt.compile(dialect=postgresql.dialect())).upper()
+    assert "ORDER BY" in sql
+    assert "CLOSED_AT DESC NULLS LAST" in sql, sql
