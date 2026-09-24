@@ -31,6 +31,14 @@ interface Props {
 export function ResumenCorreccionIA({ ejercicios, correcciones, onUsarComoBase }: Props) {
   const r = resumirCorrecciones(ejercicios, correcciones)
 
+  // BUG-11 (QA 2026-09-23): el titulo decia "Active-IA" hardcodeado, pero desde
+  // que el motor propio esta encendido la nota la produce el corrector NATIVO
+  // (rubrica_id con prefijo "nativa:"). Atribuirsela a Active-IA es un error de
+  // negocio (F15/Active-IA es otro producto). El nombre sale del motor real.
+  const motorLabel = correcciones.some((c) => c.rubrica_id?.startsWith("nativa:"))
+    ? "corrección con IA"
+    : "Active-IA"
+
   // Sin ninguna correccion terminada no hay nada que resumir, y una card
   // vacia que dice "faltan 4" antes de que el docente pida la primera seria
   // ruido.
@@ -44,7 +52,7 @@ export function ResumenCorreccionIA({ ejercicios, correcciones, onUsarComoBase }
       <div className="flex items-center gap-2">
         <Calculator size={14} className="text-muted" aria-hidden="true" />
         <p className="text-xs font-mono uppercase tracking-wider text-muted">
-          Sugerencia de Active-IA
+          Sugerencia de {motorLabel}
         </p>
         <span className="ml-auto">
           <HelpButton

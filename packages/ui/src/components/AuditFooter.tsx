@@ -30,7 +30,12 @@ const LS_AUDIT_CHAIN_KEY = "audit-chain-state"
 // `ai-native-prompts/manifest.yaml` y `tutor-service/config.py`. Si divergen,
 // el pie de auditoria le informa al usuario una version que no es la que la
 // trazabilidad esta registrando.
-const PROMPT_VERSION = "tutor/v1.3.0"
+//
+// BUG-05 (QA 2026-09-23): divergio. El manifest y config.py corren v1.5.0 y
+// esta constante seguia en v1.3.0 desde los bumps v1.4.0/v1.5.0 — el pie mentia
+// la version en prod. Bump de emergencia a v1.5.0. FIX REAL (pendiente): leer
+// `GET /api/v1/active_configs` para que no vuelva a divergir en el proximo bump.
+const PROMPT_VERSION = "tutor/v1.5.0"
 // NO es el prompt: es el etiquetador N1-N4 (ADR-020). Se bumpea por sus propias
 // reglas y cambiarlo re-etiqueta historicos. No tocar en bumps de prompt.
 const LABELER_VERSION = "1.2.0"

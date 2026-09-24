@@ -364,7 +364,11 @@ function Resultado({
       data-testid="correccion-ia-resultado"
     >
       <p className="text-body">
-        Active-IA sugiere <strong>{correccion.nota_100}/100</strong>
+        {/* BUG-11 (QA 2026-09-23): el motor real sale del prefijo del rubrica_id
+            ("nativa:" = corrector propio). Antes decia "Active-IA" fijo y le
+            atribuia a Active-IA notas del motor nativo. */}
+        {correccion.rubrica_id?.startsWith("nativa:") ? "La corrección con IA" : "Active-IA"}{" "}
+        sugiere <strong>{correccion.nota_100}/100</strong>
       </p>
       {/* Desde el 19/08 el codigo que no compila se manda igual a corregir: un
           punto y coma que falta no justifica dejar al alumno sin devolucion.
