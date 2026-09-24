@@ -1461,6 +1461,13 @@ function GradingFormView({
       await entregasDocenteApi.calificar(entrega.id, body, getToken)
       // Refetch entrega para tener estado=graded actualizado
       const updated = await entregasDocenteApi.get(entrega.id, getToken)
+      // BUG-12: si el docente llego a calificar con `reediting=true` (ej. via
+      // "Usar como base" de la sugerencia de IA, que activa reediting ANTES de
+      // calificar), dejar reediting prendido esconde "Devolver al estudiante"
+      // hasta que se aprieta "Cancelar" — que se lee como descartar lo que
+      // recien se guardo. Ya se guardo: salir de reediting es lo que el
+      // docente espera, igual que hace `handleRecalificar`.
+      setReediting(false)
       onUpdated(updated)
     } catch (e) {
       setSubmitError(String(e))

@@ -16,9 +16,9 @@ pura, verificación manual descrita). Marcar [x] al completar.
       `formError` (respetar prefers-reduced-motion). Verificación manual.
 
 ## Lote 2 — analítica y correcciones (docente)
-- [ ] BUG-14 · "Balance general" no debe afirmar una mayoría desde un ratio neto;
+- [x] BUG-14 · "Balance general" no debe afirmar una mayoría desde un ratio neto;
       texto que diga lo que mide + piso de N como en Cuartiles. Test del texto por rama.
-- [ ] BUG-12 · "Devolver al estudiante" visible sin tener que apretar "Cancelar"
+- [x] BUG-12 · "Devolver al estudiante" visible sin tener que apretar "Cancelar"
       tras calificar (salir de reediting al calificar OK, o renombrar el botón).
 
 ## Lote 3 — formulario y estado (docente)

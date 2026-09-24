@@ -267,6 +267,121 @@ describe("CorreccionesView — GradingFormView", () => {
     expect(screen.queryByTestId("calificar-btn")).toBeNull()
   })
 
+  it("BUG-12: tras Calificar exitoso, Devolver al estudiante aparece sin apretar Cancelar", async () => {
+    // Reproduce el camino real del bug: el docente usa la sugerencia de
+    // Active-IA ("Usar como base"), que deja la vista en reediting=true
+    // (`onUsarComoBase` llama `setReediting(true)`) ANTES de calificar. Si
+    // `handleCalificar` no sale de `reediting` al terminar, el gate de
+    // "Devolver al estudiante" (`entrega.estado === "graded" && !reediting &&
+    // !queueMode`) queda cerrado hasta que el docente aprieta "Cancelar" — que
+    // se lee como descartar la calificacion que recien guardo.
+    const calificacionGuardada = {
+      id: "califid-1",
+      entrega_id: ENTREGA_ID,
+      nota_final: 9,
+      feedback_general: "Buen trabajo",
+      detalle_criterios: [],
+      calificado_at: "2026-09-23T13:00:00Z",
+      calificador_id: "docente-1",
+    }
+    const correccionIA = {
+      id: "corr-1",
+      entrega_id: ENTREGA_ID,
+      tp_ejercicio_id: null,
+      orden: 1,
+      estado: "done",
+      rubrica_id: "nativa:v1",
+      nota_100: 90,
+      desglose: [],
+      tests_snapshot: {},
+      created_at: "2026-09-23T12:00:00Z",
+    }
+    const tpEjercicio = {
+      id: "tpej-1",
+      tarea_practica_id: TAREA_ID,
+      ejercicio_id: "ej-1",
+      orden: 1,
+      peso_en_tp: "1.00",
+      ejercicio: { id: "ej-1", titulo: "Ejercicio 1", rubrica: null },
+    }
+    setupFetchMock({
+      // Las rutas mas especificas van ARRIBA de "/api/v1/entregas": ese
+      // prefijo matchea a todas por `includes` (get singular, calificar,
+      // calificacion) y les devolveria el shape pageable donde el codigo
+      // espera otra cosa.
+      "/calificacion": () => calificacionGuardada,
+      "/correccion-ia": () => ({ correcciones: [correccionIA] }),
+      "/ejercicios": () => [tpEjercicio],
+      [`/api/v1/entregas/${ENTREGA_ID}/calificar`]: () => calificacionGuardada,
+      [`/api/v1/entregas/${ENTREGA_ID}`]: () => mockEntregaGraded,
+      "/api/v1/entregas": () => ({ data: [mockEntregaSubmitted], meta: { cursor_next: null } }),
+      "/api/v1/tareas-practicas/": () => mockTarea,
+    })
+    renderWithRouter(<CorreccionesView comisionId={COMISION_ID} getToken={getToken} />)
+    await waitFor(() => {
+      expect(screen.getByTestId("entrega-drill-btn")).toBeDefined()
+    })
+    fireEvent.click(screen.getByTestId("entrega-drill-btn"))
+
+    // "Usar como base" deja la vista en reediting=true, antes de calificar.
+    await waitFor(() => {
+      expect(screen.getByTestId("resumen-usar-como-base")).toBeDefined()
+    })
+    fireEvent.click(screen.getByTestId("resumen-usar-como-base"))
+
+    fireEvent.change(screen.getByTestId("feedback-input"), {
+      target: { value: "Buen trabajo" },
+    })
+    fireEvent.click(screen.getByTestId("calificar-btn"))
+
+    await waitFor(() => {
+      expect(screen.getByTestId("devolver-btn")).toBeDefined()
+    })
+    // No debe requerir un click en "Cancelar" para verlo.
+    expect(screen.queryByTestId("cancelar-recalificacion-btn")).toBeNull()
+  })
+
+  it("BUG-12 (borde): Calificar sin pasar por 'Usar como base' tambien deja Devolver visible", async () => {
+    // Caso sin la sugerencia de IA: `reediting` nunca se activa antes de
+    // calificar. `setReediting(false)` en `handleCalificar` debe ser inocuo
+    // aca (ya estaba en false) y el boton debe seguir apareciendo — cubre que
+    // el fix no dependa de que la sugerencia de IA haya sido usada.
+    const calificacionGuardada = {
+      id: "califid-2",
+      entrega_id: ENTREGA_ID,
+      nota_final: 7,
+      feedback_general: "Correcto",
+      detalle_criterios: [],
+      calificado_at: "2026-09-23T14:00:00Z",
+      calificador_id: "docente-1",
+    }
+    setupFetchMock({
+      "/calificacion": () => calificacionGuardada,
+      "/correccion-ia": () => ({ correcciones: [] }),
+      "/ejercicios": () => [],
+      [`/api/v1/entregas/${ENTREGA_ID}/calificar`]: () => calificacionGuardada,
+      [`/api/v1/entregas/${ENTREGA_ID}`]: () => mockEntregaGraded,
+      "/api/v1/entregas": () => ({ data: [mockEntregaSubmitted], meta: { cursor_next: null } }),
+      "/api/v1/tareas-practicas/": () => mockTarea,
+    })
+    renderWithRouter(<CorreccionesView comisionId={COMISION_ID} getToken={getToken} />)
+    await waitFor(() => {
+      expect(screen.getByTestId("entrega-drill-btn")).toBeDefined()
+    })
+    fireEvent.click(screen.getByTestId("entrega-drill-btn"))
+    await waitFor(() => {
+      expect(screen.getByTestId("calificar-btn")).toBeDefined()
+    })
+    fireEvent.change(screen.getByTestId("nota-final-input"), { target: { value: "7" } })
+    fireEvent.change(screen.getByTestId("feedback-input"), { target: { value: "Correcto" } })
+    fireEvent.click(screen.getByTestId("calificar-btn"))
+
+    await waitFor(() => {
+      expect(screen.getByTestId("devolver-btn")).toBeDefined()
+    })
+    expect(screen.queryByTestId("cancelar-recalificacion-btn")).toBeNull()
+  })
+
   it("boton Volver regresa a la lista", async () => {
     setupFetchMock({
       // Las sub-rutas van ARRIBA: `/api/v1/entregas` las matchea a todas por
