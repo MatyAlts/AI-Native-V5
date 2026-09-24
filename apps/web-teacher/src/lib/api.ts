@@ -1740,10 +1740,21 @@ export interface EntregaListResponse {
   meta: { cursor_next: string | null }
 }
 
+/**
+ * HALLAZGO-B (QA 2026-09-24): este tipo estaba desalineado con el contrato
+ * real de `CriterioCalificacion` (evaluation-service, `schemas/entrega.py`),
+ * que persiste `{criterio, puntaje, max_puntaje, comentario}` — no
+ * `{nombre, puntaje, peso, comentario}`. Mismo mismatch que BUG-19 del lado
+ * alumno (`web-student/src/lib/api.ts`), del lado docente: `CorreccionesView`
+ * lo esquivaba con tipos locales (`SavedCriterio`, `DetalleCriterioPayload`)
+ * y un cast `as unknown as`. `puntaje`/`max_puntaje` viajan como STRING
+ * cuando el modelo serializa el `Numeric` de Postgres (mismo gotcha que
+ * `nota_100`/`CalificacionCriterio` del web-student).
+ */
 export interface CalificacionCriterio {
-  nombre: string
-  puntaje: number
-  peso: number
+  criterio: string
+  puntaje: number | string
+  max_puntaje: number | string
   comentario: string | null
 }
 

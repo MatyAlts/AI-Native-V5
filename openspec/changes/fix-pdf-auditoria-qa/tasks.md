@@ -46,3 +46,14 @@ pura, verificación manual descrita). Marcar [x] al completar.
 ## Cosméticos (si sobra)
 - [x] BUG-04 · "Tu episodio:" sin valor colgando en Vencidas del alumno.
 - [x] BUG-20 · contador de cabecera de Evolución por estudiante vs el detalle.
+
+## Lote 7 — follow-ups del auditor (post-cierre 15/15)
+- [x] HALLAZGO-B · alinear `CalificacionCriterio` del web-teacher
+      (`apps/web-teacher/src/lib/api.ts`) al contrato real del evaluation-service
+      `{criterio, puntaje, max_puntaje, comentario}` (numéricos `number | string`
+      por el Decimal→string del backend). Quitar el cast `as unknown as` de
+      `CorreccionesView.tsx` y consolidar los tipos locales que sólo existían para
+      esquivar el desajuste. Es el mismo mismatch que causó BUG-19, del lado
+      docente. Sólo tipos + limpieza, sin cambio de runtime. Gate: `tsc --noEmit`
+      verde + suite web-teacher sin regresión (363/363). CUIDADO con la semántica
+      `peso` vs `max_puntaje`: verificar, no asumir.
