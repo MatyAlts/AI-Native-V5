@@ -31,6 +31,11 @@ interface Props {
 export function ResumenCorreccionIA({ ejercicios, correcciones, onUsarComoBase }: Props) {
   const r = resumirCorrecciones(ejercicios, correcciones)
 
+  // Decision de producto (Juani, 2026-09-24): la sugerencia se presenta SIEMPRE
+  // como "Active-IA", aunque bajo el capo corra el corrector propio. Es branding
+  // del producto y revierte el ajuste BUG-11 que la atribuia al motor real.
+  const motorLabel = "Active-IA"
+
   // Sin ninguna correccion terminada no hay nada que resumir, y una card
   // vacia que dice "faltan 4" antes de que el docente pida la primera seria
   // ruido.
@@ -44,7 +49,7 @@ export function ResumenCorreccionIA({ ejercicios, correcciones, onUsarComoBase }
       <div className="flex items-center gap-2">
         <Calculator size={14} className="text-muted" aria-hidden="true" />
         <p className="text-xs font-mono uppercase tracking-wider text-muted">
-          Sugerencia de Active-IA
+          Sugerencia de {motorLabel}
         </p>
         <span className="ml-auto">
           <HelpButton

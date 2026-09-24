@@ -35,6 +35,7 @@ import { useStudentProfiles } from "../hooks/useStudentProfiles"
 import { type CorreccionIA, listarCorreccionesIA } from "../lib/api"
 import {
   type CalificacionCreate,
+  type CalificacionCriterio,
   type EjercicioEstado,
   type EntregaDocente,
   type EntregaEstado,
@@ -50,7 +51,7 @@ import {
 } from "../lib/api"
 import { useTutorialDeVista } from "../tour/useTutorialDeVista"
 import { correccionesTour } from "../tour/vistas"
-import { ejerciciosParaResumen } from "../utils/correccionIA"
+import { ejerciciosParaResumen, sugerirPuntajesDesdeCorrecciones } from "../utils/correccionIA"
 import { studentShortLabel } from "../utils/docenteLabels"
 import { helpContent } from "../utils/helpContent"
 
@@ -700,27 +701,24 @@ function EjercicioCodigo({ resolvedEpisodeId, orden, active, getToken }: Ejercic
 //
 // El backend acepta `detalle_criterios` tanto en el POST /calificar como en el
 // PATCH /calificacion. El shape que espera el schema `CriterioCalificacion`
-// (evaluation-service) es `{ criterio, puntaje, max_puntaje, comentario }` —
-// OJO: NO coincide con el tipo `CalificacionCriterio` de `lib/api.ts`
-// (`{ nombre, puntaje, peso, comentario }`), que esta desalineado con el
-// contrato real. Como no podemos tocar api.ts en este cambio, serializamos el
-// shape correcto con un tipo local y casteamos al pasar por el metodo tipado.
-// FOLLOW-UP: corregir `CalificacionCriterio` en lib/api.ts para que matchee
-// `criterio`/`max_puntaje` (hoy dice `nombre`/`peso`).
+// (evaluation-service) es `{ criterio, puntaje, max_puntaje, comentario }`,
+// que ahora coincide con `CalificacionCriterio` de `lib/api.ts` (HALLAZGO-B,
+// QA 2026-09-24 — antes decia `{ nombre, puntaje, peso, comentario }` y esta
+// vista lo esquivaba con tipos locales + un cast `as unknown as`).
+//
+// `DetalleCriterioPayload` sigue existiendo porque cumple un rol propio, no
+// solo esquivar el desajuste: es el shape de ESCRITURA (lo que esta vista
+// construye para el POST/PATCH), con `puntaje`/`max_puntaje` como `number`
+// puro porque son valores recien calculados localmente. `CalificacionCriterio`
+// es el shape de LECTURA de la respuesta del backend, donde esos campos
+// pueden llegar como `string` (Pydantic serializa `Decimal` como string en
+// modo JSON) — es mas laxo a proposito. `DetalleCriterioPayload` es
+// estructuralmente asignable a `CalificacionCriterio` (number ⊆ number|string),
+// asi que ya no hace falta castear al pasarlo al metodo tipado.
 interface DetalleCriterioPayload {
   criterio: string
   puntaje: number
   max_puntaje: number
-  comentario: string | null
-}
-
-// Shape de vuelta desde el backend (CalificacionOut.detalle_criterios: list[dict]).
-// `puntaje`/`max_puntaje` vuelven como string (Pydantic serializa Decimal como
-// string en modo JSON), por eso los tipamos laxos y normalizamos al leer.
-interface SavedCriterio {
-  criterio: string
-  puntaje: number | string
-  max_puntaje: number | string
   comentario: string | null
 }
 
@@ -834,7 +832,7 @@ function subtotalDe(rows: RubricaRow[], scores: Record<string, string>): Subtota
 // por `nombre` como fallback si la rubrica cambio desde que se califico.
 function mapSavedToInputs(
   rows: RubricaRow[],
-  saved: SavedCriterio[],
+  saved: CalificacionCriterio[],
 ): { scores: Record<string, string>; comments: Record<string, string> } {
   const scores: Record<string, string> = {}
   const comments: Record<string, string> = {}
@@ -1118,7 +1116,7 @@ function GradingFormView({
   // guardado en la calificacion (para pre-llenar y para restaurar al cancelar).
   const [criterioScores, setCriterioScores] = useState<Record<string, string>>({})
   const [criterioComments, setCriterioComments] = useState<Record<string, string>>({})
-  const [savedCriterios, setSavedCriterios] = useState<SavedCriterio[]>([])
+  const [savedCriterios, setSavedCriterios] = useState<CalificacionCriterio[]>([])
   // Colapso por ejercicio (F17), estado local. `undefined` = default: la primera
   // tarjeta abierta, el resto colapsado (ver `isGrupoOpen`).
   const [openGrupos, setOpenGrupos] = useState<Record<string, boolean>>({})
@@ -1349,9 +1347,9 @@ function GradingFormView({
         setCalificacion(c)
         setNota(String(c.nota_final))
         setFeedback(c.feedback_general)
-        // Detalle por criterio (F4): el tipo de `lib/api.ts` esta desalineado
-        // con el contrato real, por eso lo leemos via `SavedCriterio`.
-        setSavedCriterios((c.detalle_criterios ?? []) as unknown as SavedCriterio[])
+        // Detalle por criterio (F4): `CalificacionCriterio` de `lib/api.ts`
+        // ahora matchea el contrato real (HALLAZGO-B) — sin cast.
+        setSavedCriterios(c.detalle_criterios ?? [])
       })
       .catch((e) => {
         if (!cancelled) setCalificacionError(String(e))
@@ -1448,19 +1446,20 @@ function GradingFormView({
       const body: CalificacionCreate = {
         nota_final: notaNum,
         feedback_general: feedback.trim(),
-        // El shape correcto es el del backend (`criterio`/`max_puntaje`); el tipo
-        // `CalificacionCriterio` de api.ts esta desalineado, por eso el cast.
-        ...(detalle
-          ? {
-              detalle_criterios: detalle as unknown as NonNullable<
-                CalificacionCreate["detalle_criterios"]
-              >,
-            }
-          : {}),
+        // `CalificacionCriterio` de api.ts ahora matchea el contrato real
+        // (HALLAZGO-B) — `DetalleCriterioPayload` es asignable sin cast.
+        ...(detalle ? { detalle_criterios: detalle } : {}),
       }
       await entregasDocenteApi.calificar(entrega.id, body, getToken)
       // Refetch entrega para tener estado=graded actualizado
       const updated = await entregasDocenteApi.get(entrega.id, getToken)
+      // BUG-12: si el docente llego a calificar con `reediting=true` (ej. via
+      // "Usar como base" de la sugerencia de IA, que activa reediting ANTES de
+      // calificar), dejar reediting prendido esconde "Devolver al estudiante"
+      // hasta que se aprieta "Cancelar" — que se lee como descartar lo que
+      // recien se guardo. Ya se guardo: salir de reediting es lo que el
+      // docente espera, igual que hace `handleRecalificar`.
+      setReediting(false)
       onUpdated(updated)
     } catch (e) {
       setSubmitError(String(e))
@@ -1658,6 +1657,16 @@ function GradingFormView({
           // Rellena y deja el foco en el campo. NO guarda: el docente aprieta
           // Calificar como siempre, y puede cambiar el numero antes.
           setNota(String(nota10))
+          // RUBRICA-AUTOCOMPLETE (Mejora 3): ademas de la nota final, se
+          // autocompletan los puntajes por criterio con el desglose de la
+          // correccion vigente de cada ejercicio. Sin esto, el docente
+          // calificaba con la nota sugerida pero los inputs de criterio
+          // quedaban vacios — y eso es lo que se guardaba como puntaje 0 en
+          // la devolucion que ve el alumno (BUG-19).
+          if (tieneRubrica) {
+            const sugeridos = sugerirPuntajesDesdeCorrecciones(rubricaRows, correccionesIA)
+            setCriterioScores((prev) => ({ ...prev, ...sugeridos }))
+          }
           setReediting(true)
           window.requestAnimationFrame(() => {
             document.getElementById("nota-final")?.focus()

@@ -686,12 +686,24 @@ function appropriationColor(a: StudentEpisode["appropriation"] | null): string {
       return "var(--color-appropriation-superficial)"
     case "delegacion_pasiva":
       return "var(--color-appropriation-delegacion)"
+    // Eje ortogonal "autonomo": no es parte del continuo reflexiva<->delegacion,
+    // se muestra neutral (mismo criterio que web-teacher, ver docenteLabels.ts).
+    case "autonomo":
+      return "var(--color-neutral)"
     default:
       return "var(--color-level-meta)"
   }
 }
 
-function appropriationLabel(a: NonNullable<StudentEpisode["appropriation"]>): string {
+/**
+ * BUG-04 (QA 2026-09-23): "autonomo" es un valor real de
+ * `Classification.appropriation` (eje ortogonal, brazo sin-tutor) que este
+ * switch no cubria. Sin `default`, un valor no contemplado hacia que la
+ * funcion devolviera `undefined` y el label quedara "Tu episodio: " con los
+ * dos puntos colgando. Exportada para test unitario directo (pura, sin
+ * React) — mismo patron que `cohortBalanceLabel` en web-teacher.
+ */
+export function appropriationLabel(a: NonNullable<StudentEpisode["appropriation"]>): string {
   switch (a) {
     case "apropiacion_reflexiva":
       return "apropiacion reflexiva"
@@ -699,6 +711,8 @@ function appropriationLabel(a: NonNullable<StudentEpisode["appropriation"]>): st
       return "apropiacion superficial"
     case "delegacion_pasiva":
       return "delegacion pasiva"
+    case "autonomo":
+      return "trabajo autonomo (sin tutor)"
   }
 }
 

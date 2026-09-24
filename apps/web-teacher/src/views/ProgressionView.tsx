@@ -16,6 +16,7 @@ import {
   listEntregas,
   listUnidades,
 } from "../lib/api"
+import { MIN_STUDENTS_FOR_COHORT_BALANCE, cohortBalanceLabel } from "../utils/cohortBalanceLabel"
 import {
   APPROPRIATION_DOCENTE,
   APPROPRIATION_REIFICATION_DISCLAIMER,
@@ -169,7 +170,11 @@ export function ProgressionView({ comisionId, getToken }: Props) {
       <SummaryStrip data={data} isDocente={isDocente} />
 
       {/* ═══ Net progression bar ═══ */}
-      <NetProgressionBar ratio={data.net_progression_ratio} isDocente={isDocente} />
+      <NetProgressionBar
+        ratio={data.net_progression_ratio}
+        nStudentsWithData={data.n_students_with_enough_data}
+        isDocente={isDocente}
+      />
 
       {/* ═══ Action insight (alumnos en riesgo) ═══ */}
       {isDocente && data.empeorando > 0 && <ActionInsight count={data.empeorando} />}
@@ -304,11 +309,29 @@ function SummaryStrip({ data, isDocente }: { data: CohortProgression; isDocente:
   )
 }
 
-function NetProgressionBar({ ratio, isDocente }: { ratio: number; isDocente: boolean }) {
+function NetProgressionBar({
+  ratio,
+  nStudentsWithData,
+  isDocente,
+}: {
+  ratio: number
+  nStudentsWithData: number
+  isDocente: boolean
+}) {
   const pct = Math.abs(ratio) * 100
   const isPositive = ratio > 0.1
   const isNegative = ratio < -0.1
-  const tone = isPositive ? "success" : isNegative ? "danger" : "neutral"
+  // BUG-14: sin piso de N, el veredicto salia igual de categorico con 4
+  // estudiantes con datos que con 40 — mismo criterio de k-anonymity que
+  // Cuartiles CII (`MIN_STUDENTS_FOR_COHORT_BALANCE`, ver cohortBalanceLabel.ts).
+  const insufficientData = nStudentsWithData < MIN_STUDENTS_FOR_COHORT_BALANCE
+  const tone = insufficientData
+    ? "neutral"
+    : isPositive
+      ? "success"
+      : isNegative
+        ? "danger"
+        : "neutral"
   const barColor =
     tone === "success"
       ? "var(--color-success)"
@@ -318,11 +341,9 @@ function NetProgressionBar({ ratio, isDocente }: { ratio: number; isDocente: boo
   const labelColor =
     tone === "success" ? "text-success" : tone === "danger" ? "text-danger" : "text-muted"
 
-  const plainLabel = isPositive
-    ? "La mayoría de tus alumnos está mejorando"
-    : isNegative
-      ? "La mayoría de tus alumnos está empeorando"
-      : "La cohorte se mantiene estable"
+  // El texto dice lo que el numero mide (un balance agregado de la cohorte),
+  // nunca "la mayoria": un ratio neto no es una proporcion de mayoria.
+  const plainLabel = cohortBalanceLabel(ratio, nStudentsWithData)
 
   return (
     <section

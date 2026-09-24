@@ -94,6 +94,23 @@ class OpenEpisodeMatch(BaseModel):
     ejercicio_id: UUID | None = None
 
 
+class ClosedEpisodeMatch(BaseModel):
+    """Episodio CERRADO más reciente que matchea un contexto de apertura.
+
+    Devuelto por el lookup de reapertura del tutor-service (Mejora 2 ·
+    REAPERTURA, fix-pdf-auditoria-qa, 2026-09-23): cuando el alumno reabre un
+    ejercicio ya cerrado, el episodio NUEVO no tiene código propio todavía —
+    este match le dice al tutor-service de qué episodio cerrado heredar el
+    último snapshot. Mismo shape que `OpenEpisodeMatch`; `ejercicio_id` sale
+    de `Episode.meta` (None para TP monolítica).
+    """
+
+    episode_id: UUID
+    estado: str
+    problema_id: UUID
+    ejercicio_id: UUID | None = None
+
+
 class ChainVerificationResult(BaseModel):
     episode_id: UUID
     valid: bool

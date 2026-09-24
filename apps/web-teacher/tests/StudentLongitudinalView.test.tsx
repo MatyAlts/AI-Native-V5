@@ -96,6 +96,33 @@ function mockTwoFetches(evo: object, alerts: object) {
   })
 }
 
+function mockThreeFetches(evo: object, alerts: object, episodesPayload: object) {
+  setupFetchMock({
+    "/cii-evolution-longitudinal": () => evo,
+    "/alerts": () => alerts,
+    "/episodes": () => episodesPayload,
+  })
+}
+
+function makeEpisode(overrides: Partial<Record<string, unknown>> = {}) {
+  return {
+    episode_id: "ep-1",
+    problema_id: "tp-1",
+    estado: "closed",
+    tarea_codigo: "TP1",
+    tarea_titulo: "Trabajo 1",
+    template_id: null,
+    unidad_id: null,
+    unidad_nombre: null,
+    opened_at: "2026-09-01T10:00:00Z",
+    closed_at: "2026-09-01T10:30:00Z",
+    events_count: 5,
+    appropriation: "apropiacion_superficial",
+    classified_at: "2026-09-01T10:30:00Z",
+    ...overrides,
+  }
+}
+
 beforeEach(() => {
   localStorage.setItem("analytics-view-mode", "investigador")
 })
@@ -169,5 +196,35 @@ describe("StudentLongitudinalView", () => {
     // Etiquetas de tendencia
     expect(screen.getByText(/mejorando/i)).toBeInTheDocument()
     expect(screen.getByText(/empeorando/i)).toBeInTheDocument()
+  })
+
+  test("BUG-20: en modo docente, si el detalle tiene mas trabajos que el resumen, aclara el total real", async () => {
+    localStorage.setItem("analytics-view-mode", "docente")
+    const episodes = [
+      makeEpisode({ episode_id: "ep-1", problema_id: "tp-1" }),
+      makeEpisode({ episode_id: "ep-2", problema_id: "tp-1" }),
+      makeEpisode({ episode_id: "ep-3", problema_id: "tp-2" }),
+      makeEpisode({ episode_id: "ep-4", problema_id: "tp-3" }),
+    ]
+    mockThreeFetches(evolutionResponse, alertsResponseEmpty, {
+      student_pseudonym: STUDENT,
+      comision_id: COMISION,
+      n_episodes: episodes.length,
+      episodes,
+    })
+    renderWithRouter(
+      <StudentLongitudinalView
+        getToken={fakeGetToken}
+        initialComisionId={COMISION}
+        initialStudentId={STUDENT}
+      />,
+    )
+    await waitFor(() => {
+      expect(screen.getByTestId("docente-work-summary-caption")).toBeInTheDocument()
+    })
+    // evolutionResponse trae n_episodes_total=6 (> 4 episodios reales del detalle),
+    // asi que ACA no hay discrepancia por episodios sino por trabajos distintos
+    // (n_groups_evaluated=2 vs 3 TPs distintas en el detalle) — igual dispara caption.
+    expect(screen.getByTestId("docente-work-summary-caption")).toHaveTextContent("3 trabajos")
   })
 })

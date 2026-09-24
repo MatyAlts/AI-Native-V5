@@ -364,6 +364,8 @@ function Resultado({
       data-testid="correccion-ia-resultado"
     >
       <p className="text-body">
+        {/* Decision de producto (Juani, 2026-09-24): se muestra SIEMPRE "Active-IA",
+            aunque corra el corrector propio. Branding del producto, revierte BUG-11. */}
         Active-IA sugiere <strong>{correccion.nota_100}/100</strong>
       </p>
       {/* Desde el 19/08 el codigo que no compila se manda igual a corregir: un

@@ -11,13 +11,25 @@
  */
 import { HelpButton, PageContainer } from "@platform/ui"
 import { useCallback, useEffect, useRef, useState } from "react"
+import { useComisionLabel } from "../components/ComisionSelector"
+import { InformeAvanceComision } from "../components/InformeAvanceComision"
 import {
   type ExportJobStatus,
   downloadExport,
+  getCohortAlertsSummary,
+  getCohortCIIQuartiles,
+  getCohortProgression,
   getExportStatus,
+  listStudentProfiles,
   requestCohortExport,
 } from "../lib/api"
 import { helpContent } from "../utils/helpContent"
+import {
+  type DetalleAlumnoRow,
+  type ResumenComisionPortada,
+  buildDetallePorAlumno,
+  buildResumenComision,
+} from "../utils/informeComision"
 
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
 
@@ -38,6 +50,58 @@ export function ExportView({ getToken, comisionIdDefault = "" }: Props) {
   const [error, setError] = useState<string | null>(null)
 
   const pollRef = useRef<number | null>(null)
+
+  // ── Informe de avance (imprimible) — informe-avance-comisiones IAC-04 ──
+  // Accion independiente del export JSON: compone el informe desde los
+  // wrappers ya existentes (progresion/cuartiles/alertas/perfiles) y lo
+  // renderiza inline + dispara `window.print()`. No toca el flujo de
+  // export JSON de arriba.
+  const [informe, setInforme] = useState<{
+    resumen: ResumenComisionPortada
+    detalle: DetalleAlumnoRow[]
+  } | null>(null)
+  const [informeLoading, setInformeLoading] = useState(false)
+  const [informeError, setInformeError] = useState<string | null>(null)
+  const comisionLabelText = useComisionLabel(comisionId)
+  const printRequestedRef = useRef(false)
+
+  // El print se dispara en un effect (post-commit), no en el handler: si se
+  // llamara `window.print()` justo despues de `setInforme(...)`, el DOM
+  // todavia no tiene el informe montado (setState es asincrono) y el print
+  // saldria en blanco (`.informe-avance-print` gatea la visibilidad en
+  // `index.css` y ese nodo todavia no existe).
+  useEffect(() => {
+    if (informe && printRequestedRef.current) {
+      printRequestedRef.current = false
+      window.print()
+    }
+  }, [informe])
+
+  const handleGenerarInforme = async () => {
+    setInformeError(null)
+    setInformeLoading(true)
+    try {
+      const [progression, quartiles, alertsSummary, profiles] = await Promise.all([
+        getCohortProgression(comisionId, getToken),
+        getCohortCIIQuartiles(comisionId, getToken),
+        getCohortAlertsSummary(comisionId, undefined, getToken),
+        listStudentProfiles(comisionId, getToken),
+      ])
+      const profilesMap = new Map<string, string>()
+      for (const p of profiles) {
+        if (p.full_name) profilesMap.set(p.student_pseudonym, p.full_name)
+      }
+      setInforme({
+        resumen: buildResumenComision(progression, quartiles, alertsSummary),
+        detalle: buildDetallePorAlumno(progression.trajectories, profilesMap),
+      })
+      printRequestedRef.current = true
+    } catch (e) {
+      setInformeError(String(e))
+    } finally {
+      setInformeLoading(false)
+    }
+  }
 
   const comisionIdValid = UUID_PATTERN.test(comisionId.trim())
   const saltValid = salt.length >= 16
@@ -285,6 +349,54 @@ export function ExportView({ getToken, comisionIdDefault = "" }: Props) {
         {job && <JobProgressPanel job={job} onDownload={handleDownload} onReset={handleReset} />}
 
         {error && <div className="p-3 rounded bg-danger-soft text-danger text-sm">{error}</div>}
+
+        {/* ── Informe de avance (imprimible) — junto al export JSON, no lo reemplaza ── */}
+        <div className="rounded-lg border border-border-soft dark:border-sidebar-bg-edge bg-white dark:bg-sidebar-bg p-6 space-y-3">
+          <div>
+            <h3 className="font-medium">Informe de avance de comisión</h3>
+            <p className="text-xs text-muted">
+              Genera un informe legible e imprimible (nombres reales, uso interno de la cátedra) con
+              el estado de avance de la comisión seleccionada arriba.
+            </p>
+          </div>
+          <button
+            type="button"
+            onClick={handleGenerarInforme}
+            disabled={!comisionIdValid || informeLoading}
+            className="px-4 py-2 border border-border dark:border-sidebar-bg-edge rounded hover:bg-surface-alt dark:hover:bg-sidebar-bg-edge disabled:opacity-50 text-sm font-medium"
+          >
+            {informeLoading ? "Generando informe..." : "Informe de avance (imprimible)"}
+          </button>
+          {informeError && (
+            <div className="p-3 rounded bg-danger-soft text-danger text-sm">
+              Error al generar el informe: {informeError}
+            </div>
+          )}
+        </div>
+
+        {informe && (
+          <div className="space-y-2">
+            <div className="flex items-center justify-between print:hidden">
+              <span className="text-xs text-muted">
+                Vista previa del informe (se imprime aparte)
+              </span>
+              <button
+                type="button"
+                onClick={() => setInforme(null)}
+                className="text-xs text-muted hover:text-ink underline"
+              >
+                Cerrar informe
+              </button>
+            </div>
+            <div className="rounded-lg border border-border-soft dark:border-sidebar-bg-edge overflow-hidden">
+              <InformeAvanceComision
+                comisionLabel={comisionLabelText}
+                resumen={informe.resumen}
+                detalle={informe.detalle}
+              />
+            </div>
+          </div>
+        )}
       </div>
     </PageContainer>
   )

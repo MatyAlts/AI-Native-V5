@@ -120,14 +120,26 @@ async function authHeaders(getToken?: TokenGetter): Promise<Record<string, strin
 async function throwIfNotOk(r: Response): Promise<void> {
   if (r.ok) return
   const raw = await r.text()
-  let detail = raw
+  let detail: unknown = raw
   try {
     const body = JSON.parse(raw)
     detail = body.detail ?? body.title ?? raw
   } catch {
     /* not JSON, use raw text */
   }
-  throw new Error(`${r.status}: ${detail}`)
+  // BUG-18: `detail` puede ser un array de errores de validacion de FastAPI
+  // (422). Interpolarlo directo en el template string lo colapsaba a
+  // "[object Object]" y perdia toda la info util. Serializamos para el
+  // mensaje legible y adjuntamos el valor crudo como `.detail` para que
+  // consumidores como `formatApiError` puedan armar un mensaje por campo.
+  const mensaje =
+    Array.isArray(detail) || (detail && typeof detail === "object")
+      ? JSON.stringify(detail)
+      : String(detail)
+  const err = new Error(`${r.status}: ${mensaje}`) as Error & { detail?: unknown; status?: number }
+  err.detail = detail
+  err.status = r.status
+  throw err
 }
 
 // ── Progression ───────────────────────────────────────────────────────
@@ -1728,10 +1740,21 @@ export interface EntregaListResponse {
   meta: { cursor_next: string | null }
 }
 
+/**
+ * HALLAZGO-B (QA 2026-09-24): este tipo estaba desalineado con el contrato
+ * real de `CriterioCalificacion` (evaluation-service, `schemas/entrega.py`),
+ * que persiste `{criterio, puntaje, max_puntaje, comentario}` — no
+ * `{nombre, puntaje, peso, comentario}`. Mismo mismatch que BUG-19 del lado
+ * alumno (`web-student/src/lib/api.ts`), del lado docente: `CorreccionesView`
+ * lo esquivaba con tipos locales (`SavedCriterio`, `DetalleCriterioPayload`)
+ * y un cast `as unknown as`. `puntaje`/`max_puntaje` viajan como STRING
+ * cuando el modelo serializa el `Numeric` de Postgres (mismo gotcha que
+ * `nota_100`/`CalificacionCriterio` del web-student).
+ */
 export interface CalificacionCriterio {
-  nombre: string
-  puntaje: number
-  peso: number
+  criterio: string
+  puntaje: number | string
+  max_puntaje: number | string
   comentario: string | null
 }
 

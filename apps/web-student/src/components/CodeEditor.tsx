@@ -2061,7 +2061,7 @@ function TestResultsView({
         }`}
       >
         {allPassed
-          ? `Pasan las ${total} pruebas públicas. Buen trabajo.`
+          ? `Pasan las ${total} pruebas públicas. Tu docente corrige con casos adicionales.`
           : `Pasan ${passed} de ${total} pruebas públicas.`}
       </div>
       <ul className="space-y-2">

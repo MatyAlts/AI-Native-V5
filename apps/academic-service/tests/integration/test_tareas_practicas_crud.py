@@ -898,6 +898,51 @@ async def test_update_inicial_codigo(
     assert audit_calls[0].changes == {"after": {"inicial_codigo": nuevo_template}}
 
 
+async def test_update_codigo_en_draft_se_persiste(
+    mock_session, user_docente_admin_a: User, tenant_a_id: UUID
+) -> None:
+    """BUG-02: el TS manda `codigo` en el PATCH pero `TareaPracticaUpdate` no lo
+    declaraba, asi que Pydantic lo ignoraba en silencio (200 OK, codigo intacto).
+    Sobre un draft, `codigo` debe persistirse como cualquier otro campo mutable."""
+    svc = TareaPracticaService(mock_session)
+
+    tid = uuid4()
+    obj = _fake_tarea(tid, tenant_a_id, uuid4(), estado="draft", codigo="TP-VIEJO")
+    svc.repo.get_or_404 = AsyncMock(return_value=obj)
+
+    data = TareaPracticaUpdate(codigo="TP-NUEVO")
+    result = await svc.update(tid, data, user_docente_admin_a)
+
+    assert result.codigo == "TP-NUEVO"
+
+    audit_calls = [
+        c.args[0] for c in mock_session.add.call_args_list if isinstance(c.args[0], AuditLog)
+    ]
+    assert len(audit_calls) == 1
+    assert audit_calls[0].action == "tarea_practica.update"
+
+
+async def test_update_codigo_en_published_falla_409(
+    mock_session, user_docente_admin_a: User, tenant_a_id: UUID
+) -> None:
+    """`codigo` es contenido pedagogico versionado, no metadata operacional
+    (a diferencia de `fecha_fin`/`permite_pausa`/`unidad_id`): sobre una TP
+    publicada el PATCH debe rechazarse por el mismo gate de inmutabilidad."""
+    svc = TareaPracticaService(mock_session)
+
+    tid = uuid4()
+    obj = _fake_tarea(tid, tenant_a_id, uuid4(), estado="published", codigo="TP-VIEJO")
+    svc.repo.get_or_404 = AsyncMock(return_value=obj)
+
+    data = TareaPracticaUpdate(codigo="TP-NUEVO")
+
+    with pytest.raises(HTTPException) as exc_info:
+        await svc.update(tid, data, user_docente_admin_a)
+
+    assert exc_info.value.status_code == 409
+    assert obj.codigo == "TP-VIEJO"
+
+
 def test_inicial_codigo_demasiado_grande_falla_422() -> None:
     """`inicial_codigo` con > 5000 chars falla en validación de schema."""
     template_grande = "x" * 5001

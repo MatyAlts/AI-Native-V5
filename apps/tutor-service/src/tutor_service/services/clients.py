@@ -326,6 +326,46 @@ class CTRClient:
         data = r.json()
         return data if data else None
 
+    async def find_closed_episode(
+        self,
+        tenant_id: UUID,
+        caller_id: UUID,
+        student_pseudonym: UUID,
+        problema_id: UUID,
+        ejercicio_id: UUID | None = None,
+    ) -> dict | None:
+        """Busca el episodio CERRADO más reciente del mismo contexto.
+
+        Read-only (Mejora 2 · REAPERTURA, fix-pdf-auditoria-qa): usado por
+        `get_episode_state` para encontrar de qué episodio cerrado heredar el
+        último código cuando el episodio recién reabierto todavía no tiene
+        ediciones propias — el mismo criterio que ya usa `find_open_episode`,
+        pero filtrando por `estado == "closed"` server-side y devolviendo el
+        más reciente por `closed_at`. Si hay match, devuelve
+        `{episode_id, estado, problema_id, ejercicio_id}`; si no, None.
+        """
+        headers = {
+            "X-User-Id": str(caller_id),
+            "X-Tenant-Id": str(tenant_id),
+            "X-User-Email": "tutor-service@platform.internal",
+            "X-User-Roles": "tutor_service",
+        }
+        params: dict[str, str] = {
+            "student_pseudonym": str(student_pseudonym),
+            "problema_id": str(problema_id),
+        }
+        if ejercicio_id is not None:
+            params["ejercicio_id"] = str(ejercicio_id)
+        client = self._client
+        r = await client.get(
+            f"{self.base_url}/api/v1/episodes/closed-match",
+            headers=headers,
+            params=params,
+        )
+        r.raise_for_status()
+        data = r.json()
+        return data if data else None
+
     async def get_episode(self, episode_id: UUID, tenant_id: UUID, caller_id: UUID) -> dict | None:
         """Lee el episodio + sus eventos desde el ctr-service.
 

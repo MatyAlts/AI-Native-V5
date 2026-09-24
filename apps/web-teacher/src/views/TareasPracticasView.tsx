@@ -34,7 +34,7 @@ import {
   Send,
   Trash2,
 } from "lucide-react"
-import { useCallback, useEffect, useState } from "react"
+import { useCallback, useEffect, useRef, useState } from "react"
 import { useComisionLabel } from "../components/ComisionSelector"
 import {
   DEFAULT_LANGUAGE,
@@ -55,11 +55,26 @@ import {
 } from "../lib/api"
 import { useTutorialDeVista } from "../tour/useTutorialDeVista"
 import { tareasPracticasTour } from "../tour/vistas"
+import { formatApiError } from "../utils/errorApi"
 import { helpContent } from "../utils/helpContent"
 
 interface Props {
   comisionId: string
   getToken: () => Promise<string | null>
+}
+
+// BUG-03: el mensaje de error del form de TP se renderiza arriba del modal
+// scrolleable, pero el boton de submit vive al fondo — con un form largo el
+// docente ve "algo fallo" sin ver el detalle. `block: "nearest"` evita mover
+// la pantalla si el bloque ya es visible; `prefers-reduced-motion` se respeta
+// sin animar el scroll.
+function scrollAlErrorDelForm(el: HTMLElement | null) {
+  if (!el) return
+  const prefiereMenosMovimiento =
+    typeof window !== "undefined" &&
+    typeof window.matchMedia === "function" &&
+    window.matchMedia("(prefers-reduced-motion: reduce)").matches
+  el.scrollIntoView({ block: "nearest", behavior: prefiereMenosMovimiento ? "auto" : "smooth" })
 }
 
 const ESTADO_LABEL: Record<TareaEstado, string> = {
@@ -373,30 +388,38 @@ export function TareasPracticasView({ comisionId, getToken }: Props) {
           </ul>
         )}
 
-        {/* Modal: crear nuevo TP */}
-        <TareaFormModal
-          isOpen={modal.kind === "create"}
-          title="Nuevo trabajo practico"
-          initial={null}
-          comisionId={comisionId}
-          getToken={getToken}
-          onClose={closeModal}
-          onSubmit={async (values) => {
-            const created = await tareasPracticasApi.create(
-              {
-                ...values,
-                comision_id: comisionId,
-              },
-              getToken,
-            )
-            await refreshList()
-            // FR-7: reducir la friccion "crear != componer". En vez de solo
-            // cerrar, llevamos al docente directo a la Composicion del TP recien
-            // creado (arranca en draft, sin ejercicios) para que asocie ejercicios
-            // del banco sin tener que descubrir el boton "Composicion" de la card.
-            setModal({ kind: "composicion", tarea: created })
-          }}
-        />
+        {/* Modal: crear nuevo TP.
+            BUG-01: antes quedaba SIEMPRE montado (solo `isOpen` cambiaba) y sus
+            useState(initial?...) solo corren al montar, asi que cerrar y volver
+            a abrir dejaba el codigo/titulo tipeados la vez anterior. Renderizado
+            condicional por `modal.kind`, igual que el resto de las variantes de
+            este modal (edit, versioning): al cerrarse se desmonta y el proximo
+            "Nuevo TP" monta el componente de cero con estado limpio. */}
+        {modal.kind === "create" && (
+          <TareaFormModal
+            isOpen={true}
+            title="Nuevo trabajo practico"
+            initial={null}
+            comisionId={comisionId}
+            getToken={getToken}
+            onClose={closeModal}
+            onSubmit={async (values) => {
+              const created = await tareasPracticasApi.create(
+                {
+                  ...values,
+                  comision_id: comisionId,
+                },
+                getToken,
+              )
+              await refreshList()
+              // FR-7: reducir la friccion "crear != componer". En vez de solo
+              // cerrar, llevamos al docente directo a la Composicion del TP recien
+              // creado (arranca en draft, sin ejercicios) para que asocie ejercicios
+              // del banco sin tener que descubrir el boton "Composicion" de la card.
+              setModal({ kind: "composicion", tarea: created })
+            }}
+          />
+        )}
 
         {/* Modal: composicion de ejercicios (ADR-047) */}
         {modal.kind === "composicion" && (
@@ -776,6 +799,10 @@ function TareaFormModal({
 
   const [submitting, setSubmitting] = useState(false)
   const [formError, setFormError] = useState<string | null>(null)
+  const formErrorRef = useRef<HTMLDivElement>(null)
+  useEffect(() => {
+    if (formError) scrollAlErrorDelForm(formErrorRef.current)
+  }, [formError])
 
   const showDriftBanner = Boolean(mode === "edit" && initial?.template_id && !initial.has_drift)
   const [driftAck, setDriftAck] = useState(false)
@@ -857,7 +884,7 @@ function TareaFormModal({
         ...(mode === "create" ? { language } : {}),
       })
     } catch (e) {
-      setFormError(String(e))
+      setFormError(formatApiError(e))
     } finally {
       setSubmitting(false)
     }
@@ -885,7 +912,10 @@ function TareaFormModal({
         )}
 
         {formError && (
-          <div className="rounded border border-danger/30 bg-danger-soft p-2 text-xs text-danger">
+          <div
+            ref={formErrorRef}
+            className="rounded border border-danger/30 bg-danger-soft p-2 text-xs text-danger"
+          >
             {formError}
           </div>
         )}
@@ -1122,6 +1152,10 @@ function FechaFinModal({
   const [fechaFin, setFechaFin] = useState(isoToLocalInput(tarea.fecha_fin))
   const [submitting, setSubmitting] = useState(false)
   const [formError, setFormError] = useState<string | null>(null)
+  const formErrorRef = useRef<HTMLDivElement>(null)
+  useEffect(() => {
+    if (formError) scrollAlErrorDelForm(formErrorRef.current)
+  }, [formError])
 
   const willDrift = Boolean(tarea.template_id && !tarea.has_drift)
   const [driftAck, setDriftAck] = useState(false)
@@ -1145,7 +1179,7 @@ function FechaFinModal({
     try {
       await onSubmit(iso)
     } catch (e) {
-      setFormError(String(e))
+      setFormError(formatApiError(e))
     } finally {
       setSubmitting(false)
     }
@@ -1183,7 +1217,10 @@ function FechaFinModal({
         )}
 
         {formError && (
-          <div className="rounded border border-danger/30 bg-danger-soft p-2 text-xs text-danger">
+          <div
+            ref={formErrorRef}
+            className="rounded border border-danger/30 bg-danger-soft p-2 text-xs text-danger"
+          >
             {formError}
           </div>
         )}

@@ -46,7 +46,14 @@ export interface Classification {
   episode_id: string
   comision_id: string
   classifier_config_hash: string
-  appropriation: "delegacion_pasiva" | "apropiacion_superficial" | "apropiacion_reflexiva"
+  // "autonomo" (eje ORTOGONAL, v4.0.0): brazo sin-tutor (prompts == 0). Ver
+  // `Classification.appropriation` en classifier-service — no es parte del
+  // continuo delegacion<->reflexiva, es su propio valor persistido.
+  appropriation:
+    | "delegacion_pasiva"
+    | "apropiacion_superficial"
+    | "apropiacion_reflexiva"
+    | "autonomo"
   appropriation_reason: string
   ct_summary: number | null
   ccd_mean: number | null
@@ -912,7 +919,12 @@ export interface StudentEpisode {
   opened_at: string | null
   closed_at: string | null
   events_count: number
-  appropriation: "delegacion_pasiva" | "apropiacion_superficial" | "apropiacion_reflexiva" | null
+  appropriation:
+    | "delegacion_pasiva"
+    | "apropiacion_superficial"
+    | "apropiacion_reflexiva"
+    | "autonomo"
+    | null
   classified_at: string | null
 }
 
@@ -1170,10 +1182,21 @@ export interface Entrega {
   updated_at: string
 }
 
+/**
+ * BUG-19 (QA 2026-09-23): este tipo estaba desalineado con el contrato real
+ * de `CriterioCalificacion` (evaluation-service, `schemas/entrega.py`), que
+ * persiste `{criterio, puntaje, max_puntaje, comentario}` — no
+ * `{nombre, puntaje, peso, comentario}`. Con los nombres viejos,
+ * `criterio.nombre` y `criterio.peso` daban `undefined` en runtime (el campo
+ * no viene en el JSON) y la pantalla de "Ver calificacion" mostraba
+ * "undefined" y "NaN" con la autoridad de datos reales. `puntaje`/
+ * `max_puntaje` viajan como STRING cuando el modelo serializa el `Numeric` de
+ * Postgres (mismo gotcha que `nota_100` en el resto del epic).
+ */
 export interface CalificacionCriterio {
-  nombre: string
-  puntaje: number
-  peso: number
+  criterio: string
+  puntaje: number | string
+  max_puntaje: number | string
   comentario: string | null
 }
 

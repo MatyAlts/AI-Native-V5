@@ -20,6 +20,7 @@ import {
   DEFAULT_LANGUAGE,
   type Entrega,
   type EntregaEstado,
+  type Language,
   type TpEjercicio,
   entregasApi,
   getEpisodeState,
@@ -32,6 +33,7 @@ import {
   collectArtefactoDrafts,
 } from "../lib/artefactos"
 import { puedeEditarLaEntrega } from "../lib/entregaGuard"
+import { buildEpisodioSourceFile } from "../utils/episodioDownload"
 
 export interface ExerciseListViewProps {
   tarea: AvailableTarea
@@ -44,6 +46,18 @@ export interface ExerciseListViewProps {
   ) => void
   onViewGrade: (entrega: Entrega) => void
   onBack: () => void
+}
+
+/**
+ * Precedencia de `language` para la descarga (ADE-02): ejercicio > TP >
+ * default. Espeja `langEfectivo` de `EpisodePage.tsx` — nunca asumir Python
+ * en el sitio de uso.
+ */
+function resolveDownloadLanguage(
+  ejercicio: { language: Language | undefined },
+  tarea: AvailableTarea,
+): Language {
+  return ejercicio.language ?? tarea.language ?? DEFAULT_LANGUAGE
 }
 
 function entregaEstadoLabel(estado: EntregaEstado): string {
@@ -140,6 +154,10 @@ export function ExerciseListView({
   // no un booleano para que el spinner quede en SU boton: con un flag global,
   // apretar uno pone "Abriendo..." en los cinco.
   const [reabriendo, setReabriendo] = useState<number | null>(null)
+  // ADE-02: `orden` del ejercicio que se esta descargando, misma razon que
+  // `reabriendo` — el spinner queda en SU boton, no en los cinco.
+  const [descargando, setDescargando] = useState<number | null>(null)
+  const [descargaError, setDescargaError] = useState<string | null>(null)
 
   // ADR-047: cargar entrega + composicion de ejercicios (tabla intermedia)
   // en paralelo. tarea.ejercicios ya no viene embebido — lo resolvemos via
@@ -199,6 +217,53 @@ export function ExerciseListView({
       setSubmitError(`No se pudo reabrir el ejercicio ${ejercicio.orden}: ${String(e)}`)
     } finally {
       setReabriendo(null)
+    }
+  }
+
+  /**
+   * ADE-02: descarga el episodio cerrado del ejercicio como archivo de
+   * codigo fuente (codigo final + charla con el tutor comentada al pie).
+   *
+   * `getEpisodeState` es dueno-o-nada server-side (el alumno solo puede leer
+   * SU episodio) — no hay chequeo de ownership extra aca. Precedencia de
+   * `language`: ejercicio > TP > default, igual que `EpisodePage.tsx`
+   * (`langEfectivo`) — nunca asumir Python en el sitio de uso.
+   */
+  async function handleDescargar(ejercicio: {
+    ejercicio_id: string
+    orden: number
+    titulo: string
+    language: Language | undefined
+  }) {
+    const episodeId = ejercicioEstados.find((e) => e.orden === ejercicio.orden)?.episode_id
+    if (!episodeId) {
+      setDescargaError(`El ejercicio ${ejercicio.orden} no tiene un episodio asociado.`)
+      return
+    }
+    setDescargando(ejercicio.orden)
+    setDescargaError(null)
+    try {
+      const state = await getEpisodeState(episodeId)
+      const language = resolveDownloadLanguage(ejercicio, tarea)
+      const { filename, content } = buildEpisodioSourceFile({
+        code: state.last_code_snapshot,
+        messages: state.messages,
+        language,
+        meta: { ejercicioTitulo: ejercicio.titulo, fecha: new Date().toLocaleString() },
+      })
+      const blob = new Blob([content], { type: "text/plain;charset=utf-8" })
+      const url = URL.createObjectURL(blob)
+      const a = document.createElement("a")
+      a.href = url
+      a.download = filename
+      document.body.appendChild(a)
+      a.click()
+      a.remove()
+      URL.revokeObjectURL(url)
+    } catch (e) {
+      setDescargaError(`No se pudo descargar el ejercicio ${ejercicio.orden}: ${String(e)}`)
+    } finally {
+      setDescargando(null)
     }
   }
 
@@ -264,6 +329,7 @@ export function ExerciseListView({
       orden: p.orden,
       titulo: p.ejercicio.titulo,
       peso: Number.parseFloat(p.peso_en_tp),
+      language: p.ejercicio.language,
     }))
   const ejercicioEstados = entrega?.ejercicio_estados ?? []
   const completados = ejercicioEstados.filter((e) => e.completado).length
@@ -488,6 +554,19 @@ export function ExerciseListView({
                   {completed && (
                     <span className="shrink-0 text-xs text-success font-medium">Completado</span>
                   )}
+                  {completed && (
+                    <button
+                      type="button"
+                      onClick={() => void handleDescargar(ejercicio)}
+                      disabled={descargando === ejercicio.orden}
+                      data-testid={`ejercicio-descargar-${ejercicio.orden}`}
+                      className="shrink-0 rounded border border-border bg-surface px-3 py-1.5 text-xs font-medium text-body hover:bg-surface-alt disabled:opacity-60"
+                    >
+                      {descargando === ejercicio.orden
+                        ? "Descargando..."
+                        : `Descargar (.${resolveDownloadLanguage(ejercicio, tarea) === "java" ? "java" : "py"})`}
+                    </button>
+                  )}
                   {canReopen && (
                     <button
                       type="button"
@@ -504,6 +583,15 @@ export function ExerciseListView({
             )
           })}
         </ul>
+
+        {descargaError && (
+          <div
+            className="mt-3 rounded-lg border border-danger/40 bg-danger-soft p-3 text-xs text-danger"
+            data-testid="descarga-error"
+          >
+            {descargaError}
+          </div>
+        )}
 
         {/* Boton Entregar TP */}
         {canSubmit && (
