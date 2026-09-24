@@ -116,8 +116,17 @@ describe("InformeAvanceComision", () => {
 
     const portada = screen.getByTestId("informe-avance-portada")
     expect(portada).toHaveTextContent(/datos insuficientes por privacidad/i)
-    // Ninguno de los "0" de cuartiles/alertas gateados debe aparecer como dato.
-    expect(portada).not.toHaveTextContent(/^0$/)
+    // Los DOS bloques gateados (cuartiles CII y alertas) muestran el mensaje
+    // en vez del dato. Aserción POSITIVA a propósito: si el gate se rompe y
+    // los ceros salen como dato, el count baja y el test cae.
+    //
+    // Reemplaza un `expect(portada).not.toHaveTextContent(/^0$/)` que pasaba
+    // siempre: `toHaveTextContent` matchea contra el textContent COMPLETO del
+    // nodo, que nunca es exactamente "0" — no probaba nada.
+    expect(screen.getAllByText(/datos insuficientes por privacidad/i)).toHaveLength(2)
+    // Y los labels de los datos gateados no llegan a renderizarse.
+    expect(screen.queryByText("Mediana")).not.toBeInTheDocument()
+    expect(screen.queryByText("Con alguna alerta")).not.toBeInTheDocument()
   })
 
   test("detalle por alumno: renderiza el nombre real del map y el rotulo de privacidad", () => {

@@ -58,7 +58,7 @@ function slug(texto: string): string {
   const limpio = texto
     .toLowerCase()
     .normalize("NFD")
-    .replace(/[̀-ͯ]/g, "") // saca acentos
+    .replace(/\p{Diacritic}/gu, "") // saca acentos (marcas diacriticas tras NFD)
     .replace(/[^a-z0-9]+/g, "-")
     .replace(/^-+|-+$/g, "")
   return limpio || "episodio"
