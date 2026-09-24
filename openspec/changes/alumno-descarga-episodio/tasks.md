@@ -17,7 +17,7 @@ con test del helper + verificación manual del click.
       charla multilinea comentada correctamente; sin código; sin mensajes.
 
 ## Lote 2 — affordance de descarga
-- [ ] ADE-02 · Botón "Descargar (.py/.java)" en la UI del alumno para un ejercicio
+- [x] ADE-02 · Botón "Descargar (.py/.java)" en la UI del alumno para un ejercicio
       con episodio cerrado (candidato: `ExerciseListView.tsx`, que ya tiene el
       `episode_id` vía `entrega.ejercicio_estados`). Al click: `getEpisodeState`
       (código + messages), arma con ADE-01, y descarga con Blob + `<a download>`

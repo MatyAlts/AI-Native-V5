@@ -344,6 +344,163 @@ describe("ExerciseListView", () => {
     })
   })
 
+  describe("descarga de episodio cerrado (ADE-02)", () => {
+    function entregaConEjercicio1Completado(): Entrega {
+      return makeEntrega({
+        ejercicio_estados: [
+          {
+            ejercicio_id: "ejejejej-0001-0001-0001-000000000001",
+            orden: 1,
+            completado: true,
+            episode_id: "episode-1",
+            completado_at: "2026-05-06T11:00:00Z",
+          },
+          {
+            ejercicio_id: null,
+            orden: 2,
+            completado: false,
+            episode_id: null,
+            completado_at: null,
+          },
+        ],
+      })
+    }
+
+    function stubDescargaBrowser() {
+      const createObjectURL = vi.fn(() => "blob:fake-url")
+      const revokeObjectURL = vi.fn()
+      vi.stubGlobal("URL", { ...URL, createObjectURL, revokeObjectURL })
+      let descargado: { filename: string } | null = null
+      const click = vi.spyOn(HTMLAnchorElement.prototype, "click").mockImplementation(function (
+        this: HTMLAnchorElement,
+      ) {
+        descargado = { filename: this.download }
+      })
+      return {
+        createObjectURL,
+        revokeObjectURL,
+        click,
+        getDescargado: () => descargado,
+      }
+    }
+
+    it("descarga el .py del ejercicio 1 con episodio cerrado", async () => {
+      const entrega = entregaConEjercicio1Completado()
+      setupFetchMock({
+        "/ejercicios": () => makePairs(),
+        "/api/v1/entregas": () => entrega,
+        "/api/v1/episodes/episode-1": () => ({
+          episode_id: "episode-1",
+          tarea_practica_id: TAREA_ID,
+          comision_id: COMISION_ID,
+          estado: "closed",
+          opened_at: "2026-05-06T10:00:00Z",
+          closed_at: "2026-05-06T11:00:00Z",
+          last_code_snapshot: "print('hola')",
+          messages: [{ role: "user", content: "ayuda", ts: "2026-05-06T10:30:00Z" }],
+          notes: [],
+          ejercicio_id: "ejejejej-0001-0001-0001-000000000001",
+          ejercicio_orden: 1,
+        }),
+      })
+      const browser = stubDescargaBrowser()
+      const tarea = makeTarea()
+      render(
+        <ExerciseListView
+          tarea={tarea}
+          comisionId={COMISION_ID}
+          onSelectEjercicio={vi.fn()}
+          onViewGrade={vi.fn()}
+          onBack={vi.fn()}
+        />,
+      )
+      await waitFor(() => {
+        expect(screen.getByTestId("ejercicio-descargar-1")).toBeDefined()
+      })
+      fireEvent.click(screen.getByTestId("ejercicio-descargar-1"))
+      await waitFor(() => {
+        expect(browser.click).toHaveBeenCalled()
+      })
+      expect(browser.createObjectURL).toHaveBeenCalledTimes(1)
+      expect(browser.revokeObjectURL).toHaveBeenCalledWith("blob:fake-url")
+      expect(browser.getDescargado()?.filename).toBe("suma.py")
+    })
+
+    it("descarga el .java cuando el ejercicio tiene language=java (precede a la TP)", async () => {
+      const pairsJava = makePairs()
+      const primero = pairsJava[0]
+      if (!primero) throw new Error("fixture invalida")
+      primero.ejercicio.language = "java"
+      const entrega = entregaConEjercicio1Completado()
+      setupFetchMock({
+        "/ejercicios": () => pairsJava,
+        "/api/v1/entregas": () => entrega,
+        "/api/v1/episodes/episode-1": () => ({
+          episode_id: "episode-1",
+          tarea_practica_id: TAREA_ID,
+          comision_id: COMISION_ID,
+          estado: "closed",
+          opened_at: "2026-05-06T10:00:00Z",
+          closed_at: "2026-05-06T11:00:00Z",
+          last_code_snapshot: "System.out.println(1);",
+          messages: [],
+          notes: [],
+          ejercicio_id: "ejejejej-0001-0001-0001-000000000001",
+          ejercicio_orden: 1,
+        }),
+      })
+      const browser = stubDescargaBrowser()
+      // La TP no declara language — la precedencia tiene que resolver por el
+      // ejercicio (java), no caer al default (python).
+      const tarea = makeTarea()
+      render(
+        <ExerciseListView
+          tarea={tarea}
+          comisionId={COMISION_ID}
+          onSelectEjercicio={vi.fn()}
+          onViewGrade={vi.fn()}
+          onBack={vi.fn()}
+        />,
+      )
+      await waitFor(() => {
+        expect(screen.getByTestId("ejercicio-descargar-1")).toBeDefined()
+      })
+      fireEvent.click(screen.getByTestId("ejercicio-descargar-1"))
+      await waitFor(() => {
+        expect(browser.click).toHaveBeenCalled()
+      })
+      expect(browser.getDescargado()?.filename).toBe("suma.java")
+    })
+
+    it("muestra error sin romper la lista cuando falla la carga del episodio", async () => {
+      const entrega = entregaConEjercicio1Completado()
+      setupFetchMock({
+        "/ejercicios": () => makePairs(),
+        "/api/v1/entregas": () => entrega,
+        "/api/v1/episodes/episode-1": { ok: false, status: 500, body: () => ({}) },
+      })
+      const tarea = makeTarea()
+      render(
+        <ExerciseListView
+          tarea={tarea}
+          comisionId={COMISION_ID}
+          onSelectEjercicio={vi.fn()}
+          onViewGrade={vi.fn()}
+          onBack={vi.fn()}
+        />,
+      )
+      await waitFor(() => {
+        expect(screen.getByTestId("ejercicio-descargar-1")).toBeDefined()
+      })
+      fireEvent.click(screen.getByTestId("ejercicio-descargar-1"))
+      await waitFor(() => {
+        expect(screen.getByTestId("descarga-error")).toBeDefined()
+      })
+      // La lista sigue viva: el ejercicio 2 no desaparecio por el error del 1.
+      expect(screen.getByTestId("ejercicio-item-2")).toBeDefined()
+    })
+  })
+
   describe("badges de estado de entrega", () => {
     it("muestra badge 'Entregada' cuando estado=submitted", async () => {
       const entrega = makeEntrega({ estado: "submitted" })
