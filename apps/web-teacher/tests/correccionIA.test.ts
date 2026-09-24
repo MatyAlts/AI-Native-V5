@@ -9,10 +9,12 @@ import { describe, expect, test } from "vitest"
 import type { CorreccionIA } from "../src/lib/api"
 import {
   type EjercicioDelTP,
+  type RubricaRowInput,
   chequearAritmetica,
   ejerciciosParaResumen,
   redondearA10,
   resumirCorrecciones,
+  sugerirPuntajesDesdeCorrecciones,
 } from "../src/utils/correccionIA"
 
 function correccion(orden: number, nota: number | null, over: Partial<CorreccionIA> = {}) {
@@ -381,6 +383,101 @@ describe("un ejercicio con identidad estable no toma la nota de otro", () => {
 
     const a = r.terminos.find((t) => t.titulo === "A (dificil)")
     expect(a?.nota100).toBe(100)
+  })
+})
+
+describe("sugerirPuntajesDesdeCorrecciones (RUBRICA-AUTOCOMPLETE)", () => {
+  // "Usar como base" solo rellenaba la nota final; el docente tenia que
+  // copiar el desglose a mano criterio por criterio, o dejaba los inputs
+  // vacios — y eso es lo que persistia como 0 en la devolucion (BUG-19).
+
+  const ROWS_EJ1: RubricaRowInput[] = [
+    { key: "ej-1#0", ejercicioId: "ej-1", orden: 1, nombre: "Usa la interfaz" },
+    { key: "ej-1#1", ejercicioId: "ej-1", orden: 1, nombre: "Produce la salida esperada" },
+  ]
+
+  test("autocompleta cada fila con el puntaje del criterio homonimo del desglose", () => {
+    const correcciones = [
+      correccion(1, 90, {
+        tp_ejercicio_id: "ej-1",
+        desglose: [
+          { nombre: "Usa la interfaz", puntaje: 3 },
+          { nombre: "Produce la salida esperada", puntaje: 4 },
+        ],
+      }),
+    ]
+    const scores = sugerirPuntajesDesdeCorrecciones(ROWS_EJ1, correcciones)
+    expect(scores).toEqual({ "ej-1#0": "3", "ej-1#1": "4" })
+  })
+
+  test("un ejercicio sin correccion terminada no se toca: no fuerza un 0", () => {
+    // Forzar 0 se leeria como "el alumno no lo hizo" en vez de "todavia no se
+    // corrigio" — la misma trampa que el backend evita al no convertir un
+    // fallo en un cero.
+    const scores = sugerirPuntajesDesdeCorrecciones(ROWS_EJ1, [])
+    expect(scores).toEqual({})
+  })
+
+  test("una correccion en curso o con error tampoco autocompleta", () => {
+    const correcciones = [
+      correccion(1, null, {
+        tp_ejercicio_id: "ej-1",
+        estado: "running",
+        desglose: [{ nombre: "Usa la interfaz", puntaje: 3 }],
+      }),
+    ]
+    expect(sugerirPuntajesDesdeCorrecciones(ROWS_EJ1, correcciones)).toEqual({})
+  })
+
+  test("si la TP se reordeno, no toma el desglose de OTRO ejercicio", () => {
+    // Misma regla de identidad que resumirCorrecciones: una correccion CON
+    // tp_ejercicio_id no puede pisar la fila de un ejercicio distinto por
+    // casualidad de `orden`.
+    const rowsDeOtro: RubricaRowInput[] = [
+      { key: "ej-2#0", ejercicioId: "ej-2", orden: 1, nombre: "Usa la interfaz" },
+    ]
+    const correccionDeEj1EnOrden1 = [
+      correccion(1, 90, {
+        tp_ejercicio_id: "ej-1",
+        desglose: [{ nombre: "Usa la interfaz", puntaje: 3 }],
+      }),
+    ]
+    expect(sugerirPuntajesDesdeCorrecciones(rowsDeOtro, correccionDeEj1EnOrden1)).toEqual({})
+  })
+
+  test("con varias correcciones del mismo ejercicio usa la mas nueva", () => {
+    const correcciones = [
+      correccion(1, 40, {
+        tp_ejercicio_id: "ej-1",
+        created_at: "2026-08-18T09:00:00Z",
+        desglose: [
+          { nombre: "Usa la interfaz", puntaje: 1 },
+          { nombre: "Produce la salida esperada", puntaje: 1 },
+        ],
+      }),
+      correccion(1, 80, {
+        tp_ejercicio_id: "ej-1",
+        created_at: "2026-08-18T11:00:00Z",
+        desglose: [
+          { nombre: "Usa la interfaz", puntaje: 3 },
+          { nombre: "Produce la salida esperada", puntaje: 4 },
+        ],
+      }),
+    ]
+    expect(sugerirPuntajesDesdeCorrecciones(ROWS_EJ1, correcciones)).toEqual({
+      "ej-1#0": "3",
+      "ej-1#1": "4",
+    })
+  })
+
+  test("un criterio sin homonimo en el desglose queda sin tocar", () => {
+    const correcciones = [
+      correccion(1, 90, {
+        tp_ejercicio_id: "ej-1",
+        desglose: [{ nombre: "Usa la interfaz", puntaje: 3 }],
+      }),
+    ]
+    expect(sugerirPuntajesDesdeCorrecciones(ROWS_EJ1, correcciones)).toEqual({ "ej-1#0": "3" })
   })
 })
 

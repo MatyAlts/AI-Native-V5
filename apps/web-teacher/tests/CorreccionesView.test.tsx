@@ -382,6 +382,68 @@ describe("CorreccionesView — GradingFormView", () => {
     expect(screen.queryByTestId("cancelar-recalificacion-btn")).toBeNull()
   })
 
+  it("RUBRICA-AUTOCOMPLETE: 'Usar como base' autocompleta los puntajes por criterio, no solo la nota", async () => {
+    // Antes, `onUsarComoBase` solo rellenaba `nota-final`; el docente tenia
+    // que copiar el desglose a mano criterio por criterio. Sin eso, "Usar
+    // como base" + "Calificar" persistia detalle_criterios con puntaje 0 en
+    // cada fila — la mitad del BUG-19 que ve el alumno como "0 / NaN".
+    const tpEjercicioConRubrica = {
+      id: "tpej-1",
+      tarea_practica_id: TAREA_ID,
+      ejercicio_id: "ej-1",
+      orden: 1,
+      peso_en_tp: "1.00",
+      ejercicio: {
+        id: "ej-1",
+        titulo: "Ejercicio 1",
+        rubrica: {
+          criterios: [
+            { nombre: "Usa la interfaz", descripcion: "", puntaje_max: "5" },
+            { nombre: "Produce la salida esperada", descripcion: "", puntaje_max: "5" },
+          ],
+        },
+      },
+    }
+    const correccionIA = {
+      id: "corr-1",
+      entrega_id: ENTREGA_ID,
+      tp_ejercicio_id: "ej-1",
+      orden: 1,
+      estado: "done",
+      rubrica_id: "nativa:v1",
+      nota_100: 70,
+      desglose: [
+        { nombre: "Usa la interfaz", puntaje: 3 },
+        { nombre: "Produce la salida esperada", puntaje: 4 },
+      ],
+      tests_snapshot: {},
+      created_at: "2026-09-23T12:00:00Z",
+    }
+    setupFetchMock({
+      "/correccion-ia": () => ({ correcciones: [correccionIA] }),
+      "/ejercicios": () => [tpEjercicioConRubrica],
+      "/api/v1/entregas": () => ({ data: [mockEntregaSubmitted], meta: { cursor_next: null } }),
+      "/api/v1/tareas-practicas/": () => mockTarea,
+    })
+    renderWithRouter(<CorreccionesView comisionId={COMISION_ID} getToken={getToken} />)
+    await waitFor(() => {
+      expect(screen.getByTestId("entrega-drill-btn")).toBeDefined()
+    })
+    fireEvent.click(screen.getByTestId("entrega-drill-btn"))
+
+    await waitFor(() => {
+      expect(screen.getByTestId("resumen-usar-como-base")).toBeDefined()
+    })
+    fireEvent.click(screen.getByTestId("resumen-usar-como-base"))
+
+    // El ejercicio 1 esta abierto por default (primera tarjeta): sus
+    // criterios se autocompletan con el desglose de la correccion vigente.
+    await waitFor(() => {
+      expect(screen.getByTestId("criterio-puntaje-ej-1#0")).toHaveValue(3)
+    })
+    expect(screen.getByTestId("criterio-puntaje-ej-1#1")).toHaveValue(4)
+  })
+
   it("boton Volver regresa a la lista", async () => {
     setupFetchMock({
       // Las sub-rutas van ARRIBA: `/api/v1/entregas` las matchea a todas por

@@ -34,9 +34,9 @@ pura, verificación manual descrita). Marcar [x] al completar.
       Test: reabrir con código X → el episodio nuevo trae X, no el scaffold.
 
 ## Lote 5 — Mejora 3 · retroalimentación completa
-- [ ] RUBRICA-AUTOCOMPLETE · al aplicar la corrección con IA, autocompletar los
+- [x] RUBRICA-AUTOCOMPLETE · al aplicar la corrección con IA, autocompletar los
       puntajes por criterio (no sólo la nota final).
-- [ ] BUG-19 · el desglose por criterio se persiste en la devolución y el alumno
+- [x] BUG-19 · el desglose por criterio se persiste en la devolución y el alumno
       no ve "0 / NaN" (leer puntaje_max con fallback). Test del render de criterios.
 
 ## Lote 6 — pie de auditoría vivo

@@ -14,6 +14,7 @@
  */
 import { useEffect, useState } from "react"
 import { type Calificacion, type Entrega, entregasApi } from "../lib/api"
+import { formatoCriterioPuntaje } from "../utils/calificacionCriterios"
 
 export interface GradeDetailViewProps {
   entrega: Entrega
@@ -156,14 +157,14 @@ export function GradeDetailView({ entrega, onBack }: GradeDetailViewProps) {
                 <ul className="space-y-3" data-testid="criterios-list">
                   {calificacion.detalle_criterios.map((criterio, idx) => (
                     <li
-                      key={`${criterio.nombre}-${idx}`}
+                      key={`${criterio.criterio}-${idx}`}
                       data-testid="criterio-item"
                       className="border-b border-border-soft pb-3 last:border-0 last:pb-0"
                     >
                       <div className="flex items-center justify-between mb-1">
-                        <span className="text-sm font-medium text-body">{criterio.nombre}</span>
+                        <span className="text-sm font-medium text-body">{criterio.criterio}</span>
                         <span className="text-xs font-mono text-muted">
-                          {criterio.puntaje} / {Math.round(criterio.peso * 10)}
+                          {formatoCriterioPuntaje(criterio.puntaje, criterio.max_puntaje)}
                         </span>
                       </div>
                       {criterio.comentario && (

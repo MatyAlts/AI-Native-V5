@@ -283,3 +283,82 @@ export function ejerciciosParaResumen(tpEjercicios: TpEjercicioCrudo[]): Ejercic
     peso: Number.parseFloat(tp.peso_en_tp),
   }))
 }
+
+/**
+ * Una fila de rubrica a calificar, en la forma minima que necesita el
+ * autocompletado (Mejora 3 / RUBRICA-AUTOCOMPLETE). Estructuralmente
+ * compatible con `RubricaRow` de `CorreccionesView.tsx` — vive aca, y no ahi,
+ * porque es la unica parte de este mapeo que puede quedar mal en silencio: un
+ * criterio autocompletado con el puntaje de OTRO no se ve en la pantalla.
+ */
+export interface RubricaRowInput {
+  key: string
+  ejercicioId: string | null
+  orden: number
+  nombre: string
+}
+
+/**
+ * Autocompleta los puntajes por criterio desde la correccion asistida vigente
+ * de cada ejercicio, para "Usar como base" (Mejora 3 / BUG-19).
+ *
+ * Antes, "Usar como base" solo rellenaba la nota final: el docente tenia que
+ * copiar el desglose a mano criterio por criterio, o dejaba los inputs vacios
+ * — y eso es lo que terminaba persistiendo como puntaje 0 en la devolucion
+ * que ve el alumno (BUG-19, numerador).
+ *
+ * Misma regla de identidad que `resumirCorrecciones`: la correccion se elige
+ * por `tp_ejercicio_id` (identidad estable) y, si no la tiene, por `orden` —
+ * nunca al reves. Una correccion CON `tp_ejercicio_id` no puede pisar la fila
+ * de OTRO ejercicio por casualidad de `orden` si la TP se reordeno entre
+ * corregir y calificar.
+ *
+ * Dentro de la correccion elegida, cada fila se busca en el desglose por
+ * `nombre` (misma logica que `Desgloses`: `criterio.nombre ?? criterio.criterio`).
+ * Una fila sin correccion terminada, o sin homonimo en el desglose, queda SIN
+ * TOCAR — forzar un 0 se leeria como "el alumno no lo hizo" en vez de "no
+ * vino en la respuesta", la misma trampa que el backend evita al no convertir
+ * un fallo en un cero.
+ */
+export function sugerirPuntajesDesdeCorrecciones(
+  rows: RubricaRowInput[],
+  correcciones: CorreccionIA[],
+): Record<string, string> {
+  const porId = new Map<string, CorreccionIA>()
+  const porOrden = new Map<number, CorreccionIA>()
+
+  const masNueva = (a: CorreccionIA, b: CorreccionIA | undefined): boolean => {
+    if (!b) return true
+    return a.created_at !== b.created_at ? a.created_at > b.created_at : a.id > b.id
+  }
+
+  for (const c of correcciones) {
+    if (c.estado !== "done" || !c.desglose || c.desglose.length === 0) continue
+    if (c.tp_ejercicio_id) {
+      if (masNueva(c, porId.get(c.tp_ejercicio_id))) porId.set(c.tp_ejercicio_id, c)
+    }
+    if (masNueva(c, porOrden.get(c.orden))) porOrden.set(c.orden, c)
+  }
+
+  const scores: Record<string, string> = {}
+  for (const row of rows) {
+    const porIdentidad = row.ejercicioId ? porId.get(row.ejercicioId) : undefined
+    const porPosicion = porOrden.get(row.orden)
+    // Igual que en `resumirCorrecciones`: si la correccion que ocupa esa
+    // posicion declara `tp_ejercicio_id` de OTRO ejercicio, no es candidata
+    // para el fallback por orden.
+    const c = porIdentidad ?? (porPosicion?.tp_ejercicio_id ? undefined : porPosicion)
+    if (!c) continue
+
+    const match = c.desglose.find((criterio) => {
+      const nombre = criterio.nombre ?? criterio.criterio
+      return nombre === row.nombre
+    })
+    if (!match) continue
+
+    const valor = match.puntaje ?? match.puntos ?? match.score
+    const num = typeof valor === "number" ? valor : Number.parseFloat(String(valor ?? ""))
+    if (Number.isFinite(num)) scores[row.key] = String(num)
+  }
+  return scores
+}

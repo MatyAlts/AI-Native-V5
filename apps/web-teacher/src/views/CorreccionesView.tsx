@@ -50,7 +50,7 @@ import {
 } from "../lib/api"
 import { useTutorialDeVista } from "../tour/useTutorialDeVista"
 import { correccionesTour } from "../tour/vistas"
-import { ejerciciosParaResumen } from "../utils/correccionIA"
+import { ejerciciosParaResumen, sugerirPuntajesDesdeCorrecciones } from "../utils/correccionIA"
 import { studentShortLabel } from "../utils/docenteLabels"
 import { helpContent } from "../utils/helpContent"
 
@@ -1665,6 +1665,16 @@ function GradingFormView({
           // Rellena y deja el foco en el campo. NO guarda: el docente aprieta
           // Calificar como siempre, y puede cambiar el numero antes.
           setNota(String(nota10))
+          // RUBRICA-AUTOCOMPLETE (Mejora 3): ademas de la nota final, se
+          // autocompletan los puntajes por criterio con el desglose de la
+          // correccion vigente de cada ejercicio. Sin esto, el docente
+          // calificaba con la nota sugerida pero los inputs de criterio
+          // quedaban vacios — y eso es lo que se guardaba como puntaje 0 en
+          // la devolucion que ve el alumno (BUG-19).
+          if (tieneRubrica) {
+            const sugeridos = sugerirPuntajesDesdeCorrecciones(rubricaRows, correccionesIA)
+            setCriterioScores((prev) => ({ ...prev, ...sugeridos }))
+          }
           setReediting(true)
           window.requestAnimationFrame(() => {
             document.getElementById("nota-final")?.focus()
