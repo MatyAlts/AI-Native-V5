@@ -22,9 +22,9 @@ pura, verificación manual descrita). Marcar [x] al completar.
       tras calificar (salir de reediting al calificar OK, o renombrar el botón).
 
 ## Lote 3 — formulario y estado (docente)
-- [ ] BUG-01 · "Nuevo TP" no debe arrastrar datos del TP anterior (key/remount o
+- [x] BUG-01 · "Nuevo TP" no debe arrastrar datos del TP anterior (key/remount o
       reset al abrir). Test: abrir crear dos veces → segundo form vacío.
-- [ ] BUG-02 · el Código de un TP: o inmutable (input disabled en edición) o
+- [x] BUG-02 · el Código de un TP: o inmutable (input disabled en edición) o
       editable de verdad (agregarlo al schema del academic-service). Decidir y cerrar.
 
 ## Lote 4 — Mejora 2 · reapertura con código previo

@@ -91,6 +91,13 @@ class TareaPracticaCreate(TareaPracticaBase):
 
 
 class TareaPracticaUpdate(BaseModel):
+    # BUG-02: el TS manda `codigo` en el PATCH del form de TP, pero este schema
+    # no lo declaraba — sin `extra="forbid"`, Pydantic lo ignoraba en silencio
+    # (PATCH 200 OK, codigo intacto, sin error visible). Misma validación que
+    # `TareaPracticaBase.codigo`. No entra en `_MUTABLE_REGARDLESS_OF_ESTADO`
+    # (tarea_practica_service.py): es contenido versionado, editable sólo en
+    # draft — el gate de inmutabilidad existente ya lo cubre.
+    codigo: str | None = Field(default=None, min_length=1, max_length=20)
     titulo: str | None = Field(default=None, min_length=2, max_length=200)
     enunciado: str | None = Field(default=None, min_length=1)
     inicial_codigo: str | None = Field(default=None, max_length=5000)

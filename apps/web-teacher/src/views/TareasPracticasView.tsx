@@ -388,30 +388,38 @@ export function TareasPracticasView({ comisionId, getToken }: Props) {
           </ul>
         )}
 
-        {/* Modal: crear nuevo TP */}
-        <TareaFormModal
-          isOpen={modal.kind === "create"}
-          title="Nuevo trabajo practico"
-          initial={null}
-          comisionId={comisionId}
-          getToken={getToken}
-          onClose={closeModal}
-          onSubmit={async (values) => {
-            const created = await tareasPracticasApi.create(
-              {
-                ...values,
-                comision_id: comisionId,
-              },
-              getToken,
-            )
-            await refreshList()
-            // FR-7: reducir la friccion "crear != componer". En vez de solo
-            // cerrar, llevamos al docente directo a la Composicion del TP recien
-            // creado (arranca en draft, sin ejercicios) para que asocie ejercicios
-            // del banco sin tener que descubrir el boton "Composicion" de la card.
-            setModal({ kind: "composicion", tarea: created })
-          }}
-        />
+        {/* Modal: crear nuevo TP.
+            BUG-01: antes quedaba SIEMPRE montado (solo `isOpen` cambiaba) y sus
+            useState(initial?...) solo corren al montar, asi que cerrar y volver
+            a abrir dejaba el codigo/titulo tipeados la vez anterior. Renderizado
+            condicional por `modal.kind`, igual que el resto de las variantes de
+            este modal (edit, versioning): al cerrarse se desmonta y el proximo
+            "Nuevo TP" monta el componente de cero con estado limpio. */}
+        {modal.kind === "create" && (
+          <TareaFormModal
+            isOpen={true}
+            title="Nuevo trabajo practico"
+            initial={null}
+            comisionId={comisionId}
+            getToken={getToken}
+            onClose={closeModal}
+            onSubmit={async (values) => {
+              const created = await tareasPracticasApi.create(
+                {
+                  ...values,
+                  comision_id: comisionId,
+                },
+                getToken,
+              )
+              await refreshList()
+              // FR-7: reducir la friccion "crear != componer". En vez de solo
+              // cerrar, llevamos al docente directo a la Composicion del TP recien
+              // creado (arranca en draft, sin ejercicios) para que asocie ejercicios
+              // del banco sin tener que descubrir el boton "Composicion" de la card.
+              setModal({ kind: "composicion", tarea: created })
+            }}
+          />
+        )}
 
         {/* Modal: composicion de ejercicios (ADR-047) */}
         {modal.kind === "composicion" && (
