@@ -31,13 +31,10 @@ interface Props {
 export function ResumenCorreccionIA({ ejercicios, correcciones, onUsarComoBase }: Props) {
   const r = resumirCorrecciones(ejercicios, correcciones)
 
-  // BUG-11 (QA 2026-09-23): el titulo decia "Active-IA" hardcodeado, pero desde
-  // que el motor propio esta encendido la nota la produce el corrector NATIVO
-  // (rubrica_id con prefijo "nativa:"). Atribuirsela a Active-IA es un error de
-  // negocio (F15/Active-IA es otro producto). El nombre sale del motor real.
-  const motorLabel = correcciones.some((c) => c.rubrica_id?.startsWith("nativa:"))
-    ? "corrección con IA"
-    : "Active-IA"
+  // Decision de producto (Juani, 2026-09-24): la sugerencia se presenta SIEMPRE
+  // como "Active-IA", aunque bajo el capo corra el corrector propio. Es branding
+  // del producto y revierte el ajuste BUG-11 que la atribuia al motor real.
+  const motorLabel = "Active-IA"
 
   // Sin ninguna correccion terminada no hay nada que resumir, y una card
   // vacia que dice "faltan 4" antes de que el docente pida la primera seria
