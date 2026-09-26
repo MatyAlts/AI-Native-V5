@@ -39,6 +39,7 @@ from classifier_service.services.regimen_llm import (
     REGIMEN_TO_APPROPRIATION,
     SUBGRUPOS_JUZGADOS_POR_JUEZ,
     clasificar_regimen_llm,
+    normalizar_regimen_llm_persistido,
 )
 
 # Auth de procedencia a nivel router (A0.1): con `require_gateway_signature` ON
@@ -69,11 +70,13 @@ class ClassificationOut(BaseModel):
     # Modo sombra (B1 Fase 2): subgrupo + 4 dimensiones, derivado de features.
     # None para clasificaciones viejas (pre-modo-sombra) — el front cae a la etiqueta clásica.
     subgrupo: dict | None = None
-    # Juez LLM del eje fino (eje_fino_v1.1.0): veredicto + evidencia citada de las 4
-    # dimensiones. None si el episodio no pasó por el juez (no es con-tutor no-delegación,
-    # flag OFF, o clasificación previa a la activación). v4.0.0: cuando `estado=="ok"` el
-    # veredicto GOBIERNA `appropriation`; si no, se conserva el proxy conductual y el
-    # episodio queda marcado `needs_review` (ver features).
+    # Juez LLM del eje fino (eje_fino_v1.2.0, trivaluado con Kleene fuerte —
+    # Tabla 3.11): veredicto + evidencia citada de las 4 dimensiones. None si
+    # el episodio no pasó por el juez (no es con-tutor no-delegación, flag OFF,
+    # o clasificación previa a la activación). v4.0.0: cuando `estado=="ok"` el
+    # veredicto GOBIERNA `appropriation`; si no (incluida la abstención por
+    # traza insuficiente), se conserva el proxy conductual y el episodio queda
+    # marcado `needs_review` (ver features).
     regimen_llm: dict | None = None
 
     class Config:
@@ -407,5 +410,9 @@ async def get_current_classification(
     out = ClassificationOut.model_validate(c)
     feats = c.features or {}
     out.subgrupo = feats.get("subgrupo")
-    out.regimen_llm = feats.get("regimen_llm")
+    # Normalizado en el borde de lectura (bug QA 2026-09-25): sin esto, un
+    # registro juzgado bajo `eje_fino_v1.1.0` con autonomía en su forma legada
+    # (`oraculo`, sin `presente`) llega al cliente sin esa dimensión. Ver
+    # docstring de `normalizar_regimen_llm_persistido`.
+    out.regimen_llm = normalizar_regimen_llm_persistido(feats.get("regimen_llm"))
     return out

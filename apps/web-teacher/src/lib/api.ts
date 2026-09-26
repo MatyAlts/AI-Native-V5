@@ -1320,21 +1320,29 @@ export interface Subgrupo {
 // Veredicto del juez LLM del eje fino (features['regimen_llm']). YA NO es modo
 // sombra: gobierna la etiqueta oficial `appropriation` del episodio. Lo produce
 // regimen_llm.py.
+//
+// B2a (Tabla 3.11 + Tabla B.2): las CUATRO dimensiones son trivaluadas.
+// `presente` acepta el booleano legado (clasificaciones persistidas antes de
+// esta change) ADEMAS del string nuevo, porque el backend re-parsea y expone
+// ambas formas segun cuando se clasifico el episodio — el frontend tiene que
+// poder leer las dos.
+export type RegimenLLMValorDimension = "presente" | "ausente" | "no_evaluable" | boolean
 export interface RegimenLLMDimension {
-  presente: boolean
+  presente: RegimenLLMValorDimension
   evidencia: string
 }
 export interface RegimenLLMRaw {
   verbalizacion: RegimenLLMDimension
   verificacion: RegimenLLMDimension
   justificacion: RegimenLLMDimension
-  autonomia: { oraculo: boolean; evidencia: string }
+  // Misma forma que las otras tres (D4 corregida) — ya no `{ oraculo: boolean }`.
+  autonomia: RegimenLLMDimension
   regimen: "REFLEXIVA" | "SUPERFICIAL"
   confianza: number
   justificacion_global: string
 }
 export interface RegimenLLM {
-  estado: "ok" | "inconsistente" | "baja_confianza" | "error_parseo"
+  estado: "ok" | "inconsistente" | "baja_confianza" | "error_parseo" | "abstencion_traza_insuficiente"
   regimen: "REFLEXIVA" | "SUPERFICIAL" | null
   confianza: number | null
   raw: RegimenLLMRaw | null

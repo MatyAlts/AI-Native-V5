@@ -102,6 +102,30 @@ def test_classifier_config_hash_invariante_a_orden_de_keys() -> None:
     assert compute_classifier_config_hash(profile_a) == compute_classifier_config_hash(profile_b)
 
 
+def test_classifier_config_hash_golden() -> None:
+    """Anti-regresión (hallazgo del auditor, 2026-09-25): los tests de arriba
+    prueban DETERMINISMO (`h1 == h2` calculados en el mismo proceso), no
+    INVARIANCIA — un cambio en el default de `tree_version` o en
+    `DEFAULT_REFERENCE_PROFILE` los deja los 13 en verde CON el hash movido,
+    porque ninguno fija un literal contra el que comparar. Este test sí lo
+    fija, siguiendo el patrón de `test_corpus_hash_golden`
+    (`test_event_labeler_lexical.py`, `test_postprocess_socratic.py`).
+
+    Si este test FALLA: el hash se movió. Eso puede ser legítimo — es
+    exactamente lo que `tasks.md:6.6` pide para el bump de `tree_version`
+    `v4.0.0 → v4.1.0` — pero es una DECISIÓN DELIBERADA que exige bumpear
+    `tree_version` a propósito y reclasificar el corpus del piloto (ver D6 del
+    design.md de `remediaciones-mtac-b2-b5`), no un efecto colateral de tocar
+    otra cosa. Si el cambio es legítimo, recomputar y actualizar este golden.
+    """
+    golden = "28e111aec4c5ec470bc8836cd716f563f41639d043d79bc95dca7da99e62b774"
+    actual = compute_classifier_config_hash(DEFAULT_REFERENCE_PROFILE)
+    assert actual == golden, (
+        f"classifier_config_hash se movió: golden={golden} actual={actual}. "
+        "Si es deliberado, bumpear tree_version (tasks.md:6.6) y actualizar este golden."
+    )
+
+
 # ── Escenarios end-to-end ──────────────────────────────────────────────
 
 
