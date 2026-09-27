@@ -1379,6 +1379,69 @@ export async function getEpisodeClassification(
   return r.json()
 }
 
+// ── B3+B5: cola de revisión humana (tarea 5.3/5.4) ────────────────────
+//
+// `ReviewQueueItemOut` NO trae cantidad de eventos ni transcripción del
+// episodio — esos viven en `ctr_store` y el classifier-service no hace joins
+// cross-base (CLAUDE.md). El docente ve ese detalle desde la vista de
+// episodio existente (`/episode-n-level`), no acá.
+export interface ReviewQueueItem {
+  episode_id: string
+  comision_id: string
+  classification_id: number
+  appropriation: AppropriationLabel
+  needs_review_reason: string | null
+  estado_juez: string | null
+}
+
+export interface ReviewQueueOut {
+  n: number
+  items: ReviewQueueItem[]
+}
+
+export async function getReviewQueue(
+  comisionId: string | undefined,
+  getToken?: TokenGetter,
+): Promise<ReviewQueueOut> {
+  const qs = comisionId ? `?comision_id=${comisionId}` : ""
+  const r = await fetch(`/api/v1/classifications/review-queue${qs}`, {
+    headers: await authHeaders(getToken),
+  })
+  await throwIfNotOk(r)
+  return r.json()
+}
+
+export interface ReviewIn {
+  verdict: string
+  reason: string
+}
+
+export interface ReviewOut {
+  review_id: number
+  episode_id: string
+  previous_classification_id: number
+  new_classification_id: number
+  verdict: string
+}
+
+// Errores de dominio (400 verdict invalido, 409 conflicto) llegan por
+// `throwIfNotOk` como `Error & { status, detail }` — `detail` es un string en
+// el 400 y `{ message, retryable }` en el 409 (routes/review.py). El caller
+// (RevisionColaView) distingue por `status`/`detail`, no esta funcion.
+export async function submitReview(
+  episodeId: string,
+  body: ReviewIn,
+  getToken?: TokenGetter,
+): Promise<ReviewOut> {
+  const r = await fetch(`/api/v1/classifications/${episodeId}/review`, {
+    method: "POST",
+    headers: await authHeaders(getToken),
+    body: JSON.stringify(body),
+  })
+  await throwIfNotOk(r)
+  return r.json()
+}
+
 // ── ADR-018: CII evolution longitudinal por estudiante ───────────────
 
 export interface CIIEvolutionTemplate {

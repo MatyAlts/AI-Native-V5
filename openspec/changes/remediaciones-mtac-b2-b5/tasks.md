@@ -89,8 +89,67 @@ Objetivo del bloque: que el hash y los veredictos queden **idénticos**. Si algo
   > guarda hacia adelante). Ver informe del implementador para la tabla del ciclo TDD.
 - [x] 5.5 Verificar que **no** hace falta tocar el `ROUTE_MAP` (D8): ambos endpoints cuelgan de `/api/v1/classifications`, que ya está en `proxy.py:61`. Confirmar a mano contra el gateway levantado, no por lectura — un endpoint inalcanzable falla en silencio. **Verificado 2026-09-27**: classifier-service (:8008) + api-gateway (:8000, `DEV_TRUST_HEADERS=true`) levantados a mano; `GET/POST` a través del gateway responden (200 y 404 semántico, no 404 de ruteo) sin tocar `ROUTE_MAP`. Ver tabla de evidencia del implementador.
 - [x] 5.6 Policies Casbin para el rol que puede anular (pregunta abierta del design). Van al seed (`academic-service/seeds/casbin_policies.py`), que es el source of truth, y bumpean el conteo (207→213: +6, `classification_review:{create,read}` × {superadmin, docente_admin, docente}). **Nota de implementación**: el classifier-service NO consulta Casbin en runtime para ningún endpoint (ni los viejos ni estos dos nuevos) — gatea con `require_role` sobre roles del header del gateway, igual que `CLASSIFY_ROLES`/`READ_ROLES` ya existentes. Esta entrada del seed documenta el catálogo de permisos (como pide la tarea) pero no hay enforcer que la lea desde este servicio — señalado en el informe, no soluciónado (fuera de alcance: cablear Casbin en classifier-service no está en ninguna tarea de este bloque).
-- [ ] 5.7 Pantalla de cola de revisión en web-teacher, consumiendo 5.3. Patrón obligatorio `HelpButton` + `PageContainer` + entry en `helpContent.tsx` (11 keys hoy).
-- [ ] 5.8 Ruta nueva en `web-teacher` (TanStack Router file-based, search params validados con zod) y entrada en la navegación. Sin esto la pantalla existe y no se llega.
+- [x] 5.7 Pantalla de cola de revisión en web-teacher, consumiendo 5.3. Patrón obligatorio `HelpButton` + `PageContainer` + entry en `helpContent.tsx` (11 keys hoy).
+
+  **Implementado 2026-09-27**: `RevisionColaView.tsx` — filas densas agrupadas por
+  `estado_juez`. Los conteos por grupo salen de `items.length`, nunca
+  hardcodeados (principio 4). La decisión se abre EN la fila (no modal): botón
+  "Decidir" despliega un form inline con select de veredicto (los 4
+  `VALID_VERDICTS` reales, leídos de `routes/review.py`) + textarea de motivo
+  obligatorio, con un banner que declara ANTES de confirmar que la decisión
+  reemplaza la etiqueta oficial. Los dos 409 (`retryable: true/false`) muestran
+  los dos mensajes distintos del shape brief; el 400 muestra el detail del
+  dominio tal cual lo manda el backend. UUID del episodio en `font-mono`. Sin
+  color nuevo: badges `warning`/`danger`/`info` ya declarados en el vocabulario
+  semántico existente. Estado vacío no afirma "todo revisado" — dice "no hay
+  episodios retenidos en este momento" y aclara que eso puede significar dos
+  cosas distintas (principio 5). `ReviewQueueItemOut` no trae eventos ni
+  transcripción (D2 del brief): cada fila linkea a `/episode-n-level` para ese
+  detalle, sin agregar ningún endpoint nuevo. `getReviewQueue`/`submitReview`
+  agregados a `lib/api.ts`, reusando `throwIfNotOk` existente (ya adjunta
+  `status`/`detail` al `Error`, que es exactamente lo que hace falta para
+  distinguir 400 de los dos 409). helpContent nuevo: `revisionCola`.
+
+  **Corrección (orquestador, 2026-09-27): el "cuarto grupo genérico" de la
+  primera versión estaba mal — escondía un estado real.** `abstencion_traza_insuficiente`
+  (caso 4 de la Tabla 3.11, agregado a `Estado` en `regimen_llm.py:243` por el
+  juez trivaluado, commit `e5ca9b2`) NO es hipotético: existe en el backend
+  desde hace dos commits y marca `needs_review`, así que va a aparecer en esta
+  cola en cuanto el corpus se reclasifique con la regla trivaluada. Dejarlo caer
+  en un cajón "Otros motivos" reproducía en la UI el defecto que este change
+  entero vino a arreglar (una ausencia de información indistinguible de otra
+  cosa) — el mismo patrón que `sin_clasificar` colapsando en "apropiación
+  superficial" (B2b, bloque 6).
+
+  Fix: `GROUP_ORDER` pasa a CUATRO grupos nombrados —
+  `inconsistente` → `abstencion_traza_insuficiente` → `error_parseo` →
+  `baja_confianza`, en ese orden (la abstención va segunda: el docente
+  aprende más de una abstención bien declarada que de un JSON roto). El grupo
+  genérico se mantiene como QUINTO, pero cambia de significado: ya no es "otro
+  motivo", es el canario de que el clasificador emitió un `estado_juez` que
+  esta pantalla no tiene nombrado — desincronización backend/frontend, no
+  información sobre el episodio. El copy lo dice así explícitamente (título
+  "Estados que esta pantalla no conoce"). `helpContent.revisionCola` actualizado
+  con la entrada del cuarto grupo y una nota sobre el quinto. 2 tests nuevos
+  (10 en total): uno certifica que `abstencion_traza_insuficiente` cae en su
+  grupo nombrado y no en el defensivo; otro que un `estado_juez` inventado (que
+  no existe en el `Literal` del backend) cae en el defensivo con el copy de
+  desincronización. Los dos son guardas hacia adelante, no regresión — hoy el
+  corpus todavía corre con la regla booleana vieja y ninguno de los dos casos
+  ocurre en producción; lo digo en el docstring de cada test.
+
+- [x] 5.8 Ruta nueva en `web-teacher` (TanStack Router file-based, search params validados con zod) y entrada en la navegación. Sin esto la pantalla existe y no se llega.
+
+  **Implementado 2026-09-27**: `src/routes/revision-cola.tsx`, search param
+  `comisionId` opcional validado con zod (`z.string().uuid().optional()`) —
+  a diferencia de Correcciones/Unidades, esta ruta NO redirige al home si
+  falta: el endpoint acepta filtrar por comisión o no filtrar, y no filtrar
+  (cola completa del tenant) es un caso de uso legítimo acá. Entrada en
+  `NAV_GROUPS` (`__root.tsx`) bajo "Trabajo del docente", ícono `Gavel`. El
+  test preexistente `navegacionAlcanzable.test.ts` (que exige que TODA ruta en
+  disco tenga puerta en el menú o una excepción justificada en
+  `FUERA_DEL_MENU`) pasó sin tocarlo — es la red de seguridad que ya existía
+  para esta clase exacta de bug.
 - [x] 5.9 Tests: la cola devuelve los retenidos y solo los retenidos; una revisión los saca de la cola; un segundo POST sobre el mismo episodio apila historial en vez de pisarlo; un rol sin policy recibe 403. Los tres primeros en `tests/integration/test_review_service_db.py` (contra Postgres real, transacciones que nunca commitean); el cuarto en `tests/unit/test_review_routes.py` (HTTP, mockeado).
 
   > **Ronda de QA (2026-09-27): 3 hallazgos más, dos reproducidos con scripts propios de QA sobre este diff.**

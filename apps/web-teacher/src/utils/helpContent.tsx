@@ -792,6 +792,67 @@ export const helpContent: HelpContentMap = {
     </div>
   ),
 
+  revisionCola: (
+    <div className="space-y-4 text-sidebar-text-muted">
+      <p className="text-lg font-medium text-[var(--text-inverse)]">Cola de revisión</p>
+      <p>
+        Episodios que el clasificador automático no pudo resolver solo y quedaron marcados para
+        revisión humana. Se agrupan por lo que le pasó al juez, no en una lista plana: cada grupo te
+        pide una pregunta distinta.
+      </p>
+      <ul className="list-disc list-inside space-y-2 ml-4">
+        <li>
+          <strong>El juez contradijo a la regla determinista:</strong> el veredicto del juez y el
+          del árbol no coinciden. Acá tu decisión enseña algo sobre el clasificador: decidís quién
+          tenía razón.
+        </li>
+        <li>
+          <strong>Abstención por traza insuficiente:</strong> la traza del episodio no alcanzaba
+          para evaluar una dimensión decisiva (por ejemplo, no hay con qué juzgar si el estudiante
+          verificó su propuesta). No es que el juez se equivocó ni que rompió el formato: se abstuvo
+          porque no había con qué decidir. Confirmá esa abstención o aportá el juicio que el sistema
+          no pudo emitir.
+        </li>
+        <li>
+          <strong>El juez no devolvió un veredicto legible:</strong> el juez respondió JSON
+          inválido. No hay nada semántico para juzgar — es una falla técnica, no un desacuerdo.
+        </li>
+        <li>
+          <strong>El juez no alcanzó el umbral de confianza:</strong> la confianza del juez quedó
+          por debajo de 0,70.
+        </li>
+        <li>
+          <strong>Decidir:</strong> abre el formulario en la misma fila. Elegís el veredicto y
+          escribís el motivo (obligatorio). Tu decisión reemplaza la etiqueta oficial del sistema y
+          queda como la que se cita en la tesis — no queda al lado, como un comentario.
+        </li>
+        <li>
+          <strong>UUID del episodio:</strong> en fuente monoespaciada porque es un identificador
+          verificable bit a bit. Para ver la traza completa (eventos, transcripción), abrí la vista
+          de niveles N1-N4 del episodio.
+        </li>
+      </ul>
+      <div className="bg-sidebar-bg-edge p-4 rounded-lg mt-2">
+        <p className="text-accent-brand font-medium">
+          Un quinto grupo, "Estados que esta pantalla no conoce":
+        </p>
+        <p className="text-sm mt-1">
+          Aparece solo si el clasificador emite un motivo que esta pantalla todavía no tiene
+          nombrado. No es información sobre el episodio: es una señal de que el backend cambió y el
+          frontend no se actualizó. Si lo ves, avisale a quien mantiene esta vista.
+        </p>
+      </div>
+      <div className="bg-sidebar-bg-edge p-4 rounded-lg mt-4">
+        <p className="text-warning font-medium">Si otro docente o el sistema se te adelantó:</p>
+        <p className="text-sm mt-1">
+          Si el sistema reclasificó el episodio mientras decidías, tu decisión sigue siendo válida y
+          podés reintentar. Si otro docente ya decidió, leé su decisión antes de insistir — no se
+          pisan automáticamente.
+        </p>
+      </div>
+    </div>
+  ),
+
   usoIa: (
     <div className="space-y-4 text-sidebar-text-muted">
       <p className="text-lg font-medium text-[var(--text-inverse)]">Uso de IA</p>
