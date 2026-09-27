@@ -8,7 +8,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from classifier_service.config import settings
 from classifier_service.observability import setup_observability
-from classifier_service.routes import classify_ep, health, interrater
+from classifier_service.routes import classify_ep, health, interrater, review
 
 
 @asynccontextmanager
@@ -34,6 +34,13 @@ app.add_middleware(
 
 app.include_router(health.router)
 app.include_router(health.config_router)
+# IMPORTANTE: `review.router` ANTES que `classify_ep.router`. Starlette matchea
+# rutas en orden de registro y `GET /classifications/{episode_id}` (sin tipar
+# el path param a nivel de patrón) matchearía "review-queue" como si fuera un
+# episode_id y devolvería 422 antes de llegar a `GET /classifications/review-queue`
+# — mismo gotcha que el comentario sobre "aggregated" en classify_ep.py, pero
+# entre DOS routers en vez de dentro de uno.
+app.include_router(review.router)
 app.include_router(classify_ep.router)
 app.include_router(interrater.router)
 

@@ -28,6 +28,11 @@ def get_engine() -> AsyncEngine:
             max_overflow=6,
             pool_pre_ping=True,
             echo=settings.db_echo,
+            # NO fijado explícitamente (hallazgo de QA, 2026-09-27, ronda 5,
+            # punto 2): corre bajo el default de Postgres, READ COMMITTED.
+            # `services/review.py::submit_review` depende de esa semántica
+            # exacta para su concurrencia optimista — ver el docstring de esa
+            # función ANTES de agregar `isolation_level=` acá.
         )
     return _engine
 

@@ -3,8 +3,13 @@
 El worker de classifier-service escucha eventos `episodio_cerrado`, carga
 todos los eventos del episodio desde el ctr-service, calcula las 3
 coherencias, aplica el árbol N4, y persiste la clasificación como fila
-append-only en `classifications` con `is_current=true` (marcando la
-anterior, si existía, como `is_current=false`).
+append-only en `classifications`. Normalmente entra con `is_current=true`
+(marcando la anterior, si existía, como `is_current=false`) — EXCEPTO si
+una anulación humana gobierna ese episodio (B3+B5,
+`services/review.py::submit_review`), en cuyo caso la fila de máquina se
+registra con `is_current=false`: la anulación humana gobierna hasta que
+otro humano la cambie. Ver el docstring de `persist_classification` y el
+de `Classification.is_current` en `models/__init__.py`.
 """
 
 from __future__ import annotations
@@ -131,46 +136,93 @@ async def persist_classification(
 ) -> Classification:
     """Persiste append-only (ADR-010).
 
-    Idempotencia: si ya existe una fila `is_current=true` con el mismo
-    `classifier_config_hash` para este `episode_id`, la devuelve tal cual
-    (no-op). Si existe `is_current=true` con OTRO hash (reclasificación
-    real con config nueva), la marca `is_current=false` e inserta la nueva.
+    Idempotencia: si ya existe UNA FILA CUALQUIERA (vigente o no) con este
+    `(episode_id, classifier_config_hash)`, la devuelve tal cual (no-op, sin
+    insertar ni tocar su `is_current`). Si no existe ninguna con ese hash
+    (reclasificación real con config nueva), degrada las vigentes que
+    correspondan e inserta la nueva.
 
     Esto cierra la deuda QA "POST /classify_episode/{id} no es idempotente":
     el `UniqueConstraint(episode_id, classifier_config_hash)` haría fallar
     un re-POST con duplicate-key 500 — ahora se devuelve la existente.
+
+    **Gobernanza humana (extensión post-B3+B5, ronda de revisión 2026-09-27):**
+    `is_current=true` dejó de significar "la última clasificación que
+    corrió" y pasa a significar **"la que gobierna"**. Una fila de
+    procedencia humana (`features['revision_humana']`, ver
+    `services/review.py::submit_review`) SIEMPRE tiene un
+    `classifier_config_hash` sintético distinto del de máquina — así que el
+    `UPDATE` de reclasificación, si no la excluyera explícitamente,
+    la degradaría en la primera corrida automática posterior (bug real,
+    confirmado: "el humano manda hasta la próxima corrida", que vacía el
+    propósito de la anulación). Regla: **la anulación humana gobierna hasta
+    que otro humano la cambie**. La reclasificación automática posterior a
+    una anulación SE REGISTRA (es información: el juez y el docente pueden
+    discrepar sistemáticamente en ese episodio) pero entra con
+    `is_current=false` — nunca gobierna por sí sola.
+
+    Y por eso la idempotencia se amplió a "cualquier fila con ese hash, no
+    solo la vigente": tras una anulación humana, el hash de MÁQUINA de un
+    episodio queda "usado" en una fila no-vigente (la que la anulación
+    reemplazó). Si una corrida automática posterior vuelve a computar ESE
+    MISMO hash (config sin cambios — el caso normal, ya que el hash no
+    avanza solo porque hubo una revisión), el `INSERT` chocaría con el
+    `UniqueConstraint` aunque esa fila no sea la vigente. La idempotencia
+    de arriba (chequeo por hash sin filtrar `is_current`) resuelve las dos
+    cosas con el mismo SELECT.
     """
-    # SELECT previo: ¿ya existe una clasificación current con MISMO hash?
-    # Si sí → idempotencia: no tocamos nada y devolvemos la fila existente.
+    # SELECT previo: ¿ya existe UNA FILA (current o no) con este hash para
+    # este episodio? Si sí → idempotencia: no tocamos nada y la devolvemos
+    # tal cual. Antes de la gobernanza humana esto solo miraba `is_current`,
+    # pero una anulación humana deja el hash de máquina "usado" en una fila
+    # no-vigente — sin ampliar el chequeo, la siguiente corrida automática
+    # con el mismo hash intentaría un INSERT que choca con el
+    # UniqueConstraint(episode_id, classifier_config_hash).
     existing_same_hash = await session.execute(
         select(Classification).where(
             Classification.episode_id == episode_id,
             Classification.classifier_config_hash == classifier_config_hash,
-            Classification.is_current.is_(True),
         )
     )
     current_row = existing_same_hash.scalar_one_or_none()
     if current_row is not None:
         logger.debug(
             "Idempotent re-classify: classification ya existe "
-            "(episode_id=%s, classifier_config_hash=%s)",
+            "(episode_id=%s, classifier_config_hash=%s, is_current=%s)",
             episode_id,
             classifier_config_hash,
+            current_row.is_current,
         )
         return current_row
 
-    # Reclasificación con config distinta: marcar la vieja como no-current.
-    # Filtramos por hash distinto para evitar tocar filas con el mismo hash
-    # (defensa adicional al SELECT de arriba — caso de carrera puntual).
+    # Reclasificación con hash nuevo: degradar las vigentes — EXCEPTO una de
+    # procedencia humana. `~features.has_key("revision_humana")` es la
+    # exclusión que gate 1.4 pide ("la anulación humana gobierna hasta que
+    # otro humano la cambie"); la comparación de hash es la defensa original
+    # (caso de carrera puntual) y ahora también es redundante-pero-inocua
+    # con el SELECT de arriba (que ya garantiza que ninguna fila vigente
+    # comparte este hash exacto).
     await session.execute(
         update(Classification)
         .where(
             Classification.episode_id == episode_id,
             Classification.is_current.is_(True),
             Classification.classifier_config_hash != classifier_config_hash,
+            ~Classification.features.has_key("revision_humana"),
         )
         .values(is_current=False)
     )
+
+    # ¿Sigue habiendo una fila vigente? Solo puede ser una humana — el
+    # UPDATE de arriba degradó cualquier otra. Si la hay, la nueva fila de
+    # máquina se registra pero NO gobierna (is_current=false).
+    still_current = await session.execute(
+        select(Classification.id).where(
+            Classification.episode_id == episode_id,
+            Classification.is_current.is_(True),
+        )
+    )
+    new_row_governs = still_current.scalar_one_or_none() is None
 
     new_classification = Classification(
         tenant_id=tenant_id,
@@ -185,7 +237,7 @@ async def persist_classification(
         cii_stability=result.cii_stability,
         cii_evolution=result.cii_evolution,
         features=result.features,
-        is_current=True,
+        is_current=new_row_governs,
     )
     session.add(new_classification)
     await session.flush()

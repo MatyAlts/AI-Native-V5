@@ -11,10 +11,15 @@
 ## 1. Gates previos (bloqueantes — no arrancar sin esto)
 
 - [x] 1.1 🔴 Conseguir la **Tabla 3.11** de la tesis. LEVANTADO: `tabla-3.11-de-la-tesis.md` transcribe los seis casos + la Tabla B.2 y es la fuente normativa de este commit.
-- [ ] 1.2 🔴 Aprobación humana del bump de `tree_version` (D6). **Fuera de alcance de este commit** (pertenece al bloque 6, B2b) — no tocado.
-- [ ] 1.3 🔴 Aprobación humana del relabelado de los 23 episodios `sin_clasificar` (D5). **Fuera de alcance de este commit** (bloque 6/7) — no tocado.
-- [ ] 1.4 🔴 Decidir si la anulación humana **reemplaza** la etiqueta oficial o queda al lado. **Fuera de alcance de este commit** (bloque 5, revisión humana) — no tocado.
+- [x] 1.2 🔴 Aprobación humana del bump de `tree_version` (D6). **APROBADO por el usuario el 26/09/2026**: va el cambio de mapeo + el bump, y NO la reclasificación de los históricos. El bump se ejecuta en el bloque 6, en su propio commit. Instrumento disponible desde el commit anterior: `test_classifier_config_hash_golden` fija el literal `28e111ae…`, de modo que la tarea 6.7 ahora SÍ puede demostrar que el hash cambió — con los 13 tests de reproducibilidad no se podía, porque prueban determinismo y no invariancia.
+- [x] 1.3 🔴 Aprobación humana del relabelado de los episodios `sin_clasificar` ya persistidos (D5). **DENEGADO a propósito por el usuario el 26/09/2026**: la reclasificación NO se ejecuta en esta change. Queda como 7.1, con gate operativo aparte. El motivo: cambiar etiquetas que la tesis cita no puede pasar como efecto secundario de un merge.
+
+  > **Y son 131, no 23.** Consulta a `classifier_db` del 26/09/2026: `eje = sin_clasificar` con etiqueta `apropiacion_superficial` da **131 episodios**, el 29 % de las 449 clasificaciones superficiales vigentes. El número que traía este change (23) viene de la Tabla 4.11 de la tesis y no reproduce contra el registro. Corregir el conteo donde aparezca.
+- [x] 1.4 🔴 Decidir si la anulación humana reemplaza la etiqueta oficial o queda al lado. **DECIDIDO por el usuario el 26/09/2026: REEMPLAZA**, con marca de procedencia, y reversible por otra fila (append-only, ADR-010). El razonamiento: si el humano revisa y no manda, la revisión es decorativa. Implica que 5.4 crea una `Classification` nueva y pone la anterior en `is_current=false`, nunca un `UPDATE`.
 - [ ] 1.5 Cargar la skill `impeccable` antes de tocar UI. **NO invocada.** El cambio en `EpisodeNLevelView.tsx` es una extensión mecánica de un ternario a tres estados, siguiendo la decisión de diseño YA tomada en D3/4.3 (sin color nuevo, tratamiento neutro) — no hay decisión de UI nueva que un gate de diseño deba aprobar. Declarado como desviación; el orquestador/usuario debería confirmar si esto es aceptable antes de dar el commit por cerrado.
+
+  > **ACEPTADA la desviación para el commit anterior** (orquestador, 26/09/2026): extender un ternario existente a tres estados, sin color nuevo, no es una decisión de UI que un gate de diseño deba aprobar.
+  > **NO aplica al bloque 5.** La cola de revisión es una pantalla nueva completa con su ruta, su estado vacío y su flujo de decisión. Ahí el gate de `impeccable` corre entero y sin excepción.
 
 ## 2. B2a — Dimensión trivaluada, sin cambio de comportamiento
 
@@ -52,16 +57,199 @@ Objetivo del bloque: que el hash y los veredictos queden **idénticos**. Si algo
 
 ## 5. B3+B5 — Revisión humana con historial (aditivo puro)
 
-- [ ] 5.1 Modelo `ClassificationReview` en `classifier_db` (D7): episodio, clasificación revisada, revisor, veredicto humano, motivo, timestamp, `tenant_id`. Append-only — corregir una revisión es una fila nueva, nunca un UPDATE.
-- [ ] 5.2 Migración Alembic del classifier-service **con policy RLS activa** sobre la tabla nueva (ADR-001: toda tabla con `tenant_id` la lleva). Verificar con `make check-rls`, que corre en CI.
-- [ ] 5.3 `GET /api/v1/classifications/review-queue`: lista los episodios con `features['needs_review']=True` sin revisión posterior, con el motivo y el estado terminal del juez. Filtro por comisión. Lee los headers `X-Tenant-Id`/`X-User-Id`/`X-User-Roles` del gateway vía `Depends` — no re-verificar JWT aguas abajo.
-- [ ] 5.4 `POST /api/v1/classifications/{episode_id}/review`: registra el veredicto humano. El comportamiento depende de 1.4 — si reemplaza la etiqueta oficial, lo hace creando una `Classification` nueva con marca de procedencia humana y poniendo la anterior en `is_current=false` (ADR-010), nunca con un UPDATE.
-- [ ] 5.5 Verificar que **no** hace falta tocar el `ROUTE_MAP` (D8): ambos endpoints cuelgan de `/api/v1/classifications`, que ya está en `proxy.py:61`. Confirmar a mano contra el gateway levantado, no por lectura — un endpoint inalcanzable falla en silencio.
-- [ ] 5.6 Policies Casbin para el rol que puede anular (pregunta abierta del design). Van al seed (`academic-service/seeds/casbin_policies.py`), que es el source of truth, y bumpean el conteo. Recordar que el enforcer en memoria no se refresca solo: hay que relanzar el servicio.
+- [x] 5.1 Modelo `ClassificationReview` en `classifier_db` (D7 + **corrección D7.a/D7.b del 27/09**): episodio, revisor, veredicto humano, motivo, timestamp, `tenant_id`, y **DOS** FK nullable — `previous_classification_id` y `new_classification_id`. Con una sola referencia, saber qué clasificación resultó de *esta* revisión exige inferir por episodio y orden temporal, y eso se rompe con la segunda revisión que corrige a la primera. **No** duplicar las etiquetas como texto: `classifications` es inmutable fila por fila, el join es seguro. La marca de procedencia va como `features['revision_humana']` en la `Classification` nueva, **sin migración**, con el `id` de la fila de revisión que la originó (precedente: `cii_evolution_longitudinal`, ADR-018). Append-only por disciplina de aplicación: **no hay constraint ni trigger que lo fuerce**, así que los tests tienen que cubrirlo. Agregado también `reviewer_role` (columna propia, string) — el gate 1.4 pide "rol" como parte de la marca y no había dónde ponerlo.
+- [x] 5.2 Migración Alembic del classifier-service **con policy RLS activa** sobre la tabla nueva (ADR-001: toda tabla con `tenant_id` la lleva). Verificar con `make check-rls`, que corre en CI. Migración `20260906_0006_add_classification_reviews.py`, aplicada contra `classifier_db` local (dev) con `classifier_user` como owner (mismo patrón que `interrater_ratings`) — `make check-rls` en verde.
+- [x] 5.3 `GET /api/v1/classifications/review-queue`: lista los episodios con `features['needs_review']=True` sin revisión posterior, con el motivo y el estado terminal del juez. Filtro por comisión. Lee los headers `X-Tenant-Id`/`X-User-Id`/`X-User-Roles` del gateway vía `Depends` — no re-verificar JWT aguas abajo.
+
+  **Índice obligatorio** (D7.c): parcial B-tree, no GIN —
+  ```sql
+  CREATE INDEX ix_classifications_needs_review_pending
+  ON classifications (comision_id, episode_id)
+  WHERE is_current AND (features->>'needs_review') = 'true';
+  ```
+  Su tamaño es proporcional a los ~47 retenidos, no al corpus. Más un índice simple en `classification_reviews (tenant_id, episode_id)` para el `NOT EXISTS`. Sin esto la consulta es un scan completo sobre una tabla que crece 207 filas por día, y corre cada vez que un docente abre la pantalla. Ambos índices creados por la migración 5.2 exactamente con el SQL de arriba.
+- [x] 5.4 `POST /api/v1/classifications/{episode_id}/review`: registra el veredicto humano. El comportamiento depende de 1.4 — si reemplaza la etiqueta oficial, lo hace creando una `Classification` nueva con marca de procedencia humana y poniendo la anterior en `is_current=false` (ADR-010), nunca con un UPDATE. **Hallazgo de implementación no anticipado por el design**: la `Classification` nueva no puede reusar el `classifier_config_hash` de la anterior sin violar `uq_classifications_episode_config` (misma pareja episode_id+hash ya existe en la fila vieja, que sigue física aunque `is_current=false`). Resuelto con un hash sintético determinista (`sha256(hash_anterior:human_review:episode_id:timestamp)`) que NO representa ninguna configuración real del árbol/juez — documentado en `services/review.py::_synthetic_review_config_hash`.
+
+  > **CERRADO tras ronda de revisión (2026-09-27): el riesgo que este párrafo declaraba abierto ERA real y fue confirmado.**
+  > `pipeline.py::persist_classification` degradaba CUALQUIER fila vigente con hash distinto — incluida
+  > la humana (que siempre tiene hash sintético, por construcción). Una reclasificación automática
+  > posterior pisaba la anulación sin error ni log; con ~207 clasificaciones/día no era un escenario
+  > de laboratorio. Fix: **la anulación humana gobierna hasta que otro humano la cambie** — el `UPDATE`
+  > de reclasificación ahora excluye filas con `features['revision_humana']` (D7.b), y una reclasificación
+  > automática posterior a una anulación se registra pero entra con `is_current=false` (no gobierna).
+  > `is_current` cambia de semántica: "la última que corrió" → "la que gobierna" (docstring actualizado
+  > en `Classification` y en `persist_classification`, `pipeline.py`). También se amplió la idempotencia
+  > de `persist_classification` a "cualquier fila con ese hash, no solo la vigente" — sin eso, una
+  > reclasificación automática con el MISMO hash de máquina de siempre (el caso normal, ya que el hash
+  > no avanza por una revisión humana) revienta `IntegrityError` contra la fila de máquina vieja que la
+  > anulación dejó no-vigente. Tres tests nuevos en
+  > `tests/integration/test_persist_classification_human_governance_db.py`, contra Postgres real —
+  > los tres fallaban con `IntegrityError: ... duplicate key value violates unique constraint
+  > "uq_classifications_episode_config"` contra el `pipeline.py` sin el fix (RED verificado, no es
+  > guarda hacia adelante). Ver informe del implementador para la tabla del ciclo TDD.
+- [x] 5.5 Verificar que **no** hace falta tocar el `ROUTE_MAP` (D8): ambos endpoints cuelgan de `/api/v1/classifications`, que ya está en `proxy.py:61`. Confirmar a mano contra el gateway levantado, no por lectura — un endpoint inalcanzable falla en silencio. **Verificado 2026-09-27**: classifier-service (:8008) + api-gateway (:8000, `DEV_TRUST_HEADERS=true`) levantados a mano; `GET/POST` a través del gateway responden (200 y 404 semántico, no 404 de ruteo) sin tocar `ROUTE_MAP`. Ver tabla de evidencia del implementador.
+- [x] 5.6 Policies Casbin para el rol que puede anular (pregunta abierta del design). Van al seed (`academic-service/seeds/casbin_policies.py`), que es el source of truth, y bumpean el conteo (207→213: +6, `classification_review:{create,read}` × {superadmin, docente_admin, docente}). **Nota de implementación**: el classifier-service NO consulta Casbin en runtime para ningún endpoint (ni los viejos ni estos dos nuevos) — gatea con `require_role` sobre roles del header del gateway, igual que `CLASSIFY_ROLES`/`READ_ROLES` ya existentes. Esta entrada del seed documenta el catálogo de permisos (como pide la tarea) pero no hay enforcer que la lea desde este servicio — señalado en el informe, no soluciónado (fuera de alcance: cablear Casbin en classifier-service no está en ninguna tarea de este bloque).
 - [ ] 5.7 Pantalla de cola de revisión en web-teacher, consumiendo 5.3. Patrón obligatorio `HelpButton` + `PageContainer` + entry en `helpContent.tsx` (11 keys hoy).
 - [ ] 5.8 Ruta nueva en `web-teacher` (TanStack Router file-based, search params validados con zod) y entrada en la navegación. Sin esto la pantalla existe y no se llega.
-- [ ] 5.9 Tests: la cola devuelve los retenidos y solo los retenidos; una revisión los saca de la cola; un segundo POST sobre el mismo episodio apila historial en vez de pisarlo; un rol sin policy recibe 403.
-- [ ] 5.10 Verificar contra la base del piloto que la cola devuelve los 40 episodios retenidos al 18/09 (23 `error_parseo`, 16 `inconsistente`, 1 `baja_confianza`) — el conteo viene de la auditoría, no de una medición de esta change.
+- [x] 5.9 Tests: la cola devuelve los retenidos y solo los retenidos; una revisión los saca de la cola; un segundo POST sobre el mismo episodio apila historial en vez de pisarlo; un rol sin policy recibe 403. Los tres primeros en `tests/integration/test_review_service_db.py` (contra Postgres real, transacciones que nunca commitean); el cuarto en `tests/unit/test_review_routes.py` (HTTP, mockeado).
+
+  > **Ronda de QA (2026-09-27): 3 hallazgos más, dos reproducidos con scripts propios de QA sobre este diff.**
+  >
+  > **1 · Race condition entre dos revisiones concurrentes (ALTA, confirmado 3/3 por QA).**
+  > El `UPDATE` de `submit_review` filtraba por `episode_id` + `is_current=true`, sin el `id`
+  > exacto de la fila `previous` leída — un lost update clásico: la segunda revisión degradaba
+  > la fila que dejó la primera (no la que decía haber revisado) y `classification_reviews`
+  > quedaba con dos filas `previous=<misma original>` y ninguna explicando qué pasó con la
+  > primera decisión. Fix: concurrencia optimista — el `UPDATE` ahora exige
+  > `Classification.id == previous.id`; si afecta 0 filas, se levanta `ReviewConflictError`
+  > (routes/review.py lo traduce a **409 Conflict** — decisión de contrato: el docente recarga
+  > y ve la decisión del otro, en vez de un retry automático que aplicaría su revisión sobre un
+  > estado que ya no es el que vio).
+  >
+  > **Corrección de auditoría (2026-09-27) sobre este mismo punto: el primer test
+  > (`test_dos_revisiones_concurrentes_no_pierden_la_primera`, `asyncio.gather` con dos `UPDATE`
+  > peleando por el lock de la MISMA fila) NO discrimina la causa.** El auditor revirtió el
+  > `id == previous.id` en una copia y ese test siguió pasando 10/10 — el `rowcount==0` que
+  > observa lo produce el row-lock de Postgres (el perdedor bloquea, y al reanudar Postgres
+  > reevalúa el predicado solo contra la fila que tenía bloqueada, ya `false`), no mi filtro de
+  > `id`. Agregado `test_segunda_revision_tras_commit_de_la_primera_no_pisa`: B lee `previous`
+  > ANTES de que A toque nada, pero su `UPDATE` se libera recién DESPUÉS de que A ya comiteó —
+  > sin ningún lock de por medio. Ahí sí discrimina: **RED verificado revirtiendo el filtro de
+  > `id` en el código real** (no en una copia sombra) — sin él, el test falla con las dos
+  > revisiones "exitosas", `previous_classification_id` repetido y la fila vigente final
+  > cambiada a la decisión de B (lost update silencioso, sin ningún error); con el fix, 5/5
+  > estable. **Esto SÍ cierra la hipótesis de QA sobre `MultipleResultsFound`** (dos filas
+  > `is_current=true` a la vez) — cerrada por el test nuevo, no por el viejo, que se corrigió
+  > para no reclamar más que lo que prueba (contienda por el mismo lock, sin lost update).
+  >
+  > **2 · `_find_current_classification` (classify_ep.py) no se sincronizó con la idempotencia
+  > ampliada de `persist_classification` (MEDIA).** Seguía filtrando `is_current=true`; tras una
+  > anulación humana con el mismo hash de máquina de siempre, no encontraba la fila (roundtrip
+  > de más al ctr-service) y el handler devolvía 201 en vez de 200. Fix: se quitó el filtro
+  > `is_current` del SELECT — mismo criterio que `persist_classification` ya usa. Test en
+  > `tests/integration/test_find_current_classification_human_review_db.py`.
+  >
+  > **3 · `verdict` sin validar contra el dominio conocido (ALTA).** Un `verdict="banana"`
+  > se persistía sin error como etiqueta oficial vigente. Fix: `VALID_VERDICTS` en
+  > `routes/review.py` (los 4 valores que puede producir `_EJE_TO_APPROPRIATION`), 400 explícito
+  > — mismo patrón que `interrater.py::_LABELS`. `sin_clasificar` (bloque 6, no implementado
+  > todavía) NO entra a propósito.
+  >
+  > **4 · `reviewer_role` no determinístico (BAJA).** `next(iter(set.intersection(...)))`
+  > dependía del orden de iteración del set. Fix: `REVIEW_ROLE_PRECEDENCE` explícito
+  > (superadmin > docente_admin > docente) vía `_resolve_reviewer_role`.
+  >
+  > Los 208 tests de la ronda anterior + `check-rls.py` + el roundtrip de migración (QA lo
+  > ejercitó contra su propia copia) se confirmaron sin tocar. 6 tests nuevos → 214 total.
+
+  > **Auditoría (2026-09-27), segunda pasada — 2 tests que no probaban lo que decían.**
+  >
+  > **1 (retomado arriba) · el test de concurrencia original no discriminaba la causa.** Ver el
+  > párrafo de arriba: agregado `test_segunda_revision_tras_commit_de_la_primera_no_pisa`, el
+  > viejo corregido para no reclamar de más. 214→216.
+  >
+  > **2 · El anti-join de la cola (`~ya_revisado`) no lo cubría ningún test.** El auditor borró
+  > esa línea de `list_review_queue` y los 214 pasaron igual: los dos tests que *parecían*
+  > cubrirlo pasan por otros mecanismos (`submit_review` borra `needs_review` de `features`; la
+  > fila de máquina reclasificada entra `is_current=false`). Agregado
+  > `test_anti_join_aislado_needs_review_puesto_e_is_current_true` en
+  > `tests/integration/test_review_service_db.py`: inserta una `ClassificationReview` DIRECTO
+  > (sin pasar por `submit_review`, para no heredar sus efectos sobre `features`) contra una
+  > `Classification` que sigue con `needs_review=true` e `is_current=true`. RED verificado
+  > quitando `~ya_revisado` del código real: el episodio vuelve a aparecer en la cola
+  > (`assert ... not in {...}` falla, `UUID(...) not in {UUID(...)}` — el mismo UUID en ambos
+  > lados). Con el anti-join restaurado, verde.
+  >
+  > **3 · Verificación E2E contra el gateway repetida con los códigos nuevos (2026-09-27,
+  > ~13:31).** La corrida de la tarea 5.5 era de las 12:12, antes de que `routes/review.py`
+  > agregara 400/409. Repetida con classifier-service (:8008) + api-gateway (:8000,
+  > `DEV_TRUST_HEADERS=true`) levantados de nuevo: `GET review-queue` → 200; `POST review` con
+  > `verdict="banana"` → 400 (`"verdict 'banana' no es válido..."`); `POST review` válido → 201;
+  > dos `POST review` concurrentes sobre el mismo episodio (`httpx.AsyncClient` + `asyncio.gather`,
+  > no bash — dos curls en background no llegaron a competir de verdad) → 409 en uno de los dos
+  > (`"La clasificación vigente del episodio ... cambió mientras se procesaba esta revisión"`) y
+  > 201 en el otro. Datos de prueba insertados a mano y borrados al terminar — `classifier_db`
+  > quedó en 106/0, igual que antes de la corrida.
+  >
+  > **4 · `reclassify_all.py` — docstring corregido, comportamiento NO ajustado (decisión
+  > registrada, no ejecutada).** Afirmaba "marca la vieja `is_current=false` e inserta la
+  > nueva", que ya no es cierto para un episodio con anulación humana vigente (la excluye del
+  > `UPDATE`, la fila nueva entra `is_current=false`). Docstring corregido con esa excepción. El
+  > COMPORTAMIENTO del script no se tocó — delega todo a `persist_classification`, que ya es
+  > seguro tras el fix de esta ronda — pero queda un caveat sin resolver, registrado en el
+  > docstring y no en el código: el conteo `nuevos(201)` del resumen final no distingue "quedó
+  > vigente" de "se registró pero una anulación humana sigue gobernando". No se implementó esa
+  > distinción porque no estaba pedida y el script no está en las tareas del bloque 5 — queda
+  > para quien opere un backfill real a decidir si la necesita.
+  >
+  > `test_casbin_matrix.py` (academic-service) re-corrido: 49 passed, sin cambios — no se tocó
+  > `casbin_policies.py` en esta pasada. 216 tests de classifier-service, DB en 106/0.
+- [ ] 5.10 Verificar contra la base del piloto que la cola devuelve **todos** los retenidos vigentes y solo esos. **No cablear un número esperado**: al 18/09 eran 40, al 26/09 son 47 (27 `error_parseo`, 19 `inconsistente`, 1 `baja_confianza`), y el corpus crece ~207 clasificaciones por día. El criterio es que el conteo de la cola coincida con el de la consulta directa **corrida el mismo día**, y que la verificación quede registrada con su fecha.
+
+  > **BLOQUEADO (implementador, 2026-09-27): sin acceso a la base del piloto desde este entorno.**
+  > `classifier_db` en este sandbox (`platform-postgres`, local) tiene 106 `classifications`
+  > de datos de seed — las 106 tienen `features={}` vacío, cero con la clave `needs_review`.
+  > No es la base que registra los 47 retenidos vigentes que cita esta tarea; esa base vive
+  > en la infra del piloto (VPS UTN), a la que este entorno no tiene conexión. La lógica de
+  > filtrado de la cola SÍ está verificada (5.9, contra datos sembrados a propósito en este
+  > mismo Postgres), pero la comparación "cola == conteo directo del día, sobre el corpus
+  > real" queda pendiente para quien tenga esa conexión. Query directa de referencia para
+  > correrla ahí: `SELECT count(*) FROM classifications WHERE is_current AND
+  > (features->>'needs_review')='true'` — debe coincidir con `n` de `GET
+  > /api/v1/classifications/review-queue` (sin filtro de comisión) corrido el mismo día.
+
+  > **Ronda de auditoría 2026-09-27 (QA nuevo, rondas 3-4 confirmadas enteras — 6 mutaciones,
+  > cada una hizo caer exactamente el test que debía). Cuatro puntos chicos, cerrados:**
+  >
+  > **1 · El 409 no distinguía al robot del colega.** `ReviewConflictError` ahora lleva
+  > `retryable: bool`: `False` si ganó otro docente (fila ganadora con `features['revision_humana']`
+  > — hay que leer su decisión antes de insistir) y `True` si ganó una reclasificación automática
+  > (la decisión del docente sigue siendo válida, puede reintentar). El mensaje distingue "otro
+  > docente" de "el sistema reclasificó". `routes/review.py` expone `{"message", "retryable"}` en
+  > el `detail` del 409. La carrera en el sentido que faltaba (`submit_review` vs
+  > `persist_classification`, máquina gana) tiene test nuevo en
+  > `test_submit_review_concurrency_db.py::test_conflicto_contra_reclasificacion_automatica_sugiere_reintentar`
+  > — RED verificado (`AttributeError: no attribute 'retryable'` contra el código sin el fix).
+  > El sentido humano-vs-humano ya tenía test (ronda 4); se le agregaron las aserciones de
+  > `retryable`/mensaje.
+  >
+  > **2 · Nivel de aislamiento documentado, no fijado.** `db/__init__.py::get_engine` no fija
+  > `isolation_level` — corre bajo el default de Postgres. Confirmado contra el servidor real:
+  > `SHOW default_transaction_isolation` → `read committed`. Comentario en `get_engine()` +
+  > docstring extenso en `submit_review` explicando qué garantiza READ COMMITTED (snapshot por
+  > statement, no por transacción) y qué rompería si alguien pasa a REPEATABLE READ/SERIALIZABLE.
+  > No se cambió nada del comportamiento.
+  >
+  > **3 · `reclassify_all.py`: el conteo SÍ distingue las dos cosas ahora.** `ClassificationOut.is_current`
+  > ya viajaba en la respuesta HTTP (`routes/classify_ep.py:69`) — no era un cambio de contrato.
+  > Función pura `_classify_response(status_code, body)` con 4 tests en
+  > `tests/unit/test_reclassify_all.py` (RED verificado: `ImportError` contra el código sin la
+  > función). El resumen final ahora reporta `nuevos_vigentes` separado de
+  > `nuevos_no_vigentes` (201 pero una anulación humana sigue gobernando) — relevante para la
+  > reclasificación masiva del bloque 6.
+  >
+  > **4 · El hueco end-to-end, cerrado (no solo declarado por cuarta vez).** Nuevo
+  > `tests/integration/test_classify_episode_review_composition_e2e_db.py`: los DOS routers HTTP
+  > reales en secuencia (`POST classify_episode` → `POST review` → `POST classify_episode` con
+  > hash nuevo, vía `ASGITransport` contra la app real, solo `_fetch_episode_from_ctr` mockeado)
+  > contra Postgres real. RED verificado revirtiendo a mano la exclusión `revision_humana` en
+  > `pipeline.py`: `assert True is False` en `is_current` de la respuesta HTTP real de la tercera
+  > llamada — la composición bajo el router SÍ podía romperse aunque las dos mitades pasaran
+  > por separado. Con el fix, 3/3 estable.
+  >
+  > Gotcha propio de esta ronda: los dos tests nuevos con `commit()` real (el de la carrera
+  > máquina-vs-docente y el end-to-end) dejaron residuos en `classifier_db` la primera vez que
+  > fallaron a propósito para verificar el RED — el `finally` de cleanup no envolvía el cuerpo
+  > completo. Corregido (mismo patrón que la ronda 4) y re-verificado forzando un fallo: la DB
+  > queda en 106/0 igual. 224 tests de classifier-service, DB en 106/0 al cierre.
+  >
+  > **Lo que NO se re-verificó en esta ronda, declarado:** el roundtrip de `alembic downgrade`
+  > (no se tocó `pipeline.py`/`review.py` de forma que afecte la migración; se leyó, no se
+  > re-ejecutó). La verificación E2E contra el gateway real (200/201/400/409) sigue siendo la de
+  > la ronda 4, ~13:31 — **una sola fuente**, nadie la confirmó de forma independiente en esta
+  > ronda ni en la anterior.
+
+- [x] 5.11 **`downgrade()` escrito Y ejercitado** (D7.d). Para una tabla nueva es un `drop_table`, pero «trivial de escribir» no es «ejercitado»: aplicar y revertir contra una **copia**, nunca contra la base del piloto, y registrar los dos comandos con su salida. El repo **no tiene ningún target de CI ni de `Makefile`** que corra `alembic downgrade`, así que nada obliga a este paso salvo esta línea. Ejercitado 2026-09-27 contra `classifier_db_downgrade_copy` (`CREATE DATABASE ... TEMPLATE classifier_db`, nunca contra `classifier_db` real): upgrade→downgrade→upgrade roundtrip completo, copia borrada al final. Ver tabla de evidencia del implementador.
 
 ## 6. B2b — El sumidero de `sin_clasificar` (aislado, último)
 

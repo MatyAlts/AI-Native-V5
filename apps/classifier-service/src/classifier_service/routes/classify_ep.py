@@ -105,7 +105,7 @@ async def _find_current_classification(
     episode_id: UUID,
     classifier_config_hash: str,
 ) -> Classification | None:
-    """SELECT defensivo: ¿existe ya una clasificación current con este hash?
+    """SELECT defensivo: ¿existe ya una clasificación con este hash?
 
     Usado por el handler como pre-check de idempotencia ANTES de pegarle al
     CTR. Si ya existe, evitamos la roundtrip HTTP completa al ctr-service y
@@ -115,12 +115,26 @@ async def _find_current_classification(
     duplicarlo acá es intencional para (1) cortar temprano y (2) tener un
     handle al objeto antes/después del intento de INSERT (necesario para el
     race-condition guard de abajo).
+
+    **Sin filtro de `is_current` (corregido, hallazgo de QA 2026-09-27,
+    MEDIA):** `persist_classification` ampliió su propia idempotencia a
+    "cualquier fila con este hash, vigente o no" para soportar la gobernanza
+    humana (B3+B5) — una anulación humana deja el hash de MÁQUINA de un
+    episodio "usado" en una fila no-vigente, y un re-POST con ese mismo hash
+    (config sin cambios, el caso normal) es idempotente igual. Este helper
+    tenía el filtro viejo (solo `is_current=true`), así que no encontraba esa
+    fila: el handler hacía el roundtrip al ctr-service de más y terminaba
+    devolviendo 201 en vez de 200 (contradiciendo su propio docstring). Las
+    DOS llamadas a este helper (pre-check antes del CTR, y recovery tras un
+    `IntegrityError` de carrera) necesitan el filtro ancho por la MISMA
+    razón: una fila insertada por un competidor puede legítimamente NO ser
+    la vigente (si hay una anulación humana gobernando ese episodio), y el
+    filtro viejo tampoco la habría encontrado ahí.
     """
     result = await session.execute(
         select(Classification).where(
             Classification.episode_id == episode_id,
             Classification.classifier_config_hash == classifier_config_hash,
-            Classification.is_current.is_(True),
         )
     )
     return result.scalar_one_or_none()

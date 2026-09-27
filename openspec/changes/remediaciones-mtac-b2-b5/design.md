@@ -165,6 +165,88 @@ Tabla `classification_reviews` en `classifier_db`, con `tenant_id` y policy RLS 
 
 **Alternativa rechazada: columnas nuevas en `classifications`.** Rompe append-only: revisar exigiría un UPDATE sobre una fila que la cadena trata como inmutable.
 
+---
+
+> ### Corrección de D7 tras la revisión del DBA (27/09/2026)
+>
+> Cuatro hallazgos de severidad alta. Los cuatro se resuelven acá, antes de que se escriba
+> la tabla, porque una migración es de las pocas cosas de este repo que no se deshacen
+> editando un archivo.
+>
+> **D7.a · La tabla necesita DOS referencias a clasificación, no una.**
+> La redacción original nombra «clasificación revisada», en singular. Pero si la anulación
+> reemplaza la etiqueta creando una `Classification` nueva y poniendo la anterior en
+> `is_current=false` (gate 1.4), entonces el «valor anterior» y el «valor posterior» son
+> **dos filas de `classifications`**, y una sola referencia apunta a una de las dos.
+> Reconstruir qué clasificación resultó de *esta* revisión quedaría librado a inferir por
+> `episode_id` más orden temporal, **y eso se rompe en cuanto hay una segunda revisión que
+> corrige a la primera** — que es exactamente el caso que D7 dice soportar.
+>
+> Van dos columnas FK nullable: `previous_classification_id` y `new_classification_id`.
+> **No se duplican las etiquetas como texto**: `classifications` ya es inmutable fila por
+> fila, así que el join es seguro y denormalizar sería guardar dos veces un dato que no
+> cambia.
+>
+> **D7.b · La «marca de procedencia humana» va en `features`, no en una columna.**
+> La frase aparecía tres veces en este documento sin decir en qué campo vive, y de esa
+> ambigüedad salía la segunda migración: si el implementador decidía que hacía falta una
+> columna nueva en `classifications`, había que tocar la tabla central del plano evaluativo.
+>
+> Va como clave del JSONB `features` de la `Classification` nueva, **sin migración**,
+> siguiendo el precedente de `cii_evolution_longitudinal` (ADR-018), que se persiste así
+> justamente para no tocar el esquema. El nombre queda fijado acá para que no se invente
+> dos veces: **`features['revision_humana']`**, con el `id` de la fila de
+> `classification_reviews` que la originó.
+>
+> **D7.c · Los índices, con la consulta que cada uno sirve.**
+> La tarea 5.3 no nombraba ninguno. La consulta de la cola filtra `is_current` más una
+> clave de JSONB más un anti-join contra la tabla nueva, y corre cada vez que un docente
+> abre la pantalla sobre una tabla que crece 207 filas por día.
+>
+> Va un **índice parcial B-tree**, no un GIN:
+>
+> ```sql
+> CREATE INDEX ix_classifications_needs_review_pending
+> ON classifications (comision_id, episode_id)
+> WHERE is_current AND (features->>'needs_review') = 'true';
+> ```
+>
+> Sirve exactamente `GET /api/v1/classifications/review-queue`, y su tamaño es proporcional
+> a los ~47 casos retenidos, no al corpus entero. Más un índice simple en
+> `classification_reviews (tenant_id, episode_id)` para el `NOT EXISTS`.
+>
+> *Alternativa rechazada: un GIN sobre `features`.* Sería el primer GIN del repositorio
+> —hoy no hay ninguno— y cubriría consultas que nadie hace, a cambio de un índice mucho
+> más grande. El parcial cubre la única consulta que existe.
+>
+> **D7.d · El `down` se escribe y se ejercita, y el repo no tiene cómo forzarlo.**
+> Ninguna tarea del bloque 5 lo mencionaba, y **no hay ningún target de CI ni de `Makefile`
+> que corra `alembic downgrade` en todo el proyecto**. Para una tabla nueva el `downgrade()`
+> es un `drop_table`, trivial de escribir — pero «trivial de escribir» no es «ejercitado»,
+> y nada en el repo obliga a la diferencia. Queda como tarea explícita, con el ejercicio
+> contra una copia y no contra la base del piloto.
+>
+> ### Y una premisa de este documento que era falsa
+>
+> D7 dice «append-only como el resto del plano pedagógico (ADR-010)» y rechaza las columnas
+> nuevas en `classifications` porque «rompe append-only». **El patrón vigente de
+> `classifications` no es append-only estricto**: reclasificar hace un `UPDATE` real
+> poniendo `is_current=false` y después inserta (`pipeline.py:169-188`), y el docstring del
+> propio modelo lo llama historial con bandera mutable.
+>
+> El rechazo de las columnas nuevas **sigue siendo correcto**, pero por otro motivo: no
+> porque rompa una inmutabilidad que esa tabla no tiene, sino porque mezcla el estado
+> técnico del juez con el estado de revisión humana en la misma fila, y el gate 1.4 pide
+> explícitamente dos campos de estado y no uno. Conviene que el argumento sea el verdadero,
+> porque el falso se cae en la primera lectura atenta.
+>
+> Lo que el DBA **no** objetó, y vale registrarlo: la policy RLS de la tarea 5.2 alcanza y
+> es la misma que usan las otras tablas, con `interrater_ratings` como precedente exacto
+> —tabla con `tenant_id`, escrita por un docente vía HTTP y no por un worker—; la cadena de
+> Alembic del classifier-service es propia, sobre base propia y con el usuario dueño de las
+> tablas, sin ninguno de los dos gotchas de migraciones documentados en el repo; y no hay
+> ningún camino donde corregir una revisión obligue a un `UPDATE` sobre la tabla nueva.
+
 ### D8 — Los endpoints nuevos van bajo `/api/v1/classifications`, y por eso el gateway no se toca
 
 `GET /api/v1/classifications/review-queue` y `POST /api/v1/classifications/{episode_id}/review`. El prefijo ya está en el `ROUTE_MAP` (`proxy.py:61`) y el proxy resuelve por prefijo — evidencia: el web-admin consume `/api/v1/classifications/aggregated` a través del gateway hoy.
