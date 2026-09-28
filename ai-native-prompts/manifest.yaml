@@ -46,7 +46,10 @@
 #     evento seq 0 del episodio (tutor_core.py:1218-1234), asi que el defecto
 #     medido sigue vivo en ellos hasta que cierren.
 #   - v1.5.0 y anteriores siguen en disco para reproducibilidad historica.
-#   - BLOQUEANTE ANTES DEL DEPLOY: revision coautoral con Ana Garis.
+#   - Revision coautoral con Ana Garis: OK (2026-09-28). Leyo los cuatro textos
+#     nuevos (C1 reescrito, la seccion del codigo del alumno, y los bullets C3 y
+#     C4) y los aprobo sin cambios. El gate que este bloque declaraba bloqueante
+#     queda cerrado; no aplica a v1.4.0 ni v1.5.0, que siguen pendientes.
 #
 # Activacion tutor v1.3.0 (epic java-authoring-experience, 2026-07-28):
 #   - Delta respecto de v1.2.0: DOS ejemplos que nombraban Python, generalizados.

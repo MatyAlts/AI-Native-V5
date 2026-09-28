@@ -39,7 +39,9 @@ Ana Garis.
 > C3 entra como bullet dentro de **"Lo que NO hace el tutor"**, que es
 > seccion de metodo. Los tres bugs que encontro QA son sobre los tests; el
 > **texto pedagogico no lo leyo nadie con criterio para juzgarlo**.
-> La revision coautoral pasa a **BLOQUEANTE** antes del deploy.
+> La revision coautoral paso a **BLOQUEANTE** antes del deploy, y quedo
+> **CERRADA el 2026-09-28**: Ana Garis leyo los cuatro textos nuevos y los
+> aprobo sin cambios.
 
 - **C1 — Seccion "Contexto del TP"**: reemplazar la afirmacion falsa por la
   verdadera (el tutor si recibe enunciado, y segun el caso codigo inicial,
@@ -88,7 +90,8 @@ estilo, el banco de preguntas N1-N4 y las misconceptions. **No se tocan.**
 
 Nivel **MEDIO**: contenido pedagogico de cara al alumno, con coautoria. Se
 implementa con checkpoint — el diff completo de `system.md` se muestra para
-revision humana antes de activar en produccion, y conviene que lo lea Ana Garis.
+revision humana antes de activar en produccion. Ana Garis lo leyo y lo aprobo
+el 2026-09-28.
 
 ## Open Questions
 
