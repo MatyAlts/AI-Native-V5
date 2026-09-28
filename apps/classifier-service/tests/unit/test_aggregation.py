@@ -151,6 +151,50 @@ async def test_agregacion_cuenta_autonomo() -> None:
     assert stats.distribution.total == 5
 
 
+async def test_agregacion_cuenta_sin_clasificar_y_no_descuadra_el_total() -> None:
+    """B2b (6.4): `sin_clasificar` (el árbol no pudo decidir un eje, B2b) es un
+    quinto valor real de `appropriation` desde 6.2. El bug real (no era un
+    crash): `AppropriationCounts` no tenía bucket para él, así que el `if/elif`
+    de la línea ~87 no lo sumaba a NINGÚN campo del breakdown — pero `total_n`
+    (línea ~98) sí suma TODAS las filas del GROUP BY. Resultado: `total_episodes`
+    dejaba de ser igual a `distribution.total`, sin ningún error que lo señale.
+    """
+    session = FakeSession(
+        canned=[
+            [
+                {
+                    "appropriation": "sin_clasificar",
+                    "n": 3,
+                    "avg_ct": None,
+                    "avg_ccd_mean": None,
+                    "avg_ccd_orphan": None,
+                    "avg_cii_stab": None,
+                    "avg_cii_evo": None,
+                },
+                {
+                    "appropriation": "apropiacion_reflexiva",
+                    "n": 2,
+                    "avg_ct": 0.8,
+                    "avg_ccd_mean": 0.8,
+                    "avg_ccd_orphan": 0.1,
+                    "avg_cii_stab": 0.7,
+                    "avg_cii_evo": 0.7,
+                },
+            ],
+            [],
+        ]
+    )
+
+    stats = await aggregate_by_comision(session, uuid4(), period_days=30)
+
+    assert stats.distribution.sin_clasificar == 3
+    assert stats.distribution.apropiacion_reflexiva == 2
+    assert stats.total_episodes == 5
+    # La propiedad que importa: el total agregado nunca puede desacoplarse
+    # del breakdown que lo compone.
+    assert stats.total_episodes == stats.distribution.total
+
+
 async def test_avg_es_ponderado_por_n() -> None:
     """Promedio debe ser ponderado por cantidad de episodios en cada bucket."""
     session = FakeSession(

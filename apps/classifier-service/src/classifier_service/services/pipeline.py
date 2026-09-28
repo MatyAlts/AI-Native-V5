@@ -43,7 +43,7 @@ logger = logging.getLogger(__name__)
 
 
 def compute_classifier_config_hash(
-    reference_profile: dict[str, Any], tree_version: str = "v4.0.0"
+    reference_profile: dict[str, Any], tree_version: str = "v4.1.0"
 ) -> str:
     """Hash determinista del config del classifier.
 
@@ -88,7 +88,14 @@ _EJE_TO_APPROPRIATION = {
     # como su propio valor de `appropriation` — no se colapsa en reflexiva/superficial
     # porque no hubo conversacion con el tutor que permita juzgar la apropiacion.
     "autonomo": "autonomo",
-    "sin_clasificar": "apropiacion_superficial",
+    # B2b (2026-09-27): el eje `sin_clasificar` (episodio muy corto para el
+    # arbol, subgrupo INDETERMINADO) se persiste como su propio valor. Antes
+    # colapsaba en "apropiacion_superficial" — indistinguible de una
+    # apropiacion superficial genuinamente detectada. Medicion contra
+    # produccion (26/09/2026): 131 de las 449 "apropiaciones superficiales"
+    # vigentes (29%) eran en realidad este colapso. La columna es String(40)
+    # sin enum: no hace falta migracion de esquema para el valor nuevo.
+    "sin_clasificar": "sin_clasificar",
 }
 
 

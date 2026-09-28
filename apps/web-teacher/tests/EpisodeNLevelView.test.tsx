@@ -147,6 +147,39 @@ describe("EpisodeNLevelView", () => {
     expect(filaVerificacion).not.toHaveTextContent(/^ausente$/i)
   })
 
+  // ── B2b (6.4/6.5): `sin_clasificar` es un 5to valor real de `appropriation`
+  // desde 6.2. `APPROPRIATION_DISPLAY` es un Record de 4 claves sin
+  // fallback: `display.container` de la linea siguiente rompia con
+  // TypeError para este valor. Es la vista a la que linkea la cola de
+  // revision humana, asi que el docente que hace click desde la cola se
+  // comia el crash.
+  test("appropriation sin_clasificar no rompe el render y muestra label propio", async () => {
+    // `DocenteAppropriationVerdict` (con `APPROPRIATION_DISPLAY`, el Record
+    // sin fallback) SOLO se renderiza en modo "docente" — en "investigador"
+    // (el default de este archivo) se muestra el detalle crudo del juez, que
+    // no usa `APPROPRIATION_DISPLAY`. Hay que forzar el modo docente para
+    // ejercitar la linea que rompia.
+    localStorage.setItem("analytics-view-mode", "docente")
+    const mockClassificationSinClasificar = {
+      ...mockClassificationConDimNoEvaluable,
+      appropriation: "sin_clasificar",
+    }
+    setupFetchMock({
+      "/n-level-distribution": () => mockResponse,
+      "/api/v1/classifications/": () => mockClassificationSinClasificar,
+    })
+    renderWithRouter(
+      <EpisodeNLevelView
+        getToken={fakeGetToken}
+        initialEpisodeId="11111111-2222-3333-4444-555555555555"
+      />,
+    )
+    await waitFor(() => {
+      expect(screen.getByText(/sin clasificar/i)).toBeInTheDocument()
+    })
+    localStorage.setItem("analytics-view-mode", "investigador")
+  })
+
   // ── Corrección post-QA (2026-09-25): el test de abajo ANTES fabricaba
   // `autonomia: { presente: true, evidencia }` — una forma que ningún registro
   // real tuvo jamás. La forma legada REAL de autonomía es `{ oraculo: bool }`,

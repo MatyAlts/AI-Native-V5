@@ -55,8 +55,13 @@ VERSION = "0.1.0"
 # infla "apropiacion_reflexiva".
 # v4.0.0 (2026-06-30): (B) el juez LLM GOBIERNA la etiqueta de los con-tutor
 # no-delegación + (C) nuevo eje `autonomo` que se lleva todo el brazo sin-tutor.
+# v4.1.0 (B2b, 2026-09-27): el sumidero `sin_clasificar` se persiste como su
+# propio valor de `appropriation` en vez de colapsar en
+# `apropiacion_superficial` (ver `pipeline.py::_EJE_TO_APPROPRIATION`). El
+# árbol no cambió de criterio: dejó de mentir sobre lo que ya decidía — por
+# eso es un bump MINOR y no MAJOR (mismo precedente que `LABELER_VERSION`).
 # Bump fuerza re-clasificacion (cambia el hash). Idéntico al que usa /classify_episode/{id}.
-_TREE_VERSION = "v4.0.0"
+_TREE_VERSION = "v4.1.0"
 
 
 @router.get("", response_model=HealthResponse)

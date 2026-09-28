@@ -85,13 +85,20 @@ async def test_root(client: AsyncClient) -> None:
 async def test_config_hash_reporta_v4_consistente_con_classify_ep(
     client: AsyncClient,
 ) -> None:
-    """`GET /api/v1/classifier/config-hash` reporta tree_version v4.0.0 y un hash
+    """`GET /api/v1/classifier/config-hash` reporta tree_version v4.1.0 y un hash
     idéntico al que `classify_ep.classify_episode` persiste.
 
     Invariante doctoral (ADR-020): el hash que el endpoint expone DEBE ser el
     mismo que la fila persiste, o la reproducibilidad se rompe. Ambos calculan
-    `compute_classifier_config_hash(DEFAULT_REFERENCE_PROFILE, "v4.0.0")` — este
+    `compute_classifier_config_hash(DEFAULT_REFERENCE_PROFILE, "v4.1.0")` — este
     test ancla esa igualdad para que un futuro bump no desincronice los callers.
+
+    Actualizado por B2b (6.6, 2026-09-27): bump deliberado `v4.0.0 → v4.1.0`
+    en los DOS sitios (`pipeline.py::compute_classifier_config_hash` default y
+    `routes/health.py::_TREE_VERSION`) porque el mapeo del sumidero
+    `sin_clasificar` (6.2) cambió lo que el árbol persiste — ver
+    `test_pipeline_reproducibility.py::test_classifier_config_hash_golden`
+    para la prueba de que el hash canónico se movió.
     """
     from classifier_service.services import (
         DEFAULT_REFERENCE_PROFILE,
@@ -101,9 +108,9 @@ async def test_config_hash_reporta_v4_consistente_con_classify_ep(
     response = await client.get("/api/v1/classifier/config-hash")
     assert response.status_code == 200
     body = response.json()
-    assert body["tree_version"] == "v4.0.0"
+    assert body["tree_version"] == "v4.1.0"
 
-    # Mismo cómputo que hace classify_ep.classify_episode (config_hash con "v4.0.0").
-    esperado = compute_classifier_config_hash(DEFAULT_REFERENCE_PROFILE, "v4.0.0")
+    # Mismo cómputo que hace classify_ep.classify_episode (config_hash con "v4.1.0").
+    esperado = compute_classifier_config_hash(DEFAULT_REFERENCE_PROFILE, "v4.1.0")
     assert body["classifier_config_hash"] == esperado
     assert len(body["classifier_config_hash"]) == 64

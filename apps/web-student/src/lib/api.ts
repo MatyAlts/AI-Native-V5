@@ -49,11 +49,14 @@ export interface Classification {
   // "autonomo" (eje ORTOGONAL, v4.0.0): brazo sin-tutor (prompts == 0). Ver
   // `Classification.appropriation` en classifier-service — no es parte del
   // continuo delegacion<->reflexiva, es su propio valor persistido.
+  // "sin_clasificar" (B2b, v4.1.0): el arbol corrio y no pudo decidir un
+  // eje. Ver `_EJE_TO_APPROPRIATION` en classifier-service/pipeline.py.
   appropriation:
     | "delegacion_pasiva"
     | "apropiacion_superficial"
     | "apropiacion_reflexiva"
     | "autonomo"
+    | "sin_clasificar"
   appropriation_reason: string
   ct_summary: number | null
   ccd_mean: number | null
@@ -924,6 +927,7 @@ export interface StudentEpisode {
     | "apropiacion_superficial"
     | "apropiacion_reflexiva"
     | "autonomo"
+    | "sin_clasificar"
     | null
   classified_at: string | null
 }

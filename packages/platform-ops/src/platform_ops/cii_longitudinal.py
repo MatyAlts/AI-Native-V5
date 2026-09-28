@@ -98,6 +98,13 @@ def compute_evolution_per_template(
     for template_id, items in groups.items():
         # Ordenar por classified_at ascendente
         items_sorted = sorted(items, key=lambda c: _coerce_ts(c["classified_at"]))
+        # B2b (6.3, explícito 2026-09-27): el membership check contra
+        # APPROPRIATION_ORDINAL ya excluye `sin_clasificar` (y `autonomo`)
+        # sin necesidad de nombrarlos acá — misma disciplina con la que el
+        # `if template_id is None: continue` de arriba excluye TPs huérfanas.
+        # Ninguno de los dos es un punto válido del continuo: son ausencia de
+        # dato (de template, en un caso; de veredicto del árbol, en el otro),
+        # no un cero silencioso en la escala ordinal.
         scores = [
             APPROPRIATION_ORDINAL[c["appropriation"]]
             for c in items_sorted

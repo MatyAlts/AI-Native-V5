@@ -18,6 +18,11 @@ export type AppropriationCanonical =
 // longitudinales y se pinta en GRIS. Debe coincidir con classifier-service.
 export type AppropriationAutonomo = "autonomo"
 
+// Sumidero (B2b, v4.1.0): el arbol corrio y no pudo decidir un eje. NO tiene
+// ordinal (no entra en APPROPRIATION_ORDINAL) — es ausencia de medicion, no
+// un punto del continuo. Debe coincidir con classifier-service.
+export type AppropriationSinClasificar = "sin_clasificar"
+
 // Subgrupos diagnosticos (capa de analisis sobre episodios ya clasificados).
 // Deben coincidir con classifier-service/services/subgrupo.py.
 export type AppropriationSubgroup =
@@ -36,7 +41,10 @@ export type CognitiveLevelLabel = "N1" | "N2" | "N3" | "N4"
 // La etiqueta OFICIAL del classifier es una de las 3 canonicas del continuo o el
 // eje ortogonal `autonomo`. (classification.appropriation, trajectories,
 // displays, etc. usan este tipo).
-export type AppropriationLabel = AppropriationCanonical | AppropriationAutonomo
+export type AppropriationLabel =
+  | AppropriationCanonical
+  | AppropriationAutonomo
+  | AppropriationSinClasificar
 
 // Etiqueta para RATING inter-rater (kappa): ademas de las etiquetas oficiales
 // admite subgrupos diagnosticos y niveles N1-N4 (protocolos configurables).

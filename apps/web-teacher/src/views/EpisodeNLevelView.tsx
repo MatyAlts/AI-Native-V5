@@ -533,9 +533,18 @@ function DocenteInterpretation({
   )
 }
 
-const APPROPRIATION_DISPLAY: Record<
-  AppropriationLabel,
-  { label: string; chip: string; container: string; headline: string }
+// B2b (6.4/6.5): `Partial` en vez de `Record` exhaustivo — `sin_clasificar`
+// (el arbol corrio y no pudo decidir un eje, 5to valor real de
+// `appropriation` desde 6.2) NO tiene entrada propia acá; usa el fallback
+// `APPROPRIATION_DISPLAY_FALLBACK` en el punto de uso, siguiendo el patron
+// de `docenteLabels.ts` (`dict[category] ?? category`). Antes este Record
+// era exhaustivo sobre las 4 claves viejas SIN fallback: indexar con un
+// valor no contemplado devolvia `undefined` y la linea siguiente
+// (`display.container`) rompia con TypeError — la vista a la que linkea la
+// cola de revision humana, asi que el docente que hacia click desde la cola
+// se comia el crash.
+const APPROPRIATION_DISPLAY: Partial<
+  Record<AppropriationLabel, { label: string; chip: string; container: string; headline: string }>
 > = {
   delegacion_pasiva: {
     label: "Delegacion pasiva",
@@ -568,6 +577,18 @@ const APPROPRIATION_DISPLAY: Record<
   },
 }
 
+// B2b (6.4/6.5): fallback para `sin_clasificar` (y cualquier valor futuro sin
+// entrada propia). "Sin clasificar" no es un estado de error: es informacion
+// sobre el episodio — mismo tratamiento visual neutro que "autonomo" (gris),
+// sin inventar un color nuevo.
+const APPROPRIATION_DISPLAY_FALLBACK = {
+  label: "Sin clasificar",
+  chip: "bg-neutral text-white",
+  container: "border-border-strong/40 bg-surface-alt",
+  headline:
+    "El arbol no pudo decidir un eje para este episodio. No es un error del alumno ni del sistema.",
+}
+
 function DocenteAppropriationVerdict({
   classification,
   distribution,
@@ -598,7 +619,7 @@ function DocenteAppropriationVerdict({
   // reflexiva"). Colores/severidad siguen mapeando al eje canonico.
   const subgrupoKey = classification.subgrupo?.key ?? null
   const explicacion = explicarEstadoDocente(classification, eventosCognitivos, subgrupoKey)
-  const display = APPROPRIATION_DISPLAY[classification.appropriation]
+  const display = APPROPRIATION_DISPLAY[classification.appropriation] ?? APPROPRIATION_DISPLAY_FALLBACK
 
   // Episodio sin actividad: chip neutro en vez del veredicto de apropiación
   // (no tiene sentido decir "superficial" si el alumno no trabajó).

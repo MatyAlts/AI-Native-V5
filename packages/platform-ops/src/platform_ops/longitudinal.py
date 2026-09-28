@@ -35,6 +35,16 @@ AppropriationValue = Literal[
 # superficial↔reflexiva tiene ordinal. Etiquetas oficiales ortogonales al
 # continuo (ej. `autonomo` = trabajo sin tutor) NO están acá: los consumidores
 # del slope/tercil las SALTEAN (no asumir que toda etiqueta tiene ordinal).
+#
+# B2b (6.3, explícito 2026-09-27): `sin_clasificar` TAMPOCO tiene posición
+# acá, y la exclusión es deliberada, no un olvido. No es un punto del
+# continuo — es la ausencia de medición (el árbol corrió y no pudo decidir
+# un eje). Misma disciplina con la que `cii_longitudinal.py` excluye TPs
+# huérfanas del cálculo longitudinal: ambas exclusiones tratan la falta de
+# dato como falta de dato, no como un cero silencioso en la escala ordinal.
+# El resultado ya era correcto por el membership check (`in
+# APPROPRIATION_ORDINAL`) de cada consumidor de abajo — este comentario deja
+# escrito el porqué, que antes era implícito.
 APPROPRIATION_ORDINAL: dict[str, int] = {
     "delegacion_pasiva": 0,
     "apropiacion_superficial": 1,

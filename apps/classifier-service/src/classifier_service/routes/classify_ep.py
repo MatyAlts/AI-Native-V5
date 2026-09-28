@@ -259,7 +259,14 @@ async def classify_episode(
     devuelve la fila ganadora con 200 OK.
     """
     profile = DEFAULT_REFERENCE_PROFILE
-    config_hash = compute_classifier_config_hash(profile, "v4.0.0")
+    # B2b (6.6, 2026-09-27): antes pasaba "v4.0.0" hardcodeado acá — un
+    # tercer sitio (no listado por el design, que sólo nombraba pipeline.py +
+    # health.py) que un bump de tree_version podía desincronizar en
+    # silencio. Se usa el default de `compute_classifier_config_hash`
+    # (definido en pipeline.py) para que este handler y el endpoint de
+    # health siempre reporten el mismo hash sin depender de mantener un
+    # literal sincronizado a mano en un tercer lugar.
+    config_hash = compute_classifier_config_hash(profile)
 
     # Pre-check idempotencia: si ya existe la classification current con este
     # hash, devolvemos 200 sin pegarle al ctr-service (ahorro de roundtrip).

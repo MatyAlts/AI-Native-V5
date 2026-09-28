@@ -53,6 +53,13 @@ _ORDINAL: dict[str, int] = {
 # entran en la curva/slope longitudinal ni cuentan como "indeterminado". `autonomo`
 # = trabajo sin tutor (color gris en la UI).
 _APROPIACION_ORTOGONAL: frozenset[str] = frozenset({"autonomo"})
+# B2b (6.4): el árbol corrió y no pudo decidir un eje. Bucket PROPIO
+# (`n_sin_clasificar`), separado de `n_indeterminados` — no es un perfil
+# indeterminado por falta de señal, es la ausencia de clasificación misma.
+# `PedagogiaPage.tsx` describe `n_indeterminados` como "perfil no asignable",
+# que sería una descripción falsa para este caso: el árbol SÍ asignó un
+# perfil (dijo explícitamente que no pudo decidir).
+_APROPIACION_SIN_CLASIFICAR: frozenset[str] = frozenset({"sin_clasificar"})
 # Orden canónico de presentación de los perfiles.
 _APROPIACION_ORDER = ["apropiacion_reflexiva", "apropiacion_superficial", "delegacion_pasiva"]
 
@@ -102,6 +109,9 @@ class SubgrupoCount(BaseModel):
 class DistribucionBlock(BaseModel):
     n_episodios_clasificados: int
     n_indeterminados: int
+    # B2b (6.4): bucket propio para "el árbol no pudo decidir un eje",
+    # separado de n_indeterminados (ver _APROPIACION_SIN_CLASIFICAR).
+    n_sin_clasificar: int
     por_apropiacion: dict[str, int]
     por_subgrupo: list[SubgrupoCount]
 
@@ -331,6 +341,60 @@ def _as_json(value: Any) -> Any:
     return value
 
 
+def _compute_distribucion(cls_rows: list[Any]) -> tuple[DistribucionBlock, dict[str, int]]:
+    """Distribución por apropiación + subgrupo a partir de las filas
+    `is_current` de `classifications` del scope.
+
+    Devuelve el bloque de distribución y el mapa episodio→ordinal (solo para
+    las etiquetas del continuo, usado por las curvas agregadas de cohorte).
+
+    Extraída del cuerpo del endpoint (6.4) para poder testear la agregación
+    de `sin_clasificar` sin tener que levantar las 3 bases del scope.
+    """
+    por_apropiacion: dict[str, int] = defaultdict(int)
+    por_subgrupo: dict[str, int] = defaultdict(int)
+    subgrupo_labels: dict[str, str] = {}
+    appr_por_episodio: dict[str, int] = {}
+    n_indeterminados = 0
+    n_sin_clasificar = 0
+    for r in cls_rows:
+        # Todas las etiquetas (incluido el eje ortogonal `autonomo` y el
+        # sumidero `sin_clasificar`) entran a la distribución por apropiación.
+        por_apropiacion[r.appropriation] += 1
+        if r.appropriation in _ORDINAL:
+            # Solo las del continuo alimentan el mapa episodio→ordinal (curvas).
+            appr_por_episodio[str(r.episode_id)] = _ORDINAL[r.appropriation]
+        elif r.appropriation in _APROPIACION_SIN_CLASIFICAR:
+            # El árbol corrió y no pudo decidir: bucket propio, NO indeterminado.
+            n_sin_clasificar += 1
+        elif r.appropriation not in _APROPIACION_ORTOGONAL:
+            # `autonomo` NO es indeterminado: es un eje propio sin ordinal. Solo
+            # las etiquetas realmente sin perfil cuentan como indeterminadas.
+            n_indeterminados += 1
+        feats = _as_json(r.features) or {}
+        sgd = feats.get("subgrupo") if isinstance(feats, dict) else None
+        if isinstance(sgd, dict):
+            sg = sgd.get("key")
+            if sg and sg != "indeterminado":
+                por_subgrupo[sg] += 1
+                subgrupo_labels.setdefault(sg, sgd.get("label") or sg)
+    distribucion = DistribucionBlock(
+        n_episodios_clasificados=len(cls_rows),
+        n_indeterminados=n_indeterminados,
+        n_sin_clasificar=n_sin_clasificar,
+        por_apropiacion=dict(por_apropiacion),
+        por_subgrupo=sorted(
+            (
+                SubgrupoCount(key=k, label=subgrupo_labels.get(k, k), n=v)
+                for k, v in por_subgrupo.items()
+            ),
+            key=lambda s: s.n,
+            reverse=True,
+        ),
+    )
+    return distribucion, appr_por_episodio
+
+
 def _completitud(ejercicio_estados_raw: Any) -> float | None:
     """Fracción [0,1] de ejercicios completados en una entrega. None si vacía."""
     ejercicio_estados = _as_json(ejercicio_estados_raw)
@@ -470,42 +534,7 @@ async def get_pedagogia(  # noqa: PLR0912, PLR0915
         # corpus del clasificador, no por scope— en el bloque "Validación: κ".)
 
     # ── Bloque 1: distribución (+ mapa episodio→ordinal para las curvas) ──
-    por_apropiacion: dict[str, int] = defaultdict(int)
-    por_subgrupo: dict[str, int] = defaultdict(int)
-    subgrupo_labels: dict[str, str] = {}
-    appr_por_episodio: dict[str, int] = {}
-    n_indeterminados = 0
-    for r in cls_rows:
-        # Todas las etiquetas (incluido el eje ortogonal `autonomo`) entran a la
-        # distribución por apropiación.
-        por_apropiacion[r.appropriation] += 1
-        if r.appropriation in _ORDINAL:
-            # Solo las del continuo alimentan el mapa episodio→ordinal (curvas).
-            appr_por_episodio[str(r.episode_id)] = _ORDINAL[r.appropriation]
-        elif r.appropriation not in _APROPIACION_ORTOGONAL:
-            # `autonomo` NO es indeterminado: es un eje propio sin ordinal. Solo
-            # las etiquetas realmente sin perfil cuentan como indeterminadas.
-            n_indeterminados += 1
-        feats = _as_json(r.features) or {}
-        sgd = feats.get("subgrupo") if isinstance(feats, dict) else None
-        if isinstance(sgd, dict):
-            sg = sgd.get("key")
-            if sg and sg != "indeterminado":
-                por_subgrupo[sg] += 1
-                subgrupo_labels.setdefault(sg, sgd.get("label") or sg)
-    distribucion = DistribucionBlock(
-        n_episodios_clasificados=len(cls_rows),
-        n_indeterminados=n_indeterminados,
-        por_apropiacion=dict(por_apropiacion),
-        por_subgrupo=sorted(
-            (
-                SubgrupoCount(key=k, label=subgrupo_labels.get(k, k), n=v)
-                for k, v in por_subgrupo.items()
-            ),
-            key=lambda s: s.n,
-            reverse=True,
-        ),
-    )
+    distribucion, appr_por_episodio = _compute_distribucion(cls_rows)
 
     # ── Curvas agregadas de cohorte (por orden de episodio) ─────────────
     MIN_ALUMNOS_CURVA = 3

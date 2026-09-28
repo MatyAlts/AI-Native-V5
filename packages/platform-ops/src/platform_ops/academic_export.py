@@ -219,7 +219,13 @@ class AcademicExporter:
             "delegacion_pasiva": 0,
             "apropiacion_superficial": 0,
             "apropiacion_reflexiva": 0,
-            "sin_clasificar": 0,
+            # B2b (6.4): CENTINELA — "este episodio no tiene fila de
+            # clasificación persistida" (el árbol/juez todavía no corrió).
+            # Renombrado de "sin_clasificar" porque ese nombre pasó a ser el
+            # VALOR REAL que el árbol persiste cuando corrió y no pudo
+            # decidir un eje (pipeline.py::_EJE_TO_APPROPRIATION). Con el
+            # mismo nombre, ambas poblaciones colapsaban en la misma clave.
+            "clasificacion_ausente": 0,
         }
 
         for ep in episodes_raw:
@@ -320,7 +326,7 @@ class AcademicExporter:
                 appropriation = classification.get("appropiation") or classification.get(
                     "appropriation"
                 )
-            key = appropriation if appropriation else "sin_clasificar"
+            key = appropriation if appropriation else "clasificacion_ausente"
             distribution[key] = distribution.get(key, 0) + 1
 
             record = EpisodeRecord(

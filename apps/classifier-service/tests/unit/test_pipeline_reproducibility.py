@@ -117,8 +117,18 @@ def test_classifier_config_hash_golden() -> None:
     `tree_version` a propósito y reclasificar el corpus del piloto (ver D6 del
     design.md de `remediaciones-mtac-b2-b5`), no un efecto colateral de tocar
     otra cosa. Si el cambio es legítimo, recomputar y actualizar este golden.
+
+    **Actualizado por B2b (6.7, 2026-09-27): el bump de `tree_version` a
+    `v4.1.0` (6.6) SÍ movió el hash — a propósito.** El golden que regía hasta
+    `v4.0.0` era `28e111aec4c5ec470bc8836cd716f563f41639d043d79bc95dca7da99e62b774`
+    (fijado en 2.9, cuando B2a todavía no tocaba el mapeo). Este test falló
+    exactamente así al aplicar el bump: `AssertionError: ... golden=28e111ae...
+    actual=56f39058...`, con los otros 13 tests de reproducibilidad
+    (determinismo) en verde — es la prueba de que el hash cambió por el bump
+    deliberado y no por un efecto colateral: si hubiera sido colateral, algún
+    otro test de determinismo también se habría movido de forma inconsistente.
     """
-    golden = "28e111aec4c5ec470bc8836cd716f563f41639d043d79bc95dca7da99e62b774"
+    golden = "56f3905858c19def2f20741a03378e9d5e3dfe1a4f0e4dd75d7440367fdc1180"
     actual = compute_classifier_config_hash(DEFAULT_REFERENCE_PROFILE)
     assert actual == golden, (
         f"classifier_config_hash se movió: golden={golden} actual={actual}. "
@@ -220,18 +230,23 @@ def test_escenario_trabajo_sostenido_con_reflexion_es_reflexiva() -> None:
 
 
 def test_episodio_vacio_no_crashea() -> None:
-    """Caso borde: episodio con solo apertura y cierre (sin interacciones reales)."""
+    """Caso borde: episodio con solo apertura y cierre (sin interacciones reales).
+
+    Actualizado por B2b (6.2, 2026-09-27): un episodio sin eventos
+    significativos rollea al subgrupo INDETERMINADO (eje `sin_clasificar`),
+    que ahora se persiste como su propio valor en vez de colapsar en
+    `apropiacion_superficial` — antes esta misma aserción exigía que el
+    resultado cayera en el continuo ordinal, lo cual escondía exactamente el
+    bug que B2b vino a corregir (un episodio vacío etiquetado como si el
+    árbol hubiera decidido "superficial").
+    """
     events = [
         _ev(0, "episodio_abierto", 0),
         _ev(1, "episodio_cerrado", 1),
     ]
     r = classify_episode_from_events(events)
     # Falla graceful: no crashea y devuelve una clasificación
-    assert r.appropriation in {
-        "delegacion_pasiva",
-        "apropiacion_superficial",
-        "apropiacion_reflexiva",
-    }
+    assert r.appropriation == "sin_clasificar"
 
 
 # ── Anti-regresion: reflexion_completada NO entra al classifier (ADR-035) ──

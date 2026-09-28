@@ -284,10 +284,10 @@ async def test_classify_episode_201_cuando_cambia_config_hash(
     """
     episode_id = uuid4()
     comision_id = uuid4()
-    # El pre-check busca por el config_hash CURRENT (v4.0.0). Como la fila
-    # vieja tiene hash distinto, el pre-check devuelve None (mismo path que
-    # el caso "episodio nuevo" en el handler — la distincion la hace
-    # persist_classification, no el handler).
+    # El pre-check busca por el config_hash CURRENT (el vigente, hoy v4.1.0).
+    # Como la fila vieja tiene hash distinto, el pre-check devuelve None
+    # (mismo path que el caso "episodio nuevo" en el handler — la distincion
+    # la hace persist_classification, no el handler).
     session = _make_session(existing_first_select=None)
 
     with (
@@ -308,9 +308,18 @@ async def test_classify_episode_201_cuando_cambia_config_hash(
     # Se persistio UNA fila nueva
     assert len(session.added_rows) == 1
     new = session.added_rows[0]
-    assert new.classifier_config_hash == compute_classifier_config_hash(
-        DEFAULT_REFERENCE_PROFILE, "v4.0.0"
-    )
+    # B2b (6.6, 2026-09-27): hallazgo al bumpear tree_version — el handler
+    # NO usaba el default de `compute_classifier_config_hash` (que sí se
+    # bumpeó): tenía su PROPIO literal hardcodeado "v4.0.0" en
+    # `classify_ep.py:262`, un TERCER sitio no listado por el design (que
+    # sólo nombraba pipeline.py + health.py). Sin este fix, el hash que el
+    # endpoint `/api/v1/classifier/config-hash` reporta ("v4.1.0") habría
+    # quedado desincronizado del hash que este handler persiste de verdad
+    # — exactamente la propiedad que su propio docstring en health.py
+    # promete ("el hash que el endpoint expone DEBE ser el mismo que la
+    # fila persiste"). Se usa el default (sin segundo argumento) para que
+    # un futuro bump no pueda volver a desincronizarlos.
+    assert new.classifier_config_hash == compute_classifier_config_hash(DEFAULT_REFERENCE_PROFILE)
 
 
 # ── Test D: race condition con IntegrityError -> 200 OK recuperado ───────

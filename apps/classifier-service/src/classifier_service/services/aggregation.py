@@ -18,6 +18,11 @@ class AppropriationCounts:
     apropiacion_superficial: int = 0
     apropiacion_reflexiva: int = 0
     autonomo: int = 0
+    # B2b (6.4): el árbol no pudo decidir un eje para el episodio. Bucket
+    # propio, igual que `autonomo` — si no se cuenta acá, `total_n` (que suma
+    # TODAS las filas del GROUP BY) queda desacoplado de `distribution.total`
+    # sin ningún error que lo señale.
+    sin_clasificar: int = 0
 
     @property
     def total(self) -> int:
@@ -26,6 +31,7 @@ class AppropriationCounts:
             + self.apropiacion_superficial
             + self.apropiacion_reflexiva
             + self.autonomo
+            + self.sin_clasificar
         )
 
 
@@ -92,6 +98,8 @@ async def aggregate_by_comision(
             dist.apropiacion_reflexiva = n
         elif appropriation == "autonomo":
             dist.autonomo = n
+        elif appropriation == "sin_clasificar":
+            dist.sin_clasificar = n
         all_avgs.append(dict(row))
 
     # Promedio global (ponderado por n por appropriation)
@@ -139,6 +147,8 @@ async def aggregate_by_comision(
             counts.apropiacion_reflexiva = n
         elif row["appropriation"] == "autonomo":
             counts.autonomo = n
+        elif row["appropriation"] == "sin_clasificar":
+            counts.sin_clasificar = n
 
     timeseries = [DailyCounts(date=day, counts=counts) for day, counts in sorted(ts_map.items())]
 

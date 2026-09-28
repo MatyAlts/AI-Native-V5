@@ -91,6 +91,39 @@ def test_subgrupo_no_afecta_el_classifier_config_hash() -> None:
     assert h1 == h2 and len(h1) == 64
 
 
+def test_episodio_indeterminado_persiste_como_sin_clasificar_no_como_superficial() -> None:
+    """B2b (6.2): el eje `sin_clasificar` (episodio muy corto para el árbol,
+    subgrupo INDETERMINADO) se persiste como su propio valor `sin_clasificar`.
+
+    Antes de este fix, `_EJE_TO_APPROPRIATION["sin_clasificar"]` colapsaba en
+    `"apropiacion_superficial"` — indistinguible de una apropiación superficial
+    genuinamente detectada por el árbol. Medición contra producción
+    (26/09/2026): 131 de las 449 "apropiaciones superficiales" vigentes
+    (29%) eran en realidad este colapso, no un veredicto real del árbol.
+    """
+    ev = [_ev(0, "lectura_enunciado"), _ev(1, "edicion_codigo", origin="student_typed")]
+    result = classify_episode_from_events(ev)
+    assert result.features["subgrupo"]["eje"] == "sin_clasificar"
+    assert result.appropriation == "sin_clasificar"
+    assert result.appropriation != "apropiacion_superficial"
+
+
+def test_eje_superficial_sigue_mapeando_a_apropiacion_superficial() -> None:
+    """Triangulación del fix anterior: el eje `superficial` (subgrupo real,
+    NO el sumidero `sin_clasificar`) sigue mapeando a `apropiacion_superficial`
+    sin cambios — el fix es específico de la clave `sin_clasificar`, no
+    reemplaza el mapeo entero."""
+    con_tutor = [
+        _ev(0, "lectura_enunciado"),
+        _ev(1, "prompt_enviado", prompt_kind="exploracion", content="que hace esto?"),
+        _ev(2, "prompt_enviado", prompt_kind="exploracion", content="y esto?"),
+        _ev(3, "edicion_codigo", origin="student_typed"),
+    ]
+    result = classify_episode_from_events(con_tutor)
+    assert result.features["subgrupo"]["eje"] == "superficial"
+    assert result.appropriation == "apropiacion_superficial"
+
+
 def _colaborador_reflexivo() -> list[dict]:
     """Usó el tutor reflexivamente + experimentó, SIN sobreuso."""
     ev = [_ev(0, "lectura_enunciado")]
