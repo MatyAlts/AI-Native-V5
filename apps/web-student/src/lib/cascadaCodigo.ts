@@ -1,25 +1,33 @@
 /**
- * ED-4 / H3: con QUE codigo abre el editor un episodio.
+ * H3: con QUE codigo abre el editor un episodio.
  *
- * Cuatro candidatos compiten por el buffer inicial y el orden entre ellos NO es
+ * Tres candidatos compiten por el buffer inicial y el orden entre ellos NO es
  * cosmetico. Mientras la decision vivia como una cascada de `if`/`else`
  * repartida a lo largo de la hidratacion de `EpisodePage` — con una rama a 60
  * lineas de la siguiente y un `usedPlaceholderRef` mutable de por medio — no
  * habia forma de ejercitarla sin montar la pagina entera contra el backend
  * mockeado. Se verifico que no la ejercitaba nadie: revertir el `else` de
- * `46b5f82` a `else if (ordenEfectivo == null)` — que hace que la siembra de
- * ED-4 vuelva a pisar la consigna del docente — dejaba los 274 tests en verde.
+ * `46b5f82` a `else if (ordenEfectivo == null)` — que hacia que una siembra
+ * (ED-4, desde entonces eliminada) volviera a pisar la consigna del docente —
+ * dejaba los 274 tests en verde.
  *
- * Acá la misma decision es una funcion PURA de sus cuatro entradas.
+ * Acá la misma decision es una funcion PURA de sus tres entradas.
+ *
+ * ED-4 (arrastre del codigo del ejercicio anterior de la misma TP) se saco de
+ * acá el 2026-09-28: reinterpretaba un `inicial_codigo` vacio como "el docente
+ * no se expreso" en vez de "el docente eligio que arranque vacio", y
+ * contaminaba la cadena CTR con codigo heredado indistinguible de lo que
+ * escribio el alumno. Ver `openspec/changes/eliminar-ed4-siembra-codigo-previo/`.
+ *
+ * OJO al grepear "ED-4": en este repo la etiqueta nombra DOS features
+ * distintos. El otro es *marcar la linea exacta del error en Monaco*
+ * (`CodeEditor.tsx`, `pyodideError.ts`), que sigue vivo y NO se toco. Quien
+ * busque ED-4 va a encontrar cinco comentarios que hablan de el en presente
+ * y estos que dicen que se elimino: son cosas distintas.
  */
 
 /** De donde salio el codigo con el que arranca el editor. */
-export type OrigenCodigo =
-  | "snapshot"
-  | "scaffold-tp"
-  | "scaffold-ejercicio"
-  | "codigo-previo"
-  | "placeholder"
+export type OrigenCodigo = "snapshot" | "scaffold-tp" | "scaffold-ejercicio" | "placeholder"
 
 /** Los candidatos, ya resueltos por el llamador. `null`/`""` = no hay. */
 export interface CandidatosCodigo {
@@ -29,8 +37,6 @@ export interface CandidatosCodigo {
   scaffoldTp?: string | null
   /** `inicial_codigo` del ejercicio del banco — el otro scaffold del docente. */
   scaffoldEjercicio?: string | null
-  /** ED-4: lo ultimo que el alumno dejo en un ejercicio anterior de la MISMA TP. */
-  codigoPrevio?: string | null
   /** El andamio del lenguaje. Siempre hay uno; es el ultimo eslabon. */
   placeholder: string
 }
@@ -50,14 +56,11 @@ export interface CodigoResuelto {
  *  2. `scaffoldTp` — el scaffold del docente a nivel TP.
  *  3. `scaffoldEjercicio` — el otro scaffold del docente, solo si la TP no
  *     trae el suyo.
- *  4. `codigoPrevio` — el codigo del ejercicio anterior de la misma TP.
- *  5. `placeholder` — el andamio del lenguaje.
+ *  4. `placeholder` — el andamio del lenguaje.
  *
- * Que 4 vaya DESPUES de 2 y 3 es la regla que importa: sembrar codigo de otro
- * ejercicio encima de la consigna del docente contradice el enunciado con algo
- * que parece legitimo. A diferencia del andamio del lenguaje — que se nota a
- * simple vista que no es una consigna — el alumno no tiene forma de saber que
- * lo que ve no es lo que le dejaron.
+ * Sin scaffold del docente cae directo al placeholder: el campo vacio de
+ * `inicial_codigo` tambien es una decision del docente ("que arranque
+ * vacio"), no un silencio a interpretar.
  *
  * Se usa truthiness, no `!= null`: un `inicial_codigo` vacio es "el docente no
  * dejo scaffold", no "el docente dejo un archivo vacio". Es la semantica que ya
@@ -68,9 +71,6 @@ export function resolverCascadaDeCodigo(candidatos: CandidatosCodigo): CodigoRes
   if (candidatos.scaffoldTp) return { codigo: candidatos.scaffoldTp, origen: "scaffold-tp" }
   if (candidatos.scaffoldEjercicio) {
     return { codigo: candidatos.scaffoldEjercicio, origen: "scaffold-ejercicio" }
-  }
-  if (candidatos.codigoPrevio) {
-    return { codigo: candidatos.codigoPrevio, origen: "codigo-previo" }
   }
   return { codigo: candidatos.placeholder, origen: "placeholder" }
 }
