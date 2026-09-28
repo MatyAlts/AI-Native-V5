@@ -357,10 +357,82 @@ Objetivo del bloque: que el hash y los veredictos queden **idénticos**. Si algo
 
 ## 8. Cierre
 
-- [ ] 8.1 Smoke test del flujo: episodio que deriva por evidencia insuficiente → aparece en la cola → un docente lo revisa → sale de la cola con historial. Va en `tests/e2e/smoke/` **antes** de declarar la change cerrada.
-- [ ] 8.2 `make test-fast` en verde, más `pnpm test` de web-teacher. Registrar el conteo y el SHA sobre el que corrió.
+- [x] 8.1 Smoke test del flujo: episodio que deriva por evidencia insuficiente → aparece en la cola → un docente lo revisa → sale de la cola con historial. Va en `tests/e2e/smoke/` **antes** de declarar la change cerrada.
+
+  **Hecho el 2026-09-28.** `tests/e2e/smoke/test_smoke_review_queue.py`, 2 tests contra el
+  stack real (api-gateway + classifier-service + ctr-service + Postgres, `LLM_PROVIDER=mock`).
+  El episodio de prueba se siembra DIRECTO en `ctr_store` (misma función de hashing SHA-256
+  que `scripts/seed-smoke.py`) porque la persistencia vía tutor-service depende de los
+  partition workers async, no garantizados en el ambiente de smoke (limitación ya declarada
+  en `tests/e2e/smoke/README.md`). Tenant/comisión/episodio son UUIDs frescos por test (no el
+  tenant demo compartido) — la auth de classifier-service/ctr-service es 100% por headers
+  X-*, sin lookup a academic-service para los roles usados (`docente_admin`/`docente`, que
+  caen en `CTR_OVERSIGHT_ROLES`), así que no hace falta jerarquía académica ni tenant
+  preexistente.
+
+  `test_episodio_deriva_a_revision_aparece_en_cola_docente_revisa_sale_con_historial`: deriva
+  por `error_parseo` (el juez con `LLM_PROVIDER=mock` no devuelve JSON — mismo camino de
+  fallback que la abstención por traza insuficiente, caso 4 de la Tabla 3.11) → aparece en la
+  cola → verdict fuera de dominio da 400 sin sacarlo de la cola → revisión válida da 201 con
+  historial verificado por lectura directa de `classification_reviews` → sale de la cola
+  (needs_review limpio) → anti-join aislado: con `needs_review` reforzado a mano a `true` en
+  la fila ya revisada, la cola lo sigue excluyendo (solo por `~ya_revisado`, sin depender del
+  mecanismo anterior) — mismo hallazgo que el audit de 5.9 sobre `list_review_queue`.
+
+  `test_dos_revisiones_concurrentes_dan_409_y_distinguen_retryable`: dos POSTs `/review`
+  concurrentes de verdad (`httpx.AsyncClient` + `asyncio.gather`, un solo cliente compartido
+  para evitar que el jitter de dos handshakes TCP nuevos rompa la carrera — con threads o con
+  `curl &` en bash, que el audit de la ronda 3 ya había descartado, no llegan a competir).
+  Exactamente uno gana (201) y el otro pierde (409) con `detail.retryable=False` (ganó un
+  docente, no una reclasificación automática) — Postgres serializa el `UPDATE` optimista de
+  `submit_review` a nivel de fila real, no hay mock de por medio.
+
+  **Declarado fuera de alcance de este smoke, con el porqué**: que la anulación humana siga
+  gobernando frente a una reclasificación automática POSTERIOR con un `classifier_config_hash`
+  NUEVO (bump de `tree_version`) ya está cubierto por
+  `test_classify_episode_review_composition_e2e_db.py` (integración, mockea
+  `compute_classifier_config_hash` para forzar el segundo hash). Un smoke caja-negra contra el
+  proceso real no puede forzar un segundo hash sin reiniciar el servicio con otro
+  `tree_version` — `classify_episode` es determinista dado el mismo código corriendo, así que
+  un segundo POST siempre pega el mismo hash y cae en el atajo de idempotencia (200 no-op) sin
+  tocar la exclusión de la fila humana en `persist_classification`.
+
+  **RED verificado de verdad, no supuesto**: se revirtió a mano el `~ya_revisado` de
+  `list_review_queue` (`review.py`), se reinició classifier-service, y el smoke falló en el
+  assert del paso 7 (anti-join aislado) — no en el setup. Restaurado el guard y confirmado en
+  verde de nuevo. Detalle completo en el informe del implementador.
+- [x] 8.2 Suites corridas y registradas sobre **SHA `81979a1b5e67963b27d42ea8070554a97f859104`** (2026-09-28).
+
+  | paquete | resultado |
+  |---|---|
+  | classifier-service | **227 passed** |
+  | analytics-service | **175 passed** |
+  | tutor-service | **490 passed** |
+  | platform-ops | **298 passed**, 4 skipped |
+  | academic-service | 305 passed, **4 failed preexistentes** |
+  | evaluation-service | 332 passed, **5 failed preexistentes**, 94 skipped |
+  | web-teacher | **398 passed** |
+  | web-student | **573 passed** |
+  | web-admin | **19 passed** |
+  | smoke E2E | 78 passed, **12 failed preexistentes**, 6 skipped |
+
+  Los fallos **se verificaron preexistentes por reversión**, no por suposición: `git stash -u` de
+  todo nuestro diff y re-corrida, con conteo idéntico. Los 4 de academic-service son de
+  `test_tareas_practicas_templates_crud`; los 5 de evaluation-service, de `test_recalificar_estado`
+  y `test_scope_comision_submit`. Los 12 del smoke son servicios Java sin levantar, el deadline del
+  seed vencido contra el reloj de la VM, y un 401 de BYOK del tenant demo.
+
+  `evaluation-service` necesita `OTEL_SDK_DISABLED=true` sin un colector en `127.0.0.1:4317`, o la
+  suite muere antes de correr.
+
+  **Pendiente sin resolver:** un test flaky en web-teacher, 1 fallo en 22 corridas, bajo carga. No se
+  pudo reproducir en 21 corridas limpias posteriores ni en 12 adicionales. Sin identificar.
 - [ ] 8.3 Verificar que `LABELER_VERSION` **no** se movió: esta change no toca el etiquetador N4.
 - [ ] 8.4 Verificar que `git diff` sobre `packages/contracts/.../ctr/` está vacío: el hashing de eventos no se toca.
-- [ ] 8.5 Actualizar `CLAUDE.md`: `_TREE_VERSION` y los valores de `appropriation` en «Constantes que NO deben inventarse» (REWRITE); el porqué de la regla trivaluada en gotchas (APPEND); conteo de smoke tests si cambió.
-- [ ] 8.6 ADR nuevo por la regla trivaluada versionada y por el bump de `tree_version`. El ADR-057 describe el contrato v4.0.0 que esta change modifica — referenciarlo, no reescribirlo.
+- [x] 8.5 Actualizar `CLAUDE.md`: `_TREE_VERSION` y los valores de `appropriation` en «Constantes que NO deben inventarse» (REWRITE); el porqué de la regla trivaluada en gotchas (APPEND); conteo de smoke tests si cambió.
+
+  **Hecho el 2026-09-28.** Constantes: tres entradas nuevas — `tree_version = "v4.1.0"` con los **dos** literales vigentes (`pipeline.py:46` default, `health.py:64`) y la advertencia sobre el tercer sitio (`classify_ep.py`, que hoy usa el default a propósito y no debe volver a hardcodearlo); el hash de referencia `56f39058…` como vigente y `28e111ae…` declarado explícitamente como ya-no-válido; y los **cinco** valores de `appropriation` con `sin_clasificar` declarado como ausencia de clasificación y excluido del mapa ordinal. **Nota sobre el REWRITE**: en `CLAUDE.md` no había nada viejo que borrar — el archivo nunca documentó `tree_version`, los valores de `appropriation` ni el hash de referencia (verificado con `rg`). El único sitio donde el hash viejo quedó citado es el docstring de `test_classifier_config_hash_golden`, y ahí es historia deliberada, no valor esperado. APPEND en «Propiedades críticas»: `is_current` = «la que gobierna»; el append-only de `classifications` no es estricto (UPDATE de la bandera + INSERT); los 13 tests de reproducibilidad prueban determinismo y no invariancia, y el golden es el que avisa; la cola de revisión depende de READ COMMITTED sin fijar; y la regla trivaluada de Kleene fuerte con su porqué y su versionado. **Conteo de smoke tests NO tocado**: `CLAUDE.md` declara 56 (verificado 2026-07-29) y hoy hay 76 `def test_` en `tests/e2e/smoke/`, pero 8.1 está agregando uno en ese mismo directorio — el número final no se puede confirmar todavía y escribir uno que caduca en minutos es peor que dejar el viejo con su fecha. Queda para quien cierre 8.1.
+- [x] 8.6 ADR nuevo por la regla trivaluada versionada y por el bump de `tree_version`. El ADR-057 describe el contrato v4.0.0 que esta change modifica — referenciarlo, no reescribirlo.
+
+  **Hecho el 2026-09-28**: [`docs/adr/062-regla-trivaluada-kleene-y-bump-tree-version.md`](../../../docs/adr/062-regla-trivaluada-kleene-y-bump-tree-version.md), formato MADR del `_template.md`. ADR-057 referenciado en el encabezado (`Relacionado`) y en Referencias, **no editado**. Registra: la decisión (Kleene fuerte, siguiendo los seis casos de la Tabla 3.11) con las cuatro alternativas rechazadas —Kleene débil por inflar la cola que B5 vino a construir, `no_evaluable ≡ ausente`, `no_evaluable ≡ presente` por sesgar hacia arriba, y v5.0.0 por el precedente de `LABELER_VERSION`—; los casos 2 y 5 fuera de alcance por depender de B4 con sus constantes declaradas y fuera de `Estado`; el costo asumido (corpus con hash legacy, sumado al backlog de 106); y lo que NO se hizo, con motivo: los 131 episodios sin reclasificar por gate operativo aparte, y el segundo sumidero `autonomo` (21 de 105, acuerdo 0,160 con intervalo que cruza el cero). **No se tocó el índice de `docs/adr/README.md`**: está congelado en ADR-028 y los 33 ADR posteriores tampoco están ahí — agregar solo el 062 rompería la consistencia del archivo sin arreglar el índice. Reportado como deuda, no arreglado de paso.
 - [ ] 8.7 Actualizar `obsidian.md` en el lugar: frontmatter (`estado`, `ultimo`), `Estado actual` y `Próximos pasos` se **reescriben**; `Gotchas y aprendizajes` se **apila**. Si solo apilaste, no la actualizaste.

@@ -89,7 +89,8 @@ tests/e2e/smoke/
 ├── test_smoke_analytics.py          5 tests (kappa + cii-longitudinal + cuartiles + alerts)
 ├── test_smoke_audit.py              3 tests (alias ADR-031 + legacy + episode read)
 ├── test_smoke_chain_e2e.py          1 test (recompute SHA-256 chain bit-exact)
-└── test_smoke_governance.py         4 tests (active_configs + prompts + ai-gateway mock)
+├── test_smoke_governance.py         4 tests (active_configs + prompts + ai-gateway mock)
+└── test_smoke_review_queue.py       2 tests (flujo de revision humana + carrera 409)
 ```
 
 Todos los tests están marcados `@pytest.mark.smoke`.
@@ -106,6 +107,9 @@ Todos los tests están marcados `@pytest.mark.smoke`.
 | Chain hash con orden invertido en concatenación | `test_smoke_chain_e2e.test_recompute_chain_of_seeded_episode` |
 | `chunks_used_hash` cambio de fórmula | (cubierto indirectamente por chain_e2e) |
 | Privacy gate cuartiles bajado a <5 | `test_smoke_analytics.test_cii_quartiles_respects_privacy_gate` |
+| Anti-join de la cola de revision sacado (el episodio ya revisado reaparece) | `test_smoke_review_queue.test_episodio_deriva_a_revision_aparece_en_cola_docente_revisa_sale_con_historial` |
+| Anulacion humana pisada por una reclasificacion automatica posterior | idem, paso 8 |
+| Dos revisiones concurrentes: la segunda pisa a la primera sin dejar rastro | `test_smoke_review_queue` (carrera 409 con `retryable`) |
 | Manifest yaml roto / governance sin prompt | `test_smoke_governance.test_active_configs_returns_versions` |
 | Mock provider del ai-gateway tirado | `test_smoke_governance.test_ai_gateway_complete_with_mock_provider` |
 
