@@ -28,6 +28,7 @@ from __future__ import annotations
 import json
 import logging
 from collections import defaultdict
+from collections.abc import Sequence
 from typing import Any
 from uuid import UUID
 
@@ -341,7 +342,10 @@ def _as_json(value: Any) -> Any:
     return value
 
 
-def _compute_distribucion(cls_rows: list[Any]) -> tuple[DistribucionBlock, dict[str, int]]:
+def _compute_distribucion(cls_rows: Sequence[Any]) -> tuple[DistribucionBlock, dict[str, int]]:
+    # `Sequence` y no `list`: la funcion solo ITERA, y el llamador le pasa el
+    # `Sequence[Row[Any]]` que devuelve SQLAlchemy. Pedir `list` era mas estricto
+    # que lo que el cuerpo necesita, y por eso mypy se quejaba en el call site.
     """Distribución por apropiación + subgrupo a partir de las filas
     `is_current` de `classifications` del scope.
 

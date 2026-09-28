@@ -131,9 +131,7 @@ def _headers(role: str, *, tenant_id: UUID, user_id: UUID) -> dict[str, str]:
     }
 
 
-def _seed_episode_desenganchado(
-    *, tenant_id: UUID, comision_id: UUID, episode_id: UUID
-) -> None:
+def _seed_episode_desenganchado(*, tenant_id: UUID, comision_id: UUID, episode_id: UUID) -> None:
     """Inserta episodio + 5 eventos reales (hash-chain SHA-256 válida) en
     `ctr_store`, directo en la base — ver docstring del módulo para el
     porqué (partition workers no garantizados en smoke).
@@ -346,9 +344,7 @@ def test_episodio_deriva_a_revision_aparece_en_cola_docente_revisa_sale_con_hist
         )
 
         # 2. Clasificar bajo el router real.
-        classify_resp = client.post(
-            f"/api/v1/classify_episode/{episode_id}", headers=headers
-        )
+        classify_resp = client.post(f"/api/v1/classify_episode/{episode_id}", headers=headers)
         assert classify_resp.status_code == 201, (
             f"POST classify_episode debería 201 para un episodio nuevo. "
             f"status={classify_resp.status_code} body={classify_resp.text[:400]}\n\n"
@@ -383,8 +379,7 @@ def test_episodio_deriva_a_revision_aparece_en_cola_docente_revisa_sale_con_hist
         queue_body = queue_resp.json()
         queue_episode_ids = {item["episode_id"] for item in queue_body["items"]}
         assert str(episode_id) in queue_episode_ids, (
-            f"el episodio derivado por el juez debería estar en la cola. "
-            f"queue={queue_body}"
+            f"el episodio derivado por el juez debería estar en la cola. queue={queue_body}"
         )
         item = next(i for i in queue_body["items"] if i["episode_id"] == str(episode_id))
         assert item["needs_review_reason"], "la cola debe traer el motivo real, no vacío"
@@ -404,9 +399,9 @@ def test_episodio_deriva_a_revision_aparece_en_cola_docente_revisa_sale_con_hist
             params={"comision_id": str(comision_id)},
             headers=headers,
         )
-        assert str(episode_id) in {
-            i["episode_id"] for i in queue_after_bad.json()["items"]
-        }, "el 400 no debe tener efecto secundario: el episodio sigue en la cola"
+        assert str(episode_id) in {i["episode_id"] for i in queue_after_bad.json()["items"]}, (
+            "el 400 no debe tener efecto secundario: el episodio sigue en la cola"
+        )
 
         # 5. Revisión válida -> historial.
         review_resp = client.post(
@@ -431,8 +426,7 @@ def test_episodio_deriva_a_revision_aparece_en_cola_docente_revisa_sale_con_hist
         # endpoint GET para esta tabla; confirmamos que el INSERT pasó).
         review_row = _pg_fetch_one(
             "classifier_db",
-            "SELECT id, reviewer_role, verdict FROM classification_reviews "
-            "WHERE id = %(rid)s",
+            "SELECT id, reviewer_role, verdict FROM classification_reviews WHERE id = %(rid)s",
             {"rid": review_body["review_id"]},
         )
         assert review_row is not None, "la fila de historial debería existir en classifier_db"
@@ -441,9 +435,7 @@ def test_episodio_deriva_a_revision_aparece_en_cola_docente_revisa_sale_con_hist
 
         # La etiqueta oficial quedó reemplazada (gate 1.4: reemplaza, no
         # queda al lado).
-        current_after_review = client.get(
-            f"/api/v1/classifications/{episode_id}", headers=headers
-        )
+        current_after_review = client.get(f"/api/v1/classifications/{episode_id}", headers=headers)
         assert current_after_review.json()["appropriation"] == "apropiacion_reflexiva"
 
         # 6. Sale de la cola (needs_review limpio en la fila nueva).
@@ -482,6 +474,7 @@ def test_episodio_deriva_a_revision_aparece_en_cola_docente_revisa_sale_con_hist
         )
     finally:
         _cleanup_episode(episode_id)
+
 
 # ─────────────────────────────────────────────────────────────────────────────
 # `test_dos_revisiones_concurrentes_dan_409_y_distinguen_retryable` VIVIA ACA

@@ -116,7 +116,9 @@ class ReviewResult:
     new_classification_id: int
 
 
-def _synthetic_review_config_hash(previous_hash: str, episode_id: UUID, reviewed_at: datetime) -> str:
+def _synthetic_review_config_hash(
+    previous_hash: str, episode_id: UUID, reviewed_at: datetime
+) -> str:
     """Hash sintético para el `classifier_config_hash` de la Classification
     que resulta de una anulación humana.
 
@@ -269,7 +271,9 @@ async def submit_review(
             )
         )
         winner = winner_result.scalar_one_or_none()
-        winner_is_human = bool(winner is not None and (winner.features or {}).get("revision_humana"))
+        winner_is_human = bool(
+            winner is not None and (winner.features or {}).get("revision_humana")
+        )
 
         if winner_is_human:
             raise ReviewConflictError(

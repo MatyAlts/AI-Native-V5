@@ -154,8 +154,12 @@ async def test_dos_revisiones_concurrentes_no_pierden_la_primera() -> None:
         check_factory = async_sessionmaker(check_engine, expire_on_commit=False)
         try:
             await asyncio.gather(
-                _run_review(tenant_id, episode_id, "docente", "apropiacion_reflexiva", 0, results, errors),
-                _run_review(tenant_id, episode_id, "docente_admin", "delegacion_pasiva", 1, results, errors),
+                _run_review(
+                    tenant_id, episode_id, "docente", "apropiacion_reflexiva", 0, results, errors
+                ),
+                _run_review(
+                    tenant_id, episode_id, "docente_admin", "delegacion_pasiva", 1, results, errors
+                ),
             )
 
             # Exactamente una tuvo éxito; la otra chocó con el conflicto de
@@ -205,7 +209,9 @@ async def test_dos_revisiones_concurrentes_no_pierden_la_primera() -> None:
                 # `previous`. La que perdió NUNCA llegó a insertar su fila de
                 # auditoría (levantó antes del INSERT).
                 review_rows = await check_session.execute(
-                    select(ClassificationReview).where(ClassificationReview.episode_id == episode_id)
+                    select(ClassificationReview).where(
+                        ClassificationReview.episode_id == episode_id
+                    )
                 )
                 reviews = review_rows.scalars().all()
                 assert len(reviews) == 1
@@ -217,7 +223,9 @@ async def test_dos_revisiones_concurrentes_no_pierden_la_primera() -> None:
                     {"t": str(tenant_id)},
                 )
                 await cleanup_session.execute(
-                    delete(ClassificationReview).where(ClassificationReview.episode_id == episode_id)
+                    delete(ClassificationReview).where(
+                        ClassificationReview.episode_id == episode_id
+                    )
                 )
                 await cleanup_session.execute(
                     delete(Classification).where(Classification.episode_id == episode_id)
@@ -419,7 +427,9 @@ async def test_segunda_revision_tras_commit_de_la_primera_no_pisa() -> None:
                     {"t": str(tenant_id)},
                 )
                 await cleanup_session.execute(
-                    delete(ClassificationReview).where(ClassificationReview.episode_id == episode_id)
+                    delete(ClassificationReview).where(
+                        ClassificationReview.episode_id == episode_id
+                    )
                 )
                 await cleanup_session.execute(
                     delete(Classification).where(Classification.episode_id == episode_id)
@@ -586,7 +596,9 @@ async def test_conflicto_contra_reclasificacion_automatica_sugiere_reintentar() 
                     {"t": str(tenant_id)},
                 )
                 await cleanup_session.execute(
-                    delete(ClassificationReview).where(ClassificationReview.episode_id == episode_id)
+                    delete(ClassificationReview).where(
+                        ClassificationReview.episode_id == episode_id
+                    )
                 )
                 await cleanup_session.execute(
                     delete(Classification).where(Classification.episode_id == episode_id)

@@ -102,8 +102,16 @@ async def test_cola_devuelve_retenidos_y_solo_los_retenidos(db_session) -> None:
     no_retenido = uuid4()
     retenido_pero_superado = uuid4()
 
-    session.add(_classification(tenant_id=tenant_id, episode_id=retenido, comision_id=comision_id, needs_review=True))
-    session.add(_classification(tenant_id=tenant_id, episode_id=no_retenido, comision_id=comision_id, needs_review=False))
+    session.add(
+        _classification(
+            tenant_id=tenant_id, episode_id=retenido, comision_id=comision_id, needs_review=True
+        )
+    )
+    session.add(
+        _classification(
+            tenant_id=tenant_id, episode_id=no_retenido, comision_id=comision_id, needs_review=False
+        )
+    )
     # is_current=False: fue retenido en su momento pero una fila más nueva lo superó.
     session.add(
         _classification(
@@ -146,7 +154,11 @@ async def test_una_revision_saca_el_episodio_de_la_cola(db_session) -> None:
     comision_id = uuid4()
     episode_id = uuid4()
 
-    session.add(_classification(tenant_id=tenant_id, episode_id=episode_id, comision_id=comision_id, needs_review=True))
+    session.add(
+        _classification(
+            tenant_id=tenant_id, episode_id=episode_id, comision_id=comision_id, needs_review=True
+        )
+    )
     await session.flush()
 
     antes = await list_review_queue(session)
@@ -175,7 +187,10 @@ async def test_segunda_revision_apila_historial_en_vez_de_pisarlo(db_session) ->
     session, tenant_id = db_session
     comision_id = uuid4()
     episode_id = uuid4()
-    regimen_llm_original = {"estado": "abstencion_traza_insuficiente", "prompt_version": "eje_fino_v1.2.0"}
+    regimen_llm_original = {
+        "estado": "abstencion_traza_insuficiente",
+        "prompt_version": "eje_fino_v1.2.0",
+    }
 
     session.add(
         _classification(
@@ -293,10 +308,7 @@ async def test_anti_join_aislado_needs_review_puesto_e_is_current_true(db_sessio
     # episodio desaparece de la cola ahora, es EXCLUSIVAMENTE por el
     # anti-join.
     check = await session.execute(
-        text(
-            "SELECT is_current, features->>'needs_review' FROM classifications "
-            "WHERE id = :id"
-        ),
+        text("SELECT is_current, features->>'needs_review' FROM classifications WHERE id = :id"),
         {"id": classification.id},
     )
     is_current_db, needs_review_db = check.one()
@@ -324,8 +336,16 @@ async def test_filtro_por_comision(db_session) -> None:
     episodio_a = uuid4()
     episodio_b = uuid4()
 
-    session.add(_classification(tenant_id=tenant_id, episode_id=episodio_a, comision_id=comision_a, needs_review=True))
-    session.add(_classification(tenant_id=tenant_id, episode_id=episodio_b, comision_id=comision_b, needs_review=True))
+    session.add(
+        _classification(
+            tenant_id=tenant_id, episode_id=episodio_a, comision_id=comision_a, needs_review=True
+        )
+    )
+    session.add(
+        _classification(
+            tenant_id=tenant_id, episode_id=episodio_b, comision_id=comision_b, needs_review=True
+        )
+    )
     await session.flush()
 
     items = await list_review_queue(session, comision_id=comision_a)

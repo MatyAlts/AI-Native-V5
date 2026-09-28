@@ -56,7 +56,9 @@ MACHINE_HASH = "hash-maquina-sync-precheck"
 
 @requires_local_postgres
 @pytest.mark.asyncio
-async def test_precheck_encuentra_hash_de_maquina_no_vigente_tras_anulacion_humana(db_session) -> None:
+async def test_precheck_encuentra_hash_de_maquina_no_vigente_tras_anulacion_humana(
+    db_session,
+) -> None:
     """RED verificado contra `classify_ep.py::_find_current_classification`
     SIN el fix: el assert final falla con `AssertionError` porque la función
     devuelve `None` — no es un fallo de setup, `submit_review` corre

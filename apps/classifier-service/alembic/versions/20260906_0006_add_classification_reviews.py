@@ -50,13 +50,17 @@ def upgrade() -> None:
         sa.Column(
             "previous_classification_id",
             sa.BigInteger,
-            sa.ForeignKey("classifications.id", name="fk_classification_reviews_previous_classification_id"),
+            sa.ForeignKey(
+                "classifications.id", name="fk_classification_reviews_previous_classification_id"
+            ),
             nullable=True,
         ),
         sa.Column(
             "new_classification_id",
             sa.BigInteger,
-            sa.ForeignKey("classifications.id", name="fk_classification_reviews_new_classification_id"),
+            sa.ForeignKey(
+                "classifications.id", name="fk_classification_reviews_new_classification_id"
+            ),
             nullable=True,
         ),
         sa.Column("verdict", sa.String(40), nullable=False),
@@ -69,9 +73,7 @@ def upgrade() -> None:
         ),
         sa.PrimaryKeyConstraint("id", name="pk_classification_reviews"),
     )
-    op.create_index(
-        "ix_classification_reviews_tenant_id", "classification_reviews", ["tenant_id"]
-    )
+    op.create_index("ix_classification_reviews_tenant_id", "classification_reviews", ["tenant_id"])
     op.create_index(
         "ix_classification_reviews_episode_id", "classification_reviews", ["episode_id"]
     )

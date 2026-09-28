@@ -73,7 +73,10 @@ def _machine_result(appropriation: str = "apropiacion_superficial") -> Classific
         ccd_orphan_ratio=0.3,
         cii_stability=0.4,
         cii_evolution=0.4,
-        features={"needs_review": True, "needs_review_reason": "juez_eje_fino_abstencion_traza_insuficiente"},
+        features={
+            "needs_review": True,
+            "needs_review_reason": "juez_eje_fino_abstencion_traza_insuficiente",
+        },
     )
 
 
@@ -213,7 +216,9 @@ async def test_cola_no_vuelve_a_mostrar_episodio_anulado_tras_reclasificacion(db
 
 @requires_local_postgres
 @pytest.mark.asyncio
-async def test_idempotencia_con_hash_de_maquina_reutilizado_tras_anulacion_humana(db_session) -> None:
+async def test_idempotencia_con_hash_de_maquina_reutilizado_tras_anulacion_humana(
+    db_session,
+) -> None:
     session, tenant_id = db_session
     comision_id = uuid4()
     episode_id = uuid4()

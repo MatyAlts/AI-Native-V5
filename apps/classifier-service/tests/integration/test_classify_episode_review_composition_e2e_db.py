@@ -71,7 +71,12 @@ def _fake_episode_payload(episode_id, comision_id) -> dict:
         "episode_id": str(episode_id),
         "comision_id": str(comision_id),
         "events": [
-            {"seq": 0, "event_type": "episodio_abierto", "ts": "2026-09-01T10:00:00Z", "payload": {}},
+            {
+                "seq": 0,
+                "event_type": "episodio_abierto",
+                "ts": "2026-09-01T10:00:00Z",
+                "payload": {},
+            },
             {
                 "seq": 1,
                 "event_type": "episodio_cerrado",

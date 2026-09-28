@@ -141,8 +141,7 @@ def test_kleene_caso1_v_a_y_al_menos_una_de_e_o_j_presentes_es_reflexiva() -> No
     """Caso 1 de la Tabla 3.11: V, A y (E o J) presentes → apropiación
     reflexiva automática, sin que intervenga ningún `no_evaluable`."""
     assert (
-        regimen_segun_regla(_raw_tri("presente", "presente", "ausente", "presente"))
-        == "REFLEXIVA"
+        regimen_segun_regla(_raw_tri("presente", "presente", "ausente", "presente")) == "REFLEXIVA"
     )
 
 
@@ -152,9 +151,7 @@ def test_kleene_caso3_ausente_gana_sobre_no_evaluable_en_las_demas() -> None:
     SUPERFICIAL sin importar que las otras sean `no_evaluable`. Con Kleene
     débil este caso derivaría a revisión; con Kleene fuerte, no."""
     assert (
-        regimen_segun_regla(
-            _raw_tri("ausente", "no_evaluable", "no_evaluable", "no_evaluable")
-        )
+        regimen_segun_regla(_raw_tri("ausente", "no_evaluable", "no_evaluable", "no_evaluable"))
         == "SUPERFICIAL"
     )
 
@@ -163,8 +160,7 @@ def test_kleene_caso3_e_y_j_ambas_ausentes_es_superficial() -> None:
     """Caso 3, otra rama: E y J ambas ausentes hace falso el término (b),
     aunque V y A estén presentes."""
     assert (
-        regimen_segun_regla(_raw_tri("presente", "ausente", "ausente", "presente"))
-        == "SUPERFICIAL"
+        regimen_segun_regla(_raw_tri("presente", "ausente", "ausente", "presente")) == "SUPERFICIAL"
     )
 
 
@@ -483,9 +479,7 @@ async def test_kleene_caso3_sigue_ok_y_no_deriva_pese_a_los_no_evaluable() -> No
     """Contrapunto del anterior: caso 3 (V ausente decide SUPERFICIAL) tiene
     que seguir resolviendo como `ok`, no como abstención, aunque el resto de
     las dimensiones venga `no_evaluable`."""
-    salida = _raw_dict_tri(
-        "ausente", "no_evaluable", "no_evaluable", "no_evaluable", "SUPERFICIAL"
-    )
+    salida = _raw_dict_tri("ausente", "no_evaluable", "no_evaluable", "no_evaluable", "SUPERFICIAL")
     r = await clasificar_regimen_llm(
         events=_EVENTS,
         enunciado="x",
