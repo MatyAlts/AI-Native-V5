@@ -1,0 +1,20 @@
+# Manifest del prompt tutor v1.6.0 (bump MINOR: contexto real).
+# El governance-service verifica fail-loud que sha256(system.md) == hash declarado.
+# Si el archivo se modifica sin re-firmar este manifest, el servicio falla al cargar.
+version: v1.6.0
+parent_version: v1.5.0
+bump_kind: minor_contexto_real
+files:
+  system.md: 421f902705e64150ceabcc5691ed766a34b01726d1fe72eb56d03d4e1db9fe58
+notas:
+  - Origen - verificado contra el codigo el 2026-09-28. El prompt v1.5.0 le decia al modelo que no conoce el enunciado del TP, cuando tutor_core.py (open_episode, bloque 3) SI se lo inyecta. Medido en produccion el mismo dia - el tutor pide tres veces que el alumno pegue su codigo, en una plataforma que bloquea copiar y pegar.
+  - Delta - tres correcciones a lo que el prompt dice que el tutor conoce, ninguna al metodo socratico, el tono, el banco de preguntas N1-N4 ni las misconceptions.
+  - C1 - seccion "Contexto del TP" corregida - el tutor SI recibe el enunciado al abrir el episodio (best-effort, degrada sin el si el academic-service falla), y segun el ejercicio tambien codigo inicial, rubrica, casos de prueba y el banco socratico con sus misconceptions. Se conserva intacta "NO supongas requisitos que el enunciado no establecio".
+  - C2 (seccion nueva) - "El codigo que el estudiante esta escribiendo". El codigo llega numerado por linea en cada turno (tutor_core.py:825-828, gateado por state.current_code); el tutor debe citar lineas concretas, nunca pedir que se lo peguen, e invitar a escribir en el editor cuando todavia no hay codigo.
+  - C3 - bullet nuevo en "Lo que NO hace el tutor" - prohibicion de derivar a Google, ChatGPT o Stack Overflow. Comportamiento emergente medido en produccion (el prompt no los mencionaba en ninguna linea); un comportamiento emergente solo se corrige instruyendo explicitamente en contra.
+  - Metodo INTACTO - ironia, mayeutica, elenchos y aporia, los 9 principios, "Cerrar el lazo" y la seccion de notacion no cambian una letra respecto de v1.5.0; la superficie tocada es "Contexto del TP" (reescrita), la seccion nueva sobre el codigo del alumno, y un bullet nuevo en "Lo que NO hace el tutor".
+  - Verificado por tests - apps/tutor-service/tests/unit/test_prompt_v1_6_0_contexto_real.py ancla las tres correcciones por frase (no por numero de linea) y guarda que "NO supongas requisitos que el enunciado no establecio" sigue presente.
+  - No afecta classifier_config_hash - es prompt de runtime, no etiquetador (ADR-020).
+  - v1.5.0 y anteriores siguen en disco para reproducibilidad historica del piloto.
+  - Episodios ya abiertos NO toman esta version. tutor_core.py:1218-1234 resuelve el prompt en cada turno pero PINNEADO a la version grabada en el evento seq 0 del episodio, asi que los episodios abiertos antes del deploy siguen con v1.5.0 hasta cerrar. El defecto medido en produccion sigue vivo en ellos despues de activar v1.6.0. Hallazgo de QA, 2026-09-28.
+  - PENDIENTE ANTES DEL DEPLOY - revision coautoral con Ana Garis. BLOQUEANTE, no formalidad. El change se describio a si mismo como "correccion de hechos falsos, no autoria pedagogica", y la auditoria del 2026-09-28 mostro que esa afirmacion excede lo verificado - C2 agrega directivas de conducta tutorial CON su fundamento ("referite a lineas concretas ... es mas preciso y el estudiante ve de inmediato de que le estas hablando", "no asumas que el estudiante esta atascado") y C3 entra como bullet dentro de "Lo que NO hace el tutor", que es seccion de metodo. Nadie con criterio pedagogico leyo los tres textos nuevos - los tres bugs que encontro QA son sobre los tests, no sobre el texto.

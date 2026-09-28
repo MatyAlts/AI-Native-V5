@@ -38,7 +38,7 @@ from tutor_service.config import Settings
 # El cuarto se descubrio en CI durante el bump a v1.4.0: correr solo la suite
 # del tutor-service da verde y el de governance queda rojo. Si bumpeas, corre
 # `uv run pytest apps -q` y no el servicio suelto.
-EXPECTED_TUTOR_VERSION = "v1.5.0"
+EXPECTED_TUTOR_VERSION = "v1.6.0"
 
 
 def _repo_root() -> Path:

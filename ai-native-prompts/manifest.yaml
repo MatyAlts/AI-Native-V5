@@ -17,6 +17,37 @@
 #   1. Este archivo (declarativo, expuesto via /active_configs).
 #   2. apps/tutor-service/src/tutor_service/config.py:default_prompt_version (efectivo).
 #
+# Activacion tutor v1.6.0 (2026-09-28, hallazgo de contexto real):
+#   - Delta respecto de v1.5.0: tres correcciones a lo que el prompt dice que el
+#     tutor conoce, contra lo que tutor_core.py realmente le inyecta.
+#   - C1: el prompt afirmaba "vos no conoces el enunciado completo" cuando el
+#     tutor SI lo recibe al abrir el episodio (best-effort). Corregido en la
+#     seccion "Contexto del TP", conservando intacta "NO supongas requisitos
+#     que el enunciado no establecio".
+#   - C2 (seccion nueva): el codigo del alumno le llega numerado por linea en
+#     cada turno, pero el prompt nunca lo mencionaba, asi que el tutor le
+#     pedia al alumno que lo pegue — en una plataforma que bloquea copiar y
+#     pegar. Ahora prohibe pedir codigo pegado y dice que hacer cuando
+#     todavia no hay codigo (invitar a escribir, no a pegar).
+#   - C3: prohibicion nueva de derivar a Google, ChatGPT o Stack Overflow —
+#     comportamiento emergente medido en produccion el 2026-09-28 (el prompt
+#     no los mencionaba en ninguna linea).
+#   - Metodo socratico, tono, principios, banco N1-N4 y misconceptions quedan
+#     intactos. Eso SI esta verificado mecanicamente, pero por tests heredados
+#     (test_prompt_confirmacion_al_acertar.py y test_prompt_notacion_vs_
+#     razonamiento.py, que leen la version activa): 42 rojos contra un prompt
+#     reducido a las frases ancladas. No lo verifica ningun test de este bump.
+#   - Lo que NO esta verificado: que esto sea "correccion de hechos falsos y no
+#     autoria pedagogica". La auditoria del 2026-09-28 mostro que C2 agrega
+#     directivas de conducta tutorial con su fundamento y que C3 entra en la
+#     seccion de metodo. Nadie con criterio pedagogico leyo los tres textos.
+#   - No afecta classifier_config_hash: es prompt de runtime, no etiquetador.
+#   - Episodios ya abiertos NO toman esta version: el prompt queda pinneado al
+#     evento seq 0 del episodio (tutor_core.py:1218-1234), asi que el defecto
+#     medido sigue vivo en ellos hasta que cierren.
+#   - v1.5.0 y anteriores siguen en disco para reproducibilidad historica.
+#   - BLOQUEANTE ANTES DEL DEPLOY: revision coautoral con Ana Garis.
+#
 # Activacion tutor v1.3.0 (epic java-authoring-experience, 2026-07-28):
 #   - Delta respecto de v1.2.0: DOS ejemplos que nombraban Python, generalizados.
 #     El metodo (4 movimientos socraticos, 9 principios, restricciones) es identico.
@@ -71,7 +102,7 @@
 #     cambia el metodo, no solo ejemplos — la revision es condicion, no tramite.
 active:
   default:
-    tutor: v1.5.0
+    tutor: v1.6.0
     classifier: v1.0.0
     correccion: v1.0.0
     reflection: v1.0.0
