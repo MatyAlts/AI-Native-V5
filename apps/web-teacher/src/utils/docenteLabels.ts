@@ -11,6 +11,10 @@ export const APPROPRIATION_DOCENTE: Record<string, string> = {
   // NO esta en el continuo superficial↔reflexiva — es un perfil propio, no un
   // punto de la escala ordinal de apropiacion.
   autonomo: "En este episodio: trabajo sin usar el tutor",
+  // B2b (6.5): el arbol corrio y no pudo decidir un eje para este episodio.
+  // "Sin clasificar" no es un estado de error: es informacion sobre el
+  // episodio (paper Cortez & Garis §4.4 — describe el episodio, no al alumno).
+  sin_clasificar: "En este episodio: sin clasificar (el arbol no pudo decidir un perfil)",
 }
 
 // Subgrupos en lenguaje docente (selector de protocolo del inter-rater).
@@ -39,6 +43,8 @@ export const APPROPRIATION_INVESTIGADOR: Record<string, string> = {
   // Eje ortogonal (sin ordinal): trabajo autonomo sin tutor — fuera del
   // continuo superficial↔reflexiva (color gris en las vistas).
   autonomo: "Perfil tipologico: trabajo autonomo (sin tutor)",
+  // B2b (6.5): el arbol corrio y no pudo decidir un eje (sumidero, B2b).
+  sin_clasificar: "Sin clasificar: el arbol no pudo decidir un eje",
 }
 
 /**

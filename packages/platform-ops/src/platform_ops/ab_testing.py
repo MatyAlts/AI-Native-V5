@@ -121,7 +121,14 @@ def compare_profiles(
             )
 
         # 2. Calcular Kappa del profile vs humano
-        kappa = compute_cohen_kappa(ratings)
+        # Fix de bug PREEXISTENTE (no introducido por B2b): sin `categories`
+        # explícito, `compute_cohen_kappa` usa el default del módulo (3
+        # valores del continuo) y revienta con `ValueError` ante cualquier
+        # etiqueta oficial fuera de ese continuo (`autonomo`, y desde B2b
+        # también `sin_clasificar`). Mismo patrón que ya usan
+        # `analytics.py`/`pedagogia.py`: categorías derivadas de los datos.
+        cats = sorted({r.rater_a for r in ratings} | {r.rater_b for r in ratings})
+        kappa = compute_cohen_kappa(ratings, categories=cats)
 
         results.append(
             ProfileComparisonResult(

@@ -39,6 +39,7 @@ from classifier_service.services.regimen_llm import (
     REGIMEN_TO_APPROPRIATION,
     SUBGRUPOS_JUZGADOS_POR_JUEZ,
     clasificar_regimen_llm,
+    normalizar_regimen_llm_persistido,
 )
 
 # Auth de procedencia a nivel router (A0.1): con `require_gateway_signature` ON
@@ -69,11 +70,13 @@ class ClassificationOut(BaseModel):
     # Modo sombra (B1 Fase 2): subgrupo + 4 dimensiones, derivado de features.
     # None para clasificaciones viejas (pre-modo-sombra) — el front cae a la etiqueta clásica.
     subgrupo: dict | None = None
-    # Juez LLM del eje fino (eje_fino_v1.1.0): veredicto + evidencia citada de las 4
-    # dimensiones. None si el episodio no pasó por el juez (no es con-tutor no-delegación,
-    # flag OFF, o clasificación previa a la activación). v4.0.0: cuando `estado=="ok"` el
-    # veredicto GOBIERNA `appropriation`; si no, se conserva el proxy conductual y el
-    # episodio queda marcado `needs_review` (ver features).
+    # Juez LLM del eje fino (eje_fino_v1.2.0, trivaluado con Kleene fuerte —
+    # Tabla 3.11): veredicto + evidencia citada de las 4 dimensiones. None si
+    # el episodio no pasó por el juez (no es con-tutor no-delegación, flag OFF,
+    # o clasificación previa a la activación). v4.0.0: cuando `estado=="ok"` el
+    # veredicto GOBIERNA `appropriation`; si no (incluida la abstención por
+    # traza insuficiente), se conserva el proxy conductual y el episodio queda
+    # marcado `needs_review` (ver features).
     regimen_llm: dict | None = None
 
     class Config:
@@ -102,7 +105,7 @@ async def _find_current_classification(
     episode_id: UUID,
     classifier_config_hash: str,
 ) -> Classification | None:
-    """SELECT defensivo: ¿existe ya una clasificación current con este hash?
+    """SELECT defensivo: ¿existe ya una clasificación con este hash?
 
     Usado por el handler como pre-check de idempotencia ANTES de pegarle al
     CTR. Si ya existe, evitamos la roundtrip HTTP completa al ctr-service y
@@ -112,12 +115,26 @@ async def _find_current_classification(
     duplicarlo acá es intencional para (1) cortar temprano y (2) tener un
     handle al objeto antes/después del intento de INSERT (necesario para el
     race-condition guard de abajo).
+
+    **Sin filtro de `is_current` (corregido, hallazgo de QA 2026-09-27,
+    MEDIA):** `persist_classification` ampliió su propia idempotencia a
+    "cualquier fila con este hash, vigente o no" para soportar la gobernanza
+    humana (B3+B5) — una anulación humana deja el hash de MÁQUINA de un
+    episodio "usado" en una fila no-vigente, y un re-POST con ese mismo hash
+    (config sin cambios, el caso normal) es idempotente igual. Este helper
+    tenía el filtro viejo (solo `is_current=true`), así que no encontraba esa
+    fila: el handler hacía el roundtrip al ctr-service de más y terminaba
+    devolviendo 201 en vez de 200 (contradiciendo su propio docstring). Las
+    DOS llamadas a este helper (pre-check antes del CTR, y recovery tras un
+    `IntegrityError` de carrera) necesitan el filtro ancho por la MISMA
+    razón: una fila insertada por un competidor puede legítimamente NO ser
+    la vigente (si hay una anulación humana gobernando ese episodio), y el
+    filtro viejo tampoco la habría encontrado ahí.
     """
     result = await session.execute(
         select(Classification).where(
             Classification.episode_id == episode_id,
             Classification.classifier_config_hash == classifier_config_hash,
-            Classification.is_current.is_(True),
         )
     )
     return result.scalar_one_or_none()
@@ -242,7 +259,14 @@ async def classify_episode(
     devuelve la fila ganadora con 200 OK.
     """
     profile = DEFAULT_REFERENCE_PROFILE
-    config_hash = compute_classifier_config_hash(profile, "v4.0.0")
+    # B2b (6.6, 2026-09-27): antes pasaba "v4.0.0" hardcodeado acá — un
+    # tercer sitio (no listado por el design, que sólo nombraba pipeline.py +
+    # health.py) que un bump de tree_version podía desincronizar en
+    # silencio. Se usa el default de `compute_classifier_config_hash`
+    # (definido en pipeline.py) para que este handler y el endpoint de
+    # health siempre reporten el mismo hash sin depender de mantener un
+    # literal sincronizado a mano en un tercer lugar.
+    config_hash = compute_classifier_config_hash(profile)
 
     # Pre-check idempotencia: si ya existe la classification current con este
     # hash, devolvemos 200 sin pegarle al ctr-service (ahorro de roundtrip).
@@ -407,5 +431,9 @@ async def get_current_classification(
     out = ClassificationOut.model_validate(c)
     feats = c.features or {}
     out.subgrupo = feats.get("subgrupo")
-    out.regimen_llm = feats.get("regimen_llm")
+    # Normalizado en el borde de lectura (bug QA 2026-09-25): sin esto, un
+    # registro juzgado bajo `eje_fino_v1.1.0` con autonomía en su forma legada
+    # (`oraculo`, sin `presente`) llega al cliente sin esa dimensión. Ver
+    # docstring de `normalizar_regimen_llm_persistido`.
+    out.regimen_llm = normalizar_regimen_llm_persistido(feats.get("regimen_llm"))
     return out

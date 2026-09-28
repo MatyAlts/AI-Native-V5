@@ -16,6 +16,7 @@ from sqlalchemy import (
     Boolean,
     DateTime,
     Float,
+    ForeignKey,
     Index,
     MetaData,
     String,
@@ -66,6 +67,22 @@ class Classification(Base, TenantMixin):
     Regla append-only (ADR-010):
       - Reclasificar = UPDATE is_current=false en fila vieja + INSERT fila nueva.
       - Nunca se borra ni modifica el resto de la fila anterior.
+
+    **`is_current` — cambio de semántica (B3+B5, ronda de revisión 2026-09-27):**
+    dejó de significar "la última clasificación que corrió para este episodio"
+    y pasa a significar **"la que gobierna"**. Con la anulación humana
+    (`services/review.py::submit_review`, tabla `classification_reviews`) en
+    el sistema, una reclasificación automática posterior puede correr con un
+    veredicto distinto al del docente — se REGISTRA como fila nueva (es
+    información: el juez y el docente pueden discrepar sistemáticamente en
+    ese episodio) pero entra con `is_current=false`, porque **la anulación
+    humana gobierna hasta que otro humano la cambie** (`persist_classification`
+    en `pipeline.py` implementa esto excluyendo del `UPDATE` de reclasificación
+    cualquier fila cuyo `features` tenga la clave `revision_humana`). Leer
+    `is_current=true` como "lo más reciente" deja de ser correcto para
+    cualquier código que consulte esta tabla — sigue siendo correcto leerlo
+    como "la etiqueta oficial vigente", que es lo que la mayoría de los
+    consumidores (agregaciones, exports, frontends) necesitan.
     """
 
     __tablename__ = "classifications"
@@ -147,3 +164,58 @@ class InterraterRating(Base, TenantMixin):
         Index("ix_interrater_comision", "comision_id"),
         Index("ix_interrater_materia", "materia_id"),
     )
+
+
+class ClassificationReview(Base, TenantMixin):
+    """Revisión humana de una clasificación marcada `needs_review` (B3+B5).
+
+    Append-only por DISCIPLINA DE APLICACIÓN (ADR-010 en espíritu, D7 del
+    design): corregir una revisión es una fila NUEVA, nunca un `UPDATE` de
+    una fila existente. **No hay constraint ni trigger que lo fuerce** — la
+    propiedad la cubren los tests (`tests/integration/test_review_service_db.py`),
+    no el esquema.
+
+    `previous_classification_id` / `new_classification_id` son DOS FK
+    nullable a `classifications.id` (corrección D7.a del DBA, 27/09/2026):
+    con una sola referencia, saber qué `Classification` resultó de *esta*
+    revisión exigiría inferir por `episode_id` + orden temporal, y eso se
+    rompe en cuanto hay una segunda revisión que corrige a la primera — que
+    es exactamente el caso que esta tabla existe para soportar. No se
+    duplican las etiquetas como texto: `classifications` es inmutable fila
+    por fila (nunca se hace `UPDATE` del valor, solo de `is_current`), así
+    que el join es seguro.
+
+    La marca de procedencia humana NO vive en una columna de esta tabla ni
+    de `classifications`: va como clave `features['revision_humana']` de la
+    `Classification` NUEVA (D7.b), con el `id` de la fila de esta tabla que
+    la originó — mismo precedente que `cii_evolution_longitudinal`
+    (ADR-018), que se persiste así justamente para no tocar el esquema.
+
+    Gate 1.4 (decisión del usuario, 26/09/2026): la anulación humana
+    REEMPLAZA la etiqueta oficial. `reviewer_role` + `reviewed_at` +
+    `previous_classification_id` + `new_classification_id` son la marca
+    temporal, el rol, el valor anterior y el valor posterior que pide el
+    gate. `verdict`/`reason` NUNCA sobrescriben el estado técnico del juez
+    (`features['regimen_llm']` de la `Classification` anterior, que se
+    copia intacto a la nueva) — son DOS campos de estado, no uno.
+    """
+
+    __tablename__ = "classification_reviews"
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
+    episode_id: Mapped[uuid.UUID] = mapped_column(PgUUID(as_uuid=True), nullable=False, index=True)
+    reviewer_id: Mapped[uuid.UUID] = mapped_column(PgUUID(as_uuid=True), nullable=False, index=True)
+    reviewer_role: Mapped[str] = mapped_column(String(40), nullable=False)
+    previous_classification_id: Mapped[int | None] = mapped_column(
+        BigInteger, ForeignKey("classifications.id"), nullable=True
+    )
+    new_classification_id: Mapped[int | None] = mapped_column(
+        BigInteger, ForeignKey("classifications.id"), nullable=True
+    )
+    verdict: Mapped[str] = mapped_column(String(40), nullable=False)
+    reason: Mapped[str] = mapped_column(Text, nullable=False)
+    reviewed_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=utc_now_f, nullable=False
+    )
+
+    __table_args__ = (Index("ix_classification_reviews_tenant_episode", "tenant_id", "episode_id"),)

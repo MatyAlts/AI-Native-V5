@@ -37,6 +37,7 @@ import {
   Download,
   FlaskConical,
   FolderOpen,
+  Gavel,
   GraduationCap,
   Group,
   Home,
@@ -88,6 +89,7 @@ export const NAV_GROUPS: NavGroup[] = [
       { id: "/tareas-practicas", label: "Trabajos Prácticos", icon: ClipboardList },
       { id: "/materiales", label: "Materiales", icon: FolderOpen },
       { id: "/correcciones", label: "Correcciones", icon: CheckSquare },
+      { id: "/revision-cola", label: "Cola de revisión", icon: Gavel },
       // Va DEBAJO de Correcciones porque es su continuacion: acá el docente
       // conecta su cuenta de Active-IA y sincroniza las rubricas, que es lo
       // que habilita el boton "Corregir con IA" de esa pantalla.

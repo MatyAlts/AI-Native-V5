@@ -9,6 +9,7 @@ import {
   type NLevel,
   type NLevelDistribution,
   type RegimenLLM,
+  type RegimenLLMValorDimension,
   getEpisodeClassification,
   getEpisodeNLevelDistribution,
 } from "../lib/api"
@@ -386,6 +387,33 @@ const JUEZ_REVISION_MSG: Record<string, string> = {
     "La lectura del modelo no fue consistente con la regla; el episodio va a revision humana.",
   baja_confianza: "El modelo no tuvo confianza suficiente; el episodio va a revision humana.",
   error_parseo: "El modelo no devolvio una lectura valida para este episodio.",
+  abstencion_traza_insuficiente:
+    "La regla no pudo decidir con la traza disponible (una dimension no evaluable); el episodio va a revision humana.",
+}
+
+// D3 del design.md: las cuatro dimensiones son trivaluadas. `presente` puede
+// llegar como booleano (clasificaciones persistidas antes de esta change) o
+// como el string nuevo — el frontend lee las dos formas sin distinguirlas
+// para el docente, que solo necesita ver el valor final.
+function estadoDimension(valor: RegimenLLMValorDimension): "presente" | "ausente" | "no_evaluable" {
+  if (typeof valor === "boolean") return valor ? "presente" : "ausente"
+  return valor
+}
+
+// Vocabulario generico para V/E/J.
+const DIM_LABEL: Record<"presente" | "ausente" | "no_evaluable", string> = {
+  presente: "presente",
+  ausente: "ausente",
+  no_evaluable: "no evaluable",
+}
+
+// Autonomia conserva su vocabulario propio (interlocutor/oraculo) para las
+// dos ramas que ya se auditaban; "no evaluable" es el tercer valor nuevo — no
+// inventa color, mismo tratamiento neutro que "ausente" (4.3 del design.md).
+const AUTONOMIA_LABEL: Record<"presente" | "ausente" | "no_evaluable", string> = {
+  presente: "interlocutor",
+  ausente: "oraculo",
+  no_evaluable: "no evaluable",
 }
 
 // Veredicto del juez LLM del eje fino. Es la clasificacion OFICIAL del episodio
@@ -412,29 +440,33 @@ function DocenteJuezLLM({ regimen }: { regimen: RegimenLLM }) {
   const raw = regimen.raw
   const disp = REGIMEN_JUEZ_DISPLAY[regimen.regimen]
   const conf = regimen.confianza !== null ? Math.round(regimen.confianza * 100) : null
+  const vVerbalizacion = estadoDimension(raw.verbalizacion.presente)
+  const vVerificacion = estadoDimension(raw.verificacion.presente)
+  const vJustificacion = estadoDimension(raw.justificacion.presente)
+  const vAutonomia = estadoDimension(raw.autonomia.presente)
   const dims = [
     {
       nombre: "Verbalizacion",
-      on: raw.verbalizacion.presente,
-      estado: raw.verbalizacion.presente ? "presente" : "ausente",
+      on: vVerbalizacion === "presente",
+      estado: DIM_LABEL[vVerbalizacion],
       ev: raw.verbalizacion.evidencia,
     },
     {
       nombre: "Verificacion",
-      on: raw.verificacion.presente,
-      estado: raw.verificacion.presente ? "presente" : "ausente",
+      on: vVerificacion === "presente",
+      estado: DIM_LABEL[vVerificacion],
       ev: raw.verificacion.evidencia,
     },
     {
       nombre: "Justificacion",
-      on: raw.justificacion.presente,
-      estado: raw.justificacion.presente ? "presente" : "ausente",
+      on: vJustificacion === "presente",
+      estado: DIM_LABEL[vJustificacion],
       ev: raw.justificacion.evidencia,
     },
     {
       nombre: "Autonomia",
-      on: !raw.autonomia.oraculo,
-      estado: raw.autonomia.oraculo ? "oraculo" : "interlocutor",
+      on: vAutonomia === "presente",
+      estado: AUTONOMIA_LABEL[vAutonomia],
       ev: raw.autonomia.evidencia,
     },
   ]
@@ -499,9 +531,18 @@ function DocenteInterpretation({
   )
 }
 
-const APPROPRIATION_DISPLAY: Record<
-  AppropriationLabel,
-  { label: string; chip: string; container: string; headline: string }
+// B2b (6.4/6.5): `Partial` en vez de `Record` exhaustivo — `sin_clasificar`
+// (el arbol corrio y no pudo decidir un eje, 5to valor real de
+// `appropriation` desde 6.2) NO tiene entrada propia acá; usa el fallback
+// `APPROPRIATION_DISPLAY_FALLBACK` en el punto de uso, siguiendo el patron
+// de `docenteLabels.ts` (`dict[category] ?? category`). Antes este Record
+// era exhaustivo sobre las 4 claves viejas SIN fallback: indexar con un
+// valor no contemplado devolvia `undefined` y la linea siguiente
+// (`display.container`) rompia con TypeError — la vista a la que linkea la
+// cola de revision humana, asi que el docente que hacia click desde la cola
+// se comia el crash.
+const APPROPRIATION_DISPLAY: Partial<
+  Record<AppropriationLabel, { label: string; chip: string; container: string; headline: string }>
 > = {
   delegacion_pasiva: {
     label: "Delegacion pasiva",
@@ -534,6 +575,18 @@ const APPROPRIATION_DISPLAY: Record<
   },
 }
 
+// B2b (6.4/6.5): fallback para `sin_clasificar` (y cualquier valor futuro sin
+// entrada propia). "Sin clasificar" no es un estado de error: es informacion
+// sobre el episodio — mismo tratamiento visual neutro que "autonomo" (gris),
+// sin inventar un color nuevo.
+const APPROPRIATION_DISPLAY_FALLBACK = {
+  label: "Sin clasificar",
+  chip: "bg-neutral text-white",
+  container: "border-border-strong/40 bg-surface-alt",
+  headline:
+    "El arbol no pudo decidir un eje para este episodio. No es un error del alumno ni del sistema.",
+}
+
 function DocenteAppropriationVerdict({
   classification,
   distribution,
@@ -564,7 +617,8 @@ function DocenteAppropriationVerdict({
   // reflexiva"). Colores/severidad siguen mapeando al eje canonico.
   const subgrupoKey = classification.subgrupo?.key ?? null
   const explicacion = explicarEstadoDocente(classification, eventosCognitivos, subgrupoKey)
-  const display = APPROPRIATION_DISPLAY[classification.appropriation]
+  const display =
+    APPROPRIATION_DISPLAY[classification.appropriation] ?? APPROPRIATION_DISPLAY_FALLBACK
 
   // Episodio sin actividad: chip neutro en vez del veredicto de apropiación
   // (no tiene sentido decir "superficial" si el alumno no trabajó).

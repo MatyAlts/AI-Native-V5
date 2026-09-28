@@ -191,3 +191,31 @@ def test_tres_profiles_simultaneos() -> None:
     assert len(report.results) == 3
     # p1 gana con kappa=1.0
     assert report.winner_by_kappa == "p1"
+
+
+def test_compare_profiles_no_rompe_con_autonomo() -> None:
+    """Bug PREEXISTENTE (declarado como tal, no como parte del alcance de esta
+    change): `compare_profiles` (ab_testing.py:124) llama
+    `compute_cohen_kappa(ratings)` SIN pasar `categories` explícito, así que
+    usa el default del módulo (`CATEGORIES`, 3 valores del continuo). `autonomo`
+    (eje ortogonal, v4.0.0 — ya en producción, no lo introduce esta change) ya
+    rompía esto con `ValueError: Categoría inválida en rater_a: autonomo`, sin
+    necesidad de `sin_clasificar`. `analytics.py`/`pedagogia.py` ya evitan el
+    mismo bug pasando `categories` explícito (`sorted({rater_a} | {rater_b})`).
+    Fix: mismo patrón acá.
+    """
+    episodes = [
+        _ep("e1", "autonomo"),
+        _ep("e2", "apropiacion_reflexiva"),
+    ]
+    profile_a = {"name": "default", "version": "v1"}
+    classify_fn = make_fake_classify(
+        {
+            "default": {"e1": "autonomo", "e2": "apropiacion_reflexiva"},
+        }
+    )
+
+    report = compare_profiles(episodes, [profile_a], classify_fn, fake_compute_hash)
+
+    assert report.n_episodes == 2
+    assert report.results[0].kappa.kappa == 1.0

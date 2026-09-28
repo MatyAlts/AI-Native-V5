@@ -282,6 +282,24 @@ POLICIES: list[tuple[str, str, str, str]] = [
     ("role:docente", "*", "instrumento_test_transferencia:*", "read"),
     ("role:estudiante", "*", "instrumento_test_transferencia:*", "create"),
     ("role:estudiante", "*", "instrumento_test_transferencia:*", "read"),
+    # ── Revisión humana de clasificaciones N4 (B3+B5, remediaciones-mtac-b2-b5) ──
+    # Cola de episodios retenidos (`needs_review`) + anulación humana con
+    # historial (`classifier-service`, tabla `classification_reviews`).
+    # Solo create+read: la anulación es append-only (nunca update/delete de
+    # una revisión existente). Estudiante NO puede anular ni ver la cola
+    # (decisión de design, open question resuelta el 26/09/2026: docente,
+    # docente_admin y superadmin son candidatos; el estudiante no).
+    # NOTA: el classifier-service NO consulta Casbin en runtime — sus
+    # endpoints gatean con `require_role` sobre los headers del gateway
+    # (mismo mecanismo que el resto de sus rutas, ver `routes/review.py`).
+    # Esta entrada documenta el catálogo de permisos como source of truth,
+    # igual que el resto de este seed.
+    ("role:superadmin", "*", "classification_review:*", "create"),
+    ("role:superadmin", "*", "classification_review:*", "read"),
+    ("role:docente_admin", "*", "classification_review:*", "create"),
+    ("role:docente_admin", "*", "classification_review:*", "read"),
+    ("role:docente", "*", "classification_review:*", "create"),
+    ("role:docente", "*", "classification_review:*", "read"),
 ]
 
 

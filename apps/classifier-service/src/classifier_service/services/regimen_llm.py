@@ -30,14 +30,20 @@ import logging
 from typing import Any, Literal, Protocol
 from uuid import UUID
 
-from pydantic import BaseModel, ValidationError
+from pydantic import BaseModel, ValidationError, field_validator, model_validator
 
 logger = logging.getLogger(__name__)
 
 # Versión del prompt congelado. Bumpear ante CUALQUIER cambio del system prompt
 # o de los ejemplos few-shot — la salida del modelo puede cambiar, y el κ
 # reportado se ancla a una versión concreta (snapshot reproducible).
-PROMPT_VERSION = "eje_fino_v1.1.0"
+#
+# v1.2.0 (B2a, Tabla 3.11 + Tabla B.2): la regla deja de ser binaria y pasa a
+# trivaluada con Kleene fuerte — cambio de SEMÁNTICA, no solo de redacción.
+# NO mueve `classifier_config_hash` (ese hash cubre {tree_version, profile};
+# la regla del juez se versiona acá, aparte, y esa versión ya se persiste en
+# features['regimen_llm']['prompt_version'] — D1 del design.md).
+PROMPT_VERSION = "eje_fino_v1.2.0"
 
 # Zona gris histórica de colaboradores (se conserva por referencia / compat).
 ZONA_GRIS_SUBGRUPOS = frozenset({"colaborador_reflexivo", "colaborador_funcional"})
@@ -63,14 +69,64 @@ REGIMEN_TO_APPROPRIATION: dict[str, str] = {
 
 
 # ── Contrato de salida del juez (validado contra el LLM) ──────────────────
+#
+# B2a (Tabla B.2 de la tesis, adjunta en `tabla-3.11-de-la-tesis.md`): las
+# CUATRO dimensiones (V, E, J, A) son trivaluadas — `presente`, `ausente` o
+# `no_evaluable`. El campo sigue llamándose `presente` (D2 del design): un
+# `field_validator(mode="before")` coacciona los booleanos legados
+# (`True`→"presente", `False`→"ausente") para que las clasificaciones ya
+# persistidas antes de esta change se sigan parseando sin romper.
+def _coaccionar_booleano_legado(v: Any) -> Any:
+    if isinstance(v, bool):
+        return "presente" if v else "ausente"
+    return v
+
+
 class _Dim(BaseModel):
-    presente: bool
+    presente: Literal["presente", "ausente", "no_evaluable"]
     evidencia: str
+
+    @field_validator("presente", mode="before")
+    @classmethod
+    def _coaccionar(cls, v: Any) -> Any:
+        return _coaccionar_booleano_legado(v)
 
 
 class _Autonomia(BaseModel):
-    oraculo: bool
+    """Misma forma que `_Dim`: la Tabla B.2 define Autonomía con la misma
+    escala presente/ausente/no_evaluable que V, E y J — no es un caso aparte.
+
+    Corrección de D4 (design.md): D4 suponía que autonomía podía quedar
+    booleana porque el juez solo corre sobre subgrupos con `prompts > 0`. La
+    Tabla B.2 lo contradice: que haya prompts del ALUMNO no garantiza que haya
+    PROPUESTAS DEL ASISTENTE que cuestionar, y ese es exactamente el caso
+    `no_evaluable` de A («no hay propuestas del asistente sobre las que
+    observar la conducta, o el registro está incompleto»).
+
+    `presente` acá significa que el alumno ejerce autonomía (cuestiona o
+    transforma la propuesta) — lo opuesto del campo legado `oraculo: bool`, que
+    marcaba lo contrario. La retrocompatibilidad traduce la clave Y el sentido:
+    `oraculo=True` (comportamiento oráculo) → `presente="ausente"`;
+    `oraculo=False` (interlocutor) → `presente="presente"`.
+    """
+
+    presente: Literal["presente", "ausente", "no_evaluable"]
     evidencia: str
+
+    @model_validator(mode="before")
+    @classmethod
+    def _coaccionar_oraculo_legado(cls, data: Any) -> Any:
+        if isinstance(data, dict) and "presente" not in data and "oraculo" in data:
+            data = dict(data)
+            oraculo = data.pop("oraculo")
+            if isinstance(oraculo, bool):
+                data["presente"] = "ausente" if oraculo else "presente"
+        return data
+
+    @field_validator("presente", mode="before")
+    @classmethod
+    def _coaccionar(cls, v: Any) -> Any:
+        return _coaccionar_booleano_legado(v)
 
 
 class RegimenLLMRaw(BaseModel):
@@ -110,7 +166,10 @@ RESPONSE_JSON_SCHEMA: dict[str, Any] = {
                     "required": ["presente", "evidencia"],
                     "additionalProperties": False,
                     "properties": {
-                        "presente": {"type": "boolean"},
+                        "presente": {
+                            "type": "string",
+                            "enum": ["presente", "ausente", "no_evaluable"],
+                        },
                         "evidencia": {"type": "string"},
                     },
                 },
@@ -119,7 +178,10 @@ RESPONSE_JSON_SCHEMA: dict[str, Any] = {
                     "required": ["presente", "evidencia"],
                     "additionalProperties": False,
                     "properties": {
-                        "presente": {"type": "boolean"},
+                        "presente": {
+                            "type": "string",
+                            "enum": ["presente", "ausente", "no_evaluable"],
+                        },
                         "evidencia": {"type": "string"},
                     },
                 },
@@ -128,15 +190,27 @@ RESPONSE_JSON_SCHEMA: dict[str, Any] = {
                     "required": ["presente", "evidencia"],
                     "additionalProperties": False,
                     "properties": {
-                        "presente": {"type": "boolean"},
+                        "presente": {
+                            "type": "string",
+                            "enum": ["presente", "ausente", "no_evaluable"],
+                        },
                         "evidencia": {"type": "string"},
                     },
                 },
+                # D4 CORREGIDA (ver comentario en `_Autonomia`): la Tabla B.2
+                # trivalúa también Autonomía — misma forma que las otras tres,
+                # ya no `{"oraculo": boolean}`.
                 "autonomia": {
                     "type": "object",
-                    "required": ["oraculo", "evidencia"],
+                    "required": ["presente", "evidencia"],
                     "additionalProperties": False,
-                    "properties": {"oraculo": {"type": "boolean"}, "evidencia": {"type": "string"}},
+                    "properties": {
+                        "presente": {
+                            "type": "string",
+                            "enum": ["presente", "ausente", "no_evaluable"],
+                        },
+                        "evidencia": {"type": "string"},
+                    },
                 },
                 "regimen": {"type": "string", "enum": ["REFLEXIVA", "SUPERFICIAL"]},
                 "confianza": {"type": "number", "minimum": 0, "maximum": 1},
@@ -147,7 +221,41 @@ RESPONSE_JSON_SCHEMA: dict[str, Any] = {
 }
 
 
-Estado = Literal["ok", "inconsistente", "baja_confianza", "error_parseo"]
+# Estados terminales que la Tabla 3.11 (`tabla-3.11-de-la-tesis.md`) exige,
+# más los 4 que el código ya tenía. Correspondencia con los seis casos de la
+# tabla, documentada acá porque el nombre de la tabla y el nombre del código
+# NO coinciden uno a uno:
+#   - casos 1 y 3 (clasificación automática)  → "ok" (con `regimen` REFLEXIVA/SUPERFICIAL)
+#   - caso 2  (verdadero, no auditable)       → "derivado_evidencia_insuficiente"
+#     NO IMPLEMENTADO. Depende de la verificación literal de citas (B4, no
+#     construida). Solo se declara la constante del punto de extensión más
+#     abajo — agregar el valor acá sin un camino de código que lo produzca
+#     sería documentación disfrazada de contrato.
+#   - caso 4  (indeterminado)                 → "abstencion_traza_insuficiente" (ESTE COMMIT)
+#   - caso 5  (no evaluable por formato)       → "salida_invalida"
+#     PARCIALMENTE cubierto hoy por "error_parseo" (JSON inválido). El caso
+#     puntual que la tesis exige — cita atribuida a un turno del tutor, o
+#     campo fuera de dominio — NO está implementado (depende de B4). Mismo
+#     tratamiento que el caso 2: constante declarada, sin validador.
+#   - caso 6  (conflicto de reglas)           → "inconsistente" (ya existía;
+#     es exactamente "el régimen del modelo no coincide con el que la regla
+#     determinista deriva de sus propias dimensiones")
+Estado = Literal[
+    "ok",
+    "inconsistente",
+    "baja_confianza",
+    "error_parseo",
+    "abstencion_traza_insuficiente",
+]
+
+# Casos 2 y 5 de la Tabla 3.11: brecha declarada, no implementada (ver el
+# comentario de `Estado` arriba). Dependen del pendiente B4 (verificación
+# literal de citas), que no existe en este repo. Se nombran acá para que el
+# día que B4 se construya el estado ya tenga nombre fijado por la tesis, y no
+# se improvise uno nuevo — pero NO se agregan a `Estado` ni a ningún `Literal`
+# vivo, porque hoy ningún camino de código las produce.
+CASO_2_ESTADO_FUTURO_NO_IMPLEMENTADO = "derivado_evidencia_insuficiente"
+CASO_5_ESTADO_FUTURO_NO_IMPLEMENTADO = "salida_invalida"
 
 
 class RegimenLLMResult(BaseModel):
@@ -164,20 +272,100 @@ class RegimenLLMResult(BaseModel):
     prompt_version: str
 
 
+def normalizar_regimen_llm_persistido(data: dict[str, Any] | None) -> dict[str, Any] | None:
+    """Normaliza un `features['regimen_llm']` YA PERSISTIDO a la forma vigente.
+
+    Bug real (QA, 2026-09-25): la coacción de booleanos legados y la
+    traducción de `oraculo` legado a `presente` viven en los validadores de
+    `_Dim`/`_Autonomia`, pero esos validadores SOLO corren cuando el dict pasa
+    por `RegimenLLMRaw.model_validate` — y el único lugar de código no-test
+    que hace eso es `clasificar_regimen_llm`, sobre la salida FRESCA del LLM.
+    El endpoint de lectura devolvía el dict crudo del JSONB tal cual. Para V/E/J
+    no se notaba (mismo nombre de campo); para autonomía SÍ, porque el campo se
+    RENOMBRÓ (`oraculo` → `presente`) y un registro legado sin esa clave perdía
+    la dimensión en el frontend, en blanco y sin log.
+
+    Este es el ÚNICO lugar donde se debe llamar esta función: el borde de
+    lectura (`classify_ep.py::get_current_classification`). Reusa la
+    validación completa de `RegimenLLMResult`/`RegimenLLMRaw`/`_Autonomia`
+    para que el dato que sale por HTTP tenga SIEMPRE la forma vigente, sin que
+    el frontend tenga que conocer dos formas del mismo dato (D2 del design.md).
+
+    Si el dato persistido no valida (corrupción o forma no anticipada), se
+    degrada devolviendo el dict original tal cual — la LECTURA nunca debe
+    romper por un registro viejo — y se loguea para que el caso se investigue.
+    """
+    if data is None:
+        return None
+    try:
+        return RegimenLLMResult.model_validate(data).model_dump(mode="json")
+    except ValidationError as exc:
+        logger.warning(
+            "regimen_llm_normalizacion_fallo",
+            extra={"error": str(exc)},
+        )
+        return data
+
+
 # ── Regla de decisión en código (la garantía, no el LLM) ──────────────────
-def regimen_segun_regla(raw: RegimenLLMRaw) -> Literal["REFLEXIVA", "SUPERFICIAL"]:
+def _kleene_desde_dim(valor: Literal["presente", "ausente", "no_evaluable"]) -> bool | None:
+    """Traduce el valor trivaluado al tri-estado de Kleene: True/False/None."""
+    if valor == "presente":
+        return True
+    if valor == "ausente":
+        return False
+    return None  # no_evaluable
+
+
+def _kleene_and(a: bool | None, b: bool | None) -> bool | None:
+    """AND fuerte de Kleene: un `False` GANA sobre cualquier `None`."""
+    if a is False or b is False:
+        return False
+    if a is None or b is None:
+        return None
+    return True
+
+
+def _kleene_or(a: bool | None, b: bool | None) -> bool | None:
+    """OR fuerte de Kleene: un `True` GANA sobre cualquier `None`."""
+    if a is True or b is True:
+        return True
+    if a is None or b is None:
+        return None
+    return False
+
+
+def regimen_segun_regla(
+    raw: RegimenLLMRaw,
+) -> Literal["REFLEXIVA", "SUPERFICIAL", "INDETERMINADO"]:
     """Aplica la regla del manual a las 4 dimensiones citadas por el LLM.
 
-    REFLEXIVA si y solo si:
-      (a) VERBALIZACIÓN presente, Y
-      (b) VERIFICACIÓN presente O JUSTIFICACIÓN presente, Y
-      (c) AUTONOMÍA no es de tipo oráculo.
-    En cualquier otro caso, SUPERFICIAL. La cantidad de actividad nunca decide.
+    Tabla 3.11 de la tesis (`openspec/changes/remediaciones-mtac-b2-b5/
+    tabla-3.11-de-la-tesis.md`), criterio V ∧ (E ∨ J) ∧ A, evaluado con
+    **Kleene fuerte**: el valor `no_evaluable` (desconocido) se propaga SOLO
+    cuando puede cambiar el resultado. Una dimensión que por sí sola hace
+    falsa la fórmula (ej. V ausente) decide SUPERFICIAL sin importar que las
+    demás sean `no_evaluable` (caso 3) — esa es la propiedad que distingue
+    Kleene fuerte de Kleene débil, donde cualquier `no_evaluable` derivaría.
+
+      (a) VERBALIZACIÓN, (b) VERIFICACIÓN ∨ JUSTIFICACIÓN, (c) AUTONOMÍA.
+
+    Devuelve "INDETERMINADO" (caso 4, abstención por traza insuficiente)
+    cuando ninguna dimensión hace falsa la fórmula pero el desconocido de
+    alguna impide decidir. La cantidad de actividad nunca decide.
     """
-    a = raw.verbalizacion.presente
-    b = raw.verificacion.presente or raw.justificacion.presente
-    c = not raw.autonomia.oraculo
-    return "REFLEXIVA" if (a and b and c) else "SUPERFICIAL"
+    a = _kleene_desde_dim(raw.verbalizacion.presente)
+    b = _kleene_or(
+        _kleene_desde_dim(raw.verificacion.presente),
+        _kleene_desde_dim(raw.justificacion.presente),
+    )
+    c = _kleene_desde_dim(raw.autonomia.presente)
+    resultado = _kleene_and(_kleene_and(a, b), c)
+    if resultado is True:
+        return "REFLEXIVA"
+    if resultado is False:
+        return "SUPERFICIAL"
+    return "INDETERMINADO"
 
 
 def _hay_evidencia_citable(raw: RegimenLLMRaw) -> bool:
@@ -274,18 +462,20 @@ DOS DISTINCIONES CLAVE (afinan el juicio, pero NO te vuelvas injusto con quien s
 - NARRAR no es RAZONAR: describir qué hace el código ("la línea 8 abre el archivo") por sí solo no es verbalizar el porqué. La verbalización está presente cuando el alumno explica la RAZÓN de una decisión o muestra un criterio propio. PERO si el alumno da una razón, una causa, una comparación o un criterio ("uso 'a' porque necesito conservar lo anterior", "tiene que ser un for porque recorro la lista"), eso SÍ es verbalización: contala.
 - PEDIR LA SOLUCIÓN es ORÁCULO: si el alumno pidió "cómo lo arreglo", "corregime", "está bien así?" o volcó un error esperando la respuesta, la autonomía es oráculo, y entonces es SUPERFICIAL aunque narre o explique algo después. PERO preguntar para DISCUTIR una idea, contrastar un razonamiento propio o confirmar una hipótesis que él mismo formuló ("pensé que con 'a' se agrega al final, ¿es así?") NO es oráculo: es usar la IA como interlocutor.
 
-RÚBRICA (marcá presente=false y evidencia="" si no hay evidencia clara; no inventes):
-1. VERBALIZACIÓN DEL RAZONAMIENTO — ¿explica el porqué de sus decisiones o muestra un criterio propio?
-2. VERIFICACIÓN CONCEPTUAL — ¿contrasta/anticipa resultados o razona el error con su cabeza, más allá de ejecutar?
-3. JUSTIFICACIÓN DE DECISIONES — ¿defiende sus elecciones con criterio propio?
-4. AUTONOMÍA COGNITIVA — ¿usa la IA para PENSAR (interlocutor) o para EXTRAER la solución/corrección (oráculo)?
+RÚBRICA — cada dimensión vale "presente", "ausente" o "no_evaluable" (nunca inventes; sin evidencia clara, no fuerces "presente"):
+1. VERBALIZACIÓN (V) — presente: el alumno formula con sus propias palabras una hipótesis, explicación o plan, más allá de reproducir o parafrasear al tutor. ausente: hay turnos suficientes del alumno y ninguno expresa razonamiento propio (solo pedidos de solución, pegado de errores o aceptaciones). no_evaluable: turnos del alumno escasos o truncados, episodio interrumpido, o actividad fuera del sistema que impide juzgar.
+2. VERIFICACIÓN (E) — presente: el alumno ejecuta, prueba, compara o comprueba una propuesta y refiere el resultado. ausente: acepta propuestas sin ninguna acción ni argumento de contraste, en un episodio con eventos suficientes. no_evaluable: eventos de ejecución o prueba no registrados, o registro incompleto.
+3. JUSTIFICACIÓN (J) — presente: el alumno explica por qué una decisión propia es correcta o preferible, con fundamento causal, argumentado o estratégico. ausente: las decisiones se adoptan sin fundamento expresado, en una traza suficiente para observarlo. no_evaluable: la traza no contiene decisiones propias observables, o está truncada.
+4. AUTONOMÍA (A) — presente: el alumno transforma, cuestiona o pone a prueba la propuesta del tutor en vez de tratarla como oráculo. ausente: incorpora las propuestas sin modificación ni cuestionamiento, con evidencia positiva de aceptación (ej. pegado literal seguido de entrega). no_evaluable: NO HAY PROPUESTAS DEL TUTOR sobre las que observar la conducta del alumno, o el registro está incompleto — que haya mensajes del alumno no alcanza si el tutor no propuso nada que cuestionar o aceptar.
 
-REGLA DE DECISIÓN (las tres condiciones deben cumplirse)
-REFLEXIVA si y solo si: (a) VERBALIZACIÓN del porqué presente, Y (b) VERIFICACIÓN presente O JUSTIFICACIÓN presente, Y (c) AUTONOMÍA no es oráculo. Si la autonomía es oráculo, SUPERFICIAL siempre. En cualquier otro caso, SUPERFICIAL.
+IMPORTANTE sobre "no_evaluable": es un juicio sobre la TRAZA (falta lo que haría falta para decidir presente/ausente), NO sobre tu confianza en la lectura. Si la traza alcanza pero el caso es ambiguo, decidí presente o ausente y bajá "confianza" (para eso existe el campo); "no_evaluable" es exclusivamente "no hay con qué juzgar esta dimensión".
 
-Para cada dimensión citá la frase textual del alumno que la sustenta. La confianza es un decimal entre 0 y 1: si la evidencia es ambigua, asigná confianza menor a 0,70.
+REGLA DE DECISIÓN
+REFLEXIVA si y solo si: (a) VERBALIZACIÓN presente, Y (b) VERIFICACIÓN presente O JUSTIFICACIÓN presente, Y (c) AUTONOMÍA presente. Si alguna dimensión necesaria es "no_evaluable" y ninguna otra ya decide SUPERFICIAL, no elijas un régimen por descarte: reportá igual tu mejor lectura en "regimen", que el código verifica y deriva a revisión si la regla no puede resolverla con lo que citaste.
 
-SALIDA — devolvé EXCLUSIVAMENTE el JSON con la estructura pedida, sin texto adicional. Para cada dimensión, "presente"/"oraculo" es un booleano real y "evidencia" es la frase textual (o cadena vacía). "regimen" es "REFLEXIVA" o "SUPERFICIAL". "confianza" es un decimal entre 0 y 1."""
+Para cada dimensión citá la frase textual del alumno que la sustenta (cadena vacía si es ausente/no_evaluable). La confianza es un decimal entre 0 y 1: si la evidencia es ambigua, asigná confianza menor a 0,70.
+
+SALIDA — devolvé EXCLUSIVAMENTE el JSON con la estructura pedida, sin texto adicional. Para cada una de las CUATRO dimensiones, "presente" es un string ("presente", "ausente" o "no_evaluable") y "evidencia" es la frase textual (o cadena vacía). "regimen" es "REFLEXIVA" o "SUPERFICIAL". "confianza" es un decimal entre 0 y 1."""
 
 # Ejemplos few-shot: casos REALES del piloto, etiquetados por consenso docente.
 # NOTA DE VALIDACIÓN (§6 del diseño): en la validación k-fold, estos ejemplos
@@ -301,10 +491,13 @@ _FEWSHOT: list[tuple[str, dict[str, Any]]] = [
         "ALUMNO: \"Me salio esto SyntaxError: invalid syntax. Maybe you meant '==' "
         "or ':=' instead of '='?\"\n[ejecutó el código 11 veces; ningún otro mensaje]",
         {
-            "verbalizacion": {"presente": False, "evidencia": ""},
-            "verificacion": {"presente": False, "evidencia": ""},
-            "justificacion": {"presente": False, "evidencia": ""},
-            "autonomia": {"oraculo": True, "evidencia": "volcó el error sin preguntar la causa"},
+            "verbalizacion": {"presente": "ausente", "evidencia": ""},
+            "verificacion": {"presente": "ausente", "evidencia": ""},
+            "justificacion": {"presente": "ausente", "evidencia": ""},
+            "autonomia": {
+                "presente": "ausente",
+                "evidencia": "volcó el error sin preguntar la causa",
+            },
             "regimen": "SUPERFICIAL",
             "confianza": 0.9,
             "justificacion_global": (
@@ -322,18 +515,21 @@ _FEWSHOT: list[tuple[str, dict[str, Any]]] = [
         'lo que hace es agregar el producto nuevo al final de la lista"\n[ejecutó el código 2 veces]',
         {
             "verbalizacion": {
-                "presente": True,
+                "presente": "presente",
                 "evidencia": "la linea 13 lo que hace es agregar el producto al final",
             },
             "verificacion": {
-                "presente": True,
+                "presente": "presente",
                 "evidencia": "'r' es solo lectura y 'w' volveria a escribir de 0",
             },
             "justificacion": {
-                "presente": True,
+                "presente": "presente",
                 "evidencia": "el formato 'a' es el correcto, ya que el ejercicio me pide agregar al final",
             },
-            "autonomia": {"oraculo": False, "evidencia": "razona los modos sin que se lo pidan"},
+            "autonomia": {
+                "presente": "presente",
+                "evidencia": "razona los modos sin que se lo pidan",
+            },
             "regimen": "REFLEXIVA",
             "confianza": 0.95,
             "justificacion_global": (
@@ -350,11 +546,11 @@ _FEWSHOT: list[tuple[str, dict[str, Any]]] = [
         'ALUMNO: "ah ok ya esta, entonces la linea 8 abre el archivo y la 9 lee las '
         'lineas"\n[ejecutó el código 6 veces]',
         {
-            "verbalizacion": {"presente": False, "evidencia": ""},
-            "verificacion": {"presente": False, "evidencia": ""},
-            "justificacion": {"presente": False, "evidencia": ""},
+            "verbalizacion": {"presente": "ausente", "evidencia": ""},
+            "verificacion": {"presente": "ausente", "evidencia": ""},
+            "justificacion": {"presente": "ausente", "evidencia": ""},
             "autonomia": {
-                "oraculo": True,
+                "presente": "ausente",
                 "evidencia": "pidió 'como lo arreglo' en vez de razonar el error él mismo",
             },
             "regimen": "SUPERFICIAL",
@@ -527,6 +723,24 @@ async def clasificar_regimen_llm(
     # saber cual de las dos habia disparado no alcanzaba el registro guardado:
     # habia que reconstruirlo a mano contra el JSON crudo (2026-08-06).
     esperado = regimen_segun_regla(raw)
+
+    # Caso 4 de la Tabla 3.11: la regla determinista NO puede decidir (Kleene
+    # fuerte devolvió indeterminado). Esto se chequea ANTES de comparar contra
+    # `raw.regimen` — el modelo siempre afirma REFLEXIVA o SUPERFICIAL binario,
+    # pero si la propia regla no puede resolverlo, esa afirmación es irrelevante:
+    # se abstiene, nunca se infiere una etiqueta de una regla indecisa.
+    if esperado == "INDETERMINADO":
+        return _result(
+            "abstencion_traza_insuficiente",
+            None,
+            raw.confianza,
+            raw,
+            "La regla determinista no puede decidir: ninguna dimensión hace "
+            "falsa la fórmula V ∧ (E ∨ J) ∧ A, pero el valor no evaluable de "
+            "alguna dimensión necesaria impide resolverla (Tabla 3.11, caso 4). "
+            "Va a revisión humana.",
+        )
+
     if raw.regimen != esperado:
         return _result(
             "inconsistente",

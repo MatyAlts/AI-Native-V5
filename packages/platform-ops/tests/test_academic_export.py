@@ -218,7 +218,11 @@ async def test_distribution_summary_correcto() -> None:
     assert dataset.distribution_summary["apropiacion_reflexiva"] == 1
     assert dataset.distribution_summary["apropiacion_superficial"] == 1
     assert dataset.distribution_summary["delegacion_pasiva"] == 1
-    assert dataset.distribution_summary["sin_clasificar"] == 1
+    # B2b (6.4): ep4 no tiene fila de clasificación — es la población del
+    # CENTINELA, no el valor real del árbol. Renombrado de "sin_clasificar"
+    # a "clasificacion_ausente" para no colisionar con ese valor real (ver
+    # test_sin_clasificar_del_arbol_no_colisiona_con_episodio_sin_fila_de_clasificacion).
+    assert dataset.distribution_summary["clasificacion_ausente"] == 1
 
 
 async def test_include_prompts_false_por_default_no_incluye_texto() -> None:
@@ -284,6 +288,58 @@ async def test_episodio_sin_clasificar_queda_registrado() -> None:
     unclassified = [e for e in dataset.episodes if e.appropriation is None]
     assert len(unclassified) == 1
     assert unclassified[0].ct_summary is None
+
+
+async def test_sin_clasificar_del_arbol_no_colisiona_con_episodio_sin_fila_de_clasificacion() -> (
+    None
+):
+    """B2b (6.4): COLISIÓN entre dos poblaciones distintas.
+
+    `key = appropriation if appropriation else "sin_clasificar"` (línea ~323)
+    usaba `"sin_clasificar"` como CENTINELA para "este episodio no tiene fila
+    de clasificación persistida". Desde 6.2, `"sin_clasificar"` es también un
+    VALOR REAL que el árbol puede persistir ("corrí y no pude decidir un
+    eje"). Antes de este fix ambas poblaciones colapsaban en la misma clave
+    del `distribution_summary`, indistinguibles entre sí en el export
+    académico — que es citable en la tesis.
+
+    Resuelto renombrando el CENTINELA a `clasificacion_ausente`: el valor
+    real del árbol sigue el vocabulario de la tesis (`sin_clasificar`).
+    """
+    ds, comision_id = _build_sample_cohort()
+    # ep4 de la cohorte de muestra YA es la población "ausente" (sin fila de
+    # clasificación). Agregamos un quinto episodio con clasificación REAL
+    # cuyo appropriation es "sin_clasificar" (población "el árbol no pudo
+    # decidir") en la MISMA corrida, para que el caso mixto sea observable.
+    ep5 = uuid4()
+    ts_open = (datetime.now(UTC) - timedelta(days=5)).isoformat().replace("+00:00", "Z")
+    ts_close = (
+        (datetime.now(UTC) - timedelta(days=5, minutes=-10)).isoformat().replace("+00:00", "Z")
+    )
+    ds.episodes.append(
+        {
+            "id": str(ep5),
+            "comision_id": str(comision_id),
+            "student_pseudonym": str(uuid4()),
+        }
+    )
+    ds.events_by_episode[str(ep5)] = [
+        {"seq": 0, "event_type": "episodio_abierto", "ts": ts_open, "payload": {}},
+        {"seq": 1, "event_type": "episodio_cerrado", "ts": ts_close, "payload": {}},
+    ]
+    ds.classifications[str(ep5)] = {
+        "appropiation": "sin_clasificar",
+        "classifier_config_hash": "d" * 64,
+    }
+
+    exporter = AcademicExporter(ds, salt="research_salt_analysis_2026")
+    dataset = await exporter.export_cohort(comision_id)
+
+    # Población 1: sin fila de clasificación (el sentinel). Sigue siendo 1
+    # (ep4) — ep5 SÍ tiene fila, así que no entra acá.
+    assert dataset.distribution_summary["clasificacion_ausente"] == 1
+    # Población 2: el árbol corrió y no pudo decidir (el valor real). ep5.
+    assert dataset.distribution_summary["sin_clasificar"] == 1
 
 
 # ── Privacy guarantees (OBJ-10) ───────────────────────────────────────

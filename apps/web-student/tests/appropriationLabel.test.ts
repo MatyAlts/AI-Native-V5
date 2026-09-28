@@ -38,4 +38,18 @@ describe("appropriationLabel", () => {
     expect(label).not.toBe("")
     expect(label).not.toBe("undefined")
   })
+
+  // B2b (6/item 7, 2026-09-27): `sin_clasificar` es un 5to valor real de
+  // `Classification.appropriation` desde 6.2. El mismo patron que BUG-04
+  // (switch sin `default`, exhaustivo sobre un tipo literal): el comentario
+  // del propio archivo documenta que esto YA paso una vez con "autonomo".
+  // Actualizadas las TRES uniones de tipo que declaran estos valores
+  // (web-student api.ts x2, web-teacher api.ts x1) en este mismo commit.
+  test("sin_clasificar: NO debe quedar vacio (mismo patron de bug que BUG-04)", () => {
+    const label = appropriationLabel("sin_clasificar")
+
+    expect(label).toBeTruthy()
+    expect(label).not.toBe("")
+    expect(label).not.toBe("undefined")
+  })
 })

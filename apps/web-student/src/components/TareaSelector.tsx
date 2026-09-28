@@ -713,6 +713,11 @@ export function appropriationLabel(a: NonNullable<StudentEpisode["appropriation"
       return "delegacion pasiva"
     case "autonomo":
       return "trabajo autonomo (sin tutor)"
+    // B2b (v4.1.0, 2026-09-27): el arbol corrio y no pudo decidir un eje.
+    // Mismo patron de bug que BUG-04 (switch exhaustivo sin default sobre un
+    // tipo literal): agregar el caso acá previene el mismo ": " colgando.
+    case "sin_clasificar":
+      return "sin clasificar"
   }
 }
 

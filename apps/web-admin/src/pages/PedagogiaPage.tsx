@@ -47,6 +47,10 @@ interface SubgrupoCount {
 interface DistribucionBlock {
   n_episodios_clasificados: number
   n_indeterminados: number
+  // B2b (6.4): bucket propio del backend para "el arbol no pudo decidir un
+  // eje" — no se usa directamente en este componente (que dibuja por
+  // `por_apropiacion`), pero espeja el contrato del backend.
+  n_sin_clasificar: number
   por_apropiacion: Record<string, number>
   por_subgrupo: SubgrupoCount[]
 }
@@ -198,6 +202,19 @@ const APR = {
   indeterminado: {
     label: "Indeterminado",
     short: "Indet.",
+    bar: "bg-border-strong",
+    text: "text-muted",
+    soft: "bg-surface-alt",
+    hex: "var(--color-muted-soft, #94a3b8)",
+  },
+  // B2b (6.4/6.5): el arbol corrio y no pudo decidir un eje. Entrada PROPIA,
+  // no la de `indeterminado` — no es lo mismo "no hay señal para decidir"
+  // (indeterminado) que "el arbol decidio explicitamente que no puede
+  // clasificar" (sin_clasificar). "Sin clasificar" no es un estado de
+  // error: es informacion sobre el episodio.
+  sin_clasificar: {
+    label: "Sin clasificar",
+    short: "Sin clasif.",
     bar: "bg-border-strong",
     text: "text-muted",
     soft: "bg-surface-alt",
@@ -801,11 +818,18 @@ function AblacionSection(): ReactNode {
 
 // ── Bloque 1: Distribución ────────────────────────────────────────────────
 
-function DistribucionSection({ block }: { block: DistribucionBlock }): ReactNode {
+// Exportado para test unitario directo (pura respecto de datos, sin fetch) —
+// B2b (6.4/6.5): permite testear que "sin_clasificar" se dibuja sin levantar
+// toda la página (scopes + 5 bloques + fetch).
+export function DistribucionSection({ block }: { block: DistribucionBlock }): ReactNode {
   const total = block.n_episodios_clasificados
   // `autonomo` es eje ortogonal (gris): aparece en la distribucion pero NO en la
   // curva/matriz/senales (que viven en el continuo ordinal del backend).
-  const order = [...APR_ORDER, "autonomo", "indeterminado"].filter(
+  // `sin_clasificar` (B2b, 6.4): el arbol corrio y no pudo decidir un eje. El
+  // backend manda la cuenta real en `por_apropiacion["sin_clasificar"]"; sin
+  // esta clave en `order` esa cuenta nunca se dibuja y el total de la barra
+  // no suma el total_episodios que el propio componente muestra.
+  const order = [...APR_ORDER, "autonomo", "sin_clasificar", "indeterminado"].filter(
     (k) => (block.por_apropiacion[k] ?? 0) > 0,
   )
   const maxSub = Math.max(1, ...block.por_subgrupo.map((s) => s.n))

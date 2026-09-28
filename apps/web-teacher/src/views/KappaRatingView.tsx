@@ -343,10 +343,26 @@ function EpisodeRatingCard({
   )
 }
 
-function appropriationDotColor(label: RatingLabel): string {
+// Exportado para test unitario directo (pura, sin React) — hallazgo de QA
+// (2026-09-27): esta pantalla (modo `isTraining=false`, episodios reales)
+// consume `Classification.appropriation` de TODAS las filas `is_current=true`
+// de la comisión, sin el filtro de subgrupo que protege a `/interrater/sample`.
+// `autonomo` (PREEXISTENTE) y `sin_clasificar` (B2b) llegan acá.
+export function appropriationDotColor(label: RatingLabel): string {
   if (label === "apropiacion_reflexiva") return "#16a34a"
   if (label === "apropiacion_superficial") return "#f59e0b"
-  return "#dc2626" // delegacion_pasiva
+  if (label === "delegacion_pasiva") return "#dc2626"
+  // Eje ORTOGONAL (autonomo) y sumidero (sin_clasificar, B2b): ninguno de los
+  // dos es delegación pasiva — mismo gris neutro que ya usan `docenteLabels.ts`
+  // / `PedagogiaPage.tsx` / `EpisodeNLevelView.tsx` para estas dos etiquetas.
+  if (label === "autonomo" || label === "sin_clasificar") return "#78716c"
+  // Cualquier otra cosa (subgrupos, niveles N1-N4, o una desincronización
+  // backend/frontend real) NO es delegación pasiva tampoco — el `else` viejo
+  // le mentía ese color. Mismo razonamiento que el grupo defensivo de
+  // `RevisionColaView` (bloque 5): un cajón que se disfraza de categoría real
+  // es peor que uno que se declara. Gris distinto del de arriba para que
+  // "no reconocido" no se confunda visualmente con "autonomo/sin_clasificar".
+  return "#a3a3a3"
 }
 
 function DocenteResultPanel({

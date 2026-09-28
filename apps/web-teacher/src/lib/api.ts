@@ -18,6 +18,11 @@ export type AppropriationCanonical =
 // longitudinales y se pinta en GRIS. Debe coincidir con classifier-service.
 export type AppropriationAutonomo = "autonomo"
 
+// Sumidero (B2b, v4.1.0): el arbol corrio y no pudo decidir un eje. NO tiene
+// ordinal (no entra en APPROPRIATION_ORDINAL) — es ausencia de medicion, no
+// un punto del continuo. Debe coincidir con classifier-service.
+export type AppropriationSinClasificar = "sin_clasificar"
+
 // Subgrupos diagnosticos (capa de analisis sobre episodios ya clasificados).
 // Deben coincidir con classifier-service/services/subgrupo.py.
 export type AppropriationSubgroup =
@@ -36,7 +41,10 @@ export type CognitiveLevelLabel = "N1" | "N2" | "N3" | "N4"
 // La etiqueta OFICIAL del classifier es una de las 3 canonicas del continuo o el
 // eje ortogonal `autonomo`. (classification.appropriation, trajectories,
 // displays, etc. usan este tipo).
-export type AppropriationLabel = AppropriationCanonical | AppropriationAutonomo
+export type AppropriationLabel =
+  | AppropriationCanonical
+  | AppropriationAutonomo
+  | AppropriationSinClasificar
 
 // Etiqueta para RATING inter-rater (kappa): ademas de las etiquetas oficiales
 // admite subgrupos diagnosticos y niveles N1-N4 (protocolos configurables).
@@ -1320,21 +1328,34 @@ export interface Subgrupo {
 // Veredicto del juez LLM del eje fino (features['regimen_llm']). YA NO es modo
 // sombra: gobierna la etiqueta oficial `appropriation` del episodio. Lo produce
 // regimen_llm.py.
+//
+// B2a (Tabla 3.11 + Tabla B.2): las CUATRO dimensiones son trivaluadas.
+// `presente` acepta el booleano legado (clasificaciones persistidas antes de
+// esta change) ADEMAS del string nuevo, porque el backend re-parsea y expone
+// ambas formas segun cuando se clasifico el episodio — el frontend tiene que
+// poder leer las dos.
+export type RegimenLLMValorDimension = "presente" | "ausente" | "no_evaluable" | boolean
 export interface RegimenLLMDimension {
-  presente: boolean
+  presente: RegimenLLMValorDimension
   evidencia: string
 }
 export interface RegimenLLMRaw {
   verbalizacion: RegimenLLMDimension
   verificacion: RegimenLLMDimension
   justificacion: RegimenLLMDimension
-  autonomia: { oraculo: boolean; evidencia: string }
+  // Misma forma que las otras tres (D4 corregida) — ya no `{ oraculo: boolean }`.
+  autonomia: RegimenLLMDimension
   regimen: "REFLEXIVA" | "SUPERFICIAL"
   confianza: number
   justificacion_global: string
 }
 export interface RegimenLLM {
-  estado: "ok" | "inconsistente" | "baja_confianza" | "error_parseo"
+  estado:
+    | "ok"
+    | "inconsistente"
+    | "baja_confianza"
+    | "error_parseo"
+    | "abstencion_traza_insuficiente"
   regimen: "REFLEXIVA" | "SUPERFICIAL" | null
   confianza: number | null
   raw: RegimenLLMRaw | null
@@ -1367,6 +1388,69 @@ export async function getEpisodeClassification(
     headers: await authHeaders(getToken),
   })
   if (r.status === 404) return null
+  await throwIfNotOk(r)
+  return r.json()
+}
+
+// ── B3+B5: cola de revisión humana (tarea 5.3/5.4) ────────────────────
+//
+// `ReviewQueueItemOut` NO trae cantidad de eventos ni transcripción del
+// episodio — esos viven en `ctr_store` y el classifier-service no hace joins
+// cross-base (CLAUDE.md). El docente ve ese detalle desde la vista de
+// episodio existente (`/episode-n-level`), no acá.
+export interface ReviewQueueItem {
+  episode_id: string
+  comision_id: string
+  classification_id: number
+  appropriation: AppropriationLabel
+  needs_review_reason: string | null
+  estado_juez: string | null
+}
+
+export interface ReviewQueueOut {
+  n: number
+  items: ReviewQueueItem[]
+}
+
+export async function getReviewQueue(
+  comisionId: string | undefined,
+  getToken?: TokenGetter,
+): Promise<ReviewQueueOut> {
+  const qs = comisionId ? `?comision_id=${comisionId}` : ""
+  const r = await fetch(`/api/v1/classifications/review-queue${qs}`, {
+    headers: await authHeaders(getToken),
+  })
+  await throwIfNotOk(r)
+  return r.json()
+}
+
+export interface ReviewIn {
+  verdict: string
+  reason: string
+}
+
+export interface ReviewOut {
+  review_id: number
+  episode_id: string
+  previous_classification_id: number
+  new_classification_id: number
+  verdict: string
+}
+
+// Errores de dominio (400 verdict invalido, 409 conflicto) llegan por
+// `throwIfNotOk` como `Error & { status, detail }` — `detail` es un string en
+// el 400 y `{ message, retryable }` en el 409 (routes/review.py). El caller
+// (RevisionColaView) distingue por `status`/`detail`, no esta funcion.
+export async function submitReview(
+  episodeId: string,
+  body: ReviewIn,
+  getToken?: TokenGetter,
+): Promise<ReviewOut> {
+  const r = await fetch(`/api/v1/classifications/${episodeId}/review`, {
+    method: "POST",
+    headers: await authHeaders(getToken),
+    body: JSON.stringify(body),
+  })
   await throwIfNotOk(r)
   return r.json()
 }
