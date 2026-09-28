@@ -1,27 +1,29 @@
 /**
- * ED-4 / H3 — la precedencia entre los cuatro candidatos del buffer inicial.
+ * H3 — la precedencia entre los tres candidatos del buffer inicial.
  *
  * El mutante que hasta hoy sobrevivia: revertir el `else` final a
- * `else if (ordenEfectivo == null)`, que hace que la siembra del arrastre
- * vuelva a PISAR la consigna del docente. Los 280 tests quedaban en verde.
+ * `else if (ordenEfectivo == null)`, que hacia que una siembra (ED-4, desde
+ * entonces eliminada) volviera a PISAR la consigna del docente. Los 280 tests
+ * quedaban en verde.
  *
- * Por que el bug es peor que "el editor abre con otro texto"
- * ---------------------------------------------------------
- * El andamio del lenguaje se nota a simple vista que no es una consigna: es un
- * comentario y un `main` vacio. El codigo del ejercicio ANTERIOR, no: es Java
- * o Python plausible, escrito por el propio alumno, sobre la misma TP. Puesto
- * encima del scaffold del docente, contradice el enunciado con algo que parece
- * legitimo — y el alumno no tiene forma de saber que lo que ve no es lo que le
- * dejaron.
+ * ED-4 se saco de acá el 2026-09-28 (ver
+ * `openspec/changes/eliminar-ed4-siembra-codigo-previo/`): reinterpretaba un
+ * `inicial_codigo` vacio como "el docente no se expreso" en vez de "el
+ * docente eligio que arranque vacio", y contaminaba la cadena CTR con codigo
+ * heredado indistinguible de lo que escribio el alumno. Los tests que
+ * protegian la precedencia del arrastre contra el scaffold del docente
+ * ("LA regla: el arrastre no pisa al docente") se borraron con ella: ya no
+ * hay arrastre que ordenar contra nada. Lo que sobrevive de esa garantia —
+ * que el scaffold del docente gana cuando hay snapshot ausente— ya esta
+ * cubierto por los tests 2 y 3 de abajo, que no necesitan un cuarto
+ * candidato para demostrarlo.
  *
  * Por que se assertea `origen` y no solo `codigo`
  * ----------------------------------------------
  * Es el seam que el coder abrio justo para esto. Dos candidatos con el MISMO
- * texto —el caso real: el scaffold del docente ya trabajado por el alumno en el
- * ejercicio anterior— eran indistinguibles mirando solo el string, y una
- * cascada con la precedencia invertida devolvia el mismo valor por el motivo
- * equivocado. Con `origen` la afirmacion es sobre QUIEN gano, que es lo que la
- * regla dice.
+ * texto eran indistinguibles mirando solo el string, y una cascada con la
+ * precedencia invertida devolvia el mismo valor por el motivo equivocado. Con
+ * `origen` la afirmacion es sobre QUIEN gano, que es lo que la regla dice.
  */
 
 import { describe, expect, it } from "vitest"
@@ -32,14 +34,12 @@ const PLACEHOLDER = "# Escribi tu solucion aca\n"
 const SNAPSHOT = "print('lo que escribi en ESTE episodio')\n"
 const SCAFFOLD_TP = "# scaffold de la TP\ndef resolver():\n    pass\n"
 const SCAFFOLD_EJ = "# scaffold del ejercicio\ndef resolver():\n    pass\n"
-const CODIGO_PREVIO = "print('lo que deje en el ejercicio 1')\n"
 
-/** Los cuatro candidatos presentes, con textos distinguibles. */
+/** Los tres candidatos presentes, con textos distinguibles. */
 const TODOS: CandidatosCodigo = {
   snapshot: SNAPSHOT,
   scaffoldTp: SCAFFOLD_TP,
   scaffoldEjercicio: SCAFFOLD_EJ,
-  codigoPrevio: CODIGO_PREVIO,
   placeholder: PLACEHOLDER,
 }
 
@@ -66,74 +66,19 @@ describe("resolverCascadaDeCodigo — el orden de precedencia", () => {
     })
   })
 
-  it("4. el arrastre entra recien cuando NO hay ningun scaffold del docente", () => {
-    expect(
-      resolverCascadaDeCodigo({
-        ...TODOS,
-        snapshot: null,
-        scaffoldTp: null,
-        scaffoldEjercicio: null,
-      }),
-    ).toEqual({ codigo: CODIGO_PREVIO, origen: "codigo-previo" })
-  })
-
-  it("5. el andamio del lenguaje es el ultimo eslabon", () => {
+  it("4. sin ningun scaffold del docente ni snapshot, gana el placeholder — no existe 'codigo del ejercicio anterior'", () => {
+    // Este es el reemplazo directo del viejo "4. el arrastre entra recien
+    // cuando NO hay ningun scaffold del docente": antes, sin scaffold, entraba
+    // un cuarto candidato (`codigoPrevio`). Ahora, sin scaffold, no queda nada
+    // que interponer entre el docente y el andamio del lenguaje.
     expect(
       resolverCascadaDeCodigo({
         snapshot: null,
         scaffoldTp: null,
         scaffoldEjercicio: null,
-        codigoPrevio: null,
         placeholder: PLACEHOLDER,
       }),
     ).toEqual({ codigo: PLACEHOLDER, origen: "placeholder" })
-  })
-})
-
-describe("resolverCascadaDeCodigo — LA regla: el arrastre no pisa al docente", () => {
-  it("el scaffold de la TP le gana al codigo del ejercicio anterior", () => {
-    const r = resolverCascadaDeCodigo({
-      snapshot: null,
-      scaffoldTp: SCAFFOLD_TP,
-      scaffoldEjercicio: null,
-      codigoPrevio: CODIGO_PREVIO,
-      placeholder: PLACEHOLDER,
-    })
-    expect(r.origen).toBe("scaffold-tp")
-    expect(r.codigo).not.toBe(CODIGO_PREVIO)
-  })
-
-  it("el scaffold del EJERCICIO tambien le gana al arrastre", () => {
-    // Esta es la mitad que caia con `else if (ordenEfectivo == null)`: la
-    // siembra ED-4 solo aplica a ejercicios (orden no nulo), asi que la rama
-    // revertida la ponia justo cuando el scaffold del ejercicio existe.
-    const r = resolverCascadaDeCodigo({
-      snapshot: null,
-      scaffoldTp: null,
-      scaffoldEjercicio: SCAFFOLD_EJ,
-      codigoPrevio: CODIGO_PREVIO,
-      placeholder: PLACEHOLDER,
-    })
-    expect(r.origen).toBe("scaffold-ejercicio")
-    expect(r.codigo).not.toBe(CODIGO_PREVIO)
-  })
-
-  it("con el MISMO texto en los dos, `origen` sigue diciendo quien gano", () => {
-    // El caso que hacia indistinguibles a los candidatos antes de que existiera
-    // `origen`: el alumno abrio el ejercicio anterior con el scaffold del
-    // docente y lo dejo sin tocar, asi que el arrastre guardado ES el scaffold.
-    // Mirando solo `codigo`, la cascada correcta y la invertida devuelven lo
-    // mismo. `origen` es lo unico que las separa.
-    const mismoTexto = SCAFFOLD_TP
-    const r = resolverCascadaDeCodigo({
-      snapshot: null,
-      scaffoldTp: mismoTexto,
-      scaffoldEjercicio: null,
-      codigoPrevio: mismoTexto,
-      placeholder: PLACEHOLDER,
-    })
-    expect(r.codigo).toBe(mismoTexto)
-    expect(r.origen).toBe("scaffold-tp")
   })
 })
 
@@ -146,7 +91,6 @@ describe("resolverCascadaDeCodigo — truthiness, no `!= null`", () => {
       snapshot: null,
       scaffoldTp: "",
       scaffoldEjercicio: "",
-      codigoPrevio: null,
       placeholder: PLACEHOLDER,
     })
     expect(r).toEqual({ codigo: PLACEHOLDER, origen: "placeholder" })
@@ -164,18 +108,32 @@ describe("resolverCascadaDeCodigo — truthiness, no `!= null`", () => {
   })
 })
 
+describe("resolverCascadaDeCodigo — ED-4 fuera: la cascada no consulta codigoPrevio en ninguna rama", () => {
+  it("un candidato `codigoPrevio` colado (dato heredado de una version vieja del tipo) no cambia el resultado", () => {
+    // `CandidatosCodigo` ya no declara el campo, asi que solo se puede colar
+    // via cast — exactamente lo que dejaria en memoria un build viejo del
+    // frontend sirviendo contra el codigo nuevo a mitad de un deploy.
+    const conCodigoPrevioColado = {
+      snapshot: null,
+      scaffoldTp: null,
+      scaffoldEjercicio: null,
+      placeholder: PLACEHOLDER,
+      codigoPrevio: "print('lo que deje en el ejercicio 1')\n",
+    } as unknown as CandidatosCodigo
+    expect(resolverCascadaDeCodigo(conCodigoPrevioColado)).toEqual({
+      codigo: PLACEHOLDER,
+      origen: "placeholder",
+    })
+  })
+})
+
 describe("esPlaceholder — la licencia para re-sembrar el buffer", () => {
   it("es true solo cuando gano el andamio", () => {
     // `EpisodePage` lo usa para saber si todavia puede reemplazar el buffer
     // cuando se resuelve el lenguaje del ejercicio. Si devolviera `true` sobre
     // codigo real, ese reemplazo BORRA trabajo del alumno.
     expect(esPlaceholder({ codigo: PLACEHOLDER, origen: "placeholder" })).toBe(true)
-    for (const origen of [
-      "snapshot",
-      "scaffold-tp",
-      "scaffold-ejercicio",
-      "codigo-previo",
-    ] as const) {
+    for (const origen of ["snapshot", "scaffold-tp", "scaffold-ejercicio"] as const) {
       expect(esPlaceholder({ codigo: "cualquier cosa", origen }), origen).toBe(false)
     }
   })

@@ -1,32 +1,34 @@
 /**
- * ED-4 — la siembra del codigo heredado NO puede emitir `edicion_codigo`.
+ * ED-4 afuera — codigo heredado de un ejercicio anterior de la MISMA TP, que
+ * pudo quedar en `sessionStorage` por una version anterior del frontend, ya
+ * NO siembra el editor.
  *
- * Equivalente, para el camino del arrastre entre ejercicios, del test
- * "el re-montaje NO emite un edicion_codigo fantasma" de
- * `CodeEditorRemonte.test.tsx`. Mismo invariante y mismo motivo: un evento de
- * edicion que el alumno no hizo es evidencia falsa en la cadena CTR, y peor que
- * perder codigo — la cadena es lo que sostiene la tesis.
+ * Antes de esta change, este archivo probaba lo contrario: que la siembra
+ * SI funcionaba y que lo hacia sin emitir un `edicion_codigo` fantasma. El
+ * dueno del producto decidio (2026-09-28) que un `inicial_codigo` vacio es
+ * una decision del docente ("que arranque vacio"), no un silencio a
+ * interpretar heredando codigo de otro ejercicio — ver
+ * `openspec/changes/eliminar-ed4-siembra-codigo-previo/proposal.md`.
  *
- * Como se prueba
- * --------------
- * Se monta `EpisodeView` de verdad (Monaco doblado por `_monacoMock.ts`, la
- * red por `setupFetchMock`) con `sessionStorage` ya sembrado como lo dejaria el
- * ejercicio 1, y se abre el ejercicio 2 de la MISMA TP. Despues de la
- * hidratacion:
+ * Lo que queda por proteger no es que la siembra funcione, sino lo contrario:
+ * que un residuo de `sessionStorage` bajo la clave vieja
+ * `web-student.codigo-previo.{tareaId}` — dejado por una pestana que no
+ * recargo desde el deploy de esta change — no vuelva a colarse en el editor
+ * ni deje un evento en la cadena CTR. `codigoPrevio.ts`, que era quien leia
+ * esa clave, ya no existe; este test asume solamente el contrato observable
+ * (que hay en el storage no importa).
  *
- *   1. el editor tiene que haberse creado con el codigo heredado en
- *      `editor.create({ value })` — o sea por `initialCode`, el mismo camino
- *      que `last_code_snapshot`;
- *   2. NINGUN POST a `.../events/edicion_codigo`, ni ahora ni pasado el
- *      debounce.
- *
- * El punto 1 no es decorado: sin el, el punto 2 pasaria solo porque no se
- * sembro nada. Los dos juntos son la propiedad. Si alguien "mejorara" la
- * siembra llamando `editor.setValue()` despues del mount, el doble de Monaco
- * dispara `onDidChangeModelContent` (igual que Monaco real) y el punto 2 cae.
+ * Por que se assertea tambien la ausencia de `edicion_codigo`
+ * -------------------------------------------------------
+ * Un evento de edicion que el alumno no hizo es evidencia falsa en la cadena
+ * CTR — el motivo original por el que este archivo existia. Sigue siendo
+ * relevante: si algun dia alguien reintrodujera una lectura de esta clave,
+ * este test cae en las dos puntas (el editor se siembra Y aparece el evento
+ * fantasma), no solo en una.
  */
 import { act, render, waitFor } from "@testing-library/react"
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
+import { LANGUAGE_PLACEHOLDER } from "../src/lib/api"
 import { EpisodeView } from "../src/pages/EpisodePage"
 import { setupFetchMock } from "./_mocks"
 import { editoresCreados, resetMonacoMock } from "./_monacoMock"
@@ -34,7 +36,8 @@ import { editoresCreados, resetMonacoMock } from "./_monacoMock"
 const TAREA_ID = "tp-e2-agenda"
 const EPISODIO_ID = "ep-ejercicio-2"
 
-/** Lo que el alumno dejo escrito en el ejercicio 1 de esta misma TP. */
+/** Lo que un alumno pudo haber dejado escrito en el ejercicio 1 de esta misma
+ * TP, con una version anterior del frontend (pre-ED-4-afuera). */
 const CODIGO_DEL_EJERCICIO_1 = "def saludar(nombre):\n    print('Hola', nombre)\n"
 
 /** Estado del episodio del ejercicio 2: sin snapshot propio (recien abierto),
@@ -68,9 +71,9 @@ const TAREA = {
   language: "python",
 }
 
-/** El ejercicio 2 del banco, TAMBIEN sin `inicial_codigo`: es la unica
- * situacion en la que la siembra ED-4 entra (es el ultimo eslabon de la
- * cascada; el scaffold del docente manda siempre). */
+/** El ejercicio 2 del banco, TAMBIEN sin `inicial_codigo`: es el caso en el
+ * que, con ED-4, la siembra hubiera entrado (el scaffold del docente manda
+ * siempre). Sin ED-4 este caso cae al placeholder. */
 const EJERCICIOS_TP = [
   {
     id: "tpe-2",
@@ -126,77 +129,51 @@ afterEach(() => {
   vi.unstubAllGlobals()
 })
 
-/** Deja `sessionStorage` como lo dejaria el cierre del ejercicio 1. */
-function sembrarAlmacen(code: string, language = "python") {
+/** Deja en `sessionStorage` la clave vieja de ED-4, como la hubiera dejado el
+ * cierre del ejercicio 1 con una version anterior del frontend. */
+function sembrarAlmacenResidual(code: string, language = "python") {
   window.sessionStorage.setItem(
     `web-student.codigo-previo.${TAREA_ID}`,
     JSON.stringify({ tareaId: TAREA_ID, ejercicioOrden: 1, language, code }),
   )
 }
 
-describe("ED-4 — siembra del codigo del ejercicio anterior", () => {
-  it("el codigo heredado entra por editor.create, no por un setValue posterior", async () => {
-    sembrarAlmacen(CODIGO_DEL_EJERCICIO_1)
+describe("ED-4 afuera — el codigo heredado ya NO siembra el editor", () => {
+  it("un ejercicio sin inicial_codigo, con codigo guardado de un ejercicio anterior de la misma TP, abre con el placeholder del lenguaje y no con lo heredado", async () => {
+    sembrarAlmacenResidual(CODIGO_DEL_EJERCICIO_1)
     montarEpisodio()
 
     await waitFor(() => expect(editoresCreados.length).toBeGreaterThanOrEqual(1))
-    // `__opciones.value` es lo que se le paso a `monaco.editor.create`. Si la
-    // siembra llegara despues del mount (un `setValue`, un effect sobre
-    // `initialCode`), este valor seria el andamio del lenguaje y el codigo
-    // heredado aparecería recien en `getValue()`.
-    await waitFor(() => expect(editoresCreados[0]?.__opciones.value).toBe(CODIGO_DEL_EJERCICIO_1))
+    // Afirmacion POSITIVA, no dos negativas: el titulo promete el placeholder,
+    // asi que el test compara CONTRA el placeholder. Es la linea 1 que se ve en
+    // el video del 2026-09-28 — atado al sintoma reportado y no a su negacion.
+    await waitFor(() => expect(editoresCreados[0]?.__opciones.value).not.toBe(""))
+    expect(editoresCreados[0]?.__opciones.value).toBe(LANGUAGE_PLACEHOLDER.python)
+    expect(editoresCreados[0]?.__opciones.value).not.toBe(CODIGO_DEL_EJERCICIO_1)
   })
 
-  it("la siembra NO emite un edicion_codigo fantasma", async () => {
-    // Este es el equivalente, para el camino del arrastre, de
-    // "el re-montaje NO emite un edicion_codigo fantasma".
-    //
-    // La espera es sobre el BUFFER (`getValue()`), no sobre `__opciones.value`:
-    // asi el test sigue siendo valido —y sigue pudiendo fallar— para cualquier
-    // implementacion que termine con el codigo heredado en el editor, entre por
-    // donde entre. Lo que se afirma es que llegar ahi no dejo rastro en la
-    // cadena CTR.
-    sembrarAlmacen(CODIGO_DEL_EJERCICIO_1)
+  it("el residuo en sessionStorage no deja rastro en la cadena CTR", async () => {
+    sembrarAlmacenResidual(CODIGO_DEL_EJERCICIO_1)
     montarEpisodio()
 
     await waitFor(() => expect(editoresCreados.length).toBeGreaterThanOrEqual(1))
-    await waitFor(() => expect(editoresCreados[0]?.getValue()).toBe(CODIGO_DEL_EJERCICIO_1))
+    await waitFor(() => expect(editoresCreados[0]?.getValue()).not.toBe(""))
 
     // Pasado el debounce del editor (1s) con margen.
     await act(async () => {
       await new Promise((r) => setTimeout(r, 2500))
     })
-    expect(rastrosDeEdicion(), "la siembra dejo un edicion_codigo en la cadena").toEqual([])
+    expect(rastrosDeEdicion(), "el residuo dejo un edicion_codigo en la cadena").toEqual([])
   })
 
-  it("sin nada guardado el editor abre en el andamio del lenguaje, sin emitir nada", async () => {
-    // Contraste de los dos anteriores: prueba que el `value` sembrado viene del
-    // arrastre y no de que el editor arranque con ese texto igual.
+  it("sin nada guardado el resultado es identico: el placeholder gana y no hay rastro", async () => {
+    // Contraste del par anterior: prueba que el comportamiento no depende de
+    // que exista o no la clave vieja — ya no hay ninguna rama que la lea.
     montarEpisodio()
 
     await waitFor(() => expect(editoresCreados.length).toBeGreaterThanOrEqual(1))
     await waitFor(() => expect(editoresCreados[0]?.__opciones.value).not.toBe(""))
     expect(editoresCreados[0]?.__opciones.value).not.toBe(CODIGO_DEL_EJERCICIO_1)
     expect(rastrosDeEdicion()).toEqual([])
-  })
-
-  it("el codigo guardado de OTRO lenguaje no siembra el editor", async () => {
-    // El ejercicio 2 es Python; lo guardado es Java. Sembrarlo abriria el
-    // archivo ya roto.
-    window.sessionStorage.setItem(
-      `web-student.codigo-previo.${TAREA_ID}`,
-      JSON.stringify({
-        tareaId: TAREA_ID,
-        ejercicioOrden: 1,
-        language: "java",
-        code: "class Main {}",
-      }),
-    )
-
-    montarEpisodio()
-
-    await waitFor(() => expect(editoresCreados.length).toBeGreaterThanOrEqual(1))
-    await waitFor(() => expect(editoresCreados[0]?.__opciones.value).not.toBe(""))
-    expect(editoresCreados[0]?.__opciones.value).not.toBe("class Main {}")
   })
 })
