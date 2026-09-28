@@ -32,11 +32,10 @@ from unittest.mock import AsyncMock, patch
 from uuid import uuid4
 
 import pytest
+from classifier_service.main import app
 from httpx import ASGITransport, AsyncClient
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
-
-from classifier_service.main import app
 
 TEST_DB_URL = "postgresql+asyncpg://classifier_user:classifier_pass@127.0.0.1:5432/classifier_db"
 

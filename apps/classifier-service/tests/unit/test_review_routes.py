@@ -80,7 +80,7 @@ async def test_post_review_201_cuando_el_service_resuelve(client: AsyncClient) -
     with (
         patch(
             "classifier_service.routes.review.tenant_session",
-            lambda tid: _fake_tenant_session(tid),
+            _fake_tenant_session,
         ),
         patch(
             "classifier_service.routes.review.submit_review",
@@ -108,7 +108,7 @@ async def test_post_review_404_cuando_no_hay_clasificacion_vigente(client: Async
     with (
         patch(
             "classifier_service.routes.review.tenant_session",
-            lambda tid: _fake_tenant_session(tid),
+            _fake_tenant_session,
         ),
         patch(
             "classifier_service.routes.review.submit_review",
@@ -135,7 +135,7 @@ async def test_post_review_409_cuando_el_service_reporta_conflicto_de_concurrenc
     with (
         patch(
             "classifier_service.routes.review.tenant_session",
-            lambda tid: _fake_tenant_session(tid),
+            _fake_tenant_session,
         ),
         patch(
             "classifier_service.routes.review.submit_review",
@@ -168,7 +168,7 @@ async def test_post_review_409_expone_retryable_false_cuando_gano_otro_docente(
     with (
         patch(
             "classifier_service.routes.review.tenant_session",
-            lambda tid: _fake_tenant_session(tid),
+            _fake_tenant_session,
         ),
         patch(
             "classifier_service.routes.review.submit_review",
@@ -200,7 +200,7 @@ async def test_post_review_409_expone_retryable_true_cuando_gano_la_maquina(
     with (
         patch(
             "classifier_service.routes.review.tenant_session",
-            lambda tid: _fake_tenant_session(tid),
+            _fake_tenant_session,
         ),
         patch(
             "classifier_service.routes.review.submit_review",
@@ -237,7 +237,7 @@ async def test_post_review_400_cuando_verdict_no_es_un_valor_conocido(client: As
     with (
         patch(
             "classifier_service.routes.review.tenant_session",
-            lambda tid: _fake_tenant_session(tid),
+            _fake_tenant_session,
         ),
         patch("classifier_service.routes.review.submit_review", submit_mock),
     ):
@@ -262,7 +262,7 @@ async def test_post_review_201_con_verdict_valido_autonomo(client: AsyncClient) 
     with (
         patch(
             "classifier_service.routes.review.tenant_session",
-            lambda tid: _fake_tenant_session(tid),
+            _fake_tenant_session,
         ),
         patch(
             "classifier_service.routes.review.submit_review",
@@ -300,7 +300,7 @@ async def test_reviewer_role_es_deterministico_con_dos_roles(client: AsyncClient
     with (
         patch(
             "classifier_service.routes.review.tenant_session",
-            lambda tid: _fake_tenant_session(tid),
+            _fake_tenant_session,
         ),
         patch("classifier_service.routes.review.submit_review", submit_mock),
     ):
@@ -338,7 +338,7 @@ async def test_get_review_queue_200_con_items(client: AsyncClient) -> None:
     with (
         patch(
             "classifier_service.routes.review.tenant_session",
-            lambda tid: _fake_tenant_session(tid),
+            _fake_tenant_session,
         ),
         patch(
             "classifier_service.routes.review.list_review_queue",

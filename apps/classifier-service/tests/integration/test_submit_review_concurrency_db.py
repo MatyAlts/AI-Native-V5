@@ -46,13 +46,12 @@ import socket
 from uuid import uuid4
 
 import pytest
-from sqlalchemy import delete, select, text
-from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
-
 from classifier_service.models import Classification, ClassificationReview
 from classifier_service.services.pipeline import persist_classification
 from classifier_service.services.review import ReviewConflictError, submit_review
 from classifier_service.services.tree import ClassificationResult
+from sqlalchemy import delete, select, text
+from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 
 TEST_DB_URL = "postgresql+asyncpg://classifier_user:classifier_pass@127.0.0.1:5432/classifier_db"
 

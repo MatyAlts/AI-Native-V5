@@ -39,11 +39,10 @@ import socket
 from uuid import uuid4
 
 import pytest
-from sqlalchemy import text
-
 from classifier_service.services.pipeline import persist_classification
 from classifier_service.services.review import list_review_queue, submit_review
 from classifier_service.services.tree import ClassificationResult
+from sqlalchemy import text
 
 
 def _postgres_available() -> bool:

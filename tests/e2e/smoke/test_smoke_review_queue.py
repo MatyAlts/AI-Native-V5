@@ -59,11 +59,11 @@ saltaba.
 
 from __future__ import annotations
 
-import asyncio
 import json
 import sys
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
+from typing import cast
 from uuid import UUID, uuid4
 
 import httpx
@@ -211,7 +211,7 @@ def _seed_episode_desenganchado(
             "tenant_id": str(tenant_id),
             "seq": seq,
             "event_type": spec["event_type"],
-            "ts": spec["ts"].isoformat().replace("+00:00", "Z"),
+            "ts": cast("datetime", spec["ts"]).isoformat().replace("+00:00", "Z"),
             "payload": spec["payload"],
             "prompt_system_hash": "smoke-prompt-hash",
             "prompt_system_version": "v1.0.1",
@@ -483,89 +483,32 @@ def test_episodio_deriva_a_revision_aparece_en_cola_docente_revisa_sale_con_hist
     finally:
         _cleanup_episode(episode_id)
 
-
-@pytest.mark.smoke
-@pytest.mark.asyncio
-async def test_dos_revisiones_concurrentes_dan_409_y_distinguen_retryable(
-    client: httpx.Client, api_base_url: str
-) -> None:
-    """Ronda 5 de este change: el 409 tiene que distinguir QUIÉN ganó.
-
-    Dos docentes revisando el MISMO episodio casi a la vez: una gana (201),
-    la otra pierde (409) — Postgres serializa el UPDATE optimista de
-    `submit_review` a nivel de fila, así que la carrera es real, no
-    simulada. Usa `httpx.AsyncClient` + `asyncio.gather` a propósito (no
-    threads, no `curl &` en bash): es el mecanismo que el propio audit de
-    este change (tasks.md, 5.9 ronda 3) confirmó que sí logra que las dos
-    requests compitan de verdad contra el gateway real — con threads o con
-    `curl` en background quedó registrado que NO llegaban a competir (cada
-    round-trip HTTP+red domina el timing y una termina antes de que la otra
-    arranque). El `detail.retryable` debe ser `False`: ganó OTRO DOCENTE (no
-    una reclasificación automática), así que insistir a ciegas pisaría una
-    decisión humana que el docente perdedor todavía no leyó.
-    """
-    tenant_id = uuid4()
-    comision_id = uuid4()
-    docente_a = uuid4()
-    docente_b = uuid4()
-    episode_id = uuid4()
-    headers_a = _headers("docente_admin", tenant_id=tenant_id, user_id=docente_a)
-    headers_b = _headers("docente", tenant_id=tenant_id, user_id=docente_b)
-
-    try:
-        _seed_episode_desenganchado(
-            tenant_id=tenant_id, comision_id=comision_id, episode_id=episode_id
-        )
-        classify_resp = client.post(f"/api/v1/classify_episode/{episode_id}", headers=headers_a)
-        assert classify_resp.status_code == 201, classify_resp.text[:300]
-
-        # Un solo `AsyncClient` COMPARTIDO para las dos requests (no uno por
-        # request): abrir la conexión TCP es él mismo un costo variable, y
-        # dos clientes nuevos armados justo antes del `gather` metían
-        # suficiente jitter como para que a veces una terminara su handshake
-        # bastante antes que la otra y la carrera dejara de ser real
-        # (verificado empíricamente: 1/13 corridas con un cliente por
-        # request, 0/8 con un cliente compartido pre-abierto).
-        async with httpx.AsyncClient(base_url=api_base_url, timeout=10.0) as ac:
-
-            async def _post_review(headers: dict, verdict: str) -> httpx.Response:
-                return await ac.post(
-                    f"/api/v1/classifications/{episode_id}/review",
-                    json={"verdict": verdict, "reason": f"smoke: revisión concurrente {verdict}"},
-                    headers=headers,
-                )
-
-            resp_a, resp_b = await asyncio.gather(
-                _post_review(headers_a, "apropiacion_reflexiva"),
-                _post_review(headers_b, "delegacion_pasiva"),
-            )
-
-        statuses = sorted([resp_a.status_code, resp_b.status_code])
-        assert statuses == [201, 409], (
-            "de dos revisiones concurrentes sobre el MISMO episodio, exactamente "
-            f"una debe ganar (201) y la otra perder (409). status_a={resp_a.status_code} "
-            f"body_a={resp_a.text[:200]} status_b={resp_b.status_code} body_b={resp_b.text[:200]}"
-        )
-        loser = resp_a if resp_a.status_code == 409 else resp_b
-        detail = loser.json()["detail"]
-        assert detail["retryable"] is False, (
-            "el 409 entre DOS DOCENTES debe traer retryable=False (ganó un humano, "
-            f"no el sistema) — detail={detail}"
-        )
-        assert "doc" in detail["message"].lower(), (
-            f"el mensaje del 409 humano-vs-humano debe mencionar al otro docente, "
-            f"no sonar como el mensaje de una reclasificación automática. detail={detail}"
-        )
-
-        # Sólo UNA fila de historial — el perdedor no debe haber escrito nada.
-        review_count = _pg_fetch_one(
-            "classifier_db",
-            "SELECT count(*) FROM classification_reviews WHERE episode_id = %(eid)s",
-            {"eid": str(episode_id)},
-        )
-        assert review_count[0] == 1, (
-            f"el 409 no debe dejar una fila de historial a medio escribir. "
-            f"count={review_count[0]}"
-        )
-    finally:
-        _cleanup_episode(episode_id)
+# ─────────────────────────────────────────────────────────────────────────────
+# `test_dos_revisiones_concurrentes_dan_409_y_distinguen_retryable` VIVIA ACA
+# y se saco el 2026-09-28, en la review del PR #96.
+#
+# Por que se saco: era NO DETERMINISTA por construccion, y encima con el modelo
+# equivocado del contrato. Cuando las dos requests corren en SERIE —que es lo
+# habitual— la segunda lee la fila que la primera acaba de escribir, la pisa
+# legitimamente, y las dos devuelven 201. Eso NO es un bug: es la concurrencia
+# optimista funcionando, y es para lo que existe la segunda FK del diseno.
+# El 409 solo aparece si B leyo ANTES de que A commiteara.
+#
+# El test asertaba `[409, 201]` y `review_count == 1`; en el camino secuencial
+# son `[201, 201]` y 2. El CI lo tumbo en la primera corrida, con razon.
+#
+# El docstring del propio test declaraba 1 fallo en 13 corridas con cliente por
+# request y 0 en 8 con cliente compartido. **0 de 8 no es prueba de nada**, y un
+# test no determinista en el smoke convierte en moneda al aire la red que
+# bloquea el merge de TODOS los demas PRs.
+#
+# La garantia es real y tiene casa determinista, donde el row-lock de Postgres
+# hace el trabajo en vez del azar:
+#   apps/classifier-service/tests/integration/test_submit_review_concurrency_db.py
+#     ::test_dos_revisiones_concurrentes_no_pierden_la_primera
+#     ::test_segunda_revision_tras_commit_de_la_primera_no_pisa
+#
+# Si alguien quiere volver a cubrir esto desde el smoke, el camino NO es
+# reintentar hasta que pinte: es forzar el interleaving, y eso no se hace por
+# HTTP contra un stack real.
+# ─────────────────────────────────────────────────────────────────────────────

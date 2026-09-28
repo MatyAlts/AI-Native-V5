@@ -395,9 +395,7 @@ const JUEZ_REVISION_MSG: Record<string, string> = {
 // llegar como booleano (clasificaciones persistidas antes de esta change) o
 // como el string nuevo — el frontend lee las dos formas sin distinguirlas
 // para el docente, que solo necesita ver el valor final.
-function estadoDimension(
-  valor: RegimenLLMValorDimension,
-): "presente" | "ausente" | "no_evaluable" {
+function estadoDimension(valor: RegimenLLMValorDimension): "presente" | "ausente" | "no_evaluable" {
   if (typeof valor === "boolean") return valor ? "presente" : "ausente"
   return valor
 }
@@ -619,7 +617,8 @@ function DocenteAppropriationVerdict({
   // reflexiva"). Colores/severidad siguen mapeando al eje canonico.
   const subgrupoKey = classification.subgrupo?.key ?? null
   const explicacion = explicarEstadoDocente(classification, eventosCognitivos, subgrupoKey)
-  const display = APPROPRIATION_DISPLAY[classification.appropriation] ?? APPROPRIATION_DISPLAY_FALLBACK
+  const display =
+    APPROPRIATION_DISPLAY[classification.appropriation] ?? APPROPRIATION_DISPLAY_FALLBACK
 
   // Episodio sin actividad: chip neutro en vez del veredicto de apropiación
   // (no tiene sentido decir "superficial" si el alumno no trabajó).

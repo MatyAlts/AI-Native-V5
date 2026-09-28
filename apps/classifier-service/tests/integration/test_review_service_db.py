@@ -31,14 +31,13 @@ import socket
 from uuid import uuid4
 
 import pytest
-from sqlalchemy import text
-
 from classifier_service.models import Classification, ClassificationReview
 from classifier_service.services.review import (
     ReviewTargetNotFoundError,
     list_review_queue,
     submit_review,
 )
+from sqlalchemy import text
 
 
 def _postgres_available() -> bool:

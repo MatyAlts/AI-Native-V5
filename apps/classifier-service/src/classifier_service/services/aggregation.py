@@ -55,7 +55,10 @@ class AggregatedStats:
     timeseries: list[DailyCounts]
 
 
-async def aggregate_by_comision(
+async def aggregate_by_comision(  # noqa: PLR0912 — el if/elif recorre los CINCO valores de
+    # `appropriation` (B2b sumó `sin_clasificar`) y cada rama es una linea. Colapsarlo en un
+    # dict costaria la advertencia del `else`, que es justo lo que este bloque vino a arreglar:
+    # el valor desconocido tiene que SALTAR, no caer en un default silencioso.
     session: AsyncSession,
     comision_id: UUID,
     period_days: int = 30,

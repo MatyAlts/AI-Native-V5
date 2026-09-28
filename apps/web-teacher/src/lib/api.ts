@@ -1350,7 +1350,12 @@ export interface RegimenLLMRaw {
   justificacion_global: string
 }
 export interface RegimenLLM {
-  estado: "ok" | "inconsistente" | "baja_confianza" | "error_parseo" | "abstencion_traza_insuficiente"
+  estado:
+    | "ok"
+    | "inconsistente"
+    | "baja_confianza"
+    | "error_parseo"
+    | "abstencion_traza_insuficiente"
   regimen: "REFLEXIVA" | "SUPERFICIAL" | null
   confianza: number | null
   raw: RegimenLLMRaw | null

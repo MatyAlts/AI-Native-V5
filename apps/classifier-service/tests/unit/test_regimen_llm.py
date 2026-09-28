@@ -746,7 +746,7 @@ async def test_fallback_no_rompe_el_cierre_si_el_gateway_falla(monkeypatch) -> N
 
 
 # ── Contrato de salida del juez: RESPONSE_JSON_SCHEMA (B2a, D4 corregida) ──
-from classifier_service.services.regimen_llm import RESPONSE_JSON_SCHEMA  # noqa: E402
+from classifier_service.services.regimen_llm import RESPONSE_JSON_SCHEMA
 
 _TRIVALUADO = {"presente", "ausente", "no_evaluable"}
 

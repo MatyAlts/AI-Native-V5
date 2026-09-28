@@ -18,9 +18,10 @@ from __future__ import annotations
 import hashlib
 from dataclasses import dataclass
 from datetime import datetime
+from typing import Any, cast
 from uuid import UUID
 
-from sqlalchemy import select, update
+from sqlalchemy import CursorResult, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from classifier_service.models import Classification, ClassificationReview, utc_now_f
@@ -246,7 +247,16 @@ async def submit_review(
         )
         .values(is_current=False)
     )
-    if update_result.rowcount == 0:
+    # `session.execute()` se tipa como `Result[Any]`, que no declara `rowcount` — pero un
+    # UPDATE devuelve siempre un `CursorResult`, que sí lo tiene. El cast es para el type
+    # checker, no para el runtime.
+    #
+    # Y conviene que quede dicho: `rowcount` es el PIVOTE de toda la garantía de concurrencia
+    # optimista de esta función. Que justo esa propiedad sea la que el tipado no puede
+    # verificar es incómodo, y por eso está cubierta por test —
+    # `test_segunda_revision_tras_commit_de_la_primera_no_pisa`, que falla con un lost update
+    # SILENCIOSO si alguien saca el `Classification.id == previous.id` del WHERE de arriba.
+    if cast("CursorResult[Any]", update_result).rowcount == 0:
         # ¿Quién ganó la carrera? Releemos la fila vigente actual — si
         # tiene `features['revision_humana']`, ganó OTRO DOCENTE; si no,
         # ganó una reclasificación AUTOMÁTICA (`persist_classification`).

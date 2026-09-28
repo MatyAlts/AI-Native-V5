@@ -30,11 +30,10 @@ import socket
 from uuid import uuid4
 
 import pytest
-from sqlalchemy import text
-
 from classifier_service.models import Classification
 from classifier_service.routes.classify_ep import _find_current_classification
 from classifier_service.services.review import submit_review
+from sqlalchemy import text
 
 
 def _postgres_available() -> bool:
