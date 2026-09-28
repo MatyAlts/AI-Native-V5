@@ -49,7 +49,7 @@
 #   - Revision coautoral con Ana Garis: OK (2026-09-28). Leyo los cuatro textos
 #     nuevos (C1 reescrito, la seccion del codigo del alumno, y los bullets C3 y
 #     C4) y los aprobo sin cambios. El gate que este bloque declaraba bloqueante
-#     queda cerrado; no aplica a v1.4.0 ni v1.5.0, que siguen pendientes.
+#     queda cerrado. En la misma revision cerro tambien los de v1.4.0 y v1.5.0.
 #
 # Activacion tutor v1.3.0 (epic java-authoring-experience, 2026-07-28):
 #   - Delta respecto de v1.2.0: DOS ejemplos que nombraban Python, generalizados.
@@ -88,8 +88,10 @@
 #     gobierna lo que el estudiante todavia no penso, la confirmacion lo que ya
 #     penso bien. Dominios disjuntos, declarado en la propia seccion.
 #   - NO afecta classifier_config_hash: es prompt de runtime, no etiquetador.
-#   - PENDIENTE ANTES DEL DEPLOY: revision coautoral con Ana Garis. Esta version
-#     le agrega un movimiento al metodo — la revision es condicion, no tramite.
+#   - Revision coautoral con Ana Garis: OK (2026-09-28). Esta version le agrega
+#     un movimiento al metodo, asi que la revision era condicion y no tramite.
+#     Quedo pendiente desde el 2026-09-21 y se cerro junto con la de v1.6.0.
+#     Es la version que estaba corriendo en produccion mientras tanto.
 #
 # Activacion tutor v1.4.0 (2026-09-10, reporte de un docente del piloto):
 #   - Delta unico respecto de v1.3.0: la seccion "Lo que SI se responde directo
@@ -101,8 +103,9 @@
 #     que un alumno preguntando como se escribe un for podia recibir "noto que
 #     estas tratando de saltearte el proceso". Los alumnos dejaron de preguntar.
 #   - NO afecta classifier_config_hash: es prompt de runtime, no etiquetador.
-#   - PENDIENTE ANTES DEL DEPLOY: revision coautoral con Ana Garis. Esta version
-#     cambia el metodo, no solo ejemplos — la revision es condicion, no tramite.
+#   - Revision coautoral con Ana Garis: OK (2026-09-28). Esta version cambia el
+#     metodo y no solo ejemplos, asi que la revision era condicion y no tramite.
+#     Quedo pendiente desde el 2026-09-10 y se cerro junto con la de v1.6.0.
 active:
   default:
     tutor: v1.6.0
