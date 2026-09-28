@@ -99,7 +99,6 @@ class TestC1ElTutorSiConoceElEnunciado:
             "falso sobre el enunciado, no reescribe el resto de la seccion"
         )
 
-
     def test_afirma_que_el_tutor_si_recibe_el_enunciado(self) -> None:
         """Ancla POSITIVA de C1 — sin esto, borrar la seccion corregida entera
         deja los tests en verde: la negativa de 1.2 queda satisfecha por la
@@ -129,7 +128,6 @@ class TestC1ElTutorSiConoceElEnunciado:
             "falta la conducta para el camino degradado: sin enunciado, "
             "preguntar por el problema — nunca pedir un pegado"
         )
-
 
     def test_prohibe_mandarlo_a_un_entorno_que_no_existe(self) -> None:
         """C4 — reportado por el tester el 2026-09-28: el tutor sugirio "probar

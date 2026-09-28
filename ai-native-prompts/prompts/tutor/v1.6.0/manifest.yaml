@@ -5,7 +5,7 @@ version: v1.6.0
 parent_version: v1.5.0
 bump_kind: minor_contexto_real
 files:
-  system.md: cac4f708cbe3be982632b7c78759f019f4b0ef583db41b21fafb3b5486b4d7bf
+  system.md: d2b679f6ba1c4ae8af5ba7f8ff73e551a35a0297ebeb8efa14ba578111e5f208
 notas:
   - Origen - verificado contra el codigo el 2026-09-28. El prompt v1.5.0 le decia al modelo que no conoce el enunciado del TP, cuando tutor_core.py (open_episode, bloque 3) SI se lo inyecta. Medido en produccion el mismo dia - el tutor pide tres veces que el alumno pegue su codigo, en una plataforma que bloquea copiar y pegar.
   - Delta - tres correcciones a lo que el prompt dice que el tutor conoce, ninguna al metodo socratico, el tono, el banco de preguntas N1-N4 ni las misconceptions.
