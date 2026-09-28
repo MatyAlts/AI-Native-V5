@@ -21,4 +21,4 @@ notas:
   - Pendiente separado - postprocess_socratic.py define la violacion no_question_in_response (peso 0,3), que codifica el supuesto que esta version corrige - "una respuesta sin pregunta es incumplimiento del metodo". Hoy esta OFF y no afecta runtime, pero prenderlo sin reponderar ese patron castigaria exactamente este fix. Condicion previa a la activacion de la Fase B (ADR-044 / ADR-046).
   - No afecta classifier_config_hash - es prompt de runtime, no etiquetador (ADR-020).
   - v1.4.0 y anteriores siguen en disco para reproducibilidad historica del piloto.
-  - PENDIENTE ANTES DEL DEPLOY - revision coautoral con Ana Garis. Esta version cambia el metodo (le agrega el cierre), no solo ejemplos, asi que la revision es condicion y no formalidad.
+  - Revision coautoral con Ana Garis - OK (2026-09-28). Esta version cambia el metodo (le agrega el cierre), no solo ejemplos, asi que la revision era condicion y no formalidad. Quedo pendiente desde el 2026-09-21 y se cerro junto con la de v1.6.0. Es la version que estuvo corriendo en produccion mientras tanto.

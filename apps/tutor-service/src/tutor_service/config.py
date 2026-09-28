@@ -92,8 +92,15 @@ class Settings(BaseSettings):
     # confirma en la primera oracion. Los cuatro movimientos son todos de
     # apertura y ninguno cerraba, asi que el que ya habia razonado bien recibia
     # otra pregunta — la critica mas repetida del piloto.
+    # v1.6.0 (2026-09-28) corrige tres afirmaciones falsas sobre el contexto
+    # real que el tutor recibe: SI conoce el enunciado (best-effort), SI ve el
+    # codigo del alumno numerado por linea (nunca hay que pedirselo pegado —
+    # la plataforma bloquea copiar y pegar), y no debe derivar a Google,
+    # ChatGPT ni Stack Overflow (comportamiento emergente medido en
+    # produccion). El metodo socratico, los principios y las restricciones
+    # quedan intactos byte a byte.
     default_prompt_name: str = "tutor"
-    default_prompt_version: str = "v1.5.0"
+    default_prompt_version: str = "v1.6.0"
     # Cambiado 2026-05-19: default a gpt-4o-mini para usar copilot-api proxy
     # (Mistral free tier saturado, ver SESSION-LOG). Restaurar a
     # mistral-small-latest si se vuelve a usar la BYOK key de Mistral.
