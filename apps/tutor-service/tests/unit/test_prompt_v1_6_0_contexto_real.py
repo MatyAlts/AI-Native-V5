@@ -131,6 +131,22 @@ class TestC1ElTutorSiConoceElEnunciado:
         )
 
 
+    def test_prohibe_mandarlo_a_un_entorno_que_no_existe(self) -> None:
+        """C4 — reportado por el tester el 2026-09-28: el tutor sugirio "probar
+        en la consola de Python". La plataforma no tiene consola interactiva —
+        son tres paneles (consigna, editor, tutor) y ejecucion con Pyodide.
+        Verificado en apps/web-student/src/pages/EpisodePage.tsx (aria-labels)."""
+        texto = _v1_6_0_prompt().lower()
+        assert "consola" in texto and "no existe" in texto, (
+            "falta la prohibicion de mandar al estudiante a una consola "
+            "interactiva que la plataforma no tiene"
+        )
+        assert "agregue un print" in texto or "ejecutar su propio codigo" in texto, (
+            "la prohibicion tiene que ofrecer la alternativa real: el "
+            "estudiante SI puede ejecutar su codigo y ver la salida"
+        )
+
+
 class TestElPromptSeAutodeclaraConSuVersion:
     def test_el_titulo_declara_v1_6_0_y_no_la_version_anterior(self) -> None:
         """BUG-1 de QA (2026-09-28): v1.6.0/system.md:1 decia "(v1.5.0)". Es el

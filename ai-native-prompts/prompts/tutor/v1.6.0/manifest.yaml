@@ -5,12 +5,13 @@ version: v1.6.0
 parent_version: v1.5.0
 bump_kind: minor_contexto_real
 files:
-  system.md: 421f902705e64150ceabcc5691ed766a34b01726d1fe72eb56d03d4e1db9fe58
+  system.md: cac4f708cbe3be982632b7c78759f019f4b0ef583db41b21fafb3b5486b4d7bf
 notas:
   - Origen - verificado contra el codigo el 2026-09-28. El prompt v1.5.0 le decia al modelo que no conoce el enunciado del TP, cuando tutor_core.py (open_episode, bloque 3) SI se lo inyecta. Medido en produccion el mismo dia - el tutor pide tres veces que el alumno pegue su codigo, en una plataforma que bloquea copiar y pegar.
   - Delta - tres correcciones a lo que el prompt dice que el tutor conoce, ninguna al metodo socratico, el tono, el banco de preguntas N1-N4 ni las misconceptions.
   - C1 - seccion "Contexto del TP" corregida - el tutor SI recibe el enunciado al abrir el episodio (best-effort, degrada sin el si el academic-service falla), y segun el ejercicio tambien codigo inicial, rubrica, casos de prueba y el banco socratico con sus misconceptions. Se conserva intacta "NO supongas requisitos que el enunciado no establecio".
   - C2 (seccion nueva) - "El codigo que el estudiante esta escribiendo". El codigo llega numerado por linea en cada turno (tutor_core.py:825-828, gateado por state.current_code); el tutor debe citar lineas concretas, nunca pedir que se lo peguen, e invitar a escribir en el editor cuando todavia no hay codigo.
+  - C4 - segundo bullet en "Lo que NO hace el tutor" - mandarlo a un entorno que no tiene. Reportado por el tester el 2026-09-28 - el tutor sugirio "probar en la consola de Python", y la plataforma no tiene consola interactiva: son tres paneles (consigna, editor, tutor) y ejecucion con Pyodide. Misma familia que C3 - derivar afuera - pero peor, porque el lugar al que lo manda no existe. Verificado contra apps/web-student/src/pages/EpisodePage.tsx (aria-labels de los tres paneles) y contra utils/helpContent.tsx.
   - C3 - bullet nuevo en "Lo que NO hace el tutor" - prohibicion de derivar a Google, ChatGPT o Stack Overflow. Comportamiento emergente medido en produccion (el prompt no los mencionaba en ninguna linea); un comportamiento emergente solo se corrige instruyendo explicitamente en contra.
   - Metodo INTACTO - ironia, mayeutica, elenchos y aporia, los 9 principios, "Cerrar el lazo" y la seccion de notacion no cambian una letra respecto de v1.5.0; la superficie tocada es "Contexto del TP" (reescrita), la seccion nueva sobre el codigo del alumno, y un bullet nuevo en "Lo que NO hace el tutor".
   - Verificado por tests - apps/tutor-service/tests/unit/test_prompt_v1_6_0_contexto_real.py ancla las tres correcciones por frase (no por numero de linea) y guarda que "NO supongas requisitos que el enunciado no establecio" sigue presente.
