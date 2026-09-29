@@ -116,8 +116,12 @@ function appropriationDot(label: string | null): string {
   if (label === "apropiacion_reflexiva") return "var(--color-appropriation-reflexiva)"
   if (label === "apropiacion_superficial") return "var(--color-appropriation-superficial)"
   if (label === "delegacion_pasiva") return "var(--color-appropriation-delegacion)"
-  // Eje ortogonal `autonomo`: gris (token neutral). No esta en el continuo ordinal.
-  if (label === "autonomo") return "var(--color-neutral)"
+  // Eje ortogonal (ADR-057): fuera del continuo ordinal, pero ES un regimen
+  // observado — y el mas frecuente del corpus. Hasta el 2026-09-29 usaba el
+  // gris neutro, que lo volvia indistinguible de "no hay dato".
+  if (label === "autonomo") return "var(--color-appropriation-autonomo)"
+  // La ausencia de clasificacion (B2b, ADR-062). Ese SI es el gris.
+  if (label === "sin_clasificar") return "var(--color-appropriation-sin-clasificar)"
   return "var(--color-level-meta)"
 }
 
@@ -553,7 +557,21 @@ function DocenteTemplateTable({
             className="inline-block w-2 h-2 rounded-full"
             style={{ backgroundColor: colors[2] }}
           />
-          Autonomo
+          Reflexiva
+        </span>
+        <span className="flex items-center gap-1.5">
+          <span
+            className="inline-block w-2 h-2 rounded-full"
+            style={{ backgroundColor: "var(--color-appropriation-autonomo)" }}
+          />
+          Autonomo (sin tutor)
+        </span>
+        <span className="flex items-center gap-1.5">
+          <span
+            className="inline-block w-2 h-2 rounded-full"
+            style={{ backgroundColor: "var(--color-appropriation-sin-clasificar)" }}
+          />
+          Sin clasificar
         </span>
         <span className="flex items-center gap-1.5">
           <span
@@ -729,7 +747,21 @@ function DocenteUnidadTable({
             className="inline-block w-2 h-2 rounded-full"
             style={{ backgroundColor: colors[2] }}
           />
-          Autonomo
+          Reflexiva
+        </span>
+        <span className="flex items-center gap-1.5">
+          <span
+            className="inline-block w-2 h-2 rounded-full"
+            style={{ backgroundColor: "var(--color-appropriation-autonomo)" }}
+          />
+          Autonomo (sin tutor)
+        </span>
+        <span className="flex items-center gap-1.5">
+          <span
+            className="inline-block w-2 h-2 rounded-full"
+            style={{ backgroundColor: "var(--color-appropriation-sin-clasificar)" }}
+          />
+          Sin clasificar
         </span>
         <span className="flex items-center gap-1.5">
           <span

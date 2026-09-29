@@ -77,10 +77,24 @@
   --color-level-n4: oklch(0.55 0.18 50); /* Terracota - apropiación */
   --color-level-meta: oklch(0.55 0.02 250); /* Slate - apertura, cierre, sistema */
 
-  /* === Apropiacion (resultado classifier, ADR-022) === */
+  /* === Apropiacion (resultado classifier, ADR-022) ===
+     Los CINCO valores de `Classification.appropriation`. Hasta el 2026-09-29
+     habia tres: `autonomo` pedia prestado `--color-neutral` y `sin_clasificar`
+     no existia, asi que caia al fallback. Eso hacia dos cosas mal a la vez —
+     `autonomo` es el 62% del corpus y se veia como "sin dato", y lo que
+     realmente es "sin dato" no se distinguia de el.
+     La regla: los cuatro regimenes observados llevan color propio; la ausencia
+     de clasificacion lleva gris apagado, para que RETROCEDA en vez de competir. */
   --color-appropriation-reflexiva: oklch(0.65 0.18 145);
   --color-appropriation-superficial: oklch(0.78 0.16 75);
   --color-appropriation-delegacion: oklch(0.61 0.2 27);
+  /* Eje ortogonal (ADR-057): fuera del continuo, pero ES un regimen observado.
+     Hue 255 separado del brand (245, mucho mas oscuro: 0.43 vs 0.58). */
+  --color-appropriation-autonomo: oklch(0.58 0.16 255);
+  /* NO es un regimen: es la ausencia de clasificacion (B2b, ADR-062). Croma
+     casi cero y lightness alta — tiene que leerse como hueco, no como quinta
+     categoria. */
+  --color-appropriation-sin-clasificar: oklch(0.72 0.02 250);
 
   /* === Adversarial (ADR-019, RN-129) ===
      Categorias de guardrail. Tokens consumidos por cualquier frontend que
