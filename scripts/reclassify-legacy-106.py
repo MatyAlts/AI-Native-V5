@@ -188,9 +188,7 @@ async def reclassify_one(
         return False, f"HTTP error: {e}"
 
 
-async def main(
-    dry_run: bool, service_url: str, db_url: str, solo_sumidero: bool = False
-) -> int:
+async def main(dry_run: bool, service_url: str, db_url: str, solo_sumidero: bool = False) -> int:
     # 1. Calcular el hash vigente local (debe coincidir con el que computa
     # el classifier-service endpoint — ambos usan la misma funcion pura).
     # BUGFIX: antes hardcodeaba "v1.0.0" (desactualizado) → el hash "vigente" no
@@ -203,7 +201,9 @@ async def main(
     print(f"DB: {_redact(db_url)}")
     print(f"Service URL: {service_url}")
     print(f"Mode: {'DRY-RUN (no persist)' if dry_run else 'REAL (persist via HTTP)'}")
-    print(f"Filtro: {'SOLO SUMIDERO (indeterminado mal etiquetado)' if solo_sumidero else 'TODO hash legacy'}")
+    print(
+        f"Filtro: {'SOLO SUMIDERO (indeterminado mal etiquetado)' if solo_sumidero else 'TODO hash legacy'}"
+    )
     print()
 
     # 2. Listar legacy
