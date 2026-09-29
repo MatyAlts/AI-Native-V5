@@ -796,3 +796,63 @@ def test_schema_las_cuatro_dimensiones_son_enum_trivaluado() -> None:
         assert presente_schema["type"] == "string"
         assert set(presente_schema["enum"]) == _TRIVALUADO
     assert "oraculo" not in props["autonomia"]["properties"]
+
+
+# ── El esquema de salida se MANDA, no solo se documenta ───────────────────
+#
+# Encontrado en produccion el 2026-09-29: tres episodios en la cola de revision
+# con `error_parseo` por `justificacion_global Field required`. El modelo
+# devolvia las cuatro dimensiones, el regimen y la confianza, y omitia ese
+# campo — porque nadie se lo exigia.
+#
+# RESPONSE_JSON_SCHEMA lo declara `required` con `minLength: 1` desde siempre.
+# Lo que fallaba es que no viajaba: se mandaba `{"type": "json_object"}`, JSON a
+# secas. El comentario que lo justificaba decia que el ai-gateway no aceptaba el
+# json_schema anidado, y eso dejo de ser cierto el 2026-09-03 con el PR #91
+# (`09d3e03`), que cambio `response_format` a `dict[str, Any]`. El comentario
+# quedo viejo y el codigo se quedo con el.
+#
+# Tercera vez en este repo que un comentario desactualizado sobrevive a lo que
+# describia. Por eso el test afirma el VALOR que viaja, no la intencion.
+@pytest.mark.asyncio
+async def test_manda_el_json_schema_y_no_json_object_pelado() -> None:
+    from classifier_service.services.regimen_llm import RESPONSE_JSON_SCHEMA
+
+    visto: dict = {}
+
+    async def _capturar(**kwargs):
+        visto.update(kwargs)
+        return SimpleNamespace(
+            content=json.dumps(
+                _raw(True, True, True, False, "REFLEXIVA", conf=0.95).model_dump(),
+                ensure_ascii=False,
+            ),
+            output_tokens=50,
+        )
+
+    await clasificar_regimen_llm(
+        events=_EVENTS,
+        enunciado="x",
+        episode_id="e-schema",
+        complete=_capturar,
+        model="gpt-4o",
+        tenant_id=TENANT,
+    )
+
+    assert visto.get("response_format") == RESPONSE_JSON_SCHEMA, (
+        "el juez manda JSON a secas en vez del esquema que exige "
+        "justificacion_global — es lo que produjo los error_parseo del 29/09"
+    )
+
+
+def test_el_esquema_exige_justificacion_global() -> None:
+    """El campo que faltaba en produccion tiene que ser obligatorio y no vacio.
+
+    Sin esto, el test de arriba pasaria igual con un esquema que no exija nada:
+    afirmaria que mandamos *un* esquema, no que mandamos el que sirve.
+    """
+    from classifier_service.services.regimen_llm import RESPONSE_JSON_SCHEMA
+
+    esquema = RESPONSE_JSON_SCHEMA["json_schema"]["schema"]
+    assert "justificacion_global" in esquema["required"]
+    assert esquema["properties"]["justificacion_global"]["minLength"] == 1

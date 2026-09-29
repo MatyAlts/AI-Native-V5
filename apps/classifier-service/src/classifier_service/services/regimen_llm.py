@@ -663,11 +663,19 @@ async def clasificar_regimen_llm(
             materia_id=materia_id,
             temperature=0.0,  # determinismo (§4.3)
             max_tokens=max_tokens,
-            # El ai-gateway acepta response_format como dict[str,str] (JSON mode
-            # simple), NO el json_schema anidado. El esquema lo garantizan el
-            # prompt + la validación de RegimenLLMRaw aguas abajo (RESPONSE_JSON_SCHEMA
-            # queda como documentación del contrato de salida).
-            response_format={"type": "json_object"},
+            # El esquema VIAJA: el modelo recibe el contrato de salida, no solo
+            # el prompt. Hasta el 2026-09-29 se mandaba `{"type":"json_object"}`
+            # —JSON a secas— porque el ai-gateway declaraba `response_format`
+            # como `dict[str, str]` y rechazaba el objeto anidado. Eso dejo de
+            # ser cierto el 2026-09-03 con el PR #91 (`09d3e03`), que lo paso a
+            # `dict[str, Any]`; el comentario que lo justificaba quedo viejo y
+            # el codigo se quedo con el. Costo: tres episodios en la cola de
+            # revision con `error_parseo` por `justificacion_global Field
+            # required` — el modelo devolvia todo lo demas y omitia ese campo,
+            # porque nadie se lo exigia. La validacion de RegimenLLMRaw aguas
+            # abajo sigue siendo la red: el esquema reduce el error, no lo
+            # reemplaza.
+            response_format=RESPONSE_JSON_SCHEMA,
         )
         try:
             data = json.loads(_limpiar_json(res.content))

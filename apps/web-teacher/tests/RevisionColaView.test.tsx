@@ -89,6 +89,27 @@ const ITEM_ESTADO_DESCONOCIDO = {
   estado_juez: "un_estado_inventado_que_no_existe_en_el_backend",
 }
 
+/**
+ * El juez NO llego a correr: `classify_ep.py:199` escribe el motivo y hace
+ * `return` ANTES de setear `features["regimen_llm"]`, asi que NO hay
+ * `estado_juez`. Distinto de ITEM_ESTADO_DESCONOCIDO, que SI tiene uno — solo
+ * que el frontend no lo conoce.
+ *
+ * Medido en produccion el 2026-09-29: 18 de 23 items de la cola eran esto,
+ * todos con `502 Bad Gateway` del ai-gateway. Caian en el grupo defensivo, que
+ * le decia al docente que era una desincronizacion de frontend. Era falso.
+ */
+const EP_SIN_JUEZ = "6f603f3b-d0eb-4961-9341-58317dfa4177"
+const ITEM_SIN_JUEZ = {
+  episode_id: EP_SIN_JUEZ,
+  comision_id: COMISION_ID,
+  classification_id: 6,
+  appropriation: "apropiacion_superficial",
+  needs_review_reason:
+    "juez_eje_fino_error_gateway: Server error '502 Bad Gateway' for url 'http://ai-gateway:8011/api/v1/complete'",
+  estado_juez: null,
+}
+
 afterEach(() => {
   vi.unstubAllGlobals()
 })
@@ -342,4 +363,58 @@ describe("RevisionColaView", () => {
 
     expect(within(fila).getByText(/reemplaza la etiqueta oficial/i)).toBeInTheDocument()
   })
+
+  test("el juez que no llego a correr es su propio grupo, no una desincronizacion", async () => {
+    setupFetchMock({
+      "/api/v1/classifications/review-queue": () =>
+        queueWith([ITEM_SIN_JUEZ, ITEM_ESTADO_DESCONOCIDO]),
+    })
+    renderWithRouter(<RevisionColaView comisionId={undefined} getToken={fakeGetToken} />)
+
+    await waitFor(() => {
+      expect(screen.getByText(EP_SIN_JUEZ)).toBeInTheDocument()
+    })
+
+    // Son DOS grupos distintos y dicen cosas distintas.
+    expect(screen.getByText(/no llegó a correr|no llego a correr/i)).toBeInTheDocument()
+    expect(screen.getByText(/falla de infraestructura/i)).toBeInTheDocument()
+    expect(screen.getByText(/estados que esta pantalla no conoce/i)).toBeInTheDocument()
+
+    // El de infraestructura NO manda a reportar un bug de frontend.
+    const grupoSinJuez = document.querySelector('[data-testid="review-group-__sin_juez__"]')
+    expect(grupoSinJuez).not.toBeNull()
+    expect(grupoSinJuez?.textContent ?? "").not.toMatch(/desincronizaci/i)
+  })
+
+  test("sin veredicto no se puede decidir: el boton esta apagado", async () => {
+    setupFetchMock({
+      "/api/v1/classifications/review-queue": () => queueWith([ITEM_SIN_JUEZ]),
+    })
+    renderWithRouter(<RevisionColaView comisionId={undefined} getToken={fakeGetToken} />)
+
+    await waitFor(() => {
+      expect(screen.getByText(EP_SIN_JUEZ)).toBeInTheDocument()
+    })
+
+    // Es lo que evita que un docente firme una etiqueta sobre un episodio que
+    // nadie juzgo — y la pantalla le avisa que esa etiqueta se cita en la tesis.
+    const boton = screen.getByRole("button", { name: /sin veredicto/i })
+    expect(boton).toBeDisabled()
+    expect(screen.queryByText(/reemplaza la etiqueta oficial/i)).not.toBeInTheDocument()
+  })
+
+  test("el estado desconocido SI se puede decidir: ahi hubo veredicto", async () => {
+    setupFetchMock({
+      "/api/v1/classifications/review-queue": () => queueWith([ITEM_ESTADO_DESCONOCIDO]),
+    })
+    renderWithRouter(<RevisionColaView comisionId={undefined} getToken={fakeGetToken} />)
+
+    await waitFor(() => {
+      expect(screen.getByText(EP_ESTADO_DESCONOCIDO)).toBeInTheDocument()
+    })
+
+    // Guardian del alcance: apagar el boton de mas seria peor que el bug.
+    expect(screen.getByRole("button", { name: /decidir/i })).toBeEnabled()
+  })
+
 })

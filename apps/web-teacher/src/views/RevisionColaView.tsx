@@ -45,6 +45,15 @@ interface GroupConfig {
   titulo: string
   descripcion: string
   badge: "warning" | "danger" | "info" | "default"
+  /**
+   * `false` = el episodio NO tiene veredicto que juzgar, asi que no se ofrece
+   * decidir. Hoy solo el grupo "el juez no llego a correr": ahi el fallo es de
+   * infraestructura y lo que corresponde es reclasificar, no que un docente
+   * invente una etiqueta. La pantalla avisa que la decision REEMPLAZA la
+   * etiqueta oficial y que esa es la que se cita en la tesis — ofrecer el boton
+   * sobre un 502 es pedirle a una persona que firme un juicio que nadie emitio.
+   */
+  decidible?: boolean
 }
 
 // Orden fijo del shape brief, con el agregado del caso 4 de la Tabla 3.11
@@ -55,6 +64,7 @@ interface GroupConfig {
 // que el sistema declaró bien que de una falla de formato. Los números NO se
 // hardcodean (principio 4, PRODUCT.md) — se leen del largo de cada grupo ya
 // filtrado.
+
 const GROUP_ORDER: GroupConfig[] = [
   {
     estado: "inconsistente",
@@ -95,6 +105,24 @@ const GROUP_ORDER: GroupConfig[] = [
 // emitió un `estado_juez` que esta pantalla no tiene nombrado en
 // `GROUP_ORDER`. El copy tiene que decir eso, no inventar una pregunta al
 // docente sobre un episodio que en realidad está bien.
+// El juez NO llego a correr. `classify_ep.py:199` escribe el motivo y hace
+// `return` ANTES de setear `features["regimen_llm"]`, asi que estos episodios
+// no tienen `estado_juez`: no hay veredicto, ni bueno ni malo. Medido en
+// produccion el 2026-09-29: 18 de 23 items de la cola eran esto, todos con
+// `502 Bad Gateway` del ai-gateway.
+//
+// Hasta ese dia caian en OTROS_GROUP, que le decia al docente que era una
+// desincronizacion de frontend. Era falso y lo mandaba a reportar un bug que no
+// existe — cuando lo que pasaba era que el gateway estaba caido.
+const SIN_JUEZ_GROUP: GroupConfig = {
+  estado: "__sin_juez__",
+  titulo: "El juez no llego a correr",
+  descripcion:
+    "El clasificador no pudo consultar al modelo, asi que no hay veredicto que revisar. No es una decision pedagogica: es una falla de infraestructura. Estos episodios se reclasifican cuando el servicio vuelva — no hace falta que decidas nada.",
+  badge: "danger",
+  decidible: false,
+}
+
 const OTROS_GROUP: GroupConfig = {
   estado: "__otros__",
   titulo: "Estados que esta pantalla no conoce",
@@ -116,7 +144,12 @@ function groupItems(items: ReviewQueueItem[]): { config: GroupConfig; items: Rev
     items: items.filter((i) => i.estado_juez === config.estado),
   }))
   const conocidos = new Set(GROUP_ORDER.map((g) => g.estado))
-  const otros = items.filter((i) => !conocidos.has(i.estado_juez ?? ""))
+  // Dos cosas distintas que antes caian juntas:
+  //   sin `estado_juez`        → el juez nunca corrio (infraestructura)
+  //   con uno que no conozco   → desincronizacion backend/frontend de verdad
+  const sinJuez = items.filter((i) => !i.estado_juez)
+  const otros = items.filter((i) => i.estado_juez && !conocidos.has(i.estado_juez))
+  if (sinJuez.length > 0) grupos.push({ config: SIN_JUEZ_GROUP, items: sinJuez })
   if (otros.length > 0) grupos.push({ config: OTROS_GROUP, items: otros })
   return grupos.filter((g) => g.items.length > 0)
 }
@@ -215,6 +248,7 @@ export function RevisionColaView({ comisionId, getToken }: Props) {
                     }
                     onReviewed={() => handleReviewed(item.episode_id)}
                     getToken={getToken}
+                    decidible={config.decidible !== false}
                   />
                 ))}
               </ul>
@@ -232,9 +266,17 @@ interface ReviewRowProps {
   onToggle: () => void
   onReviewed: () => void
   getToken: TokenGetter
+  decidible: boolean
 }
 
-function ReviewRow({ item, expanded, onToggle, onReviewed, getToken }: ReviewRowProps) {
+function ReviewRow({
+  item,
+  expanded,
+  onToggle,
+  onReviewed,
+  getToken,
+  decidible,
+}: ReviewRowProps) {
   const [verdict, setVerdict] = useState("")
   const [reason, setReason] = useState("")
   const [submitting, setSubmitting] = useState(false)
@@ -273,9 +315,15 @@ function ReviewRow({ item, expanded, onToggle, onReviewed, getToken }: ReviewRow
           <button
             type="button"
             onClick={onToggle}
-            className="press-shrink inline-flex items-center rounded-md border border-border bg-surface-alt px-3 py-1.5 text-xs font-medium text-ink hover:bg-border-soft transition-colors"
+            disabled={!decidible}
+            title={
+              decidible
+                ? undefined
+                : "No hay veredicto que revisar: el juez no llego a correr sobre este episodio"
+            }
+            className="press-shrink inline-flex items-center rounded-md border border-border bg-surface-alt px-3 py-1.5 text-xs font-medium text-ink transition-colors enabled:hover:bg-border-soft disabled:cursor-not-allowed disabled:opacity-40"
           >
-            {expanded ? "Cerrar" : "Decidir"}
+            {!decidible ? "Sin veredicto" : expanded ? "Cerrar" : "Decidir"}
           </button>
         </div>
       </div>
