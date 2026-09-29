@@ -121,9 +121,31 @@ _WHERE_SUMIDERO = """
                       AND features->'subgrupo'->>'key' = 'indeterminado'
 """
 
+# Filtro de FALLOS DEL JUEZ. Episodios que quedaron en la cola de revision no
+# porque haya algo que decidir, sino porque el juez no pudo emitir veredicto:
+# el gateway devolvio 502 (`error_gateway`) o el modelo devolvio un JSON que no
+# valida (`error_parseo`).
+#
+# El `LIKE 'juez_eje_fino_error%'` es lo que hace que esto sea seguro: deja
+# AFUERA a `juez_eje_fino_inconsistente`, que es el unico motivo donde SI hubo
+# veredicto y SI hace falta que decida una persona. Reclasificar un
+# `inconsistente` le borraria al docente la pregunta que tiene que contestar.
+#
+# A diferencia del sumidero, estos SI llaman al LLM: son episodios de los
+# subgrupos que el juez evalua. Medido el 2026-09-29: 21 episodios, y el gasto
+# es de centavos. Correr con el gateway sano — si no, vuelven a caer en la cola
+# por la misma razon.
+_WHERE_FALLOS_JUEZ = """
+                      AND (features->>'needs_review')::boolean IS TRUE
+                      AND features->>'needs_review_reason' LIKE 'juez_eje_fino_error%'
+"""
+
 
 async def list_legacy(
-    db_url: str, vigente_hash: str, solo_sumidero: bool = False
+    db_url: str,
+    vigente_hash: str,
+    solo_sumidero: bool = False,
+    solo_fallos_juez: bool = False,
 ) -> list[LegacyClassification]:
     """Lista classifications current con hash distinto al vigente.
 
@@ -139,9 +161,13 @@ async def list_legacy(
                     SELECT episode_id, tenant_id, comision_id, classifier_config_hash
                     FROM classifications
                     WHERE is_current = true
-                      AND classifier_config_hash != :vigente
                     """
+                    # Los fallos del juez son RECIENTES: tienen el hash vigente,
+                    # asi que el filtro por hash los excluiria. Por eso este
+                    # modo lo saltea en vez de sumarse a el.
+                    + ("" if solo_fallos_juez else "  AND classifier_config_hash != :vigente")
                     + (_WHERE_SUMIDERO if solo_sumidero else "")
+                    + (_WHERE_FALLOS_JUEZ if solo_fallos_juez else "")
                     + """
                     ORDER BY classified_at ASC
                     """
@@ -188,7 +214,13 @@ async def reclassify_one(
         return False, f"HTTP error: {e}"
 
 
-async def main(dry_run: bool, service_url: str, db_url: str, solo_sumidero: bool = False) -> int:
+async def main(
+    dry_run: bool,
+    service_url: str,
+    db_url: str,
+    solo_sumidero: bool = False,
+    solo_fallos_juez: bool = False,
+) -> int:
     # 1. Calcular el hash vigente local (debe coincidir con el que computa
     # el classifier-service endpoint — ambos usan la misma funcion pura).
     # BUGFIX: antes hardcodeaba "v1.0.0" (desactualizado) → el hash "vigente" no
@@ -207,7 +239,7 @@ async def main(dry_run: bool, service_url: str, db_url: str, solo_sumidero: bool
     print()
 
     # 2. Listar legacy
-    legacy = await list_legacy(db_url, vigente_hash, solo_sumidero)
+    legacy = await list_legacy(db_url, vigente_hash, solo_sumidero, solo_fallos_juez)
     print(f"Legacy classifications encontradas: {len(legacy)}")
     if not legacy:
         print("Nada que re-procesar. Salida limpia.")
@@ -286,6 +318,16 @@ def _parse_args() -> argparse.Namespace:
         ),
     )
     parser.add_argument(
+        "--solo-fallos-del-juez",
+        action="store_true",
+        help=(
+            "Solo los episodios donde el juez NO pudo emitir veredicto: gateway "
+            "caido o JSON invalido. Deja afuera los `inconsistente`, que son los "
+            "unicos que necesitan que decida una persona. Estos SI llaman al "
+            "LLM: correr con el gateway sano."
+        ),
+    )
+    parser.add_argument(
         "--service-url",
         default=os.environ.get("CLASSIFIER_SERVICE_URL", "http://127.0.0.1:8008"),
         help="URL del classifier-service (default 127.0.0.1:8008).",
@@ -309,6 +351,7 @@ if __name__ == "__main__":
             service_url=args.service_url,
             db_url=args.db_url,
             solo_sumidero=args.solo_sumidero,
+            solo_fallos_juez=args.solo_fallos_del_juez,
         )
     )
     sys.exit(exit_code)
