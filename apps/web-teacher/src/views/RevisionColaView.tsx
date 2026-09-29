@@ -269,14 +269,7 @@ interface ReviewRowProps {
   decidible: boolean
 }
 
-function ReviewRow({
-  item,
-  expanded,
-  onToggle,
-  onReviewed,
-  getToken,
-  decidible,
-}: ReviewRowProps) {
+function ReviewRow({ item, expanded, onToggle, onReviewed, getToken, decidible }: ReviewRowProps) {
   const [verdict, setVerdict] = useState("")
   const [reason, setReason] = useState("")
   const [submitting, setSubmitting] = useState(false)

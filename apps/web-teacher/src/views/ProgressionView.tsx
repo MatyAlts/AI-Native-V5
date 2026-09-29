@@ -25,13 +25,32 @@ import {
 } from "../utils/docenteLabels"
 import { helpContent } from "../utils/helpContent"
 
+// Los CINCO valores de `appropriation`. Tienen que estar los cinco: lo que
+// falte cae al `?? var(--color-level-meta)` de abajo y sale de un color que
+// ninguna leyenda explica. Paso el 2026-09-29 con `sin_clasificar`, cuando 158
+// episodios del sumidero B2b se reclasificaron y perdieron su color.
 const LABEL_COLOR_VAR: Record<string, string> = {
   delegacion_pasiva: "var(--color-appropriation-delegacion)",
   apropiacion_superficial: "var(--color-appropriation-superficial)",
   apropiacion_reflexiva: "var(--color-appropriation-reflexiva)",
-  // Eje ortogonal: gris (token neutral del design system).
-  autonomo: "var(--color-neutral)",
+  // Eje ortogonal (ADR-057): fuera del continuo ordinal, pero es un regimen
+  // observado y el mas frecuente del corpus. Antes usaba el gris neutro, que
+  // lo hacia indistinguible de "no hay dato".
+  autonomo: "var(--color-appropriation-autonomo)",
+  // La ausencia de clasificacion. Gris apagado a proposito.
+  sin_clasificar: "var(--color-appropriation-sin-clasificar)",
 }
+
+/** Orden de la leyenda: del continuo (peor a mejor), despues el eje ortogonal,
+ *  y al final lo que no es una categoria. Los colores NO se repiten aca — se
+ *  leen de `LABEL_COLOR_VAR`, para que no puedan volver a desincronizarse. */
+const LEYENDA_APROPIACION: { valor: string; etiqueta: string }[] = [
+  { valor: "delegacion_pasiva", etiqueta: "Depende de la IA" },
+  { valor: "apropiacion_superficial", etiqueta: "Superficial" },
+  { valor: "apropiacion_reflexiva", etiqueta: "Reflexiva" },
+  { valor: "autonomo", etiqueta: "Autonomo (sin tutor)" },
+  { valor: "sin_clasificar", etiqueta: "Sin clasificar" },
+]
 
 interface Props {
   comisionId: string
@@ -443,28 +462,21 @@ function TrajectoriesSection({
         </p>
       </div>
       {isDocente && (
-        <div className="px-6 py-2 border-b border-border bg-canvas flex items-center gap-4 text-xs text-muted">
-          <span className="flex items-center gap-1.5">
-            <span
-              className="inline-block w-2 h-2 rounded-full"
-              style={{ backgroundColor: "var(--color-appropriation-reflexiva)" }}
-            />
-            Autonomo
-          </span>
-          <span className="flex items-center gap-1.5">
-            <span
-              className="inline-block w-2 h-2 rounded-full"
-              style={{ backgroundColor: "var(--color-appropriation-superficial)" }}
-            />
-            Superficial
-          </span>
-          <span className="flex items-center gap-1.5">
-            <span
-              className="inline-block w-2 h-2 rounded-full"
-              style={{ backgroundColor: "var(--color-appropriation-delegacion)" }}
-            />
-            Depende de la IA
-          </span>
+        /* La leyenda se genera del MISMO mapa que pinta los puntos. Antes eran
+           dos listas escritas a mano y se desincronizaron: la entrada decia
+           "Autonomo" con el verde de `reflexiva`, asi que el docente leia al
+           reves — los puntos verdes eran reflexiva, y los `autonomo` de verdad
+           salian grises sin entrada que los nombrara. */
+        <div className="px-6 py-2 border-b border-border bg-canvas flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-muted">
+          {LEYENDA_APROPIACION.map(({ valor, etiqueta }) => (
+            <span key={valor} className="flex items-center gap-1.5">
+              <span
+                className="inline-block w-2 h-2 rounded-full shrink-0"
+                style={{ backgroundColor: LABEL_COLOR_VAR[valor] }}
+              />
+              {etiqueta}
+            </span>
+          ))}
         </div>
       )}
       {isDocente && Object.keys(entregaStats).length > 0 && (

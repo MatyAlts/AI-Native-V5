@@ -102,8 +102,34 @@ class LegacyClassification:
     legacy_hash: str
 
 
-async def list_legacy(db_url: str, vigente_hash: str) -> list[LegacyClassification]:
-    """Lista classifications current con hash distinto al vigente."""
+# Filtro del SUMIDERO (B2b, ADR-062). Hasta el 2026-09-27
+# `_EJE_TO_APPROPRIATION["sin_clasificar"]` apuntaba a `apropiacion_superficial`,
+# asi que un episodio que el arbol NO pudo clasificar —subgrupo `indeterminado`,
+# menos de MIN_EVENTS eventos significativos— quedaba indistinguible de una
+# apropiacion superficial detectada de verdad.
+#
+# Por que este filtro y no el del hash: el bump de `tree_version` a v4.1.0 movio
+# el `classifier_config_hash` de TODO el corpus (3027 episodios medidos contra
+# produccion el 2026-09-29). De esos, los unicos con la etiqueta MAL son estos:
+# el resto tiene la etiqueta correcta, solo sellada con un hash viejo.
+#
+# Y son baratos: `indeterminado` NO esta en `SUBGRUPOS_JUZGADOS_POR_JUEZ`
+# (`regimen_llm.py`), asi que reclasificarlos no llama al LLM. Cero costo,
+# determinista.
+_WHERE_SUMIDERO = """
+                      AND appropriation = 'apropiacion_superficial'
+                      AND features->'subgrupo'->>'key' = 'indeterminado'
+"""
+
+
+async def list_legacy(
+    db_url: str, vigente_hash: str, solo_sumidero: bool = False
+) -> list[LegacyClassification]:
+    """Lista classifications current con hash distinto al vigente.
+
+    Con `solo_sumidero`, ademas exige que sean las del sumidero de B2b: las que
+    el arbol dejo en `indeterminado` y el mapa viejo convirtio en superficial.
+    """
     engine = create_async_engine(db_url, echo=False)
     try:
         async with engine.connect() as conn:
@@ -114,6 +140,9 @@ async def list_legacy(db_url: str, vigente_hash: str) -> list[LegacyClassificati
                     FROM classifications
                     WHERE is_current = true
                       AND classifier_config_hash != :vigente
+                    """
+                    + (_WHERE_SUMIDERO if solo_sumidero else "")
+                    + """
                     ORDER BY classified_at ASC
                     """
                 ),
@@ -159,7 +188,7 @@ async def reclassify_one(
         return False, f"HTTP error: {e}"
 
 
-async def main(dry_run: bool, service_url: str, db_url: str) -> int:
+async def main(dry_run: bool, service_url: str, db_url: str, solo_sumidero: bool = False) -> int:
     # 1. Calcular el hash vigente local (debe coincidir con el que computa
     # el classifier-service endpoint — ambos usan la misma funcion pura).
     # BUGFIX: antes hardcodeaba "v1.0.0" (desactualizado) → el hash "vigente" no
@@ -172,10 +201,13 @@ async def main(dry_run: bool, service_url: str, db_url: str) -> int:
     print(f"DB: {_redact(db_url)}")
     print(f"Service URL: {service_url}")
     print(f"Mode: {'DRY-RUN (no persist)' if dry_run else 'REAL (persist via HTTP)'}")
+    print(
+        f"Filtro: {'SOLO SUMIDERO (indeterminado mal etiquetado)' if solo_sumidero else 'TODO hash legacy'}"
+    )
     print()
 
     # 2. Listar legacy
-    legacy = await list_legacy(db_url, vigente_hash)
+    legacy = await list_legacy(db_url, vigente_hash, solo_sumidero)
     print(f"Legacy classifications encontradas: {len(legacy)}")
     if not legacy:
         print("Nada que re-procesar. Salida limpia.")
@@ -244,6 +276,16 @@ def _parse_args() -> argparse.Namespace:
         help="No ejecuta re-clasificacion; solo reporta cuantas estarian afectadas.",
     )
     parser.add_argument(
+        "--solo-sumidero",
+        action="store_true",
+        help=(
+            "Solo los episodios del sumidero B2b: subgrupo `indeterminado` "
+            "etiquetados como `apropiacion_superficial` por el mapa viejo. Son "
+            "los unicos con la etiqueta MAL; el resto del corpus tiene la "
+            "etiqueta correcta con un hash viejo. No llaman al LLM."
+        ),
+    )
+    parser.add_argument(
         "--service-url",
         default=os.environ.get("CLASSIFIER_SERVICE_URL", "http://127.0.0.1:8008"),
         help="URL del classifier-service (default 127.0.0.1:8008).",
@@ -262,6 +304,11 @@ def _parse_args() -> argparse.Namespace:
 if __name__ == "__main__":
     args = _parse_args()
     exit_code = asyncio.run(
-        main(dry_run=args.dry_run, service_url=args.service_url, db_url=args.db_url)
+        main(
+            dry_run=args.dry_run,
+            service_url=args.service_url,
+            db_url=args.db_url,
+            solo_sumidero=args.solo_sumidero,
+        )
     )
     sys.exit(exit_code)
