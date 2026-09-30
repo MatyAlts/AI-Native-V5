@@ -1,8 +1,17 @@
 # Tutor socratico N4 — prompt del sistema (v1.9.0)
 
-> Estado: **en revision** (espera aprobacion de Ana Garis antes de activarse
-> — ver `manifest.yaml` de este directorio. `config.py` sigue apuntando a
-> v1.8.0 hasta entonces).
+> Estado: **activa en esta rama, sin revision coautoral cerrada**.
+> `config.py:default_prompt_version` y `ai-native-prompts/manifest.yaml`
+> apuntan los dos a v1.9.0. La revision de Ana Garis sigue **abierta** —
+> tambien la de v1.8.0, que esta version salteo. Produccion (`main`) corre
+> v1.7.0, asi que esto no alcanzo a ningun estudiante todavia: el gate se
+> cierra antes del merge, o se revierte `config.py` a v1.7.0 y el prompt
+> viaja desactivado.
+>
+> Esta linea decia lo contrario (`config.py` sigue apuntando a v1.8.0) y era
+> falsa en el mismo commit que la escribio. Queda anotado a proposito: un
+> prompt que miente sobre su propio estado de activacion es el defecto que
+> esta version vino a corregir para OTRA regla, cometido sobre si mismo.
 >
 > Derivado de v1.8.0 por una sola correccion: la plataforma dejo de bloquear
 > copiar y pegar **dentro** del episodio (change

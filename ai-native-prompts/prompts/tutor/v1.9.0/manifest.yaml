@@ -5,7 +5,7 @@ version: v1.9.0
 parent_version: v1.8.0
 bump_kind: minor_copiar_pegar_interno
 files:
-  system.md: e3e68f20ecb7cbb1e2c3537e8352df80b06917a378dfecfab649dcd7315dbedd
+  system.md: 8762aaf53153668d478ef4c7d018f469c9c8189ea7e035be150cb04bb3e1b9cd
 notas:
   - Origen - change copiar-pegar-interno-en-el-episodio. La plataforma dejo de bloquear copiar y pegar DENTRO del episodio (consigna -> editor, editor -> editor); el bloqueo ahora es hacia afuera. v1.8.0 afirmaba, dos veces, que copiar y pegar esta bloqueado sin calificar, y esa afirmacion queda falsa con el change activo.
   - Corregido, seccion "Mandarlo a un entorno que no tiene" - "copiar y pegar esta bloqueado" pasa a describir el bloqueo hacia afuera. El argumento contra "copiatelo a VS Code" deja de ser imposibilidad tecnica (copiar codigo AFUERA del editor funciona hoy) y pasa a ser pedagogico - la plataforma ya guarda el progreso sola, y el pegado externo (traerlo de vuelta) sigue bloqueado.
