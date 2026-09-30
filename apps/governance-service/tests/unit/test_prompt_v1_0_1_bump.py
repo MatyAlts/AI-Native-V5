@@ -120,7 +120,7 @@ def test_v101_corrige_cuenta_de_guardarrailes(loader: PromptLoader) -> None:
 # El nombre
 # del test NO lleva la version a proposito: antes se llamaba `..._activa_v101_...`
 # mientras asserteaba v1.2.0, y el nombre quedo mintiendo dos bumps seguidos.
-ACTIVE_TUTOR_VERSION = "v1.6.0"
+ACTIVE_TUTOR_VERSION = "v1.7.0"
 
 
 def test_manifest_global_activa_la_version_vigente_del_tutor(loader: PromptLoader) -> None:

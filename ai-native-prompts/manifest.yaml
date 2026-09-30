@@ -17,6 +17,21 @@
 #   1. Este archivo (declarativo, expuesto via /active_configs).
 #   2. apps/tutor-service/src/tutor_service/config.py:default_prompt_version (efectivo).
 #
+# Activacion tutor v1.7.0 (informe del tester TP Listas v3, 2026-09-30):
+#   - C5: el tutor deja de afirmar como son las reglas de la plataforma. Le dijo
+#     al alumno que salir de pestana no lo penaliza; el alumno respondio que le
+#     salia el cartel y el tutor cambio de postura sin corregirse. La politica
+#     real es intermedia (no cierra, pero registra y muestra overlay), y nada de
+#     eso le llega en el contexto: lo estaba adivinando.
+#   - C3 CORREGIDO respecto de v1.6.0: la prohibicion de derivar afuera chocaba
+#     con 13 enunciados del piloto que mandan a investigar. Pasa a ser regla de
+#     PROCEDENCIA — la consigna puede mandarlo, el tutor por su cuenta no.
+#   - Voseo explicito. "Rioplatense neutro" lo daba por implicado y el modelo
+#     derrapaba al tuteo en conversaciones largas.
+#   - Metodo, tono, principios, banco N1-N4 y misconceptions intactos.
+#   - No afecta classifier_config_hash: es prompt de runtime, no etiquetador.
+#   - BLOQUEANTE ANTES DEL DEPLOY: revision coautoral con Ana Garis.
+#
 # Activacion tutor v1.6.0 (2026-09-28, hallazgo de contexto real):
 #   - Delta respecto de v1.5.0: tres correcciones a lo que el prompt dice que el
 #     tutor conoce, contra lo que tutor_core.py realmente le inyecta.
@@ -108,7 +123,7 @@
 #     Quedo pendiente desde el 2026-09-10 y se cerro junto con la de v1.6.0.
 active:
   default:
-    tutor: v1.6.0
+    tutor: v1.7.0
     classifier: v1.0.0
     correccion: v1.0.0
     reflection: v1.0.0

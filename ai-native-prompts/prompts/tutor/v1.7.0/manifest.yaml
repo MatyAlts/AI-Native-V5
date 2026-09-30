@@ -1,0 +1,20 @@
+# Manifest del prompt tutor v1.7.0 (bump MINOR: las reglas que el tutor no conoce).
+# El governance-service verifica fail-loud que sha256(system.md) == hash declarado.
+# Si el archivo se modifica sin re-firmar este manifest, el servicio falla al cargar.
+version: v1.7.0
+parent_version: v1.6.0
+bump_kind: minor_reglas_de_plataforma
+files:
+  system.md: 168dbe61bbd7104bdef779e9d766ff9c9686b42685ea287f8abafbe0943df518
+notas:
+  - Origen - informe del tester sobre el TP de Listas v3, ejercicios 1 a 5, 2026-09-30.
+  - C5 (bullet nuevo en "Lo que NO hace el tutor") - afirmar como son las reglas de la plataforma. El tutor le dijo al alumno que salir de pestaña no lo penaliza; el alumno respondio que le salia el cartel de aviso y el tutor cambio de postura SIN corregir lo que habia dicho. La politica real (tutor-service/config.py:131-138) es intermedia - NO cierra el episodio, pero SI registra pestana_perdida/pestana_recuperada en el CTR, SI muestra un overlay bloqueante al volver, y el docente lo ve en la auditoria. El tutor afirmo la mitad tranquilizadora. Nada de eso le llega en el contexto - lo estaba adivinando.
+  - C3 CORREGIDO, y es una correccion de v1.6.0 - la prohibicion de derivar afuera chocaba con las consignas. 13 enunciados del piloto mandan a investigar, y uno dice literal "Nota - investigar el uso del operador de modulo (%) en Python" (ejercicios-piloto.yaml:1834). Contradecir la consigna pone al tutor en contra del docente. La regla pasa a ser de PROCEDENCIA - la consigna puede mandarlo afuera, el tutor por su cuenta no.
+  - Voseo explicito en "Formato de respuesta". v1.6.0 decia "espanol rioplatense neutro" y lo daba por implicado; el tester reporto tuteo en el ejercicio 3. Un implicito no sostiene un turno 40.
+  - Metodo INTACTO - ironia, mayeutica, elenchos y aporia, los 9 principios, "Cerrar el lazo", el banco N1-N4 y las misconceptions no cambian una letra respecto de v1.6.0.
+  - Verificado por tests - apps/tutor-service/tests/unit/test_prompt_v1_7_0_reglas_plataforma.py ancla los tres cambios por frase, y cada ancla se verifico rompiendola.
+  - No afecta classifier_config_hash - es prompt de runtime, no etiquetador (ADR-020).
+  - Episodios ya abiertos NO toman esta version - el prompt queda pinneado al evento seq 0 (tutor_core.py:1218-1234).
+  - v1.6.0 y anteriores siguen en disco para reproducibilidad historica del piloto.
+  - LO QUE ESTE BUMP NO ARREGLA, y es la mayor parte del informe - las funciones (def/return/ValueError) que piden los ejercicios 3, 5, 6 y 7 sin haberse dado en la unidad, el editor del 3 que prohibe funciones mientras el enunciado exige cuatro, el "investiga en la documentacion" del enunciado del 5, y la recomendacion de inicializar maximos y minimos "fuera del rango" contra lo que dice el apunte de Buenas Practicas. Eso es CONTENIDO y MATERIAL, no prompt - ningun texto en este archivo lo arregla.
+  - BLOQUEANTE ANTES DEL DEPLOY - revision coautoral con Ana Garis. El voseo explicito entra en "Formato de respuesta", que es seccion de tono, asi que lo marco como lo que es - borderline. C5 y la correccion de C3 son hechos verificados contra el codigo.
