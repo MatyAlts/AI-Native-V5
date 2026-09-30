@@ -862,6 +862,18 @@ export function EpisodeView({ episodeId, onExit, ejercicioContext, getToken }: E
     <section
       className="animate-fade-in-up animate-delay-50 flex-1 flex flex-col rounded-xl border border-border bg-surface overflow-hidden shadow-[0_1px_3px_-1px_rgba(0,0,0,0.04)]"
       aria-label="Consigna del problema"
+      // ALLOWLIST del portapapeles interno (change
+      // `copiar-pegar-interno-en-el-episodio`): habilita copiar de la consigna
+      // y pegar en el editor. Es el caso que motiva el change — un nombre de
+      // variable que el enunciado exige literal, una cadena de prueba, un
+      // formato de salida. Sin esto hay que tipearlo a mano y un error de
+      // tipeo se lleva un caso de prueba.
+      //
+      // El panel del TUTOR no lleva este atributo, y no se lo pongan: ADR-026
+      // difirio a post-defensa el canal para tomar codigo del tutor, porque
+      // cambia la economia de la interaccion y puede inducir delegacion pasiva
+      // como variable confound.
+      data-copiable-interno
     >
       <PanelHeader
         level="N1"

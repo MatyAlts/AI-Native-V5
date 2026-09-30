@@ -39,7 +39,8 @@ export interface EditorFalso {
   onDidPaste(cb: () => void): void
   onDidChangeModelContent(cb: () => void): void
   addCommand(keybinding: number, cb: () => void): void
-  getSelection(): null
+  getSelection(): Record<string, unknown> | null
+  __setSeleccion(texto: string | null): void
   getModel(): Record<string, unknown>
   updateOptions(o: Record<string, unknown>): void
   focus(): void
@@ -47,6 +48,8 @@ export interface EditorFalso {
 }
 
 /** Un item por cada `monaco.editor.create`, en orden de creacion. */
+let seleccionMock: string | null = null
+
 export const editoresCreados: EditorFalso[] = []
 
 /** Limpia el registro entre tests (el modulo es singleton para todo el file). */
@@ -122,8 +125,18 @@ function create(_container: HTMLElement, opciones: Record<string, unknown>): Edi
     addCommand: (keybinding: number, cb: () => void) => {
       editor.__comandos.set(keybinding, cb)
     },
-    getSelection: () => null,
-    getModel: () => ({}),
+    // Seleccion de MONACO, no del DOM. `CodeEditor` la lee con
+    // `editor.getSelection()` + `getModel().getValueInRange()` porque
+    // `window.getSelection()` devuelve "" cuando la seleccion vive adentro
+    // del textarea oculto de Monaco. Sin esto en el doble, el copiado
+    // "editor -> editor" es inobservable desde los tests.
+    getSelection: () => (seleccionMock === null ? null : { __sel: true }),
+    getModel: () => ({
+      getValueInRange: () => seleccionMock ?? "",
+    }),
+    __setSeleccion: (texto: string | null) => {
+      seleccionMock = texto
+    },
     updateOptions: () => {},
     focus: () => {},
     dispose: () => {},

@@ -17,6 +17,23 @@
 #   1. Este archivo (declarativo, expuesto via /active_configs).
 #   2. apps/tutor-service/src/tutor_service/config.py:default_prompt_version (efectivo).
 #
+# Activacion tutor v1.9.0 (change copiar-pegar-interno-en-el-episodio, 2026-09-30):
+#   - Corrige la afirmacion de v1.8.0 "en esta plataforma copiar y pegar esta
+#     bloqueado": la plataforma dejo de bloquearlo DENTRO del episodio
+#     (consigna -> editor, editor -> editor, portapapeles interno en
+#     CodeEditor.tsx). El bloqueo ahora es hacia afuera.
+#   - "Llevatelo a VS Code" sigue prohibido: copiar codigo AFUERA del editor
+#     funciona hoy, asi que la razon deja de ser imposibilidad tecnica y pasa
+#     a ser pedagogica (guardado automatico ya existe; el pegado externo de
+#     vuelta sigue bloqueado).
+#   - NO toca el boton "Insertar codigo del tutor" ni copied_from_tutor
+#     (ADR-026, diferido a post-defensa).
+#   - Metodo, principios, C3/C4/C5 intactos respecto de v1.8.0.
+#   - BLOQUEANTE ANTES DEL DEPLOY: revision coautoral con Ana Garis pendiente,
+#     igual que v1.6.0/v1.7.0/v1.8.0. El literal de version se mueve en este
+#     commit (asi lo hicieron los tres bumps anteriores — ver sus notas); lo
+#     que espera la revision es el DEPLOY a produccion, no este commit.
+#
 # Activacion tutor v1.8.0 (prueba propia contra produccion, 2026-09-30):
 #   - C4 AMPLIADO: la prohibicion de mandar afuera cubria "resolver" y no
 #     "respaldar". Ante "se me borra lo que escribi?" el tutor recomendo guardar
@@ -134,7 +151,7 @@
 #     Quedo pendiente desde el 2026-09-10 y se cerro junto con la de v1.6.0.
 active:
   default:
-    tutor: v1.8.0
+    tutor: v1.9.0
     classifier: v1.0.0
     correccion: v1.0.0
     reflection: v1.0.0

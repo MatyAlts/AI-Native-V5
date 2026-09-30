@@ -289,6 +289,29 @@ def test_edicion_codigo_snippet_expanded_es_n2_no_n4() -> None:
     )
 
 
+def test_edicion_codigo_pasted_internal_es_n2_no_n4() -> None:
+    """Change copiar-pegar-interno-en-el-episodio: pegar algo copiado DENTRO
+    del mismo episodio (consigna o editor propio) NO es interaccion con IA.
+
+    A diferencia de `pasted_external` (que SI es N4: el contenido vino de
+    afuera, tipicamente un asistente externo) y de `copied_from_tutor` (N4
+    por definicion), `pasted_internal` es el estudiante reusando algo que ya
+    estaba adentro del episodio — copiar el nombre de una variable de la
+    consigna no es apropiacion reflexiva, ni siquiera un gesto mecanico
+    como `sout`.
+
+    Candado de la decision: si alguien agrega `pasted_internal` a
+    `_EDICION_CODIGO_N4_ORIGINS`, revienta aca. Agregar el valor al Literal
+    del contrato NO cambio el etiquetado de ningun evento existente ni
+    futuro (cae al fallback N2 igual que `student_typed`), asi que NO
+    corresponde bumpear LABELER_VERSION.
+    """
+    assert label_event("edicion_codigo", {"origin": "pasted_internal"}) == "N2"
+    assert label_event("edicion_codigo", {"origin": "pasted_internal"}) == label_event(
+        "edicion_codigo", {"origin": "student_typed"}
+    )
+
+
 def test_event_type_desconocido_cae_a_meta() -> None:
     """Fallback conservador: nunca crashear ante un evento experimental o legacy."""
     assert label_event("evento_inventado_v9000") == "meta"

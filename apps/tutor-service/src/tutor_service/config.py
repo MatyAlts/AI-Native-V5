@@ -95,12 +95,20 @@ class Settings(BaseSettings):
     # v1.6.0 (2026-09-28) corrige tres afirmaciones falsas sobre el contexto
     # real que el tutor recibe: SI conoce el enunciado (best-effort), SI ve el
     # codigo del alumno numerado por linea (nunca hay que pedirselo pegado —
-    # la plataforma bloquea copiar y pegar), y no debe derivar a Google,
-    # ChatGPT ni Stack Overflow (comportamiento emergente medido en
-    # produccion). El metodo socratico, los principios y las restricciones
-    # quedan intactos byte a byte.
+    # la plataforma bloqueaba copiar y pegar en ESE momento), y no debe
+    # derivar a Google, ChatGPT ni Stack Overflow (comportamiento emergente
+    # medido en produccion). El metodo socratico, los principios y las
+    # restricciones quedan intactos byte a byte.
+    # v1.9.0 (2026-09-30, change copiar-pegar-interno-en-el-episodio) corrige
+    # la afirmacion de v1.6.0/v1.7.0/v1.8.0 de que "copiar y pegar esta
+    # bloqueado": la plataforma dejo de bloquearlo DENTRO del episodio
+    # (consigna -> editor, editor -> editor); el bloqueo ahora es hacia
+    # afuera. "Llevatelo a VS Code" sigue prohibido, ahora por argumento
+    # pedagogico (la plataforma ya guarda el progreso sola) y no por
+    # imposibilidad tecnica. El boton "Insertar codigo del tutor" sigue sin
+    # existir (ADR-026, diferido a post-defensa) — nada cambia sobre eso.
     default_prompt_name: str = "tutor"
-    default_prompt_version: str = "v1.8.0"
+    default_prompt_version: str = "v1.9.0"
     # Cambiado 2026-05-19: default a gpt-4o-mini para usar copilot-api proxy
     # (Mistral free tier saturado, ver SESSION-LOG). Restaurar a
     # mistral-small-latest si se vuelve a usar la BYOK key de Mistral.
