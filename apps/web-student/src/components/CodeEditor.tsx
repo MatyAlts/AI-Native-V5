@@ -42,10 +42,11 @@ import {
   type TokenGetter,
 } from "../lib/api"
 import { mensajeDeCorrida } from "../lib/corridaRemota"
-import { resolverEdicionPendiente } from "../lib/edicionPendiente"
+import { type PasteOrigen, resolverEdicionPendiente } from "../lib/edicionPendiente"
 import { armarMensajeDeInput } from "../lib/inputDialogo"
 import { parseJavaError } from "../lib/javaError"
 import { registerJavaSnippets } from "../lib/javaSnippets"
+import { type PortapapelesInterno, esPegadoValido } from "../lib/portapapelesInterno"
 import { extractPyodideErrorLine, extractPyodideErrorLineNumber } from "../lib/pyodideError"
 import { registerPythonSnippets } from "../lib/pythonSnippets"
 import { runRemote } from "../lib/runRemote"
@@ -102,7 +103,7 @@ export interface CodeEditorProps {
   onEditDebounced?: (
     snapshot: string,
     diffChars: number,
-    origin: "student_typed" | "pasted_external" | "snippet_expanded",
+    origin: "student_typed" | "pasted_external" | "pasted_internal" | "snippet_expanded",
   ) => void
   /** El editor deja acá una función para forzar la emisión del debounce
    * pendiente. La llama el caller antes de entregar: sin eso, el submit sale
@@ -352,6 +353,37 @@ export function CodeEditor({
    * que su `Scanner` no le pregunta nada. */
   const [stdinLibre, setStdinLibre] = useState("")
   // Refs estables para los callbacks de clipboard (evita re-mount del editor).
+  // Cuando se abrio el menu contextual por ultima vez. Lo lee
+  // `metodoDeClipboard`.
+  const ultimoContextMenuRef = useRef<number>(0)
+  /**
+   * De donde salio una accion de clipboard: atajo de teclado o menu contextual.
+   *
+   * Un `ClipboardEvent` nativo NO dice cual de los dos lo disparo — es el mismo
+   * evento. Hasta que este change saco los `addCommand`, la distincion salia
+   * gratis: el `addCommand(Ctrl+C)` de Monaco daba "shortcut" y el listener DOM
+   * daba "menu_contextual", porque eran dos caminos separados.
+   *
+   * Al unificarlos habia tres salidas y dos son malas. Emitir un valor fijo
+   * MIENTE, y miente plausible: una copia por menu quedaria registrada como
+   * atajo, y `metodo` es un campo del CTR que alimenta la tesis. Poner `null`
+   * pide cambiar el contrato, donde hoy es obligatorio.
+   *
+   * La tercera: el menu contextual SIEMPRE se abre con un `contextmenu` justo
+   * antes de que el usuario haga click en "Copiar". El atajo no dispara
+   * ninguno. Con una ventana corta la heuristica separa los dos casos.
+   *
+   * No es exacta —abrir el menu, cerrarlo y apretar Ctrl+C dentro de la
+   * ventana se registra como menu— pero se equivoca en un caso raro, mientras
+   * que un valor fijo se equivoca siempre en la mitad de los casos.
+   */
+  const VENTANA_CONTEXT_MENU_MS = 2000
+  function metodoDeClipboard(_ev: ClipboardEvent): "shortcut" | "menu_contextual" {
+    return Date.now() - ultimoContextMenuRef.current < VENTANA_CONTEXT_MENU_MS
+      ? "menu_contextual"
+      : "shortcut"
+  }
+
   const onPasteAttemptRef = useRef<typeof onPasteAttempt>(onPasteAttempt)
   const onCopyAttemptRef = useRef<typeof onCopyAttempt>(onCopyAttempt)
   // Ref a runCode para que el shortcut Ctrl+Enter del editor Monaco
@@ -376,15 +408,36 @@ export function CodeEditor({
   // que el alumno tipeó después del template.
   const editTimeoutRef = useRef<number | null>(null)
   const lastFiredSnapshotRef = useRef<string>(initialCode)
-  // F6: si el usuario hizo paste antes del flush, marcamos el origin como
-  // "pasted_external"; sino default a "student_typed". Una vez emitido el
-  // evento, reseteamos para no contaminar la siguiente ventana.
-  const pasteSinceLastFlushRef = useRef<boolean>(false)
+  // F6 + change copiar-pegar-interno-en-el-episodio: si el usuario hizo paste
+  // antes del flush, marcamos el origin como "pasted_external" o
+  // "pasted_internal" segun de donde vino (ver `onDidPaste` y `onPasteDom`
+  // mas abajo); sino default a "student_typed". Una vez emitido el evento,
+  // reseteamos para no contaminar la siguiente ventana.
+  const pasteSinceLastFlushRef = useRef<PasteOrigen>(null)
   // Mismo mecanismo que el paste, para las expansiones de snippets de
   // ceremonia. Sin esto una expansión de 8 líneas entra al CTR como
   // `student_typed` — mentira invisible: el evento se ve igual y un diff
   // grande no llama la atención.
   const snippetSinceLastFlushRef = useRef<boolean>(false)
+  // Portapapeles interno EN MEMORIA (change copiar-pegar-interno-en-el-episodio).
+  // Se llena al copiar/cortar dentro de la pagina (consigna o editor propio,
+  // NUNCA el panel del tutor — ADR-026) y se lee al pegar para decidir
+  // "cortar" (bloquear, como siempre) vs "validar" (dejar pasar). Vive en un
+  // ref, no en state: no dispara render y no hace falta que sobreviva un
+  // re-montaje del editor (si el editor se re-monta, arrancar en blanco es
+  // lo correcto — no hay portapapeles "viejo" mas legitimo que "ninguno").
+  const portapapelesInternoRef = useRef<PortapapelesInterno | null>(null)
+  // Seteado por `onPasteDom` JUSTO ANTES de dejar pasar un pegado validado
+  // (no le hace `preventDefault`), para que `onDidPaste` —que Monaco dispara
+  // DESPUES, cuando aplica el pegado al modelo— sepa que este paste en
+  // particular vino avalado por el portapapeles interno. Se resetea al leerlo.
+  const pegadoValidadoPendienteRef = useRef<boolean>(false)
+  // Contenedor del panel de Salida/pruebas (ver el JSX mas abajo). Un copiado
+  // hecho ADENTRO de este panel NO alimenta el portapapeles interno: la tabla
+  // del proposal dice "Salida / pruebas -> editor: BLOQUEAR" (sin caso de uso
+  // hoy). Sin esta exclusion, copiar el `expected` de un test y pegarlo en el
+  // editor pasaria a estar permitido sin que nadie lo haya decidido asi.
+  const outputPanelRef = useRef<HTMLDivElement | null>(null)
   const onEditDebouncedRef = useRef<typeof onEditDebounced>(onEditDebounced)
   useEffect(() => {
     onEditDebouncedRef.current = onEditDebounced
@@ -438,7 +491,7 @@ export function CodeEditor({
     //
     // Empeoro cuando "Ejecutar"/"Probar" pasaron a llamar a este mismo flush:
     // cada corrida es otra oportunidad de cerrar la ventana sin emitir.
-    pasteSinceLastFlushRef.current = false
+    pasteSinceLastFlushRef.current = null
     snippetSinceLastFlushRef.current = false
     if (!pendiente) return
     lastFiredSnapshotRef.current = pendiente.snapshot
@@ -491,127 +544,134 @@ export function CodeEditor({
         // cierre; la otra mitad son los listeners `dragover`/`drop` de mas
         // abajo, porque esto solo desactiva el widget de Monaco y no impide
         // que el navegador inserte el texto por su cuenta.
+        //
+        // DECISION (tarea 2.4, change copiar-pegar-interno-en-el-episodio):
+        // sigue CERRADO. Validar con el mismo criterio que paste exigiria un
+        // rastreador de `dragstart` sobre las MISMAS regiones externas que el
+        // copiado (consigna, con el mismo riesgo de fuga de ADR-026 si el
+        // panel del tutor quedara mal excluido) para un gesto que en la
+        // practica casi nadie usa (seleccionar texto y arrastrarlo entre
+        // paneles del navegador, en vez de copiar y pegar). El costo de
+        // mantener una segunda superficie de exclusion no se justifica para
+        // esa ganancia. Si en el futuro se decide destrabarlo, el criterio
+        // es el mismo: registrar el `dragstart` como un "copiado" mas en
+        // `portapapelesInternoRef` y validar el `drop` igual que `onPasteDom`.
         dropIntoEditor: { enabled: false },
         ...SUGERENCIAS_OPTIONS,
       })
 
-      // F6: detectar paste del clipboard. Monaco dispara onDidPaste *antes*
-      // de onDidChangeModelContent, así marcamos el flag y lo lee el flush.
+      // F6 + change copiar-pegar-interno-en-el-episodio: Monaco dispara
+      // onDidPaste *antes* de onDidChangeModelContent, cuando ya aplico el
+      // pegado al modelo. Antes de este change el callback NUNCA se disparaba
+      // (el pegado se bloqueaba por dos vias ANTES de que Monaco llegara a
+      // verlo). Ahora SI se dispara para los pegados que `onPasteDom` valido
+      // y dejo pasar — `pegadoValidadoPendienteRef` es la posta entre los
+      // dos: `onPasteDom` la prende justo antes de no llamar a
+      // `preventDefault()`, y este callback la lee y la apaga.
       //
-      // ⚠ HOY ESTE CALLBACK NO SE DISPARA NUNCA, y es a proposito. Es el UNICO
-      // setter de `pasteSinceLastFlushRef`, o sea la unica fuente de
-      // `origin: "pasted_external"`, y el componente bloquea el pegado por dos
-      // vias independientes que corren ANTES:
-      //
-      //   1. el `addCommand(Ctrl+V)` de abajo, que reemplaza el keybinding de
-      //      Monaco (y con el, su `preventDefault`, asi que el navegador ni
-      //      llega a generar un evento `paste` nativo);
-      //   2. el listener DOM `paste` en fase de CAPTURA sobre el contenedor,
-      //      con `preventDefault()` + `stopPropagation()`: el evento se corta
-      //      bajando, antes de llegar al textarea oculto que Monaco escucha.
-      //
-      // El pegado no se "trackea", se PROHIBE: en su lugar sale un evento CTR
-      // `pega_intentada`. Eso hace que la rama `pasted_external` del override a
-      // N4 del labeler sea inalcanzable DESDE ESTE EDITOR — no rota, sino
-      // deliberadamente vacia. La linea se conserva porque si algun dia se
-      // levanta el bloqueo, esta es la costura correcta.
-      //
-      // El arrastrar-y-soltar era la puerta de al lado y estaba abierta:
-      // `dropIntoEditor` (default `true` en Monaco) NO pasa por `onDidPaste`
-      // ni por ningun listener de clipboard, asi que el texto arrastrado
-      // desde otra ventana entraba al buffer y salia rotulado
-      // `origin: "student_typed"` — la plataforma afirmando que el alumno
-      // tipeo codigo que no tipeo. Se cerro el 2026-08-28 (decision del
-      // equipo) con el MISMO criterio que el clipboard: se bloquea y se
-      // registra el intento, no se trackea y se deja pasar.
-      //
-      // No agrega un tipo de evento nuevo a la cadena: `drag_drop` ya estaba
-      // declarado en el `metodo` de `pega_intentada` (contrato, ruta del
-      // tutor y cliente) y simplemente no lo emitia nadie.
+      // El `else` (pegado SIN la marca) deberia ser inalcanzable en la
+      // practica: todo paste que llega hasta aca paso por `onPasteDom`, que o
+      // bien prende la marca (valido) o bien bloquea el evento entero
+      // (preventDefault + stopPropagation, `onDidPaste` nunca llega a
+      // dispararse). Se conserva como la costura legacy — si algun dia
+      // aparece un camino de pegado que no pasa por `onPasteDom`, cae del
+      // lado seguro (`pasted_external`, que SI lleva override a N4) en vez de
+      // perderse en silencio como `student_typed`.
       editor.onDidPaste(() => {
-        pasteSinceLastFlushRef.current = true
+        if (pegadoValidadoPendienteRef.current) {
+          pegadoValidadoPendienteRef.current = false
+          pasteSinceLastFlushRef.current = "interno"
+        } else {
+          pasteSinceLastFlushRef.current = "externo"
+        }
       })
 
-      // ── Bloqueo de clipboard (paste/copy/cut) ──────────────────────────
-      // Sobrescribir los keybindings nativos de Monaco. addCommand reemplaza
-      // el handler default. Codigos en https://microsoft.github.io/monaco-editor/
       const ctrl = monaco.KeyMod.CtrlCmd
-      // Ctrl+V → paste bloqueado
-      editor.addCommand(ctrl | monaco.KeyCode.KeyV, () => {
-        onPasteAttemptRef.current?.({
-          contenidoLongitud: 0,
-          contenidoPreview: "",
-          metodo: "shortcut",
-        })
-        flashClipboardWarning(
-          "Pegar está bloqueado. Escribí el código vos mismo. Quedó registrado.",
-        )
-      })
-      // Ctrl+C → copy bloqueado
-      editor.addCommand(ctrl | monaco.KeyCode.KeyC, () => {
-        const selection = editor.getSelection()
-        const seleccion = selection ? (editor.getModel()?.getValueInRange(selection) ?? "") : ""
-        onCopyAttemptRef.current?.({
-          seleccionChars: seleccion.length,
-          metodo: "shortcut",
-        })
-        flashClipboardWarning("Copiar está bloqueado. Quedó registrado en la trazabilidad.")
-      })
-      // Ctrl+X → cut bloqueado (es copy + delete, lo tratamos como copy)
-      editor.addCommand(ctrl | monaco.KeyCode.KeyX, () => {
-        const selection = editor.getSelection()
-        const seleccion = selection ? (editor.getModel()?.getValueInRange(selection) ?? "") : ""
-        onCopyAttemptRef.current?.({
-          seleccionChars: seleccion.length,
-          metodo: "shortcut",
-        })
-        flashClipboardWarning("Cortar está bloqueado. Quedó registrado.")
-      })
       // Ctrl/Cmd+Enter → ejecutar codigo (Etapa 1.7). Shortcut estandar de
       // IDEs ("Run" en VSCode/JetBrains). Llamamos via ref para mantener
       // la captura sincronizada con el render actual.
+      //
+      // NO hay `addCommand` para Ctrl+V/C/X: hasta este change los tres
+      // reemplazaban el keybinding nativo de Monaco para CORTAR la accion
+      // antes de que el navegador generara un evento de clipboard real (ver
+      // el comentario de `onPasteDom`/`onCopyDom` mas abajo). El pegado ahora
+      // se VALIDA en vez de cortarse, y esa validacion necesita el contenido
+      // real del clipboard — que solo esta disponible en el evento `paste`
+      // nativo del DOM (`ClipboardEvent.clipboardData`), no en un
+      // `addCommand`. Sacar el `addCommand` es lo que deja que Ctrl+V/C/X
+      // generen ese evento nativo; `onPasteDom`/`onCopyDom`/`onCutDom` de mas
+      // abajo son ahora el UNICO punto de decision para los tres.
       editor.addCommand(ctrl | monaco.KeyCode.Enter, () => {
         runCodeRef.current?.()
       })
 
-      // Listeners DOM para cubrir menu contextual y eventos no atrapados
-      // por addCommand (drag&drop, paste via clipboard API en algunos browsers).
+      // Listeners DOM para cubrir menu contextual, el atajo de teclado (ver
+      // comentario de arriba: ya no hay `addCommand` que lo intercepte antes)
+      // y eventos no atrapados de otra forma (drag&drop).
       const containerEl = editorContainerRef.current
       if (containerEl) {
+        // Pegado: CORTAR paso a VALIDAR. Compara el contenido real del
+        // clipboard (`ev.clipboardData`, sincrono — por eso hace falta que el
+        // evento nativo exista, ver arriba) contra el portapapeles interno.
+        // Coincide -> se deja pasar (sin preventDefault: el navegador y
+        // Monaco insertan el texto como cualquier paste; `onDidPaste` de
+        // arriba marca el origen). No coincide (nada copiado adentro de la
+        // pagina, un contenido distinto, o el panel del tutor — que NUNCA
+        // llega a poblar el portapapeles interno, ADR-026) -> se bloquea
+        // exactamente como siempre.
         const onPasteDom = (ev: ClipboardEvent) => {
+          const text = ev.clipboardData?.getData("text") ?? ""
+          if (esPegadoValido(text, portapapelesInternoRef.current)) {
+            pegadoValidadoPendienteRef.current = true
+            return
+          }
           ev.preventDefault()
           ev.stopPropagation()
-          const text = ev.clipboardData?.getData("text") ?? ""
           onPasteAttemptRef.current?.({
             contenidoLongitud: text.length,
             contenidoPreview: text.slice(0, 200),
-            metodo: "menu_contextual",
+            metodo: metodoDeClipboard(ev),
           })
           flashClipboardWarning("Pegar está bloqueado. Quedó registrado en la trazabilidad.")
         }
-        const onCopyDom = (ev: ClipboardEvent) => {
-          const sel = window.getSelection()?.toString() ?? ""
-          ev.preventDefault()
-          ev.stopPropagation()
+        // Copiar/cortar DESDE el editor: "editor -> editor" esta PERMITIDO
+        // (tabla del proposal — reordenar codigo propio no es tomar nada de
+        // nadie). Ya no se bloquea: el navegador escribe de verdad al
+        // clipboard del SO (sin eso, pegarlo de vuelta seria imposible) y acá
+        // solo se registra en el portapapeles interno + se mantiene el mismo
+        // evento CTR de auditoria que ya existia. Copiar y cortar comparten
+        // exactamente la misma logica de registro.
+        const onCopyOCutDom = (ev: ClipboardEvent) => {
+          // La seleccion se lee con la API de MONACO, no con
+          // `window.getSelection()`. Monaco mantiene la seleccion en un
+          // textarea oculto, y en Chrome y Firefox `getSelection().toString()`
+          // devuelve "" cuando la seleccion vive adentro de un control de
+          // formulario. Con ese lector el portapapeles interno NUNCA se
+          // llenaria desde el editor y "editor -> editor" quedaria roto en
+          // produccion, en verde. El `addCommand(Ctrl+C)` que este change
+          // elimino ya leia asi; se conserva el lector y se descarta el otro.
+          const seleccion = editor.getSelection()
+          const sel = seleccion ? (editor.getModel()?.getValueInRange(seleccion) ?? "") : ""
           onCopyAttemptRef.current?.({
             seleccionChars: sel.length,
-            metodo: "menu_contextual",
+            // `metodo` NO se puede distinguir desde un listener nativo: el
+            // atajo y el menu contextual disparan el MISMO evento `copy`. Se
+            // emite el valor honesto en vez de uno plausible y falso — hasta
+            // este change el `addCommand` daba "shortcut" y el listener DOM
+            // "menu_contextual", y colapsarlos en un fijo hacia que una copia
+            // por menu se registrara como atajo. Un campo que miente es peor
+            // que uno vacio: el vacio se ve en el analisis, la mentira no.
+            metodo: metodoDeClipboard(ev),
           })
-          flashClipboardWarning("Copiar está bloqueado. Quedó registrado.")
+          if (sel) portapapelesInternoRef.current = { texto: sel, origen: "editor" }
         }
-        const onCutDom = (ev: ClipboardEvent) => {
-          ev.preventDefault()
-          ev.stopPropagation()
-          onCopyAttemptRef.current?.({
-            seleccionChars: 0,
-            metodo: "menu_contextual",
-          })
-          flashClipboardWarning("Cortar está bloqueado. Quedó registrado.")
-        }
+        const onCopyDom = onCopyOCutDom
+        const onCutDom = onCopyOCutDom
         const onContextMenu = (_ev: MouseEvent) => {
-          // No bloqueamos el menu (Monaco lo necesita) — solo registramos
-          // que esta proximo a usarlo. Los listeners de paste/copy van a
-          // capturar la accion final.
+          // No bloqueamos el menu (Monaco lo necesita): anotamos CUANDO se
+          // abrio, y `metodoDeClipboard` lo usa para distinguir el atajo del
+          // menu contextual. Ver el comentario de esa funcion.
+          ultimoContextMenuRef.current = Date.now()
         }
         // `drop` solo llega si `dragover` acepta el arrastre; cancelar
         // `dragover` es lo que impide que el navegador inserte el texto.
@@ -642,6 +702,79 @@ export function CodeEditor({
         containerEl.addEventListener("copy", onCopyDom, true)
         containerEl.addEventListener("cut", onCutDom, true)
         containerEl.addEventListener("contextmenu", onContextMenu)
+
+        // Copiado FUERA del editor (la consigna, hoy). `CodeEditor` no
+        // renderiza la consigna — vive en otro subarbol de `EpisodePage.tsx`
+        // — asi que el UNICO lugar en comun para observar "se copio algo en
+        // la pagina" es `document`. No hace falta tocar ningun otro
+        // componente: este listener no le hace `preventDefault`, asi que el
+        // copiado real (el que escribe al clipboard del SO) sigue pasando
+        // exactamente igual que si este editor no existiera.
+        //
+        // Dos exclusiones, deliberadas:
+        //   - El panel del tutor (`[data-tour="tutor-chat"]`, el mismo
+        //     atributo que ya usa el tour de onboarding en
+        //     `EpisodePage.tsx`): ADR-026. Un copiado ahi NUNCA llena el
+        //     portapapeles interno, asi que cualquier pegado de ese origen
+        //     cae por "no coincide" y se bloquea solo, sin necesidad de una
+        //     regla aparte en el pegado.
+        //   - El panel de Salida/pruebas de ESTE MISMO editor
+        //     (`outputPanelRef`): la tabla del proposal lo deja bloqueado
+        //     ("sin caso de uso hoy").
+        // Todo lo demas de la pagina (la consigna, las notas del alumno)
+        // registra como origen "pagina".
+        //
+        // El copiado DESDE el editor ya lo manejan `onCopyDom`/`onCutDom` de
+        // arriba (con su propio `metodo`): si este listener tambien
+        // registrara esos casos seria trabajo redundante, no un bug — pero
+        // se salta explicitamente para no pisar el "editor" con un "pagina"
+        // menos preciso.
+        // ALLOWLIST, no denylist — y la direccion en la que falla es la
+        // decision de diseno entera.
+        //
+        // La primera version excluia el panel del tutor por selector
+        // (`[data-tour="tutor-chat"]`). Eso FALLA ABIERTO: renombrar ese
+        // atributo, refactorizar el panel o agregar uno nuevo convertia el
+        // codigo del tutor en pegable, en silencio y con la suite en verde
+        // (QA lo comprobo: renombro el atributo y los 548 tests siguieron
+        // pasando). Y tenia dos fugas mas: `closest()` mira donde EMPEZO la
+        // seleccion, no que CONTIENE, asi que un Ctrl+A capturaba el panel
+        // entero; y un `target` de tipo Text esquivaba la comparacion porque
+        // `closest` solo existe en Element.
+        //
+        // Invertido, el mismo accidente FALLA CERRADO: el portapapeles no se
+        // llena, el pegado se bloquea, y la feature degrada al comportamiento
+        // de antes de este change. Lo peor que pasa es que un alumno tipea un
+        // nombre de variable a mano. Con la denylist, lo peor que pasaba era
+        // romper ADR-026 — una decision del director de tesis.
+        //
+        // Mismo criterio que las cuotas de execution-service (ADR-060), que
+        // fallan cerradas a proposito: sin contador no se ejecuta.
+        //
+        // Para habilitar una region nueva se le pone `data-copiable-interno`.
+        // El panel del tutor NO lo lleva y no se lo pongan: ADR-026.
+        const onCopyOCutFueraDelEditor = (ev: ClipboardEvent) => {
+          const target = ev.target
+          if (!(target instanceof Node)) return
+          if (editorContainerRef.current?.contains(target)) return
+          const elemento = target instanceof Element ? target : (target.parentElement ?? null)
+          const region = elemento?.closest("[data-copiable-interno]") ?? null
+          if (!region) return
+          const texto = window.getSelection()?.toString() ?? ""
+          if (!texto) return
+          // La seleccion puede EXTENDERSE fuera de la region permitida aunque
+          // haya empezado adentro (Ctrl+A). Se exige que lo seleccionado este
+          // contenido en la region, no solo que arranque ahi.
+          const sel = window.getSelection()
+          const contenida =
+            sel !== null &&
+            sel.rangeCount > 0 &&
+            region.contains(sel.getRangeAt(0).commonAncestorContainer)
+          if (!contenida) return
+          portapapelesInternoRef.current = { texto, origen: "pagina" }
+        }
+        document.addEventListener("copy", onCopyOCutFueraDelEditor)
+        document.addEventListener("cut", onCopyOCutFueraDelEditor)
         ;(editor as unknown as { __clipboardListeners?: () => void }).__clipboardListeners = () => {
           containerEl.removeEventListener("dragover", onDragOverDom, true)
           containerEl.removeEventListener("drop", onDropDom, true)
@@ -649,6 +782,8 @@ export function CodeEditor({
           containerEl.removeEventListener("copy", onCopyDom, true)
           containerEl.removeEventListener("cut", onCutDom, true)
           containerEl.removeEventListener("contextmenu", onContextMenu)
+          document.removeEventListener("copy", onCopyOCutFueraDelEditor)
+          document.removeEventListener("cut", onCopyOCutFueraDelEditor)
         }
       }
 
@@ -1829,164 +1964,171 @@ def __tutor_run_tests(student_code, cases_json):
           minSize={14}
           className="flex flex-col min-h-0 bg-ink"
         >
-          {/* Header del panel de salida: pestanas + historial de corridas */}
-          <div className="flex items-center gap-2 px-3 py-1.5 border-b border-white/5">
-            <div
-              role="tablist"
-              aria-label="Vista de salida"
-              className="inline-flex items-center gap-0.5 rounded-md bg-white/5 p-0.5"
-            >
-              <button
-                type="button"
-                role="tab"
-                aria-selected={outputTab === "consola"}
-                onClick={() => setOutputTab("consola")}
-                className={`rounded px-2.5 py-1 text-[11px] font-semibold uppercase tracking-wider transition-colors ${
-                  outputTab === "consola"
-                    ? "bg-white/10 text-surface"
-                    : "text-muted hover:text-surface"
-                }`}
+          {/* `ref={outputPanelRef}`: Salida/pruebas queda AFUERA del
+              portapapeles interno (tabla del proposal, "sin caso de uso
+              hoy") — copiar el `expected` de un test y pegarlo en el editor
+              se sigue bloqueando. `display: contents` para no alterar el
+              layout flex que este `Panel` espera de sus hijos directos. */}
+          <div ref={outputPanelRef} className="contents">
+            {/* Header del panel de salida: pestanas + historial de corridas */}
+            <div className="flex items-center gap-2 px-3 py-1.5 border-b border-white/5">
+              <div
+                role="tablist"
+                aria-label="Vista de salida"
+                className="inline-flex items-center gap-0.5 rounded-md bg-white/5 p-0.5"
               >
-                Salida
-              </button>
-              {hasTests && (
                 <button
                   type="button"
                   role="tab"
-                  aria-selected={outputTab === "pruebas"}
-                  onClick={() => setOutputTab("pruebas")}
-                  data-testid="tests-tab"
-                  className={`inline-flex items-center gap-1.5 rounded px-2.5 py-1 text-[11px] font-semibold uppercase tracking-wider transition-colors ${
-                    outputTab === "pruebas"
+                  aria-selected={outputTab === "consola"}
+                  onClick={() => setOutputTab("consola")}
+                  className={`rounded px-2.5 py-1 text-[11px] font-semibold uppercase tracking-wider transition-colors ${
+                    outputTab === "consola"
                       ? "bg-white/10 text-surface"
                       : "text-muted hover:text-surface"
                   }`}
                 >
-                  Pruebas
-                  {testResults && (
-                    <span
-                      className={`inline-flex items-center rounded-full px-1.5 py-px text-[10px] font-bold tabular-nums ${
-                        testsPassed === testsTotal
-                          ? "bg-emerald-500/20 text-emerald-300"
-                          : "bg-danger/20 text-danger"
-                      }`}
-                    >
-                      {testsPassed}/{testsTotal}
-                    </span>
-                  )}
+                  Salida
                 </button>
+                {hasTests && (
+                  <button
+                    type="button"
+                    role="tab"
+                    aria-selected={outputTab === "pruebas"}
+                    onClick={() => setOutputTab("pruebas")}
+                    data-testid="tests-tab"
+                    className={`inline-flex items-center gap-1.5 rounded px-2.5 py-1 text-[11px] font-semibold uppercase tracking-wider transition-colors ${
+                      outputTab === "pruebas"
+                        ? "bg-white/10 text-surface"
+                        : "text-muted hover:text-surface"
+                    }`}
+                  >
+                    Pruebas
+                    {testResults && (
+                      <span
+                        className={`inline-flex items-center rounded-full px-1.5 py-px text-[10px] font-bold tabular-nums ${
+                          testsPassed === testsTotal
+                            ? "bg-emerald-500/20 text-emerald-300"
+                            : "bg-danger/20 text-danger"
+                        }`}
+                      >
+                        {testsPassed}/{testsTotal}
+                      </span>
+                    )}
+                  </button>
+                )}
+              </div>
+
+              {/* ED-7: historial de corridas (solo en la pestana Salida) */}
+              {outputTab === "consola" && runHistory.length > 0 && (
+                <div className="ml-auto flex items-center gap-1 overflow-x-auto">
+                  <span className="shrink-0 text-[10px] uppercase tracking-wider text-muted-soft">
+                    Historial
+                  </span>
+                  {runHistory.map((h) => {
+                    const active = viewingRunId === h.id
+                    return (
+                      <button
+                        key={h.id}
+                        type="button"
+                        onClick={() => setViewingRunId((cur) => (cur === h.id ? null : h.id))}
+                        title={`Corrida ${h.id} · ${h.ok ? "sin error" : "con error"} · ${Math.round(h.durationMs)} ms`}
+                        className={`shrink-0 inline-flex items-center gap-1 rounded px-1.5 py-0.5 font-mono text-[10px] tabular-nums transition-colors ${
+                          active
+                            ? "bg-accent-brand text-white"
+                            : h.ok
+                              ? "bg-emerald-500/15 text-emerald-300 hover:bg-emerald-500/25"
+                              : "bg-danger/15 text-danger hover:bg-danger/25"
+                        }`}
+                      >
+                        {h.ok ? "✓" : "✗"}
+                        {h.id}
+                      </button>
+                    )
+                  })}
+                </div>
               )}
             </div>
 
-            {/* ED-7: historial de corridas (solo en la pestana Salida) */}
-            {outputTab === "consola" && runHistory.length > 0 && (
-              <div className="ml-auto flex items-center gap-1 overflow-x-auto">
-                <span className="shrink-0 text-[10px] uppercase tracking-wider text-muted-soft">
-                  Historial
-                </span>
-                {runHistory.map((h) => {
-                  const active = viewingRunId === h.id
-                  return (
-                    <button
-                      key={h.id}
-                      type="button"
-                      onClick={() => setViewingRunId((cur) => (cur === h.id ? null : h.id))}
-                      title={`Corrida ${h.id} · ${h.ok ? "sin error" : "con error"} · ${Math.round(h.durationMs)} ms`}
-                      className={`shrink-0 inline-flex items-center gap-1 rounded px-1.5 py-0.5 font-mono text-[10px] tabular-nums transition-colors ${
-                        active
-                          ? "bg-accent-brand text-white"
-                          : h.ok
-                            ? "bg-emerald-500/15 text-emerald-300 hover:bg-emerald-500/25"
-                            : "bg-danger/15 text-danger hover:bg-danger/25"
-                      }`}
-                    >
-                      {h.ok ? "✓" : "✗"}
-                      {h.id}
-                    </button>
-                  )
-                })}
-              </div>
-            )}
-          </div>
-
-          {/* Entrada del programa — solo en lenguajes remotos.
+            {/* Entrada del programa — solo en lenguajes remotos.
               En Python el `input()` abre una ventanita durante la corrida; acá
               el contenedor no tiene canal de vuelta, asi que los datos se
               escriben ANTES. Se muestra siempre (no detras de un toggle) para
               que el alumno cuyo `Scanner` "no le pregunta nada" encuentre por
               que sin tener que adivinar. */}
-          {isRemoto && outputTab === "consola" && (
-            <div className="border-b border-white/10 px-4 py-2">
-              <label
-                htmlFor="stdin-libre"
-                className="mb-1 block text-[10px] uppercase tracking-wider text-muted-soft"
-              >
-                Entrada del programa
-              </label>
-              <textarea
-                id="stdin-libre"
-                value={stdinLibre}
-                onChange={(e) => setStdinLibre(e.target.value)}
-                rows={2}
-                spellCheck={false}
-                placeholder={
-                  "Un dato por linea, en el orden en que tu programa los lee.\nSe manda entero al apretar Ejecutar."
-                }
-                className="w-full resize-y rounded border border-white/10 bg-black/30 px-2 py-1 font-mono text-xs leading-relaxed text-surface placeholder:text-muted-soft focus:border-white/30 focus:outline-none"
-              />
-            </div>
-          )}
-
-          {/* Cuerpo del panel */}
-          <div className="flex-1 min-h-0 overflow-auto">
-            {outputTab === "consola" ? (
-              // `status` + `aria-live` para que un error de ejecucion (o el aviso
-              // de que el lenguaje no tiene runtime) se anuncie solo. Antes habia
-              // que navegar hasta acá para enterarse de que algo fallo.
-              <output
-                aria-live="polite"
-                aria-atomic="false"
-                className="block p-4 font-mono text-sm leading-relaxed text-surface"
-              >
-                {viewingRun && (
-                  <div className="mb-2 flex items-center gap-2 text-[11px] text-muted">
-                    <span>Viendo la corrida {viewingRun.id} (historial).</span>
-                    <button
-                      type="button"
-                      onClick={() => setViewingRunId(null)}
-                      className="rounded bg-white/10 px-1.5 py-0.5 font-sans font-medium text-surface hover:bg-white/20"
-                    >
-                      Ver corrida actual
-                    </button>
-                  </div>
-                )}
-                {/* Espera de la corrida remota. La local no lo necesita: es
-                    instantanea salvo la carga inicial de Pyodide. */}
-                {remoteWait && (
-                  <div className="flex items-center gap-2 text-muted">
-                    <span className="inline-block h-3 w-3 shrink-0 rounded-full border-2 border-muted/30 border-t-muted motion-safe:animate-spin" />
-                    <span>{remoteWait}</span>
-                  </div>
-                )}
-                {consoleOutput && <pre className="whitespace-pre-wrap">{consoleOutput}</pre>}
-                {consoleError && (
-                  <pre className="whitespace-pre-wrap text-danger">{consoleError}</pre>
-                )}
-                {!consoleOutput && !consoleError && !running && (
-                  <span className="text-muted">
-                    {!hasRuntime
-                      ? `Todavía no hay entorno de ejecución de ${languageLabel}. Podés escribir código y trabajarlo con el tutor: tus ediciones se registran igual.`
-                      : loading
-                        ? `Cargando runtime Python en el navegador (primera vez ~6 MB)... (${loadSeconds}s)`
-                        : isRemoto
-                          ? `Ejecutá tu código (${shortcutLabel}). Se compila y corre en el servidor, así que tarda unos segundos cada vez.`
-                          : `Ejecutá tu código (${shortcutLabel}) para ver el output acá.`}
-                  </span>
-                )}
-              </output>
-            ) : (
-              <TestResultsView results={testResults} testing={testing} />
+            {isRemoto && outputTab === "consola" && (
+              <div className="border-b border-white/10 px-4 py-2">
+                <label
+                  htmlFor="stdin-libre"
+                  className="mb-1 block text-[10px] uppercase tracking-wider text-muted-soft"
+                >
+                  Entrada del programa
+                </label>
+                <textarea
+                  id="stdin-libre"
+                  value={stdinLibre}
+                  onChange={(e) => setStdinLibre(e.target.value)}
+                  rows={2}
+                  spellCheck={false}
+                  placeholder={
+                    "Un dato por linea, en el orden en que tu programa los lee.\nSe manda entero al apretar Ejecutar."
+                  }
+                  className="w-full resize-y rounded border border-white/10 bg-black/30 px-2 py-1 font-mono text-xs leading-relaxed text-surface placeholder:text-muted-soft focus:border-white/30 focus:outline-none"
+                />
+              </div>
             )}
+
+            {/* Cuerpo del panel */}
+            <div className="flex-1 min-h-0 overflow-auto">
+              {outputTab === "consola" ? (
+                // `status` + `aria-live` para que un error de ejecucion (o el aviso
+                // de que el lenguaje no tiene runtime) se anuncie solo. Antes habia
+                // que navegar hasta acá para enterarse de que algo fallo.
+                <output
+                  aria-live="polite"
+                  aria-atomic="false"
+                  className="block p-4 font-mono text-sm leading-relaxed text-surface"
+                >
+                  {viewingRun && (
+                    <div className="mb-2 flex items-center gap-2 text-[11px] text-muted">
+                      <span>Viendo la corrida {viewingRun.id} (historial).</span>
+                      <button
+                        type="button"
+                        onClick={() => setViewingRunId(null)}
+                        className="rounded bg-white/10 px-1.5 py-0.5 font-sans font-medium text-surface hover:bg-white/20"
+                      >
+                        Ver corrida actual
+                      </button>
+                    </div>
+                  )}
+                  {/* Espera de la corrida remota. La local no lo necesita: es
+                    instantanea salvo la carga inicial de Pyodide. */}
+                  {remoteWait && (
+                    <div className="flex items-center gap-2 text-muted">
+                      <span className="inline-block h-3 w-3 shrink-0 rounded-full border-2 border-muted/30 border-t-muted motion-safe:animate-spin" />
+                      <span>{remoteWait}</span>
+                    </div>
+                  )}
+                  {consoleOutput && <pre className="whitespace-pre-wrap">{consoleOutput}</pre>}
+                  {consoleError && (
+                    <pre className="whitespace-pre-wrap text-danger">{consoleError}</pre>
+                  )}
+                  {!consoleOutput && !consoleError && !running && (
+                    <span className="text-muted">
+                      {!hasRuntime
+                        ? `Todavía no hay entorno de ejecución de ${languageLabel}. Podés escribir código y trabajarlo con el tutor: tus ediciones se registran igual.`
+                        : loading
+                          ? `Cargando runtime Python en el navegador (primera vez ~6 MB)... (${loadSeconds}s)`
+                          : isRemoto
+                            ? `Ejecutá tu código (${shortcutLabel}). Se compila y corre en el servidor, así que tarda unos segundos cada vez.`
+                            : `Ejecutá tu código (${shortcutLabel}) para ver el output acá.`}
+                    </span>
+                  )}
+                </output>
+              ) : (
+                <TestResultsView results={testResults} testing={testing} />
+              )}
+            </div>
           </div>
         </Panel>
       </Group>

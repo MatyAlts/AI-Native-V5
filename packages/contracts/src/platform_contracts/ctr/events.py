@@ -322,7 +322,14 @@ class EdicionCodigoPayload(BaseModel):
     diff_chars: int  # cantidad de caracteres cambiados desde evento anterior
     language: str
     origin: (
-        Literal["student_typed", "copied_from_tutor", "pasted_external", "snippet_expanded"] | None
+        Literal[
+            "student_typed",
+            "copied_from_tutor",
+            "pasted_external",
+            "snippet_expanded",
+            "pasted_internal",
+        ]
+        | None
     ) = Field(
         default=None,
         description=(
@@ -340,7 +347,14 @@ class EdicionCodigoPayload(BaseModel):
             "pero tampoco es interacción con IA, así que NO lleva override a "
             "N4 — inflaría la métrica de dependencia del tutor cada vez que "
             "alguien escribe `sout`. Cae a N2 como student_typed; la "
-            "distinción queda en el payload para el análisis posterior."
+            "distinción queda en el payload para el análisis posterior. "
+            "pasted_internal (change copiar-pegar-interno-en-el-episodio): "
+            "el portapapeles interno del editor detectó que el contenido "
+            "pegado coincide con algo copiado DENTRO del mismo episodio "
+            "(la consigna o el propio editor) — NO con el panel del tutor "
+            "(ADR-026, fuera de alcance) ni con nada externo. NO lleva "
+            "override a N4 (ver event_labeler): copiar el nombre de una "
+            "variable de la consigna no es apropiación reflexiva."
         ),
     )
 
@@ -514,7 +528,24 @@ class PestanaRecuperada(CTRBaseEvent):
 
 
 class CopiaIntentadaPayload(BaseModel):
-    """Intento de copiar contenido del editor Monaco (bloqueado por la UI)."""
+    """Copiado de contenido del editor Monaco.
+
+    ⚠ EL NOMBRE QUEDO VIEJO Y EL EVENTO CAMBIO DE SIGNIFICADO (2026-09-30,
+    change `copiar-pegar-interno-en-el-episodio`).
+
+    Hasta ese dia copiar en el editor estaba BLOQUEADO, asi que este evento
+    queria decir "intento copiar y se lo cortamos" — de ahi `copia_intentada`.
+    Desde el change, copiar dentro del episodio FUNCIONA, y el mismo evento
+    sale en un copiado EXITOSO. No hay campo que distinga los dos casos.
+
+    Consecuencia para cualquier analisis de la cadena: **la serie no es
+    continua**. Los eventos anteriores al 2026-09-30 son intentos fallidos; los
+    posteriores son copiados que ocurrieron. Cortar por `event_type` sin cortar
+    tambien por fecha mezcla dos cosas distintas.
+
+    El nombre no se cambia porque el `event_type` esta en la cadena firmada de
+    todos los episodios historicos; renombrarlo invalidaria sus hashes.
+    """
 
     seleccion_chars: int = Field(ge=0, description="Caracteres seleccionados al intentar copiar")
     metodo: Literal["shortcut", "menu_contextual"] = Field(description="Como dispararon la accion")

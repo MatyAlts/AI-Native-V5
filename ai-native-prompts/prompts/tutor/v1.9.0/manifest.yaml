@@ -1,0 +1,18 @@
+# Manifest del prompt tutor v1.9.0 (bump MINOR: copiar/pegar interno).
+# El governance-service verifica fail-loud que sha256(system.md) == hash declarado.
+# Si el archivo se modifica sin re-firmar este manifest, el servicio falla al cargar.
+version: v1.9.0
+parent_version: v1.8.0
+bump_kind: minor_copiar_pegar_interno
+files:
+  system.md: e3e68f20ecb7cbb1e2c3537e8352df80b06917a378dfecfab649dcd7315dbedd
+notas:
+  - Origen - change copiar-pegar-interno-en-el-episodio. La plataforma dejo de bloquear copiar y pegar DENTRO del episodio (consigna -> editor, editor -> editor); el bloqueo ahora es hacia afuera. v1.8.0 afirmaba, dos veces, que copiar y pegar esta bloqueado sin calificar, y esa afirmacion queda falsa con el change activo.
+  - Corregido, seccion "Mandarlo a un entorno que no tiene" - "copiar y pegar esta bloqueado" pasa a describir el bloqueo hacia afuera. El argumento contra "copiatelo a VS Code" deja de ser imposibilidad tecnica (copiar codigo AFUERA del editor funciona hoy) y pasa a ser pedagogico - la plataforma ya guarda el progreso sola, y el pegado externo (traerlo de vuelta) sigue bloqueado.
+  - Corregido, seccion "El codigo que el estudiante esta escribiendo" - "la plataforma no permite copiar y pegar en el editor" ya no es la razon para no pedirle al alumno que pegue su codigo. La razon de fondo no cambia (ya lo tenes, numerado por linea); se agrega que pegar codigo de afuera del episodio sigue bloqueado.
+  - NO se toca el boton "Insertar codigo del tutor" ni copied_from_tutor - ADR-026, diferido a post-defensa. El prompt no dice nada nuevo sobre el panel del tutor.
+  - Metodo INTACTO - ironia, mayeutica, elenchos y aporia, los 9 principios, "Cerrar el lazo", C3/C4/C5 (voseo, derivar afuera, pestana perdida) no cambian una letra respecto de v1.8.0 salvo las dos correcciones de arriba.
+  - Verificado por tests - apps/tutor-service/tests/unit/test_prompt_v1_9_0_copiar_pegar_interno.py ancla las dos correcciones por frase (incluye guardianes negativos de que la frase vieja NO sobrevive) y la regresion del resto de v1.8.0.
+  - No afecta classifier_config_hash - es prompt de runtime, no etiquetador (ADR-020).
+  - ACTIVADO en este commit - config.py::default_prompt_version y manifest.yaml (root) declaran tutor: v1.9.0, igual que hicieron los bumps a v1.6.0/v1.7.0/v1.8.0 (ver ai-native-prompts/manifest.yaml, "Los DOS/CUATRO literales" documentados en apps/tutor-service/tests/unit/test_config_prompt_version.py). Gobernanza MEDIO-ALTA del proposal: lo que espera revision coautoral de Ana Garis es el DEPLOY a produccion, no este commit - marcado BLOQUEANTE ANTES DEL DEPLOY en el manifest raiz, igual que v1.6.0/v1.7.0/v1.8.0.
+  - v1.8.0 y anteriores siguen en disco para reproducibilidad historica del piloto.

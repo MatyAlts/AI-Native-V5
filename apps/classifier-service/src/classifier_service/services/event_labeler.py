@@ -13,9 +13,12 @@ Niveles (Tesis Seccion 4.3):
 - meta: apertura/cierre/abandono del episodio.
 
 Override condicional para `edicion_codigo`: el payload trae `origin` con valores
-"student_typed" | "copied_from_tutor" | "pasted_external" | None (legacy). Una
-edicion copiada del tutor o pegada desde afuera se etiqueta N4 (la accion
-proviene de una interaccion IA/externa, no es elaboracion propia del estudiante).
+"student_typed" | "copied_from_tutor" | "pasted_external" | "snippet_expanded" |
+"pasted_internal" | None (legacy). Una edicion copiada del tutor o pegada desde
+afuera se etiqueta N4 (la accion proviene de una interaccion IA/externa, no es
+elaboracion propia del estudiante). `snippet_expanded` y `pasted_internal`
+quedan afuera del override (ver `_EDICION_CODIGO_N4_ORIGINS`): ninguno de los
+dos es interaccion con IA.
 
 Override temporal para `anotacion_creada` (ADR-023, G8a, v1.1.0):
 La Tabla 4.1 de la tesis asigna las anotaciones a N1 ("notas tomadas;
@@ -120,6 +123,19 @@ EVENT_N_LEVEL_BASE: dict[str, NLevel] = {
 # set quedo intacto y ninguna constante de override se movio. Por eso NO
 # corresponde bumpear LABELER_VERSION (ADR-020). Si algun dia se decide que la
 # ceremonia expandida merece nivel propio, ESO si es un bump + ADR.
+#
+# `pasted_internal` (change copiar-pegar-interno-en-el-episodio) queda
+# AFUERA por el mismo motivo, deliberadamente: el portapapeles interno del
+# editor (web-student/src/lib/portapapelesInterno.ts) distingue un pegado
+# copiado DENTRO del episodio (la consigna o el propio editor) de uno
+# externo. Copiar el nombre de una variable de la consigna no es
+# apropiacion reflexiva — es el mismo tipo de gesto mecanico que
+# `snippet_expanded`, no una interaccion con IA. Agregarlo al set inflaria
+# la metrica de dependencia del tutor cada vez que el alumno reordena su
+# propio codigo o usa un identificador que la consigna le exige literal.
+# El panel del tutor NUNCA llega a poblar el portapapeles interno (ADR-026):
+# cualquier pegado de ese origen sale `pasted_external` (o se bloquea), asi
+# que el override a N4 para contenido del tutor sigue intacto por esa via.
 _EDICION_CODIGO_N4_ORIGINS = {"copied_from_tutor", "pasted_external"}
 
 

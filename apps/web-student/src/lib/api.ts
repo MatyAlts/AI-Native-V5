@@ -529,12 +529,19 @@ export async function getExecution(
  * `snippet_expanded` = ceremonia expandida por el editor (ver
  * `lib/javaSnippets.ts`). No es tipeo del alumno, pero tampoco interaccion con
  * IA: el labeler NO le aplica override a N4.
+ *
+ * `pasted_internal` (change copiar-pegar-interno-en-el-episodio) = el
+ * portapapeles interno del editor (`lib/portapapelesInterno.ts`) valido el
+ * contenido pegado contra algo copiado DENTRO del episodio (consigna o
+ * editor propio). Tampoco lleva override a N4 — ver el mismo motivo que
+ * `snippet_expanded`.
  */
 export type EdicionCodigoOrigin =
   | "student_typed"
   | "copied_from_tutor"
   | "pasted_external"
   | "snippet_expanded"
+  | "pasted_internal"
 
 /** Emite un evento edicion_codigo al CTR. Disparado por el editor con
  * debouncing (1s) — el snapshot es el estado actual del buffer y diff_chars
