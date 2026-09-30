@@ -1,13 +1,15 @@
-# Manifest del prompt tutor v1.7.0 (bump MINOR: las reglas que el tutor no conoce).
+# Manifest del prompt tutor v1.8.0 (bump MINOR: salir afuera tambien cuenta si la excusa es respaldar).
 # El governance-service verifica fail-loud que sha256(system.md) == hash declarado.
 # Si el archivo se modifica sin re-firmar este manifest, el servicio falla al cargar.
-version: v1.7.0
-parent_version: v1.6.0
-bump_kind: minor_reglas_de_plataforma
+version: v1.8.0
+parent_version: v1.7.0
+bump_kind: minor_salida_por_respaldo
 files:
-  system.md: 168dbe61bbd7104bdef779e9d766ff9c9686b42685ea287f8abafbe0943df518
+  system.md: 8369d306ef94fec6a7bdbc7778b959624b9c128351b00c07531f8fc7979b1304
 notas:
-  - Origen - informe del tester sobre el TP de Listas v3, ejercicios 1 a 5, 2026-09-30.
+  - Origen - prueba propia contra produccion el 2026-09-30, despues de activar v1.7.0. Los tres cambios de v1.7.0 pasaron (no invento reglas de plataforma, se corrigio cuando el alumno lo desmintio, no derivo afuera ante una invitacion directa, ofrecio print+ejecutar en vez de una consola inexistente, voseo sostenido, metodo intacto y "Cerrar el lazo" funcionando). Este bump cierra el unico agujero que aparecio.
+  - C4 AMPLIADO - la prohibicion de mandar afuera cubria "resolver" y NO cubria "respaldar". Ante "se me borra lo que escribi al cerrar?" el tutor recomendo "guardar tu codigo en algun editor local o un sistema de control de versiones". Nadie le pidio resolver: lo encuadro como precaucion y por ese lado la regla no lo frenaba. Cuando despues le propuse explicitamente llevarme el codigo a VS Code, SI se nego — o sea que la instruccion existia y el marco la esquivaba.
+  - Y se agrega EL DATO, no solo el argumento pedagogico. En las dos respuestas el tutor argumento "si te llevas el codigo no voy a poder asistirte", y nunca dijo que copiar y pegar esta bloqueado. Un estudiante que sigue ese consejo pierde el tiempo contra una pared, creyendo que se lo recomendo el tutor.
   - C5 (bullet nuevo en "Lo que NO hace el tutor") - afirmar como son las reglas de la plataforma. El tutor le dijo al alumno que salir de pestaña no lo penaliza; el alumno respondio que le salia el cartel de aviso y el tutor cambio de postura SIN corregir lo que habia dicho. La politica real (tutor-service/config.py:131-138) es intermedia - NO cierra el episodio, pero SI registra pestana_perdida/pestana_recuperada en el CTR, SI muestra un overlay bloqueante al volver, y el docente lo ve en la auditoria. El tutor afirmo la mitad tranquilizadora. Nada de eso le llega en el contexto - lo estaba adivinando.
   - C3 CORREGIDO, y es una correccion de v1.6.0 - la prohibicion de derivar afuera chocaba con las consignas. 13 enunciados del piloto mandan a investigar, y uno dice literal "Nota - investigar el uso del operador de modulo (%) en Python" (ejercicios-piloto.yaml:1834). Contradecir la consigna pone al tutor en contra del docente. La regla pasa a ser de PROCEDENCIA - la consigna puede mandarlo afuera, el tutor por su cuenta no.
   - Voseo explicito en "Formato de respuesta". v1.6.0 decia "espanol rioplatense neutro" y lo daba por implicado; el tester reporto tuteo en el ejercicio 3. Un implicito no sostiene un turno 40.

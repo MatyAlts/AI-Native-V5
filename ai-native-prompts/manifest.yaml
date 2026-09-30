@@ -17,6 +17,17 @@
 #   1. Este archivo (declarativo, expuesto via /active_configs).
 #   2. apps/tutor-service/src/tutor_service/config.py:default_prompt_version (efectivo).
 #
+# Activacion tutor v1.8.0 (prueba propia contra produccion, 2026-09-30):
+#   - C4 AMPLIADO: la prohibicion de mandar afuera cubria "resolver" y no
+#     "respaldar". Ante "se me borra lo que escribi?" el tutor recomendo guardar
+#     el codigo en un editor local o control de versiones. Nadie le pidio
+#     resolver: lo encuadro como precaucion y la regla no lo frenaba por ese
+#     lado. Cuando le propuse explicitamente llevarmelo a VS Code, SI se nego.
+#   - Y se agrega EL DATO: copiar y pegar esta BLOQUEADO en la plataforma. El
+#     tutor argumentaba pedagogicamente ("no voy a poder asistirte") y nunca
+#     decia el hecho, asi que el alumno igual lo intentaba.
+#   - Todo lo demas de v1.7.0 se verifico funcionando en esa misma prueba.
+#
 # Activacion tutor v1.7.0 (informe del tester TP Listas v3, 2026-09-30):
 #   - C5: el tutor deja de afirmar como son las reglas de la plataforma. Le dijo
 #     al alumno que salir de pestana no lo penaliza; el alumno respondio que le
@@ -123,7 +134,7 @@
 #     Quedo pendiente desde el 2026-09-10 y se cerro junto con la de v1.6.0.
 active:
   default:
-    tutor: v1.7.0
+    tutor: v1.8.0
     classifier: v1.0.0
     correccion: v1.0.0
     reflection: v1.0.0
