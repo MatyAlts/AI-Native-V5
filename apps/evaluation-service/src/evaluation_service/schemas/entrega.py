@@ -122,6 +122,53 @@ class EntregaOut(BaseModel):
     legacy: bool = False
     created_at: datetime
     deleted_at: datetime | None = None
+    # Código y título de la TP, resueltos por `routes/entregas.py::_tp_metadata`
+    # (no acá: el schema sólo define el shape). OPCIONALES a propósito — una
+    # entrega cuya TP fue borrada no tiene de dónde sacarlos, y un campo
+    # obligatorio convertiría ese dato faltante en un 500. Change
+    # `alumno-ve-su-nota-sin-depender-del-listado`.
+    tarea_codigo: str | None = None
+    tarea_titulo: str | None = None
+    # Nota de la calificación de esta entrega, resuelta por
+    # `routes/entregas.py::_notas_metadata` en el mismo batch que la TP.
+    # `None` cuando la entrega no tiene calificación todavía (draft/submitted)
+    # — un campo obligatorio convertiría ese estado normal en un 500.
+    #
+    # CORREGIDO (hallazgo de QA, verificado empíricamente — no es un bug, es
+    # un comentario que mentía): el `field_validator` de abajo NO es lo que
+    # evita el bug Decimal/string que tuvo `CalificacionOut.nota_final`
+    # (backlog QA 2026-05-07, ver CLAUDE.md). No se ejercita en NINGUNO de
+    # los dos caminos reales de este archivo:
+    #   1. `EntregaOut.model_validate(entrega)` arranca de un `Entrega` del
+    #      ORM que NO TIENE atributo `nota_final` — pydantic usa el default
+    #      `None` sin pasar ese valor por el validator.
+    #   2. `_entrega_out_con_tp` asigna después, por atributo directo
+    #      (`out.nota_final = ...`), y el schema no declara
+    #      `validate_assignment=True` — una asignación tampoco dispara
+    #      validators.
+    # La defensa real contra el bug es el `float(nota)` explícito en
+    # `_entrega_out_con_tp`, reforzado por la coerción de pydantic al
+    # serializar (un `Decimal` crudo en un campo `float` sale `8.5` en el
+    # JSON, no `"8.50"`, incluso sin el validator — es "correcto por partida
+    # doble"). El validator sólo se ejercita si algo construye
+    # `EntregaOut(nota_final=Decimal(...), ...)` por kwargs explícitos —
+    # ningún camino de producción lo hace hoy.
+    nota_final: float | None = None
+    # Fecha de la calificación de esta entrega, mismo batch que `nota_final`
+    # (`_notas_metadata` ya consulta `calificaciones` — una columna más, no
+    # una consulta más). `None` en el mismo caso que `nota_final`: la entrega
+    # no tiene calificación todavía. Mismo tipo y mismo patrón de
+    # serialización que `submitted_at`/`created_at` acá arriba — un
+    # `datetime` de Python, sin cast a `str`: pydantic lo serializa a ISO-8601
+    # igual que a esos dos, y el frontend ya los tipa `string`.
+    graded_at: datetime | None = None
+
+    @field_validator("nota_final", mode="before")
+    @classmethod
+    def _nota_final_decimal_a_float(cls, v: object) -> object:
+        if isinstance(v, Decimal):
+            return float(v)
+        return v
 
 
 class CriterioCalificacion(BaseModel):

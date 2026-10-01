@@ -21,12 +21,13 @@ import copy
 import hashlib
 import uuid
 from datetime import UTC, datetime
+from decimal import Decimal
 from typing import Any, Literal
 from uuid import UUID
 
 import structlog
 from fastapi import APIRouter, Depends, HTTPException, Query, Response, status
-from sqlalchemy import and_, select, text
+from sqlalchemy import and_, bindparam, select, text
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
@@ -227,7 +228,11 @@ async def list_entregas(
 
     stmt = select(Entrega).where(and_(*conditions)).order_by(Entrega.id.asc()).limit(limit)
     rows = (await db.execute(stmt)).scalars().all()
-    data = [EntregaOut.model_validate(r) for r in rows]
+    # Una sola consulta para TODO el lote (hasta `limit` filas), no una por
+    # fila — ver `_tp_metadata`/`_notas_metadata`.
+    tp_meta = await _tp_metadata(db, {r.tarea_practica_id for r in rows})
+    notas_meta = await _notas_metadata(db, {r.id for r in rows})
+    data = [_entrega_out_con_tp(r, tp_meta, notas_meta) for r in rows]
     cursor_next = str(rows[-1].id) if len(rows) == limit else None
     return EntregaListResponse(
         data=data,
@@ -244,7 +249,9 @@ async def get_entrega(
     entrega = await _get_or_404(db, entrega_id)
     _assert_can_read(entrega, user)
     await _assert_comision_visible(db, entrega, user)
-    return EntregaOut.model_validate(entrega)
+    tp_meta = await _tp_metadata(db, {entrega.tarea_practica_id})
+    notas_meta = await _notas_metadata(db, {entrega.id})
+    return _entrega_out_con_tp(entrega, tp_meta, notas_meta)
 
 
 @router.post("/{entrega_id}/submit", response_model=EntregaOut)
@@ -822,6 +829,99 @@ async def _ejercicios_esperados(db: AsyncSession, tarea_practica_id: UUID) -> li
         {"tp": str(tarea_practica_id)},
     )
     return [{"orden": r[0], "ejercicio_id": str(r[1]) if r[1] else None} for r in rows.all()]
+
+
+async def _tp_metadata(
+    db: AsyncSession, tarea_practica_ids: set[UUID]
+) -> dict[UUID, tuple[str, str]]:
+    """Código y título de cada TP del lote, en UNA sola consulta.
+
+    `tareas_practicas` es propiedad de academic-service pero vive en la misma
+    DB (`academic_main`) — mismo criterio que `_ejercicios_esperados` y
+    `_comision_de_la_tp`: se lee por SQL crudo, no importando el modelo
+    `TareaPractica`. Se verificó que no es alcanzable: `platform-evaluation-service`
+    no depende de `academic-service` en su `pyproject.toml`, así que un import
+    cruzado ni siquiera resolvería.
+
+    Un solo `IN` para TODO el lote y no una consulta por fila: `list_entregas`
+    devuelve hasta 50 filas, y una consulta por fila serían 51 (N+1).
+
+    Las TPs borradas o inexistentes simplemente no entran al dict devuelto —
+    el caller (`_entrega_out_con_tp`) las deja en `None`, no se cae. Opcional
+    por diseño: ver `EntregaOut.tarea_codigo`/`tarea_titulo`.
+    """
+    if not tarea_practica_ids:
+        return {}
+    stmt = text(
+        "SELECT id, codigo, titulo FROM tareas_practicas WHERE id IN :ids AND deleted_at IS NULL"
+    ).bindparams(bindparam("ids", expanding=True))
+    rows = await db.execute(stmt, {"ids": [str(i) for i in tarea_practica_ids]})
+    return {UUID(str(r[0])): (r[1], r[2]) for r in rows.all()}
+
+
+async def _notas_metadata(
+    db: AsyncSession, entrega_ids: set[UUID]
+) -> dict[UUID, tuple[Decimal, datetime]]:
+    """`nota_final` y `graded_at` de cada entrega del lote, en UNA sola
+    consulta.
+
+    A diferencia de `_tp_metadata`, `calificaciones` SÍ es un modelo propio de
+    evaluation-service (`models/entregas.py::Calificacion`): no hace falta SQL
+    crudo ni el chequeo de alcanzabilidad cruzada — se consulta por ORM. Mismo
+    criterio de batching que `_tp_metadata` y por la misma razón: `IN` sobre
+    todo el lote, no una consulta por fila (`list_entregas` puede devolver
+    hasta 50).
+
+    `graded_at` viaja en el mismo `select` que `nota_final` a propósito: ya
+    se está consultando `calificaciones` para la nota, así que la fecha de
+    corrección es una columna más del mismo `SELECT`, no una consulta nueva.
+
+    Una entrega sin calificación (`draft`/`submitted`) no tiene fila en
+    `calificaciones` — no entra al dict, el caller deja los dos campos en
+    `None`.
+    """
+    if not entrega_ids:
+        return {}
+    stmt = select(Calificacion.entrega_id, Calificacion.nota_final, Calificacion.graded_at).where(
+        Calificacion.entrega_id.in_(entrega_ids)
+    )
+    rows = await db.execute(stmt)
+    return {UUID(str(r[0])): (r[1], r[2]) for r in rows.all()}
+
+
+def _entrega_out_con_tp(
+    entrega: Entrega,
+    tp_meta: dict[UUID, tuple[str, str]],
+    notas_meta: dict[UUID, tuple[Decimal, datetime]],
+) -> EntregaOut:
+    """`EntregaOut.model_validate` + los campos de TP, nota y fecha de
+    corrección resueltos en `tp_meta`/`notas_meta` (ver
+    `_tp_metadata`/`_notas_metadata`). Separado de las consultas a propósito:
+    el caller decide el tamaño del lote (una entrega en `get_entrega`, hasta
+    50 en `list_entregas`) y acá sólo se arma la respuesta.
+
+    El cast a `float` de `nota_final` es explícito acá, no delegado al
+    validator del schema: una asignación post-construcción
+    (`out.nota_final = ...`) NO dispara `field_validator` sin
+    `validate_assignment=True`, que el schema no declara — mismo motivo por
+    el que `tarea_codigo`/`tarea_titulo` se asignan ya resueltos y no crudos.
+    `graded_at` no necesita cast: es un `datetime` de Python tanto en el
+    origen (columna `DateTime` de SQLAlchemy) como en el destino (campo
+    `datetime` del schema) — mismo tipo que `submitted_at`/`created_at`.
+    """
+    out = EntregaOut.model_validate(entrega)
+    codigo, titulo = tp_meta.get(entrega.tarea_practica_id, (None, None))
+    out.tarea_codigo = codigo
+    out.tarea_titulo = titulo
+    nota_y_fecha = notas_meta.get(entrega.id)
+    if nota_y_fecha is None:
+        out.nota_final = None
+        out.graded_at = None
+    else:
+        nota, graded_at = nota_y_fecha
+        out.nota_final = float(nota)
+        out.graded_at = graded_at
+    return out
 
 
 async def _comision_de_la_tp(db: AsyncSession, tarea_practica_id: UUID) -> UUID | None:

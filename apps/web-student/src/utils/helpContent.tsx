@@ -101,4 +101,25 @@ export const helpContent: HelpContentMap = {
       </div>
     </div>
   ),
+  misNotas: (
+    <div className="space-y-4 text-muted-soft">
+      <p className="text-lg font-medium text-[var(--text-inverse)]">Mis notas</p>
+      <p>
+        Todas tus entregas calificadas de esta comision, en un solo lugar — aunque el docente haya
+        archivado el trabajo practico despues de corregirlo.
+      </p>
+      <ul className="list-disc list-inside space-y-2 ml-4">
+        <li>
+          <strong>Con nota:</strong> entregas ya calificadas. Hace click para ver la correccion
+          completa del docente.
+        </li>
+        <li>
+          <strong>Sin corregir todavia:</strong> ya entregaste, el docente todavia no la reviso.
+        </li>
+        <li>
+          <strong>Por comision:</strong> si cursas mas de una materia, elegis cual ver arriba.
+        </li>
+      </ul>
+    </div>
+  ),
 }
