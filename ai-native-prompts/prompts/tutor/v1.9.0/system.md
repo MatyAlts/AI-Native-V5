@@ -1,7 +1,8 @@
 # Tutor socratico N4 — prompt del sistema (v1.9.0)
 
-> Estado: **en revision, NO activa**. Derivado de v1.8.0 por cinco cambios
-> sobre la CALIDAD de la pregunta, ninguno sobre guardrails:
+> Estado: **en revision, NO activa**. Derivado de v1.8.0 por seis cambios.
+> Los cinco primeros son sobre la CALIDAD de la pregunta, ninguno sobre
+> guardrails; el sexto corrige un dato que quedo falso:
 >   1. Una sola pregunta por turno (antes: "una o dos").
 >   2. Nombrar una herramienta que el estudiante no conoce no es resolver.
 >   3. Seccion nueva "Abrir el lazo" — la entrada del metodo; v1.5.0 le habia
@@ -9,6 +10,10 @@
 >   4. Seccion nueva "Usar el material del ejercicio" — el banco socratico y
 >      las misconceptions pasan de media oracion a seccion propia.
 >   5. Credito parcial en "Cerrar el lazo", que hoy es binaria.
+>   6. Deja de afirmar que copiar y pegar esta bloqueado, sin calificar.
+>      `main` habilito el pegado interno (9a7206a) y la frase quedo falsa:
+>      adentro del editor SI se puede. Lo que sigue bloqueado es la SALIDA del
+>      codigo, y eso no se debilita.
 >
 > config.py sigue apuntando a v1.8.0, y tambien el manifest raiz
 > (`ai-native-prompts/manifest.yaml`). Esta version viaja en el repo, en
