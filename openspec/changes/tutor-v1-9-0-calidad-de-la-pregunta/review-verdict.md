@@ -3,27 +3,59 @@
 Un implementador, un QA que no tocó producción, y el orquestador después. Queda
 acá para que se archive con la change.
 
-## El hallazgo grave: el manifest no parseaba
+## El manifest no parseaba — y la gravedad que se le atribuyó era falsa
 
 El `manifest.yaml` de v1.9.0 se commiteó siendo **YAML inválido**. Seis `": "`
 dentro de escalares planos lo rompían — notas en prosa del tipo *"dijeron la
 misma cosa de cuatro formas: le preguntan al tutor…"*. Los manifests de v1.5.0 a
-v1.8.0 son todos válidos; este era el único roto.
+v1.8.0 son todos válidos; este era el único roto. **Ese dato es cierto** y lo
+verificaron por separado el orquestador y el auditor.
 
-**La consecuencia si se activaba:** el governance-service parsea este archivo al
-cargar el prompt, el parseo revienta, y `POST /api/v1/episodes` del tutor-service
-devuelve 500. Ningún estudiante puede abrir un episodio. Fallo total del núcleo
-de la plataforma, por una prosa con dos puntos.
+### La corrección, y es sobre lo que el orquestador escribió
 
-**Y no lo vio nadie, por el mismo motivo las tres veces:**
+La primera versión de este documento, el mensaje del commit `11bcff9` y un
+comentario en el PR afirmaban que **el governance-service parsea este archivo al
+cargar el prompt, que el parseo revienta, y que
+`POST /api/v1/episodes` devuelve 500 dejando a los estudiantes sin poder abrir un
+episodio**.
 
-- los tests del prompt sacan el sha256 con una expresión regular;
-- la revisión de QA lo leyó con `rg`;
-- CI no tiene ningún paso que valide los YAML del repo de prompts.
+**Es falso.** Lo encontró el auditor leyendo el código en vez de la prosa que lo
+describía:
 
-Los tres **leyeron el archivo sin parsearlo**. Y como v1.9.0 no está activa, el
-`PromptLoader` nunca lo abrió, así que el único consumidor que habría gritado no
-corrió.
+- `PromptLoader._declared_hash()` es un parser de **líneas** hecho a mano. Su
+  propio docstring lo dice: *"parseo minimal para no depender de PyYAML"*. Busca
+  la clave `files:` y después una línea `system.md: <hash>`, y no le importa un
+  `": "` dentro de una nota.
+- `PromptLoader.active_configs()`, que lee el manifest raíz, hace lo mismo:
+  *"Parseo mínimo — en producción reemplazar por PyYAML"*.
+- **PyYAML no se importa en ningún lugar de `governance-service`.**
+
+El auditor lo verificó ejecutando `_declared_hash()` contra el manifest roto tal
+como estaba commiteado: devuelve el hash, sin excepción. El orquestador lo
+reprodujo después, leyendo las dos funciones.
+
+Así que el riesgo era **latente, no activo**. Lo que vale, y es bastante menos:
+
+1. El archivo declara ser YAML y no lo era. Cualquier consumidor que lo lea con
+   un parser de verdad revienta.
+2. **El código dice que ese cambio está planeado** — el comentario de
+   `active_configs` es literalmente *"en producción reemplazar por PyYAML"*. El
+   día que se reemplace, deja de ser latente.
+3. El manifest es el registro de auditoría de cada versión del prompt, y uno que
+   no se abre con las herramientas del formato que declara es un registro peor.
+
+### La lección que sí se sostiene
+
+**Los tres lectores leyeron el archivo sin parsearlo:** los tests del prompt
+sacan el sha256 con una expresión regular, la revisión de QA usó `rg`, y CI no
+valida los YAML del repo de prompts. Que además el servicio tampoco lo parsee es
+lo que convirtió un error latente en uno invisible.
+
+Y una lección sobre el propio ciclo: **este hallazgo lo produjo el orquestador
+después de que QA terminó, así que nadie lo revisó hasta el auditor.** El dato
+era correcto y la consecuencia inventada, y la etiqueta que se le puso fue "el
+hallazgo más grave de la change". Un hallazgo propio sin revisor se califica
+solo, y se califica de más.
 
 Lo cierra `apps/governance-service/tests/unit/test_manifests_de_prompts_parsean.py`,
 sobre **todas** las versiones en disco y no sobre la última: el modo de falla no

@@ -16,11 +16,49 @@ Nada lo detecto:
 - CI no tiene ningun paso que valide los YAML del repo de prompts;
 - y la version no estaba activa, asi que el `PromptLoader` nunca la abrio.
 
-La consecuencia, si se hubiera activado: el governance-service parsea este
-archivo al cargar el prompt, el parseo revienta, y
-`POST /api/v1/episodes` del tutor-service devuelve 500 — es decir, **ningun
-estudiante puede abrir un episodio**. Un fallo total del nucleo de la
-plataforma, por una prosa con dos puntos.
+QUE SE ROMPE HOY, Y ACA SE CORRIGE UNA AFIRMACION PREVIA
+----------------------------------------------------------
+**Nada.** El commit que agrego este archivo (`11bcff9`) y la primera version de
+este docstring afirmaban que el governance-service parsea el manifest al cargar
+el prompt, que el parseo reventaba, y que `POST /api/v1/episodes` devolvia 500
+dejando a los estudiantes sin poder abrir un episodio. **Eso es falso**, y lo
+encontro el auditor de la change leyendo el codigo en vez de la prosa que lo
+describia:
+
+- `PromptLoader._declared_hash()` es un parser de LINEAS hecho a mano. Su propio
+  docstring lo dice: *"parseo minimal para no depender de PyYAML"*. Busca la
+  clave `files:` y despues una linea `system.md: <hash>`, y no le importa un
+  `": "` en una nota de prosa.
+- `PromptLoader.active_configs()`, que lee el manifest RAIZ, hace lo mismo
+  ("Parseo minimo — en produccion reemplazar por PyYAML").
+- **PyYAML no se importa en ningun lugar de `governance-service`.**
+
+Verificado ejecutando `_declared_hash()` contra el manifest roto tal como estaba
+commiteado: devuelve el hash, sin excepcion.
+
+POR QUE ESTE TEST VALE IGUAL
+------------------------------
+Dos razones, y ninguna es la catastrofe que se declaro antes:
+
+1. **El archivo declara ser YAML y no lo era.** La extension es `.yaml`, la
+   estructura es YAML, y cualquier consumidor que lo lea con un parser de verdad
+   —una herramienta futura, un script de alguien, un paso de CI— revienta. Es un
+   riesgo latente, no uno activo.
+2. **El codigo dice que ese cambio esta planeado**: el comentario de
+   `active_configs` es literalmente *"en produccion reemplazar por PyYAML"*. El
+   dia que se reemplace, un manifest invalido deja de ser latente.
+
+Y una tercera, mas chica: el manifest es el registro de auditoria de cada
+version del prompt. Un registro que no se puede abrir con las herramientas del
+formato que declara es un registro peor.
+
+LA LECCION QUE SI SE SOSTIENE
+-------------------------------
+Los tres lectores de la change —el implementador, QA, y el orquestador— leyeron
+este archivo **sin parsearlo**: los tests del prompt sacan el sha256 con una
+expresion regular, la revision de QA uso `rg`, y CI no valida los YAML del repo
+de prompts. Que ademas el servicio tampoco lo parsee es lo que convirtio un
+error latente en uno invisible.
 
 Este archivo cubre TODAS las versiones en disco, no la ultima: el modo de falla
 no tiene nada de particular a v1.9.0 y la proxima version va a redactar sus
@@ -63,7 +101,12 @@ def test_hay_manifests_para_revisar() -> None:
 
 @pytest.mark.parametrize("manifest", MANIFESTS, ids=IDS)
 def test_el_manifest_es_yaml_valido(manifest: Path) -> None:
-    """Lo que el governance-service hace al cargar el prompt."""
+    """Que el archivo sea el formato que su extension declara.
+
+    NO es "lo que el governance-service hace": ese servicio usa un parser de
+    lineas y no PyYAML (ver el docstring del modulo). Esta es una propiedad mas
+    estricta que la que el servicio exige hoy, y se afirma a proposito.
+    """
     try:
         datos = yaml.safe_load(manifest.read_text(encoding="utf-8"))
     except yaml.YAMLError as e:
@@ -78,7 +121,11 @@ def test_el_manifest_es_yaml_valido(manifest: Path) -> None:
 
 @pytest.mark.parametrize("manifest", MANIFESTS, ids=IDS)
 def test_el_manifest_declara_el_hash_real_de_system_md(manifest: Path) -> None:
-    """El governance-service verifica esto fail-loud: si no coincide, no carga.
+    """El governance-service SI verifica esto fail-loud: si no coincide, no carga.
+
+    A diferencia de la validez del YAML, esta propiedad si la exige el servicio
+    en runtime: `PromptLoader.load()` compara el hash declarado contra el
+    computado y levanta `ValueError("Hash mismatch ... posible manipulacion")`.
 
     Se recalcula sobre los bytes del archivo, no sobre el texto decodificado —
     es la misma operacion que hace el servicio.
