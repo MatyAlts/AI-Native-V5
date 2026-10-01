@@ -882,8 +882,25 @@ async def _notas_metadata(
     """
     if not entrega_ids:
         return {}
+    # `deleted_at IS NULL` NO es redundante, y no se saca.
+    #
+    # Lo senalo la revision de DBA: las otras DOS lecturas de `Calificacion` en
+    # este mismo archivo si lo filtran —`get_calificacion` y
+    # `recalificar_entrega`— y esta era la unica que no. `Calificacion` hereda
+    # `TimestampMixin`, que trae `deleted_at`, y la migracion le crea su propio
+    # indice (`ix_calificaciones_deleted_at`).
+    #
+    # Hoy el filtro no cambia nada: nada en el repo escribe
+    # `Calificacion.deleted_at`, asi que no hay soft-delete de calificaciones
+    # todavia. Pero la columna y el indice ya estan esperando. El dia que exista,
+    # sin este filtro la LISTA le muestra al alumno una nota que el DETALLE
+    # (`get_calificacion`) trata como inexistente — la misma discrepancia entre
+    # lista y detalle que esta change vino a resolver, al reves.
     stmt = select(Calificacion.entrega_id, Calificacion.nota_final, Calificacion.graded_at).where(
-        Calificacion.entrega_id.in_(entrega_ids)
+        and_(
+            Calificacion.entrega_id.in_(entrega_ids),
+            Calificacion.deleted_at.is_(None),
+        )
     )
     rows = await db.execute(stmt)
     return {UUID(str(r[0])): (r[1], r[2]) for r in rows.all()}

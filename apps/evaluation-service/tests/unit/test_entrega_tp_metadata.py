@@ -44,7 +44,7 @@ from uuid import UUID, uuid4
 
 from evaluation_service.auth.dependencies import User
 from evaluation_service.models.entregas import Entrega
-from evaluation_service.routes.entregas import get_entrega, list_entregas
+from evaluation_service.routes.entregas import _notas_metadata, get_entrega, list_entregas
 
 TENANT = UUID("aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa")
 COMISION = UUID("cccccccc-cccc-cccc-cccc-cccccccccccc")
@@ -77,6 +77,21 @@ def _entrega(
 def _student(sid: UUID) -> User:
     return User(
         id=sid, tenant_id=TENANT, email="a@utn.edu.ar", roles=frozenset({"estudiante"}), realm="utn"
+    )
+
+
+def _docente_oversight(did: UUID) -> User:
+    """Rol oversight (`superadmin`) — salta la consulta previa de
+    `usuarios_comision` (gate `if not is_oversight:`), así que `list_entregas`
+    hace UNA sola llamada a `db.execute`: la del `select(Entrega)` principal.
+    Eso es lo que permite capturarlo por índice fijo (`call_args_list[0]`)
+    sin tener que mockear también la consulta cruda de comisiones."""
+    return User(
+        id=did,
+        tenant_id=TENANT,
+        email="d@utn.edu.ar",
+        roles=frozenset({"superadmin"}),
+        realm="utn",
     )
 
 
@@ -346,3 +361,145 @@ class TestListEntregasConNotaFinal:
         # podría confundirse es la fecha si el mapeo por id fallara.
         assert by_id[str(e1.id)].graded_at == graded_at_e1
         assert by_id[str(e2.id)].graded_at == graded_at_e2
+
+
+class TestListEntregasAislamientoPorAlumno:
+    """Hallazgo de la auditoría: el filtro `Entrega.student_pseudonym ==
+    user.id` que impide que un alumno vea las entregas de OTRO alumno no
+    estaba fijado por ningún test. Los `_mock_db(...)` de esta clase devuelven
+    filas pre-armadas sin que `db.execute` mire qué `WHERE` compiló
+    `list_entregas` — así que los tests existentes (incluido
+    `test_cada_entrega_trae_su_propia_nota_y_fecha_de_correccion`, que prueba
+    que dos entregas del MISMO alumno no se crucen entre sí, algo distinto)
+    pasarían igual aunque el filtro por alumno desapareciera entero.
+
+    Estos dos capturan el `Select` real que `list_entregas` arma (lo único NO
+    mockeado — compilarlo no toca una DB) y leen el SQL compilado con
+    `literal_binds=True`.
+
+    LÍMITE DECLARADO, con las palabras del auditor: esto prueba que el código
+    ARMA la condición correcta. NO prueba que Postgres la APLIQUE — eso
+    necesita una base real contra la cual ejecutar, y no hay una levantada en
+    esta suite (es sesión mockeada, como el resto del archivo). Una RLS mal
+    configurada, un índice que ignora la condición o un bug del driver async
+    quedan fuera del alcance de este test.
+
+    GOTCHA verificado al escribir esto: el literal UUID que compila
+    SQLAlchemy con el tipo `PgUUID` NO lleva guiones (`sid.hex`, no
+    `str(sid)`) — comparar contra `str(uuid)` da un falso negativo silencioso
+    (el `in` nunca es `True`, pero tampoco explota).
+    """
+
+    async def test_alumno_no_docente_ignora_el_parametro_student_pseudonym_y_usa_su_propio_id(
+        self,
+    ) -> None:
+        """El vector de ataque concreto: un alumno pide
+        `?student_pseudonym=<otro-alumno>`. La rama no-docente de
+        `list_entregas` NUNCA lee ese parámetro — siempre arma la condición
+        con `user.id`. Si alguien cambia `user.id` por el parámetro en esa
+        rama (o lo agrega a la condición), el valor que compila cambia y esto
+        se pone rojo."""
+        sid = uuid4()
+        otro_alumno = uuid4()
+        db = _mock_db(_res_list([]))  # lote vacío: UNA sola llamada a db.execute
+
+        await list_entregas(
+            tarea_practica_id=None,
+            comision_id=None,
+            estado=None,
+            student_pseudonym=otro_alumno,  # el alumno pide el id de OTRO
+            cursor=None,
+            limit=50,
+            user=_student(sid),
+            db=db,
+        )
+
+        stmt = db.execute.call_args_list[0].args[0]
+        compiled = str(stmt.compile(compile_kwargs={"literal_binds": True}))
+        assert sid.hex in compiled, compiled
+        assert otro_alumno.hex not in compiled, compiled
+
+    async def test_rol_docente_no_agrega_filtro_por_student_pseudonym_del_propio_user(
+        self,
+    ) -> None:
+        """Lo opuesto: para un rol docente (oversight, para que `list_entregas`
+        haga UNA sola llamada a `db.execute` — ver `_docente_oversight`), el
+        código NO debe agregar `Entrega.student_pseudonym == user.id` — esa
+        restricción es sólo para no-docentes. Si alguien la agrega sin querer
+        a la rama docente, el id del docente aparecería en el WHERE
+        compilado donde no corresponde."""
+        did = uuid4()
+        db = _mock_db(_res_list([]))
+
+        await list_entregas(
+            tarea_practica_id=None,
+            comision_id=None,
+            estado=None,
+            student_pseudonym=None,
+            cursor=None,
+            limit=50,
+            user=_docente_oversight(did),
+            db=db,
+        )
+
+        stmt = db.execute.call_args_list[0].args[0]
+        compiled = str(stmt.compile(compile_kwargs={"literal_binds": True}))
+        assert did.hex not in compiled, compiled
+
+
+class TestNotasMetadataExcluyeCalificacionesBorradas:
+    """`_notas_metadata` filtra `deleted_at IS NULL`, igual que sus hermanas.
+
+    POR QUE ESTE TEST EXISTE
+    --------------------------
+    Lo senalo la revision de DBA. Las otras DOS lecturas de `Calificacion` en
+    `routes/entregas.py` si filtran por `deleted_at` —`get_calificacion` y
+    `recalificar_entrega`— y `_notas_metadata` era la unica que no.
+
+    Hoy el filtro es inerte: nada en el repo escribe `Calificacion.deleted_at`,
+    asi que no hay soft-delete de calificaciones implementado. Pero la columna
+    existe (viene de `TimestampMixin`) y la migracion le crea su propio indice.
+    El dia que exista el soft-delete, sin este filtro la LISTA le muestra al
+    alumno una nota que el DETALLE trata como inexistente.
+
+    QUE PRUEBA Y QUE NO
+    ---------------------
+    Prueba que el codigo ARMA la condicion, afirmando sobre el SQL compilado.
+    NO prueba que Postgres la aplique: eso necesita una base real, y con una
+    sesion mockeada un test asi pasaria con el filtro puesto Y sacado. Es el
+    mismo limite que declara `TestListEntregasAislamientoPorAlumno` mas arriba.
+    """
+
+    async def test_el_where_compilado_excluye_las_borradas(self) -> None:
+        capturado: list[object] = []
+
+        class _Db:
+            async def execute(self, stmt: object) -> object:
+                capturado.append(stmt)
+
+                class _R:
+                    @staticmethod
+                    def all() -> list[object]:
+                        return []
+
+                return _R()
+
+        await _notas_metadata(_Db(), {uuid4()})  # type: ignore[arg-type]
+
+        assert capturado, "no se capturo ningun statement: el test quedo vacuo"
+        compilado = str(capturado[0].compile())  # type: ignore[attr-defined]
+        # El `IS NULL` sobre deleted_at tiene que estar en el WHERE. Se busca la
+        # columna Y el IS NULL juntos: buscar solo "deleted_at" pasaria si la
+        # columna apareciera en el SELECT por cualquier otro motivo.
+        assert "deleted_at IS NULL" in compilado, (
+            f"el filtro de borradas no esta en el WHERE: {compilado}"
+        )
+
+    async def test_sin_ids_no_consulta_nada(self) -> None:
+        # Guarda del guard: con el set vacio devuelve {} sin tocar la base, asi
+        # que el `IN ()` degenerado nunca llega a Postgres.
+        class _DbQueExplota:
+            async def execute(self, stmt: object) -> object:
+                raise AssertionError("no deberia consultar con ids vacios")
+
+        assert await _notas_metadata(_DbQueExplota(), set()) == {}  # type: ignore[arg-type]
