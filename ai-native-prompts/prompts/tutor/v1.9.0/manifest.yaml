@@ -1,0 +1,79 @@
+# Manifest del prompt tutor v1.9.0 (bump MINOR: calidad de la pregunta).
+# El governance-service verifica fail-loud que sha256(system.md) == hash declarado.
+# Si el archivo se modifica sin re-firmar este manifest, el servicio falla al cargar.
+version: v1.9.0
+parent_version: v1.8.0
+bump_kind: minor_calidad_de_la_pregunta
+files:
+  system.md: 2766eaad80bbd768332b471e4818177059b443621f80330ab59025b96bf875a7
+notas:
+  - Origen - cuatro alumnos del piloto, por dos canales distintos, reportaron la
+    misma cosa de cuatro formas: le preguntan al tutor como validar algo y
+    recibe otra pregunta en vez de ayuda, nunca les muestra una funcion o
+    porcion de codigo, responde pregunta con pregunta en vez de un ejemplo.
+  - DIAGNOSTICO - los cuatro movimientos del metodo (ironia, mayeutica,
+    elenchos, aporia) son todos de APERTURA y presuponen que el estudiante ya
+    tiene algo adentro para sacarle. Un alumno de primer ano que nunca
+    escucho hablar del concepto no tiene de donde agarrarse, y es el caso mas
+    comun, no el raro. Es el mismo defecto estructural que v1.5.0 cerro del
+    otro lado (le agrego SALIDA al metodo); esta version le agrega ENTRADA.
+  - CAMBIO 1 - Una sola pregunta por turno (antes "una o dos"). Tres preguntas
+    juntas no son tres oportunidades de pensar, son una pared.
+  - CAMBIO 2 - Nombrar una herramienta que el estudiante no conoce no es
+    resolver. Se agrega a "Lo que SI se responde directo". La linea esta en
+    PARA QUE se nombra - dar el nombre y seguir preguntando si, escribir el
+    bloque armado no.
+  - CAMBIO 3 - Seccion nueva "Abrir el lazo": la entrada del metodo, con como
+    detectar que el estudiante no tiene de donde agarrarse (no sabe por donde
+    empezar, "no se", respuesta sin ningun termino del problema, devuelve la
+    misma pregunta) y que hacer (dar el piso, un ejemplo de OTRO dominio,
+    recien ahi la pregunta). Insertada antes de "Cerrar el lazo" - entrada y
+    salida del metodo quedan juntas y en orden.
+  - CAMBIO 4 - Seccion nueva "Usar el material del ejercicio": el banco
+    socratico y las misconceptions pasan de media oracion en "Contexto del
+    TP" a seccion propia, con el test de la pregunta generica (si le cambias
+    el tema y sigue funcionando, es una plantilla) y la aclaracion de que
+    "no revelar" significa no mostrar el material, no significa no usarlo.
+    Insertada antes de "Uso del material de catedra (contexto RAG)".
+  - CAMBIO 5 - Credito parcial en "Cerrar el lazo", que era binaria. Agregado
+    al final de la seccion, en parrafos nuevos, SIN tocar una letra de lo que
+    ya estaba (verificado por test). Cuando el razonamiento acierta en parte,
+    nombra primero que parte esta bien -concreta, no "vas bien"- y recien
+    despues la que falta. Se escribe explicito (no se deja emerger) porque en
+    el A/B salio una sola vez, por efecto lateral de la regla de una sola
+    pregunta, y un comportamiento que emerge no es un comportamiento
+    garantizado.
+  - EVIDENCIA - A/B de tres brazos (ver openspec/changes/
+    tutor-v1-9-0-calidad-de-la-pregunta/ab-test.md), el mismo ejercicio con
+    todo su material, las mismas cinco preguntas en el mismo orden, criterios
+    fijados por escrito antes de ver cada respuesta. Sostiene que "Abrir el
+    lazo" produce un comportamiento ausente en los otros brazos, que "una
+    sola pregunta" se cumple y se cuenta (3 contra 1), que no hay regresion
+    de "Cerrar el lazo", y que la regla de nombrar la herramienta no pisa las
+    instrucciones_adicionales del ejercicio. NO sostiene que "Usar el
+    material del ejercicio" haga algo por si sola (el brazo intermedio ya
+    usaba las misconceptions sin que el prompt se lo pidiera) ni que el
+    paquete este validado cambio por cambio - el A/B valido el paquete
+    entero. n=1 por brazo y el modelo del A/B (Sonnet) no es el de
+    produccion (gpt-4o-mini) - limitaciones completas en ab-test.md.
+  - METODO INTACTO - ironia, mayeutica, elenchos y aporia, los nueve
+    principios, "Lo que NO hace el tutor" y el texto previo de "Cerrar el
+    lazo" no cambian una letra respecto de v1.8.0. Verificado por
+    apps/tutor-service/tests/unit/test_prompt_v1_9_0_calidad_de_pregunta.py,
+    que compara los cuatro movimientos y los principios byte a byte contra
+    v1.8.0 - el mismo patron de test_prompt_confirmacion_al_acertar.py.
+  - No afecta classifier_config_hash - es prompt de runtime, no etiquetador
+    (ADR-020).
+  - REVISION COAUTORAL CON ANA GARIS - ABIERTA. Tambien sigue abierta la de
+    v1.8.0, que esta version saltea sin cerrarla (deuda acumulada, no
+    repetida aqui en silencio).
+  - DESACTIVADA A PROPOSITO - apps/tutor-service/src/tutor_service/config.py
+    y ai-native-prompts/manifest.yaml (el raiz) siguen apuntando a v1.8.0.
+    Esta version viaja en el repo, en disco, sin activarse, hasta que la
+    revision coautoral cierre. En la change del portapapeles se activo una
+    version sin revisar y el header del prompt afirmaba lo contrario, lo que
+    convirtio al prompt en algo que le mentia al modelo sobre su propio
+    estado. No se repite - verificado por
+    apps/tutor-service/tests/unit/test_header_del_prompt_no_miente.py.
+  - v1.8.0 y anteriores siguen en disco para reproducibilidad historica del
+    piloto.
