@@ -219,6 +219,7 @@ class TestLoQueNoCambioNoCambio:
         delta esta CONTENIDO en el parrafo del portapapeles y que el resto de la
         seccion sigue byte a byte.
         """
+
         # Se normaliza antes de recortar: los marcadores de corte cruzan saltos
         # de linea en el archivo real, y un reflow cosmetico no tiene que romper
         # este test (mismo criterio que `_normalizado`).
@@ -242,8 +243,7 @@ class TestLoQueNoCambioNoCambio:
         resto_viejo = vieja[:cv] + vieja[fv:]
 
         assert resto_nuevo == resto_viejo, (
-            "la seccion de guardrails cambio en algo mas que el dato del "
-            "portapapeles"
+            "la seccion de guardrails cambio en algo mas que el dato del portapapeles"
         )
 
 
@@ -255,9 +255,7 @@ class TestElManifestDeclaraElHashReal:
         manifest = version_dir / "manifest.yaml"
         assert manifest.exists(), f"falta {manifest}"
 
-        declared = re.search(
-            r"system\.md:\s*([0-9a-f]{64})", manifest.read_text(encoding="utf-8")
-        )
+        declared = re.search(r"system\.md:\s*([0-9a-f]{64})", manifest.read_text(encoding="utf-8"))
         assert declared is not None, "manifest.yaml no declara el sha256 de system.md"
 
         actual = hashlib.sha256(_ruta(VERSION).read_bytes()).hexdigest()
@@ -355,10 +353,7 @@ class TestElSextoCambioLaReglaDelPortapapeles:
         # `in texto` sobre esa frase pasa aunque se borre justo el lugar donde
         # se afirma el permiso. Encontrado por mutacion: borrando "adentro" de
         # esta oracion, la version suelta de este test seguia en verde.
-        assert (
-            "**SI puede copiar y pegar su propio codigo adentro del editor**"
-            in texto
-        )
+        assert "**SI puede copiar y pegar su propio codigo adentro del editor**" in texto
 
     def test_conserva_que_el_codigo_no_sale_del_editor(self) -> None:
         # El guardrail de v1.8.0 (C4: no mandarlo afuera) no se debilita: lo que
