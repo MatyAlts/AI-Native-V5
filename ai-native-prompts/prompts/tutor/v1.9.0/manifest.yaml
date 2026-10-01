@@ -5,7 +5,7 @@ version: v1.9.0
 parent_version: v1.8.0
 bump_kind: minor_calidad_de_la_pregunta
 files:
-  system.md: 2766eaad80bbd768332b471e4818177059b443621f80330ab59025b96bf875a7
+  system.md: d8e9e67f6f9bd57302cb0f38667a8779cf533ba8b3be10e6796d1dc805d21157
 notas:
   - Origen - cuatro alumnos del piloto, por dos canales distintos, reportaron la
     misma cosa de cuatro formas: le preguntan al tutor como validar algo y

@@ -206,11 +206,44 @@ class TestLoQueNoCambioNoCambio:
             "que ya estaba."
         )
 
-    def test_lo_que_no_hace_el_tutor_es_identico_a_v180(self) -> None:
-        """Esta change no toca guardrails — 'Lo que NO hace el tutor' es ajeno
-        a los cinco cambios de la calidad de la pregunta."""
-        assert _seccion(VERSION, "Lo que NO hace el tutor") == _seccion(
-            PADRE, "Lo que NO hace el tutor"
+    def test_lo_que_no_hace_el_tutor_cambia_SOLO_en_el_dato_del_portapapeles(
+        self,
+    ) -> None:
+        """Esta change no toca guardrails. La unica edicion en esta seccion es
+        el DATO sobre copiar y pegar (sexto cambio), que quedo falso cuando
+        `main` habilito el pegado interno.
+
+        El test no se borro al agregar ese cambio: se acoto. Borrarlo habria
+        dejado la seccion de guardrails sin ninguna red, que es exactamente lo
+        que este archivo existe para evitar. Lo que se afirma ahora es que el
+        delta esta CONTENIDO en el parrafo del portapapeles y que el resto de la
+        seccion sigue byte a byte.
+        """
+        # Se normaliza antes de recortar: los marcadores de corte cruzan saltos
+        # de linea en el archivo real, y un reflow cosmetico no tiene que romper
+        # este test (mismo criterio que `_normalizado`).
+        def _plano(s: str) -> str:
+            return re.sub(r"\s+", " ", s).strip()
+
+        nueva = _plano(_seccion(VERSION, "Lo que NO hace el tutor"))
+        vieja = _plano(_seccion(PADRE, "Lo que NO hace el tutor"))
+
+        INICIO = "**Y decile el dato"
+        FIN_NUEVO = "Lo que esta bloqueado es la salida, no el reuso."
+        FIN_VIEJO = "lo recomendaste."
+
+        # Se recorta el parrafo del dato en cada version y se compara el
+        # remanente: si cambio algo MAS, el remanente difiere y esto falla.
+        cn, cv = nueva.index(INICIO), vieja.index(INICIO)
+        fn = nueva.index(FIN_NUEVO) + len(FIN_NUEVO)
+        fv = vieja.index(FIN_VIEJO) + len(FIN_VIEJO)
+
+        resto_nuevo = nueva[:cn] + nueva[fn:]
+        resto_viejo = vieja[:cv] + vieja[fv:]
+
+        assert resto_nuevo == resto_viejo, (
+            "la seccion de guardrails cambio en algo mas que el dato del "
+            "portapapeles"
         )
 
 
@@ -233,3 +266,93 @@ class TestElManifestDeclaraElHashReal:
             f"declarado.\n  declarado: {declared.group(1)}\n  actual:    {actual}\n"
             "Calcular el sha256 DESPUES del ultimo cambio al archivo."
         )
+
+
+class TestElSextoCambioLaReglaDelPortapapeles:
+    """El prompt deja de afirmar que copiar y pegar esta bloqueado, sin calificar.
+
+    POR QUE ESTE CAMBIO EXISTE
+    ----------------------------
+    `main` habilito el pegado interno (commit 9a7206a, "copiar y pegar el propio
+    codigo adentro del editor"). v1.8.0 decia DOS cosas sobre eso, y con ese
+    cambio una queda falsa:
+
+      1. "en esta plataforma copiar y pegar esta bloqueado" — la PREMISA quedo
+         falsa (adentro del editor si se puede), aunque la conclusion que sacaba
+         sigue siendo cierta: "copiatelo a VS Code" es inejecutable, porque el
+         Ctrl+C del editor NO escribe en el portapapeles del sistema.
+      2. "la plataforma no permite copiar y pegar en el editor" — esta es
+         directamente falsa. El titulo del propio commit que la invalido dice
+         "adentro del editor".
+
+    Quien mergeo el cambio argumento que v1.8.0 seguia siendo verdadero, y tenia
+    razon sobre la frase que cito (la 1, por la conclusion). Su argumento no
+    cubre la frase 2.
+
+    POR QUE NO ES PROLIJIDAD
+    --------------------------
+    Es el defecto que la v1.7.0 cerro con C5: el tutor afirmo una regla de la
+    plataforma que estaba mal, el alumno lo contradijo, y el tutor cambio de
+    postura sin corregirse. La regla que quedo fue "el tiene el dato y vos no".
+    Un estudiante descubre que esta frase es falsa la primera vez que aprieta
+    Ctrl+C adentro del editor, y desde ahi deja de creerle al resto.
+
+    LO QUE SIGUE SIENDO VERDAD, Y NO SE DEBE DEBILITAR
+    ----------------------------------------------------
+    El codigo NO sale del editor: `portapapelesInternoRef` es una variable en
+    memoria y el codigo de `CodeEditor.tsx` declara que no escribe al clipboard
+    del SO. Asi que el consejo "llevatelo afuera" sigue siendo inejecutable, y
+    pedirle al estudiante que pegue su codigo en el chat sigue siendo un
+    callejon sin salida. Lo que cambia es el MOTIVO, no la conclusion.
+    """
+
+    def test_no_afirma_el_bloqueo_sin_calificar(self) -> None:
+        texto = _normalizado("v1.9.0")
+
+        # La forma ASERTIVA es la que quedo falsa, y es la que no puede volver.
+        # No alcanza con buscar la cadena pelada: el prompt la menciona a
+        # proposito, en una prohibicion ("No digas que copiar y pegar esta
+        # bloqueado, sin calificar"), y un `not in` sobre la cadena suelta
+        # prohibiria la instruccion que arregla el problema.
+        assert "en esta plataforma **copiar y pegar esta bloqueado**" not in texto
+        assert "no permite copiar y pegar en el editor" not in texto
+
+    def test_donde_menciona_el_bloqueo_es_para_prohibirlo(self) -> None:
+        # Complemento del anterior: la cadena SI aparece, y tiene que aparecer
+        # siempre como prohibicion. Sin esta mitad, el test de arriba pasaria
+        # con una redaccion afirmativa apenas distinta de la original.
+        texto = _normalizado("v1.9.0")
+        for m in re.finditer(r"copiar y pegar esta bloqueado", texto):
+            contexto = texto[max(0, m.start() - 60) : m.start()]
+            assert "No digas" in contexto, (
+                f"aparece sin prohibirlo, en: ...{contexto}"
+            )
+
+    def test_dice_que_adentro_del_editor_SI_se_puede(self) -> None:
+        texto = _normalizado("v1.9.0")
+        # Anclado a la afirmacion COMPLETA, no a la frase suelta. "adentro del
+        # editor" aparece en tres lugares distintos del prompt, asi que un
+        # `in texto` sobre esa frase pasa aunque se borre justo el lugar donde
+        # se afirma el permiso. Encontrado por mutacion: borrando "adentro" de
+        # esta oracion, la version suelta de este test seguia en verde.
+        assert (
+            "**SI puede copiar y pegar su propio codigo adentro del editor**"
+            in texto
+        )
+
+    def test_conserva_que_el_codigo_no_sale_del_editor(self) -> None:
+        # El guardrail de v1.8.0 (C4: no mandarlo afuera) no se debilita: lo que
+        # se corrige es el dato, no la politica.
+        texto = _normalizado("v1.9.0")
+        assert "no sale del editor" in texto
+        assert "que no se puede ejecutar" in texto
+
+    def test_v180_SI_tenia_las_dos_frases_falsas(self) -> None:
+        # Guarda contra el modo de falla mas tonto de los tres tests de arriba:
+        # si la normalizacion o la lectura se rompen y devuelven "", los
+        # `not in` pasan sin haber mirado nada. Este test afirma que en v1.8.0
+        # las frases SI estaban, asi que los `not in` de arriba miden un delta
+        # real y no un archivo vacio.
+        viejo = _normalizado("v1.8.0")
+        assert "copiar y pegar esta bloqueado" in viejo
+        assert "no permite copiar y pegar en el editor" in viejo
