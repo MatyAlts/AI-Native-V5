@@ -23,7 +23,7 @@ import pathlib
 
 import pytest
 
-_VERSION = "v1.7.0"
+_VERSION = "v1.8.0"
 _RUTA = (
     pathlib.Path(__file__).resolve().parents[4]
     / "ai-native-prompts"
@@ -92,6 +92,34 @@ class TestVoseoExplicito:
         t = _plano()
         assert "voseo siempre" in t
         assert "nunca tuteo" in t
+
+
+class TestC4SalirAfueraTambienCuentaSiLaExcusaEsRespaldar:
+    """Agujero encontrado probando v1.7.0 contra produccion el 2026-09-30.
+
+    La prohibicion cubria "salir a resolver" y NO "salir a respaldar". Ante
+    "se me borra lo que escribi al cerrar?" el tutor recomendo guardar el
+    codigo en un editor local o un sistema de control de versiones. Nadie le
+    pidio resolver nada: lo encuadro como precaucion, y por ese lado la regla
+    no lo frenaba. Cuando despues le propuse explicitamente llevarme el codigo
+    a VS Code, SI se nego — la instruccion existia y el marco la esquivaba.
+    """
+
+    def test_cubre_la_excusa_de_respaldar(self) -> None:
+        t = _plano()
+        assert "cuando la excusa no es resolver" in t
+        assert "respaldarlo" in t, (
+            "la prohibicion no nombra el caso que fallo: llevarse el codigo "
+            "afuera para guardarlo, no para resolverlo"
+        )
+
+    def test_dice_el_dato_y_no_solo_el_argumento_pedagogico(self) -> None:
+        # En las dos respuestas medidas el tutor argumento "no voy a poder
+        # asistirte" y NUNCA dijo que copiar y pegar esta bloqueado. El alumno
+        # igual lo intenta, y pierde el tiempo creyendo que se lo recomendaron.
+        t = _plano()
+        assert "copiar y pegar esta bloqueado" in t
+        assert "no se puede ejecutar" in t
 
 
 class TestElPromptSeAutodeclaraConSuVersion:
