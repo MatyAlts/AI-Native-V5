@@ -33,7 +33,14 @@ export interface TestCaseResult {
   type: "stdin_stdout" | "pytest_assert"
   passed: boolean
   expected: string | null
+  /** Buffer de PANTALLA: prompts de `input()` + prints. Lo que el alumno ve.
+   * Se muestra tal cual en el panel "Obtenido" de un caso fallado. */
   actual: string
+  /** Buffer de COMPARACION: solo lo que el codigo del alumno escribio via
+   * `print()` / `sys.stdout.write()`. El prompt de `input()` NUNCA entra —
+   * comparacion-ignora-el-prompt-del-input. Es lo que se coteja contra
+   * `expected`, nunca `actual`. */
+  comparacion: string
   stdin: string
   error: string | null
 }
@@ -54,7 +61,7 @@ export interface TestCaseResult {
 export function resolverVeredictosPython(resultados: readonly TestCaseResult[]): TestCaseResult[] {
   return resultados.map((r) =>
     r.type === "stdin_stdout" && r.error === null
-      ? { ...r, passed: salidaCoincide(r.actual, r.expected) }
+      ? { ...r, passed: salidaCoincide(r.comparacion, r.expected) }
       : r,
   )
 }

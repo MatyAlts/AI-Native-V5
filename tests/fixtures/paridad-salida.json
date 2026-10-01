@@ -395,6 +395,48 @@
       "esperado": "a\nb",
       "coincide": false,
       "porque": "la salida es una secuencia, no un conjunto"
+    },
+    {
+      "nombre": "input con mensaje (E2, seed_ejercicios_p6_funciones.py:318/480): el prompt no entra a la comparacion",
+      "actual": "Hola Marcos!",
+      "esperado": "Hola Marcos!",
+      "coincide": true,
+      "porque": "Una vez que el shim separa el buffer de pantalla del de comparacion, lo que llega aca es la salida del alumno SIN 'Ingrese su nombre: '. Es el caso real que abrio esta change: la pista del docente hacia input(\"Ingrese su nombre: \") y el expected del banco, sin el prompt, le daba False"
+    },
+    {
+      "nombre": "cuatro input seguidos (E3, seed_ejercicios_p6_funciones.py:551/713): los cuatro prompts salen de la comparacion",
+      "actual": "Soy Marcos Pérez, tengo 25 años y vivo en San Rafael.",
+      "esperado": "Soy Marcos Pérez, tengo 25 años y vivo en San Rafael.",
+      "coincide": true,
+      "porque": "La pista de E3 pide cuatro datos con cuatro input() distintos ('Nombre: ', 'Apellido: ', 'Edad: ', 'Lugar de residencia: ') antes del print. Los cuatro se escriben al buffer de pantalla y ninguno al de comparacion"
+    },
+    {
+      "nombre": "el alumno escribe un mensaje de input() distinto al del banco: coincide igual",
+      "actual": "Hola Lucia!",
+      "esperado": "Hola Lucia!",
+      "coincide": true,
+      "porque": "La comparacion nunca ve el texto del prompt, sea cual sea ('Ingrese su nombre: ', 'Decime tu nombre: ' o cualquier otro): la redaccion que elija el alumno no puede hacer fallar el caso, porque nunca llega al buffer que se compara"
+    },
+    {
+      "nombre": "input() pelado, sin mensaje: sigue coincidiendo",
+      "actual": "Hola Juan!",
+      "esperado": "Hola Juan!",
+      "coincide": true,
+      "porque": "Un input() sin argumento no escribe nada al buffer de comparacion (no hay prompt que separar): el alumno que ya aprendio a escribirlo pelado no deja de pasar"
+    },
+    {
+      "nombre": "el alumno imprime de mas con un print que el ejercicio no pedia: sigue fallando",
+      "actual": "Hola Marcos!\nDebug: ejecutando",
+      "esperado": "Hola Marcos!",
+      "coincide": false,
+      "porque": "Lo que se ignora es el prompt del input(), no cualquier salida extra. Un print agregado que el ejercicio no pedia sigue siendo una diferencia real: es el caso que separa este fix de un aflojamiento del comparador"
+    },
+    {
+      "nombre": "el prompt es lo UNICO que se imprime: la salida comparada queda vacia",
+      "actual": "",
+      "esperado": "",
+      "coincide": true,
+      "porque": "Si el codigo del alumno solo hace input(prompt) sin imprimir nada mas, el prompt se escribe al buffer de pantalla y el de comparacion queda vacio: coincide con un expected igualmente vacio"
     }
   ]
 }

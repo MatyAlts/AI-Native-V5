@@ -105,6 +105,7 @@ describe("orden de eventos: edicion antes que ejecucion (BUG-11)", () => {
         passed: true,
         expected: "ok",
         actual: "ok",
+        comparacion: "ok",
         stdin: "",
         error: null,
       },

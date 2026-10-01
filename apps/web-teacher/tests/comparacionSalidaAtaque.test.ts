@@ -30,8 +30,11 @@ function casoDocente(esperado: string | null): TestCaseLike {
   }
 }
 
+// Este archivo ataca el corrector generico (delegacion en salidaCoincide), no
+// el prompt de input(): `comparacion` sigue a `stdout` tal cual.
 const pasa = (actual: string, esperado: string | null) =>
-  evaluateCase(casoDocente(esperado), { stdout: actual, error: null }).status === "pass"
+  evaluateCase(casoDocente(esperado), { stdout: actual, comparacion: actual, error: null }).status ===
+  "pass"
 
 describe("evaluateCase delega en salidaCoincide — barrido del BMP, no una tabla", () => {
   // El set de blancos es EXACTAMENTE donde el corrector del docente divergia
@@ -153,25 +156,39 @@ describe("evaluateCase — el orden de las guardas, que la tabla no puede tocar"
   // pero cuyo stdout truncado casualmente coincide con el esperado se pinta
   // verde, y eso mueve el conteo que alimenta la clasificacion N1-N4.
   it("un error de ejecucion gana aunque la salida coincida EXACTAMENTE", () => {
-    const r = evaluateCase(casoDocente("Hola"), { stdout: "Hola", error: "RecursionError" })
+    const r = evaluateCase(casoDocente("Hola"), {
+      stdout: "Hola",
+      comparacion: "Hola",
+      error: "RecursionError",
+    })
     expect(r.status).toBe("error")
   })
 
   it("un error de ejecucion gana aunque la salida coincida tras normalizar", () => {
-    const r = evaluateCase(casoDocente("Hola"), { stdout: "  Hola\r\n", error: "TimeoutError" })
+    const r = evaluateCase(casoDocente("Hola"), {
+      stdout: "  Hola\r\n",
+      comparacion: "  Hola\r\n",
+      error: "TimeoutError",
+    })
     expect(r.status).toBe("error")
   })
 
   it("pytest_assert no compara salida ni siquiera cuando difiere del expected", () => {
     const tc: TestCaseLike = { ...casoDocente("Hola"), type: "pytest_assert" }
-    expect(evaluateCase(tc, { stdout: "otra cosa", error: null }).status).toBe("pass")
+    expect(evaluateCase(tc, { stdout: "otra cosa", comparacion: "otra cosa", error: null }).status).toBe(
+      "pass",
+    )
   })
 
   it("el `got` que ve el docente es el stdout CRUDO, no el normalizado", () => {
     // Si se mostrara el normalizado, el docente veria "Hola" y no entenderia
     // por que un caso que le parece igual da rojo. El diagnostico depende de
     // ver los blancos que sobran.
-    const r = evaluateCase(casoDocente("Hola"), { stdout: "Hola  ﻿", error: null })
+    const r = evaluateCase(casoDocente("Hola"), {
+      stdout: "Hola  ﻿",
+      comparacion: "Hola  ﻿",
+      error: null,
+    })
     expect(r.got).toBe("Hola  ﻿")
     expect(r.status).toBe("fail")
   })

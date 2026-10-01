@@ -35,15 +35,23 @@ import { describe, expect, it } from "vitest"
 import type { TestCaseResult } from "../src/lib/veredictoTests"
 import { contarTests, resolverVeredictosPython } from "../src/lib/veredictoTests"
 
-/** Un `stdin_stdout` tal como sale del runner: `passed` SIEMPRE false. */
+/** Un `stdin_stdout` tal como sale del runner: `passed` SIEMPRE false.
+ *
+ * `comparacion` sigue a `actual` por default: los tests de este archivo que
+ * NO son sobre el prompt de `input()` no tienen por que declarar los dos
+ * buffers por separado. Los que si prueban la separacion (buffer de pantalla
+ * vs. buffer de comparacion) pisan `comparacion` explicito via `over`.
+ */
 function delRunner(over: Partial<TestCaseResult> = {}): TestCaseResult {
+  const actual = over.actual ?? "hola\n"
   return {
     id: "tc-1",
     name: "Caso 1",
     type: "stdin_stdout",
     passed: false, // el placeholder del runner
     expected: "hola",
-    actual: "hola\n",
+    actual,
+    comparacion: actual,
     stdin: "",
     error: null,
     ...over,
@@ -80,6 +88,39 @@ describe("resolverVeredictosPython — el veredicto de los stdin_stdout", () => 
     // "ignorar espacios internos", corregiria mal.
     expect(resolverVeredictosPython([delRunner({ actual: "HOLA\n" })])[0]?.passed).toBe(false)
     expect(resolverVeredictosPython([delRunner({ actual: "h o l a\n" })])[0]?.passed).toBe(false)
+  })
+
+  it("usa el buffer de COMPARACION, no el de pantalla, para decidir el veredicto", () => {
+    // JAVA-1 / comparacion-ignora-el-prompt-del-input: `actual` (pantalla)
+    // sigue trayendo el prompt de `input()` para el panel "Obtenido"; el
+    // veredicto tiene que salir de `comparacion`, que el runner arma SIN el
+    // prompt. Si esto comparara contra `actual`, "Ingrese su nombre: Hola
+    // Marcos!" nunca coincidiria con "Hola Marcos!" y el alumno perderia nota
+    // por seguir la consigna del `input()` con mensaje.
+    const [r] = resolverVeredictosPython([
+      delRunner({
+        actual: "Ingrese su nombre: Hola Marcos!",
+        comparacion: "Hola Marcos!",
+        expected: "Hola Marcos!",
+      }),
+    ])
+    expect(r?.passed).toBe(true)
+  })
+
+  it("un print de mas en el buffer de comparacion sigue fallando aunque `actual` coincida con el expected", () => {
+    // Triangula el caso de arriba: una implementacion que simplemente volviera
+    // a comparar contra `actual` (o que lo usara como fallback) daria
+    // `passed: true` aca, porque `actual` === expected por casualidad. El
+    // veredicto correcto tiene que salir de `comparacion`, que SI tiene el
+    // print de mas, y por eso falla.
+    const [r] = resolverVeredictosPython([
+      delRunner({
+        actual: "Hola Marcos!",
+        comparacion: "Hola Marcos!\nDebug: ejecutando",
+        expected: "Hola Marcos!",
+      }),
+    ])
+    expect(r?.passed).toBe(false)
   })
 
   it("expected null se compara contra la salida vacia", () => {

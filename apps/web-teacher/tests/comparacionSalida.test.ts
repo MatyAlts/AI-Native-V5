@@ -67,7 +67,9 @@ describe("evaluateCase — tabla compartida con el alumno y el execution-service
   })
 
   it.each(casos)("$nombre -> $coincide ($porque)", ({ actual, esperado, coincide }) => {
-    const r = evaluateCase(casoDocente(esperado), { stdout: actual, error: null })
+    // Esta tabla es sobre el corrector generico, no sobre el prompt de
+    // input(): `comparacion` sigue a `stdout` tal cual.
+    const r = evaluateCase(casoDocente(esperado), { stdout: actual, comparacion: actual, error: null })
     expect(r.status).toBe(coincide ? "pass" : "fail")
   })
 })
@@ -86,39 +88,90 @@ describe("evaluateCase — los cinco code points que el \\s de JS no cubre", () 
   ] as const
 
   it.each(soloPython)("%s se recorta al final (isspace() de Python SI lo es)", (_n, ch) => {
-    const r = evaluateCase(casoDocente("Hola"), { stdout: `Hola${ch}`, error: null })
+    const salida = `Hola${ch}`
+    const r = evaluateCase(casoDocente("Hola"), { stdout: salida, comparacion: salida, error: null })
     expect(r.status).toBe("pass")
   })
 
   it("U+FEFF (BOM) NO se recorta: `\\s` de JS lo recortaba y Python no", () => {
     // El caso estrella. Con la `normalize()` vieja esto daba "pass" y el
     // docente asignaba un ejercicio que reprobaba a la cohorte entera.
-    const r = evaluateCase(casoDocente("\ufeffHola"), { stdout: "Hola", error: null })
+    const r = evaluateCase(casoDocente("\ufeffHola"), { stdout: "Hola", comparacion: "Hola", error: null })
     expect(r.status).toBe("fail")
   })
 
   it("el `\\r` suelto (Mac clasico) se unifica a `\\n`", () => {
     // La `normalize()` vieja solo reemplazaba `\r\n`, asi que este daba "fail".
-    const r = evaluateCase(casoDocente("Hola\nmundo"), { stdout: "Hola\rmundo", error: null })
+    const r = evaluateCase(casoDocente("Hola\nmundo"), {
+      stdout: "Hola\rmundo",
+      comparacion: "Hola\rmundo",
+      error: null,
+    })
     expect(r.status).toBe("pass")
+  })
+})
+
+describe("evaluateCase — el buffer de comparacion ignora el prompt de input() (comparacion-ignora-el-prompt-del-input)", () => {
+  // Mismo contrato que `resolverVeredictosPython` del lado alumno
+  // (apps/web-student/src/lib/veredictoTests.ts): `stdout` es la PANTALLA
+  // (prompts + prints, lo que se muestra en "Obtenido"), `comparacion` es lo
+  // unico que se coteja contra `expected`.
+  it("usa `comparacion`, no `stdout`, para decidir el veredicto", () => {
+    // Si esto comparara contra `stdout`, el docente veria ROJO al probar la
+    // propia pista del ejercicio con el mensaje puesto — exactamente el
+    // incidente del 2026-09-10 referenciado arriba en este archivo.
+    const r = evaluateCase(casoDocente("Hola Marcos!"), {
+      stdout: "Ingrese su nombre: Hola Marcos!",
+      comparacion: "Hola Marcos!",
+      error: null,
+    })
+    expect(r.status).toBe("pass")
+  })
+
+  it("un print de mas en `comparacion` sigue fallando aunque `stdout` coincida con el expected", () => {
+    // Triangula el caso de arriba: descarta una implementacion que comparara
+    // contra `stdout` (que aca coincide por casualidad) o que ignorara
+    // `comparacion` por completo.
+    const r = evaluateCase(casoDocente("Hola Marcos!"), {
+      stdout: "Hola Marcos!",
+      comparacion: "Hola Marcos!\nDebug: ejecutando",
+      error: null,
+    })
+    expect(r.status).toBe("fail")
+  })
+
+  it("`got` sigue siendo el stdout de PANTALLA, con el prompt, aunque el veredicto use `comparacion`", () => {
+    // El docente tiene que seguir viendo el prompt en el panel de resultado
+    // ("Obtenido"): separar los buffers para el veredicto no le saca
+    // contexto a la pantalla.
+    const r = evaluateCase(casoDocente("Hola Marcos!"), {
+      stdout: "Ingrese su nombre: Hola Marcos!",
+      comparacion: "Hola Marcos!",
+      error: null,
+    })
+    expect(r.got).toBe("Ingrese su nombre: Hola Marcos!")
   })
 })
 
 describe("evaluateCase — lo que NO cambia", () => {
   it("un error de ejecucion sigue ganandole a la comparacion", () => {
-    const r = evaluateCase(casoDocente("Hola"), { stdout: "Hola", error: "ZeroDivisionError" })
+    const r = evaluateCase(casoDocente("Hola"), {
+      stdout: "Hola",
+      comparacion: "Hola",
+      error: "ZeroDivisionError",
+    })
     expect(r.status).toBe("error")
   })
 
   it("un `pytest_assert` sin excepcion pasa sin comparar salida", () => {
     const tc: TestCaseLike = { ...casoDocente(null as unknown as string), type: "pytest_assert" }
-    const r = evaluateCase(tc, { stdout: "cualquier cosa", error: null })
+    const r = evaluateCase(tc, { stdout: "cualquier cosa", comparacion: "cualquier cosa", error: null })
     expect(r.status).toBe("pass")
   })
 
   it("`expected` nulo equivale a esperar que no imprima nada", () => {
     const tc: TestCaseLike = { ...casoDocente(""), expected: null }
-    expect(evaluateCase(tc, { stdout: "", error: null }).status).toBe("pass")
-    expect(evaluateCase(tc, { stdout: "Hola", error: null }).status).toBe("fail")
+    expect(evaluateCase(tc, { stdout: "", comparacion: "", error: null }).status).toBe("pass")
+    expect(evaluateCase(tc, { stdout: "Hola", comparacion: "Hola", error: null }).status).toBe("fail")
   })
 })

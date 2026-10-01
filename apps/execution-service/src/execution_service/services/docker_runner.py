@@ -379,6 +379,16 @@ def outputs_match(actual: str, expected: str) -> bool:
     return normalize_output(actual) == normalize_output(expected)
 
 
+# comparacion-ignora-el-prompt-del-input NO llega hasta aca. El prompt de un
+# `Scanner` de Java es un `System.out.print(...)` COMUN, indistinguible por
+# construccion de cualquier otro print — a diferencia del `input(prompt)` de
+# Python, que es UNA llamada que el shim de Pyodide intercepta y separa antes
+# de llegar a este comparador. `run.stdout` (arriba, en `to_sandbox_result`)
+# sigue siendo la salida CRUDA del contenedor, prompt incluido. Si un dia un
+# ejercicio de Java reporta el mismo sintoma, esto no lo arregla: hace falta
+# otra decision, declarada en la change `comparacion-ignora-el-prompt-del-input`.
+
+
 def to_sandbox_result(run: DockerRunResult, expected_output: str | None) -> SandboxResult:
     """Traduce la corrida cruda al tipo comun del servicio.
 
