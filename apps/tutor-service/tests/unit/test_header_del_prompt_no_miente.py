@@ -111,8 +111,26 @@ class TestLaRevisionCoautoralQuedaExplicita:
         assert "abierta" in header
 
     def test_el_header_no_omite_que_v180_tambien_la_tiene_abierta(self) -> None:
+        """La deuda acumulada: v1.8.0 tampoco tiene su revision cerrada, y el
+        header tiene que decirlo.
+
+        POR QUE LA ASERCION ESTA ANCLADA ASI
+        --------------------------------------
+        La version anterior de este test afirmaba `"v1.8.0" in header`, que es
+        **trivialmente cierto** en cualquier version derivada de v1.8.0: la
+        cadena aparece cuatro veces en el header por motivos ajenos a esto
+        ("Derivado de v1.8.0", "config.py sigue apuntando a v1.8.0", "no
+        cambian una letra respecto de v1.8.0"). QA lo demostro por mutacion el
+        2026-10-01: borro la oracion que afirma que la revision de v1.8.0 sigue
+        abierta y el test quedo en verde.
+
+        Es la cuarta asercion floja de esta misma forma en esta change. Las
+        otras tres se corrigieron en el archivo hermano; esta vivia aca y no se
+        volvio a mirar. Por eso se ancla a la conjuncion que carga el
+        significado, no a la version suelta.
+        """
         header = _header(VERSION).lower()
-        assert "v1.8.0" in header
+        assert "tambien la de v1.8.0" in header
 
 
 class TestElRestoDelRepoDiceLoMismoQueElHeader:
