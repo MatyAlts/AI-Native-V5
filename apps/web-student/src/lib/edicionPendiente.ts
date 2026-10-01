@@ -11,7 +11,25 @@
  * ramas se desincronicen.
  */
 
-export type OrigenEdicion = "student_typed" | "pasted_external" | "snippet_expanded"
+export type OrigenEdicion =
+  | "student_typed"
+  | "pasted_external"
+  | "pasted_internal"
+  | "snippet_expanded"
+
+/** De donde vino un pegado, o `null` si no hubo ninguno en la ventana.
+ *
+ * "interno" = el alumno reordenando SU PROPIO codigo dentro del editor
+ * (change `portapapeles-interno-editor`). No sale de una interaccion con la
+ * IA ni de una fuente externa, asi que NO lleva override a N4 — pero tampoco
+ * es tipeo, y decir que lo es seria afirmar que elaboro caracter por caracter
+ * algo que movio de lugar.
+ *
+ * "externo" = un pegado nativo que llego al modelo sin pasar por el
+ * portapapeles interno. Con el bloqueo puesto no deberia ocurrir; se conserva
+ * como la costura por la que cae cualquier camino de pegado imprevisto, que es
+ * el lado seguro (SI lleva override a N4). */
+export type PasteOrigen = "interno" | "externo" | null
 
 export interface EdicionPendiente {
   snapshot: string
@@ -22,8 +40,8 @@ export interface EdicionPendiente {
 
 /** Marcas acumuladas desde la ultima emision. */
 export interface MarcasEdicion {
-  /** Hubo un paste del clipboard en la ventana. */
-  paste: boolean
+  /** Hubo un paste en la ventana, y de donde vino. */
+  paste: PasteOrigen
   /** Se expandio un snippet de ceremonia del editor en la ventana. */
   snippet: boolean
 }
@@ -35,9 +53,17 @@ export interface MarcasEdicion {
  * caso tipico: tecla y undo dentro de la misma ventana de debounce). Emitirlo
  * igual metaria un `edicion_codigo` con `diff_chars: 0` en la cadena.
  *
- * Precedencia del origen: paste > snippet > tipeo. Si en la misma ventana pasan
- * las dos cosas gana el paste, que es la señal mas fuerte — es la unica que
- * lleva override a N4 en el labeler.
+ * Precedencia del origen: paste externo > paste interno > snippet > tipeo.
+ *
+ * El paste le gana al snippet porque es la señal mas fuerte. Y entre los dos
+ * pastes gana el EXTERNO, que es el unico que lleva override a N4 en el
+ * labeler: si en la misma ventana entraron los dos, perderlo subestima la
+ * dependencia del alumno. De los dos errores posibles, ese es el caro.
+ *
+ * OJO con el orden de la comparacion: `marcas.paste` ya no es un booleano.
+ * Preguntar por su veracidad en vez de por su valor mandaba todo pegado
+ * interno a `pasted_external` —"interno" es truthy— y con eso el alumno que
+ * reordena su propio codigo quedaba etiquetado N4.
  */
 export function resolverEdicionPendiente(
   snapshot: string,
@@ -45,11 +71,14 @@ export function resolverEdicionPendiente(
   marcas: MarcasEdicion,
 ): EdicionPendiente | null {
   if (snapshot === ultimoEmitido) return null
-  const origin: OrigenEdicion = marcas.paste
-    ? "pasted_external"
-    : marcas.snippet
-      ? "snippet_expanded"
-      : "student_typed"
+  const origin: OrigenEdicion =
+    marcas.paste === "externo"
+      ? "pasted_external"
+      : marcas.paste === "interno"
+        ? "pasted_internal"
+        : marcas.snippet
+          ? "snippet_expanded"
+          : "student_typed"
   return {
     snapshot,
     diffChars: snapshot.length - ultimoEmitido.length,

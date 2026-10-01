@@ -322,7 +322,14 @@ class EdicionCodigoPayload(BaseModel):
     diff_chars: int  # cantidad de caracteres cambiados desde evento anterior
     language: str
     origin: (
-        Literal["student_typed", "copied_from_tutor", "pasted_external", "snippet_expanded"] | None
+        Literal[
+            "student_typed",
+            "copied_from_tutor",
+            "pasted_external",
+            "pasted_internal",
+            "snippet_expanded",
+        ]
+        | None
     ) = Field(
         default=None,
         description=(
@@ -340,7 +347,14 @@ class EdicionCodigoPayload(BaseModel):
             "pero tampoco es interacción con IA, así que NO lleva override a "
             "N4 — inflaría la métrica de dependencia del tutor cada vez que "
             "alguien escribe `sout`. Cae a N2 como student_typed; la "
-            "distinción queda en el payload para el análisis posterior."
+            "distinción queda en el payload para el análisis posterior. "
+            "pasted_internal marca que el estudiante pegó código que él mismo "
+            "había copiado DENTRO del editor (portapapeles interno, ver "
+            "web-student/src/components/CodeEditor.tsx): reordenar lo propio "
+            "no es tomar nada de nadie, así que tampoco lleva override a N4 "
+            "— por el mismo criterio que snippet_expanded. Cae a N2; la "
+            "distinción queda en el payload porque mover un bloque no es lo "
+            "mismo que tipearlo, y confundirlos sobrestima la elaboración."
         ),
     )
 

@@ -124,7 +124,15 @@ def _significativos(events: list[dict]) -> list[dict]:
 
 # ── Las 4 dimensiones (cada una en [0,1]) ──
 def dim_autonomia(events: list[dict]) -> float:
-    """1.0 = autónomo puro. origin real en prod: student_typed / pasted_external."""
+    """1.0 = autónomo puro. origin real en prod: student_typed / pasted_external.
+
+    `pasted_internal` (el alumno reordenando su propio código) NO cuenta como
+    pegada, y es deliberado: la dimensión mide dependencia de fuentes ajenas, y
+    mover un bloque propio de lugar no lo es. Cae del lado autónomo por la
+    comparación de abajo, que pregunta por `pasted_external` y no por "hubo un
+    paste" — si algún día se reescribe como denylist, este es el caso que se
+    rompe en silencio y le baja la autonomía a quien ordena su código.
+    """
     prompts = _count(events, "prompt_enviado")
     ediciones = [e for e in events if e.get("event_type") == "edicion_codigo"]
     pegadas = sum(

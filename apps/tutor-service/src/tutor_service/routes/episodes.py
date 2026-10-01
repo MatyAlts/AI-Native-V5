@@ -841,7 +841,14 @@ class EdicionCodigoRequest(BaseModel):
     )
     language: str = Field(default="python", min_length=1, max_length=32)
     origin: (
-        Literal["student_typed", "copied_from_tutor", "pasted_external", "snippet_expanded"] | None
+        Literal[
+            "student_typed",
+            "copied_from_tutor",
+            "pasted_external",
+            "pasted_internal",
+            "snippet_expanded",
+        ]
+        | None
     ) = Field(
         default=None,
         description=(

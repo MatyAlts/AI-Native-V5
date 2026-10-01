@@ -120,6 +120,13 @@ EVENT_N_LEVEL_BASE: dict[str, NLevel] = {
 # set quedo intacto y ninguna constante de override se movio. Por eso NO
 # corresponde bumpear LABELER_VERSION (ADR-020). Si algun dia se decide que la
 # ceremonia expandida merece nivel propio, ESO si es un bump + ADR.
+#
+# `pasted_internal` entra por la MISMA puerta y por la misma razon. Es el
+# alumno pegando codigo que el mismo copio adentro del editor (portapapeles
+# interno, change `portapapeles-interno-editor`): reordenar lo propio no es una
+# interaccion con la IA ni con una fuente externa, asi que NO va en este set.
+# Ponerlo seria afirmar que mover un bloque de lugar es delegar en el tutor.
+# Cae al fallback N2, el set queda intacto, y tampoco corresponde bump.
 _EDICION_CODIGO_N4_ORIGINS = {"copied_from_tutor", "pasted_external"}
 
 

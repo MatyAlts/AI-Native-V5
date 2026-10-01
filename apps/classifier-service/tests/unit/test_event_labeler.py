@@ -6,6 +6,7 @@ from datetime import UTC, datetime, timedelta
 from typing import Any
 
 from classifier_service.services.event_labeler import (
+    _EDICION_CODIGO_N4_ORIGINS,
     ANOTACION_N1_WINDOW_SECONDS,
     ANOTACION_N4_WINDOW_SECONDS,
     EVENT_N_LEVEL_BASE,
@@ -265,6 +266,32 @@ def test_edicion_codigo_copied_from_tutor_es_n4() -> None:
 def test_edicion_codigo_pasted_external_es_n4() -> None:
     """Pegar codigo de afuera tampoco es elaboracion propia."""
     assert label_event("edicion_codigo", {"origin": "pasted_external"}) == "N4"
+
+
+def test_edicion_codigo_pasted_internal_es_n2_no_n4() -> None:
+    """Pegar codigo PROPIO copiado adentro del editor NO es interaccion con IA.
+
+    Portapapeles interno (change `portapapeles-interno-editor`): el alumno
+    copia un bloque suyo y lo pega en otro lado del mismo editor. No vino del
+    tutor ni de afuera — es reordenamiento de lo que ya habia elaborado.
+
+    Este test es el candado de esa decision, igual que el de
+    `snippet_expanded`: si alguien agrega `pasted_internal` a
+    `_EDICION_CODIGO_N4_ORIGINS`, revienta aca. Mandarlo a N4 contaria como
+    dependencia del tutor el gesto de mover una linea de lugar, y ese sesgo no
+    se nota porque el evento se ve igual que cualquier otro.
+    """
+    assert label_event("edicion_codigo", {"origin": "pasted_internal"}) == "N2"
+
+
+def test_pasted_internal_no_entro_al_set_de_override() -> None:
+    """El set de override no se movio, asi que LABELER_VERSION no se bumpea.
+
+    Asertar sobre el set y no solo sobre el resultado: el resultado N2 tambien
+    saldria si `pasted_internal` cayera al fallback por un typo en la constante.
+    """
+    assert "pasted_internal" not in _EDICION_CODIGO_N4_ORIGINS
+    assert {"copied_from_tutor", "pasted_external"} == _EDICION_CODIGO_N4_ORIGINS
 
 
 def test_edicion_codigo_snippet_expanded_es_n2_no_n4() -> None:

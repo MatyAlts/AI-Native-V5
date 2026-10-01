@@ -34,16 +34,51 @@ export interface EditorFalso {
   __pegar(texto: string): void
   /** Comandos registrados con `addCommand`, por keybinding. */
   __comandos: Map<number, () => void>
+  /**
+   * Marca un fragmento del buffer como seleccionado.
+   *
+   * Hace falta porque el portapapeles interno se llena con
+   * `getModel().getValueInRange(getSelection())` y NO con
+   * `window.getSelection()`: Monaco mantiene la seleccion en un textarea
+   * oculto, y en Chrome y Firefox `window.getSelection().toString()` devuelve
+   * "" cuando la seleccion vive adentro de un control de formulario. Con el
+   * lector equivocado "copiar adentro del editor" queda roto en produccion y
+   * verde en los tests, asi que el mock modela el lector correcto.
+   *
+   * Pasar `null` deselecciona.
+   */
+  __seleccionar(texto: string | null): void
+  /** Dispara el handler que `CodeEditor` registro para ese keybinding. */
+  __comando(keybinding: number): void
   getValue(): string
   setValue(v: string): void
   onDidPaste(cb: () => void): void
   onDidChangeModelContent(cb: () => void): void
   addCommand(keybinding: number, cb: () => void): void
-  getSelection(): null
-  getModel(): Record<string, unknown>
+  getSelection(): SeleccionFalsa | null
+  getModel(): ModeloFalso
+  executeEdits(fuente: string, ediciones: EdicionFalsa[]): boolean
   updateOptions(o: Record<string, unknown>): void
   focus(): void
   dispose(): void
+}
+
+/** Lo que `getSelection()` devuelve. Monaco entrega un `Selection` con
+ * coordenadas; acá alcanza con el texto, porque es lo unico que el componente
+ * hace con el (leerlo, y usarlo como rango de `executeEdits`). */
+export interface SeleccionFalsa {
+  texto: string
+}
+
+export interface ModeloFalso {
+  getValueInRange(sel: SeleccionFalsa | null): string
+  getFullModelRange(): SeleccionFalsa
+}
+
+export interface EdicionFalsa {
+  range: SeleccionFalsa | null
+  text: string
+  forceMoveMarkers?: boolean
 }
 
 /** Un item por cada `monaco.editor.create`, en orden de creacion. */
@@ -93,9 +128,23 @@ function create(_container: HTMLElement, opciones: Record<string, unknown>): Edi
   const listeners: (() => void)[] = []
   const pasteListeners: (() => void)[] = []
   let valor = String(opciones.value ?? "")
+  let seleccion: SeleccionFalsa | null = null
   const editor: EditorFalso = {
     __opciones: opciones,
     __comandos: new Map(),
+    __seleccionar(texto: string | null) {
+      if (texto !== null && !valor.includes(texto)) {
+        // Sin esto un test podria "seleccionar" algo que no esta en el buffer
+        // y seguir en verde midiendo una situacion que no existe.
+        throw new Error(`no se puede seleccionar ${JSON.stringify(texto)}: no esta en el buffer`)
+      }
+      seleccion = texto === null ? null : { texto }
+    },
+    __comando(keybinding: number) {
+      const cb = editor.__comandos.get(keybinding)
+      if (!cb) throw new Error(`no hay comando registrado para el keybinding ${keybinding}`)
+      cb()
+    },
     __tipear(texto: string) {
       valor = texto
       for (const l of [...listeners]) l()
@@ -122,8 +171,37 @@ function create(_container: HTMLElement, opciones: Record<string, unknown>): Edi
     addCommand: (keybinding: number, cb: () => void) => {
       editor.__comandos.set(keybinding, cb)
     },
-    getSelection: () => null,
-    getModel: () => ({}),
+    getSelection: () => seleccion,
+    getModel: () => ({
+      getValueInRange: (sel: SeleccionFalsa | null) => sel?.texto ?? "",
+      getFullModelRange: () => ({ texto: valor }),
+    }),
+    /**
+     * Aplica la edicion al buffer y notifica, como hace Monaco real.
+     *
+     * Simplificacion deliberada: el rango se modela por TEXTO, asi que se
+     * reemplaza la primera ocurrencia de lo seleccionado. Alcanza para lo que
+     * el componente hace (reemplazar la seleccion, o insertar si no hay) y
+     * deja observable lo que importa: que el pegado interno entra al buffer y
+     * dispara el debounce.
+     */
+    executeEdits: (_fuente: string, ediciones: EdicionFalsa[]) => {
+      let siguiente = valor
+      for (const ed of ediciones) {
+        const sel = ed.range
+        siguiente =
+          sel && sel.texto !== "" ? siguiente.replace(sel.texto, ed.text) : siguiente + ed.text
+      }
+      // La seleccion COLAPSA a vacia (el cursor queda donde termino la
+      // edicion). NO queda en `null`: Monaco real devuelve un `Selection`
+      // vacio en la posicion del cursor, y solo da `null` si no hay modelo ni
+      // view state. Modelarlo como `null` hacia que un Ctrl+V despues de un
+      // Ctrl+X no encontrara donde insertar — un fallo del doble, no del
+      // componente.
+      seleccion = { texto: "" }
+      editor.__tipear(siguiente)
+      return true
+    },
     updateOptions: () => {},
     focus: () => {},
     dispose: () => {},

@@ -534,6 +534,7 @@ export type EdicionCodigoOrigin =
   | "student_typed"
   | "copied_from_tutor"
   | "pasted_external"
+  | "pasted_internal"
   | "snippet_expanded"
 
 /** Emite un evento edicion_codigo al CTR. Disparado por el editor con

@@ -228,7 +228,13 @@ export class CTRClient {
     snapshot: string
     diff_chars: number
     language: string
-    origin?: "student_typed" | "copied_from_tutor" | "pasted_external" | "snippet_expanded" | null
+    origin?:
+      | "student_typed"
+      | "copied_from_tutor"
+      | "pasted_external"
+      | "pasted_internal"
+      | "snippet_expanded"
+      | null
   }): void {
     this.emit({ event_type: "edicion_codigo", payload })
   }

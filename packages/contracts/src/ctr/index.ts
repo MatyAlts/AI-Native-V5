@@ -130,16 +130,30 @@ export type IntentoAdversoDetectado = z.infer<typeof IntentoAdversoDetectado>
 //   - `snippet_expanded`  → emitido por web-student al expandir un snippet de
 //       ceremonia del editor (System.out.println, getters/setters, import del
 //       Scanner). Ver `apps/web-student/src/lib/javaSnippets.ts`.
+//   - `pasted_internal`   → emitido por web-student cuando el alumno pega
+//       código que él mismo copió DENTRO del editor (portapapeles interno,
+//       change `portapapeles-interno-editor`).
 //
 // El event_labeler (ADR-020) aplica override a N4 SOLO a los dos que provienen
 // de una interacción IA/externa (`copied_from_tutor`, `pasted_external`).
 // `snippet_expanded` NO lleva override: no es tipeo del alumno, pero tampoco es
 // interacción con IA — mandarlo a N4 inflaría la métrica de dependencia del
-// tutor cada vez que alguien expande `sout`.
+// tutor cada vez que alguien expande `sout`. `pasted_internal` tampoco, por el
+// mismo criterio: reordenar código propio no es tomar nada de nadie.
+//
+// OJO — este enum es UNO de los OCHO lugares donde vive la lista de origines
+// (los otros: `platform_contracts/ctr/events.py`, `ctr-client/src/index.ts`,
+// `web-student/src/lib/api.ts`, `web-student/src/lib/edicionPendiente.ts`,
+// `web-student/src/components/CodeEditor.tsx`, y en el tutor-service
+// `routes/episodes.py` y `services/tutor_core.py`). Los dos del tutor-service
+// son los que VALIDAN el ingest: si un valor nuevo no está ahí, el frontend lo
+// emite y el borde lo rechaza con 422 — la edición desaparece de la cadena y
+// no se nota hasta producción. Agregar un origin es tocar los ocho.
 export const EdicionCodigoOrigin = z.enum([
   "student_typed",
   "copied_from_tutor",
   "pasted_external",
+  "pasted_internal",
   "snippet_expanded",
 ])
 export type EdicionCodigoOrigin = z.infer<typeof EdicionCodigoOrigin>

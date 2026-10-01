@@ -42,7 +42,7 @@ import {
   type TokenGetter,
 } from "../lib/api"
 import { mensajeDeCorrida } from "../lib/corridaRemota"
-import { resolverEdicionPendiente } from "../lib/edicionPendiente"
+import { type PasteOrigen, resolverEdicionPendiente } from "../lib/edicionPendiente"
 import { armarMensajeDeInput } from "../lib/inputDialogo"
 import { parseJavaError } from "../lib/javaError"
 import { registerJavaSnippets } from "../lib/javaSnippets"
@@ -102,7 +102,7 @@ export interface CodeEditorProps {
   onEditDebounced?: (
     snapshot: string,
     diffChars: number,
-    origin: "student_typed" | "pasted_external" | "snippet_expanded",
+    origin: "student_typed" | "pasted_external" | "pasted_internal" | "snippet_expanded",
   ) => void
   /** El editor deja acá una función para forzar la emisión del debounce
    * pendiente. La llama el caller antes de entregar: sin eso, el submit sale
@@ -376,10 +376,38 @@ export function CodeEditor({
   // que el alumno tipeó después del template.
   const editTimeoutRef = useRef<number | null>(null)
   const lastFiredSnapshotRef = useRef<string>(initialCode)
-  // F6: si el usuario hizo paste antes del flush, marcamos el origin como
-  // "pasted_external"; sino default a "student_typed". Una vez emitido el
-  // evento, reseteamos para no contaminar la siguiente ventana.
-  const pasteSinceLastFlushRef = useRef<boolean>(false)
+  // F6 + change `portapapeles-interno-editor`: si el usuario pego antes del
+  // flush, marcamos el origin segun DE DONDE vino el pegado ("interno" = su
+  // propio codigo, "externo" = cualquier otra cosa); sino default a
+  // "student_typed". Una vez emitido el evento, reseteamos para no contaminar
+  // la siguiente ventana.
+  const pasteSinceLastFlushRef = useRef<PasteOrigen>(null)
+  /**
+   * Portapapeles interno del editor, EN MEMORIA.
+   *
+   * Guarda lo ultimo que el alumno copio o corto adentro del editor. Es lo
+   * unico que `Ctrl+V` puede insertar: no se lee el clipboard del sistema
+   * operativo en ningun momento.
+   *
+   * Esa es la decision de diseno entera, y tiene dos consecuencias buscadas.
+   * La primera es que el codigo NO SALE de la plataforma: `Ctrl+C` nunca llega
+   * a escribir al clipboard del SO, asi que seguir el consejo de "copiatelo a
+   * VS Code" sigue siendo imposible. La segunda es que el bloqueo del pegado
+   * externo se queda en los `addCommand`, que es donde se sabe que funciona.
+   *
+   * Medido en Chrome el 2026-10-01, y es la razon por la que NO se usa el
+   * clipboard real: para compararlo hay que leerlo, para leerlo hace falta el
+   * evento `paste` nativo, y para que exista hay que sacar el
+   * `addCommand(Ctrl+V)`. Sacandolo, el listener DOM en captura sobre el
+   * contenedor NO recibe el evento —uno a nivel `document` si— con lo cual el
+   * `preventDefault()` nunca corre: el pegado externo entra al buffer sin
+   * cartel y sin `pega_intentada`, con la suite entera en verde.
+   *
+   * Vive en un ref, no en state: no dispara render, y si el editor se
+   * re-monta arrancar en blanco es lo correcto — no hay portapapeles "viejo"
+   * mas legitimo que "ninguno".
+   */
+  const portapapelesInternoRef = useRef<string | null>(null)
   // Mismo mecanismo que el paste, para las expansiones de snippets de
   // ceremonia. Sin esto una expansión de 8 líneas entra al CTR como
   // `student_typed` — mentira invisible: el evento se ve igual y un diff
@@ -438,7 +466,7 @@ export function CodeEditor({
     //
     // Empeoro cuando "Ejecutar"/"Probar" pasaron a llamar a este mismo flush:
     // cada corrida es otra oportunidad de cerrar la ventana sin emitir.
-    pasteSinceLastFlushRef.current = false
+    pasteSinceLastFlushRef.current = null
     snippetSinceLastFlushRef.current = false
     if (!pendiente) return
     lastFiredSnapshotRef.current = pendiente.snapshot
@@ -529,43 +557,109 @@ export function CodeEditor({
       // declarado en el `metodo` de `pega_intentada` (contrato, ruta del
       // tutor y cliente) y simplemente no lo emitia nadie.
       editor.onDidPaste(() => {
-        pasteSinceLastFlushRef.current = true
+        // Si un pegado NATIVO llego hasta el modelo, no paso por el
+        // portapapeles interno: el camino interno inserta con `executeEdits`,
+        // que no dispara este callback. O sea que todo lo que caiga aca vino
+        // de afuera, y "afuera" es el lado que lleva override a N4. Con el
+        // bloqueo puesto no deberia dispararse nunca; se conserva para que un
+        // camino de pegado imprevisto caiga del lado seguro en vez de
+        // perderse en silencio como `student_typed`.
+        pasteSinceLastFlushRef.current = "externo"
       })
 
-      // ── Bloqueo de clipboard (paste/copy/cut) ──────────────────────────
+      // ── Clipboard: interno permitido, todo lo demas bloqueado ──────────
       // Sobrescribir los keybindings nativos de Monaco. addCommand reemplaza
-      // el handler default. Codigos en https://microsoft.github.io/monaco-editor/
+      // el handler default, y con el su `preventDefault`: el navegador ni
+      // llega a generar un evento de clipboard. Esa es la propiedad que hace
+      // que el codigo no salga de la plataforma, y la razon por la que estos
+      // tres comandos se conservan en vez de pasar a listeners DOM.
+      // Codigos en https://microsoft.github.io/monaco-editor/
       const ctrl = monaco.KeyMod.CtrlCmd
-      // Ctrl+V → paste bloqueado
+      /** Lo seleccionado en el editor, leido con la API de MONACO.
+       *
+       * NO con `window.getSelection()`: Monaco mantiene la seleccion en un
+       * textarea oculto, y en Chrome y Firefox `getSelection().toString()`
+       * devuelve "" cuando la seleccion vive adentro de un control de
+       * formulario. Con ese lector el portapapeles interno nunca se llenaria
+       * y "copiar adentro del editor" quedaria roto en produccion, en verde.
+       */
+      const leerSeleccion = (): string => {
+        const selection = editor.getSelection()
+        return selection ? (editor.getModel()?.getValueInRange(selection) ?? "") : ""
+      }
+      /** Registra el copiado en el CTR y lo guarda en el portapapeles interno.
+       *
+       * El evento `copia_intentada` se sigue emitiendo aunque el copiado ya
+       * no se bloquee: es el rastro de que el alumno movio codigo. OJO al
+       * leer la serie historica — no es continua: antes de este change el
+       * evento significaba "intento fallido" y ahora significa "copiado
+       * real". Cortar por `event_type` sin cortar por fecha mezcla las dos
+       * cosas. El `event_type` no se renombra porque esta en la cadena
+       * firmada de los episodios ya cerrados.
+       */
+      const registrarCopiado = (
+        seleccion: string,
+        metodo: "shortcut" | "menu_contextual" = "shortcut",
+      ) => {
+        onCopyAttemptRef.current?.({
+          seleccionChars: seleccion.length,
+          metodo,
+        })
+        // Una seleccion vacia NO llena el portapapeles: si contara, el Ctrl+V
+        // siguiente insertaria "" y el bloqueo quedaria desactivado por una
+        // tecla de mas.
+        if (seleccion) portapapelesInternoRef.current = seleccion
+      }
+      // Ctrl+V → pega SOLO lo copiado adentro del editor. Lo demas, bloqueado.
       editor.addCommand(ctrl | monaco.KeyCode.KeyV, () => {
-        onPasteAttemptRef.current?.({
-          contenidoLongitud: 0,
-          contenidoPreview: "",
-          metodo: "shortcut",
-        })
-        flashClipboardWarning(
-          "Pegar está bloqueado. Escribí el código vos mismo. Quedó registrado.",
-        )
+        const interno = portapapelesInternoRef.current
+        if (interno === null) {
+          onPasteAttemptRef.current?.({
+            contenidoLongitud: 0,
+            contenidoPreview: "",
+            metodo: "shortcut",
+          })
+          flashClipboardWarning(
+            "Pegar está bloqueado. Escribí el código vos mismo. Quedó registrado.",
+          )
+          return
+        }
+        // Sin cursor no hay donde insertar. Monaco devuelve una seleccion
+        // VACIA en la posicion del cursor cuando no hay nada seleccionado, asi
+        // que `null` solo pasa si no hay modelo ni view state. Se sale sin
+        // emitir `pega_intentada`: no es un pegado bloqueado —el alumno tiene
+        // algo copiado y la regla se lo permite— es un editor sin cursor, y
+        // registrarlo como intento fallido ensuciaria la serie.
+        const rango = editor.getSelection()
+        if (rango === null) return
+        // Insertamos NOSOTROS el texto, y por eso la marca de origen va a
+        // mano: `executeEdits` es una edicion programatica, no un pegado, asi
+        // que NO dispara `onDidPaste` —el unico otro lugar que la pone—. Sin
+        // esta linea el pegado interno saldria al CTR como `student_typed`:
+        // la plataforma afirmando que el alumno tipeo codigo que movio de
+        // lugar, justo sobre la señal que mide su elaboracion.
+        pasteSinceLastFlushRef.current = "interno"
+        editor.executeEdits("portapapeles-interno", [
+          { range: rango, text: interno, forceMoveMarkers: true },
+        ])
       })
-      // Ctrl+C → copy bloqueado
+      /** Borra lo seleccionado. Comparte los dos llamadores del corte
+       * (atajo y menu contextual) para que no se desincronicen. */
+      const borrarSeleccion = () => {
+        const rango = editor.getSelection()
+        if (rango === null) return
+        editor.executeEdits("corte-interno", [{ range: rango, text: "", forceMoveMarkers: true }])
+      }
+      // Ctrl+C → copia adentro del editor. No escribe al clipboard del SO.
       editor.addCommand(ctrl | monaco.KeyCode.KeyC, () => {
-        const selection = editor.getSelection()
-        const seleccion = selection ? (editor.getModel()?.getValueInRange(selection) ?? "") : ""
-        onCopyAttemptRef.current?.({
-          seleccionChars: seleccion.length,
-          metodo: "shortcut",
-        })
-        flashClipboardWarning("Copiar está bloqueado. Quedó registrado en la trazabilidad.")
+        registrarCopiado(leerSeleccion())
       })
-      // Ctrl+X → cut bloqueado (es copy + delete, lo tratamos como copy)
+      // Ctrl+X → cortar es copiar + borrar, y comparte el mismo registro.
       editor.addCommand(ctrl | monaco.KeyCode.KeyX, () => {
-        const selection = editor.getSelection()
-        const seleccion = selection ? (editor.getModel()?.getValueInRange(selection) ?? "") : ""
-        onCopyAttemptRef.current?.({
-          seleccionChars: seleccion.length,
-          metodo: "shortcut",
-        })
-        flashClipboardWarning("Cortar está bloqueado. Quedó registrado.")
+        const seleccion = leerSeleccion()
+        registrarCopiado(seleccion)
+        if (!seleccion) return
+        borrarSeleccion()
       })
       // Ctrl/Cmd+Enter → ejecutar codigo (Etapa 1.7). Shortcut estandar de
       // IDEs ("Run" en VSCode/JetBrains). Llamamos via ref para mantener
@@ -578,6 +672,14 @@ export function CodeEditor({
       // por addCommand (drag&drop, paste via clipboard API en algunos browsers).
       const containerEl = editorContainerRef.current
       if (containerEl) {
+        // El pegado por esta via se bloquea SIEMPRE, incluso con algo en el
+        // portapapeles interno. Dos razones: no hay forma de saber si el
+        // contenido del clipboard es el mismo que el alumno copio adentro
+        // (habria que leerlo y compararlo, que es el camino que medimos
+        // roto), y este listener no se dispara de forma confiable con una
+        // tecla real — Ctrl+V lo resuelve el `addCommand`, que si funciona.
+        // Construir logica fina sobre un evento que a veces no llega es
+        // apoyarse en arena; bloquear es el lado seguro.
         const onPasteDom = (ev: ClipboardEvent) => {
           ev.preventDefault()
           ev.stopPropagation()
@@ -589,24 +691,23 @@ export function CodeEditor({
           })
           flashClipboardWarning("Pegar está bloqueado. Quedó registrado en la trazabilidad.")
         }
+        // Copiar/cortar por menu contextual. El `preventDefault()` se queda:
+        // es lo que impide que el texto llegue al clipboard del SO, o sea lo
+        // que mantiene el codigo adentro de la plataforma. Lo que cambia es
+        // que ademas alimenta el portapapeles interno, para que copiar por
+        // menu y pegar con Ctrl+V haga lo que el alumno espera.
         const onCopyDom = (ev: ClipboardEvent) => {
-          const sel = window.getSelection()?.toString() ?? ""
           ev.preventDefault()
           ev.stopPropagation()
-          onCopyAttemptRef.current?.({
-            seleccionChars: sel.length,
-            metodo: "menu_contextual",
-          })
-          flashClipboardWarning("Copiar está bloqueado. Quedó registrado.")
+          registrarCopiado(leerSeleccion(), "menu_contextual")
         }
         const onCutDom = (ev: ClipboardEvent) => {
           ev.preventDefault()
           ev.stopPropagation()
-          onCopyAttemptRef.current?.({
-            seleccionChars: 0,
-            metodo: "menu_contextual",
-          })
-          flashClipboardWarning("Cortar está bloqueado. Quedó registrado.")
+          const seleccion = leerSeleccion()
+          registrarCopiado(seleccion, "menu_contextual")
+          if (!seleccion) return
+          borrarSeleccion()
         }
         const onContextMenu = (_ev: MouseEvent) => {
           // No bloqueamos el menu (Monaco lo necesita) — solo registramos
@@ -1816,7 +1917,14 @@ def __tutor_run_tests(student_code, cases_json):
       {/* ED-6: editor + salida como panel vertical redimensionable real. */}
       <Group orientation="vertical" className="flex-1 min-h-0">
         <Panel id="editor-code" defaultSize={62} minSize={25} className="flex flex-col min-h-0">
-          <div ref={editorContainerRef} className="flex-1 min-h-[140px]" />
+          {/* El testid es el unico asidero para observar los listeners de
+              clipboard desde un test: son los que impiden que el codigo
+              llegue al portapapeles del SO. */}
+          <div
+            ref={editorContainerRef}
+            data-testid="code-editor-container"
+            className="flex-1 min-h-[140px]"
+          />
         </Panel>
 
         <Separator className="group relative my-0.5 flex h-2 items-center justify-center cursor-row-resize">

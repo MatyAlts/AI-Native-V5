@@ -1475,7 +1475,13 @@ class TutorCore:
         language: str,
         user_id: UUID,
         origin: (
-            Literal["student_typed", "copied_from_tutor", "pasted_external", "snippet_expanded"]
+            Literal[
+                "student_typed",
+                "copied_from_tutor",
+                "pasted_external",
+                "pasted_internal",
+                "snippet_expanded",
+            ]
             | None
         ) = None,
     ) -> int:
