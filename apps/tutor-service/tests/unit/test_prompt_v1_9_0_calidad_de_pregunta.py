@@ -317,15 +317,35 @@ class TestElSextoCambioLaReglaDelPortapapeles:
         assert "en esta plataforma **copiar y pegar esta bloqueado**" not in texto
         assert "no permite copiar y pegar en el editor" not in texto
 
-    def test_donde_menciona_el_bloqueo_es_para_prohibirlo(self) -> None:
-        # Complemento del anterior: la cadena SI aparece, y tiene que aparecer
-        # siempre como prohibicion. Sin esta mitad, el test de arriba pasaria
-        # con una redaccion afirmativa apenas distinta de la original.
+    # Formas en las que la frase puede aparecer SIN afirmar la regla. No es una
+    # lista para ir agrandando ante cada rojo: cada entrada es un verbo que
+    # NIEGA o DESCRIBE la afirmacion en vez de hacerla. Si aparece una forma
+    # nueva que no niega nada, el test tiene que ponerse rojo, no crecer.
+    _NEGADORES = ("No digas", "Deja de afirmar", "no es que")
+
+    def test_donde_menciona_el_bloqueo_es_para_negarlo(self) -> None:
+        """Complemento del test anterior: la cadena SI aparece en el prompt, y
+        cada aparicion tiene que estar NEGANDO la regla, nunca afirmandola.
+
+        Sin esta mitad, el test de arriba pasaria con una redaccion afirmativa
+        apenas distinta de la original — por ejemplo "aca copiar y pegar esta
+        bloqueado", que esquiva el literal exacto y dice lo mismo.
+
+        Este test ya se puso rojo una vez de verdad: al agregar el sexto cambio
+        al changelog del header apareció "Deja de afirmar que copiar y pegar
+        esta bloqueado", que es una descripcion del cambio y no la regla. Se
+        agrego ese negador en vez de aflojar el test.
+        """
         texto = _normalizado("v1.9.0")
-        for m in re.finditer(r"copiar y pegar esta bloqueado", texto):
+        apariciones = list(re.finditer(r"copiar y pegar esta bloqueado", texto))
+        assert apariciones, (
+            "la frase no aparece en ninguna parte: este test quedo vacuo y el "
+            "de arriba tambien pasaria sin medir nada"
+        )
+        for m in apariciones:
             contexto = texto[max(0, m.start() - 60) : m.start()]
-            assert "No digas" in contexto, (
-                f"aparece sin prohibirlo, en: ...{contexto}"
+            assert any(neg in contexto for neg in self._NEGADORES), (
+                f"aparece afirmando la regla, en: ...{contexto}"
             )
 
     def test_dice_que_adentro_del_editor_SI_se_puede(self) -> None:
