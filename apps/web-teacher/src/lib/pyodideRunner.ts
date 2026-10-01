@@ -313,7 +313,11 @@ export async function runTestCases(
     )
     let parsed: { stdout: string; comparacion: string; error: string | null }
     try {
-      parsed = JSON.parse(String(raw)) as { stdout: string; comparacion: string; error: string | null }
+      parsed = JSON.parse(String(raw)) as {
+        stdout: string
+        comparacion: string
+        error: string | null
+      }
     } catch {
       parsed = { stdout: "", comparacion: "", error: "No se pudo leer el resultado del runtime" }
     }
