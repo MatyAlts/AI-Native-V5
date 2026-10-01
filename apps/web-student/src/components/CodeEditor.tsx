@@ -1145,7 +1145,31 @@ def __tutor_run_tests(student_code, cases_json):
         if _partes and _partes[-1] == "":
             _partes.pop()
         _lines = iter(_partes)
+        # DOS BUFFERS, NO CENTINELAS (comparacion-ignora-el-prompt-del-input).
+        #
+        # buf es el buffer de PANTALLA: prompts + prints, lo que el alumno
+        # veria si mirara la salida completa. Sigue viajando en "actual" para
+        # el panel "Obtenido". NO CAMBIA.
+        #
+        # buf_comparacion es lo unico que se coteja contra el expected del
+        # banco (ver resolverVeredictosPython en lib/veredictoTests.ts). Recibe
+        # el print()/sys.stdout.write() del alumno via el redirect_stdout de
+        # abajo, pero el prompt de input() NUNCA llega aca: _feed lo escribe
+        # directo en buf, nunca en buf_comparacion.
         buf = _tutor_io.StringIO()
+        buf_comparacion = _tutor_io.StringIO()
+
+        class _DualOut:
+            # stdout "normal" del alumno (print, sys.stdout.write) tiene que
+            # verse en los DOS buffers por igual. Solo el prompt de _feed
+            # (abajo) se escribe aparte, directo a buf.
+            def write(_self, s):
+                buf.write(s)
+                buf_comparacion.write(s)
+                return len(s)
+
+            def flush(_self):
+                pass
 
         def _feed(prompt="", _it=_lines, _out=buf):
             # EL PROMPT DE input() ES SALIDA DEL PROGRAMA, Y VA A stdout.
@@ -1191,14 +1215,16 @@ def __tutor_run_tests(student_code, cases_json):
         error = None
         passed = False
         actual = ""
+        comparacion = ""
         _tutor_watchdog["deadline"] = _tutor_time.monotonic() + _TUTOR_TIMEOUT_SECONDS
         _tutor_wd_sys.settrace(_tutor_trace)
         try:
-            with _tutor_contextlib.redirect_stdout(buf):
+            with _tutor_contextlib.redirect_stdout(_DualOut()):
                 exec(compile(student_code, "<editor>", "exec"), ns)
                 if ctype == "pytest_assert":
                     exec(compile(assert_code, "<test>", "exec"), ns)
             actual = buf.getvalue()
+            comparacion = buf_comparacion.getvalue()
             if ctype == "stdin_stdout":
                 # JAVA-1: la comparacion NO se decide aca. La resuelve
                 # salidaCoincide() de comparacionSalida.ts, del lado JS, que es
@@ -1212,13 +1238,16 @@ def __tutor_run_tests(student_code, cases_json):
                 passed = True
         except _TutorTimeout:
             actual = buf.getvalue()
+            comparacion = buf_comparacion.getvalue()
             error = "La ejecucion supero el limite de tiempo (posible bucle infinito)."
         except AssertionError as _e:
             actual = buf.getvalue()
+            comparacion = buf_comparacion.getvalue()
             _msg = str(_e)
             error = "La comprobacion no se cumplio" + (": " + _msg if _msg else "")
         except BaseException as _e:
             actual = buf.getvalue()
+            comparacion = buf_comparacion.getvalue()
             error = type(_e).__name__ + ": " + str(_e)
         finally:
             _tutor_wd_sys.settrace(None)
@@ -1230,6 +1259,7 @@ def __tutor_run_tests(student_code, cases_json):
             "passed": passed,
             "expected": expected,
             "actual": actual,
+            "comparacion": comparacion,
             "stdin": stdin_text,
             "error": error,
         })
@@ -1592,6 +1622,17 @@ def __tutor_run_tests(student_code, cases_json):
           passed: c.status === "pass",
           expected: c.expected ?? null,
           actual: c.got ?? "",
+          // Mismo valor que `actual`, y NO la cadena vacia: en Java el prompt
+          // del input es un `System.out.print` comun, indistinguible de
+          // cualquier otra salida (ver el comentario en docker_runner.py), asi
+          // que no hay nada que separar y lo que se compara ES el stdout crudo.
+          //
+          // Hoy esta rama no llama a `resolverVeredictosPython` —el veredicto
+          // lo trae el servidor en `c.status`— asi que el campo no se lee. Por
+          // eso mismo un `""` aca no rompe nada HOY y rompe todo el dia que
+          // alguien rutee Java por el resolvedor: cada caso compararia contra
+          // vacio y fallaria. El valor honesto es el stdout.
+          comparacion: c.got ?? "",
           stdin: c.input ?? "",
           error: c.error ?? null,
         })),
@@ -1677,6 +1718,7 @@ def __tutor_run_tests(student_code, cases_json):
           passed: false,
           expected: null,
           actual: "",
+          comparacion: "",
           stdin: "",
           error: extractPyodideErrorLine(String(e)),
         },

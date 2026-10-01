@@ -136,13 +136,29 @@ def __probar_run_case(solution_code, test_code, stdin_text, mode):
     # Namespace fresco por caso (aislamiento entre tests). __name__ == __main__
     # para que el bloque if __name__ == "__main__": de la solucion corra.
     ns = {"__name__": "__main__"}
+    # DOS BUFFERS, NO CENTINELAS (comparacion-ignora-el-prompt-del-input).
+    # Mismo contrato que el shim del alumno (web-student/CodeEditor.tsx):
+    # out es PANTALLA (prompts + prints, lo que ve el docente en "Obtenido").
+    # out_comparacion es lo unico que compara evaluateCase contra expected.
+    # _fake_input escribe el prompt SOLO en out.
     out = _pr_io.StringIO()
+    out_comparacion = _pr_io.StringIO()
     lines = stdin_text.split("\\n") if stdin_text else []
     pos = {"i": 0}
 
+    class _PrDualOut:
+        def write(_self, s):
+            out.write(s)
+            out_comparacion.write(s)
+            return len(s)
+
+        def flush(_self):
+            pass
+
     def _fake_input(prompt=""):
         # CPython escribe el prompt a stdout (es salida del programa); el valor
-        # tipeado NO va a stdout (seria echo de terminal). Replicamos eso.
+        # tipeado NO va a stdout (seria echo de terminal). Replicamos eso — y
+        # SOLO a out (pantalla): el prompt no entra al buffer de comparacion.
         if prompt:
             out.write(str(prompt))
         if pos["i"] < len(lines):
@@ -155,7 +171,7 @@ def __probar_run_case(solution_code, test_code, stdin_text, mode):
 
     real_stdout = _pr_sys.stdout
     real_input = _pr_builtins.input
-    _pr_sys.stdout = out
+    _pr_sys.stdout = _PrDualOut()
     _pr_builtins.input = _fake_input
     _pr_deadline["t"] = _pr_time.monotonic() + _PR_TIMEOUT
     _pr_sys.settrace(_pr_trace)
@@ -179,7 +195,9 @@ def __probar_run_case(solution_code, test_code, stdin_text, mode):
         _pr_deadline["t"] = None
         _pr_sys.stdout = real_stdout
         _pr_builtins.input = real_input
-    return _pr_json.dumps({"stdout": out.getvalue(), "error": exc_msg})
+    return _pr_json.dumps(
+        {"stdout": out.getvalue(), "comparacion": out_comparacion.getvalue(), "error": exc_msg}
+    )
 `
 
 let runtimePromise: Promise<PyodideAPI> | null = null
@@ -232,7 +250,7 @@ export function loadPyodideRuntime(): Promise<PyodideAPI> {
  */
 export function evaluateCase(
   tc: TestCaseLike,
-  parsed: { stdout: string; error: string | null },
+  parsed: { stdout: string; comparacion: string; error: string | null },
 ): TestCaseRunResult {
   const base = {
     id: tc.id,
@@ -249,9 +267,12 @@ export function evaluateCase(
     // Sin excepcion => todos los asserts pasaron.
     return { ...base, status: "pass", got: parsed.stdout, error: null }
   }
-  // stdin_stdout: comparar stdout normalizado contra expected, con el MISMO
-  // corrector que usan el alumno y el servidor (ver el comentario del import).
-  const pass = salidaCoincide(parsed.stdout, tc.expected)
+  // stdin_stdout: comparar el buffer de COMPARACION (sin el prompt de
+  // input(), comparacion-ignora-el-prompt-del-input) normalizado contra
+  // expected, con el MISMO corrector que usan el alumno y el servidor (ver el
+  // comentario del import). `got` sigue siendo `parsed.stdout` (pantalla
+  // completa, con el prompt) — es lo que el docente ve en "Obtenido".
+  const pass = salidaCoincide(parsed.comparacion, tc.expected)
   return { ...base, status: pass ? "pass" : "fail", got: parsed.stdout, error: null }
 }
 
@@ -290,11 +311,15 @@ export async function runTestCases(
     const raw = await py.runPythonAsync(
       "__probar_run_case(__pr_solution, __pr_test, __pr_stdin, __pr_mode)",
     )
-    let parsed: { stdout: string; error: string | null }
+    let parsed: { stdout: string; comparacion: string; error: string | null }
     try {
-      parsed = JSON.parse(String(raw)) as { stdout: string; error: string | null }
+      parsed = JSON.parse(String(raw)) as {
+        stdout: string
+        comparacion: string
+        error: string | null
+      }
     } catch {
-      parsed = { stdout: "", error: "No se pudo leer el resultado del runtime" }
+      parsed = { stdout: "", comparacion: "", error: "No se pudo leer el resultado del runtime" }
     }
     results.push(evaluateCase(tc, parsed))
   }

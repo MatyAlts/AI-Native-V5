@@ -213,6 +213,9 @@ describe("el camino REAL del veredicto del alumno pasa por el corrector canonico
     passed: false,
     expected,
     actual,
+    // Esta tabla es sobre el corrector generico, no sobre el prompt de
+    // input(): la comparacion sigue viendo lo mismo que la pantalla.
+    comparacion: actual,
     stdin: "",
     error: null,
   })

@@ -20,6 +20,8 @@ export interface ResultadoCasoFalso {
   passed: boolean
   expected: string | null
   actual: string
+  /** Buffer de comparacion (sin el prompt de input()) — ver veredictoTests.ts. */
+  comparacion: string
   stdin: string
   error: string | null
 }
