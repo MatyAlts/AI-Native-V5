@@ -2261,7 +2261,31 @@ function TestResultCard({ result, index }: { result: TestCaseResult; index: numb
         <dl className="mt-2 space-y-1.5 text-xs">
           {r.stdin.trim() !== "" && <TestKV label="Entrada" value={r.stdin} />}
           <TestKV label="Esperado" value={r.expected ?? ""} tone="expected" />
-          {!r.passed && <TestKV label="Obtenido" value={r.actual} tone="actual" />}
+          {/* "Obtenido" muestra lo que SE COMPARO (`comparacion`), no lo que
+              se vio en pantalla (`actual`). Antes mostraba `actual`, y cuando
+              el ejercicio usa `input()` los dos difieren: el panel exhibia el
+              prompt mientras el veredicto se decidia contra otra cosa.
+
+              El caso real que lo destapo (2026-10-02): un alumno con el
+              `input()` puesto pero sin el `print()` veia
+              `Obtenido: "Ingrese su edad:"` contra
+              `Esperado: "Desaprobado"` — y concluyo, razonablemente, que el
+              sistema estaba roto. Lo que se comparo era la cadena vacia. */}
+          {!r.passed && (
+            <TestKV
+              label="Obtenido"
+              value={r.comparacion}
+              tone="actual"
+              vacio="tu programa no imprimio nada"
+            />
+          )}
+          {/* La pantalla, SOLO cuando difiere de lo comparado — o sea cuando
+              hubo un prompt de `input()`. Mostrarla siempre seria ruido; no
+              mostrarla nunca deja al alumno sin entender por que ve una cosa
+              al ejecutar y otra acá. */}
+          {!r.passed && r.actual !== r.comparacion && (
+            <TestKV label="En pantalla" value={r.actual} nota="el texto de input() no se compara" />
+          )}
         </dl>
       )}
     </li>
@@ -2272,18 +2296,34 @@ function TestKV({
   label,
   value,
   tone,
+  vacio,
+  nota,
 }: {
   label: string
   value: string
   tone?: "expected" | "actual"
+  /** Que decir cuando `value` es "". El default "(vacío)" no distingue "no
+      imprimiste nada" de "el sistema no me trajo el dato", y en el panel de
+      pruebas el alumno necesita saber cuál de las dos es. */
+  vacio?: string
+  /** Aclaración corta al lado del valor, para campos que se muestran pero no
+      participan del veredicto. */
+  nota?: string
 }): ReactNode {
   const valueClass =
     tone === "expected" ? "text-emerald-300" : tone === "actual" ? "text-amber-300" : "text-surface"
   return (
-    <div className="grid grid-cols-[72px_1fr] gap-2">
+    <div className="grid grid-cols-[88px_1fr] gap-2">
       <dt className="text-[10px] uppercase tracking-wider text-muted-soft pt-0.5">{label}</dt>
       <dd className={`min-w-0 whitespace-pre-wrap break-words font-mono ${valueClass}`}>
-        {value === "" ? <span className="text-muted-soft italic">(vacío)</span> : value}
+        {value === "" ? (
+          <span className="text-muted-soft italic">{vacio ?? "(vacío)"}</span>
+        ) : (
+          value
+        )}
+        {nota && (
+          <span className="ml-2 font-sans text-[10px] not-italic text-muted-soft">({nota})</span>
+        )}
       </dd>
     </div>
   )

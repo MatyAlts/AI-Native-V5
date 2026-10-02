@@ -90,8 +90,18 @@ export interface TestCaseRunResult {
   input: string
   /** salida esperada (solo stdin_stdout). */
   expected: string | null
-  /** lo que efectivamente imprimio el programa (stdout capturado). */
+  /** lo que efectivamente imprimio el programa (stdout capturado), prompts de
+      `input()` incluidos. Es lo que se veria en una terminal. */
   got: string
+  /** lo que SE COMPARO contra `expected`: el stdout sin los prompts de
+      `input()`.
+
+      Difiere de `got` justo cuando el ejercicio usa `input()` con mensaje, y
+      esa diferencia es la que confundia al docente igual que al alumno: el
+      panel exhibia `got` mientras el veredicto se decidia contra esto. Para
+      Java los dos son iguales — ahi el prompt es un `print` comun y no hay
+      nada que separar. */
+  comparacion: string
   /** mensaje de error/excepcion (ultima linea) si status === "error". */
   error: string | null
   weight: number
@@ -261,11 +271,23 @@ export function evaluateCase(
     weight: tc.weight,
   }
   if (parsed.error) {
-    return { ...base, status: "error", got: parsed.stdout, error: parsed.error }
+    return {
+      ...base,
+      status: "error",
+      got: parsed.stdout,
+      comparacion: parsed.comparacion,
+      error: parsed.error,
+    }
   }
   if (tc.type === "pytest_assert") {
     // Sin excepcion => todos los asserts pasaron.
-    return { ...base, status: "pass", got: parsed.stdout, error: null }
+    return {
+      ...base,
+      status: "pass",
+      got: parsed.stdout,
+      comparacion: parsed.comparacion,
+      error: null,
+    }
   }
   // stdin_stdout: comparar el buffer de COMPARACION (sin el prompt de
   // input(), comparacion-ignora-el-prompt-del-input) normalizado contra
@@ -273,7 +295,13 @@ export function evaluateCase(
   // comentario del import). `got` sigue siendo `parsed.stdout` (pantalla
   // completa, con el prompt) — es lo que el docente ve en "Obtenido".
   const pass = salidaCoincide(parsed.comparacion, tc.expected)
-  return { ...base, status: pass ? "pass" : "fail", got: parsed.stdout, error: null }
+  return {
+    ...base,
+    status: pass ? "pass" : "fail",
+    got: parsed.stdout,
+    comparacion: parsed.comparacion,
+    error: null,
+  }
 }
 
 /**
@@ -299,6 +327,7 @@ export async function runTestCases(
         input: tc.code,
         expected: tc.expected,
         got: "",
+        comparacion: "",
         error: "No hay entorno de ejecucion de Java todavia: este caso no se corrio.",
         weight: tc.weight,
       })
