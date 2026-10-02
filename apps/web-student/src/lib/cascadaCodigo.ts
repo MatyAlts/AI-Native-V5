@@ -24,13 +24,34 @@
  * (`CodeEditor.tsx`, `pyodideError.ts`), que sigue vivo y NO se toco. Quien
  * busque ED-4 va a encontrar cinco comentarios que hablan de el en presente
  * y estos que dicen que se elimino: son cosas distintas.
+ *
+ * `borradorLocal` (2026-10-02) es un CUARTO candidato, con la MAYOR
+ * precedencia de los cuatro. Cierra un bug distinto a ED-4 y hermano suyo: el
+ * alumno escribe, cada segundo se guarda una copia local Y se intenta
+ * emitir el snapshot al servidor; si ese POST falla (fire-and-forget), el
+ * alumno reabre y ve el snapshot viejo del servidor teniendo su propio
+ * codigo, mas fresco, en esta misma maquina. La resolucion de ESTE candidato
+ * (el chequeo de que sea del mismo episodio) vive en `EpisodePage`, no acá —
+ * ver el comentario ahi para el porque completo. Acá solo importa que, una
+ * vez resuelto, gana por sobre todo lo demas: dentro de un mismo episodio es
+ * por construccion al menos tan fresco como el snapshot.
  */
 
 /** De donde salio el codigo con el que arranca el editor. */
-export type OrigenCodigo = "snapshot" | "scaffold-tp" | "scaffold-ejercicio" | "placeholder"
+export type OrigenCodigo =
+  | "borrador-local"
+  | "snapshot"
+  | "scaffold-tp"
+  | "scaffold-ejercicio"
+  | "placeholder"
 
 /** Los candidatos, ya resueltos por el llamador. `null`/`""` = no hay. */
 export interface CandidatosCodigo {
+  /**
+   * El respaldo local de ESTE episodio (`readArtefactoDraft`, ya filtrado por
+   * `episode_id` en el llamador). Maxima precedencia: ver el modulo arriba.
+   */
+  borradorLocal?: string | null
   /** Lo que el alumno escribio en ESTE episodio (`last_code_snapshot`). */
   snapshot?: string | null
   /** `inicial_codigo` de la TP — el scaffold del docente. */
@@ -51,12 +72,14 @@ export interface CodigoResuelto {
  *
  * La cascada, de MAYOR a MENOR precedencia:
  *
- *  1. `snapshot` — lo que el alumno escribio en este episodio. Pisarlo es
+ *  1. `borradorLocal` — el respaldo que quedo en ESTA maquina para este
+ *     episodio. Gana incluso al snapshot: ver el comentario del modulo.
+ *  2. `snapshot` — lo que el alumno escribio en este episodio. Pisarlo es
  *     borrarle trabajo.
- *  2. `scaffoldTp` — el scaffold del docente a nivel TP.
- *  3. `scaffoldEjercicio` — el otro scaffold del docente, solo si la TP no
+ *  3. `scaffoldTp` — el scaffold del docente a nivel TP.
+ *  4. `scaffoldEjercicio` — el otro scaffold del docente, solo si la TP no
  *     trae el suyo.
- *  4. `placeholder` — el andamio del lenguaje.
+ *  5. `placeholder` — el andamio del lenguaje.
  *
  * Sin scaffold del docente cae directo al placeholder: el campo vacio de
  * `inicial_codigo` tambien es una decision del docente ("que arranque
@@ -67,6 +90,9 @@ export interface CodigoResuelto {
  * tenia la cascada imperativa y no se cambia acá.
  */
 export function resolverCascadaDeCodigo(candidatos: CandidatosCodigo): CodigoResuelto {
+  if (candidatos.borradorLocal) {
+    return { codigo: candidatos.borradorLocal, origen: "borrador-local" }
+  }
   if (candidatos.snapshot) return { codigo: candidatos.snapshot, origen: "snapshot" }
   if (candidatos.scaffoldTp) return { codigo: candidatos.scaffoldTp, origen: "scaffold-tp" }
   if (candidatos.scaffoldEjercicio) {

@@ -23,13 +23,13 @@
  *    fallar ningun caso que el `str.strip()` viejo aceptaba.
  */
 
+import { CANTIDAD_BLANCOS_RECORTADOS } from "@platform/contracts/comparacion-salida"
 import { describe, expect, it } from "vitest"
 // Import de JSON, no `readFileSync`: bajo Vitest (entorno jsdom) `import.meta.url`
 // no es un `file://` y leerlo a mano tira "The URL must be of scheme file". El
 // import lo resuelve Vite relativo a ESTE archivo, que es lo que queremos — si
 // la tabla se mueve, el test no compila en vez de pasar sin comparar nada.
 import tabla from "../../../tests/fixtures/paridad-salida.json"
-import { CANTIDAD_BLANCOS_RECORTADOS } from "@platform/contracts/comparacion-salida"
 import { normalizarSalida, salidaCoincide } from "../src/lib/comparacionSalida"
 
 interface CasoParidad {
