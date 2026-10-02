@@ -222,11 +222,33 @@ describe("persistencia del tamaño del panel de salida — patron ED-2 replicado
     expect(JSON.parse(window.localStorage.getItem(OUTPUT_PANEL_STORAGE_KEY) ?? "")).toEqual(layout)
   })
 
+  /**
+   * El espia va sobre `Storage.prototype`, NO sobre `window.localStorage`.
+   *
+   * La primera version de este test hacia `vi.spyOn(window.localStorage,
+   * "setItem")` y **no discriminaba nada**: en jsdom bajo Node 22 el
+   * `localStorage` es un Proxy, asi que definirle una propiedad propia no
+   * tapa a la del prototipo y el `setItem` real se ejecuta igual. El
+   * `not.toThrow()` pasaba porque nunca se tiraba nada — con o sin el
+   * `try/catch` de produccion.
+   *
+   * Se verifico por mutacion: sacando el `try/catch` de
+   * `persistOutputPanelLayout`, los 13 tests de este archivo seguian en
+   * verde. Es la septima forma de asercion que pasa sin medir que encuentra
+   * este repo, y la primera que viene de un espia que no espia.
+   */
   it("si localStorage.setItem tira (cuota llena / modo privado), no rompe al alumno", () => {
-    const spy = vi.spyOn(window.localStorage, "setItem").mockImplementation(() => {
+    const spy = vi.spyOn(Storage.prototype, "setItem").mockImplementation(() => {
       throw new Error("QuotaExceededError")
     })
-    expect(() => persistOutputPanelLayout({ "editor-code": 60 })).not.toThrow()
-    spy.mockRestore()
+    try {
+      expect(spy).not.toHaveBeenCalled()
+      expect(() => persistOutputPanelLayout({ "editor-code": 60 })).not.toThrow()
+      // Sin esto el test volveria a pasar si el espia dejara de interceptar:
+      // "no tiro" y "no se llamo" se ven igual desde afuera.
+      expect(spy).toHaveBeenCalledWith(OUTPUT_PANEL_STORAGE_KEY, expect.any(String))
+    } finally {
+      spy.mockRestore()
+    }
   })
 })
