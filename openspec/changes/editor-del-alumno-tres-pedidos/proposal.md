@@ -111,6 +111,39 @@ hasta que un alumno lo nota.
 - Sin cambios de backend, sin cambios al contrato del CTR, sin cambios a
   prompts del tutor.
 
+## QA round 2 (sobre el commit `8486551`) — huecos cerrados
+
+Dos revisores independientes (QA por mutación, frontend) encontraron que la
+implementación funcionaba pero la cobertura tenía huecos reales, y un detalle
+de foco quedó corto. Ver tarea 5 en `tasks.md` para el detalle con evidencia
+de mutación. Resumen:
+
+- El cableado del layout del panel de salida contra el `<Group>`
+  (`defaultLayout`/`onLayoutChanged`) no tenía ningún test que cayera si se
+  borraba — solo las funciones puras de persistencia estaban cubiertas.
+  Cerrado el lado de LECTURA; el de ESCRITURA se investigó y se descartó por
+  una limitación real de jsdom (declarada, no fingida).
+- `readArtefactoDraft` con `episode_id` ausente/null no tenía test directo —
+  importa porque de eso depende el candado anti-ED-4 en `EpisodePage.tsx`.
+- `localStorage.getItem` que tira (modo privado/cuota) para el borrador local
+  no tenía test de que el episodio igual hidrata y cae al snapshot. Un gotcha
+  de entorno nuevo quedó documentado en el test: `vi.spyOn` sobre la
+  INSTANCIA de `localStorage` no intercepta en este proyecto (Node 22 +
+  vitest/jsdom); hay que espiar `Storage.prototype`. Esto revela que un test
+  preexistente (`CodeEditorPanelDeSalida.test.tsx`, el de `setItem` roto) no
+  discrimina nada en este entorno — reportado, no corregido en esta ronda.
+- El manubrio del panel de salida tenía `focus-visible:outline-none` sin
+  ningún `focus-visible:ring-*` que lo reemplazara, y sin nombre accesible.
+  Alineado con el patrón que ya usa el resto del archivo. Los dos separadores
+  laterales preexistentes de `EpisodePage.tsx` quedan con la misma falta de
+  nombre accesible — deuda declarada, no corregida acá.
+- El comentario sobre `fixedOverflowWidgets` se amplió con la verificación en
+  browser real de que `animate-fade-in-up` (que deja un `transform`
+  permanente en el ancestro) NO rompe el posicionamiento del widget de
+  sugerencias — Monaco lo absorbe con coordenadas medidas. La geometría
+  extrema (panel arrastrado al mínimo) quedó sin verificar, declarada como
+  supuesto.
+
 ## Knowledge Base Impact
 
 Ninguno. Este repo no tiene un directorio `knowledge-base/` generado por

@@ -579,6 +579,33 @@ export function CodeEditor({
         // es la opcion de Monaco para exactamente este caso: monta esos
         // widgets con `position: fixed` en un nodo propio que ignora
         // cualquier `overflow: hidden` ancestro.
+        //
+        // Verificado contra un caso que PARECIA romper esto (QA round 2):
+        // `EpisodePage.tsx` envuelve la `section` del editor en
+        // `animate-fade-in-up` (fill-mode `both`), que deja un
+        // `transform: translateY(0)` PERMANENTE en ese ancestro una vez
+        // terminada la animacion — y un ancestro con `transform` se convierte
+        // en el "containing block" de cualquier descendiente `position: fixed`,
+        // lo cual en teoria anularia exactamente esta opcion (el widget de
+        // Monaco quedaria fijo relativo a ESE ancestro, no al viewport).
+        // Probado a mano en un browser real (no en jsdom, que no mide layout):
+        // se monto el mismo editor dos veces, con y sin ese `transform` en un
+        // ancestro, dentro de un panel con `overflow: hidden` identico al de
+        // produccion. El widget de sugerencias aparecio en las MISMAS
+        // coordenadas en los dos casos y se desbordo igual fuera del panel
+        // recortado (42px) — exactamente lo que `fixedOverflowWidgets` deberia
+        // lograr. Monaco posiciona sus widgets con coordenadas MEDIDAS, no con
+        // CSS puro, y esa medicion absorbe el cambio de containing block.
+        // Conclusion: NO tocar este flag por el `transform` de la animacion.
+        //
+        // Lo que ese chequeo NO cubrio (declarado, no verificado): la
+        // geometria extrema donde el editor ocupa casi toda la altura
+        // disponible y el widget tendria que salirse por el borde INFERIOR de
+        // la `section` (no solo del panel con overflow:hidden). No se logro
+        // reproducir esa geometria a mano — queda sin probar si en ese caso
+        // limite el popup se corta igual. Si alguien lo repite con el panel
+        // de salida arrastrado al minimo, confirmar ahi antes de asumir que
+        // sigue sosteniendo.
         fixedOverflowWidgets: true,
         ...SUGERENCIAS_OPTIONS,
       })
@@ -2053,7 +2080,10 @@ def __tutor_run_tests(student_code, cases_json):
             divisores laterales (EpisodePage, consigna/tutor). El grip en
             reposo usa `border-strong` (no `border-soft`, que sobre fondo
             claro es casi invisible) para que se vea SIN necesitar hover. */}
-        <Separator className="group relative my-0.5 flex h-3 items-center justify-center cursor-row-resize focus-visible:outline-none">
+        <Separator
+          aria-label="Redimensionar el panel de salida"
+          className="group relative my-0.5 flex h-3 items-center justify-center cursor-row-resize focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent-brand/40"
+        >
           <span className="block h-1 w-14 rounded-full bg-border-strong transition-colors group-hover:bg-accent-brand group-focus-visible:bg-accent-brand group-data-[resize-handle-active]:bg-accent-brand" />
         </Separator>
 

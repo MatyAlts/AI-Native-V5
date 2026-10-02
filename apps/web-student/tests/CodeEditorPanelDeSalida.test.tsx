@@ -41,6 +41,21 @@
  * `localStorage` al montar, se escribe cuando la libreria avisa un cambio de
  * layout) y que el manubrio exista con su rol accesible. Eso es lo unico que
  * se afirma acá.
+ *
+ * QA round 2 — el cableado contra el `<Group>`, no solo las funciones puras
+ * --------------------------------------------------------------------------
+ * Mutado por QA: sacar `defaultLayout={savedOutputPanelLayout}` O
+ * `onLayoutChanged={handleOutputPanelLayoutChanged}` del `<Group>` dejaba
+ * la suite entera en 630/630 verde — los tests de "persistencia" de mas abajo
+ * prueban `readStoredOutputPanelLayout`/`persistOutputPanelLayout` aisladas,
+ * nunca que `CodeEditor` se las pase al `Group`. El describe
+ * "el layout guardado llega de verdad al <Group>" cierra la mitad de LECTURA
+ * de ese hueco, leyendo el `flexGrow` inline que la libreria le pone a cada
+ * `Panel` (deriva directo del estado de React, no de una medicion de layout
+ * — ver el comentario en ese describe). La mitad de ESCRITURA
+ * (`onLayoutChanged`) se investigo y quedo sin cerrar — ver el comentario ahi
+ * mismo sobre por que, declarado explicito en vez de fingido con un test que
+ * no prueba nada.
  */
 import { render, waitFor } from "@testing-library/react"
 import { beforeEach, describe, expect, it, vi } from "vitest"
@@ -98,6 +113,87 @@ describe("CodeEditor — el manubrio del panel de salida es accesible", () => {
     expect(manubrio).not.toBeNull()
     expect(manubrio).toHaveAttribute("tabIndex", "0")
   })
+
+  // QA round 2 (frontend): el manubrio llevaba `focus-visible:outline-none`
+  // SIN ningun `focus-visible:ring-*` que lo reemplace — quedaba solo el
+  // cambio de color del grip de 4px. El archivo ya tiene el patron correcto
+  // en otros dos botones (`focus-visible:ring-2
+  // focus-visible:ring-accent-brand/40`, ver `CodeEditor.tsx:1921,1955`): el
+  // manubrio nuevo tiene que alinearse con ESE anillo, no ser el unico
+  // control del archivo sin indicador de foco real.
+  it('lleva el mismo anillo de foco que el resto del archivo ("focus-visible:ring-2 focus-visible:ring-accent-brand/40")', () => {
+    const { container } = render(<CodeEditor initialCode="x=1" language="java" />)
+    const manubrio = container.querySelector('[role="separator"]')
+    expect(manubrio).toHaveClass("focus-visible:ring-2")
+    expect(manubrio).toHaveClass("focus-visible:ring-accent-brand/40")
+  })
+
+  // Ningun separador del archivo (ni este ni los dos laterales preexistentes
+  // de `EpisodePage.tsx`) tenia nombre accesible. Este test cierra el nuevo
+  // nada mas — los dos laterales quedan como deuda preexistente declarada en
+  // `tasks.md`, no se tocan en este cambio.
+  it('tiene nombre accesible ("Redimensionar el panel de salida")', () => {
+    const { container } = render(<CodeEditor initialCode="x=1" language="java" />)
+    const manubrio = container.querySelector('[role="separator"]')
+    expect(manubrio).toHaveAttribute("aria-label", "Redimensionar el panel de salida")
+  })
+})
+
+describe("CodeEditor — el layout guardado llega de verdad al <Group> (QA round 2, mutacion)", () => {
+  // QA mutó el componente sacando `defaultLayout={savedOutputPanelLayout}` del
+  // `<Group>` y la suite entera siguió en 630/630 verde: los 10 tests de este
+  // archivo prueban `readStoredOutputPanelLayout`/`persistOutputPanelLayout`
+  // como funciones puras aisladas, nunca que el `CodeEditor` se las pase al
+  // `Group`. Este test cierra ESE hueco especifico: lee contra el DOM, no
+  // contra la funcion pura.
+  //
+  // Como se sabe que el layout guardado es observable sin layout real:
+  // `react-resizable-panels` computa, por cada `Panel`, un `flexGrow` IGUAL al
+  // numero del layout (via `getPanelStyles`, ver el bundle de la libreria) y
+  // lo pone en el `style` INLINE del div con `data-testid={id}` — no depende
+  // de `getBoundingClientRect`/`ResizeObserver` (que jsdom no calcula), es un
+  // valor puesto directo desde el estado de React. Por eso difiere del default
+  // (62/38, los `defaultSize` de cada `Panel`) de forma observable en jsdom.
+  it("un layout guardado en localStorage (30/70) se aplica a los paneles, no el default (62/38)", () => {
+    const layoutGuardado = { "editor-code": 30, "editor-output": 70 }
+    window.localStorage.setItem(OUTPUT_PANEL_STORAGE_KEY, JSON.stringify(layoutGuardado))
+
+    const { container } = render(<CodeEditor initialCode="x=1" language="java" />)
+
+    const panelEditor = container.querySelector('[data-testid="editor-code"]') as HTMLElement | null
+    const panelSalida = container.querySelector(
+      '[data-testid="editor-output"]',
+    ) as HTMLElement | null
+    expect(panelEditor).not.toBeNull()
+    expect(panelSalida).not.toBeNull()
+
+    // El default declarado en el JSX es `defaultSize={62}` / `defaultSize={38}`
+    // — si el `defaultLayout` guardado no llegara al `Group`, estos dos
+    // valores serian 62/38 en vez de 30/70.
+    expect(panelEditor?.style.flexGrow).toBe("30")
+    expect(panelSalida?.style.flexGrow).toBe("70")
+  })
+
+  // Por que NO hay un test equivalente para `onLayoutChanged` (la escritura)
+  // ------------------------------------------------------------------------
+  // Se investigo honestamente una via: disparar un `keyDown` de flecha sobre
+  // el separador, porque el calculo de `adjustLayoutByDelta` para el trigger
+  // "keyboard" opera en espacio de PORCENTAJES (no pixeles) — en principio no
+  // deberia necesitar layout real. Probado a mano: jsdom tira
+  // `Error: Previous layout not found for panel index 0` ANTES de llegar a
+  // ese calculo — el registro interno de paneles de la libreria depende de
+  // una medicion previa (via `ResizeObserver`, que jsdom no dispara) que
+  // nunca llega a completarse. Mismo techo que documenta el resto de este
+  // archivo sobre `resize()`, solo que alcanza tambien al camino de teclado.
+  // Confirmado quitando la via "keyboard": no queda ninguna forma de
+  // disparar `onLayoutChanged` sin simular layout real.
+  //
+  // Lo que SI queda cubierto: la lectura (test de arriba, que cae si se
+  // borra `defaultLayout`) y que `persistOutputPanelLayout` en si misma
+  // escribe bien bajo la clave (suite de persistencia, mas abajo). El hueco
+  // real que queda sin cerrar: si alguien borra el `onLayoutChanged={...}`
+  // del `<Group>`, NINGUN test de este archivo lo detecta. Reportado como tal
+  // en el cierre, no escondido.
 })
 
 describe("persistencia del tamaño del panel de salida — patron ED-2 replicado", () => {

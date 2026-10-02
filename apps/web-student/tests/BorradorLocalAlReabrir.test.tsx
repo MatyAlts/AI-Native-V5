@@ -41,7 +41,7 @@
  * probar ahi, y por eso el caso negativo vive en la seccion multi-ejercicio.
  */
 import { render, waitFor } from "@testing-library/react"
-import { afterEach, beforeEach, describe, expect, it } from "vitest"
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 import {
   type ArtefactoDraft,
   MONOLITHIC_ORDEN,
@@ -152,6 +152,35 @@ describe("readArtefactoDraft — lectura puntual de un borrador", () => {
     expect(readArtefactoDraft("scope-x", 3)).toBeNull()
   })
 
+  // Las dos siguientes importan por lo que NO hacen: `readArtefactoDraft` no
+  // filtra por `episode_id` (esa es responsabilidad del llamador, el `===`
+  // de `EpisodePage.tsx` — el candado anti-ED-4, ver docstring arriba). Si
+  // alguien cambiara esta funcion para "normalizar" un `episode_id` faltante
+  // a, por ejemplo, el string vacio o el propio episodeId esperado, el
+  // candado de `EpisodePage` dejaria de poder distinguir "borrador de otro
+  // episodio" de "borrador de este episodio" — y nadie se enteraria sin este
+  // test, porque la suite de integracion de mas abajo siempre pasa un
+  // `episode_id` explicito.
+  it("episode_id AUSENTE en el JSON guardado -> se lee igual, episode_id queda undefined (no lo inventa)", () => {
+    window.localStorage.setItem(
+      rawKey("scope-x", 3),
+      JSON.stringify({ orden: 3, ejercicio_id: "ej-x", codigo: "x = 1\n", language: "python" }),
+    )
+    const leido = readArtefactoDraft("scope-x", 3)
+    expect(leido?.codigo).toBe("x = 1\n")
+    expect(leido?.episode_id).toBeUndefined()
+  })
+
+  it("episode_id: null en el JSON guardado -> se lee igual, episode_id queda null (no lo descarta)", () => {
+    window.localStorage.setItem(
+      rawKey("scope-x", 3),
+      JSON.stringify({ ...DRAFT_BASE, episode_id: null }),
+    )
+    const leido = readArtefactoDraft("scope-x", 3)
+    expect(leido?.codigo).toBe(DRAFT_BASE.codigo)
+    expect(leido?.episode_id).toBeNull()
+  })
+
   it("codigo vacio o solo espacios -> null — no es un borrador util", () => {
     window.localStorage.setItem(
       rawKey("scope-x", 3),
@@ -249,6 +278,43 @@ describe("EpisodeView — TP monolitica (scope = episodeId)", () => {
     await waitFor(() => expect(editoresCreados.length).toBeGreaterThanOrEqual(1))
     await waitFor(() => expect(editoresCreados[0]?.__opciones.value).not.toBe(""))
     expect(editoresCreados[0]?.__opciones.value).toBe(CODIGO_VIEJO_SERVIDOR)
+  })
+
+  it("localStorage.getItem tira para la clave del borrador (modo privado / cuota): el editor abre igual, cae al snapshot", async () => {
+    // Acotado a la clave EXACTA del borrador, no un throw global: un mock
+    // global de `getItem` rompe OTRAS lecturas sin relacion (ej. el
+    // `useState` de `skippedReflection` en `EpisodePage`, que lee localStorage
+    // sin try/catch) y el test fallaria por una razon distinta a la que
+    // afirma. Lo que este test prueba es puntual: que el try/catch DENTRO de
+    // `readArtefactoDraft` (no en el llamador) es lo que mantiene la
+    // hidratacion del episodio funcionando cuando ESA lectura puntual falla.
+    //
+    // Gotcha de este repo (nuevo, no documentado antes): `vi.spyOn(window.
+    // localStorage, "getItem")` NO INTERCEPTA en este entorno (Node 22 +
+    // vitest/jsdom) — probado a mano: el mock nunca se invoca y la llamada
+    // real sigue pasando. `tests/setup.ts` ya avisa de esto para `setItem`
+    // ("los metodos se instalan en `Storage.prototype`, no en la instancia")
+    // pero el test de `CodeEditorPanelDeSalida.test.tsx` que simula
+    // `setItem` roto sigue espiando la INSTANCIA de todos modos — queda
+    // reportado aparte, no se toca acá. La via que SI intercepta es
+    // `Storage.prototype`.
+    const draftKey = rawKey(EPISODIO_ID, MONOLITHIC_ORDEN)
+    const original = Storage.prototype.getItem
+    const spy = vi.spyOn(Storage.prototype, "getItem").mockImplementation(function (
+      this: Storage,
+      k: string,
+    ) {
+      if (k === draftKey) throw new Error("SecurityError: almacenamiento no disponible")
+      return original.call(this, k)
+    })
+
+    montar()
+
+    await waitFor(() => expect(editoresCreados.length).toBeGreaterThanOrEqual(1))
+    await waitFor(() => expect(editoresCreados[0]?.__opciones.value).not.toBe(""))
+    expect(editoresCreados[0]?.__opciones.value).toBe(CODIGO_VIEJO_SERVIDOR)
+
+    spy.mockRestore()
   })
 })
 
