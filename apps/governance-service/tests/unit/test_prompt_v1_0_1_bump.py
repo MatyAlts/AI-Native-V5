@@ -120,16 +120,21 @@ def test_v101_corrige_cuenta_de_guardarrailes(loader: PromptLoader) -> None:
 # El nombre
 # del test NO lleva la version a proposito: antes se llamaba `..._activa_v101_...`
 # mientras asserteaba v1.2.0, y el nombre quedo mintiendo dos bumps seguidos.
-ACTIVE_TUTOR_VERSION = "v1.8.0"
+ACTIVE_TUTOR_VERSION = "v1.9.0"
 
 
 def test_manifest_global_activa_la_version_vigente_del_tutor(loader: PromptLoader) -> None:
     """El manifest global del repo declara la version activa del `tutor` para el
-    tenant `default`. Hoy: v1.5.0 (2026-09-21) — le da SALIDA al metodo: cuando
-    el estudiante trae una conclusion junto con la razon que la sostiene y la
-    razon es correcta, se confirma en la primera oracion. Los cuatro movimientos
-    socraticos son todos de apertura y ninguno cerraba, asi que el que ya habia
-    razonado bien recibia otra pregunta — la critica mas repetida del piloto.
+    tenant `default`. Hoy: v1.9.0 (2026-10-02) — le da la ENTRADA al metodo.
+    Los cuatro movimientos socraticos presuponen que el estudiante ya tiene algo
+    adentro para sacarle; el de primer ano que nunca escucho hablar del concepto
+    no tiene de donde agarrarse, y es el caso mas comun. Cuatro alumnos del
+    piloto lo reportaron por dos canales. Es la contraparte de v1.5.0, que le
+    habia dado la SALIDA (confirmar cuando el estudiante acierta con su razon).
+
+    Este docstring describia v1.5.0 hasta el 2026-10-02, dos bumps despues de
+    que dejara de ser cierto. Se actualiza con el pin: un docstring que nombra
+    una version es un cuarto lugar donde la version vive, y nadie lo contaba.
 
     Si este test falla:
       - Se borro/movio `ai-native-prompts/manifest.yaml`, o

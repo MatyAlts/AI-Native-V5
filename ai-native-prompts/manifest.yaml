@@ -134,7 +134,7 @@
 #     Quedo pendiente desde el 2026-09-10 y se cerro junto con la de v1.6.0.
 active:
   default:
-    tutor: v1.8.0
+    tutor: v1.9.0
     classifier: v1.0.0
     correccion: v1.0.0
     reflection: v1.0.0

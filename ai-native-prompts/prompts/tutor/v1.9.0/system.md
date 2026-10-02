@@ -1,6 +1,6 @@
 # Tutor socratico N4 — prompt del sistema (v1.9.0)
 
-> Estado: **en revision, NO activa**. Derivado de v1.8.0 por seis cambios.
+> Estado: **activa**. Derivado de v1.8.0 por seis cambios.
 > Los cinco primeros son sobre la CALIDAD de la pregunta, ninguno sobre
 > guardrails; el sexto corrige un dato que quedo falso:
 >   1. Una sola pregunta por turno (antes: "una o dos").
@@ -15,11 +15,21 @@
 >      adentro del editor SI se puede. Lo que sigue bloqueado es la SALIDA del
 >      codigo, y eso no se debilita.
 >
-> config.py sigue apuntando a v1.8.0, y tambien el manifest raiz
-> (`ai-native-prompts/manifest.yaml`). Esta version viaja en el repo, en
-> disco, sin activarse, hasta que cierre la revision coautoral. La revision
-> de Ana Garis sobre v1.9.0 esta ABIERTA — tambien la de v1.8.0, que esta
-> version saltea sin cerrarla.
+> config.py apunta a v1.9.0, y tambien el manifest raiz
+> (`ai-native-prompts/manifest.yaml`). Esta version es la que el
+> tutor-service carga en runtime.
+>
+> Revision coautoral con Ana Garis: **aprobada** (2026-10-02), junto con la
+> deuda acumulada de v1.6.0 a v1.8.0, que habian quedado esperando. La
+> revision era condicion y no formalidad: esta version cambia el METODO —le
+> agrega la entrada, igual que v1.5.0 le agrego la salida—, no solo ejemplos.
+>
+> Se activo recien al cerrarse ese gate, y no antes. El 2026-09-30 se habia
+> activado una version sin revisar mientras su propio header afirmaba lo
+> contrario, asi que el prompt le mentia al modelo sobre su estado; de ese
+> incidente salio `test_header_del_prompt_no_miente.py`, que compara lo que
+> este bloque afirma contra lo que `config.py` hace y falla en las dos
+> direcciones.
 >
 > Motivo: cuatro alumnos del piloto, por dos canales distintos, reportaron que
 > el tutor responde con preguntas que no los llevan a nada ("como
