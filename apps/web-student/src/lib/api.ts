@@ -1185,6 +1185,30 @@ export interface Entrega {
   submitted_at: string | null
   created_at: string
   updated_at: string
+  /**
+   * Codigo y titulo de la TP al momento de esta consulta (NO un snapshot al
+   * entregar). Opcionales: una TP borrada no tiene de donde resolverlos.
+   * Change `alumno-ve-su-nota-sin-depender-del-listado` — ver
+   * `evaluation_service/schemas/entrega.py::EntregaOut`.
+   */
+  tarea_codigo?: string | null
+  tarea_titulo?: string | null
+  /**
+   * Nota de la calificacion de esta entrega, resuelta por el mismo batch que
+   * `tarea_codigo`/`tarea_titulo` (`_notas_metadata` en evaluation-service).
+   * `null`/`undefined` cuando la entrega no tiene calificacion todavia
+   * (draft/submitted) — la pantalla "Mis notas" la muestra como pendiente,
+   * no pide `getCalificacion` por fila para resolverla.
+   */
+  nota_final?: number | null
+  /**
+   * Fecha de la calificacion, mismo batch que `nota_final` (una columna mas
+   * del mismo `select` en `_notas_metadata`, no un fetch aparte). Mismo
+   * patron que `submitted_at`/`created_at`: un `datetime` de Python se
+   * serializa a ISO-8601 string — tipado `string` acá, no un shape nuevo.
+   * `null`/`undefined` en el mismo caso que `nota_final`.
+   */
+  graded_at?: string | null
 }
 
 /**

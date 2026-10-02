@@ -11,6 +11,7 @@
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as ReflexionesRouteImport } from './routes/reflexiones'
 import { Route as ProgresoRouteImport } from './routes/progreso'
+import { Route as MisNotasRouteImport } from './routes/mis-notas'
 import { Route as InstrumentosRouteImport } from './routes/instrumentos'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as MateriaIdRouteImport } from './routes/materia.$id'
@@ -24,6 +25,11 @@ const ReflexionesRoute = ReflexionesRouteImport.update({
 const ProgresoRoute = ProgresoRouteImport.update({
   id: '/progreso',
   path: '/progreso',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const MisNotasRoute = MisNotasRouteImport.update({
+  id: '/mis-notas',
+  path: '/mis-notas',
   getParentRoute: () => rootRouteImport,
 } as any)
 const InstrumentosRoute = InstrumentosRouteImport.update({
@@ -50,6 +56,7 @@ const EpisodioIdRoute = EpisodioIdRouteImport.update({
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/instrumentos': typeof InstrumentosRoute
+  '/mis-notas': typeof MisNotasRoute
   '/progreso': typeof ProgresoRoute
   '/reflexiones': typeof ReflexionesRoute
   '/episodio/$id': typeof EpisodioIdRoute
@@ -58,6 +65,7 @@ export interface FileRoutesByFullPath {
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/instrumentos': typeof InstrumentosRoute
+  '/mis-notas': typeof MisNotasRoute
   '/progreso': typeof ProgresoRoute
   '/reflexiones': typeof ReflexionesRoute
   '/episodio/$id': typeof EpisodioIdRoute
@@ -67,6 +75,7 @@ export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
   '/instrumentos': typeof InstrumentosRoute
+  '/mis-notas': typeof MisNotasRoute
   '/progreso': typeof ProgresoRoute
   '/reflexiones': typeof ReflexionesRoute
   '/episodio/$id': typeof EpisodioIdRoute
@@ -77,6 +86,7 @@ export interface FileRouteTypes {
   fullPaths:
     | '/'
     | '/instrumentos'
+    | '/mis-notas'
     | '/progreso'
     | '/reflexiones'
     | '/episodio/$id'
@@ -85,6 +95,7 @@ export interface FileRouteTypes {
   to:
     | '/'
     | '/instrumentos'
+    | '/mis-notas'
     | '/progreso'
     | '/reflexiones'
     | '/episodio/$id'
@@ -93,6 +104,7 @@ export interface FileRouteTypes {
     | '__root__'
     | '/'
     | '/instrumentos'
+    | '/mis-notas'
     | '/progreso'
     | '/reflexiones'
     | '/episodio/$id'
@@ -102,6 +114,7 @@ export interface FileRouteTypes {
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
   InstrumentosRoute: typeof InstrumentosRoute
+  MisNotasRoute: typeof MisNotasRoute
   ProgresoRoute: typeof ProgresoRoute
   ReflexionesRoute: typeof ReflexionesRoute
   EpisodioIdRoute: typeof EpisodioIdRoute
@@ -122,6 +135,13 @@ declare module '@tanstack/react-router' {
       path: '/progreso'
       fullPath: '/progreso'
       preLoaderRoute: typeof ProgresoRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/mis-notas': {
+      id: '/mis-notas'
+      path: '/mis-notas'
+      fullPath: '/mis-notas'
+      preLoaderRoute: typeof MisNotasRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/instrumentos': {
@@ -158,6 +178,7 @@ declare module '@tanstack/react-router' {
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   InstrumentosRoute: InstrumentosRoute,
+  MisNotasRoute: MisNotasRoute,
   ProgresoRoute: ProgresoRoute,
   ReflexionesRoute: ReflexionesRoute,
   EpisodioIdRoute: EpisodioIdRoute,

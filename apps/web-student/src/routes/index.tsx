@@ -11,7 +11,7 @@
  */
 import { useQuery } from "@tanstack/react-query"
 import { Link, createFileRoute, useNavigate } from "@tanstack/react-router"
-import { BookOpenText, LineChart, Plus, Sparkles } from "lucide-react"
+import { BookOpenText, ClipboardCheck, LineChart, Plus, Sparkles } from "lucide-react"
 import { useEffect, useState } from "react"
 import { createPortal } from "react-dom"
 import { MateriaCard } from "../components/MateriaCard"
@@ -124,6 +124,14 @@ export function HomeContent({ isLoading, error, materias, onEnter }: HomeContent
             >
               <LineChart className="h-3.5 w-3.5" aria-hidden="true" />
               Mi progreso
+            </Link>
+            <Link
+              to="/mis-notas"
+              data-testid="home-link-mis-notas"
+              className="press-shrink shrink-0 inline-flex items-center gap-1.5 px-3 py-2 rounded-md border border-border bg-surface text-xs font-medium text-body hover:bg-accent-brand-soft hover:text-accent-brand-deep hover:border-accent-brand/40 transition-colors"
+            >
+              <ClipboardCheck className="h-3.5 w-3.5" aria-hidden="true" />
+              Mis notas
             </Link>
             <Link
               to="/reflexiones"
