@@ -34,7 +34,9 @@ describe("buildEpisodioSourceFile", () => {
   test("java: extension .java y header/charla comentados con //", () => {
     const result = buildEpisodioSourceFile({
       code: "class Fib {}",
-      messages: [{ role: "assistant", content: "che, pensalo de nuevo", ts: "2026-09-24T10:01:00Z" }],
+      messages: [
+        { role: "assistant", content: "che, pensalo de nuevo", ts: "2026-09-24T10:01:00Z" },
+      ],
       language: "java",
       meta,
     })
@@ -47,9 +49,7 @@ describe("buildEpisodioSourceFile", () => {
   test("charla multilinea: CADA linea del mensaje queda comentada por separado", () => {
     const result = buildEpisodioSourceFile({
       code: "print(1)",
-      messages: [
-        { role: "user", content: "linea uno\nlinea dos", ts: "2026-09-24T10:00:00Z" },
-      ],
+      messages: [{ role: "user", content: "linea uno\nlinea dos", ts: "2026-09-24T10:00:00Z" }],
       language: "python",
       meta,
     })

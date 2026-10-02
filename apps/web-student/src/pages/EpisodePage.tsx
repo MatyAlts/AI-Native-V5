@@ -66,7 +66,12 @@ import {
   resumeEpisode,
   sendMessage,
 } from "../lib/api"
-import { MONOLITHIC_ORDEN, collectArtefactoDrafts, saveArtefactoDraft } from "../lib/artefactos"
+import {
+  MONOLITHIC_ORDEN,
+  collectArtefactoDrafts,
+  readArtefactoDraft,
+  saveArtefactoDraft,
+} from "../lib/artefactos"
 import { esPlaceholder, resolverCascadaDeCodigo } from "../lib/cascadaCodigo"
 import { helpContent } from "../utils/helpContent"
 
@@ -359,6 +364,11 @@ export function EpisodeView({ episodeId, onExit, ejercicioContext, getToken }: E
   )
 
   const ejercicioOrden = ejercicioContext?.ejercicioOrden ?? null
+  // Mismo motivo que `ejercicioOrden` arriba: se deriva como primitivo FUERA
+  // del efecto de hidratacion para poder declararlo en su array de deps.
+  // `ejercicioContext` entero no puede ir ahi (es un objeto nuevo en cada
+  // render de `EpisodeView` si el caller no lo memoiza).
+  const entregaId = ejercicioContext?.entregaId ?? null
 
   const scrollToBottom = useCallback(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" })
@@ -522,13 +532,50 @@ export function EpisodeView({ episodeId, onExit, ejercicioContext, getToken }: E
         }
         setTestCases(resolvedTests)
 
+        // Candidato de MAYOR precedencia: el borrador local de ESTE mismo
+        // episodio. El scope/orden son los MISMOS que usa la escritura
+        // (`onEditDebounced` mas abajo): `entregaId`+`ejercicioOrden` cuando
+        // hay `ejercicioContext`, `episodeId`+`MONOLITHIC_ORDEN` cuando no. Si
+        // no coincidieran, este candidato nunca encontraria nada y la cascada
+        // se comportaria como si no existiera.
+        //
+        // Por que gana incluso sobre el snapshot del servidor
+        // -----------------------------------------------------
+        // El alumno escribe, y cada segundo pasan DOS cosas: se guarda una
+        // copia en esta maquina (`saveArtefactoDraft`, sincronico, no puede
+        // fallar) y se intenta emitir el snapshot al servidor (POST
+        // fire-and-forget, si puede fallar). Dentro de un mismo episodio el
+        // borrador local es por construccion al menos tan fresco como el
+        // snapshot — el unico caso en que difieren es que ese POST fallo, que
+        // es exactamente el bug que esto cierra: sin este candidato, el
+        // alumno reabre y ve codigo viejo teniendo el suyo en su propia
+        // maquina.
+        //
+        // Por que NO se usa un borrador de OTRO episodio
+        // -------------------------------------------------
+        // `EpisodeStateResponse` no expone timestamp de `last_code_snapshot`
+        // (solo `opened_at`/`closed_at`), asi que no hay forma de comparar
+        // frescura entre dos episodios distintos — un borrador viejo dejado
+        // por un episodio abandonado resucitaria codigo muerto. Y sembrar
+        // codigo de OTRO episodio es exactamente la puerta por la que
+        // volveria ED-4 (arrastre de codigo de un ejercicio anterior,
+        // eliminado el 2026-09-28 — ver
+        // `openspec/changes/eliminar-ed4-siembra-codigo-previo/`). Por eso el
+        // chequeo de `episode_id` no es un detalle: es la frontera entre este
+        // fix y ese bug.
+        const draftScopeId = entregaId ?? episodeId
+        const draftOrden = ejercicioOrden ?? MONOLITHIC_ORDEN
+        const draftLocal = readArtefactoDraft(draftScopeId, draftOrden)
+        const borradorLocal = draftLocal?.episode_id === episodeId ? draftLocal.codigo : null
+
         // Con QUE codigo abre el editor. La decision entera —la precedencia
-        // entre los tres candidatos— vive en `resolverCascadaDeCodigo`, una
+        // entre los candidatos— vive en `resolverCascadaDeCodigo`, una
         // funcion pura: acá solo se juntan los candidatos y se aplica el
         // resultado. Antes estaba desparramada en tres `if` separados por 60
         // lineas, con `usedPlaceholderRef` mutando en el medio, y no habia
         // forma de ejercitarla sin montar la pagina contra el backend.
         const siembra = resolverCascadaDeCodigo({
+          borradorLocal,
           snapshot: state.last_code_snapshot,
           scaffoldTp: resolveCodigoInicial(t),
           scaffoldEjercicio,
@@ -566,7 +613,7 @@ export function EpisodeView({ episodeId, onExit, ejercicioContext, getToken }: E
     return () => {
       cancelled = true
     }
-  }, [episodeId, salir, ejercicioOrden, applyLanguage])
+  }, [episodeId, salir, ejercicioOrden, entregaId, applyLanguage])
 
   // UI-8: enviar un mensaje al tutor. Si el stream falla (LLM saturado, red,
   // sesion pausada), NO cerramos el episodio ni ofrecemos salir — un error

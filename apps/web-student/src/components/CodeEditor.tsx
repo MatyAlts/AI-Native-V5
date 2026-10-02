@@ -26,6 +26,7 @@ import {
   type ReactNode,
   useCallback,
   useEffect,
+  useMemo,
   useRef,
   useState,
 } from "react"
@@ -207,11 +208,26 @@ const EDIT_DEBOUNCE_MS = 1000
  * `other` (codigo) y se conserva `suggestOnTriggerCharacters` para que el
  * autocompletado siga existiendo donde ayuda — el fix no es "apagar
  * IntelliSense", es que deje de robar teclas.
+ *
+ * `wordBasedSuggestions: "currentDocument"` fija una decision que hoy sostiene
+ * un default implicito de Monaco. El criterio del docente de la materia fue
+ * textual: "obvio no haga toda una funcion, pero si que le ahorre escribir la
+ * misma funcion 90 veces" — eso es exactamente lo que hace el autocompletado
+ * por palabra (no genera codigo nuevo, solo completa un identificador que ya
+ * aparecio en el documento). Se deja `"currentDocument"` y no
+ * `"matchingDocuments"`: el alumno tiene un solo archivo abierto por
+ * ejercicio, y `matchingDocuments` abriria la puerta a sugerir palabras de
+ * OTROS modelos de Monaco (otro ejercicio, otro episodio) que comparten
+ * lenguaje — sugerir de otro ejercicio no es "ahorrale tipeo". Consecuencia
+ * declarada, no accidente: con esto, las sugerencias por palabra incluyen las
+ * palabras del scaffold que dejo el docente, porque estan en el documento
+ * desde que el editor abre.
  */
 export const SUGERENCIAS_OPTIONS = {
   acceptSuggestionOnCommitCharacter: false,
   quickSuggestions: { other: true, comments: false, strings: false },
   suggestOnTriggerCharacters: true,
+  wordBasedSuggestions: "currentDocument",
 } as const
 
 // ED-3: control de tamano de fuente del editor. Persistido en localStorage
@@ -226,6 +242,35 @@ function readStoredFontSize(): number {
   const raw = Number.parseInt(window.localStorage.getItem(FONT_SIZE_KEY) ?? "", 10)
   if (!Number.isFinite(raw)) return FONT_SIZE_DEFAULT
   return Math.min(FONT_SIZE_MAX, Math.max(FONT_SIZE_MIN, raw))
+}
+
+// Panel de salida (editor/consola redimensionable, `Group orientation="vertical"`
+// mas abajo): persistencia del tamano, mismo patron ED-2 que ya usa EpisodePage
+// para sus 3 paneles horizontales (`PANELS_STORAGE_KEY`, lectura con
+// `useMemo` + try/catch, escritura en `onLayoutChanged` + try/catch). Acá se
+// expone como funciones puras (como `readStoredFontSize` arriba) en vez de
+// quedar inline: es lo unico de esta persistencia que se puede ejercitar sin
+// layout real — ver el docstring de
+// `tests/CodeEditorPanelDeSalida.test.tsx`.
+export const OUTPUT_PANEL_STORAGE_KEY = "web-student.editor.outputPanel.v1"
+
+export function readStoredOutputPanelLayout(): Record<string, number> | undefined {
+  if (typeof window === "undefined") return undefined
+  try {
+    const raw = window.localStorage.getItem(OUTPUT_PANEL_STORAGE_KEY)
+    return raw ? (JSON.parse(raw) as Record<string, number>) : undefined
+  } catch {
+    return undefined
+  }
+}
+
+export function persistOutputPanelLayout(layout: Record<string, number>): void {
+  if (typeof window === "undefined") return
+  try {
+    window.localStorage.setItem(OUTPUT_PANEL_STORAGE_KEY, JSON.stringify(layout))
+  } catch {
+    // best-effort: modo privado / cuota llena no puede romper el editor.
+  }
 }
 
 // ED-7: historial de corridas. Guardamos las ultimas N (no solo la ultima)
@@ -307,6 +352,12 @@ export function CodeEditor({
   const [testResults, setTestResults] = useState<TestCaseResult[] | null>(null)
   // Panel de salida (ED-6): pestana activa consola vs pruebas.
   const [outputTab, setOutputTab] = useState<"consola" | "pruebas">("consola")
+  // Persistencia del tamano del panel editor/salida (patron ED-2, ver las
+  // funciones puras declaradas arriba del componente).
+  const savedOutputPanelLayout = useMemo(() => readStoredOutputPanelLayout(), [])
+  const handleOutputPanelLayoutChanged = useCallback((layout: Record<string, number>) => {
+    persistOutputPanelLayout(layout)
+  }, [])
   // ED-7: historial de corridas + cual se esta viendo (null = la corrida viva).
   const [runHistory, setRunHistory] = useState<RunHistoryEntry[]>([])
   const [viewingRunId, setViewingRunId] = useState<number | null>(null)
@@ -520,6 +571,15 @@ export function CodeEditor({
         // abajo, porque esto solo desactiva el widget de Monaco y no impide
         // que el navegador inserte el texto por su cuenta.
         dropIntoEditor: { enabled: false },
+        // El `Panel` del editor ahora recorta su contenido (ver `style` mas
+        // abajo, en el JSX) para que Monaco no le tape el manubrio del
+        // divisor. Sin esto, cualquier widget que Monaco posicione por fuera
+        // del area visible (sugerencias, parametros, busqueda) quedaria
+        // recortado por ese mismo `overflow: hidden`. `fixedOverflowWidgets`
+        // es la opcion de Monaco para exactamente este caso: monta esos
+        // widgets con `position: fixed` en un nodo propio que ignora
+        // cualquier `overflow: hidden` ancestro.
+        fixedOverflowWidgets: true,
         ...SUGERENCIAS_OPTIONS,
       })
 
@@ -1768,7 +1828,7 @@ def __tutor_run_tests(student_code, cases_json):
     "inline-flex h-7 w-7 items-center justify-center rounded-md border border-border-soft text-muted hover:text-ink hover:bg-surface-alt disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
 
   return (
-    <div className="flex flex-col h-full relative">
+    <div data-testid="code-editor-root" className="flex flex-col h-full min-h-0 relative">
       {/* ── Toolbar ─────────────────────────────────────────────────────── */}
       <div className="flex items-center justify-between gap-2 border-b border-border-soft px-3 py-2">
         <h2 className="text-sm font-medium text-ink shrink-0">Código</h2>
@@ -1957,8 +2017,25 @@ def __tutor_run_tests(student_code, cases_json):
       )}
 
       {/* ED-6: editor + salida como panel vertical redimensionable real. */}
-      <Group orientation="vertical" className="flex-1 min-h-0">
-        <Panel id="editor-code" defaultSize={62} minSize={25} className="flex flex-col min-h-0">
+      <Group
+        orientation="vertical"
+        className="flex-1 min-h-0"
+        defaultLayout={savedOutputPanelLayout}
+        onLayoutChanged={handleOutputPanelLayoutChanged}
+      >
+        <Panel
+          id="editor-code"
+          defaultSize={62}
+          minSize={25}
+          className="flex flex-col min-h-0"
+          // `react-resizable-panels` le pone a este div un `overflow: "auto"`
+          // inline por default — una clase de Tailwind no le gana a eso. Este
+          // `style` se mergea DESPUES en el mismo componente, es la unica via
+          // que lo pisa. Sin esto, Monaco (que no recorta solo) puede volver
+          // a taparle el manubrio al divisor pase lo que pase con el redondeo
+          // de alturas.
+          style={{ overflow: "hidden" }}
+        >
           {/* El testid es el unico asidero para observar los listeners de
               clipboard desde un test: son los que impiden que el codigo
               llegue al portapapeles del SO. */}
@@ -1969,8 +2046,15 @@ def __tutor_run_tests(student_code, cases_json):
           />
         </Panel>
 
-        <Separator className="group relative my-0.5 flex h-2 items-center justify-center cursor-row-resize">
-          <span className="block h-0.5 w-12 rounded-full bg-border-soft transition-colors group-hover:bg-accent-brand group-data-[resize-handle-active]:bg-accent-brand" />
+        {/* Manubrio del divisor editor/salida. Area de agarre mas alta que el
+            grip visible (h-3 vs h-1) para que el cursor row-resize aparezca
+            con margen real y no justo sobre una linea de 2px — mismo
+            problema, resuelto igual, que el area de 8px que ya usan los
+            divisores laterales (EpisodePage, consigna/tutor). El grip en
+            reposo usa `border-strong` (no `border-soft`, que sobre fondo
+            claro es casi invisible) para que se vea SIN necesitar hover. */}
+        <Separator className="group relative my-0.5 flex h-3 items-center justify-center cursor-row-resize focus-visible:outline-none">
+          <span className="block h-1 w-14 rounded-full bg-border-strong transition-colors group-hover:bg-accent-brand group-focus-visible:bg-accent-brand group-data-[resize-handle-active]:bg-accent-brand" />
         </Separator>
 
         <Panel
