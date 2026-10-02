@@ -1112,6 +1112,65 @@ class CIIEvolutionLongitudinalOut(BaseModel):
 
 
 @router.get(
+    "/student/me/cii-evolution-longitudinal",
+    response_model=CIIEvolutionLongitudinalOut,
+)
+async def get_my_cii_evolution_longitudinal(
+    comision_id: UUID,
+    language: str | None = None,
+    tenant_id: UUID = Depends(get_tenant_id),
+    user_id: UUID = Depends(get_user_id),
+) -> CIIEvolutionLongitudinalOut:
+    """Trayectoria longitudinal del PROPIO alumno autenticado.
+
+    Mismo patron que `/student/me/episodes`, y por el mismo motivo — ahora
+    documentado con un caso real.
+
+    EL BUG QUE CIERRA (reportado el 2026-10-02)
+    ---------------------------------------------
+    El web-student pegaba a `/student/{id}/cii-evolution-longitudinal` con su
+    propio UUID y recibia **403**, asi que el bloque "tu trayectoria en tareas
+    parecidas" de "Mi progreso" mostraba un error crudo con el codigo HTTP.
+
+    La causa no es que al alumno no le corresponda el dato: es que
+    `clerk_base_roles` reparte `"estudiante,docente"` a TODO usuario logueado
+    (`api-gateway/config.py`), asi que un alumno real llega con rol `docente`.
+    `require_student_progress_access` ve un rol de staff, toma la rama de
+    docente, y exige membresia en `usuarios_comision` — tabla donde los alumnos
+    no estan, porque viven en `inscripciones`. 403.
+
+    POR QUE UN `/me` Y NO ABRIR EL GUARD
+    --------------------------------------
+    Sacarle `docente` a la etiqueta base rompe a los docentes reales en este
+    mismo endpoint: caerian en la rama de alumno, que solo deja ver el propio
+    progreso. Y aflojar el guard para que un rol de staff SIN comision caiga a
+    la rama de alumno arregla este 403 pero deja intacto el problema de fondo
+    —la etiqueta miente para todos— que es una decision de autorizacion y tiene
+    su propia conversacion.
+
+    Este `/me` no necesita ninguna de las dos: el pseudonimo sale del token y
+    no se acepta por path, asi que no hay nada que autorizar. Es exactamente lo
+    que ya se hizo para `/student/me/episodes`, y por eso ESE bloque de la
+    misma pantalla cargaba bien mientras este fallaba.
+
+    DEBE quedar registrado ANTES de `/student/{student_pseudonym}/...` o
+    FastAPI captura "me" como path param y tira 422.
+    """
+    # Se delega en el handler de staff pasando el pseudonimo del token. El
+    # `_access=None` saltea la dependencia de autorizacion a proposito: la
+    # unica identidad posible aca es la del propio token, asi que no hay
+    # escalacion que impedir — pasar `user_id` por path es imposible.
+    return await get_cii_evolution_longitudinal(
+        student_pseudonym=user_id,
+        comision_id=comision_id,
+        language=language,
+        tenant_id=tenant_id,
+        user_id=user_id,
+        _access=None,
+    )
+
+
+@router.get(
     "/student/{student_pseudonym}/cii-evolution-longitudinal",
     response_model=CIIEvolutionLongitudinalOut,
 )

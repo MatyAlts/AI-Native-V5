@@ -48,6 +48,17 @@ interface ReflectionModalProps {
   onClose: (submitted: boolean) => void
 }
 
+/** Esperas entre reintentos ante un 409, en milisegundos.
+ *
+ * El 409 de este endpoint significa "el episodio todavia no figura cerrado", y
+ * eso se resuelve solo cuando el `partition_worker` drena el evento de cierre.
+ * Tres intentos cubren ~5s de retraso del worker, que es holgado para el caso
+ * normal; si tarda mas que eso hay algo roto de verdad y el alumno tiene que
+ * enterarse, no quedarse mirando un boton que gira.
+ *
+ * Exportada para que el test no tenga que esperar 5 segundos de reloj real. */
+export const ESPERAS_409_MS = [600, 1500, 3000] as const
+
 export function ReflectionModal({ isOpen, episodeId, onClose }: ReflectionModalProps) {
   const [queAprendiste, setQueAprendiste] = useState("")
   const [dificultad, setDificultad] = useState("")
@@ -67,6 +78,22 @@ export function ReflectionModal({ isOpen, episodeId, onClose }: ReflectionModalP
   // mandaria a la DLQ un episodio ya cerrado, marcandolo integrity_compromised.
   const idempotencyKeyRef = useRef<string | null>(null)
 
+  /** Guard doble-submit SINCRONICO (NB-11).
+   *
+   * El state `submitting` se actualiza de forma asincronica: entre el primer
+   * click y el re-render que lo pone en `true` entran mas clicks, y el guard
+   * `if (submitting) return` los deja pasar. `EpisodePage.handleClose` ya usa
+   * una ref por este motivo; este modal habia quedado afuera del patron.
+   *
+   * Hoy el backend absorbe el doble envio por la `Idempotency-Key` compartida
+   * —los dos requests devuelven el mismo seq—, asi que el guard no evita un
+   * evento duplicado. Evita dos POST y, sobre todo, dos cadenas de reintento
+   * corriendo en paralelo sobre el mismo modal. */
+  const enviandoRef = useRef(false)
+  /** Mostrado mientras se reintenta por un 409: el alumno tiene que saber que
+      la demora es del sistema terminando de cerrar, no de su conexion. */
+  const [esperandoCierre, setEsperandoCierre] = useState(false)
+
   useEffect(() => {
     if (isOpen) {
       openedAtRef.current = Date.now()
@@ -83,35 +110,76 @@ export function ReflectionModal({ isOpen, episodeId, onClose }: ReflectionModalP
   }, [isOpen])
 
   async function handleSubmit() {
-    if (!episodeId || submitting) return
+    if (!episodeId || enviandoRef.current) return
     if (openedAtRef.current === null) {
       // Defensa: si el ref no se hidrato, no enviamos un valor invalido.
       return
     }
+    enviandoRef.current = true
     setSubmitting(true)
     setError(null)
+    setEsperandoCierre(false)
     const tiempoMs = Date.now() - openedAtRef.current
+
     try {
-      await submitReflection(
-        episodeId,
-        {
-          que_aprendiste: queAprendiste,
-          dificultad_encontrada: dificultad,
-          que_haria_distinto: queDistinto,
-          prompt_version: PROMPT_VERSION,
-          tiempo_completado_ms: Math.max(0, tiempoMs),
-        },
-        idempotencyKeyRef.current ?? undefined,
-      )
-      onClose(true)
+      for (let intento = 0; ; intento++) {
+        try {
+          await submitReflection(
+            episodeId,
+            {
+              que_aprendiste: queAprendiste,
+              dificultad_encontrada: dificultad,
+              que_haria_distinto: queDistinto,
+              prompt_version: PROMPT_VERSION,
+              tiempo_completado_ms: Math.max(0, tiempoMs),
+            },
+            idempotencyKeyRef.current ?? undefined,
+          )
+          onClose(true)
+          return
+        } catch (e) {
+          const status = (e as Error & { status?: number }).status
+          if (status !== 409 || intento >= ESPERAS_409_MS.length) throw e
+
+          // 409 ACA SIGNIFICA "TODAVIA NO", NO "NO".
+          //
+          // El unico camino de 409 del endpoint es que el episodio no figure
+          // todavia como `closed`. Y eso es una carrera, no un error del
+          // alumno: cerrar el episodio publica `episodio_cerrado` al CTR, que
+          // responde 202 apenas hace el XADD a Redis —la persistencia es
+          // asincronica—, y el `partition_worker` recien pone
+          // `estado = "closed"` cuando drena ese evento. Este modal se abre
+          // sobre el 202, asi que un alumno que escribe rapido llega antes que
+          // el worker.
+          //
+          // Reintentar es SEGURO porque la `Idempotency-Key` es la misma en
+          // todos los intentos: si alguno llegara a persistir, el siguiente
+          // recibe el seq ya asignado en vez de emitir un segundo evento.
+          //
+          // Y era necesario: sin esto, el 409 PIERDE la reflexion. El chequeo
+          // de estado corta antes de publicar al CTR, asi que no es un "se
+          // guardo pero el ACK se perdio" — no se escribe nada, y para la
+          // tesis queda un `reflexion_completada` que no existe.
+          setEsperandoCierre(true)
+          await new Promise((r) => setTimeout(r, ESPERAS_409_MS[intento]))
+        }
+      }
     } catch (e) {
-      setError(`Error enviando reflexion: ${e}`)
+      const status = (e as Error & { status?: number }).status
+      setError(
+        status === 409
+          ? "Todavia estamos terminando de cerrar tu episodio. Esperá unos segundos y volvé a enviar — lo que escribiste no se pierde."
+          : `No pudimos enviar tu reflexion. Probá de nuevo; lo que escribiste no se pierde. (detalle: ${e})`,
+      )
       setSubmitting(false)
+      setEsperandoCierre(false)
+    } finally {
+      enviandoRef.current = false
     }
   }
 
   function handleSkip() {
-    if (submitting) return
+    if (enviandoRef.current) return
     onClose(false)
   }
 
@@ -153,8 +221,30 @@ export function ReflectionModal({ isOpen, episodeId, onClose }: ReflectionModalP
           onChange={setQueDistinto}
         />
 
+        {/* Mientras se reintenta por un 409. Sin esto el alumno ve el boton
+            girando hasta cinco segundos sin saber por que, y el silencio se
+            lee como "se colgo". */}
+        {esperandoCierre && !error && (
+          // `<output>` y no un `div` con role: trae `role="status"` implicito y
+          // es el elemento semantico para un estado en vivo — el lector de
+          // pantalla lo anuncia sin interrumpir lo que el alumno este leyendo.
+          <output
+            className="block bg-surface-soft text-muted px-3 py-2 text-sm rounded"
+            data-testid="reflexion-esperando-cierre"
+          >
+            Estamos terminando de cerrar tu episodio. Tu reflexion se envia en cuanto termine — no
+            cierres esta ventana.
+          </output>
+        )}
+
         {error && (
-          <div className="bg-danger-soft text-danger px-3 py-2 text-sm rounded">{error}</div>
+          <div
+            role="alert"
+            className="bg-danger-soft text-danger px-3 py-2 text-sm rounded"
+            data-testid="reflexion-error"
+          >
+            {error}
+          </div>
         )}
 
         <div className="flex justify-end gap-2 pt-2">

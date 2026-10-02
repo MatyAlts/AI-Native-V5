@@ -1289,6 +1289,10 @@ function ProbarEjercicioPanel({
               input: c.input ?? "",
               expected: c.expected,
               got: c.got ?? "",
+              // Mismo valor que `got`, y NO vacio: en Java el prompt es un
+              // `System.out.print` comun, indistinguible de cualquier salida,
+              // asi que lo que se compara ES el stdout crudo.
+              comparacion: c.got ?? "",
               error: c.error,
               weight: c.weight,
             })),

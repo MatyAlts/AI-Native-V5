@@ -96,13 +96,15 @@ interface StudentAlerts {
   highest_severity: "low" | "medium" | "high" | null
 }
 
-async function fetchCiiEvolution(
-  pseudonym: string,
-  comisionId: string,
-): Promise<CIIEvolutionLongitudinal> {
+async function fetchCiiEvolution(comisionId: string): Promise<CIIEvolutionLongitudinal> {
   const qs = new URLSearchParams({ comision_id: comisionId })
   const r = await fetch(
-    `/api/v1/analytics/student/${pseudonym}/cii-evolution-longitudinal?${qs.toString()}`,
+    // `/me` y no `/{pseudonym}`: el endpoint con path param aplica el guard de
+    // docente y le devolvia 403 a los alumnos — ver el docstring de
+    // `get_my_cii_evolution_longitudinal` en analytics-service. Mismo patron
+    // que `/student/me/episodes`, que es por lo que ESE bloque de esta misma
+    // pantalla cargaba bien mientras este fallaba.
+    `/api/v1/analytics/student/me/cii-evolution-longitudinal?${qs.toString()}`,
   )
   if (!r.ok) throw new Error(`cii-evolution-longitudinal failed: ${r.status}`)
   return (await r.json()) as CIIEvolutionLongitudinal
@@ -229,7 +231,7 @@ function ProgresoContent({ comisionId }: { comisionId: string }) {
 
   const ciiQuery = useQuery({
     queryKey: ["mi-progreso", "cii", comisionId, pseudonym],
-    queryFn: () => fetchCiiEvolution(pseudonym as string, comisionId),
+    queryFn: () => fetchCiiEvolution(comisionId),
     enabled: !!pseudonym,
     staleTime: 60 * 1000,
   })
