@@ -174,6 +174,51 @@ async def list_entregas(
     )
     is_oversight = bool(user.roles & frozenset({"superadmin", "docente_admin"}))
 
+    # Las comisiones donde el caller es docente asignado. Se resuelve ACA,
+    # antes de la bifurcacion, porque su resultado decide por que rama entra.
+    my_comisiones: list[UUID] = []
+    if is_docente and not is_oversight:
+        rows_c = await db.execute(
+            text(
+                "SELECT comision_id FROM usuarios_comision "
+                "WHERE user_id = :uid AND deleted_at IS NULL"
+            ),
+            {"uid": str(user.id)},
+        )
+        my_comisiones = [r[0] for r in rows_c.all()]
+        if not my_comisiones:
+            # SIN COMISIONES ASIGNADAS NO SE ES DOCENTE.
+            #
+            # EL BUG QUE CIERRA (2026-10-02): un alumno abria "Mis notas" y leia
+            # "todavia no entregaste nada" teniendo una entrega corregida con
+            # nota 5. Este endpoint devolvia `{"data": []}` y nadie veia un
+            # error, porque no habia error — habia una mentira tranquila.
+            #
+            # La causa es que `clerk_base_roles` reparte "estudiante,docente" a
+            # TODO usuario logueado (`api-gateway/config.py`), asi que un alumno
+            # real llega con rol `docente`, entraba por la rama de staff,
+            # buscaba sus comisiones, no encontraba ninguna, y se iba con la
+            # lista vacia sin llegar nunca al filtro de "mis propias entregas".
+            #
+            # Degradar el rol aca —en vez de parchear la rama de staff— es lo
+            # que hace que el caller entre por la rama del alumno COMPLETA, con
+            # su semantica: entre otras cosas, ahi SI ve su propio `draft`,
+            # cosa que la rama de docente oculta a proposito.
+            #
+            # NO AMPLIA PERMISOS: la rama del alumno filtra por
+            # `student_pseudonym == user.id`. Ve sus propias entregas y nada
+            # mas. Un docente real, con comisiones asignadas, no pasa por aca.
+            #
+            # Lo que distingue a un docente de un alumno es `usuarios_comision`,
+            # no el token — lo dice el comentario del propio `clerk_base_roles`.
+            # Esta es la tercera cara del mismo defecto en un dia: el mismo rol
+            # heredado producia un 403 en `cii-evolution-longitudinal`, y segun
+            # `docs/RUNBOOK-DEPLOY-2026-08-28.md` abre de mas en
+            # `GET /api/v1/audit/episodes/{id}`. La raiz —que el gateway derive
+            # el rol de las tablas— es otra conversacion: el api-gateway hoy no
+            # se conecta a ninguna base.
+            is_docente = False
+
     # Anotado explicito: `.is_(None)` infiere `BinaryExpression[bool]`, pero los
     # `.append()` de mas abajo agregan comparaciones `==`/`.in_()` que SQLAlchemy
     # tipa como `ColumnElement[bool]` (el tipo base comun). Sin la anotacion,
@@ -195,18 +240,9 @@ async def list_entregas(
             # (usuarios_comision vive en la misma DB academic_main). Pedir una
             # comisión ajena queda fuera del IN → no se filtra nada de otro
             # docente. Ver docs/filtrado-teacher-plan.md.
-            rows_c = await db.execute(
-                text(
-                    "SELECT comision_id FROM usuarios_comision "
-                    "WHERE user_id = :uid AND deleted_at IS NULL"
-                ),
-                {"uid": str(user.id)},
-            )
-            my_comisiones = [r[0] for r in rows_c.all()]
-            if not my_comisiones:
-                return EntregaListResponse(
-                    data=[], meta=EntregaListMeta(cursor_next=None, limit=limit)
-                )
+            #
+            # `my_comisiones` se resolvio arriba y aca no puede estar vacia: si
+            # lo estuviera, `is_docente` ya seria False y no entrariamos.
             conditions.append(Entrega.comision_id.in_(my_comisiones))
         if student_pseudonym:
             conditions.append(Entrega.student_pseudonym == student_pseudonym)
