@@ -100,7 +100,7 @@ class Settings(BaseSettings):
     # produccion). El metodo socratico, los principios y las restricciones
     # quedan intactos byte a byte.
     default_prompt_name: str = "tutor"
-    default_prompt_version: str = "v1.8.0"
+    default_prompt_version: str = "v1.9.0"
     # Cambiado 2026-05-19: default a gpt-4o-mini para usar copilot-api proxy
     # (Mistral free tier saturado, ver SESSION-LOG). Restaurar a
     # mistral-small-latest si se vuelve a usar la BYOK key de Mistral.

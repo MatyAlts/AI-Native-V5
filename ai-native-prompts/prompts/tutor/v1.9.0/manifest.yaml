@@ -5,7 +5,7 @@ version: v1.9.0
 parent_version: v1.8.0
 bump_kind: minor_calidad_de_la_pregunta
 files:
-  system.md: 3b34d3a03a99e0a589afa55db61041daf3efed88f9da8fccee000fb875939435
+  system.md: 0e539f336cec3d90333a2514dff2ba0506266925f8bc18afbbc325aaf4a942c9
 notas:
   - Origen - cuatro alumnos del piloto, por dos canales distintos, reportaron la
     misma cosa de cuatro formas - le preguntan al tutor como validar algo y
@@ -99,16 +99,25 @@ notas:
     v1.8.0 - el mismo patron de test_prompt_confirmacion_al_acertar.py.
   - No afecta classifier_config_hash - es prompt de runtime, no etiquetador
     (ADR-020).
-  - REVISION COAUTORAL CON ANA GARIS - ABIERTA. Tambien sigue abierta la de
-    v1.8.0, que esta version saltea sin cerrarla (deuda acumulada, no
-    repetida aqui en silencio).
-  - DESACTIVADA A PROPOSITO - apps/tutor-service/src/tutor_service/config.py
-    y ai-native-prompts/manifest.yaml (el raiz) siguen apuntando a v1.8.0.
-    Esta version viaja en el repo, en disco, sin activarse, hasta que la
-    revision coautoral cierre. En la change del portapapeles se activo una
-    version sin revisar y el header del prompt afirmaba lo contrario, lo que
-    convirtio al prompt en algo que le mentia al modelo sobre su propio
-    estado. No se repite - verificado por
-    apps/tutor-service/tests/unit/test_header_del_prompt_no_miente.py.
+  - REVISION COAUTORAL CON ANA GARIS - APROBADA el 2026-10-02, junto con la
+    deuda acumulada de v1.6.0 a v1.8.0, que habian quedado esperando. La
+    revision era condicion y no formalidad - esta version cambia el METODO,
+    le agrega la entrada igual que v1.5.0 le agrego la salida, no solo
+    ejemplos.
+  - ACTIVADA el 2026-10-02, al cerrarse ese gate y no antes.
+    apps/tutor-service/src/tutor_service/config.py y
+    ai-native-prompts/manifest.yaml (el raiz) apuntan los dos a v1.9.0.
+    Durante el tiempo que estuvo en el repo sin activarse, el header del
+    prompt lo declaraba asi y un test lo verificaba - el 2026-09-30 se habia
+    activado una version sin revisar mientras su header afirmaba lo
+    contrario, lo que convirtio al prompt en algo que le mentia al modelo
+    sobre su propio estado.
+  - El pin de la version vive en CUATRO lugares y los cuatro se movieron
+    juntos - el manifest raiz, config.py,
+    apps/tutor-service/tests/unit/test_config_prompt_version.py
+    (EXPECTED_TUTOR_VERSION) y
+    apps/governance-service/tests/unit/test_prompt_v1_0_1_bump.py
+    (ACTIVE_TUTOR_VERSION). Correr la suite de un servicio suelto da verde
+    con el otro en rojo - hay que correr `uv run pytest apps -q`.
   - v1.8.0 y anteriores siguen en disco para reproducibilidad historica del
     piloto.
