@@ -73,6 +73,7 @@ import {
   saveArtefactoDraft,
 } from "../lib/artefactos"
 import { esPlaceholder, resolverCascadaDeCodigo } from "../lib/cascadaCodigo"
+import { mensajeAvisoDescartado } from "../lib/ctrDropAviso"
 import { helpContent } from "../utils/helpContent"
 
 const ACTIVE_EPISODE_KEY = "active-episode-id"
@@ -314,6 +315,10 @@ export function EpisodeView({ episodeId, onExit, ejercicioContext, getToken }: E
   // es riesgoso para el orden/semantica del CTR; se difiere. El cliente usa el
   // fetch global parcheado (interceptor P-18) => hereda el Bearer sin getToken.
   const ctrClientRef = useRef<CTRClient | null>(null)
+  // Aviso visible (no bloqueante) cuando el CTR descarta un evento por
+  // agotamiento de reintentos ("exhausted" — ver `ctrDropAviso.ts` para por
+  // que SOLO esa razon, nunca "rejected"). `null` = no hay nada que mostrar.
+  const [avisoDescarteCtr, setAvisoDescarteCtr] = useState<string | null>(null)
   useEffect(() => {
     const client = new CTRClient({
       episodeId,
@@ -322,11 +327,17 @@ export function EpisodeView({ episodeId, onExit, ejercicioContext, getToken }: E
       // (episodio cerrado) o agote reintentos se perdia sin rastro. Lo logueamos
       // con el tipo de evento y la razon (`rejected` | `exhausted`) para que un
       // drop del CTR quede visible en consola/telemetria.
+      //
+      // Ademas del log, le avisamos al ALUMNO (no solo a la consola que nadie
+      // mira): `mensajeAvisoDescartado` decide si corresponde mostrar algo —
+      // hoy solo ante "exhausted", ver el porque en ese modulo.
       onDrop: (event, reason) => {
         console.error(
           `[CTR] evento descartado (dead-letter): ${event.event_type} — razon=${reason}`,
           { episodeId, eventUuid: event.event_uuid, attempts: event.attempts, reason },
         )
+        const mensaje = mensajeAvisoDescartado(reason)
+        if (mensaje) setAvisoDescarteCtr(mensaje)
       },
     })
     ctrClientRef.current = client
@@ -945,6 +956,26 @@ export function EpisodeView({ episodeId, onExit, ejercicioContext, getToken }: E
         colorVar="var(--color-level-n3)"
         badge={LANGUAGE_LABELS[language]}
       />
+      {/* Aviso visible (no bloqueante) del dead-letter del CTR: mismo patron
+          que el "tutor-send-error" de mas abajo — banda de advertencia en el
+          flujo normal, nunca un modal, el alumno sigue escribiendo. */}
+      {avisoDescarteCtr && (
+        <div
+          role="alert"
+          data-testid="ctr-dead-letter-aviso"
+          className="animate-fade-in-up mx-3 mt-2 flex items-start justify-between gap-3 rounded-lg border border-warning/40 bg-warning-soft px-3 py-2.5 text-xs text-warning"
+        >
+          <span className="leading-relaxed">{avisoDescarteCtr}</span>
+          <button
+            type="button"
+            onClick={() => setAvisoDescarteCtr(null)}
+            aria-label="Cerrar aviso"
+            className="press-shrink shrink-0 text-warning/80 hover:text-warning"
+          >
+            ×
+          </button>
+        </div>
+      )}
       <CodeEditor
         initialCode={code}
         testCases={testCases}

@@ -474,9 +474,12 @@ describe("CTRClient — 429 y 408 son transitorios, no rechazos", () => {
 
   it("los 4xx de negocio vecinos SIGUEN siendo dead-letter inmediato", async () => {
     // La otra mitad del guard: ensanchar la excepcion a todo 4xx tampoco puede
-    // pasar en silencio. 400/401/403/404/409/422 son rechazos definitivos —
+    // pasar en silencio. 400/403/404/409/422 son rechazos definitivos —
     // reintentarlos es martillar al servidor con algo que nunca va a entrar.
-    for (const status of [400, 401, 403, 404, 409, 422]) {
+    // 401 QUEDA AFUERA de esta lista a proposito desde el fix de sesion
+    // vencida: no es un juicio sobre el EVENTO sino sobre la SESION, y tiene
+    // su propio describe block mas abajo ("401 es reintentable").
+    for (const status of [400, 403, 404, 409, 422]) {
       const storage = memStorage()
       const dropped: DropReason[] = []
       const { impl, calls } = mockFetch(() => ({ ok: false, status }))
@@ -491,5 +494,87 @@ describe("CTRClient — 429 y 408 son transitorios, no rechazos", () => {
       expect(calls, `status ${status}`).toHaveLength(1)
       expect(dropped, `status ${status}`).toEqual(["rejected"])
     }
+  })
+})
+
+describe("CTRClient — 401 es reintentable (sesion vencida, no evento invalido)", () => {
+  // El bug que esto cierra: un 401 (sesion vencida del alumno) caia en el
+  // mismo balde que un 409/422 — "4xx de negocio, no apendable" — y se
+  // descartaba de una. Pero un 401 es un juicio sobre la SESION, no sobre el
+  // EVENTO: el payload (ej. un snapshot de `edicion_codigo`) es perfectamente
+  // apendable, y entraria sin problema apenas el alumno vuelva a loguearse.
+  // Por eso 401 se trata como 408/429 (transitorio), NO como 403/409/422.
+  //
+  // 403 se deja AFUERA deliberadamente (no se mueve a retry): un 403 es "sos
+  // vos y no te corresponde", un juicio sobre el evento/permiso, no sobre la
+  // sesion. Y en este deploy un 403 al alumno es ademas el sintoma del
+  // defecto abierto de `clerk_base_roles` (reparte roles de mas) — reintentar
+  // lo taparia en vez de dejarlo salir a la superficie. Ver test de 403 en el
+  // describe anterior ("los 4xx de negocio vecinos").
+
+  it("un 401 (sesion vencida) se REINTENTA, no se descarta de una", async () => {
+    const storage = memStorage()
+    const dropped: DropReason[] = []
+    // Primer intento 401 (sesion vencida), segundo OK (el alumno reingreso):
+    // el evento tiene que llegar, no perderse.
+    const { impl, calls } = mockFetch((_call, i) =>
+      i === 0 ? { ok: false, status: 401 } : okResponse(),
+    )
+    const client = new CTRClient({
+      ...baseOpts(storage, impl),
+      onDrop: (_e, reason) => dropped.push(reason),
+    })
+    client.emit({ event_type: "edicion_codigo", payload: { n: 1 } })
+
+    await client.flush()
+    expect(dropped).toEqual([])
+    expect(client.pendingCount()).toBe(1) // sigue en la cola, esperando
+
+    await client.flush()
+    expect(calls).toHaveLength(2)
+    expect(dropped).toEqual([])
+    expect(client.pendingCount()).toBe(0)
+  })
+
+  it("un 401 persistente termina en dead-letter por agotamiento (exhausted), nunca por rechazo (rejected)", async () => {
+    const storage = memStorage()
+    const dropped: DropReason[] = []
+    const { impl, calls } = mockFetch(() => ({ ok: false, status: 401 }))
+    const client = new CTRClient({
+      ...baseOpts(storage, impl),
+      maxAttempts: 3,
+      onDrop: (_e, reason) => dropped.push(reason),
+    })
+    client.emit({ event_type: "edicion_codigo", payload: { n: 1 } })
+    await client.flush()
+    await client.flush()
+    await client.flush()
+
+    expect(calls).toHaveLength(3)
+    expect(dropped).toEqual(["exhausted"])
+    expect(client.pendingCount()).toBe(0)
+  })
+
+  it("el 401 reintenta con el MISMO Idempotency-Key", async () => {
+    // Aunque un 401 ni siquiera llega al tutor-service (lo rechaza el
+    // gateway antes de `call_next`, verificado en
+    // `apps/api-gateway/src/api_gateway/middleware/jwt_auth.py:146`), mandar
+    // el mismo event_uuid mantiene la garantia uniforme con el resto de los
+    // reintentables — no hay motivo para que este camino sea distinto.
+    const storage = memStorage()
+    const keys: (string | undefined)[] = []
+    const impl = vi.fn(async (_input: unknown, init?: { headers?: Record<string, string> }) => {
+      keys.push(init?.headers?.["Idempotency-Key"])
+      return { ok: keys.length > 1, status: keys.length > 1 ? 202 : 401 } as Response
+    }) as unknown as CTRFetch
+    const client = new CTRClient(baseOpts(storage, impl))
+    client.emit({ event_type: "edicion_codigo", payload: { n: 1 } })
+
+    await client.flush()
+    await client.flush()
+
+    expect(keys).toHaveLength(2)
+    expect(keys[0]).toBeTruthy()
+    expect(keys[1]).toBe(keys[0])
   })
 })

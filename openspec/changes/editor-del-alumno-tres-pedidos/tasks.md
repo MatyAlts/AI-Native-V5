@@ -144,6 +144,75 @@ nuevo. Nada de esto rehace lo hecho; cierra huecos sobre ello.
       (`suppressions/unused`) — sigue sin tocarse.
 - [x] 5.8 `pnpm run typecheck`: limpio.
 
+## 6. Bugfix: 401 se perdia en dead-letter + aviso visible al alumno
+
+No es uno de los tres pedidos originales — es un bug reportado aparte sobre
+la MISMA pantalla (cola de eventos del CTR en `packages/ctr-client`, cableado
+en `EpisodePage.tsx`). Se documenta acá por instrucción explícita del
+orquestador en vez de abrir un change nuevo.
+
+El bug: `CTRClient.send()` clasificaba un 401 (sesión del alumno vencida)
+como "4xx de negocio, no apendable" — el mismo balde que 409/422 — y lo
+descartaba al primer intento. Un 401 es un juicio sobre la SESION, no sobre
+el EVENTO: el payload (ej. el snapshot de `edicion_codigo`, que
+`tutor-service` usa para reconstruir `last_code_snapshot`) es perfectamente
+apendable y entraría sin problema apenas el alumno vuelva a loguearse.
+Descartarlo de una deja agujeros permanentes en la cadena CTR.
+
+- [x] 6.1 `packages/ctr-client/src/index.ts::send()`: 401 sacado del balde de
+      descarte inmediato y movido a reintentable (junto a 408/429). **403
+      queda afuera a propósito** — es un juicio sobre el evento/permiso, no
+      sobre la sesión, y en este deploy es además el síntoma del defecto
+      abierto de `clerk_base_roles`; reintentarlo lo taparía. Porqué
+      documentado en el comentario de `send()` y en la cabecera del archivo
+      (líneas ~37-45).
+- [x] 6.2 Sin tope nuevo: `maxAttempts` (default 8, ya existente) manda un
+      401 persistente a dead-letter con razón `exhausted`, igual que
+      cualquier otro reintentable agotado.
+- [x] 6.3 Verificado leyendo `apps/api-gateway/src/api_gateway/middleware/jwt_auth.py:146`
+      que un 401 se devuelve ANTES de `call_next(request)` — el request
+      nunca llega a `tutor-service`. Reintentar es seguro por dos vías
+      independientes: (a) el servidor no persistió nada (nunca lo vio), y
+      (b) aunque persistiera, el `Idempotency-Key` ya cubre "ACK perdido".
+- [x] 6.4 Tests en `packages/ctr-client/src/index.test.ts` (describe "401 es
+      reintentable"): reintenta sin ir a dead-letter al primer 401 (3/3,
+      incluye verificación de `Idempotency-Key` estable), termina en
+      `exhausted` tras agotar `maxAttempts` contra un 401 persistente. El
+      test preexistente del loop de 4xx vecinos se achicó (sacando 401,
+      dejando 400/403/404/409/422) con comentario explicando por qué. 23/23
+      verde (20 preexistentes + 3 nuevos).
+- [x] 6.5 Aviso visible (no bloqueante) al alumno cuando el CTR descarta un
+      evento. Nuevo módulo puro `apps/web-student/src/lib/ctrDropAviso.ts`
+      (`mensajeAvisoDescartado(reason)`), cableado en el `onDrop` ya
+      existente de `EpisodePage.tsx` (antes solo loggeaba a consola) —
+      banda de advertencia dentro del panel del editor, mismo patrón que
+      `tutor-send-error`, con botón de cierre.
+- [x] 6.6 **Limitación declarada, reportada al orquestador antes de tocar el
+      tipo**: `DropReason` (`"rejected" | "exhausted"`) no alcanza para
+      distinguir "se venció la sesión" de "el evento era inválido". Decisión
+      tomada SIN agregar un valor nuevo (no autorizado): el aviso se muestra
+      SOLO ante `"exhausted"` (la causa más probable tras el fix de 6.1 es
+      una sesión que nunca se renovó durante la ventana de reintentos, pero
+      no es la única — una caída de red o un 5xx persistente por el mismo
+      lapso también terminan en `"exhausted"`); nunca ante `"rejected"`
+      (403/409/422 — rechazo de negocio genuino, decirle "volvé a entrar" ahí
+      sería falso). Documentado en el docstring de `ctrDropAviso.ts`.
+- [x] 6.7 Tests: `tests/ctrDropAviso.test.ts` (función pura, 2 casos:
+      "exhausted" → mensaje, "rejected" → `null`) y
+      `tests/CTRAvisoDescartado.test.tsx` (cableado — mockea `CTRClient`
+      para capturar el `onDrop` real que le pasa `EpisodeView` y lo invoca a
+      mano; no reproduce reintentos reales porque `EpisodePage.tsx` no
+      expone `maxAttempts`/`scheduler` al construir el cliente, y simularlo
+      con fake timers hubiera sido frágil para lo que este test necesita
+      afirmar — ver docstring del archivo para el límite declarado entre "la
+      librería dispara `onDrop`" y "la página reacciona a `onDrop`").
+- [x] 6.8 `pnpm test -- --run` en `packages/ctr-client`: 23/23 verde. En
+      `apps/web-student`: 640/640 verde (636 previos + 4 nuevos).
+- [x] 6.9 `pnpm exec biome check --write .`: sin fixes nuevos aplicados.
+      Mismo warning preexistente de `tests/episodioDownload.test.ts`
+      (`suppressions/unused`) — sigue sin tocarse.
+- [x] 6.10 `pnpm run typecheck` en ambos paquetes: limpio.
+
 ## Fuera de alcance
 
 - El resto del backlog de `EpisodePage`/`CodeEditor` no mencionado en los tres
@@ -156,3 +225,10 @@ nuevo. Nada de esto rehace lo hecho; cierra huecos sobre ello.
 - Test de `onLayoutChanged` (escritura de persistencia del panel) contra el
   componente — investigado y descartado por limitación real de jsdom, ver
   5.1 y el docstring del archivo de test.
+- Agregar un valor nuevo a `DropReason` para distinguir "sesión vencida" de
+  "falla de red/servidor persistente" dentro de `"exhausted"` — decisión de
+  contrato de `@platform/ctr-client` que no le toca a esta ronda; reportado
+  al orquestador en 6.6, no implementado.
+- Avisos visibles para la razón `"rejected"` (409/422/403) — fuera del pedido
+  original (que era específicamente sobre sesión vencida); hoy sigue solo
+  logueado a consola, igual que antes de este cambio.

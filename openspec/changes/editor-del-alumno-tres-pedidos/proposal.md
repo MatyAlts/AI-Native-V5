@@ -111,6 +111,19 @@ hasta que un alumno lo nota.
 - Sin cambios de backend, sin cambios al contrato del CTR, sin cambios a
   prompts del tutor.
 
+### Impacto adicional del bugfix (tarea 6, fuera de los tres pedidos)
+
+- `packages/ctr-client/src/index.ts` (clasificación de 401; **este archivo
+  SI toca el comportamiento del contrato de la cola del CTR**, aunque no su
+  tipos públicos — ver la limitación declarada arriba).
+- `apps/web-student/src/lib/ctrDropAviso.ts` (nuevo).
+- `apps/web-student/src/pages/EpisodePage.tsx` (mismo archivo que el resto
+  del cambio — se agrega el aviso visible dentro del `editorPanel`).
+- Tests nuevos: `packages/ctr-client/src/index.test.ts` (describe "401 es
+  reintentable", + ajuste al describe de 4xx vecinos),
+  `apps/web-student/tests/ctrDropAviso.test.ts`,
+  `apps/web-student/tests/CTRAvisoDescartado.test.tsx`.
+
 ## QA round 2 (sobre el commit `8486551`) — huecos cerrados
 
 Dos revisores independientes (QA por mutación, frontend) encontraron que la
@@ -143,6 +156,32 @@ de mutación. Resumen:
   sugerencias — Monaco lo absorbe con coordenadas medidas. La geometría
   extrema (panel arrastrado al mínimo) quedó sin verificar, declarada como
   supuesto.
+
+## Bugfix fuera de los tres pedidos: 401 en dead-letter + aviso al alumno
+
+Reportado aparte, sobre la misma pantalla. `packages/ctr-client` clasificaba
+un 401 (sesión del alumno vencida) junto con 409/422 ("4xx de negocio, no
+apendable") y lo descartaba al primer intento — perdiendo para siempre
+eventos como `edicion_codigo`, de donde `tutor-service` reconstruye
+`last_code_snapshot`. Un 401 es un juicio sobre la SESION, no sobre el
+EVENTO: el payload sigue siendo apendable apenas el alumno vuelva a
+loguearse. Ver tarea 6 en `tasks.md` para el detalle con evidencia.
+
+- `packages/ctr-client/src/index.ts`: 401 se trata ahora como reintentable
+  (junto a 408/429), nunca como rechazo inmediato. 403 queda deliberadamente
+  afuera (es sobre permiso, no sobre sesión, y en este deploy es el síntoma
+  del defecto abierto de `clerk_base_roles` — reintentarlo lo taparía). Sin
+  tope nuevo: el `maxAttempts` existente cubre el caso de un 401 que nunca
+  cede.
+- `apps/web-student/src/lib/ctrDropAviso.ts` (nuevo): decide si corresponde
+  un aviso visible al alumno ante un dead-letter del CTR. Cableado en el
+  `onDrop` que `EpisodePage.tsx` ya le pasaba al `CTRClient` (antes solo
+  loggeaba a consola).
+- **Limitación declarada, no resuelta en esta ronda**: `DropReason`
+  (`"rejected" | "exhausted"`) no distingue "sesión vencida" de "red/5xx
+  persistente" dentro de `"exhausted"`. Se decidió NO agregar un valor nuevo
+  sin autorización — el aviso se muestra solo ante `"exhausted"`, con un
+  texto que no asegura la causa exacta. Reportado, no implementado.
 
 ## Knowledge Base Impact
 
