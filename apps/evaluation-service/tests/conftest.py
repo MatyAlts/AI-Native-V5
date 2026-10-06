@@ -27,6 +27,57 @@ PR #71 devolvia **403 con un detalle que nombraba la comision**; `main` devuelve
 confirma que la entrega existe, y ahi el `entrega_id` de una comision ajena se
 vuelve un oraculo de existencia. La intencion original ("el docente ajeno no
 llega") se conserva; la respuesta que se verifica es la mas fuerte de las dos.
+
+## No-determinismo encontrado y corregido (2026-10-06)
+
+`_fetch_dos_comisiones` tomaba *las primeras dos comisiones con TP que haya en
+la base* sin filtrar por nada mas, y `scope_setup` sembraba la entrega con
+`ejercicio_estados='[]'::jsonb` asumiendo, sin escribirlo en ningun lado, que
+esa TP no tenia `tp_ejercicios`. Si la TP elegida SI tenia ejercicios
+declarados, `submit_entrega` (`routes/entregas.py`) rechaza el submit por DOS
+validaciones independientes y ninguna de las dos se arregla sembrando estados:
+
+1. `incompletos` (linea ~335): exige que todo `ejercicio_estados` este
+   `completado=True` — esto SI se puede simular sembrando el estado completo.
+2. El chequeo de codigo (linea ~347): exige que el **body del POST /submit**
+   traiga el codigo de cada ejercicio esperado (`body.artefactos`). Ninguno de
+   los tests de este fixture manda body — llaman a `/submit` sin `json=` — asi
+   que este chequeo rechaza SIEMPRE que `_ejercicios_esperados` no sea vacio,
+   sin importar que tan completo este `ejercicio_estados`. Se intento primero
+   el camino (1) solo y quedo demostrado en rojo que no alcanza (422 cambia de
+   "Ejercicios incompletos" a "Falta el código de los ejercicios").
+
+**La correccion real es otra: elegir TPs sin ejercicios, no simular que los
+tienen completos.** Estos tests verifican el guard de autorizacion por
+comision (`_assert_comision_visible`), NO la feature de completitud de
+ejercicios — que la TP sorteada tuviera o no `tp_ejercicios` era un
+confundidor ajeno a lo que el test declara probar, no cobertura real de nada.
+`_fetch_dos_comisiones` ahora filtra con
+`NOT EXISTS (SELECT 1 FROM tp_ejercicios ...)`, controlando esa variable en
+vez de dejarla azarosa — asi el escenario es el mismo (una TP sin exigencia de
+ejercicios) en cualquier entorno, determinista.
+
+**Por que esto no se vio en CI antes de este fix.** El step "Seed minimo para
+los tests con DB" de `.github/workflows/ci.yml` corre `scripts/seed-ci-tests.py`
++ `scripts/seed-ejercicios-piloto.py`. Ninguno de los dos inserta una sola fila
+en `tp_ejercicios` (verificado con `grep -rn tp_ejercicios
+scripts/seed-ci-tests.py scripts/seed-ejercicios-piloto.py` → cero matches):
+`seed-ejercicios-piloto.py` carga un banco standalone de 25 ejercicios en la
+tabla `ejercicios`, pero nunca los asocia a una TP via `tp_ejercicios`.
+Entonces las TPs de CI siempre calificaban para el filtro por pura
+coincidencia — nunca se habia notado que dependia de eso. Se detecto porque en
+un Postgres de desarrollo local (con `seed-smoke.py` corrido alguna vez) la TP
+"propia" que le tocaba a este fixture SI tenia 2 `tp_ejercicios`, y 5 tests
+(`test_scope_comision_submit.py` x3, `test_recalificar_estado.py` x2) fallaban
+con 422 en vez del 200 esperado.
+
+**Agujero de cobertura que esto deja (a proposito, sin tapar — ver GAP-10 en
+`docs/research/BUGS-PILOTO.md`)**: con el filtro, estos tests eligen a
+proposito una TP SIN `tp_ejercicios`. Es lo correcto para lo que prueban (el
+guard de comision no tiene nada que ver con ejercicios), pero significa que
+"entrega/submit de una TP que SI exige ejercicios completos bajo un guard de
+comision cruzado" queda sin cobertura tanto en CI (por el seed) como aca (por
+el filtro, ahora explicito). Nadie ejercita esa combinacion hoy.
 """
 
 from __future__ import annotations
@@ -83,7 +134,17 @@ def build_headers(user_id: uuid.UUID, tenant_id: uuid.UUID, roles: str) -> dict[
 
 
 async def _fetch_dos_comisiones(engine) -> tuple[uuid.UUID, list[tuple[uuid.UUID, uuid.UUID]]]:
-    """(tenant_id, [(tarea_practica_id, comision_id), ...]) de DOS comisiones del seed."""
+    """(tenant_id, [(tarea_practica_id, comision_id), ...]) de DOS comisiones del seed.
+
+    Filtra TPs con `tp_ejercicios` propios: estos tests prueban el guard de
+    comision (`_assert_comision_visible`), no la completitud de ejercicios, y
+    `submit_entrega` exige codigo en el body para cada ejercicio esperado — algo
+    que ningun test de `scope_setup` manda. Una TP con ejercicios declarados
+    siempre rechaza el submit con 422, sin importar el guard. Ver "No-
+    determinismo encontrado y corregido" en el docstring del modulo para el
+    detalle completo (incluye por que esto no se notaba en CI y que agujero de
+    cobertura deja este mismo filtro).
+    """
     async with engine.connect() as conn:
         rows = (
             await conn.execute(
@@ -91,6 +152,10 @@ async def _fetch_dos_comisiones(engine) -> tuple[uuid.UUID, list[tuple[uuid.UUID
                     "SELECT DISTINCT ON (tp.comision_id) tp.tenant_id, tp.id, tp.comision_id "
                     "FROM tareas_practicas tp "
                     "WHERE tp.deleted_at IS NULL "
+                    "AND NOT EXISTS ("
+                    "    SELECT 1 FROM tp_ejercicios te "
+                    "    WHERE te.tarea_practica_id = tp.id"
+                    ") "
                     "ORDER BY tp.comision_id, tp.id"
                 )
             )
@@ -119,6 +184,10 @@ async def scope_setup() -> AsyncIterator[dict]:
     asi que sin ellos un guard de autorizacion no se distingue de un 409 de
     estado.
 
+    `ejercicio_estados` nace `[]`: las TPs que `_fetch_dos_comisiones` elige
+    estan filtradas para no tener `tp_ejercicios` (ver su docstring), asi que
+    `[]` es siempre la lista completa — no hay ejercicio pendiente posible.
+
     Ademas: `tenant_id`, `docente` / `admin` (headers listos), `headers`
     (callable generico) y `alumno_de(key)` (headers del dueño de esa entrega).
     """
@@ -131,7 +200,17 @@ async def scope_setup() -> AsyncIterator[dict]:
 
     if len(pares) < 2:
         await engine.dispose()
-        pytest.skip("El seed no tiene tareas_practicas en dos comisiones distintas")
+        # Mensaje DISTINTO del generico ("el seed no tiene tareas_practicas en
+        # dos comisiones distintas"): ese mensaje manda a buscar donde no es
+        # cuando el problema real es que las comisiones SI existen pero sus
+        # TPs tienen `tp_ejercicios` enganchados (ver `_fetch_dos_comisiones`
+        # y "No-determinismo encontrado y corregido" en el modulo).
+        pytest.skip(
+            "El seed no tiene dos comisiones con TPs SIN tp_ejercicios "
+            "(scope_setup necesita TPs sin ejercicios declarados: estos tests "
+            "prueban el guard de comision, no la completitud de ejercicios, y "
+            "ninguno manda codigo en el body del submit)"
+        )
 
     (tp_propia, comision_propia), (tp_ajena, comision_ajena) = pares
     membresia_id = uuid.uuid4()
@@ -175,6 +254,7 @@ async def scope_setup() -> AsyncIterator[dict]:
                 "fd": date.today() - timedelta(days=60),
             },
         )
+
         for key, (tp_id, comision_id, estado, cal_id) in entregas.items():
             await s.execute(
                 text(
