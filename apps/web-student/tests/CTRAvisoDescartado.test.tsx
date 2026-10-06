@@ -108,7 +108,7 @@ beforeEach(() => {
 })
 
 describe("EpisodeView — aviso visible cuando el CTR descarta un evento", () => {
-  it('reason "exhausted" (reintentos agotados — probable sesion vencida) muestra el aviso', async () => {
+  it('reason "exhausted" (reintentos agotados, causa no determinable) muestra el aviso', async () => {
     const { getByTestId } = montar()
 
     await waitFor(() => expect(ctrClientMock.onDrop).not.toBeNull())
@@ -121,8 +121,11 @@ describe("EpisodeView — aviso visible cuando el CTR descarta un evento", () =>
     })
 
     const aviso = await waitFor(() => getByTestId("ctr-dead-letter-aviso"))
-    expect(aviso.textContent).toMatch(/sesión/i)
+    expect(aviso.textContent).toMatch(/no pudimos registrar/i)
     expect(aviso.textContent).toMatch(/código está a salvo/i)
+    // El cartel NO afirma la causa: "exhausted" tambien sale de una caida de
+    // red o un 5xx persistente — ver el docstring de `ctrDropAviso.ts`.
+    expect(aviso.textContent).not.toMatch(/venció tu sesión/i)
   })
 
   it('reason "rejected" (evento invalido, no la sesion) NO muestra el aviso', async () => {

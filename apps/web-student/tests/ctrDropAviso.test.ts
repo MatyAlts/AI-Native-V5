@@ -11,14 +11,27 @@ import { describe, expect, it } from "vitest"
 import { mensajeAvisoDescartado } from "../src/lib/ctrDropAviso"
 
 describe("mensajeAvisoDescartado", () => {
-  it('"exhausted" devuelve el aviso de sesion vencida — no asusta, no miente', () => {
+  it('"exhausted" avisa lo que paso, sin ocultarlo y sin inventar la causa', () => {
     const mensaje = mensajeAvisoDescartado("exhausted")
     expect(mensaje).not.toBeNull()
-    // No le decimos que perdio el codigo (el borrador local lo cubre) ni le
-    // ocultamos que algo no se registro.
-    expect(mensaje).toMatch(/sesión/i)
+    // Lo que es CIERTO y le sirve al alumno: algo no se registro, y su codigo
+    // no se perdio (el borrador local lo cubre, sincronico, mismo tick).
+    expect(mensaje).toMatch(/no pudimos registrar/i)
     expect(mensaje).toMatch(/código está a salvo/i)
-    expect(mensaje).toMatch(/volvé a entrar/i)
+  })
+
+  it('"exhausted" NO afirma que se vencio la sesion — no se puede saber', () => {
+    // La guarda de este PR: "exhausted" tambien lo produce una caida de red o
+    // un 5xx persistente, y el CTRClient no guarda que status vio en el ultimo
+    // intento. Afirmar la sesion manda a reloguear a quien solo perdio el wifi.
+    expect(mensajeAvisoDescartado("exhausted")).not.toMatch(/venció tu sesión/i)
+  })
+
+  it('"exhausted" NO promete que volver a entrar recupere el evento perdido', () => {
+    // Al agotar reintentos, `drain()` hace `queue.shift()` ANTES de `onDrop`:
+    // el evento ya no esta en la cola y ninguna reconexion lo retransmite. Lo
+    // que vuelve a registrar el trabajo es la PROXIMA edicion.
+    expect(mensajeAvisoDescartado("exhausted")).not.toMatch(/para que se registre/i)
   })
 
   it('"rejected" (409/422/403 — evento invalido, no sesion) NO muestra aviso', () => {

@@ -26,17 +26,31 @@
  *    status HTTP vio en el ultimo intento. El aviso de abajo es por lo tanto
  *    una aproximacion declarada, no una certeza — reportado al orquestador.
  *
- * Por eso el aviso se muestra SOLO ante "exhausted" (nunca ante "rejected"),
- * con un texto que no asegura la causa exacta pero tampoco miente: no le dice
- * al alumno que perdio su codigo (el borrador local lo cubre — ver
- * `cascadaCodigo.ts`), le dice que no se pudo REGISTRAR el cambio.
+ * Por eso el aviso se muestra SOLO ante "exhausted" (nunca ante "rejected"), y
+ * su TEXTO no afirma la causa. Las dos cosas que el texto NO puede decir, y no
+ * dice:
+ *
+ *  - "Se vencio tu sesion" seria inventar el motivo con una autoridad que este
+ *    modulo no tiene: como dice el parrafo de arriba, una caida de red o un 5xx
+ *    persistente producen el mismo "exhausted". Mandar a reloguear a quien solo
+ *    perdio el wifi es un dato falso y encima un consejo inutil.
+ *  - "Volve a entrar PARA QUE SE REGISTRE" seria prometer algo que no pasa: al
+ *    agotar reintentos el CTRClient hace `queue.shift()` ANTES de invocar
+ *    `onDrop` (ver `drain()` en `@platform/ctr-client`), asi que ese evento ya
+ *    no existe y ninguna reconexion lo trae de vuelta.
+ *
+ * Lo que SI es cierto es lo que se le dice: el codigo esta a salvo en este
+ * dispositivo (`saveArtefactoDraft` es sincronico y corre en el mismo tick del
+ * debounce — ver `cascadaCodigo.ts`), y lo que efectivamente vuelve a registrar
+ * el trabajo es la PROXIMA edicion, que emite un snapshot nuevo y completo.
  */
 import type { DropReason } from "@platform/ctr-client"
 
 export function mensajeAvisoDescartado(reason: DropReason): string | null {
   if (reason !== "exhausted") return null
   return (
-    "Se venció tu sesión y no pudimos registrar tus últimos cambios. " +
-    "Tu código está a salvo en este dispositivo — volvé a entrar para que se registre."
+    "No pudimos registrar tus últimos cambios en el servidor. " +
+    "Tu código está a salvo en este dispositivo: revisá tu conexión y, si el " +
+    "problema sigue, volvé a entrar — al seguir escribiendo se registra de nuevo."
   )
 }
