@@ -182,7 +182,10 @@ describe("doble click (patron NB-11)", () => {
   it("dos clicks seguidos mandan UN solo POST", async () => {
     let resolver: ((v: unknown) => void) | null = null
     vi.mocked(submitReflection).mockImplementation(
-      () => new Promise((r) => { resolver = r }) as never,
+      () =>
+        new Promise((r) => {
+          resolver = r
+        }) as never,
     )
 
     montar()

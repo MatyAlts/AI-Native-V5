@@ -71,8 +71,7 @@ async function esperarEditor() {
   await waitFor(() => expect(editoresCreados.length).toBeGreaterThanOrEqual(1))
 }
 
-const botonEjecutar = () =>
-  screen.getByRole("button", { name: /^Ejecutar/ }) as HTMLButtonElement
+const botonEjecutar = () => screen.getByRole("button", { name: /^Ejecutar/ }) as HTMLButtonElement
 
 describe("Ejecutar en remoto sin casos de prueba", () => {
   it("no manda la corrida (ni con el boton ni con el atajo)", async () => {

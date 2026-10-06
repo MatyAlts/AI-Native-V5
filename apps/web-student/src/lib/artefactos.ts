@@ -115,6 +115,28 @@ export function collectArtefactoDrafts(scopeId: string, ordenes: number[]): Arte
 }
 
 /**
+ * Lee el borrador de UN ejercicio puntual, por su clave exacta.
+ *
+ * Hermano de lectura puntual de `collectArtefactoDrafts` (que junta VARIOS
+ * ordenes para el submit): acá hay un solo candidato, el que compite con el
+ * `last_code_snapshot` del servidor por el buffer inicial de un episodio al
+ * reabrirlo. Best-effort como el resto del modulo: entrada ausente, corrupta
+ * o con codigo vacio devuelven `null` en vez de tirar — el llamador cae al
+ * siguiente candidato de la cascada sin enterarse del motivo.
+ */
+export function readArtefactoDraft(scopeId: string, orden: number): ArtefactoDraft | null {
+  try {
+    const raw = window.localStorage.getItem(key(scopeId, orden))
+    if (!raw) return null
+    const parsed = JSON.parse(raw) as ArtefactoDraft
+    if (typeof parsed?.codigo !== "string" || parsed.codigo.trim() === "") return null
+    return parsed
+  } catch {
+    return null
+  }
+}
+
+/**
  * Limpia los borradores de una entrega ya enviada, y de paso barre lo viejo.
  *
  * El barrido va acá y NO en `collect`: en `collect` estaríamos borrando

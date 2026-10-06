@@ -36,10 +36,13 @@
  *
  * Este cliente ademas MINIMIZA la cantidad de reintentos innecesarios:
  *   - Reintenta SOLO ante fallas donde el servidor tipicamente NO persistio:
- *     error de red (fetch rechaza), 5xx, 408, 429.
- *   - NO reintenta 4xx de negocio (409 episodio cerrado, 422 invalido): esos
- *     eventos no son apendables y se descartan a dead-letter (con callback,
- *     nunca en silencio).
+ *     error de red (fetch rechaza), 5xx, 408, 429, Y 401 (sesion vencida del
+ *     alumno — un juicio sobre la SESION, no sobre el evento; el 401 ni
+ *     siquiera llega al backend, lo rechaza el api-gateway antes de
+ *     reenviar la request, asi que no hay nada persistido que duplicar).
+ *   - NO reintenta 4xx de negocio (403 sin permiso, 409 episodio cerrado,
+ *     422 invalido): esos eventos no son apendables y se descartan a
+ *     dead-letter (con callback, nunca en silencio).
  */
 
 /** Tipos de evento CTR que el frontend puede emitir al tutor-service.
@@ -402,11 +405,26 @@ export class CTRClient {
     }
 
     if (ok) return "ok"
-    // 4xx de negocio: no apendable, no reintentar. Excepto 408/429 (transitorios).
-    if (status >= 400 && status < 500 && status !== 408 && status !== 429) {
+    // 4xx de negocio: no apendable, no reintentar. Excepto 401/408/429
+    // (transitorios). El 401 es un caso aparte de los otros dos: no es que
+    // el SERVIDOR este ocupado (408/429) sino que la SESION del alumno
+    // vencio — un juicio sobre la sesion, no sobre el evento. El payload
+    // (ej. el snapshot de `edicion_codigo`) es perfectamente apendable y
+    // entraria sin problema apenas el alumno vuelva a loguearse. Si el 401
+    // no cede, `maxAttempts` (default 8) lo manda a dead-letter con razon
+    // `exhausted` igual que cualquier otro reintentable — no hace falta un
+    // tope nuevo.
+    //
+    // El 403 QUEDA AFUERA de esta excepcion a proposito: "sos vos y no te
+    // corresponde" es un juicio sobre el EVENTO/permiso, no sobre la sesion
+    // (reintentarlo no lo arregla). Ademas, en este deploy un 403 al alumno
+    // es el sintoma del defecto abierto de `clerk_base_roles` (reparte
+    // "estudiante,docente" a todos) — reintentarlo lo TAPARIA en vez de
+    // dejarlo salir a la superficie mientras ese defecto siga abierto.
+    if (status >= 400 && status < 500 && status !== 401 && status !== 408 && status !== 429) {
       return "drop"
     }
-    // 5xx, 408, 429: reintentar.
+    // 5xx, 401, 408, 429: reintentar.
     return "retry"
   }
 

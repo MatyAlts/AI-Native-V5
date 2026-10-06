@@ -31,11 +31,11 @@
  *     detecta nada).
  */
 
-import { describe, expect, it } from "vitest"
 import { CANTIDAD_BLANCOS_RECORTADOS } from "@platform/contracts/comparacion-salida"
+import { describe, expect, it } from "vitest"
+import tabla from "../../../tests/fixtures/paridad-salida.json"
 import { normalizarSalida, salidaCoincide } from "../src/lib/comparacionSalida"
 import { type TestCaseResult, resolverVeredictosPython } from "../src/lib/veredictoTests"
-import tabla from "../../../tests/fixtures/paridad-salida.json"
 
 interface CasoParidad {
   nombre: string
@@ -115,7 +115,8 @@ describe("invariante del strip() viejo — EXHAUSTIVO, no muestreado", () => {
     for (const g of grupos.values()) {
       const cabeza = g[0] ?? ""
       for (const s of g) {
-        if (!salidaCoincide(cabeza, s)) rotos.push(`${JSON.stringify(cabeza)} vs ${JSON.stringify(s)}`)
+        if (!salidaCoincide(cabeza, s))
+          rotos.push(`${JSON.stringify(cabeza)} vs ${JSON.stringify(s)}`)
       }
     }
     expect(rotos.slice(0, 10)).toEqual([])

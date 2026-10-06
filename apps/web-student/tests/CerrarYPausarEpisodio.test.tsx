@@ -181,9 +181,7 @@ describe('"Cerrar episodio" hace las tres cosas que tiene que hacer', () => {
     await act(async () => {
       fireEvent.click(cerrar)
     })
-    await waitFor(() =>
-      expect(veces(llamadas, "/close")).toBe(1),
-    )
+    await waitFor(() => expect(veces(llamadas, "/close")).toBe(1))
   })
 
   it("dispara la clasificacion despues del cierre", async () => {
@@ -208,9 +206,7 @@ describe('"Cerrar episodio" hace las tres cosas que tiene que hacer', () => {
     })
     // Si no se borra, el recovery de `routes/index.tsx` vuelve a meter al
     // alumno en un episodio que ya cerro.
-    await waitFor(() =>
-      expect(window.sessionStorage.getItem(ACTIVE_EPISODE_KEY)).toBeNull(),
-    )
+    await waitFor(() => expect(window.sessionStorage.getItem(ACTIVE_EPISODE_KEY)).toBeNull())
   })
 
   it("el doble click no cierra dos veces (guard sincronico NB-11)", async () => {
@@ -251,9 +247,7 @@ describe('"Seguir despues" pausa sin cerrar', () => {
     await act(async () => {
       fireEvent.click(pausar)
     })
-    await waitFor(() =>
-      expect(window.sessionStorage.getItem(ACTIVE_EPISODE_KEY)).toBeNull(),
-    )
+    await waitFor(() => expect(window.sessionStorage.getItem(ACTIVE_EPISODE_KEY)).toBeNull())
     expect(salidas.length).toBe(1)
   })
 })
