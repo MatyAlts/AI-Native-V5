@@ -1,6 +1,42 @@
-Copyright (c) 2026 Alberto Alejandro Cortez
+Copyright (c) 2026 Alberto Alejandro Cortez, Juan Ignacio Sarmiento y
+Neyen Bianchi. Todos los derechos reservados.
 
-Licencia por definir según acuerdo con dirección de tesis y universidades
-piloto. Por defecto, derechos reservados hasta definición formal.
+SOFTWARE PROPIETARIO — NO ES CODIGO ABIERTO
 
-Para uso, colaboración o licenciamiento contactar al autor.
+Este software y su documentacion son obra de los titulares nombrados arriba, en
+coautoria. No se concede ninguna licencia, expresa ni implicita, sobre el codigo
+fuente, los modelos, los prompts, los esquemas de datos ni ningun otro material
+de este repositorio.
+
+Queda prohibido, sin autorizacion previa y por escrito de los titulares:
+
+  - usar el software, en todo o en parte, con cualquier fin;
+  - copiarlo, reproducirlo o almacenarlo mas alla de la lectura del
+    repositorio;
+  - modificarlo, adaptarlo, traducirlo o crear obras derivadas;
+  - distribuirlo, publicarlo, sublicenciarlo, venderlo o cederlo;
+  - usarlo para entrenar, ajustar o evaluar modelos de aprendizaje automatico.
+
+TITULARIDAD CONJUNTA
+
+Los tres titulares lo son en condominio y en partes iguales sobre la totalidad
+de la obra, sin division por modulo, servicio ni aporte individual.
+
+Ninguno de ellos puede, por si solo, licenciar, ceder, transferir, vender ni
+gravar el software ni parte alguna de el. Toda licencia, venta, cesion o
+convenio requiere el consentimiento previo, expreso y por escrito de LOS TRES
+titulares, y el producido de cualquiera de esos actos les corresponde en las
+mismas partes iguales.
+
+Cualquier acuerdo celebrado sin el consentimiento escrito de los tres es
+inoponible a los titulares que no lo prestaron.
+
+El repositorio puede estar disponible publicamente para fines de revision
+academica, auditoria y transparencia de la investigacion. Esa visibilidad NO
+otorga ningun derecho de uso: leer el codigo no autoriza a emplearlo.
+
+Las dependencias de terceros conservan sus propias licencias, que no se ven
+afectadas por este aviso.
+
+Para uso, colaboracion, licenciamiento o convenios con instituciones, contactar
+a los titulares.
