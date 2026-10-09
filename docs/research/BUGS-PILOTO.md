@@ -1264,3 +1264,26 @@ Threshold puesto en **60%** — el floor actual real, no el target. Esto convier
 **Decisiones humanas pendientes**:
 - Si el ratchet a 85% se hace antes del piloto UTN o se documenta como deuda técnica conocida en la defensa de tesis. Dado que el plano pedagógico es el corazón de la tesis (tutor + CTR + classifier), no cumplir el target propio en `tutor` y `ctr` es un riesgo a la aceptabilidad académica. Recomendación de esta sesión: **Fase A debe ejecutarse antes del go-live del piloto**, no después.
 - Si vale la pena fixear el `tests/test_health.py` cross-service collision para poder medir coverage global en CI (hoy CI agrega coverage XML pero no se sabe si el agregado pasa el target porque la corrida desde root da collection errors).
+
+---
+
+## GAP-10 (El submit de una TP con ejercicios, bajo el guard de comisión, no se ejercita en ningún lado) — abierto, 2026-10-06
+
+**Contexto del hallazgo**: arreglando 5 tests rojos de `apps/evaluation-service/tests/{test_scope_comision_submit.py,test_recalificar_estado.py}` en un Postgres de desarrollo local. Fallaban con 422 "Ejercicios incompletos"/"Falta el código" en vez del 200 esperado — no por un bug de producción, sino porque `scope_setup` (`tests/conftest.py`) dependía de qué TP le tocara de la base, y en ese Postgres la TP "propia" tenía `tp_ejercicios` reales.
+
+**La causa de fondo**: ningún seed que corre en CI inserta una sola fila en `tp_ejercicios`.
+
+- `scripts/seed-ci-tests.py` crea sus propias TPs (comisiones A/B) sin asociarles ejercicios.
+- `scripts/seed-ejercicios-piloto.py` carga un banco standalone de 25 ejercicios en la tabla `ejercicios`, pero **nunca los asocia a una TP** vía `tp_ejercicios`.
+- Verificado con `grep -rn tp_ejercicios scripts/seed-ci-tests.py scripts/seed-ejercicios-piloto.py` → cero matches.
+
+Consecuencia: toda TP que existe en la base de CI tiene `tp_ejercicios` vacío, siempre. `_ejercicios_esperados()` (`apps/evaluation-service/src/evaluation_service/routes/entregas.py`) devuelve `[]` para cualquier TP de CI, así que las dos validaciones de `submit_entrega` que dependen de `esperados` (completitud de `ejercicio_estados` y código obligatorio por ejercicio) **nunca se disparan en CI**, en NINGÚN test — no sólo en los 5 que fallaron en local.
+
+**El fix aplicado no tapa el agujero, lo deja explícito**: `_fetch_dos_comisiones` (`apps/evaluation-service/tests/conftest.py`) ahora filtra con `NOT EXISTS (SELECT 1 FROM tp_ejercicios ...)`, así que `scope_setup` elige **a propósito** TPs sin ejercicios — correcto, porque esos tests prueban el guard de autorización por comisión (`_assert_comision_visible`), no la feature de ejercicios, y ninguno manda código en el body del submit. Pero esto significa que la combinación **"entrega de una TP que SI exige ejercicios completos, bajo un guard de comisión cruzado"** sigue sin cobertura — ahora de forma documentada en vez de accidental.
+
+**Lo que falta (no se resuelve acá — es otro trabajo)**:
+1. Que algún seed de CI asocie al menos una TP a ejercicios reales via `tp_ejercicios` (ninguno lo hace hoy).
+2. Un test de scope de comisión / submit que corra específicamente contra una TP CON ejercicios, mandando el código en el body — para probar que el guard de `_assert_comision_visible` y la validación de completitud/código conviven sin que una tape a la otra.
+3. Mientras no exista (2), un bug en la combinación de ambos checks (ej. el guard de comisión evaluándose después de la validación de código, filtrando información sobre si la TP exige ejercicios a un docente ajeno) no lo detectaría ningún test del repo.
+
+**Decisión humana pendiente**: si vale la pena escribir (2) antes o después del piloto. No es bloqueante — ningún bug concreto se identificó, es una ausencia de cobertura — pero el camino de entrega con ejercicios es el que usan los alumnos reales del piloto (banco de 25 ejercicios cargado), así que el escenario no es hipotético.
