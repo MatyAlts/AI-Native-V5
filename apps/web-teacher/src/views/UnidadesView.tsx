@@ -49,6 +49,9 @@ export function UnidadesView({ comisionId, getToken }: Props) {
   const [tps, setTps] = useState<TareaPractica[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
+  // Error de una ESCRITURA (crear/editar/eliminar/asignar). Va aparte de `error`
+  // (carga inicial): se descarta a mano y no depende de re-fetchear.
+  const [actionError, setActionError] = useState<string | null>(null)
   const [modal, setModal] = useState<ModalState>({ kind: "closed" })
   const [expandedIds, setExpandedIds] = useState<Set<string>>(new Set())
   const [saving, setSaving] = useState(false)
@@ -88,6 +91,7 @@ export function UnidadesView({ comisionId, getToken }: Props) {
 
   async function handleCreate(nombre: string, descripcion: string) {
     setSaving(true)
+    setActionError(null)
     const nextOrden = unidades.length > 0 ? Math.max(...unidades.map((u) => u.orden)) + 1 : 1
     const body: UnidadCreate = {
       comision_id: comisionId,
@@ -100,7 +104,7 @@ export function UnidadesView({ comisionId, getToken }: Props) {
       setModal({ kind: "closed" })
       fetchAll()
     } catch (e) {
-      alert(`Error al crear unidad: ${String(e)}`)
+      setActionError(`Error al crear unidad: ${String(e)}`)
     } finally {
       setSaving(false)
     }
@@ -108,12 +112,13 @@ export function UnidadesView({ comisionId, getToken }: Props) {
 
   async function handleEdit(unidad: Unidad, nombre: string, descripcion: string) {
     setSaving(true)
+    setActionError(null)
     try {
       await updateUnidad(unidad.id, { nombre, descripcion: descripcion || null }, getToken)
       setModal({ kind: "closed" })
       fetchAll()
     } catch (e) {
-      alert(`Error al editar unidad: ${String(e)}`)
+      setActionError(`Error al editar unidad: ${String(e)}`)
     } finally {
       setSaving(false)
     }
@@ -121,12 +126,13 @@ export function UnidadesView({ comisionId, getToken }: Props) {
 
   async function handleDelete(unidad: Unidad) {
     setSaving(true)
+    setActionError(null)
     try {
       await deleteUnidad(unidad.id, getToken)
       setModal({ kind: "closed" })
       fetchAll()
     } catch (e) {
-      alert(`Error al eliminar unidad: ${String(e)}`)
+      setActionError(`Error al eliminar unidad: ${String(e)}`)
     } finally {
       setSaving(false)
     }
@@ -134,12 +140,13 @@ export function UnidadesView({ comisionId, getToken }: Props) {
 
   async function handleAssignTP(tpId: string, unidadId: string | null) {
     setSavingTpId(tpId)
+    setActionError(null)
     try {
       await assignTPToUnidad(tpId, unidadId, getToken)
       // Optimistic local update
       setTps((prev) => prev.map((t) => (t.id === tpId ? { ...t, unidad_id: unidadId } : t)))
     } catch (e) {
-      alert(`Error al asignar TP: ${String(e)}`)
+      setActionError(`Error al asignar TP: ${String(e)}`)
     } finally {
       setSavingTpId(null)
     }
@@ -166,6 +173,27 @@ export function UnidadesView({ comisionId, getToken }: Props) {
           <div className="animate-fade-in-up rounded-xl border border-danger/30 bg-danger-soft p-4 text-sm text-danger">
             <div className="font-semibold">Error al cargar datos</div>
             <div className="mt-1 font-mono text-xs break-all">{error}</div>
+          </div>
+        )}
+
+        {actionError && (
+          <div
+            role="alert"
+            data-testid="unidades-action-error"
+            className="animate-fade-in-up flex items-start justify-between gap-3 rounded-xl border border-danger/30 bg-danger-soft p-4 text-sm text-danger"
+          >
+            <div>
+              <div className="font-semibold">No pudimos completar la operación</div>
+              <div className="mt-1 font-mono text-xs break-all">{actionError}</div>
+            </div>
+            <button
+              type="button"
+              onClick={() => setActionError(null)}
+              aria-label="Cerrar aviso"
+              className="shrink-0 text-danger/70 hover:text-danger text-lg leading-none"
+            >
+              ×
+            </button>
           </div>
         )}
 
@@ -243,6 +271,7 @@ export function UnidadesView({ comisionId, getToken }: Props) {
           onClose={() => setModal({ kind: "closed" })}
           onSubmit={handleCreate}
           saving={saving}
+          error={actionError}
         />
       )}
 
@@ -254,6 +283,7 @@ export function UnidadesView({ comisionId, getToken }: Props) {
           onClose={() => setModal({ kind: "closed" })}
           onSubmit={(nombre, descripcion) => handleEdit(modal.unidad, nombre, descripcion)}
           saving={saving}
+          error={actionError}
         />
       )}
 
@@ -496,12 +526,14 @@ function UnidadFormModal({
   onClose,
   onSubmit,
   saving,
+  error,
 }: {
   title: string
   initial?: Unidad
   onClose: () => void
   onSubmit: (nombre: string, descripcion: string) => void
   saving: boolean
+  error?: string | null
 }) {
   const [nombre, setNombre] = useState(initial?.nombre ?? "")
   const [descripcion, setDescripcion] = useState(initial?.descripcion ?? "")
@@ -545,6 +577,7 @@ function UnidadFormModal({
             className="w-full rounded-lg border border-border bg-surface px-3 py-2 text-sm text-ink placeholder:text-muted-soft focus:border-ink focus:outline-none transition-colors resize-none"
           />
         </div>
+        {error && <p className="text-xs text-danger break-words">{error}</p>}
         <div className="flex justify-end gap-3">
           <button
             type="button"

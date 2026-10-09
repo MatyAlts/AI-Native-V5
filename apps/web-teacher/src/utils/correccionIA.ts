@@ -198,6 +198,13 @@ export interface ChequeoAritmetico {
    * porque los endpoints de escritura de rubricas no existen.
    */
   indeterminado: boolean
+  /**
+   * Suma de los `max_puntaje` de los criterios contados, o `null` si a alguno
+   * le falta (o no es un numero > 0). Con maximo conocido el total 0-100 se
+   * compara contra `suma / sumaMax * 100`, no contra los puntos crudos: "8 de
+   * 10" con nota 80 cierra. Sin maximo se compara crudo (comportamiento previo).
+   */
+  sumaMax: number | null
 }
 
 /**
@@ -226,6 +233,8 @@ export function chequearAritmetica(
   if (total === null || desglose.length === 0) return null
 
   let suma = 0
+  let sumaMax = 0
+  let todosConMax = true
   let encontroAlguno = false
   for (const criterio of desglose) {
     const valor = criterio.puntaje ?? criterio.puntos ?? criterio.score
@@ -236,16 +245,30 @@ export function chequearAritmetica(
     if (Number.isFinite(num)) {
       suma += num
       encontroAlguno = true
+      const rawMax = criterio.max_puntaje ?? criterio.puntaje_max
+      const max = typeof rawMax === "number" ? rawMax : Number.parseFloat(String(rawMax ?? ""))
+      if (Number.isFinite(max) && max > 0) sumaMax += max
+      else todosConMax = false
     }
   }
   if (!encontroAlguno) {
-    return { suma: 0, total, difiere: false, indeterminado: true }
+    return { suma: 0, total, difiere: false, indeterminado: true, sumaMax: null }
   }
+
+  const maxConocido = todosConMax ? sumaMax : null
+  // Con maximo conocido se normaliza a la escala 0-100 de la nota.
+  const comparable = maxConocido === null ? suma : (suma / maxConocido) * 100
 
   // 0.5 de tolerancia: los motores redondean cada criterio por su cuenta y una
   // diferencia de decimas no es un error de calculo. 0.5 sobre 100 no tapa el
   // caso real, que fueron 26 puntos.
-  return { suma, total, difiere: Math.abs(suma - total) > 0.5, indeterminado: false }
+  return {
+    suma,
+    total,
+    difiere: Math.abs(comparable - total) > 0.5,
+    indeterminado: false,
+    sumaMax: maxConocido,
+  }
 }
 
 /**

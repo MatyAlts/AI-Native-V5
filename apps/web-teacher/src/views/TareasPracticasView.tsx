@@ -18,7 +18,7 @@
  * fueron consolidados en un enum para evitar el race condition de "dos modales
  * abiertos al mismo tiempo" si un handler apagaba uno pero olvidaba el otro.
  */
-import { Badge, HelpButton, MarkdownRenderer, Modal, PageContainer } from "@platform/ui"
+import { Badge, HelpButton, MarkdownRenderer, Modal, PageContainer, useConfirm } from "@platform/ui"
 import {
   Archive,
   ArrowDown,
@@ -81,6 +81,12 @@ const ESTADO_LABEL: Record<TareaEstado, string> = {
   draft: "Borrador",
   published: "Publicado",
   archived: "Archivado",
+}
+
+const EMPTY_FILTRADO: Record<TareaEstado, string> = {
+  draft: "No hay TPs en borrador",
+  published: "No hay TPs publicados",
+  archived: "No hay TPs archivados",
 }
 
 const ESTADO_VARIANT: Record<TareaEstado, "default" | "success" | "warning"> = {
@@ -168,6 +174,7 @@ function localInputToIso(local: string): string | null {
 }
 
 export function TareasPracticasView({ comisionId, getToken }: Props) {
+  const confirm = useConfirm()
   const comisionLabelText = useComisionLabel(comisionId)
   const [tareas, setTareas] = useState<TareaPractica[]>([])
   const [loading, setLoading] = useState(true)
@@ -216,9 +223,10 @@ export function TareasPracticasView({ comisionId, getToken }: Props) {
   }
 
   const handleArchive = async (t: TareaPractica) => {
-    const ok = window.confirm(
-      `¿Archivar el TP "${t.codigo}: ${t.titulo}"? Los estudiantes no podrán seguir enviando episodios.`,
-    )
+    const ok = await confirm({
+      title: "Archivar TP",
+      message: `¿Archivar el TP "${t.codigo}: ${t.titulo}"? Los estudiantes no podrán seguir enviando episodios.`,
+    })
     if (!ok) return
     try {
       await tareasPracticasApi.archive(t.id, getToken)
@@ -229,9 +237,11 @@ export function TareasPracticasView({ comisionId, getToken }: Props) {
   }
 
   const handleDelete = async (t: TareaPractica) => {
-    const ok = window.confirm(
-      `¿Eliminar el TP "${t.codigo}: ${t.titulo}"? Esta acción es un soft delete.`,
-    )
+    const ok = await confirm({
+      title: "Eliminar TP",
+      message: `¿Eliminar el TP "${t.codigo}: ${t.titulo}"? Esta acción es un soft delete.`,
+      tone: "danger",
+    })
     if (!ok) return
     try {
       await tareasPracticasApi.delete(t.id, getToken)
@@ -335,8 +345,30 @@ export function TareasPracticasView({ comisionId, getToken }: Props) {
           </div>
         )}
 
+        {/* ═══ Empty state: filtro activo (hay TPs en la comision, no en este estado) ═══ */}
+        {!loading && tareas.length === 0 && estadoFilter !== "all" && (
+          <div
+            data-testid="tp-empty-filtrado"
+            className="animate-fade-in-up rounded-2xl border border-dashed border-border bg-surface p-8 max-w-2xl mx-auto text-center"
+          >
+            <h2 className="text-base font-semibold text-ink mb-2">
+              {EMPTY_FILTRADO[estadoFilter]}
+            </h2>
+            <p className="text-sm text-muted mb-4">
+              El filtro &quot;{ESTADO_LABEL[estadoFilter]}&quot; no tiene resultados.
+            </p>
+            <button
+              type="button"
+              onClick={() => setEstadoFilter("all")}
+              className="press-shrink px-3.5 py-1.5 text-xs border border-border bg-surface rounded-md hover:bg-surface-alt transition-colors text-ink font-medium"
+            >
+              Ver todos
+            </button>
+          </div>
+        )}
+
         {/* ═══ Empty state ════════════════════════════════════════════════ */}
-        {!loading && tareas.length === 0 && (
+        {!loading && tareas.length === 0 && estadoFilter === "all" && (
           <div className="animate-fade-in-up rounded-2xl border border-dashed border-border bg-surface p-10 max-w-2xl mx-auto text-center">
             <div className="inline-flex items-center justify-center rounded-full bg-surface-alt p-4 mb-4">
               <FileText className="h-7 w-7 text-muted" />

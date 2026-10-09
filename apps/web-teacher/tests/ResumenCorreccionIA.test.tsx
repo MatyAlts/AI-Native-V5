@@ -101,6 +101,41 @@ describe("ResumenCorreccionIA", () => {
     expect(screen.getByTestId("resumen-no-cierra-1")).toBeInTheDocument()
   })
 
+  test("con max_puntaje, 8 de 10 y nota 80 NO avisa (falso positivo #7a)", () => {
+    render(
+      <ResumenCorreccionIA
+        ejercicios={[{ ejercicioId: "ej-1", orden: 1, titulo: "E1", peso: 1 }]}
+        correcciones={[
+          correccion(1, 80, {
+            desglose: [
+              { nombre: "C1", puntaje: 5, max_puntaje: 6 },
+              { nombre: "C2", puntaje: 3, max_puntaje: 4 },
+            ],
+          }),
+        ]}
+        onUsarComoBase={() => {}}
+      />,
+    )
+    expect(screen.queryByTestId("resumen-no-cierra-1")).not.toBeInTheDocument()
+  })
+
+  test("con max_puntaje, el aviso muestra la suma como 8/10", () => {
+    render(
+      <ResumenCorreccionIA
+        ejercicios={[{ ejercicioId: "ej-1", orden: 1, titulo: "E1", peso: 1 }]}
+        correcciones={[
+          correccion(1, 60, {
+            desglose: [{ nombre: "C1", puntaje: 8, max_puntaje: 10 }],
+          }),
+        ]}
+        onUsarComoBase={() => {}}
+      />,
+    )
+    const aviso = screen.getByTestId("resumen-no-cierra-1")
+    expect(aviso).toHaveTextContent("8/10")
+    expect(aviso).toHaveTextContent("60")
+  })
+
   test("no avisa cuando cierran", () => {
     render(
       <ResumenCorreccionIA

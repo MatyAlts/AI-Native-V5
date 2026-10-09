@@ -513,3 +513,71 @@ describe("chequearAritmetica — el umbral de tolerancia", () => {
     expect(chequearAritmetica([{ puntaje: 84 }], 87)?.difiere).toBe(true)
   })
 })
+
+/**
+ * Hallazgo #7a: con `max_puntaje` en el desglose, la suma de puntos crudos
+ * (8 de 10) se comparaba contra la nota 0-100 (80) y avisaba "no cierra" en
+ * falso. Hay que normalizar: suma/sumaMax*100.
+ */
+describe("chequearAritmetica — normaliza por max_puntaje", () => {
+  test("8 de 10 con nota 80 CIERRA (antes: falso positivo)", () => {
+    const r = chequearAritmetica(
+      [
+        { puntaje: 5, max_puntaje: 6 },
+        { puntaje: 3, max_puntaje: 4 },
+      ],
+      80,
+    )
+    expect(r?.difiere).toBe(false)
+    expect(r?.suma).toBe(8)
+    expect(r?.sumaMax).toBe(10)
+  })
+
+  test("acepta puntaje y max como string numerico (viajan como Decimal)", () => {
+    const r = chequearAritmetica(
+      [
+        { puntaje: "5.00", max_puntaje: "6.00" },
+        { puntaje: "3", max_puntaje: 4 },
+      ],
+      80,
+    )
+    expect(r?.difiere).toBe(false)
+    expect(r?.sumaMax).toBe(10)
+  })
+
+  test("8 de 10 con nota 60 SI difiere", () => {
+    const r = chequearAritmetica([{ puntaje: 8, max_puntaje: 10 }], 60)
+    expect(r?.difiere).toBe(true)
+    expect(r?.sumaMax).toBe(10)
+  })
+
+  test("el caso real de la reduccion del 30% sigue marcandose con max conocido", () => {
+    // 87 de 100 puntos (rubrica sobre 100) pero la nota dice 61.
+    const r = chequearAritmetica(
+      [
+        { puntaje: 48, max_puntaje: 50 },
+        { puntaje: 14, max_puntaje: 15 },
+        { puntaje: 15, max_puntaje: 15 },
+        { puntaje: 10, max_puntaje: 10 },
+        { puntaje: 0, max_puntaje: 10 },
+      ],
+      61,
+    )
+    expect(r?.difiere).toBe(true)
+  })
+
+  test("si a algun criterio contado le falta el max, se mantiene el comportamiento crudo", () => {
+    const r = chequearAritmetica([{ puntaje: 50, max_puntaje: 60 }, { puntaje: 37 }], 87)
+    expect(r?.sumaMax).toBeNull()
+    expect(r?.difiere).toBe(false) // 87 crudo == 87
+  })
+
+  test("max cero o no numerico no se usa para normalizar", () => {
+    expect(chequearAritmetica([{ puntaje: 8, max_puntaje: 0 }], 8)?.sumaMax).toBeNull()
+    expect(chequearAritmetica([{ puntaje: 8, max_puntaje: "n/a" }], 8)?.sumaMax).toBeNull()
+  })
+
+  test("sin max, sumaMax es null", () => {
+    expect(chequearAritmetica([{ puntaje: 50 }, { puntaje: 37 }], 87)?.sumaMax).toBeNull()
+  })
+})

@@ -32,7 +32,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import { CorreccionIAPanel } from "../components/CorreccionIAPanel"
 import { ResumenCorreccionIA } from "../components/ResumenCorreccionIA"
 import { useStudentProfiles } from "../hooks/useStudentProfiles"
-import { type CorreccionIA, listarCorreccionesIA } from "../lib/api"
+import { type ArtefactoEjercicio, type CorreccionIA, listarCorreccionesIA } from "../lib/api"
 import {
   type CalificacionCreate,
   type CalificacionCriterio,
@@ -598,9 +598,23 @@ interface EjercicioCodigoProps {
   // La tarjeta contenedora esta abierta → dispara la carga del codigo.
   active: boolean
   getToken: () => Promise<string | null>
+  // Codigo ENTREGADO (artefacto hash-sellado) de este ejercicio, o `null` si no
+  // hay. Gana sobre los eventos del episodio: un reintento vacio puede pisar el
+  // `episode_id` y dejar los eventos sin codigo aunque lo entregado exista.
+  codigoEntregado: string | null
+  // El artefacto de la entrega ya se pidio (con o sin resultado). Hasta
+  // entonces no se piden los eventos, para no mostrar el codigo equivocado.
+  artefactoListo: boolean
 }
 
-function EjercicioCodigo({ resolvedEpisodeId, orden, active, getToken }: EjercicioCodigoProps) {
+function EjercicioCodigo({
+  resolvedEpisodeId,
+  orden,
+  active,
+  getToken,
+  codigoEntregado,
+  artefactoListo,
+}: EjercicioCodigoProps) {
   const [code, setCode] = useState<string | null>(null)
   const [loading, setLoading] = useState(false)
   const [fetchError, setFetchError] = useState<string | null>(null)
@@ -610,7 +624,8 @@ function EjercicioCodigo({ resolvedEpisodeId, orden, active, getToken }: Ejercic
   const pedido = useRef<string | null>(null)
 
   useEffect(() => {
-    if (!active || !resolvedEpisodeId || pedido.current === resolvedEpisodeId) return
+    if (!active || !artefactoListo || codigoEntregado !== null) return
+    if (!resolvedEpisodeId || pedido.current === resolvedEpisodeId) return
     pedido.current = resolvedEpisodeId
     let cancelled = false
     setLoading(true)
@@ -653,13 +668,21 @@ function EjercicioCodigo({ resolvedEpisodeId, orden, active, getToken }: Ejercic
     // exactamente como nacio el bug: alguien agrego `code` y `loading` para callar
     // al linter. Por eso la guarda pasa a un ref, que no es dependencia reactiva.
     // `getToken` sale de `Route.useRouteContext()` y es estable.
-  }, [active, resolvedEpisodeId, getToken])
+  }, [active, resolvedEpisodeId, getToken, artefactoListo, codigoEntregado])
+
+  const entregado = codigoEntregado !== null
+  const mostrado = entregado ? codigoEntregado : code
 
   return (
     <div className="space-y-2">
       <div className="flex items-center justify-between gap-2">
         <span className="text-[10px] font-mono uppercase tracking-wider text-muted-soft">
           Codigo del alumno
+          {mostrado !== null && (
+            <span className="ml-2 normal-case" data-testid={`codigo-origen-${orden}`}>
+              {entregado ? "· codigo entregado" : "· reconstruido de la sesion"}
+            </span>
+          )}
         </span>
         {resolvedEpisodeId && (
           <Link
@@ -673,11 +696,11 @@ function EjercicioCodigo({ resolvedEpisodeId, orden, active, getToken }: Ejercic
         )}
       </div>
 
-      {!resolvedEpisodeId && (
+      {!resolvedEpisodeId && !entregado && (
         <p className="text-xs text-muted">Sin episodio asociado a este ejercicio.</p>
       )}
 
-      {resolvedEpisodeId && loading && (
+      {resolvedEpisodeId && !entregado && loading && (
         <div className="flex items-center justify-center py-6">
           <div
             className="inline-block w-4 h-4 border-2 border-t-transparent rounded-full motion-safe:animate-spin"
@@ -688,9 +711,9 @@ function EjercicioCodigo({ resolvedEpisodeId, orden, active, getToken }: Ejercic
 
       {fetchError && <p className="text-xs text-danger">{fetchError}</p>}
 
-      {code !== null && !loading && (
+      {mostrado !== null && !loading && (
         <pre className="rounded-md bg-surface-alt px-3 py-2.5 text-xs font-mono text-ink overflow-x-auto whitespace-pre max-h-80 overflow-y-auto">
-          {code}
+          {mostrado}
         </pre>
       )}
     </div>
@@ -1125,6 +1148,10 @@ function GradingFormView({
 
   // Resolver episode_ids: primero de ejercicio_estados, fallback a analytics (por orden temporal)
   const [resolvedEpisodeMap, setResolvedEpisodeMap] = useState<Record<number, string>>({})
+  // Artefacto entregado: UN pedido por entrega (no por tarjeta). `listo` pasa a
+  // true aunque falle o no exista (404/legacy): ahi se cae a los eventos.
+  const [artefactos, setArtefactos] = useState<ArtefactoEjercicio[]>([])
+  const [artefactoListo, setArtefactoListo] = useState(false)
 
   // Composicion de la TP (tp_ejercicios, ADR-047): fuente del titulo real de
   // cada ejercicio + su `ejercicio_id` estable. `getTareaPractica` no popula
@@ -1325,6 +1352,26 @@ function GradingFormView({
     tarea,
     getToken,
   ])
+
+  useEffect(() => {
+    let cancelled = false
+    setArtefactoListo(false)
+    setArtefactos([])
+    entregasDocenteApi
+      .getArtefacto(entrega.id, getToken)
+      .then((art) => {
+        if (!cancelled) setArtefactos(art?.artefactos ?? [])
+      })
+      .catch(() => {
+        // Sin artefacto legible: se muestra lo reconstruido de los eventos.
+      })
+      .finally(() => {
+        if (!cancelled) setArtefactoListo(true)
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [entrega.id, getToken])
 
   // Cargar calificacion existente si la hay
   useEffect(() => {
@@ -1744,6 +1791,10 @@ function GradingFormView({
                         orden={grupo.orden}
                         active={open}
                         getToken={getToken}
+                        codigoEntregado={
+                          artefactos.find((a) => a.orden === grupo.orden)?.codigo ?? null
+                        }
+                        artefactoListo={artefactoListo}
                       />
 
                       {/* Correccion asistida de ESTE ejercicio. Va por

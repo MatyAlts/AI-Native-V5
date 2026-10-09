@@ -223,10 +223,13 @@ function Desgloses({ correcciones }: { correcciones: CorreccionIA[] }) {
               >
                 <AlertTriangle size={12} className="mt-0.5 shrink-0" aria-hidden="true" />
                 <span>
-                  Los criterios suman <strong>{chequeo.suma}</strong> pero la nota dice{" "}
-                  <strong>{chequeo.total}</strong>. Ya paso: una rubrica declaraba una reduccion del
-                  30% y el motor devolvio la suma limpia. Revisa el desglose antes de usar este
-                  numero.
+                  Los criterios suman{" "}
+                  <strong>
+                    {chequeo.sumaMax !== null ? `${chequeo.suma}/${chequeo.sumaMax}` : chequeo.suma}
+                  </strong>{" "}
+                  pero la nota dice <strong>{chequeo.total}</strong>. Ya paso: una rubrica declaraba
+                  una reduccion del 30% y el motor devolvio la suma limpia. Revisa el desglose antes
+                  de usar este numero.
                 </span>
               </p>
             )}

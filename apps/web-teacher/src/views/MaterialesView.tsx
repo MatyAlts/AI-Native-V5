@@ -14,7 +14,7 @@
  * hasta que llegue a un estado terminal (indexed | failed). El polling se cancela
  * en cleanup del useEffect cuando el componente se desmonta.
  */
-import { Badge, HelpButton, PageContainer } from "@platform/ui"
+import { Badge, HelpButton, PageContainer, useConfirm } from "@platform/ui"
 import { FileArchive, FileText, FileType, Film, Library, Trash2, Upload } from "lucide-react"
 import { useCallback, useEffect, useRef, useState } from "react"
 import { useComisionLabel } from "../components/ComisionSelector"
@@ -141,6 +141,7 @@ function formatRelative(iso: string): string {
 }
 
 export function MaterialesView({ comisionId, getToken }: Props) {
+  const confirm = useConfirm()
   const comisionLabelText = useComisionLabel(comisionId)
   const materiaIdState = useMateriaId(comisionId)
   const materiaId = materiaIdState.status === "ready" ? materiaIdState.materiaId : null
@@ -267,7 +268,11 @@ export function MaterialesView({ comisionId, getToken }: Props) {
   }
 
   const handleDelete = async (m: Material) => {
-    const ok = window.confirm(`¿Eliminar el material "${m.nombre}"? El RAG dejará de usarlo.`)
+    const ok = await confirm({
+      title: "Eliminar material",
+      message: `¿Eliminar el material "${m.nombre}"? El RAG dejará de usarlo.`,
+      tone: "danger",
+    })
     if (!ok) return
     try {
       await materialesApi.delete(m.id, getToken)

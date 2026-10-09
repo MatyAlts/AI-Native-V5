@@ -15,7 +15,7 @@
  * Patron de estados de modal: `ModalState` discriminated union — mutex
  * estricto para evitar doble modal. Mismo patron que `TareasPracticasView`.
  */
-import { Badge, HelpButton, Modal, PageContainer } from "@platform/ui"
+import { Badge, HelpButton, Modal, PageContainer, useConfirm } from "@platform/ui"
 import {
   Archive,
   Eye,
@@ -78,6 +78,7 @@ function formatDateTime(iso: string): string {
 }
 
 export function TemplatesView({ getToken }: Props) {
+  const confirm = useConfirm()
   const [ctx, setCtx] = useState<AcademicContext | null>(null)
   const [templates, setTemplates] = useState<TareaPracticaTemplate[]>([])
   const [loading, setLoading] = useState(false)
@@ -120,9 +121,10 @@ export function TemplatesView({ getToken }: Props) {
   }
 
   const handleArchive = async (t: TareaPracticaTemplate) => {
-    const ok = window.confirm(
-      `Archivar la plantilla "${t.codigo}: ${t.titulo}"? Las instancias en comisiones no se archivan automáticamente.`,
-    )
+    const ok = await confirm({
+      title: "Archivar plantilla",
+      message: `Archivar la plantilla "${t.codigo}: ${t.titulo}"? Las instancias en comisiones no se archivan automáticamente.`,
+    })
     if (!ok) return
     try {
       await tareasPracticasTemplatesApi.archive(t.id, getToken)
@@ -133,9 +135,11 @@ export function TemplatesView({ getToken }: Props) {
   }
 
   const handleDelete = async (t: TareaPracticaTemplate) => {
-    const ok = window.confirm(
-      `Eliminar la plantilla "${t.codigo}: ${t.titulo}"? Soft delete. Las instancias existentes quedan con link muerto al template.`,
-    )
+    const ok = await confirm({
+      title: "Eliminar plantilla",
+      message: `Eliminar la plantilla "${t.codigo}: ${t.titulo}"? Soft delete. Las instancias existentes quedan con link muerto al template.`,
+      tone: "danger",
+    })
     if (!ok) return
     try {
       await tareasPracticasTemplatesApi.delete(t.id, getToken)

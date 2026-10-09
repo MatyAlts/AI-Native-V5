@@ -13,7 +13,7 @@
  *  - useCallback para las fetchFns que van a deps de useEffect
  *  - Texto en espanol SIN tildes (encoding gotcha cp1252)
  */
-import { PageContainer } from "@platform/ui"
+import { PageContainer, useConfirm } from "@platform/ui"
 import { AlertTriangle, Link2, Link2Off, RefreshCw } from "lucide-react"
 import { useCallback, useEffect, useState } from "react"
 import {
@@ -61,6 +61,7 @@ function estadoUI(estado: EstadoSyncEjercicio): { label: string; clase: string }
 }
 
 export function ActiveIAView({ comisionId, getToken }: Props) {
+  const confirm = useConfirm()
   const [cred, setCred] = useState<ActiveIACredencialEstado | null>(null)
   const [cargando, setCargando] = useState(true)
   const [error, setError] = useState<string | null>(null)
@@ -133,7 +134,12 @@ export function ActiveIAView({ comisionId, getToken }: Props) {
   }
 
   async function handleDesconectar() {
-    if (!window.confirm("Se va a desconectar tu cuenta de Active-IA. Confirmas?")) return
+    const ok = await confirm({
+      title: "Desconectar Active-IA",
+      message: "Se va a desconectar tu cuenta de Active-IA. ¿Confirmás?",
+      tone: "danger",
+    })
+    if (!ok) return
     setError(null)
     try {
       await desconectarActiveIA(getToken)

@@ -6,7 +6,7 @@
 export const APPROPRIATION_DOCENTE: Record<string, string> = {
   delegacion_pasiva: "En este episodio: dependio de la IA",
   apropiacion_superficial: "En este episodio: uso superficial de la IA",
-  apropiacion_reflexiva: "En este episodio: trabajo de forma autonoma",
+  apropiacion_reflexiva: "En este episodio: trabajo de forma reflexiva (se apropio de la solucion)",
   // Eje ORTOGONAL (color gris): el alumno trabajo sin apoyarse en el tutor.
   // NO esta en el continuo superficial↔reflexiva — es un perfil propio, no un
   // punto de la escala ordinal de apropiacion.
@@ -24,6 +24,7 @@ export const SUBGRUPO_DOCENTE: Record<string, string> = {
   autonomo_trabado: "Autonomo: se trabo sin pedir ayuda",
   escribe_sin_validar: "Escribio codigo sin probarlo",
   desenganchado: "Poco enganchado con la tarea",
+  autonomo_desenganchado: "Autonomo: poca actividad, sin usar al tutor",
   colaborador_reflexivo: "Colaboro con la IA reflexionando",
   colaborador_funcional: "Uso la IA de forma funcional",
   dependiente_delegador: "Dependio de la IA",
@@ -280,7 +281,9 @@ const SUBGRUPO_RESUMEN_DOCENTE: Record<string, string> = {
   escribe_sin_validar:
     "Escribio codigo sin probarlo: casi no ejecuto para validar lo que iba haciendo.",
   desenganchado:
-    "Hubo poca actividad en la sesion: ni trabajo sostenido sobre el codigo ni dialogo con el tutor.",
+    "Hablo con el tutor pero trabajo poco sobre el codigo: hubo dialogo, casi nada de escritura o ejecucion propia.",
+  autonomo_desenganchado:
+    "Hubo poca actividad en la sesion y sin usar al tutor: ni trabajo sostenido sobre el codigo ni consultas.",
   colaborador_reflexivo:
     "Uso el tutor para pensar: pregunto, experimento por su cuenta y siguio elaborando sobre lo que recibia.",
   colaborador_funcional:
@@ -298,6 +301,7 @@ const SUBGRUPOS_SIN_TUTOR = new Set([
   "autonomo_competente",
   "autonomo_trabado",
   "escribe_sin_validar",
+  "autonomo_desenganchado",
 ])
 
 export function explicarEstadoDocente(
@@ -359,7 +363,7 @@ export function explicarEstadoDocente(
   let resumen: string
   switch (c.appropriation) {
     case "apropiacion_reflexiva":
-      resumen = "En conjunto, fue un trabajo reflexivo y autonomo."
+      resumen = "En conjunto, fue un trabajo reflexivo."
       break
     case "delegacion_pasiva":
       resumen =

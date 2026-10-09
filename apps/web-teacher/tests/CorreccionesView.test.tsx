@@ -477,3 +477,108 @@ describe("CorreccionesView — GradingFormView", () => {
     })
   })
 })
+
+/**
+ * Hallazgo #2: `EjercicioCodigo` leia solo los eventos del episodio. Si el
+ * reintento vacio pisaba el `episode_id`, mostraba "// Sin codigo registrado"
+ * aunque el artefacto entregado (hash-sellado) tenia el codigo real. Ahora
+ * muestra primero `artefactos[orden].codigo` y cae a los eventos solo si no hay.
+ */
+describe("CorreccionesView — codigo entregado vs reconstruido", () => {
+  const artefacto = (codigo: string) => ({
+    entrega_id: ENTREGA_ID,
+    tarea_practica_id: TAREA_ID,
+    student_pseudonym: STUDENT_ID,
+    submitted_at: "2026-05-06T12:00:00Z",
+    artefacto_sha256: "abc",
+    legacy: false,
+    artefactos: [
+      {
+        orden: 1,
+        ejercicio_id: null,
+        episode_id: "ep-0000001-abcd",
+        codigo,
+        language: "python",
+        sha256: "h1",
+        created_at: "2026-05-06T12:00:00Z",
+      },
+    ],
+  })
+  const eventosConCodigo = (snapshot: string) => ({
+    episode_id: "ep-0000001-abcd",
+    events: [{ event_type: "edicion_codigo", seq: 1, payload: { snapshot } }],
+  })
+  const eventosVacios = { episode_id: "ep-0000001-abcd", events: [] }
+
+  async function abrirEntrega() {
+    renderWithRouter(<CorreccionesView comisionId={COMISION_ID} getToken={getToken} />)
+    await waitFor(() => {
+      expect(screen.getByTestId("entrega-drill-btn")).toBeDefined()
+    })
+    fireEvent.click(screen.getByTestId("entrega-drill-btn"))
+  }
+
+  const baseHandlers = {
+    "/correccion-ia": () => ({ correcciones: [] }),
+    "/ejercicios": () => [],
+    "/api/v1/tareas-practicas/": () => mockTarea,
+  }
+
+  it("muestra el codigo del artefacto entregado cuando los eventos del episodio estan vacios", async () => {
+    setupFetchMock({
+      ...baseHandlers,
+      "/artefacto": () => artefacto("def suma(a, b):\n    return a + b"),
+      "/api/v1/audit/episodes/": () => eventosVacios,
+      "/api/v1/entregas": () => ({ data: [mockEntregaSubmitted], meta: { cursor_next: null } }),
+    })
+    await abrirEntrega()
+    await waitFor(() => {
+      expect(screen.getByText(/def suma\(a, b\)/)).toBeDefined()
+    })
+    expect(screen.queryByText("// Sin codigo registrado")).toBeNull()
+    expect(screen.getByTestId("codigo-origen-1")).toHaveTextContent(/entregado/i)
+  })
+
+  it("el artefacto gana sobre un snapshot distinto de los eventos", async () => {
+    setupFetchMock({
+      ...baseHandlers,
+      "/artefacto": () => artefacto("print('entregado')"),
+      "/api/v1/audit/episodes/": () => eventosConCodigo("print('reconstruido')"),
+      "/api/v1/entregas": () => ({ data: [mockEntregaSubmitted], meta: { cursor_next: null } }),
+    })
+    await abrirEntrega()
+    await waitFor(() => {
+      expect(screen.getByText("print('entregado')")).toBeDefined()
+    })
+    expect(screen.queryByText("print('reconstruido')")).toBeNull()
+  })
+
+  it("sin artefacto (404, entrega legacy) cae al codigo de los eventos y lo rotula reconstruido", async () => {
+    setupFetchMock({
+      ...baseHandlers,
+      "/artefacto": { ok: false, status: 404, body: () => ({}) },
+      "/api/v1/audit/episodes/": () => eventosConCodigo("print('reconstruido')"),
+      "/api/v1/entregas": () => ({ data: [mockEntregaSubmitted], meta: { cursor_next: null } }),
+    })
+    await abrirEntrega()
+    await waitFor(() => {
+      expect(screen.getByText("print('reconstruido')")).toBeDefined()
+    })
+    expect(screen.getByTestId("codigo-origen-1")).toHaveTextContent(/reconstruido/i)
+  })
+
+  it("artefacto sin entrada para ese orden: cae a los eventos", async () => {
+    const otroOrden = artefacto("print('del ejercicio 2')")
+    otroOrden.artefactos[0] = { ...otroOrden.artefactos[0], orden: 2 } as never
+    setupFetchMock({
+      ...baseHandlers,
+      "/artefacto": () => otroOrden,
+      "/api/v1/audit/episodes/": () => eventosConCodigo("print('reconstruido')"),
+      "/api/v1/entregas": () => ({ data: [mockEntregaSubmitted], meta: { cursor_next: null } }),
+    })
+    await abrirEntrega()
+    await waitFor(() => {
+      expect(screen.getByText("print('reconstruido')")).toBeDefined()
+    })
+  })
+})
