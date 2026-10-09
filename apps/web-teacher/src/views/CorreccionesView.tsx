@@ -803,11 +803,27 @@ interface EjercicioGrupo {
   // Clave estable para el estado de colapso local.
   id: string
   orden: number
+  // Identidad estable del ejercicio (ADR-047), si se conoce: el artefacto se
+  // empareja por ella y cae a `orden` solo si falta de algun lado.
+  ejercicioId: string | null
   titulo: string
   // El alumno completo el ejercicio (dato de `ejercicio_estados`).
   completado: boolean
   resolvedEpisodeId: string | null
   rows: RubricaRow[]
+}
+
+// Artefacto entregado de un ejercicio: por `ejercicio_id` cuando ambos lados lo
+// tienen (sobrevive a que la TP se reordene), y por `orden` en otro caso.
+function buscarArtefacto(
+  artefactos: ArtefactoEjercicio[],
+  grupo: { ejercicioId: string | null; orden: number },
+): ArtefactoEjercicio | undefined {
+  if (grupo.ejercicioId) {
+    const porId = artefactos.find((a) => a.ejercicio_id === grupo.ejercicioId)
+    if (porId) return porId
+  }
+  return artefactos.find((a) => a.orden === grupo.orden && (!a.ejercicio_id || !grupo.ejercicioId))
 }
 
 // Clave de agrupamiento de un ejercicio: su identidad estable si la tiene
@@ -1236,6 +1252,7 @@ function GradingFormView({
       grupos.push({
         id: String(ej.orden),
         orden: ej.orden,
+        ejercicioId: ej.ejercicio_id ?? tp?.ejercicio_id ?? null,
         titulo: resolveTituloEjercicio(ej, tpEjercicios) ?? `Ejercicio ${ej.orden}`,
         completado: ej.completado,
         resolvedEpisodeId: resolvedEpisodeMap[ej.orden] ?? null,
@@ -1252,6 +1269,7 @@ function GradingFormView({
       grupos.push({
         id: `tp:${k}`,
         orden: t.orden,
+        ejercicioId: t.ejercicio_id ?? null,
         titulo: t.ejercicio.titulo || `Ejercicio ${t.orden}`,
         completado: false,
         resolvedEpisodeId: null,
@@ -1791,9 +1809,7 @@ function GradingFormView({
                         orden={grupo.orden}
                         active={open}
                         getToken={getToken}
-                        codigoEntregado={
-                          artefactos.find((a) => a.orden === grupo.orden)?.codigo ?? null
-                        }
+                        codigoEntregado={buscarArtefacto(artefactos, grupo)?.codigo ?? null}
                         artefactoListo={artefactoListo}
                       />
 

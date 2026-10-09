@@ -581,4 +581,66 @@ describe("CorreccionesView — codigo entregado vs reconstruido", () => {
       expect(screen.getByText("print('reconstruido')")).toBeDefined()
     })
   })
+
+  const entregaConEjercicioId = (ejercicioId: string) => ({
+    ...mockEntregaSubmitted,
+    ejercicio_estados: [
+      {
+        orden: 1,
+        ejercicio_id: ejercicioId,
+        completado: true,
+        episode_id: "ep-0000001-abcd",
+        completado_at: "2026-05-06T11:00:00Z",
+      },
+    ],
+  })
+  const art = (orden: number, ejercicio_id: string | null, codigo: string) => ({
+    orden,
+    ejercicio_id,
+    episode_id: "ep-0000001-abcd",
+    codigo,
+    language: "python",
+    sha256: `h${orden}`,
+    created_at: "2026-05-06T12:00:00Z",
+  })
+
+  it("TP reordenada: empareja el artefacto por ejercicio_id aunque el orden no coincida", async () => {
+    const reordenado = artefacto("")
+    reordenado.artefactos = [
+      art(1, "ej-A", "print('del ejercicio A')"),
+      art(2, "ej-B", "print('del ejercicio B')"),
+    ]
+    setupFetchMock({
+      ...baseHandlers,
+      "/artefacto": () => reordenado,
+      "/api/v1/audit/episodes/": () => eventosVacios,
+      "/api/v1/entregas": () => ({
+        data: [entregaConEjercicioId("ej-B")],
+        meta: { cursor_next: null },
+      }),
+    })
+    await abrirEntrega()
+    await waitFor(() => {
+      expect(screen.getByText("print('del ejercicio B')")).toBeDefined()
+    })
+    expect(screen.queryByText("print('del ejercicio A')")).toBeNull()
+  })
+
+  it("si el artefacto no trae ejercicio_id cae al orden", async () => {
+    const legacy = artefacto("")
+    legacy.artefactos = [art(1, null, "print('por orden')")]
+    setupFetchMock({
+      ...baseHandlers,
+      "/artefacto": () => legacy,
+      "/api/v1/audit/episodes/": () => eventosVacios,
+      "/api/v1/entregas": () => ({
+        data: [entregaConEjercicioId("ej-B")],
+        meta: { cursor_next: null },
+      }),
+    })
+    await abrirEntrega()
+    await waitFor(() => {
+      expect(screen.getByText("print('por orden')")).toBeDefined()
+    })
+  })
 })
