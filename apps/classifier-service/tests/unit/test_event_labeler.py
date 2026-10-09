@@ -425,6 +425,72 @@ def test_time_in_level_clampa_deltas_negativos_a_cero() -> None:
     assert r["N1"] == 0.0  # delta negativo → clamp 0
 
 
+def test_time_in_level_latido_lectura_con_hueco_largo_no_infla_n1() -> None:
+    """v1.3.0: un latido con duration_seconds=30 seguido de 10 min de silencio
+    aporta solo 30 s a N1; el resto va al nivel del ultimo evento previo
+    no-lectura (N4: el alumno quedo despues de la respuesta del tutor)."""
+    events = [
+        _ev(0, "tutor_respondio", 0),
+        _ev(1, "lectura_enunciado", 10, {"duration_seconds": 30}),
+        _ev(2, "edicion_codigo", 610, {"origin": "student_typed"}),
+    ]
+    r = time_in_level(events)
+    assert r["N1"] == 30.0
+    assert r["N4"] == 10.0 + 570.0  # tutor_respondio(0->10) + resto del hueco
+    assert sum(r.values()) == 610.0  # el total del episodio se conserva
+
+
+def test_time_in_level_latido_sin_duration_conserva_comportamiento_legacy() -> None:
+    """Sin duration_seconds (o invalido) el latido sigue valiendo todo el delta."""
+    for payload in (
+        {},
+        {"duration_seconds": None},
+        {"duration_seconds": "x"},
+        {"duration_seconds": -5},
+    ):
+        events = [
+            _ev(0, "lectura_enunciado", 0, payload),
+            _ev(1, "edicion_codigo", 600, {"origin": "student_typed"}),
+        ]
+        assert time_in_level(events)["N1"] == 600.0, payload
+
+
+def test_time_in_level_resto_del_latido_sin_evento_previo_va_a_meta() -> None:
+    """Si no hay evento previo no-lectura, el excedente se atribuye a 'meta'."""
+    events = [
+        _ev(0, "lectura_enunciado", 0, {"duration_seconds": 30}),
+        _ev(1, "edicion_codigo", 100, {"origin": "student_typed"}),
+    ]
+    r = time_in_level(events)
+    assert r["N1"] == 30.0
+    assert r["meta"] == 70.0
+
+
+def test_time_in_level_latido_con_duration_mayor_al_delta_usa_el_delta() -> None:
+    """min(delta, duration): si duration excede el delta, no se crea tiempo."""
+    events = [
+        _ev(0, "lectura_enunciado", 0, {"duration_seconds": 30}),
+        _ev(1, "edicion_codigo", 20, {"origin": "student_typed"}),
+    ]
+    r = time_in_level(events)
+    assert r["N1"] == 20.0
+    assert r["meta"] == 0.0
+
+
+def test_time_in_level_latidos_consecutivos_heredan_nivel_del_ultimo_no_lectura() -> None:
+    """El excedente de un latido NO se atribuye a otro latido: apunta al ultimo
+    evento no-lectura (aqui codigo_ejecutado -> N3)."""
+    events = [
+        _ev(0, "codigo_ejecutado", 0),
+        _ev(1, "lectura_enunciado", 5, {"duration_seconds": 10}),
+        _ev(2, "lectura_enunciado", 105, {"duration_seconds": 10}),
+        _ev(3, "episodio_cerrado", 205),
+    ]
+    r = time_in_level(events)
+    assert r["N1"] == 20.0
+    assert r["N3"] == 5.0 + 90.0 + 90.0
+
+
 # ---------------------------------------------------------------------------
 # n_level_distribution
 # ---------------------------------------------------------------------------

@@ -128,18 +128,36 @@ def label_event(event_type: str, payload: dict) -> NLevel:
 
 ```python
 def time_in_level(events: list[Event]) -> dict[NLevel, float]:
-    """Suma duración (en segundos) entre eventos consecutivos del mismo nivel.
+    """Atribuye a cada evento el tiempo hasta el siguiente (delta), al nivel del evento.
 
     Asume eventos ordenados por seq. Para el último evento del episodio
     asume duración 0 (no hay siguiente para medir).
+
+    Excepción (labeler v1.3.0): un latido `lectura_enunciado` con
+    `duration_seconds` válido aporta a N1 solo min(delta, duration_seconds);
+    el excedente va al nivel del último evento previo que no sea
+    `lectura_enunciado`, o a `meta` si no hay ninguno. La suma total no cambia.
     """
     durations: dict[NLevel, float] = {"N1": 0, "N2": 0, "N3": 0, "N4": 0, "meta": 0}
+    carry_level: NLevel = "meta"
     for current, next_ev in zip(events, events[1:]):
         level = label_event(current.event_type, current.payload)
         delta = (next_ev.ts - current.ts).total_seconds()
-        durations[level] += delta
+        reading = _reading_seconds(current)  # None salvo latido con duration_seconds válido
+        if reading is None:
+            durations[level] += delta  # regla base: delta hasta el siguiente evento
+            if current.event_type != "lectura_enunciado":
+                carry_level = level
+            continue
+        credited = min(delta, reading)
+        durations[level] += credited
+        durations[carry_level] += delta - credited
     return durations
 ```
+
+**Regla de atribución del tiempo**: por defecto, el tiempo de un evento es el delta hasta el siguiente evento y se acredita al nivel de ese evento. La única excepción es el latido `lectura_enunciado` (labeler v1.3.0, ver nota abajo): su aporte a N1 se acota a lo que el propio latido declara en `duration_seconds`, y el resto del intervalo se reasigna al nivel de la actividad real previa (o a `meta`). Si `duration_seconds` falta, no es numérico o es negativo, rige la regla base (todo el delta a N1), de modo que los eventos históricos sin ese campo se computan igual que antes.
+
+> **Nota 2026-10-09 — labeler v1.3.0 (`time_in_level`)**: hallazgo de QA: el nivel "Leyendo el problema" (N1) salía inflado. El frontend emite un latido `lectura_enunciado` cada 30 s mientras el enunciado está visible, aunque el estudiante esté escribiendo o ejecutando; con la regla "delta hasta el siguiente evento" todo el intervalo hasta el próximo evento se sumaba a N1. Desde v1.3.0 el latido solo acredita a N1 `min(delta, duration_seconds)` y el excedente se atribuye al nivel del último evento previo que no sea `lectura_enunciado` (o a `meta` si no hay ninguno). Implementación: `_reading_seconds` y `time_in_level` en `classifier_service/services/event_labeler.py`. No toca el CTR (`self_hash`/`chain_hash` intactos); al ser derivación en lectura, `LABELER_VERSION = "1.3.0"` re-etiqueta los episodios históricos y el campo `labeler_version` de la respuesta permite distinguir qué reglas generaron cada número.
 
 ### Endpoint analytics
 

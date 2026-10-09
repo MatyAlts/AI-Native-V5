@@ -431,7 +431,7 @@ def test_language_no_esta_en_labeler_version_fields() -> None:
     inspeccion)."""
     from classifier_service.services.event_labeler import LABELER_VERSION
 
-    assert LABELER_VERSION == "1.2.0"
+    assert LABELER_VERSION == "1.3.0"
 
 
 def test_reflexion_completada_es_meta_en_event_labeler() -> None:

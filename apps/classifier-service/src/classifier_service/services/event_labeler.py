@@ -73,7 +73,11 @@ NLevel = Literal["N1", "N2", "N3", "N4", "meta"]
 #   1.0.0 — base (Tabla 4.1 de la tesis).
 #   1.1.0 — override temporal de `anotacion_creada` (ADR-023, G8a).
 #   1.2.0 — regla N3/N4 para `tests_ejecutados` (ADR-033/034).
-LABELER_VERSION = "1.2.0"
+#   1.3.0 — `time_in_level` acota el tiempo de `lectura_enunciado` a su
+#           `payload.duration_seconds` (antes: delta hasta el proximo evento,
+#           que inflaba N1). NO cambia `label_event` ni los conteos por nivel,
+#           solo los segundos. Ver Seccion 17.3 de la tesis.
+LABELER_VERSION = "1.3.0"
 
 # Ventanas temporales del override (ADR-023). Decisiones arbitrarias del piloto
 # documentadas en el ADR. Bumpear estas constantes obliga a bumpear LABELER_VERSION.
@@ -259,6 +263,15 @@ def time_in_level(events: list[dict[str, Any]]) -> dict[NLevel, float]:
     evento aporta 0 (no hay siguiente). Asume `seq` ordenable; si los timestamps
     estan invertidos por reloj de cliente, el delta se clamp a 0.
 
+    v1.3.0: `lectura_enunciado` es un latido que reporta en
+    `payload.duration_seconds` el tiempo de lectura visible de la ventana que
+    TERMINO en su `ts`. Por eso aporta a N1 solo `min(delta, duration_seconds)`;
+    el excedente (`delta - duration_seconds`) NO es lectura y se atribuye al
+    nivel del ultimo evento previo que no sea `lectura_enunciado`, o a "meta"
+    si no hay ninguno (el tiempo se conserva: la suma total no cambia). Si
+    `duration_seconds` falta o no es un numero >= 0, rige el comportamiento
+    legacy (todo el delta a N1).
+
     Episodios con < 2 eventos devuelven todos los niveles en 0.0.
 
     v1.1.0 (ADR-023): `anotacion_creada` se etiqueta con override temporal segun
@@ -276,13 +289,33 @@ def time_in_level(events: list[dict[str, Any]]) -> dict[NLevel, float]:
 
     sorted_events = sorted(events, key=lambda e: e["seq"])
     contexts = _build_event_contexts(sorted_events)
+    # Nivel al que se atribuye el excedente de un latido de lectura.
+    carry_level: NLevel = "meta"
     for (current, nxt), ctx in zip(pairwise(sorted_events), contexts, strict=False):
         level = label_event(current["event_type"], current.get("payload"), context=ctx)
         delta = (_parse_ts(nxt["ts"]) - _parse_ts(current["ts"])).total_seconds()
         if delta < 0:
             delta = 0.0
-        durations[level] += delta
+        reading = _reading_seconds(current)
+        if reading is None:
+            durations[level] += delta
+            if current["event_type"] != "lectura_enunciado":
+                carry_level = level
+            continue
+        credited = min(delta, reading)
+        durations[level] += credited
+        durations[carry_level] += delta - credited
     return durations
+
+
+def _reading_seconds(event: dict[str, Any]) -> float | None:
+    """`duration_seconds` valido de un latido `lectura_enunciado`, o None."""
+    if event["event_type"] != "lectura_enunciado":
+        return None
+    value = (event.get("payload") or {}).get("duration_seconds")
+    if isinstance(value, bool) or not isinstance(value, int | float) or value < 0:
+        return None
+    return float(value)
 
 
 def n_level_distribution(events: list[dict[str, Any]]) -> dict[str, Any]:
