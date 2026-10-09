@@ -50,7 +50,13 @@ const metricas = {
 }
 
 describe("hallazgo #8: reflexiva no se confunde con el eje autonomo", () => {
-  const m = { appropriation: "apropiacion_reflexiva", ct_summary: 0.8, ccd_mean: 0.8, ccd_orphan_ratio: 0.1, cii_stability: 0.8 }
+  const m = {
+    appropriation: "apropiacion_reflexiva",
+    ct_summary: 0.8,
+    ccd_mean: 0.8,
+    ccd_orphan_ratio: 0.1,
+    cii_stability: 0.8,
+  }
 
   test("label de apropiacion_reflexiva dice 'reflexiva' y no 'autonoma'", () => {
     expect(APPROPRIATION_DOCENTE.apropiacion_reflexiva.toLowerCase()).toContain("reflexiv")
