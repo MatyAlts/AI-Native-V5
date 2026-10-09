@@ -19,9 +19,9 @@
 > (`ai-native-prompts/manifest.yaml`). Esta version es la que el
 > tutor-service carga en runtime.
 >
-> Revision coautoral con Ana Garis: **aprobada** (2026-10-09). El cambio 2 toca
-> una seccion que ella aprobo (la notacion, desde v1.4.0) y la regla de desempate
-> de "Abrir el lazo" (v1.9.0), asi que la revision era condicion y no tramite.
+> Revision coautoral con Ana Garis: **pendiente**. El cambio 2 toca una
+> seccion que ella aprobo (la notacion, desde v1.4.0) y la regla de desempate
+> de "Abrir el lazo" (v1.9.0).
 >
 > Metodo intacto: ironia, mayeutica, elenchos, aporia, "Cerrar el lazo", los
 > nueve principios, "Lo que NO hace el tutor", el formato de respuesta (voseo
