@@ -75,7 +75,7 @@ Sin ese `cd`, todos los `make`, `pnpm`, `uv`, `pytest` van a fallar — no hay `
 
 El CLAUDE.md operativo (invariantes, constantes hash, versiones pinned, gotchas Windows/IPv6/Vite, ports, decisiones non-obvious) vive en **`AI-NativeV3-main/CLAUDE.md`** (~247 líneas). Leelo antes de modificar cualquier cosa que toque:
 
-- Reproducibilidad bit-a-bit (`classifier_config_hash`, `LABELER_VERSION=1.2.0`).
+- Reproducibilidad bit-a-bit (`classifier_config_hash`, `LABELER_VERSION=1.3.0`).
 - CTR append-only (`GENESIS_HASH`, `chain_hash`, `self_hash`).
 - BYOK encryption (`BYOK_MASTER_KEY`).
 - k-anonymity (`MIN_STUDENTS_FOR_QUARTILES=5`, `MIN_EPISODES_FOR_LONGITUDINAL=3`).
@@ -94,7 +94,7 @@ Stack: **11 servicios Python activos** (FastAPI 0.100+ / SQLAlchemy 2.0 async / 
 Dos planos desacoplados por bus Redis Streams particionado (8 shards):
 
 - **Plano académico-operacional**: `academic-service` (CRUDs + bulk-import de inscripciones), `evaluation-service` (entregas + calificaciones, ADR del epic `tp-entregas-correccion`), `analytics-service` (kappa, progresión cohorte, alertas predictivas, export académico anonimizado).
-- **Plano pedagógico-evaluativo (núcleo de la tesis)**: `tutor-service` (SSE socrático con guardrails ADR-019/043), `ctr-service` + 8 workers (cadena criptográfica SHA-256 append-only, una partición por worker), `classifier-service` (N4 + 3 coherencias agregadas en 5 métricas + LABELER_VERSION=1.2.0), `content-service` (RAG pgvector), `governance-service` (prompts versionados internos, NO expuesto en ROUTE_MAP).
+- **Plano pedagógico-evaluativo (núcleo de la tesis)**: `tutor-service` (SSE socrático con guardrails ADR-019/043), `ctr-service` + 8 workers (cadena criptográfica SHA-256 append-only, una partición por worker), `classifier-service` (N4 + 3 coherencias agregadas en 5 métricas + LABELER_VERSION=1.3.0), `content-service` (RAG pgvector), `governance-service` (prompts versionados internos, NO expuesto en ROUTE_MAP).
 - **Transversales**: `api-gateway` (único punto de auth — emite JWT RS256 e inyecta `X-Tenant-Id`/`X-User-Id`/`X-User-Roles` a servicios internos; cualquier endpoint público requiere entrada en `ROUTE_MAP`), `ai-gateway` (LLM proxy con BYOK por tenant — todo LLM/embedding pasa por acá), `integrity-attestation-service` (Ed25519 post-cierre, vive en VPS UTN, 503 by design en dev local).
 
 **4 bases lógicas separadas** sin joins cross-base: `academic_main`, `ctr_store`, `classifier_db`, `content_db`. Los servicios se comunican por eventos Redis Streams o HTTP via api-gateway, nunca por queries cross-base.
@@ -122,7 +122,7 @@ Estas NO son sugerencias — están verificadas por tests y fundamentan la acept
 | **Attestation Ed25519 post-cierre eventual** | XADD a stream Redis `attestation.requests`. Ausencia NO bloquea cierre (SLO 24h). | ADR-021/RN-128 |
 | **Export académico anonimizado** | `salt ≥ 16 chars`, `include_prompts=False` default. `student_alias` (hash) en export; `student_pseudonym` (UUID) en endpoints UI. | RN-090 |
 
-**Romper cualquiera invalida la tesis.** Constantes críticas (`GENESIS_HASH = "0"*64`, `TUTOR_SERVICE_USER_ID = UUID("00000000-0000-0000-0000-000000000010")`, `NUM_PARTITIONS=8`, `BYOK_MASTER_KEY`, `LABELER_VERSION=1.2.0`, ventanas N1/N4 del override `anotacion_creada`, timeout abandono = 1800s) están enumeradas en el CLAUDE.md interno bajo "Constantes que NO deben inventarse ni cambiarse" — incluyen la fórmula exacta de cada hash (`self_hash` con `ensure_ascii=False`, `chain_hash` con orden `self+prev`, `classifier_config_hash` JSON canónico).
+**Romper cualquiera invalida la tesis.** Constantes críticas (`GENESIS_HASH = "0"*64`, `TUTOR_SERVICE_USER_ID = UUID("00000000-0000-0000-0000-000000000010")`, `NUM_PARTITIONS=8`, `BYOK_MASTER_KEY`, `LABELER_VERSION=1.3.0`, ventanas N1/N4 del override `anotacion_creada`, timeout abandono = 1800s) están enumeradas en el CLAUDE.md interno bajo "Constantes que NO deben inventarse ni cambiarse" — incluyen la fórmula exacta de cada hash (`self_hash` con `ensure_ascii=False`, `chain_hash` con orden `self+prev`, `classifier_config_hash` JSON canónico).
 
 ## Estado actual (resumen — ver `audi2.md`, `plan-accion.md` y `paper-draft.md` para detalle vigente)
 
