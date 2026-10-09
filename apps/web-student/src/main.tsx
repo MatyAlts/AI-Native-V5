@@ -1,6 +1,6 @@
 import { ClerkProvider, useAuth, useUser } from "@clerk/clerk-react"
 import { installApiFetchInterceptor } from "@platform/auth-client/fetch"
-import { ErrorBoundary } from "@platform/ui"
+import { ConfirmProvider, ErrorBoundary } from "@platform/ui"
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query"
 import { RouterProvider, createRouter } from "@tanstack/react-router"
 import { StrictMode, useEffect } from "react"
@@ -113,14 +113,18 @@ createRoot(rootElement).render(
     {DEV_NO_CLERK ? (
       <QueryClientProvider client={queryClient}>
         <ErrorBoundary>
-          <DevApp />
+          <ConfirmProvider>
+            <DevApp />
+          </ConfirmProvider>
         </ErrorBoundary>
       </QueryClientProvider>
     ) : (
       <ClerkProvider publishableKey={CLERK_PUBLISHABLE_KEY}>
         <QueryClientProvider client={queryClient}>
           <ErrorBoundary>
-            <InnerApp />
+            <ConfirmProvider>
+              <InnerApp />
+            </ConfirmProvider>
           </ErrorBoundary>
         </QueryClientProvider>
       </ClerkProvider>

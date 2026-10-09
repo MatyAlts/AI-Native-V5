@@ -2,7 +2,7 @@
 
 ## Capabilities cerradas en epic `ai-native-completion-and-byok`
 
-5 capabilities backend con ADRs 033-040 (los detalles operativos viven en los invariantes y constantes de `CLAUDE.md` — las constantes hash, `LABELER_VERSION=1.2.0`, `BYOK_MASTER_KEY`, `_EXCLUDED_FROM_FEATURES` ya están documentadas):
+5 capabilities backend con ADRs 033-040 (los detalles operativos viven en los invariantes y constantes de `CLAUDE.md` — las constantes hash, `LABELER_VERSION=1.3.0`, `BYOK_MASTER_KEY`, `_EXCLUDED_FROM_FEATURES` ya están documentadas):
 
 - **Reflexión metacognitiva post-cierre** (ADR-035, RN-133): `POST /episodes/{id}/reflection` emite `reflexion_completada` excluido del classifier. Export académico redacta textuales por default; flag `--include-reflections` con audit log.
 - **Sandbox client-side + test_cases** (ADR-033, ADR-034, RN-134): JSONB en `tareas_practicas[_templates]`, filter por rol en GET, `POST /run-tests` solo conteos (no código). Pyodide diferido al piloto-2.

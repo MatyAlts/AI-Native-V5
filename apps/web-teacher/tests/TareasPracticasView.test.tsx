@@ -29,9 +29,7 @@ function clickNuevoTp() {
 describe("TareasPracticasView — BUG-01 el form de crear no arrastra datos", () => {
   it("el segundo 'Nuevo TP' abre con el codigo vacio tras cancelar el primero", async () => {
     setupFetchMock({})
-    renderWithRouter(
-      <TareasPracticasView comisionId={COMISION_ID} getToken={async () => "tok"} />,
-    )
+    renderWithRouter(<TareasPracticasView comisionId={COMISION_ID} getToken={async () => "tok"} />)
 
     await waitFor(() => {
       expect(screen.getAllByRole("button", { name: /Nuevo TP/i }).length).toBeGreaterThan(0)
@@ -54,9 +52,7 @@ describe("TareasPracticasView — BUG-01 el form de crear no arrastra datos", ()
 
   it("tambien resetea titulo y 'permite pausa' (no es un parche solo para codigo)", async () => {
     setupFetchMock({})
-    renderWithRouter(
-      <TareasPracticasView comisionId={COMISION_ID} getToken={async () => "tok"} />,
-    )
+    renderWithRouter(<TareasPracticasView comisionId={COMISION_ID} getToken={async () => "tok"} />)
 
     await waitFor(() => {
       expect(screen.getAllByRole("button", { name: /Nuevo TP/i }).length).toBeGreaterThan(0)
@@ -82,5 +78,46 @@ describe("TareasPracticasView — BUG-01 el form de crear no arrastra datos", ()
     const permitePausaSegundo = screen.getByTestId("tp-form-permite-pausa") as HTMLInputElement
     expect(tituloSegundo.value).toBe("")
     expect(permitePausaSegundo.checked).toBe(true)
+  })
+})
+
+describe("TareasPracticasView — hallazgo #12 empty state sensible al filtro", () => {
+  async function montar() {
+    setupFetchMock({})
+    renderWithRouter(<TareasPracticasView comisionId={COMISION_ID} getToken={async () => "tok"} />)
+    await waitFor(() => {
+      expect(screen.getByText(/Todavía no hay TPs en esta comisión/i)).toBeInTheDocument()
+    })
+  }
+
+  it("sin filtro y sin TPs: mantiene el texto original de comision vacia", async () => {
+    await montar()
+    expect(screen.queryByTestId("tp-empty-filtrado")).toBeNull()
+  })
+
+  it("filtro Borrador sin resultados: dice que no hay borradores, no que la comision no tiene TPs", async () => {
+    await montar()
+    fireEvent.click(screen.getByRole("tab", { name: /Borrador/i }))
+    const vacio = await screen.findByTestId("tp-empty-filtrado")
+    expect(vacio).toHaveTextContent(/No hay TPs en borrador/i)
+    expect(screen.queryByText(/Todavía no hay TPs en esta comisión/i)).toBeNull()
+  })
+
+  it("filtro Archivado: el mensaje cambia con el filtro (no es texto fijo)", async () => {
+    await montar()
+    fireEvent.click(screen.getByRole("tab", { name: /Archivado/i }))
+    const vacio = await screen.findByTestId("tp-empty-filtrado")
+    expect(vacio).toHaveTextContent(/No hay TPs archivados/i)
+  })
+
+  it("'Ver todos' vuelve al filtro Todos", async () => {
+    await montar()
+    fireEvent.click(screen.getByRole("tab", { name: /Publicado/i }))
+    await screen.findByTestId("tp-empty-filtrado")
+    fireEvent.click(screen.getByRole("button", { name: /Ver todos/i }))
+    await waitFor(() => {
+      expect(screen.queryByTestId("tp-empty-filtrado")).toBeNull()
+    })
+    expect(screen.getByRole("tab", { name: /Todos/i })).toHaveAttribute("aria-selected", "true")
   })
 })

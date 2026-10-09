@@ -1,12 +1,3 @@
-import { QueryClient, QueryClientProvider } from "@tanstack/react-query"
-import {
-  Outlet,
-  RouterProvider,
-  createMemoryHistory,
-  createRootRoute,
-  createRoute,
-  createRouter,
-} from "@tanstack/react-router"
 /**
  * Helper compartido para mockear fetch por path-prefix.
  *
@@ -26,6 +17,16 @@ import {
  * Link requiere RouterProvider en el arbol — sin él tira "Cannot read
  * properties of null (reading 'isServer')".
  */
+import { ConfirmProvider } from "@platform/ui"
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query"
+import {
+  Outlet,
+  RouterProvider,
+  createMemoryHistory,
+  createRootRoute,
+  createRoute,
+  createRouter,
+} from "@tanstack/react-router"
 import { render } from "@testing-library/react"
 import type { ReactNode } from "react"
 import { vi } from "vitest"
@@ -112,7 +113,9 @@ export function renderWithRouter(node: ReactNode) {
   })
   return render(
     <QueryClientProvider client={queryClient}>
-      <RouterProvider router={router} />
+      <ConfirmProvider>
+        <RouterProvider router={router} />
+      </ConfirmProvider>
     </QueryClientProvider>,
   )
 }

@@ -128,18 +128,37 @@ def label_event(event_type: str, payload: dict) -> NLevel:
 
 ```python
 def time_in_level(events: list[Event]) -> dict[NLevel, float]:
-    """Suma duración (en segundos) entre eventos consecutivos del mismo nivel.
+    """Atribuye a cada evento el tiempo hasta el siguiente (delta), al nivel del evento.
 
     Asume eventos ordenados por seq. Para el último evento del episodio
     asume duración 0 (no hay siguiente para medir).
+
+    Excepción (labeler v1.3.0): `lectura_enunciado` es un latido cuyo
+    `duration_seconds` describe la lectura de la ventana que TERMINÓ en su `ts`
+    (hacia atrás). Del intervalo [evento previo, latido] se acreditan
+    min(delta, duration_seconds) a N1 y el resto al nivel que abrió el
+    intervalo. El intervalo POSTERIOR a un latido válido va al nivel del último
+    evento no-lectura (o `meta` si no hay). La suma total no cambia.
     """
     durations: dict[NLevel, float] = {"N1": 0, "N2": 0, "N3": 0, "N4": 0, "meta": 0}
-    for current, next_ev in zip(events, events[1:]):
-        level = label_event(current.event_type, current.payload)
-        delta = (next_ev.ts - current.ts).total_seconds()
-        durations[level] += delta
+    levels = [label_event(e.event_type, e.payload) for e in events]
+    carry_level: NLevel = "meta"  # nivel del último evento no-lectura visto
+    for idx, (current, next_ev) in enumerate(zip(events, events[1:])):
+        if current.event_type != "lectura_enunciado":
+            carry_level = levels[idx]
+        delta = max((next_ev.ts - current.ts).total_seconds(), 0)
+        # tras un latido válido: último nivel no-lectura; si no, nivel del propio evento
+        interval_level = carry_level if _reading_seconds(current) is not None else levels[idx]
+        back = _reading_seconds(next_ev)  # None salvo latido con duration_seconds válido
+        credited = min(delta, back) if back is not None else 0
+        durations[levels[idx + 1]] += credited  # lectura reclamada hacia atrás
+        durations[interval_level] += delta - credited
     return durations
 ```
+
+**Regla de atribución del tiempo**: por defecto, el tiempo de un evento es el delta hasta el siguiente evento y se acredita al nivel de ese evento. La única excepción es el latido `lectura_enunciado` (labeler v1.3.0, ver nota abajo): su `duration_seconds` describe la lectura de la ventana que *terminó* en su `ts`, así que del intervalo [evento previo, latido] se acreditan `min(delta, duration_seconds)` a N1 y el resto al nivel del evento que abrió el intervalo; el intervalo *posterior* a un latido va al nivel del último evento que no sea `lectura_enunciado` (o `meta` si no hay), porque el próximo latido reclamará su propia lectura hacia atrás. Si `duration_seconds` falta, no es numérico o es negativo, rige la regla base (todo el delta hacia adelante a N1), de modo que los eventos históricos sin ese campo se computan igual que antes. Ejemplo: abre, lee 60 s (latidos a los 30 y 60 s con `duration_seconds=30`) y edita a los 61 s → N1 = 60 s, `meta` = 1 s.
+
+> **Nota 2026-10-09 — labeler v1.3.0 (`time_in_level`)**: hallazgo de QA: el nivel "Leyendo el problema" (N1) salía inflado. El frontend emite un latido `lectura_enunciado` cada 30 s mientras el enunciado está visible, aunque el estudiante esté escribiendo o ejecutando; con la regla "delta hasta el siguiente evento" todo el intervalo hasta el próximo evento se sumaba a N1. Desde v1.3.0 el latido se interpreta hacia atrás (su `duration_seconds` cubre la ventana que terminó en su `ts`): acredita a N1 `min(delta, duration_seconds)` del intervalo previo, el resto de ese intervalo queda en el nivel que lo abrió, y el intervalo posterior al latido se atribuye al último evento no-lectura (o a `meta`). Implementación: `_reading_seconds` y `time_in_level` en `classifier_service/services/event_labeler.py`. No toca el CTR (`self_hash`/`chain_hash` intactos); al ser derivación en lectura, `LABELER_VERSION = "1.3.0"` re-etiqueta los episodios históricos y el campo `labeler_version` de la respuesta permite distinguir qué reglas generaron cada número.
 
 ### Endpoint analytics
 

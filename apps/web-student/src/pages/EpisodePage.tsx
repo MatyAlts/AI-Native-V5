@@ -74,6 +74,11 @@ import {
 } from "../lib/artefactos"
 import { esPlaceholder, resolverCascadaDeCodigo } from "../lib/cascadaCodigo"
 import { mensajeAvisoDescartado } from "../lib/ctrDropAviso"
+import {
+  marcarActividad,
+  msDeLecturaContables,
+  ultimaActividadMs,
+} from "../lib/lecturaEnunciadoActividad"
 import { helpContent } from "../utils/helpContent"
 
 const ACTIVE_EPISODE_KEY = "active-episode-id"
@@ -634,6 +639,7 @@ export function EpisodeView({ episodeId, onExit, ejercicioContext, getToken }: E
   async function handleSend(retryMessage?: string) {
     const userMessage = (retryMessage ?? input).trim()
     if (!userMessage || streaming) return
+    marcarActividad()
     const isRetry = retryMessage != null
     // FIX B: envio fresco → nueva clave; reintento → reusar la misma para que el
     // server deduplique el prompt_enviado en vez de duplicarlo.
@@ -731,6 +737,16 @@ export function EpisodeView({ episodeId, onExit, ejercicioContext, getToken }: E
       actionInFlightRef.current = false
       setSubmitting(false)
       return
+    }
+    // Hallazgo #1: cerrar el episodio TAMBIEN completa el ejercicio. Antes solo
+    // lo marcaban "Siguiente ejercicio" y el cierre del modal de reflexion: si
+    // el alumno cerraba y recargaba antes, el ejercicio quedaba pendiente.
+    // Idempotente (markedCompletedRef) — los otros dos caminos pasan a no-op.
+    // Best-effort: un fallo de marcado no debe romper reflexion ni clasificacion.
+    try {
+      await markEjercicioCompletedOnce()
+    } catch (e) {
+      console.warn("mark ejercicio completed on close failed (best-effort):", e)
     }
     setClosed(true)
     setReflectionTargetId(episodeId)
@@ -950,10 +966,10 @@ export function EpisodeView({ episodeId, onExit, ejercicioContext, getToken }: E
       data-tour="editor-codigo"
     >
       <PanelHeader
-        level="N3"
+        level="N2"
         label="Editor de código"
         icon={<Code2 className="h-3.5 w-3.5" />}
-        colorVar="var(--color-level-n3)"
+        colorVar="var(--color-level-n2)"
         badge={LANGUAGE_LABELS[language]}
       />
       {/* Aviso visible (no bloqueante) del dead-letter del CTR: mismo patron
@@ -994,6 +1010,7 @@ export function EpisodeView({ episodeId, onExit, ejercicioContext, getToken }: E
         // no existe en mobile — ahi el alumno enfoca el editor con las tabs).
         onToggleMaximize={isMobile ? undefined : toggleEditorMaximized}
         onTestsRun={(result) => {
+          marcarActividad()
           // F1: correr tests es actividad de EJECUCION (N3), igual que "Ejecutar".
           setMaxActividad((a) => (a < 3 ? 3 : a))
           // Emitir tests_ejecutados al CTR (conteos agregados). Va por la cola
@@ -1023,8 +1040,12 @@ export function EpisodeView({ episodeId, onExit, ejercicioContext, getToken }: E
         // medio de un ejercicio le borraba todo lo tipeado desde la ultima
         // corrida. NO emite nada al CTR — `edicion_codigo` sigue saliendo por
         // `onEditDebounced`.
-        onCodeChange={setCode}
+        onCodeChange={(c) => {
+          marcarActividad()
+          setCode(c)
+        }}
         onCodeExecuted={(result) => {
+          marcarActividad()
           setCode(result.code)
           setMaxActividad((a) => (a < 3 ? 3 : a))
           // P0 (QA 2026-05-29): emitir codigo_ejecutado al CTR. Sin esto el
@@ -1115,7 +1136,8 @@ export function EpisodeView({ episodeId, onExit, ejercicioContext, getToken }: E
         label="Tutor socrático"
         icon={<MessageSquare className="h-3.5 w-3.5" />}
         colorVar="var(--color-level-n4)"
-        badge={streaming ? "escribiendo…" : "Mistral"}
+        // El cliente no recibe el modelo real (ni open, ni estado, ni stream): no se inventa.
+        badge={streaming ? "escribiendo…" : "Tutor"}
         badgePulse={streaming}
       />
 
@@ -1254,7 +1276,10 @@ export function EpisodeView({ episodeId, onExit, ejercicioContext, getToken }: E
           <textarea
             data-testid="tutor-input"
             value={input}
-            onChange={(e) => setInput(e.target.value)}
+            onChange={(e) => {
+              marcarActividad()
+              setInput(e.target.value)
+            }}
             onKeyDown={(e) => {
               if (e.key === "Enter" && !e.shiftKey) {
                 e.preventDefault()
@@ -1301,7 +1326,7 @@ export function EpisodeView({ episodeId, onExit, ejercicioContext, getToken }: E
       key: "editor",
       label: "Editor",
       icon: <Code2 className="h-4 w-4" />,
-      colorVar: "var(--color-level-n3)",
+      colorVar: "var(--color-level-n2)",
     },
     {
       key: "tutor",
@@ -1760,8 +1785,12 @@ function useReadingTimeReporter(episodeId: string | null, enabled: boolean, flus
       return visibleInDom && tabVisible
     }
     function tick() {
-      if (lastTickAt != null) accumMs += Date.now() - lastTickAt
-      lastTickAt = isCounting() ? Date.now() : null
+      const now = Date.now()
+      // #6-B: mientras el alumno escribe en el editor o charla con el tutor NO
+      // esta leyendo el enunciado — ese tramo no suma a `lectura_enunciado`.
+      if (lastTickAt != null)
+        accumMs += msDeLecturaContables(now - lastTickAt, now, ultimaActividadMs())
+      lastTickAt = isCounting() ? now : null
     }
 
     async function flush() {
@@ -1805,11 +1834,16 @@ function useReadingTimeReporter(episodeId: string | null, enabled: boolean, flus
     const flushTimer = window.setInterval(() => {
       void flush()
     }, flushMs)
+    // Tick de 1 s: la ventana de quietud (ACTIVIDAD_QUIETA_MS) se evalua con
+    // esa granularidad. Sin esto, 30 s de tipeo se medirian en un solo delta
+    // al flush, contra la ultima actividad nada mas.
+    const tickTimer = window.setInterval(tick, 1000)
 
     return () => {
       io.disconnect()
       document.removeEventListener("visibilitychange", onVisibility)
       window.clearInterval(flushTimer)
+      window.clearInterval(tickTimer)
       // Skip el último flush si el componente se está deshabilitando
       // (típicamente: episodio cerrado). El CTR es append-only y rechaza
       // eventos post-close con 409 Conflict.

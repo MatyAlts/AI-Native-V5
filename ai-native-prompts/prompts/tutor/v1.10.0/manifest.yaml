@@ -1,0 +1,65 @@
+# Manifest del prompt tutor v1.10.0 (bump MINOR: primer turno + respuesta directa acotada).
+# El governance-service verifica fail-loud que sha256(system.md) == hash declarado.
+# Si el archivo se modifica sin re-firmar este manifest, el servicio falla al cargar.
+version: v1.10.0
+parent_version: v1.9.0
+bump_kind: minor_primer_turno_y_respuesta_directa_acotada
+files:
+  system.md: 5d8ce7c2b7c771affba59af4755d8676866216382ceb29b1069586bc0e338e4a
+notas:
+  - Origen - QA sobre produccion el 2026-10-08, hallazgos 17 y 18.
+  - HALLAZGO 17 - el tutor abria con "En que ejercicio estas trabajando?"
+    aunque el enunciado SI le llega en el system message (tutor_core.py,
+    _build_ejercicio_context). v1.9.0 decia que lo recibe, pero no tenia
+    ninguna regla para el primer turno, y ante un "hola" sin contenido el
+    modelo caia en la pregunta de apertura generica.
+  - CAMBIO 1 - Regla de primer turno en "Contexto del TP". Ante un saludo o
+    una apertura sin contenido, nombra el ejercicio por su titulo y pregunta
+    por donde quiere empezar o que entendio de la consigna (una sola
+    pregunta). Nunca pregunta en que ejercicio esta trabajando cuando el
+    enunciado llego en el contexto. El fallback para cuando la consulta al
+    academic-service falla queda intacto.
+  - HALLAZGO 18 - con un estudiante que recien empezaba, el tutor explico
+    int() y float() con su uso completo en vez de guiar. Causa - dos reglas
+    tiraban en direcciones opuestas. "Si pregunta por la sintaxis o por un
+    hecho del lenguaje, respondele directo" (con "el nombre o el uso de algo
+    de la biblioteca estandar" entre los ejemplos) contra "dale el piso" de
+    "Abrir el lazo". El modelo resolvia el empate dando el uso entero.
+  - CAMBIO 2 - "Lo que SI se responde directo" se acota a la forma precisa de
+    algo que el estudiante YA sabe que necesita (como se escribe X, que firma
+    tiene). Parrafo nuevo para cuando no sabe que herramienta necesita - eso
+    no es una consulta de notacion; el piso en una oracion (nombre y que hace,
+    en concepto), una pregunta sobre su caso, y no mostrarle el uso completo
+    que resuelve el ejercicio. El ejemplo de la biblioteca estandar pasa de
+    "el nombre o el uso" a "el nombre o la forma ... que ya sabe que quiere
+    usar".
+  - CAMBIO 3 - "Abrir el lazo" conserva su regla de desempate ("ante la duda,
+    dale el piso") y agrega que el piso es el concepto, no el uso. Sin esto
+    las dos reglas volvian a chocar en el mismo punto.
+  - INTACTO respecto de v1.9.0, byte a byte - los cuatro movimientos, "Cerrar
+    el lazo", los nueve principios (incluido el desempate del Principio 9),
+    "Lo que NO hace el tutor", "Formato de respuesta" (voseo incluido), el
+    codigo del estudiante, "Usar el material del ejercicio", rubrica, RAG y
+    temas fuera de scope. Verificado por
+    apps/tutor-service/tests/unit/test_prompt_v1_10_0_primer_turno_y_sintaxis.py.
+  - LIMITE - los tests anclan frases, no prueban que el modelo las cumpla. No
+    hubo A/B con LLM real para esta version.
+  - Cambio lateral en tutor_core.py, sin efecto en el comportamiento - los
+    warnings de la consulta de contexto fallida (open y resume) llevan la
+    etiqueta tutor_contexto_no_disponible, para distinguir en los logs de prod
+    "el modelo ignoro el enunciado" de "el enunciado nunca llego".
+  - No afecta classifier_config_hash - es prompt de runtime, no etiquetador
+    (ADR-020).
+  - REVISION COAUTORAL CON ANA GARIS - PENDIENTE. El cambio 2 edita la seccion
+    de notacion que ella aprobo en v1.4.0 y el cambio 3 la regla de desempate
+    de v1.9.0.
+  - El pin de la version vive en CUATRO lugares del repo y los cuatro se
+    movieron juntos - el manifest raiz, config.py,
+    apps/tutor-service/tests/unit/test_config_prompt_version.py
+    (EXPECTED_TUTOR_VERSION) y
+    apps/governance-service/tests/unit/test_prompt_v1_0_1_bump.py
+    (ACTIVE_TUTOR_VERSION). El quinto es la imagen desplegada del
+    governance-service, que copia ai-native-prompts al construirse - hay que
+    redeployar governance y tutor juntos, governance primero.
+  - v1.9.0 y anteriores siguen en disco para reproducibilidad historica del
+    piloto.

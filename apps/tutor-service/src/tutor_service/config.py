@@ -99,8 +99,11 @@ class Settings(BaseSettings):
     # ChatGPT ni Stack Overflow (comportamiento emergente medido en
     # produccion). El metodo socratico, los principios y las restricciones
     # quedan intactos byte a byte.
+    # v1.10.0 (2026-10-09, QA sobre prod 08/10): regla de primer turno (no
+    # preguntar en que ejercicio esta cuando el enunciado llego) y respuesta
+    # directa acotada a la forma de lo que el alumno ya sabe que necesita.
     default_prompt_name: str = "tutor"
-    default_prompt_version: str = "v1.9.0"
+    default_prompt_version: str = "v1.10.0"
     # Cambiado 2026-05-19: default a gpt-4o-mini para usar copilot-api proxy
     # (Mistral free tier saturado, ver SESSION-LOG). Restaurar a
     # mistral-small-latest si se vuelve a usar la BYOK key de Mistral.

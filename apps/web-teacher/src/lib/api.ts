@@ -1755,6 +1755,33 @@ export async function getEpisodeEvents(
   return r.json()
 }
 
+/**
+ * Resultado de POST /api/v1/audit/episodes/{id}/verify (ctr-service
+ * `ChainVerificationResult`). `failing_seq` apunta al primer evento donde la
+ * cadena de hashes no coincide.
+ */
+export interface ChainVerificationResult {
+  episode_id: string
+  valid: boolean
+  events_count: number
+  failing_seq: number | null
+  integrity_compromised: boolean
+  message: string
+}
+
+/** Recomputa la cadena criptografica del episodio. Es POST: no sirve como link. */
+export async function verifyEpisode(
+  episodeId: string,
+  getToken?: TokenGetter,
+): Promise<ChainVerificationResult> {
+  const r = await fetch(`/api/v1/audit/episodes/${encodeURIComponent(episodeId)}/verify`, {
+    method: "POST",
+    headers: await authHeaders(getToken),
+  })
+  await throwIfNotOk(r)
+  return r.json()
+}
+
 export function extractFinalCode(events: CTREvent[]): string | null {
   const codeEvents = events.filter((e) => e.event_type === "edicion_codigo")
   if (codeEvents.length === 0) return null

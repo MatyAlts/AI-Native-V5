@@ -91,8 +91,8 @@ def test_modo_dev_devuelve_distribucion_vacia_con_200(client: TestClient) -> Non
     data = r.json()
     assert data["episode_id"] == episode_id
     assert (
-        data["labeler_version"] == "1.2.0"
-    )  # ADR-034 epic ai-native-completion (regla N3/N4 tests_ejecutados)
+        data["labeler_version"] == "1.3.0"
+    )  # ADR-020 (v1.3.0: heartbeat lectura_enunciado en time_in_level)
 
     # Distribución vacía
     assert data["distribution_seconds"] == {

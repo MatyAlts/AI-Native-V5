@@ -362,7 +362,7 @@ def test_time_in_level_episodio_mixto() -> None:
     """Episodio realista: lectura → edicion → ejecucion → prompt → respuesta."""
     events = [
         _ev(0, "episodio_abierto", 0),
-        _ev(1, "lectura_enunciado", 10, {"duration_seconds": 20}),
+        _ev(1, "lectura_enunciado", 10, {"duration_seconds": 10}),
         _ev(2, "edicion_codigo", 30, {"origin": "student_typed"}),
         _ev(3, "codigo_ejecutado", 90),
         _ev(4, "prompt_enviado", 130, {"prompt_kind": "validacion"}),
@@ -370,10 +370,12 @@ def test_time_in_level_episodio_mixto() -> None:
         _ev(6, "episodio_cerrado", 160),
     ]
     r = time_in_level(events)
-    # meta(0→10)=10 + N1(10→30)=20 + N2(30→90)=60 + N3(90→130)=40 + N4(130→145)=15 + N4(145→160)=15
+    # v1.3.0: el latido reclama hacia atras sus 10 s de lectura (0→10) = N1 10;
+    # el tramo posterior al latido (10→30) va al ultimo nivel no-lectura (meta).
+    # meta(10→30)=20 + N2(30→90)=60 + N3(90→130)=40 + N4(130→145)=15 + N4(145→160)=15
     # episodio_cerrado es el ultimo → no aporta delta
-    assert r["meta"] == 10.0
-    assert r["N1"] == 20.0
+    assert r["meta"] == 20.0
+    assert r["N1"] == 10.0
     assert r["N2"] == 60.0
     assert r["N3"] == 40.0
     assert r["N4"] == 30.0
@@ -423,6 +425,105 @@ def test_time_in_level_clampa_deltas_negativos_a_cero() -> None:
     ]
     r = time_in_level(events)
     assert r["N1"] == 0.0  # delta negativo → clamp 0
+
+
+def test_time_in_level_latido_lectura_con_hueco_largo_no_infla_n1() -> None:
+    """v1.3.0: un latido con duration_seconds=30 seguido de 10 min de silencio
+    aporta solo 30 s a N1 (hacia atras); el tramo posterior va al nivel del
+    ultimo evento previo no-lectura (N4: despues de la respuesta del tutor)."""
+    events = [
+        _ev(0, "tutor_respondio", 0),
+        _ev(1, "lectura_enunciado", 40, {"duration_seconds": 30}),
+        _ev(2, "edicion_codigo", 610, {"origin": "student_typed"}),
+    ]
+    r = time_in_level(events)
+    assert r["N1"] == 30.0
+    assert r["N4"] == 10.0 + 570.0  # tutor_respondio(0->40 menos lectura) + hueco posterior
+    assert sum(r.values()) == 610.0  # el total del episodio se conserva
+
+
+def test_time_in_level_latido_sin_duration_conserva_comportamiento_legacy() -> None:
+    """Sin duration_seconds (o invalido) el latido sigue valiendo todo el delta."""
+    for payload in (
+        {},
+        {"duration_seconds": None},
+        {"duration_seconds": "x"},
+        {"duration_seconds": -5},
+    ):
+        events = [
+            _ev(0, "lectura_enunciado", 0, payload),
+            _ev(1, "edicion_codigo", 600, {"origin": "student_typed"}),
+        ]
+        assert time_in_level(events)["N1"] == 600.0, payload
+
+
+def test_time_in_level_resto_del_latido_sin_evento_previo_va_a_meta() -> None:
+    """Si no hay evento previo no-lectura, el tramo sin lectura va a 'meta'."""
+    events = [
+        _ev(0, "lectura_enunciado", 0, {"duration_seconds": 30}),
+        _ev(1, "lectura_enunciado", 100, {"duration_seconds": 30}),
+        _ev(2, "edicion_codigo", 130, {"origin": "student_typed"}),
+    ]
+    r = time_in_level(events)
+    assert r["N1"] == 30.0
+    assert r["meta"] == 100.0  # 0->100 sin lectura (menos 30) + 100->130
+    assert sum(r.values()) == 130.0
+
+
+def test_time_in_level_latido_con_duration_mayor_al_delta_usa_el_delta() -> None:
+    """min(delta, duration): si duration excede el delta, no se crea tiempo."""
+    events = [
+        _ev(0, "episodio_abierto", 0),
+        _ev(1, "lectura_enunciado", 20, {"duration_seconds": 30}),
+    ]
+    r = time_in_level(events)
+    assert r["N1"] == 20.0
+    assert r["meta"] == 0.0
+
+
+def test_time_in_level_latidos_consecutivos_heredan_nivel_del_ultimo_no_lectura() -> None:
+    """El excedente de un latido NO se atribuye a otro latido: apunta al ultimo
+    evento no-lectura (aqui codigo_ejecutado -> N3)."""
+    events = [
+        _ev(0, "codigo_ejecutado", 0),
+        _ev(1, "lectura_enunciado", 5, {"duration_seconds": 10}),
+        _ev(2, "lectura_enunciado", 105, {"duration_seconds": 10}),
+        _ev(3, "episodio_cerrado", 205),
+    ]
+    r = time_in_level(events)
+    assert r["N1"] == 5.0 + 10.0  # min(10, 5) + 10
+    assert r["N3"] == 90.0 + 100.0  # excedente del 2do latido + tramo posterior
+    assert sum(r.values()) == 205.0
+
+
+def test_time_in_level_lectura_de_60s_en_dos_latidos_acredita_60_a_n1() -> None:
+    """v1.3.0: el duration_seconds describe la ventana que TERMINO en el latido.
+    Abre, lee 60 s (latidos a 30 y 60 con duration 30) y edita a los 61 s:
+    N1 = 60 (antes salia 31 por acreditar hacia adelante)."""
+    events = [
+        _ev(0, "episodio_abierto", 0),
+        _ev(1, "lectura_enunciado", 30, {"duration_seconds": 30}),
+        _ev(2, "lectura_enunciado", 60, {"duration_seconds": 30}),
+        _ev(3, "edicion_codigo", 61, {"origin": "student_typed"}),
+    ]
+    r = time_in_level(events)
+    assert r["N1"] == 60.0
+    assert r["meta"] == 1.0  # el segundo posterior al ultimo latido
+    assert sum(r.values()) == 61.0
+
+
+def test_time_in_level_latido_reparte_el_intervalo_previo_con_su_nivel() -> None:
+    """Triangulacion: el intervalo [previo, latido] se divide entre N1 (lo que
+    declara el latido) y el nivel del evento que abrio el intervalo."""
+    events = [
+        _ev(0, "edicion_codigo", 0, {"origin": "student_typed"}),
+        _ev(1, "lectura_enunciado", 100, {"duration_seconds": 40}),
+        _ev(2, "codigo_ejecutado", 130),
+    ]
+    r = time_in_level(events)
+    assert r["N1"] == 40.0
+    assert r["N2"] == 60.0 + 30.0  # resto previo + tramo posterior (ultimo no-lectura)
+    assert sum(r.values()) == 130.0
 
 
 # ---------------------------------------------------------------------------

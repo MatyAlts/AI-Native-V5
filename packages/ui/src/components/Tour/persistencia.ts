@@ -100,3 +100,27 @@ export function guardarDescartes(flowId: string, ids: ReadonlySet<string>): void
     /* ver el bloque de arriba: degradar en silencio */
   }
 }
+
+/* ========================================================================== */
+/* 3. Omitir todas las ayudas (global, vale para todos los flows)             */
+/* ========================================================================== */
+
+/** Clave global: "No mostrar mas ayudas". Vive junto a los descartes por flow. */
+export const CLAVE_OMITIR_TODAS = `${PREFIJO_ONBOARDING}__all__`
+
+/** True si el usuario pidio no ver mas ayudas. Ante cualquier fallo: false (se muestran). */
+export function leerOmitirTodas(): boolean {
+  try {
+    return window.localStorage.getItem(CLAVE_OMITIR_TODAS) === "1"
+  } catch {
+    return false
+  }
+}
+
+export function guardarOmitirTodas(): void {
+  try {
+    window.localStorage.setItem(CLAVE_OMITIR_TODAS, "1")
+  } catch {
+    /* ver el bloque de arriba: degradar en silencio */
+  }
+}

@@ -1,6 +1,12 @@
 import { Button, Input, Label, PageContainer } from "@platform/ui"
 import { useCallback, useEffect, useMemo, useState } from "react"
-import { type CTREvent, type EpisodeWithEvents, getEpisodeEvents } from "../lib/api"
+import {
+  type CTREvent,
+  type ChainVerificationResult,
+  type EpisodeWithEvents,
+  getEpisodeEvents,
+  verifyEpisode,
+} from "../lib/api"
 import {
   ALL_CATEGORIES,
   CATEGORY_LABEL,
@@ -69,6 +75,12 @@ interface EnrichedEvent extends CTREvent {
   relTs: string
 }
 
+type VerifyState =
+  | { status: "idle" }
+  | { status: "loading" }
+  | { status: "done"; result: ChainVerificationResult }
+  | { status: "error"; message: string }
+
 export function EpisodeTimelineView({ getToken, initialEpisodeId }: Props) {
   const [episodeIdInput, setEpisodeIdInput] = useState(initialEpisodeId ?? "")
   const [data, setData] = useState<EpisodeWithEvents | null>(null)
@@ -82,6 +94,7 @@ export function EpisodeTimelineView({ getToken, initialEpisodeId }: Props) {
   const [showDiff, setShowDiff] = useState(false)
   const [diffASeq, setDiffASeq] = useState<number | null>(null)
   const [diffBSeq, setDiffBSeq] = useState<number | null>(null)
+  const [verify, setVerify] = useState<VerifyState>({ status: "idle" })
 
   const load = useCallback(
     async (id: string) => {
@@ -90,6 +103,7 @@ export function EpisodeTimelineView({ getToken, initialEpisodeId }: Props) {
       setError(null)
       setData(null)
       setSelected(null)
+      setVerify({ status: "idle" })
       try {
         const res = await getEpisodeEvents(id, getToken)
         setData(res)
@@ -97,6 +111,18 @@ export function EpisodeTimelineView({ getToken, initialEpisodeId }: Props) {
         setError(`No se pudo cargar el episodio: ${e instanceof Error ? e.message : String(e)}`)
       } finally {
         setLoading(false)
+      }
+    },
+    [getToken],
+  )
+
+  const runVerify = useCallback(
+    async (id: string) => {
+      setVerify({ status: "loading" })
+      try {
+        setVerify({ status: "done", result: await verifyEpisode(id, getToken) })
+      } catch (e) {
+        setVerify({ status: "error", message: e instanceof Error ? e.message : String(e) })
       }
     },
     [getToken],
@@ -246,15 +272,38 @@ export function EpisodeTimelineView({ getToken, initialEpisodeId }: Props) {
                 <span className="text-muted">Eventos:</span>{" "}
                 <span className="font-mono">{enriched.length}</span>
               </div>
-              <div className="ml-auto">
-                <a
-                  href={`/api/v1/audit/episodes/${data.id}/verify`}
-                  target="_blank"
-                  rel="noreferrer"
-                  className="text-accent-brand hover:underline text-xs font-medium"
+              <div className="ml-auto flex items-center gap-2">
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="secondary"
+                  data-testid="timeline-verify"
+                  disabled={verify.status === "loading"}
+                  onClick={() => void runVerify(data.id)}
                 >
-                  Verificar cadena criptográfica ↗
-                </a>
+                  {verify.status === "loading" ? "Verificando…" : "Verificar cadena criptográfica"}
+                </Button>
+                {verify.status === "done" && (
+                  <output
+                    data-testid="timeline-verify-result"
+                    data-state={verify.result.valid ? "ok" : "broken"}
+                    className={`text-xs font-medium ${verify.result.valid ? "text-success" : "text-danger"}`}
+                  >
+                    {verify.result.valid
+                      ? `Cadena íntegra · ${verify.result.events_count} eventos`
+                      : `Cadena rota${verify.result.failing_seq !== null ? ` en el evento #${verify.result.failing_seq}` : ""} · ${verify.result.events_count} eventos`}
+                  </output>
+                )}
+                {verify.status === "error" && (
+                  <span
+                    role="alert"
+                    data-testid="timeline-verify-result"
+                    data-state="error"
+                    className="text-xs font-medium text-danger"
+                  >
+                    No se pudo verificar: {verify.message}
+                  </span>
+                )}
               </div>
             </div>
 

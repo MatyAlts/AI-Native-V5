@@ -78,8 +78,12 @@ export const EVENT_META: Record<string, EventMeta> = {
     category: "codigo",
     nLevelBase: "N3",
     summary: (p) => {
-      const ok = p.success === true ? "OK" : "ERROR"
-      return `[${ok}] ${fmtPreview(p.output ?? p.error, 60)}`
+      // Payload real (contrato CTR): { code, stdout, stderr, duration_ms, runtime }.
+      // `error`/`output` son el formato legacy; nadie emite `success`.
+      const stderr = fmtPreview(p.stderr ?? p.error, 60)
+      const ok = stderr === ""
+      const preview = ok ? fmtPreview(p.stdout ?? p.output, 60) : stderr
+      return `[${ok ? "OK" : "ERROR"}]${preview ? ` ${preview}` : ""}`
     },
   },
   tests_ejecutados: {
