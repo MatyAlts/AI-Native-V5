@@ -9,6 +9,7 @@
  *   - Boton "Ver calificacion" visible cuando graded/returned
  *   - Click en ejercicio disponible llama onSelectEjercicio
  */
+import { ConfirmProvider } from "@platform/ui"
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react"
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 import { ExerciseListView } from "../src/components/ExerciseListView"
@@ -120,6 +121,7 @@ describe("ExerciseListView", () => {
           onViewGrade={vi.fn()}
           onBack={vi.fn()}
         />,
+        { wrapper: ConfirmProvider },
       )
       await waitFor(() => {
         expect(screen.getByTestId("exercise-list-view")).toBeDefined()
@@ -137,6 +139,7 @@ describe("ExerciseListView", () => {
           onViewGrade={vi.fn()}
           onBack={vi.fn()}
         />,
+        { wrapper: ConfirmProvider },
       )
       await waitFor(() => {
         expect(screen.getByTestId("ejercicios-list")).toBeDefined()
@@ -162,6 +165,7 @@ describe("ExerciseListView", () => {
           onViewGrade={vi.fn()}
           onBack={vi.fn()}
         />,
+        { wrapper: ConfirmProvider },
       )
       await waitFor(() => {
         expect(screen.getByTestId("entrega-progress")).toBeDefined()
@@ -201,6 +205,7 @@ describe("ExerciseListView", () => {
           onViewGrade={vi.fn()}
           onBack={vi.fn()}
         />,
+        { wrapper: ConfirmProvider },
       )
       await waitFor(() => {
         expect(screen.getByText("1/2")).toBeDefined()
@@ -224,6 +229,7 @@ describe("ExerciseListView", () => {
           onViewGrade={vi.fn()}
           onBack={vi.fn()}
         />,
+        { wrapper: ConfirmProvider },
       )
       await waitFor(() => {
         expect(screen.getByTestId("ejercicios-list")).toBeDefined()
@@ -247,6 +253,7 @@ describe("ExerciseListView", () => {
           onViewGrade={vi.fn()}
           onBack={vi.fn()}
         />,
+        { wrapper: ConfirmProvider },
       )
       await waitFor(() => {
         expect(screen.getByTestId("ejercicio-start-1")).toBeDefined()
@@ -269,6 +276,7 @@ describe("ExerciseListView", () => {
           onViewGrade={vi.fn()}
           onBack={vi.fn()}
         />,
+        { wrapper: ConfirmProvider },
       )
       await waitFor(() => {
         expect(screen.getByTestId("ejercicio-start-1")).toBeDefined()
@@ -298,6 +306,7 @@ describe("ExerciseListView", () => {
           onViewGrade={vi.fn()}
           onBack={vi.fn()}
         />,
+        { wrapper: ConfirmProvider },
       )
       await waitFor(() => {
         expect(screen.getByTestId("ejercicios-list")).toBeDefined()
@@ -337,6 +346,7 @@ describe("ExerciseListView", () => {
           onViewGrade={vi.fn()}
           onBack={vi.fn()}
         />,
+        { wrapper: ConfirmProvider },
       )
       await waitFor(() => {
         expect(screen.getByTestId("submit-entrega-btn")).toBeDefined()
@@ -413,6 +423,7 @@ describe("ExerciseListView", () => {
           onViewGrade={vi.fn()}
           onBack={vi.fn()}
         />,
+        { wrapper: ConfirmProvider },
       )
       await waitFor(() => {
         expect(screen.getByTestId("ejercicio-descargar-1")).toBeDefined()
@@ -461,6 +472,7 @@ describe("ExerciseListView", () => {
           onViewGrade={vi.fn()}
           onBack={vi.fn()}
         />,
+        { wrapper: ConfirmProvider },
       )
       await waitFor(() => {
         expect(screen.getByTestId("ejercicio-descargar-1")).toBeDefined()
@@ -488,6 +500,7 @@ describe("ExerciseListView", () => {
           onViewGrade={vi.fn()}
           onBack={vi.fn()}
         />,
+        { wrapper: ConfirmProvider },
       )
       await waitFor(() => {
         expect(screen.getByTestId("ejercicio-descargar-1")).toBeDefined()
@@ -517,6 +530,7 @@ describe("ExerciseListView", () => {
           onViewGrade={vi.fn()}
           onBack={vi.fn()}
         />,
+        { wrapper: ConfirmProvider },
       )
       await waitFor(() => {
         expect(screen.getByTestId("entrega-estado-badge")).toBeDefined()
@@ -558,6 +572,7 @@ describe("ExerciseListView", () => {
           onViewGrade={onViewGrade}
           onBack={vi.fn()}
         />,
+        { wrapper: ConfirmProvider },
       )
       await waitFor(() => {
         expect(screen.getByTestId("ver-calificacion-btn")).toBeDefined()

@@ -14,6 +14,7 @@
  *   4. Cuando todos completos, muestra "Entregar TP" button.
  *   5. Cuando estado=submitted o graded, muestra badge informativo.
  */
+import { useConfirm } from "@platform/ui"
 import { useEffect, useState } from "react"
 import {
   type AvailableTarea,
@@ -144,6 +145,7 @@ export function ExerciseListView({
   onViewGrade,
   onBack,
 }: ExerciseListViewProps) {
+  const confirm = useConfirm()
   const [entrega, setEntrega] = useState<Entrega | null>(null)
   const [pairs, setPairs] = useState<TpEjercicio[]>([])
   const [loading, setLoading] = useState(true)
@@ -269,9 +271,11 @@ export function ExerciseListView({
 
   async function handleSubmit() {
     if (!entrega) return
-    const confirmed = window.confirm(
-      "Una vez entregada, tu docente sera notificado para corregirla. ¿Confirmas?",
-    )
+    const confirmed = await confirm({
+      title: "Entregar TP",
+      message: "Una vez entregada, tu docente sera notificado para corregirla. ¿Confirmas?",
+      confirmLabel: "Confirmar",
+    })
     if (!confirmed) return
     setSubmitting(true)
     setSubmitError(null)

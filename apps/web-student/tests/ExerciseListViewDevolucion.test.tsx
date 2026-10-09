@@ -37,6 +37,7 @@
  * Una pieza, tres resultados: el alumno trabado se destraba, el botón "Devolver"
  * pasa a hacer lo que promete, y la feature de rehacer el TP queda hecha.
  */
+import { ConfirmProvider } from "@platform/ui"
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react"
 import { afterEach, describe, expect, it, vi } from "vitest"
 import { ExerciseListView } from "../src/components/ExerciseListView"
@@ -119,6 +120,7 @@ function montar(props: Partial<Parameters<typeof ExerciseListView>[0]> = {}) {
       onBack={vi.fn()}
       {...props}
     />,
+    { wrapper: ConfirmProvider },
   )
 }
 

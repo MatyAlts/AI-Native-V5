@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react"
 import { SELECTED_TENANT_STORAGE_KEY } from "../auth"
+import { elegirTenantInicial } from "../lib/tenantInicial"
 
 interface Universidad {
   id: string
@@ -31,10 +32,12 @@ export function TenantSelector() {
       .then((body: { data: Universidad[] }) => {
         if (cancelled) return
         setUniversidades(body.data ?? [])
-        if (!selected && body.data?.[0]) {
-          const first = body.data[0].tenant_id
-          setSelected(first)
-          localStorage.setItem(SELECTED_TENANT_STORAGE_KEY, first)
+        // El backend ordena por UUID (arbitrario): se respeta la ultima eleccion
+        // persistida y, sin ella, se ordena por nombre. Ver lib/tenantInicial.ts.
+        const inicial = elegirTenantInicial(body.data ?? [], selected)
+        if (inicial && inicial !== selected) {
+          setSelected(inicial)
+          localStorage.setItem(SELECTED_TENANT_STORAGE_KEY, inicial)
         }
       })
       .catch(() => {

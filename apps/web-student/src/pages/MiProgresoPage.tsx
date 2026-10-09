@@ -118,9 +118,9 @@ async function fetchStudentAlerts(pseudonym: string, comisionId: string): Promis
 }
 
 // ── Escala de apropiacion (cualitativa, NO un puntaje) ───────────────────
-// Colores tomados del DS: delegacion en slate neutro (pasivo, sin juicio de
-// valor tipo rojo/verde que reificaria), superficial en el azul de marca,
-// reflexiva en la terracota que la tesis usa para "apropiacion" (level-n4).
+// Colores: tokens canonicos `--color-appropriation-*` del DS (theme.css), los mismos
+// que usa el panel docente. NO usar `level-n4` (terracota): es el nivel N4, no una
+// categoria de apropiacion. Siguen siendo cualitativos, no un puntaje.
 
 interface ModoApropiacion {
   label: string
@@ -128,17 +128,17 @@ interface ModoApropiacion {
   color: string
 }
 
-const MODOS: Record<number, ModoApropiacion> = {
-  0: { label: "Delegacion", short: "Delegacion", color: "var(--color-muted)" },
+export const MODOS: Record<number, ModoApropiacion> = {
+  0: { label: "Delegacion", short: "Delegacion", color: "var(--color-appropriation-delegacion)" },
   1: {
     label: "Apropiacion superficial",
     short: "Superficial",
-    color: "var(--color-accent-brand)",
+    color: "var(--color-appropriation-superficial)",
   },
   2: {
     label: "Apropiacion reflexiva",
     short: "Reflexiva",
-    color: "var(--color-level-n4)",
+    color: "var(--color-appropriation-reflexiva)",
   },
 }
 
