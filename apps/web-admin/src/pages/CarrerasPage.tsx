@@ -30,11 +30,6 @@ export function CarrerasPage(): ReactNode {
   const deleteMutation = useMutation({
     mutationFn: (id: string) => carrerasApi.delete(id),
     onSuccess: () => void queryClient.invalidateQueries({ queryKey: ["carreras"] }),
-    onError: (err) => {
-      const msg =
-        err instanceof HttpError ? `${err.status}: ${err.detail || err.title}` : String(err)
-      window.alert(`No se pudo eliminar: ${msg}`)
-    },
   })
 
   const items: Carrera[] = carrerasQuery.data?.data ?? []
@@ -42,10 +37,13 @@ export function CarrerasPage(): ReactNode {
   const loading = carrerasQuery.isLoading || facultadesQuery.isLoading
 
   const queryError = carrerasQuery.error || facultadesQuery.error || deleteMutation.error
+  // El fallo de borrado se muestra en el banner inline (no con window.alert).
+  const prefijo = queryError && queryError === deleteMutation.error ? "No se pudo eliminar: " : ""
   const error = queryError
-    ? queryError instanceof HttpError
-      ? `${queryError.status}: ${queryError.detail || queryError.title}`
-      : String(queryError)
+    ? prefijo +
+      (queryError instanceof HttpError
+        ? `${queryError.status}: ${queryError.detail || queryError.title}`
+        : String(queryError))
     : null
 
   const facMap = new Map(facultades.map((f) => [f.id, f]))

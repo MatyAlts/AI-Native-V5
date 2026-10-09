@@ -9,8 +9,13 @@ import {
   useRef,
   useState,
 } from "react"
-import { CLASE_BOTON_PRIMARIO, TourOverlay } from "./TourOverlay"
-import { guardarDescartes, leerDescartes } from "./persistencia"
+import { CLASE_BOTON_PRIMARIO, CLASE_BOTON_TEXTO, TourOverlay } from "./TourOverlay"
+import {
+  guardarDescartes,
+  guardarOmitirTodas,
+  leerDescartes,
+  leerOmitirTodas,
+} from "./persistencia"
 import type { OnboardingFlow, OnboardingHint, OnboardingProgress } from "./types"
 
 interface OnboardingContextValue {
@@ -18,6 +23,8 @@ interface OnboardingContextValue {
   visible: string | null
   /** Descarta un cartel y lo persiste. Es lo que hacen el CTA y Escape. */
   descartar: (hintId: string) => void
+  /** "No mostrar mas ayudas": apaga todos los carteles de todos los flows, persistido. */
+  omitirTodas: () => void
   /** Progreso derivado del estado real. La barra que lo dibuja se difirio. */
   progreso: OnboardingProgress
 }
@@ -72,7 +79,9 @@ function aplica<S>(
   estado: S,
   route: string,
   descartados: ReadonlySet<string>,
+  omitidasTodas: boolean,
 ): boolean {
+  if (omitidasTodas) return false
   if (!matcheaRuta(route, hint.route)) return false
   if (descartados.has(hint.id)) return false
   return hint.unlockWhen(estado) && !hint.doneWhen(estado)
@@ -105,6 +114,8 @@ export function OnboardingProvider<S>({
 }: OnboardingProviderProps<S>) {
   const [descartados, setDescartados] = useState<ReadonlySet<string>>(() => leerDescartes(flow.id))
 
+  const [omitidasTodas, setOmitidasTodas] = useState<boolean>(() => leerOmitirTodas())
+
   // Cambiar el id del flow es cambiar de catalogo de descartes. Pasa poco (un flow por
   // app), pero si pasa hay que releer: los descartes del flow viejo no son los de este.
   const flowIdPrevio = useRef(flow.id)
@@ -125,11 +136,16 @@ export function OnboardingProvider<S>({
     [descartados, flow.id],
   )
 
+  const omitirTodas = useCallback(() => {
+    setOmitidasTodas(true)
+    guardarOmitirTodas()
+  }, [])
+
   // Se recalcula cuando cambia el estado o la ruta. Todo sale del estado real; lo unico
   // que aporta el localStorage es el set de descartados.
   const hint = useMemo(
-    () => flow.hints.find((h) => aplica(h, estado, route, descartados)) ?? null,
-    [flow, estado, route, descartados],
+    () => flow.hints.find((h) => aplica(h, estado, route, descartados, omitidasTodas)) ?? null,
+    [flow, estado, route, descartados, omitidasTodas],
   )
 
   const progreso = useMemo<OnboardingProgress>(() => {
@@ -149,8 +165,8 @@ export function OnboardingProvider<S>({
   }, [hint, descartar])
 
   const value = useMemo<OnboardingContextValue>(
-    () => ({ visible: hint?.id ?? null, descartar, progreso }),
-    [hint, descartar, progreso],
+    () => ({ visible: hint?.id ?? null, descartar, omitirTodas, progreso }),
+    [hint, descartar, omitirTodas, progreso],
   )
 
   return (
@@ -165,13 +181,18 @@ export function OnboardingProvider<S>({
           placement={hint.placement}
           modal={false}
           footer={
-            <button
-              type="button"
-              onClick={() => descartar(hint.id)}
-              className={CLASE_BOTON_PRIMARIO}
-            >
-              {hint.ctaLabel ?? "Entendido"}
-            </button>
+            <>
+              <button type="button" onClick={omitirTodas} className={CLASE_BOTON_TEXTO}>
+                No mostrar mas ayudas
+              </button>
+              <button
+                type="button"
+                onClick={() => descartar(hint.id)}
+                className={CLASE_BOTON_PRIMARIO}
+              >
+                {hint.ctaLabel ?? "Entendido"}
+              </button>
+            </>
           }
         />
       )}

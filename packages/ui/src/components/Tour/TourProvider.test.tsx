@@ -276,3 +276,25 @@ describe("TourProvider — navegacion", () => {
     expect(navigate).toHaveBeenCalledWith("/correcciones")
   })
 })
+
+describe("TourProvider — omitir todas las ayudas", () => {
+  it("maybeStart NO arranca si el usuario omitio todas las ayudas", () => {
+    window.localStorage.setItem("ai-native:onboarding:__all__", "1")
+    renderTour(flujo("flow-omitido"))
+    expect(screen.queryByRole("dialog")).toBeNull()
+  })
+
+  it("start explicito SI arranca aunque este omitido (accion deliberada)", () => {
+    window.localStorage.setItem("ai-native:onboarding:__all__", "1")
+    renderTour(flujo("flow-omitido-2"), "start")
+    expect(screen.getByRole("dialog")).toBeInTheDocument()
+  })
+})
+
+describe("TourProvider — clave global invalida", () => {
+  it("un valor que no es el centinela no cuenta como omitido", () => {
+    window.localStorage.setItem("ai-native:onboarding:__all__", "basura")
+    renderTour(flujo("flow-basura"))
+    expect(screen.getByRole("dialog")).toBeInTheDocument()
+  })
+})

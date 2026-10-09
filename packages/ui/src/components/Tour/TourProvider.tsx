@@ -14,7 +14,7 @@ import {
   CLASE_BOTON_TEXTO,
   TourOverlay,
 } from "./TourOverlay"
-import { estadoPendiente, guardarTour, leerTour } from "./persistencia"
+import { estadoPendiente, guardarTour, leerOmitirTodas, leerTour } from "./persistencia"
 import type { TourFlow, TourStatus } from "./types"
 
 interface TourContextValue {
@@ -75,6 +75,9 @@ export function TourProvider({ children, navigate }: TourProviderProps) {
   }, [])
 
   const maybeStart = useCallback((f: TourFlow) => {
+    // "No mostrar mas ayudas" aplica tambien al arranque automatico. `start` (accion
+    // deliberada del usuario, ej. "Ver el tour de nuevo") no lo respeta a proposito.
+    if (leerOmitirTodas()) return
     const { estado, paso } = leerTour(f.id)
     if (estado !== "pendiente") return
     // Retomamos donde quedo. Si el paso guardado ya no existe (el flow cambio sin

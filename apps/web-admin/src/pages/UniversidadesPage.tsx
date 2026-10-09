@@ -26,7 +26,6 @@ export function UniversidadesPage(): ReactNode {
   const deleteMutation = useMutation({
     mutationFn: (id: string) => universidadesApi.delete(id),
     onSuccess: () => void queryClient.invalidateQueries({ queryKey: ["universidades"] }),
-    onError: (e) => window.alert(`No se pudo eliminar: ${errMsg(e)}`),
   })
 
   const items: Universidad[] = universidadesQuery.data?.data ?? []
@@ -34,7 +33,9 @@ export function UniversidadesPage(): ReactNode {
   const deletingId = deleteMutation.isPending ? deleteMutation.variables : null
 
   const queryError = universidadesQuery.error || deleteMutation.error
-  const error = queryError ? errMsg(queryError) : null
+  // El fallo de borrado se muestra en el banner inline (no con window.alert).
+  const prefijo = queryError && queryError === deleteMutation.error ? "No se pudo eliminar: " : ""
+  const error = queryError ? prefijo + errMsg(queryError) : null
 
   const handleDelete = async (u: Universidad) => {
     if (!(await confirm({ message: `¿Eliminar universidad ${u.nombre}?`, tone: "danger" }))) return

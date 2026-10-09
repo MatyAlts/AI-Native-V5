@@ -422,3 +422,39 @@ describe("OnboardingProvider — persistencia rota", () => {
     vi.restoreAllMocks()
   })
 })
+
+describe("OnboardingProvider — omitir todas las ayudas", () => {
+  const OMITIR = /no mostrar mas ayudas/i
+
+  it("el boton persiste la clave global y retira el cartel visible", async () => {
+    renderOnboarding(flujo([hint({ id: "a" }), hint({ id: "b" })]), ESTADO_CERO)
+    await userEvent.click(screen.getByRole("button", { name: OMITIR }))
+    expect(screen.queryByText("Titulo de a")).toBeNull()
+    expect(screen.queryByText("Titulo de b")).toBeNull()
+    expect(window.localStorage.getItem("ai-native:onboarding:__all__")).toBe("1")
+  })
+
+  it("con la clave global previa no se muestra ningun cartel, en cualquier flow", () => {
+    window.localStorage.setItem("ai-native:onboarding:__all__", "1")
+    const { unmount } = renderOnboarding(flujo([hint({ id: "a" })], "flow-uno"), ESTADO_CERO)
+    expect(screen.queryByText("Titulo de a")).toBeNull()
+    unmount()
+    renderOnboarding(flujo([hint({ id: "z" })], "flow-dos"), ESTADO_CERO)
+    expect(screen.queryByText("Titulo de z")).toBeNull()
+  })
+
+  it("sin la clave global el cartel se muestra y descartar uno solo no la escribe", async () => {
+    renderOnboarding(flujo([hint({ id: "a" })]), ESTADO_CERO)
+    await userEvent.click(screen.getByRole("button", { name: /entendido/i }))
+    expect(window.localStorage.getItem("ai-native:onboarding:__all__")).toBeNull()
+  })
+
+  it("omitir todas no rompe si el storage tira excepcion", async () => {
+    vi.spyOn(Storage.prototype, "setItem").mockImplementation(() => {
+      throw new Error("cuota")
+    })
+    renderOnboarding(flujo([hint({ id: "a" })]), ESTADO_CERO)
+    await userEvent.click(screen.getByRole("button", { name: OMITIR }))
+    expect(screen.queryByText("Titulo de a")).toBeNull()
+  })
+})
