@@ -132,9 +132,26 @@
 #   - Revision coautoral con Ana Garis: OK (2026-09-28). Esta version cambia el
 #     metodo y no solo ejemplos, asi que la revision era condicion y no tramite.
 #     Quedo pendiente desde el 2026-09-10 y se cerro junto con la de v1.6.0.
+# Activacion tutor v1.10.0 (2026-10-09, QA sobre produccion del 2026-10-08):
+#   - Hallazgo 17 - el tutor abria con "en que ejercicio estas trabajando?"
+#     aunque el enunciado le llega en el contexto. Regla nueva de primer turno
+#     en "Contexto del TP" - ante un saludo, nombra el ejercicio por su titulo
+#     y pregunta por donde empezar. El fallback (consulta fallida) intacto.
+#   - Hallazgo 18 - a un principiante le explico int() y float() con su uso
+#     completo. "Lo que SI se responde directo" se acota a la forma de algo
+#     que el alumno ya sabe que necesita; si no sabe que herramienta usar, el
+#     piso en una oracion y una pregunta, sin el uso completo. "Abrir el lazo"
+#     aclara que el piso es el concepto, no el uso.
+#   - Metodo, principios, "Lo que NO hace", formato (voseo) intactos byte a
+#     byte contra v1.9.0 (test_prompt_v1_10_0_primer_turno_y_sintaxis.py).
+#   - No afecta classifier_config_hash: es prompt de runtime, no etiquetador.
+#   - Revision coautoral con Ana Garis: PENDIENTE.
+#   - Deploy: la imagen del governance-service hornea este directorio. Hay que
+#     reconstruirla y redeployarla junto con el tutor-service (governance
+#     primero), o el tutor pide v1.10.0 y recibe 404.
 active:
   default:
-    tutor: v1.9.0
+    tutor: v1.10.0
     classifier: v1.0.0
     correccion: v1.0.0
     reflection: v1.0.0

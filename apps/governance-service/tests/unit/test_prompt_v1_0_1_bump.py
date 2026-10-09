@@ -120,17 +120,20 @@ def test_v101_corrige_cuenta_de_guardarrailes(loader: PromptLoader) -> None:
 # El nombre
 # del test NO lleva la version a proposito: antes se llamaba `..._activa_v101_...`
 # mientras asserteaba v1.2.0, y el nombre quedo mintiendo dos bumps seguidos.
-ACTIVE_TUTOR_VERSION = "v1.9.0"
+ACTIVE_TUTOR_VERSION = "v1.10.0"
 
 
 def test_manifest_global_activa_la_version_vigente_del_tutor(loader: PromptLoader) -> None:
     """El manifest global del repo declara la version activa del `tutor` para el
-    tenant `default`. Hoy: v1.9.0 (2026-10-02) — le da la ENTRADA al metodo.
-    Los cuatro movimientos socraticos presuponen que el estudiante ya tiene algo
-    adentro para sacarle; el de primer ano que nunca escucho hablar del concepto
-    no tiene de donde agarrarse, y es el caso mas comun. Cuatro alumnos del
-    piloto lo reportaron por dos canales. Es la contraparte de v1.5.0, que le
-    habia dado la SALIDA (confirmar cuando el estudiante acierta con su razon).
+    tenant `default`. Hoy: v1.10.0 (2026-10-09) — dos fixes de QA sobre prod
+    (08/10): el tutor deja de preguntar "en que ejercicio estas trabajando"
+    cuando el enunciado ya le llega en el contexto (regla de primer turno), y
+    la respuesta directa de sintaxis se acota a quien ya sabe que herramienta
+    necesita (a un principiante que no lo sabe se le da el piso en una oracion
+    y una pregunta, no el uso completo de `int()`/`float()`).
+
+    Antes: v1.9.0 (2026-10-02) — le dio la ENTRADA al metodo ("Abrir el lazo"),
+    contraparte de v1.5.0, que le habia dado la SALIDA.
 
     Este docstring describia v1.5.0 hasta el 2026-10-02, dos bumps despues de
     que dejara de ser cierto. Se actualiza con el pin: un docstring que nombra

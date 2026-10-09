@@ -68,6 +68,15 @@ _PROMPT_KIND_MAPPING: dict[str, str] = {
 
 logger = logging.getLogger(__name__)
 
+# Etiqueta de los warnings que avisan que el tutor arranca SIN el contexto
+# pedagogico (enunciado, rubrica, banco socratico) porque la consulta al
+# academic-service fallo. El episodio se abre igual (best-effort) y el prompt
+# tiene un fallback para ese caso: preguntarle al estudiante por el problema.
+# Sin una etiqueta comun no habia forma de distinguir en los logs de prod "el
+# modelo ignoro el enunciado" de "el enunciado nunca llego" (QA 08/10, #17).
+# Es lo que se grepea: no cambiarla sin avisar.
+CONTEXTO_NO_DISPONIBLE_LOG = "tutor_contexto_no_disponible"
+
 # Namespace fijo para derivar el `event_uuid` de `reflexion_completada` desde el
 # `Idempotency-Key`. Es una constante del contrato: cambiarla haria que un
 # reintento deje de matchear la idempotencia del worker.
@@ -298,8 +307,9 @@ class TutorCore:
                 )
             except Exception:
                 logger.warning(
-                    "get_ejercicio_by_id failed for ejercicio=%s; continuing without "
+                    "[%s] get_ejercicio_by_id failed for ejercicio=%s; continuing without "
                     "pedagogical context",
+                    CONTEXTO_NO_DISPONIBLE_LOG,
                     ejercicio_id,
                     exc_info=True,
                 )
@@ -445,8 +455,9 @@ class TutorCore:
                 )
             except Exception:
                 logger.warning(
-                    "get_tarea_practica_full failed for tarea=%s; continuing without "
+                    "[%s] get_tarea_practica_full failed for tarea=%s; continuing without "
                     "TP pedagogical context",
+                    CONTEXTO_NO_DISPONIBLE_LOG,
                     problema_id,
                     exc_info=True,
                 )
@@ -1254,8 +1265,9 @@ class TutorCore:
                     rubrica_context = formatted if formatted else None
             except Exception:
                 logger.warning(
-                    "resume: get_ejercicio_by_id failed para ejercicio=%s; "
+                    "[%s] resume: get_ejercicio_by_id failed para ejercicio=%s; "
                     "se reanuda sin contexto pedagógico",
+                    CONTEXTO_NO_DISPONIBLE_LOG,
                     ejercicio_id,
                     exc_info=True,
                 )
@@ -1268,8 +1280,9 @@ class TutorCore:
                 )
             except Exception:
                 logger.warning(
-                    "resume: get_tarea_practica_full failed para tarea=%s; "
+                    "[%s] resume: get_tarea_practica_full failed para tarea=%s; "
                     "se reanuda sin contexto pedagógico de la TP",
+                    CONTEXTO_NO_DISPONIBLE_LOG,
                     problema_id,
                     exc_info=True,
                 )
