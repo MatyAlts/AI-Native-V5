@@ -263,14 +263,15 @@ def time_in_level(events: list[dict[str, Any]]) -> dict[NLevel, float]:
     evento aporta 0 (no hay siguiente). Asume `seq` ordenable; si los timestamps
     estan invertidos por reloj de cliente, el delta se clamp a 0.
 
-    v1.3.0: `lectura_enunciado` es un latido que reporta en
-    `payload.duration_seconds` el tiempo de lectura visible de la ventana que
-    TERMINO en su `ts`. Por eso aporta a N1 solo `min(delta, duration_seconds)`;
-    el excedente (`delta - duration_seconds`) NO es lectura y se atribuye al
-    nivel del ultimo evento previo que no sea `lectura_enunciado`, o a "meta"
-    si no hay ninguno (el tiempo se conserva: la suma total no cambia). Si
-    `duration_seconds` falta o no es un numero >= 0, rige el comportamiento
-    legacy (todo el delta a N1).
+    v1.3.0: `lectura_enunciado` es un latido cuyo `payload.duration_seconds`
+    describe la lectura de la ventana que TERMINO en su `ts` (hacia atras). Para
+    el intervalo [evento previo, latido] se acreditan `min(duration, delta)` a
+    N1 y el resto al nivel que abrio el intervalo. El intervalo POSTERIOR a un
+    latido (valido) se atribuye al nivel del ultimo evento no-lectura (o "meta"
+    si no hay), porque la lectura de ese tramo la reclamara hacia atras el
+    proximo latido. Si `duration_seconds` falta o no es un numero >= 0, rige el
+    comportamiento legacy (el delta hacia adelante va al nivel del latido, N1).
+    Cada delta se reparte completo: el tiempo total se conserva.
 
     Episodios con < 2 eventos devuelven todos los niveles en 0.0.
 
@@ -289,22 +290,26 @@ def time_in_level(events: list[dict[str, Any]]) -> dict[NLevel, float]:
 
     sorted_events = sorted(events, key=lambda e: e["seq"])
     contexts = _build_event_contexts(sorted_events)
-    # Nivel al que se atribuye el excedente de un latido de lectura.
+    levels = [
+        label_event(ev["event_type"], ev.get("payload"), context=ctx)
+        for ev, ctx in zip(sorted_events, contexts, strict=True)
+    ]
+    # Nivel del ultimo evento no-lectura ya visto ("meta" si no hay).
     carry_level: NLevel = "meta"
-    for (current, nxt), ctx in zip(pairwise(sorted_events), contexts, strict=False):
-        level = label_event(current["event_type"], current.get("payload"), context=ctx)
+    for idx, (current, nxt) in enumerate(pairwise(sorted_events)):
+        level = levels[idx]
+        if current["event_type"] != "lectura_enunciado":
+            carry_level = level
         delta = (_parse_ts(nxt["ts"]) - _parse_ts(current["ts"])).total_seconds()
         if delta < 0:
             delta = 0.0
-        reading = _reading_seconds(current)
-        if reading is None:
-            durations[level] += delta
-            if current["event_type"] != "lectura_enunciado":
-                carry_level = level
-            continue
-        credited = min(delta, reading)
-        durations[level] += credited
-        durations[carry_level] += delta - credited
+        # Intervalo que abre `current`: tras un latido valido va al ultimo nivel
+        # no-lectura; en cualquier otro caso, al nivel del propio evento.
+        interval_level = carry_level if _reading_seconds(current) is not None else level
+        reading_back = _reading_seconds(nxt)
+        credited = min(delta, reading_back) if reading_back is not None else 0.0
+        durations[levels[idx + 1]] += credited
+        durations[interval_level] += delta - credited
     return durations
 
 
