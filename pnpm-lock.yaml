@@ -21,8 +21,8 @@ importers:
         specifier: ^22.10.0
         version: 22.19.17
       '@types/pg':
-        specifier: ^8.11.10
-        version: 8.20.0
+        specifier: ^8.23.1
+        version: 8.23.1
       docx:
         specifier: ^9.6.1
         version: 9.6.1
@@ -30,8 +30,8 @@ importers:
         specifier: ^5.4.1
         version: 5.10.1
       pg:
-        specifier: ^8.13.0
-        version: 8.20.0
+        specifier: ^8.23.1
+        version: 8.23.1
       playwright:
         specifier: ^1.59.1
         version: 1.59.1
@@ -621,12 +621,12 @@ packages:
     peerDependencies:
       '@babel/core': ^7.0.0-0
 
-  '@babel/runtime@7.29.2':
-    resolution: {integrity: sha512-JiDShH45zKHWyGe4ZNVRrCjBz8Nh9TMmZG1kh4QTK8hCBTWBi8Da+i7s1fJw7/lYpM4ccepSNfqzZ/QvABBi5g==}
+  '@babel/runtime@7.29.10':
+    resolution: {integrity: sha512-NpugTzbKgGrNe45Ui32cN8vCFFMxVtP/9rtfwv0nP5FRDAjvYBxJcLVpYA9mr1jxP6cnIT7x9LUzuDTbWYYNRA==}
     engines: {node: '>=6.9.0'}
 
-  '@babel/runtime@7.29.7':
-    resolution: {integrity: sha512-Nq8OhGWiZIZGV6hLHoyAKLLcJihP/xFeBMGJoUrxTX2psI8dCifzLhZISFb+VWS3wFMRDmCGw5R+dOySCqPLhw==}
+  '@babel/runtime@7.29.2':
+    resolution: {integrity: sha512-JiDShH45zKHWyGe4ZNVRrCjBz8Nh9TMmZG1kh4QTK8hCBTWBi8Da+i7s1fJw7/lYpM4ccepSNfqzZ/QvABBi5g==}
     engines: {node: '>=6.9.0'}
 
   '@babel/template@7.28.6':
@@ -697,6 +697,7 @@ packages:
   '@clerk/clerk-react@5.61.9':
     resolution: {integrity: sha512-PRIodE1QVem/eV3wrjicJJiJ2pkGiZfI6t1vekE/+04cIHciXyvUezQ/468gGPl31xd7BiCNO3uKNM14TXEKZQ==}
     engines: {node: '>=18.17.0'}
+    deprecated: 'This package is no longer supported. Please use @clerk/react instead. See the upgrade guide for more info: https://clerk.com/docs/guides/development/upgrading/upgrade-guides/core-3'
     peerDependencies:
       react: ^18.0.0 || ~19.0.3 || ~19.1.4 || ~19.2.3 || ~19.3.0-0
       react-dom: ^18.0.0 || ~19.0.3 || ~19.1.4 || ~19.2.3 || ~19.3.0-0
@@ -1688,8 +1689,8 @@ packages:
   '@types/node@25.6.0':
     resolution: {integrity: sha512-+qIYRKdNYJwY3vRCZMdJbPLJAtGjQBudzZzdzwQYkEPQd+PJGixUL5QfvCLDaULoLv+RhT3LDkwEfKaAkgSmNQ==}
 
-  '@types/pg@8.20.0':
-    resolution: {integrity: sha512-bEPFOaMAHTEP1EzpvHTbmwR8UsFyHSKsRisLIHVMXnpNefSbGA1bD6CVy+qKjGSqmZqNqBDV2azOBo8TgkcVow==}
+  '@types/pg@8.23.1':
+    resolution: {integrity: sha512-fKVHpikPdg4GKks3JuLEhvwSyvwzF23hnabPy6DD8ljVbC7+6J5dQzdv4arV6jqq57djnMgs1HKBxX4P8aBI3A==}
 
   '@types/react-dom@19.2.3':
     resolution: {integrity: sha512-jp2L/eY6fn+KgVVQAOqYItbF0VY/YApe5Mz2F0aykSO8gx31bYCZyvSeYxCHKvzHG5eZjc+zyaS5BrBWya2+kQ==}
@@ -1713,6 +1714,7 @@ packages:
 
   '@ungap/structured-clone@1.3.0':
     resolution: {integrity: sha512-WmoN8qaIAo7WTYWbAZuG8PYEhn5fkz7dZrqTBZ7dtt//lL2Gwms1IcnQ5yHqjDfX8Ft5j4YzDM23f87zBfDe9g==}
+    deprecated: Potential CWE-502 - Update to 1.3.1 or higher
 
   '@vitejs/plugin-react@4.7.0':
     resolution: {integrity: sha512-gUu9hwfWvvEDBBmgtAowQCojwZmJ5mcLn3aufeCsitijs3+f2NsrPtlAWIR6OPiqljl96GVCUbLe0HyqIpVaoA==}
@@ -2601,30 +2603,30 @@ packages:
     resolution: {integrity: sha512-//nshmD55c46FuFw26xV/xFAaB5HF9Xdap7HJBBnrKdAd6/GxDBaNA1870O79+9ueg61cZLSVc+OaFlfmObYVQ==}
     engines: {node: '>= 14.16'}
 
-  pg-cloudflare@1.3.0:
-    resolution: {integrity: sha512-6lswVVSztmHiRtD6I8hw4qP/nDm1EJbKMRhf3HCYaqud7frGysPv7FYJ5noZQdhQtN2xJnimfMtvQq21pdbzyQ==}
+  pg-cloudflare@1.4.1:
+    resolution: {integrity: sha512-6PQbsFWZcp9EmJEwy5cGQ2La+AMWpP46lgbb8X+U/XsHIUweYDNCpeuKck5RxL2MdVFi7krbbEi5nX4Zh7JhrQ==}
 
-  pg-connection-string@2.12.0:
-    resolution: {integrity: sha512-U7qg+bpswf3Cs5xLzRqbXbQl85ng0mfSV/J0nnA31MCLgvEaAo7CIhmeyrmJpOr7o+zm0rXK+hNnT5l9RHkCkQ==}
+  pg-connection-string@2.14.1:
+    resolution: {integrity: sha512-qR3kGNPBLpCNtz0evbKA0Y/MRFXwSSdT+pTJvYp/bXTcReZbvX1kzF0IyTc1QnxqF7AZbOeBhNL8R5mYQZV/MA==}
 
   pg-int8@1.0.1:
     resolution: {integrity: sha512-WCtabS6t3c8SkpDBUlb1kjOs7l66xsGdKpIPZsg4wR+B3+u9UAum2odSsF9tnvxg80h4ZxLWMy4pRjOsFIqQpw==}
     engines: {node: '>=4.0.0'}
 
-  pg-pool@3.13.0:
-    resolution: {integrity: sha512-gB+R+Xud1gLFuRD/QgOIgGOBE2KCQPaPwkzBBGC9oG69pHTkhQeIuejVIk3/cnDyX39av2AxomQiyPT13WKHQA==}
+  pg-pool@3.14.0:
+    resolution: {integrity: sha512-gKtPkFdQPU3DksooVLi9LsjZxrsBUZIpa+7aVx+LV5pNh0KzP4Zleud2po+ConrxbuXGBJ6Hfer6hdgpIBpBaw==}
     peerDependencies:
       pg: '>=8.0'
 
-  pg-protocol@1.13.0:
-    resolution: {integrity: sha512-zzdvXfS6v89r6v7OcFCHfHlyG/wvry1ALxZo4LqgUoy7W9xhBDMaqOuMiF3qEV45VqsN6rdlcehHrfDtlCPc8w==}
+  pg-protocol@1.16.1:
+    resolution: {integrity: sha512-p9VOFMiHB/ZbJATetbg+99PxssTVSQRnyuPSQ67mN1+1KBOjZaZ83ZQzltnxPhJwSsC3nwVjJ10DVJlerbFzLg==}
 
   pg-types@2.2.0:
     resolution: {integrity: sha512-qTAAlrEsl8s4OiEQY69wDvcMIdQN6wdz5ojQiOy6YRMuynxenON0O5oCpJI6lshc6scgAY8qvJ2On/p+CXY0GA==}
     engines: {node: '>=4'}
 
-  pg@8.20.0:
-    resolution: {integrity: sha512-ldhMxz2r8fl/6QkXnBD3CR9/xg694oT6DZQ2s6c/RI28OjtSOpxnPrUCGOBJ46RCUxcWdx3p6kw/xnDHjKvaRA==}
+  pg@8.23.1:
+    resolution: {integrity: sha512-aL96AHANtWjPLDOLqnhx+ngp9+UK7ETEU8VJrDCGvsSSi/mGLcWYsS6Herg7lmaBJe4uwrfqsa7gTEFaSizDoQ==}
     engines: {node: '>= 16.0.0'}
     peerDependencies:
       pg-native: '>=3.0.1'
@@ -3305,9 +3307,9 @@ snapshots:
       '@babel/core': 7.29.0
       '@babel/helper-plugin-utils': 7.28.6
 
-  '@babel/runtime@7.29.2': {}
+  '@babel/runtime@7.29.10': {}
 
-  '@babel/runtime@7.29.7': {}
+  '@babel/runtime@7.29.2': {}
 
   '@babel/template@7.28.6':
     dependencies:
@@ -3944,7 +3946,7 @@ snapshots:
   '@testing-library/dom@10.4.1':
     dependencies:
       '@babel/code-frame': 7.29.7
-      '@babel/runtime': 7.29.7
+      '@babel/runtime': 7.29.10
       '@types/aria-query': 5.0.4
       aria-query: 5.3.0
       dom-accessibility-api: 0.5.16
@@ -4068,10 +4070,10 @@ snapshots:
     dependencies:
       undici-types: 7.19.2
 
-  '@types/pg@8.20.0':
+  '@types/pg@8.23.1':
     dependencies:
       '@types/node': 22.19.17
-      pg-protocol: 1.13.0
+      pg-protocol: 1.16.1
       pg-types: 2.2.0
 
   '@types/react-dom@19.2.3(@types/react@19.2.14)':
@@ -5206,18 +5208,18 @@ snapshots:
 
   pathval@2.0.1: {}
 
-  pg-cloudflare@1.3.0:
+  pg-cloudflare@1.4.1:
     optional: true
 
-  pg-connection-string@2.12.0: {}
+  pg-connection-string@2.14.1: {}
 
   pg-int8@1.0.1: {}
 
-  pg-pool@3.13.0(pg@8.20.0):
+  pg-pool@3.14.0(pg@8.23.1):
     dependencies:
-      pg: 8.20.0
+      pg: 8.23.1
 
-  pg-protocol@1.13.0: {}
+  pg-protocol@1.16.1: {}
 
   pg-types@2.2.0:
     dependencies:
@@ -5227,15 +5229,15 @@ snapshots:
       postgres-date: 1.0.7
       postgres-interval: 1.2.0
 
-  pg@8.20.0:
+  pg@8.23.1:
     dependencies:
-      pg-connection-string: 2.12.0
-      pg-pool: 3.13.0(pg@8.20.0)
-      pg-protocol: 1.13.0
+      pg-connection-string: 2.14.1
+      pg-pool: 3.14.0(pg@8.23.1)
+      pg-protocol: 1.16.1
       pg-types: 2.2.0
       pgpass: 1.0.5
     optionalDependencies:
-      pg-cloudflare: 1.3.0
+      pg-cloudflare: 1.4.1
 
   pgpass@1.0.5:
     dependencies:
