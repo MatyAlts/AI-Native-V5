@@ -50,7 +50,7 @@ elección distinta cambie la tarea, está marcado.
 ## 6. Cierre
 
 - [x] 6.1 Suite completa `pnpm test` + `pnpm exec tsc --noEmit` + `pnpm biome check src` (ojo: `index.css` en rojo por CRLF en local es falso positivo). Verificación: mismo baseline de 0.1 más los tests nuevos en verde; cualquier rojo nuevo explicado.
-- [ ] 6.2 (PENDIENTE — la corre Neyén, pasos en STATUS.md) Prueba local reproducible (Neyén la corre solo). Verificación: los pasos de abajo dan lo esperado y el resultado queda en el `STATUS.md`.
+- [x] 6.2 (corrida 2026-10-21 y 2026-10-23, resultado en STATUS.md) Prueba local reproducible (Neyén la corre solo). Verificación: los pasos de abajo dan lo esperado y el resultado queda en el `STATUS.md`.
   1. Levantar el stack local según `ai-native-tech/` (gateway con `DEV_TRUST_HEADERS=true`, evaluation, academic, tutor, ctr con workers) y `make dev`.
   2. Con `seed-3-comisiones`, tener una entrega del alumno `b1b1b1b1-0001-…` en `graded` **con artefactos** (entregar un TP multi-ejercicio desde la app y calificarlo desde web-teacher).
   3. **Antes de mirar**: anotar `SELECT count(*) FROM events;` en `ctr_store` y `SELECT id, events_count, last_chain_hash FROM episodes WHERE id IN (<episode_id de los artefactos>);`.
