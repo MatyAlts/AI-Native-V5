@@ -1,7 +1,7 @@
 """Endpoints de liveness y readiness.
 
 - /health/live  → siempre 200 si el proceso corre
-- /health/ready → 200 si dependencias están OK (DB, Redis); 503 si alguna falla
+- /health/ready → 200 si dependencias están OK (DB, Redis, workers); 503 si alguna falla
 - /health      → alias de readiness por compatibilidad
 """
 
@@ -18,6 +18,8 @@ from sqlalchemy import text
 
 from ctr_service.config import settings
 from ctr_service.db.session import get_engine
+from ctr_service.services.producer import NUM_PARTITIONS
+from ctr_service.workers.partition_worker import HEARTBEAT_KEY_PREFIX
 
 logger = logging.getLogger(__name__)
 
@@ -62,11 +64,37 @@ async def _check_redis() -> str:
                 await client.aclose()
 
 
+async def _check_workers() -> str:
+    """¿Cada una de las NUM_PARTITIONS particiones tiene un worker latiendo?
+
+    Cada worker renueva `ctr:worker:heartbeat:{p}` (TTL 60 s) en cada vuelta de
+    su loop; si falta la key, el worker esta muerto, colgado o todavia
+    reintentando el arranque. Sin este check, el HTTP respondia 202 con los 8
+    workers caidos y nadie se enteraba (incidentes 2026-10-16 y 2026-10-23).
+    """
+    client: redis.Redis | None = None
+    try:
+        client = redis.from_url(settings.redis_url, socket_connect_timeout=_DEP_TIMEOUT_SEC)
+        keys = [f"{HEARTBEAT_KEY_PREFIX}{p}" for p in range(NUM_PARTITIONS)]
+        valores = await asyncio.wait_for(client.mget(keys), timeout=_DEP_TIMEOUT_SEC)
+        faltan = [f"p{p}" for p, v in enumerate(valores) if v is None]
+        return "ok" if not faltan else f"fail: sin heartbeat {','.join(faltan)}"
+    except Exception as exc:
+        logger.warning("readiness_workers_check_failed", exc_info=exc)
+        return f"fail: {type(exc).__name__}"
+    finally:
+        if client is not None:
+            with contextlib.suppress(Exception):
+                await client.aclose()
+
+
 @router.get("", response_model=HealthResponse)
 @router.get("/ready", response_model=HealthResponse)
 async def ready(response: Response) -> HealthResponse:
-    db_status, redis_status = await asyncio.gather(_check_db(), _check_redis())
-    checks = {"db": db_status, "redis": redis_status}
+    db_status, redis_status, workers_status = await asyncio.gather(
+        _check_db(), _check_redis(), _check_workers()
+    )
+    checks = {"db": db_status, "redis": redis_status, "workers": workers_status}
     overall_ok = all(v == "ok" for v in checks.values())
     if not overall_ok:
         response.status_code = status.HTTP_503_SERVICE_UNAVAILABLE
