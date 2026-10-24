@@ -34,6 +34,12 @@ VENV_PY="/app/.venv/bin/python"
 # boot/DNS de Postgres/Redis y crashear con gaierror "Name or service not
 # known" (paso real 2026-06: los 8 workers murieron al arrancar y un episodio
 # quedo integrity_compromised). Reintenta hasta ~2 min y recien ahi falla.
+#
+# Redis NO se espera con wait_for_tcp: "puerto abierto" != "listo". Tras un
+# reinicio del stack (2026-10-16 y 2026-10-23) Redis acepto TCP pero respondia
+# LOADING (BusyLoadingError) mientras cargaba el dataset, `ensure_consumer_group`
+# exploto y los 8 workers murieron con el HTTP aun devolviendo 202. Redis se
+# espera con PING real (wait_redis, con la auth de REDIS_URL).
 wait_for_tcp() {
   # $1=host  $2=port  $3=nombre
   [ -n "$1" ] || { echo "[ctr-entrypoint] $3: host vacio, no espero"; return 0; }
@@ -59,9 +65,8 @@ url_part() {
 DB_URL_VAR="CTR_DB_URL"
 [ -n "${CTR_DB_URL:-}" ] || DB_URL_VAR="CTR_STORE_URL"
 PG_HOST=$(url_part "$DB_URL_VAR" hostname); PG_PORT=$(url_part "$DB_URL_VAR" port); [ -n "$PG_PORT" ] || PG_PORT=5432
-RD_HOST=$(url_part REDIS_URL hostname);     RD_PORT=$(url_part REDIS_URL port);     [ -n "$RD_PORT" ] || RD_PORT=6379
 wait_for_tcp "$PG_HOST" "$PG_PORT" "Postgres"
-wait_for_tcp "$RD_HOST" "$RD_PORT" "Redis"
+"$VENV_PY" -m ctr_service.workers.wait_redis --timeout 120 --interval 2
 
 # ── Migraciones (fallar duro) ─────────────────────────────────────────────
 # Con la DB ya disponible (wait_for arriba), un fallo de alembic aca es un
@@ -99,9 +104,15 @@ case "${CTR_MODE:-server}" in
     # in-process y el container) => rompe single-writer (ADR-010). En prod usar
     # CTR_MODE=http para el ctr-service y dejar los ctr-worker-N como unicos
     # writers.
-    echo "[ctr-entrypoint] arrancando workers partition 0-7 en background (modo server monolitico)"
+    #
+    # Cada particion corre bajo ctr-supervise-worker: si el worker muere (como
+    # los 8 el 2026-10-16 y el 2026-10-23), se relanza con backoff. Preserva la
+    # INVARIANTE single-writer porque hay exactamente UN supervisor por
+    # particion y el worker corre en foreground dentro de su loop: el siguiente
+    # lanzamiento ocurre recien cuando el anterior termino, nunca dos a la vez.
+    echo "[ctr-entrypoint] arrancando workers partition 0-7 supervisados en background (modo server monolitico)"
     for p in 0 1 2 3 4 5 6 7; do
-      "$VENV_PY" -m ctr_service.workers.partition_worker --partition "$p" &
+      ctr-supervise-worker "$p" &
     done
     echo "[ctr-entrypoint] arrancando HTTP server :8007"
     exec "$VENV_PY" -m uvicorn ctr_service.main:app --host 0.0.0.0 --port 8007
