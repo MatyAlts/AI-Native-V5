@@ -1,0 +1,44 @@
+> Strict TDD: cada tarea de código arranca con el test en ROJO (ejecutado y visto fallar por la razón correcta), después el mínimo código para VERDE, triangulación y refactor. Safety net previo: correr la suite existente de los archivos que se tocan y anotar el baseline (`uv run pytest apps/ctr-service/tests/unit apps/ctr-service/tests/test_health.py -q`; en web-student `pnpm test` acotado a los tests de `EpisodePage`, recordando que bajo Node 26 los rojos de localStorage son ambientales).
+
+## 1. Arranque: esperar a que Redis responda PING
+
+- [x] 1.1 RED: crear `apps/ctr-service/tests/unit/test_wait_redis.py` con un fake client (sin Redis real) que cubra: `PONG` al primer intento → éxito; `BusyLoadingError` ×2 y luego `PONG` → éxito con 2 reintentos logueados; `ConnectionError` siempre → falla al agotar el tope con la causa en el mensaje; `AuthenticationError` → no listo, causa en el mensaje. `sleep`/`clock` inyectados para no esperar. Verificar: los 4 tests fallan por import inexistente.
+- [x] 1.2 GREEN: implementar `ctr_service/workers/wait_redis.py` (`esperar_redis(...)` + `main()` con `--timeout` / `--interval`, exit 0/1, logs ASCII). Verificar: 1.1 en verde.
+- [x] 1.3 RED→GREEN: test de `main()` que con el tope agotado devuelve exit code 1 y con éxito 0 (via `pytest.raises(SystemExit)` o retorno). Verificar: verde.
+- [x] 1.4 En `apps/ctr-service/docker-entrypoint.sh` reemplazar `wait_for_tcp "$RD_HOST" "$RD_PORT" "Redis"` por `"$VENV_PY" -m ctr_service.workers.wait_redis --timeout 120 --interval 2` (Postgres sigue con `wait_for_tcp`) y actualizar el comentario del incidente 2026-10-16. Verificar: `sh -n apps/ctr-service/docker-entrypoint.sh` sin errores y `grep` muestra que Redis ya no usa `wait_for_tcp`.
+
+## 2. Worker: `ensure_consumer_group` sobrevive a transitorios
+
+- [x] 2.1 RED: en `apps/ctr-service/tests/unit/test_partition_worker.py` agregar tests con un `redis_client` mock: (a) `xgroup_create` lanza `BusyLoadingError` ×2 y luego OK → `ensure_consumer_group` retorna, 3 llamadas, sleeps con backoff creciente; (b) `ResponseError("BUSYGROUP ...")` → retorna sin reintentar; (c) `ResponseError("WRONGTYPE ...")` → propaga; (d) `ConnectionError`/`TimeoutError` → reintenta; (e) `stop()` durante la espera → retorna/sale sin agotar el backoff; (f) la llamada sigue usando `id="0"` y `mkstream=True`. Verificar: (a), (d), (e) fallan hoy; (b), (c), (f) documentan el comportamiento a preservar.
+- [x] 2.2 GREEN: implementar el reintento en `PartitionWorker.ensure_consumer_group` reusando `_es_transitorio`, backoff 1→30 s con tope, espera interrumpible por `self._stop`, delays inyectables. Verificar: todos los tests de 2.1 en verde y el resto de `test_partition_worker.py` sigue en verde. **Desvío**: no reusa `_es_transitorio` tal cual (incluye `ResponseError`, p. ej. WRONGTYPE, que debe propagar): se agregó `_es_transitorio_de_redis` (ConnectionError/TimeoutError/OSError).
+- [x] 2.3 RED→GREEN (fijación): test de que un `BusyLoadingError` lanzado por `_process_batch` no termina `run()` (el loop sigue hasta `stop()`). Debería pasar sin cambios de código; si falla, arreglar. Verificar: verde.
+
+## 3. Heartbeat por partición
+
+- [x] 3.1 RED: tests en `test_partition_worker.py`: `run()` escribe `ctr:worker:heartbeat:{p}` con `ex=60` en cada vuelta del loop (mock de `set`, 2 vueltas → 2 escrituras); no escribe heartbeat mientras `ensure_consumer_group` no tuvo éxito; un fallo del `set` del heartbeat no impide que se ejecute `_process_batch`. Verificar: fallan.
+- [x] 3.2 GREEN: implementar el heartbeat en `run()` (constantes `HEARTBEAT_KEY_PREFIX` y `HEARTBEAT_TTL_SECONDS` a nivel módulo, `try` propio). Verificar: 3.1 en verde, resto del archivo en verde.
+
+## 4. Readiness del ctr-service reporta a los workers
+
+- [x] 4.1 RED: en `apps/ctr-service/tests/test_health.py` agregar: 8 heartbeats presentes → 200 y `checks["workers"] == "ok"`; ninguno → 503 con las 8 particiones nombradas; falta sólo p5 → 503 nombrando `p5`; `/health/live` sigue 200 con workers caídos. Parchar `_check_workers` / el cliente Redis como hacen los tests existentes; actualizar los 3 tests existentes de readiness para parchar también `_check_workers` en "ok". Verificar: los nuevos fallan.
+- [x] 4.2 GREEN: implementar `_check_workers()` en `routes/health.py` (MGET de las keys para `range(NUM_PARTITIONS)` importado de `services/producer.py`, timeout 2 s, `"fail: sin heartbeat p3,p5"`), sumarlo al `gather` y a `checks`. Verificar: `uv run pytest apps/ctr-service/tests/test_health.py -q` en verde.
+- [x] 4.3 RED→GREEN (triangulación): test de que una key de heartbeat con otro prefijo o una partición fuera de rango no cuenta, y de que un error de Redis en el check devuelve `fail: <Tipo>` (no excepción). Verificar: verde.
+
+## 5. Supervisión de workers en `CTR_MODE=server`
+
+- [x] 5.1 RED: crear `apps/ctr-service/tests/unit/test_supervise_worker.py` que invoque `apps/ctr-service/ctr-supervise-worker.sh` con `subprocess` y `sh`, usando `CTR_VENV_PY` apuntando a un "worker" falso (script que appendea una línea a un archivo y sale con rc=1), `CTR_SUPERVISE_MAX_RESTARTS=3` y backoff en 0/1 s. Afirmar: el falso se lanzó exactamente 3 veces; el log contiene `partition=3` y `rc=1` en cada salida; los lanzamientos nunca se solapan (el falso escribe `start`/`end` y no hay dos `start` seguidos). `pytest.mark.skipif(shutil.which("sh") is None)`. Verificar: falla porque el script no existe.
+- [x] 5.2 GREEN: crear `apps/ctr-service/ctr-supervise-worker.sh` (POSIX sh, ASCII en stdout, worker en foreground, backoff exponencial con tope `CTR_SUPERVISE_BACKOFF_MAX` y reset tras `CTR_SUPERVISE_RESET_AFTER` s vivo, `CTR_SUPERVISE_MAX_RESTARTS` opcional). Verificar: 5.1 en verde y `sh -n` OK.
+- [x] 5.3 RED→GREEN (triangulación): test de que el backoff crece y respeta el tope (log con los delays `1,2,4,...,MAX`) usando un `sleep` falso vía PATH o variable de delay base. Verificar: verde.
+- [x] 5.4 Dockerfile + entrypoint: `COPY` del script a `/usr/local/bin/ctr-supervise-worker` + `chmod +x` en `apps/ctr-service/Dockerfile`; en la rama `server|*` del entrypoint lanzar `ctr-supervise-worker "$p" &` en lugar del worker suelto, y actualizar el comentario de INVARIANTE single-writer explicando por qué el supervisor la preserva. Verificar: `sh -n` OK y `docker build -f apps/ctr-service/Dockerfile .` construye (si no hay Docker local: "sin verificar" en el PR, lo cubre el build de EasyPanel). **Sin verificar**: `docker build` (el daemon de Docker no estaba corriendo); `sh -n` OK.
+
+## 6. UX: el alumno no vuelve a la lista en silencio
+
+- [x] 6.1 RED: test vitest nuevo `apps/web-student/tests/EpisodioNoSeAbrio.test.tsx` (siguiendo el patrón de mocks de `CerrarYPausarEpisodio.test.tsx`): `getEpisodeState` rechaza con `EpisodeStateError(404)` → se muestra el mensaje de apertura, botones "Reintentar" y "Volver", `onExit` NO se llamó y `sessionStorage["active-episode-id"]` quedó limpio; click en "Reintentar" con el mock resolviendo el estado → desaparece el error y carga; click en "Volver" → `onExit` llamado una vez; 403 → `onExit` llamado (comportamiento previo). Verificar: los casos 404 fallan hoy.
+- [x] 6.2 GREEN: en `EpisodePage.tsx`, rama 404 del `catch` de la hidratación → `setError(<mensaje>)` + limpiar `ACTIVE_EPISODE_KEY` (sin `salir()`); agregar `reloadKey` a las deps del effect; sumar el botón "Reintentar" al panel `!tarea` existente. No tocar listeners de abandono ni `salir()`. Verificar: 6.1 en verde y los demás tests de `EpisodePage` siguen como en el baseline.
+
+## 7. Verificación integral y PR
+
+- [x] 7.1 Correr la suite del ctr-service (`uv run pytest apps/ctr-service/tests -q -m "not integration"`) y comparar con el baseline: cero regresiones. Si hay Docker, correr también `-m integration` (`test_ctr_end_to_end.py`) para confirmar que el heartbeat no rompe el flujo real. Unit: 127 passed (baseline 94 + 33 nuevos). **Sin verificar**: `-m integration` (19 skipped, sin Docker).
+- [x] 7.2 Lint/format: `uv run ruff check apps/ctr-service && uv run ruff format --check apps/ctr-service`, `pnpm --filter web-student typecheck` y biome sobre `EpisodePage.tsx`. Verificar: limpio (CRLF de `index.css` es falso positivo conocido).
+- [x] 7.3 Confirmar que el gate de `e2e-smoke.yml` (curl a `:8007/health` con workers de `dev-start-all.sh`) sigue pasando: en el CI del PR o localmente levantando ctr-service + workers y verificando `/health` → 200 con `workers: ok` en ≤60 s. **Sin verificar localmente** (sin Redis/Postgres/Docker); el gate espera hasta 60 s y los workers escriben el heartbeat en <=2 s: lo cubre el CI del PR.
+- [x] 7.4 Documentar en el PR el plan de deploy/rollback y las 2 Open Questions de `design.md` (CTR_MODE real en EasyPanel y si coexisten `ctr-worker-N`; quién consume `/health` del ctr). Verificar: la descripción del PR las incluye. No mergear: el merge lo hace Neyén. Cuerpo en `PR_BODY.md` (no commiteado); el PR no se abrió.
