@@ -48,6 +48,18 @@ logger = logging.getLogger(__name__)
 
 MAX_ATTEMPTS = 3  # después se envía a DLQ
 
+# Backoff de `ensure_consumer_group` ante un Redis no listo (BusyLoadingError,
+# conexion cortada...): 1, 2, 4, ... segundos con este tope.
+BACKOFF_INICIAL_SECONDS = 1.0
+BACKOFF_MAX_SECONDS = 30.0
+
+# Heartbeat por particion: `/health/ready` (routes/health.py) lee estas keys.
+# El prefijo es propio del CTR (`ctr:`) y no colisiona con `tutor:*`. El TTL deja
+# margen para un batch lento (32 mensajes con la DB lenta); con block_ms=2000 el
+# loop renueva la key cada <=2 s en reposo.
+HEARTBEAT_KEY_PREFIX = "ctr:worker:heartbeat:"
+HEARTBEAT_TTL_SECONDS = 60
+
 # Contador atómico de seq del tutor-service (`SessionManager.SEQ_KEY_PREFIX`).
 # El CTR normalmente no conoce keys de otro servicio; la excepción es
 # deliberada, está acotada a un SET y se documenta acá.
@@ -129,21 +141,79 @@ class PartitionWorker:
         self._stop.set()
 
     async def ensure_consumer_group(self) -> None:
-        """Crea el consumer group si no existe (idempotente)."""
-        try:
-            await self.redis.xgroup_create(
-                name=self.stream_key,
-                groupname=self.cfg.consumer_group,
-                id="0",
-                mkstream=True,
-            )
-        except redis.ResponseError as e:
-            if "BUSYGROUP" not in str(e):
+        """Crea el consumer group si no existe (idempotente).
+
+        Los fallos TRANSITORIOS de Redis (cargando el dataset, conexion
+        cortada, timeout) se reintentan con backoff exponencial 1, 2, 4... hasta
+        `BACKOFF_MAX_SECONDS`, sin tope de intentos (misma politica que
+        `_es_transitorio` en `_process_message`). Antes esta llamada no
+        reintentaba: el 2026-10-16 y el 2026-10-23 un Redis con
+        `BusyLoadingError` tras reiniciar el stack mato a los 8 workers.
+        Cualquier otro error (p. ej. WRONGTYPE) se propaga: un problema de
+        configuracion tiene que verse, no quedar en un loop silencioso. Por eso
+        NO se reusa `_es_transitorio` tal cual: `redis.RedisError` incluye a
+        `ResponseError` (WRONGTYPE, NOAUTH...), que aca es permanente.
+
+        `id="0"` se conserva: el worker procesa tambien lo encolado mientras
+        estuvo caido. Si se pide `stop()`, la espera se corta y retorna.
+        """
+        delay = BACKOFF_INICIAL_SECONDS
+        intento = 0
+        while True:
+            intento += 1
+            try:
+                await self.redis.xgroup_create(
+                    name=self.stream_key,
+                    groupname=self.cfg.consumer_group,
+                    id="0",
+                    mkstream=True,
+                )
+                return
+            except redis.ResponseError as e:
+                # BusyLoadingError hereda de ConnectionError, no de ResponseError.
+                if "BUSYGROUP" in str(e):
+                    return
                 raise
+            except Exception as e:
+                if not self._es_transitorio_de_redis(e):
+                    raise
+                exc = e
+            logger.warning(
+                "Worker partition=%d: Redis no listo al crear el consumer group "
+                "(intento %d, %s: %s); reintento en %gs",
+                self.cfg.partition,
+                intento,
+                type(exc).__name__,
+                exc,
+                delay,
+            )
+            if await self._esperar_o_detener(delay):
+                return
+            delay = min(delay * 2, BACKOFF_MAX_SECONDS)
+
+    @staticmethod
+    def _es_transitorio_de_redis(exc: BaseException) -> bool:
+        """Redis no esta listo ahora (carga, red, timeout); no es un error de uso.
+
+        Mas estrecho que `_es_transitorio`: excluye `ResponseError` (el comando
+        fue rechazado por contenido, reintentar da lo mismo).
+        """
+        return isinstance(exc, redis.ConnectionError | redis.TimeoutError | OSError)
+
+    async def _esperar_o_detener(self, seconds: float) -> bool:
+        """Duerme `seconds` o hasta `stop()`. True si se pidio detener."""
+        try:
+            await asyncio.wait_for(self._stop.wait(), timeout=seconds)
+        except TimeoutError:
+            return False
+        return True
 
     async def run(self) -> None:
         """Loop principal del worker."""
         await self.ensure_consumer_group()
+        if self._stop.is_set():
+            logger.info("Worker partition=%d detenido antes de arrancar", self.cfg.partition)
+            return
         logger.info(
             "Worker partition=%d stream=%s consumer=%s iniciado",
             self.cfg.partition,
@@ -157,6 +227,7 @@ class PartitionWorker:
 
         try:
             while not self._stop.is_set():
+                await self._latir()
                 try:
                     await self._process_batch()
                 except Exception:
@@ -168,6 +239,21 @@ class PartitionWorker:
                 await xpending_task
 
         logger.info("Worker partition=%d terminado", self.cfg.partition)
+
+    async def _latir(self) -> None:
+        """Renueva el heartbeat de la particion; un fallo nunca tumba al worker.
+
+        Se llama al inicio de cada vuelta del loop (no desde una task aparte):
+        si el loop se cuelga, la key vence y el health lo muestra.
+        """
+        try:
+            await self.redis.set(
+                f"{HEARTBEAT_KEY_PREFIX}{self.cfg.partition}",
+                f"{utc_now().isoformat()} {self.consumer_name}",
+                ex=HEARTBEAT_TTL_SECONDS,
+            )
+        except Exception:
+            logger.debug("No se pudo escribir el heartbeat de partition=%d", self.cfg.partition)
 
     async def _xpending_metric_loop(self) -> None:
         """Loop background que reporta XPENDING count cada 30s al gauge.
