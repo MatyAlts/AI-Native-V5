@@ -82,6 +82,10 @@ import {
 import { helpContent } from "../utils/helpContent"
 
 const ACTIVE_EPISODE_KEY = "active-episode-id"
+
+/** Mensaje cuando el estado del episodio da 404 aun despues de los reintentos. */
+const EPISODIO_NO_SE_ABRIO =
+  "El ejercicio no terminó de abrirse. Puede ser una demora del sistema: probá de nuevo en unos segundos."
 // ED-2: clave de persistencia del layout de los 3 paneles del episodio.
 const PANELS_STORAGE_KEY = "web-student.episode.panels.v1"
 
@@ -196,6 +200,9 @@ export function EpisodeView({ episodeId, onExit, ejercicioContext, getToken }: E
   const [classification, setClassification] = useState<Classification | null>(null)
   const [classificationFailed, setClassificationFailed] = useState<boolean>(false)
   const [error, setError] = useState<string | null>(null)
+  // Contador para "Reintentar" cuando el episodio no se pudo abrir: cambiarlo
+  // re-dispara la hidratacion sin remontar la pantalla.
+  const [reloadKey, setReloadKey] = useState(0)
   // Notas del alumno (N2 "Anotacion", UI-1). Se hidratan del CTR y NotesPanel
   // appendea localmente al guardar. Cada guardado emite anotacion_creada.
   const [notes, setNotes] = useState<{ contenido: string; ts: number }[]>([])
@@ -468,6 +475,7 @@ export function EpisodeView({ episodeId, onExit, ejercicioContext, getToken }: E
   }, [closed])
 
   // Hydration on-mount. El episodeId viene del path param, no del state.
+  // biome-ignore lint/correctness/useExhaustiveDependencies: `reloadKey` no se lee dentro del efecto; es un disparador para el "Reintentar" del 404.
   useEffect(() => {
     let cancelled = false
     setHydrating(true)
@@ -615,7 +623,16 @@ export function EpisodeView({ episodeId, onExit, ejercicioContext, getToken }: E
         )
       } catch (e) {
         if (cancelled) return
-        if (e instanceof EpisodeStateError && (e.status === 404 || e.status === 403)) {
+        if (e instanceof EpisodeStateError && e.status === 404) {
+          // 404 tras los reintentos de `getEpisodeState` (~3 s): el episodio
+          // todavia no llego a Postgres (workers del CTR caidos o atrasados,
+          // incidentes 2026-10-16 y 2026-10-23). Antes se llamaba a `salir()` y
+          // el alumno volvia a la lista sin ningun aviso. Ahora se queda en la
+          // pantalla con un error accionable (Reintentar / Volver). Se limpia el
+          // marcador para que "Volver" no reabra este mismo episodio.
+          window.sessionStorage.removeItem(ACTIVE_EPISODE_KEY)
+          setError(EPISODIO_NO_SE_ABRIO)
+        } else if (e instanceof EpisodeStateError && e.status === 403) {
           window.sessionStorage.removeItem(ACTIVE_EPISODE_KEY)
           salir()
         } else {
@@ -629,7 +646,7 @@ export function EpisodeView({ episodeId, onExit, ejercicioContext, getToken }: E
     return () => {
       cancelled = true
     }
-  }, [episodeId, salir, ejercicioOrden, entregaId, applyLanguage])
+  }, [episodeId, salir, ejercicioOrden, entregaId, applyLanguage, reloadKey])
 
   // UI-8: enviar un mensaje al tutor. Si el stream falla (LLM saturado, red,
   // sesion pausada), NO cerramos el episodio ni ofrecemos salir — un error
@@ -916,6 +933,15 @@ export function EpisodeView({ episodeId, onExit, ejercicioContext, getToken }: E
           <p className="text-sm font-medium text-danger mb-2">
             {error ?? "No pudimos cargar el episodio."}
           </p>
+          {error === EPISODIO_NO_SE_ABRIO && (
+            <button
+              type="button"
+              onClick={() => setReloadKey((k) => k + 1)}
+              className="mt-4 mr-2 px-4 py-2 rounded text-sm font-medium border border-border"
+            >
+              Reintentar
+            </button>
+          )}
           <button
             type="button"
             onClick={salir}
