@@ -644,3 +644,127 @@ describe("CorreccionesView — codigo entregado vs reconstruido", () => {
     })
   })
 })
+
+// ─── Re-entrega (returned -> submitted con la calificacion vieja adherida) ───
+//
+// `setupFetchMock` no distingue metodo HTTP, y aca el punto es justamente
+// POST vs PATCH sobre la misma URL: se stubea fetch a mano y se inspeccionan
+// las llamadas.
+describe("CorreccionesView — re-entrega (submitted con calificacion previa)", () => {
+  const calificacionPrevia = {
+    id: "d1",
+    entrega_id: ENTREGA_ID,
+    nota_final: 4,
+    feedback_general: "Falta manejo de errores",
+    detalle_criterios: [],
+    graded_at: "2026-05-07T13:00:00Z",
+    graded_by: "docente-1",
+  }
+
+  function stubFetch(opts: { previa: typeof calificacionPrevia | null; postStatus?: number }) {
+    const calls: { method: string; url: string }[] = []
+    const json = (status: number, body: unknown) =>
+      Promise.resolve({
+        ok: status >= 200 && status < 300,
+        status,
+        json: () => Promise.resolve(body),
+        text: () => Promise.resolve(JSON.stringify(body)),
+      } as Response)
+    vi.stubGlobal(
+      "fetch",
+      vi.fn((url: string | URL | Request, init?: RequestInit) => {
+        const u = typeof url === "string" ? url : url.toString()
+        const method = init?.method ?? "GET"
+        calls.push({ method, url: u })
+        if (u.includes("/correccion-ia")) return json(200, { correcciones: [] })
+        if (u.includes("/ejercicios")) return json(200, [])
+        if (u.includes("/api/v1/tareas-practicas/")) return json(200, mockTarea)
+        if (u.endsWith("/calificar")) {
+          return (opts.postStatus ?? 200) === 409
+            ? json(409, { detail: "Esta entrega ya tiene una calificacion" })
+            : json(200, calificacionPrevia)
+        }
+        if (u.endsWith("/calificacion")) {
+          if (method === "PATCH") return json(200, { ...calificacionPrevia, nota_final: 9 })
+          return opts.previa ? json(200, opts.previa) : json(404, { detail: "no hay" })
+        }
+        if (u.includes(`/api/v1/entregas/${ENTREGA_ID}`)) return json(200, mockEntregaGraded)
+        return json(200, { data: [mockEntregaSubmitted], meta: { cursor_next: null } })
+      }),
+    )
+    return calls
+  }
+
+  async function abrirEntrega() {
+    renderWithRouter(<CorreccionesView comisionId={COMISION_ID} getToken={getToken} />)
+    await waitFor(() => {
+      expect(screen.getByTestId("entrega-drill-btn")).toBeDefined()
+    })
+    fireEvent.click(screen.getByTestId("entrega-drill-btn"))
+    await waitFor(() => {
+      expect(screen.getByTestId("calificar-btn")).toBeDefined()
+    })
+  }
+
+  async function calificarConNotaYFeedback() {
+    fireEvent.change(screen.getByTestId("nota-final-input"), { target: { value: "9" } })
+    fireEvent.change(screen.getByTestId("feedback-input"), { target: { value: "Mejoró mucho" } })
+    fireEvent.click(screen.getByTestId("calificar-btn"))
+  }
+
+  const escrituras = (calls: { method: string; url: string }[]) =>
+    calls.filter((c) => c.method === "POST" || c.method === "PATCH")
+
+  it("re-entrega: Calificar actualiza la calificacion existente por PATCH y no hace POST", async () => {
+    const calls = stubFetch({ previa: calificacionPrevia })
+    await abrirEntrega()
+    await waitFor(() => {
+      expect(screen.getByTestId("reentrega-aviso")).toBeDefined()
+    })
+    await calificarConNotaYFeedback()
+    await waitFor(() => {
+      expect(screen.getByTestId("devolver-btn")).toBeDefined()
+    })
+    const w = escrituras(calls)
+    expect(w).toHaveLength(1)
+    expect(w[0].method).toBe("PATCH")
+    expect(w[0].url).toContain(`/api/v1/entregas/${ENTREGA_ID}/calificacion`)
+  })
+
+  it("primera calificacion (sin calificacion previa): sigue usando POST /calificar, sin aviso", async () => {
+    const calls = stubFetch({ previa: null })
+    await abrirEntrega()
+    expect(screen.queryByTestId("reentrega-aviso")).toBeNull()
+    await calificarConNotaYFeedback()
+    await waitFor(() => {
+      expect(screen.getByTestId("devolver-btn")).toBeDefined()
+    })
+    const w = escrituras(calls)
+    expect(w).toHaveLength(1)
+    expect(w[0].method).toBe("POST")
+    expect(w[0].url).toContain("/calificar")
+  })
+
+  it("si el POST responde 409 reintenta con PATCH y no muestra el error al docente", async () => {
+    // Sin calificacion previa visible (sondeo viejo/fallido) pero el back ya la tiene.
+    const calls = stubFetch({ previa: null, postStatus: 409 })
+    await abrirEntrega()
+    await calificarConNotaYFeedback()
+    await waitFor(() => {
+      expect(screen.getByTestId("devolver-btn")).toBeDefined()
+    })
+    expect(escrituras(calls).map((c) => c.method)).toEqual(["POST", "PATCH"])
+    expect(screen.queryByText(/ya tiene una calificacion/)).toBeNull()
+  })
+
+  it("re-entrega: muestra la nota anterior como referencia y el form arranca vacio", async () => {
+    stubFetch({ previa: calificacionPrevia })
+    await abrirEntrega()
+    const aviso = await screen.findByTestId("reentrega-aviso")
+    expect(aviso.textContent).toContain("Re-entrega")
+    expect(aviso.textContent).toContain("nota anterior: 4")
+    expect(aviso.textContent).toContain("Falta manejo de errores")
+    expect((screen.getByTestId("nota-final-input") as HTMLInputElement).value).toBe("")
+    expect((screen.getByTestId("feedback-input") as HTMLTextAreaElement).value).toBe("")
+  })
+})

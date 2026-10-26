@@ -34,7 +34,7 @@ import { ResumenCorreccionIA } from "../components/ResumenCorreccionIA"
 import { useStudentProfiles } from "../hooks/useStudentProfiles"
 import { type ArtefactoEjercicio, type CorreccionIA, listarCorreccionesIA } from "../lib/api"
 import {
-  type CalificacionCreate,
+  type Calificacion,
   type CalificacionCriterio,
   type EjercicioEstado,
   type EntregaDocente,
@@ -1161,6 +1161,11 @@ function GradingFormView({
   const [openGrupos, setOpenGrupos] = useState<Record<string, boolean>>({})
 
   const yaCalificada = entrega.estado === "graded" || entrega.estado === "returned"
+  // Re-entrega (NB-4): el alumno re-envio una TP devuelta y la entrega quedo
+  // `submitted` CON la calificacion vieja adherida. No es `yaCalificada` (el
+  // form arranca vacio para la version nueva) pero `POST /calificar` daria 409:
+  // se la sondea aparte, solo como referencia y para elegir PATCH al guardar.
+  const [calificacionPrevia, setCalificacionPrevia] = useState<Calificacion | null>(null)
 
   // Resolver episode_ids: primero de ejercicio_estados, fallback a analytics (por orden temporal)
   const [resolvedEpisodeMap, setResolvedEpisodeMap] = useState<Record<number, string>>({})
@@ -1427,6 +1432,25 @@ function GradingFormView({
     }
   }, [entrega.id, yaCalificada, getToken])
 
+  // Sondeo de calificacion previa en entregas `submitted` (re-entrega). Best-effort:
+  // si falla, se trata como primera entrega y `handleCalificar` cae a PATCH ante un 409.
+  useEffect(() => {
+    setCalificacionPrevia(null)
+    if (entrega.estado !== "submitted") return
+    let cancelled = false
+    entregasDocenteApi
+      .getCalificacion(entrega.id, getToken)
+      .then((c) => {
+        if (!cancelled && c && typeof c.nota_final === "number") setCalificacionPrevia(c)
+      })
+      .catch(() => {
+        /* sin sondeo: el fallback 409 -> PATCH cubre el caso */
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [entrega.id, entrega.estado, getToken])
+
   /**
    * Descarga el código entregado como un .txt con un ejercicio por bloque.
    *
@@ -1508,14 +1532,26 @@ function GradingFormView({
       const detalle = tieneRubrica
         ? serializeCriterios(rubricaRows, criterioScores, criterioComments)
         : undefined
-      const body: CalificacionCreate = {
+      const body: CalificacionBody = {
         nota_final: notaNum,
         feedback_general: feedback.trim(),
         // `CalificacionCriterio` de api.ts ahora matchea el contrato real
         // (HALLAZGO-B) — `DetalleCriterioPayload` es asignable sin cast.
         ...(detalle ? { detalle_criterios: detalle } : {}),
       }
-      await entregasDocenteApi.calificar(entrega.id, body, getToken)
+      if (calificacionPrevia) {
+        // Re-entrega: se actualiza la calificacion existente (el PATCH deja `graded`).
+        await recalificarEntrega(entrega.id, body, getToken)
+      } else {
+        try {
+          await entregasDocenteApi.calificar(entrega.id, body, getToken)
+        } catch (e) {
+          // 409 = ya habia calificacion (sondeo viejo/fallido o carrera): es una
+          // re-entrega igual, asi que se actualiza en vez de mostrar el error crudo.
+          if ((e as { status?: number }).status !== 409) throw e
+          await recalificarEntrega(entrega.id, body, getToken)
+        }
+      }
       // Refetch entrega para tener estado=graded actualizado
       const updated = await entregasDocenteApi.get(entrega.id, getToken)
       // BUG-12: si el docente llego a calificar con `reediting=true` (ej. via
@@ -1942,6 +1978,21 @@ function GradingFormView({
             data-testid="calificacion-load-error"
           >
             {calificacionError}
+          </div>
+        )}
+
+        {!loadingCalificacion && calificacionPrevia && entrega.estado === "submitted" && (
+          <div
+            className="mb-4 rounded-lg border border-warning/30 bg-warning-soft p-3 text-xs text-warning space-y-1"
+            data-testid="reentrega-aviso"
+          >
+            <p className="font-medium">
+              Re-entrega — nota anterior: {calificacionPrevia.nota_final}
+            </p>
+            <p className="whitespace-pre-wrap">
+              Feedback anterior: {calificacionPrevia.feedback_general}
+            </p>
+            <p>El alumno volvió a entregar: calificá esta versión; reemplaza la nota anterior.</p>
           </div>
         )}
 
