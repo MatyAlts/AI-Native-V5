@@ -261,3 +261,262 @@ def test_los_prefijos_del_tutor_no_pueden_derivar_en_silencio() -> None:
 
     assert TUTOR_SEQ_KEY_PREFIX == SEQ_KEY_PREFIX
     assert TUTOR_SESSION_KEY_PREFIX == SESSION_KEY_PREFIX
+
+
+# ── ensure_consumer_group: sobrevive a transitorios de Redis ──────────────
+# Incidente 2026-10-16 / 2026-10-23: Redis cargando el dataset (BusyLoadingError)
+# mató a los 8 workers porque `ensure_consumer_group` no reintentaba.
+
+
+def _worker_con_redis(redis_mock: MagicMock, partition: int = 3) -> PartitionWorker:
+    return PartitionWorker(
+        config=PartitionConfig(partition=partition),
+        redis_client=redis_mock,
+        session_factory=MagicMock(),
+    )
+
+
+def _redis_con_xgroup(*efectos: object) -> MagicMock:
+    from unittest.mock import AsyncMock
+
+    r = MagicMock()
+    r.xgroup_create = AsyncMock(side_effect=list(efectos))
+    return r
+
+
+async def test_ensure_consumer_group_reintenta_busyloading_con_backoff_creciente() -> None:
+    from unittest.mock import AsyncMock
+
+    import redis as redis_lib
+
+    loading = redis_lib.BusyLoadingError("Redis is loading the dataset in memory")
+    r = _redis_con_xgroup(loading, loading, True)
+    worker = _worker_con_redis(r)
+    worker._esperar_o_detener = AsyncMock(return_value=False)  # type: ignore[method-assign]
+
+    await worker.ensure_consumer_group()
+
+    assert r.xgroup_create.await_count == 3
+    esperas = [c.args[0] for c in worker._esperar_o_detener.await_args_list]
+    assert esperas == [1, 2]
+
+
+async def test_ensure_consumer_group_backoff_se_topa_en_30s() -> None:
+    from unittest.mock import AsyncMock
+
+    import redis as redis_lib
+
+    fallos = [redis_lib.BusyLoadingError("loading")] * 8
+    r = _redis_con_xgroup(*fallos, True)
+    worker = _worker_con_redis(r)
+    worker._esperar_o_detener = AsyncMock(return_value=False)  # type: ignore[method-assign]
+
+    await worker.ensure_consumer_group()
+
+    esperas = [c.args[0] for c in worker._esperar_o_detener.await_args_list]
+    assert esperas == [1, 2, 4, 8, 16, 30, 30, 30]
+
+
+async def test_ensure_consumer_group_busygroup_retorna_sin_reintentar() -> None:
+    import redis as redis_lib
+
+    r = _redis_con_xgroup(redis_lib.ResponseError("BUSYGROUP Consumer Group name already exists"))
+    worker = _worker_con_redis(r)
+
+    await worker.ensure_consumer_group()
+
+    assert r.xgroup_create.await_count == 1
+
+
+async def test_ensure_consumer_group_error_permanente_propaga_sin_reintentar() -> None:
+    import pytest
+    import redis as redis_lib
+
+    r = _redis_con_xgroup(
+        redis_lib.ResponseError("WRONGTYPE Operation against a key holding the wrong kind of value")
+    )
+    worker = _worker_con_redis(r)
+
+    with pytest.raises(redis_lib.ResponseError, match="WRONGTYPE"):
+        await worker.ensure_consumer_group()
+
+    assert r.xgroup_create.await_count == 1
+
+
+async def test_ensure_consumer_group_reintenta_connection_y_timeout() -> None:
+    from unittest.mock import AsyncMock
+
+    import redis as redis_lib
+
+    r = _redis_con_xgroup(
+        redis_lib.ConnectionError("Connection refused"),
+        redis_lib.TimeoutError("Timeout reading from socket"),
+        True,
+    )
+    worker = _worker_con_redis(r)
+    worker._esperar_o_detener = AsyncMock(return_value=False)  # type: ignore[method-assign]
+
+    await worker.ensure_consumer_group()
+
+    assert r.xgroup_create.await_count == 3
+
+
+async def test_ensure_consumer_group_stop_interrumpe_la_espera_del_backoff() -> None:
+    """El backoff real (30 s) no se cumple: stop() corta la espera."""
+    import asyncio
+
+    import redis as redis_lib
+
+    r = _redis_con_xgroup(*([redis_lib.BusyLoadingError("loading")] * 50))
+    worker = _worker_con_redis(r)
+    worker.stop()  # ya detenido: la primera espera debe volver de inmediato
+
+    await asyncio.wait_for(worker.ensure_consumer_group(), timeout=2)
+
+    assert r.xgroup_create.await_count == 1  # no siguió reintentando tras el stop
+
+
+async def test_ensure_consumer_group_stop_durante_la_espera_corta_el_backoff() -> None:
+    import asyncio
+
+    import redis as redis_lib
+
+    r = _redis_con_xgroup(*([redis_lib.BusyLoadingError("loading")] * 50))
+    worker = _worker_con_redis(r)
+
+    tarea = asyncio.create_task(worker.ensure_consumer_group())
+    await asyncio.sleep(0.05)  # ya está esperando el backoff de 1 s
+    worker.stop()
+
+    await asyncio.wait_for(tarea, timeout=0.5)  # < 1 s del backoff
+
+
+async def test_ensure_consumer_group_conserva_id_0_y_mkstream() -> None:
+    r = _redis_con_xgroup(True)
+    worker = _worker_con_redis(r, partition=5)
+
+    await worker.ensure_consumer_group()
+
+    r.xgroup_create.assert_awaited_once_with(
+        name="ctr.p5", groupname="ctr_workers", id="0", mkstream=True
+    )
+
+
+async def test_un_busyloading_en_process_batch_no_termina_run() -> None:
+    """El loop principal ya sobrevivía a errores de infra: queda fijado."""
+    from unittest.mock import AsyncMock, patch
+
+    import redis as redis_lib
+
+    r = MagicMock()
+    r.xgroup_create = AsyncMock(return_value=True)
+    r.set = AsyncMock(return_value=True)
+    worker = _worker_con_redis(r)
+    llamadas = {"n": 0}
+
+    async def batch() -> None:
+        llamadas["n"] += 1
+        if llamadas["n"] < 3:
+            raise redis_lib.BusyLoadingError("loading")
+        worker.stop()
+
+    worker._process_batch = batch  # type: ignore[method-assign]
+    worker._xpending_metric_loop = AsyncMock()  # type: ignore[method-assign]
+
+    with patch("ctr_service.workers.partition_worker.asyncio.sleep", new=AsyncMock()):
+        await worker.run()
+
+    assert llamadas["n"] == 3
+
+
+# ── Heartbeat por partición ───────────────────────────────────────────────
+# Cada vuelta del loop renueva `ctr:worker:heartbeat:{p}` (TTL 60 s). Si el
+# loop se cuelga o el worker muere, la key vence y /health/ready lo muestra.
+
+
+def _worker_para_run(*, vueltas: int, partition: int = 3) -> tuple[PartitionWorker, MagicMock]:
+    """Worker cuyo `run()` da `vueltas` vueltas y se detiene solo."""
+    from unittest.mock import AsyncMock
+
+    r = MagicMock()
+    r.xgroup_create = AsyncMock(return_value=True)
+    r.set = AsyncMock(return_value=True)
+    worker = _worker_con_redis(r, partition=partition)
+    restantes = {"n": vueltas}
+
+    async def batch() -> None:
+        restantes["n"] -= 1
+        if restantes["n"] <= 0:
+            worker.stop()
+
+    worker._process_batch = batch  # type: ignore[method-assign]
+    worker._xpending_metric_loop = AsyncMock()  # type: ignore[method-assign]
+    return worker, r
+
+
+async def test_run_escribe_heartbeat_con_ttl_60_en_cada_vuelta() -> None:
+    from ctr_service.workers.partition_worker import (
+        HEARTBEAT_KEY_PREFIX,
+        HEARTBEAT_TTL_SECONDS,
+    )
+
+    worker, r = _worker_para_run(vueltas=2, partition=3)
+
+    await worker.run()
+
+    assert HEARTBEAT_KEY_PREFIX == "ctr:worker:heartbeat:"
+    assert HEARTBEAT_TTL_SECONDS == 60
+    assert r.set.await_count == 2
+    for call in r.set.await_args_list:
+        assert call.args[0] == "ctr:worker:heartbeat:3"
+        assert "worker-3" in call.args[1]
+        assert call.kwargs == {"ex": 60}
+
+
+async def test_heartbeat_usa_la_key_de_la_particion_del_worker() -> None:
+    worker, r = _worker_para_run(vueltas=1, partition=6)
+
+    await worker.run()
+
+    assert r.set.await_args.args[0] == "ctr:worker:heartbeat:6"
+
+
+async def test_no_escribe_heartbeat_mientras_ensure_consumer_group_no_tuvo_exito() -> None:
+    import asyncio
+    from unittest.mock import AsyncMock
+
+    import redis as redis_lib
+
+    r = MagicMock()
+    r.xgroup_create = AsyncMock(side_effect=redis_lib.BusyLoadingError("loading"))
+    r.set = AsyncMock(return_value=True)
+    worker = _worker_con_redis(r)
+
+    tarea = asyncio.create_task(worker.run())
+    await asyncio.sleep(0.05)  # reintentando el arranque
+    worker.stop()
+    await asyncio.wait_for(tarea, timeout=1)
+
+    r.set.assert_not_awaited()
+
+
+async def test_un_fallo_del_heartbeat_no_impide_procesar_el_batch() -> None:
+    from unittest.mock import AsyncMock
+
+    import redis as redis_lib
+
+    worker, r = _worker_para_run(vueltas=2)
+    r.set = AsyncMock(side_effect=redis_lib.ConnectionError("down"))
+    procesados = {"n": 0}
+    original = worker._process_batch
+
+    async def contando() -> None:
+        procesados["n"] += 1
+        await original()
+
+    worker._process_batch = contando  # type: ignore[method-assign]
+
+    await worker.run()
+
+    assert procesados["n"] == 2
+    assert r.set.await_count == 2

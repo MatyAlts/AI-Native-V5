@@ -30,4 +30,9 @@ ENV PATH="/app/.venv/bin:$PATH" \
 COPY --from=builder /app/apps/ctr-service/docker-entrypoint.sh /usr/local/bin/ctr-entrypoint
 RUN chmod +x /usr/local/bin/ctr-entrypoint
 
+# Supervisor por particion (CTR_MODE=server): relanza el partition_worker si
+# muere, en foreground y de a uno => single-writer preservado (ADR-010).
+COPY --from=builder /app/apps/ctr-service/ctr-supervise-worker.sh /usr/local/bin/ctr-supervise-worker
+RUN chmod +x /usr/local/bin/ctr-supervise-worker
+
 ENTRYPOINT ["/usr/local/bin/ctr-entrypoint"]
