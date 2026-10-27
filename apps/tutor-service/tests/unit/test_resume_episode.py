@@ -355,3 +355,101 @@ async def test_resume_403_si_estudiante_ajeno_con_sesion_viva(
     state = await tutor.sessions.get(episode_id)
     assert state is not None
     assert state.student_pseudonym == student_id
+
+
+# ── tutor-ve-salida-de-ejecucion ────────────────────────────────────
+
+
+def _con_eventos(ep: dict, extra: list[tuple[str, dict]]) -> dict:
+    """Reemplaza el abandono final por `extra` (seq 4..)."""
+    base = ep["events"][:4]
+    plantilla = base[0]
+    for i, (et, payload) in enumerate(extra, start=4):
+        base.append(
+            {
+                **plantilla,
+                "event_uuid": str(uuid4()),
+                "seq": i,
+                "event_type": et,
+                "ts": _ts(i),
+                "payload": payload,
+            }
+        )
+    ep["events"] = base
+    ep["events_count"] = len(base)
+    return ep
+
+
+def _ejecucion(code: str, stdout: str = "", stderr: str = "") -> dict:
+    return {
+        "code": code,
+        "stdout": stdout,
+        "stderr": stderr,
+        "duration_ms": 7.0,
+        "runtime": "pyodide-0.26",
+    }
+
+
+async def _reanudar(tutor: TutorCore, fake_ctr: _FakeCTR, extra: list[tuple[str, dict]]):
+    tenant_id, student_id, episode_id = uuid4(), uuid4(), uuid4()
+    fake_ctr.episodes[str(episode_id)] = _con_eventos(
+        _paused_episode(episode_id, tenant_id, student_id), extra
+    )
+    await tutor.resume_episode(episode_id=episode_id, tenant_id=tenant_id, user_id=student_id)
+    state = await tutor.sessions.get(episode_id)
+    assert state is not None
+    return state
+
+
+async def test_resume_reconstruye_last_execution_identico_al_de_la_sesion_viva(
+    tutor: TutorCore, fake_ctr: _FakeCTR
+) -> None:
+    from tutor_service.services.contexto_ejecucion import construir_ultima_ejecucion
+
+    payload = _ejecucion("print(x)", stdout="o" * 3000, stderr="Traceback\n" + "e" * 5000)
+    state = await _reanudar(tutor, fake_ctr, [("codigo_ejecutado", payload)])
+
+    assert state.last_execution == construir_ultima_ejecucion(payload)
+    assert state.last_execution["stderr"].startswith("[... ")
+    assert state.current_code == "print(x)"
+
+
+async def test_resume_con_dos_ejecuciones_gana_la_ultima(
+    tutor: TutorCore, fake_ctr: _FakeCTR
+) -> None:
+    state = await _reanudar(
+        tutor,
+        fake_ctr,
+        [
+            ("codigo_ejecutado", _ejecucion("a", stderr="NameError primero")),
+            ("codigo_ejecutado", _ejecucion("b", stdout="segundo")),
+        ],
+    )
+    assert state.last_execution["stdout"] == "segundo"
+    assert state.last_execution["stderr"] == ""
+
+
+async def test_resume_con_edicion_posterior_marca_desactualizada(
+    tutor: TutorCore, fake_ctr: _FakeCTR
+) -> None:
+    from tutor_service.services.contexto_ejecucion import formatear_bloque
+
+    state = await _reanudar(
+        tutor,
+        fake_ctr,
+        [
+            ("codigo_ejecutado", _ejecucion("a = 1", stderr="boom")),
+            ("edicion_codigo", {"snapshot": "a = 2", "origin": "typed"}),
+        ],
+    )
+    assert state.current_code == "a = 2"
+    assert "edito el codigo despues de ejecutarlo" in formatear_bloque(
+        state.last_execution, state.current_code
+    )
+
+
+async def test_resume_sin_codigo_ejecutado_deja_last_execution_none(
+    tutor: TutorCore, fake_ctr: _FakeCTR
+) -> None:
+    state = await _reanudar(tutor, fake_ctr, [])
+    assert state.last_execution is None

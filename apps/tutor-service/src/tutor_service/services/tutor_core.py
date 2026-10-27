@@ -37,6 +37,10 @@ from tutor_service.services.clients import (
     GovernanceClient,
     RetrievalResult,
 )
+from tutor_service.services.contexto_ejecucion import (
+    construir_ultima_ejecucion,
+    formatear_bloque,
+)
 from tutor_service.services.guardrails import (
     GUARDRAILS_CORPUS_HASH,
     Match,
@@ -849,6 +853,18 @@ class TutorCore:
                 }
             )
 
+        # 4.quater.bis (tutor-ve-salida-de-ejecucion): salida (stdout/stderr) de
+        # la ULTIMA ejecucion, ya truncada en la sesion. Va pegada al codigo y
+        # antes del mensaje del alumno. Texto DESCRIPTIVO (sin directivas
+        # pedagogicas): ver services/contexto_ejecucion.py.
+        if state.last_execution:
+            messages.append(
+                {
+                    "role": "system",
+                    "content": formatear_bloque(state.last_execution, state.current_code),
+                }
+            )
+
         # 4.ter (tutor-context-rag-rubrica): inyectar rubrica de evaluacion como
         # contexto separado del RAG. El tutor usa esta informacion para orientar
         # sus preguntas socraticas hacia los criterios, sin revelarlos al alumno.
@@ -1317,6 +1333,7 @@ class TutorCore:
         # Historia conversacional + último código desde la cadena persistida.
         messages: list[dict[str, str]] = [{"role": "system", "content": system_content}]
         current_code: str | None = None
+        last_execution: dict[str, Any] | None = None
         for ev in events:
             et = ev.get("event_type")
             payload = ev.get("payload") or {}
@@ -1332,6 +1349,8 @@ class TutorCore:
                 code = payload.get("snapshot") or payload.get("code")
                 if isinstance(code, str):
                     current_code = code
+                if et == "codigo_ejecutado":
+                    last_execution = construir_ultima_ejecucion(payload)
 
         state = SessionState(
             episode_id=episode_id,
@@ -1351,6 +1370,7 @@ class TutorCore:
             ejercicio_orden=ejercicio_orden,
             rubrica_context=rubrica_context,
             current_code=current_code,
+            last_execution=last_execution,
         )
         await self.sessions.set(state)
         # FIX A: reponer el contador atómico de seq desde el max seq ya
@@ -1476,6 +1496,15 @@ class TutorCore:
         # Publicar como el estudiante, no como el service account
         await self._publicar_evento(event, state, seq, user_id)
         await self._record_overuse_non_prompt_event(event)
+        # tutor-ve-salida-de-ejecucion: recien con el evento publicado, la sesion
+        # "ve" la ejecucion (misma disciplina que record_edicion_codigo). El CTR
+        # ya recibio la salida completa; aca se guarda la version truncada.
+        # Tambien alinea current_code con el codigo ejecutado (igual que resume).
+        code = payload.get("code")
+        if isinstance(code, str):
+            state.current_code = code
+        state.last_execution = construir_ultima_ejecucion(payload)
+        await self.sessions.set(state)
         return seq
 
     # ── Evento edicion_codigo (emitido por el editor del frontend) ──────
