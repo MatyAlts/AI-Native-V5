@@ -16,7 +16,13 @@ from sqlalchemy.exc import IntegrityError
 
 from evaluation_service.config import settings
 from evaluation_service.observability import setup_observability
-from evaluation_service.routes import activeia, correccion_ia, entregas, health
+from evaluation_service.routes import (
+    activeia,
+    correccion_ia,
+    entregas,
+    health,
+    pedidos_ayuda,
+)
 from evaluation_service.services.correccion_worker import (
     reconciliar_running,
     run_reconciliador,
@@ -95,6 +101,7 @@ app.include_router(health.router)
 app.include_router(entregas.router)
 app.include_router(activeia.router)
 app.include_router(correccion_ia.router)
+app.include_router(pedidos_ayuda.router)
 
 
 @app.exception_handler(RequestValidationError)
