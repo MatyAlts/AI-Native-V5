@@ -35,6 +35,7 @@ import {
 } from "../lib/artefactos"
 import { puedeEditarLaEntrega } from "../lib/entregaGuard"
 import { buildEpisodioSourceFile } from "../utils/episodioDownload"
+import { PedirAyudaBoton } from "./PedirAyudaModal"
 
 export interface ExerciseListViewProps {
   tarea: AvailableTarea
@@ -399,6 +400,16 @@ export function ExerciseListView({
             {tarea.codigo} (v{tarea.version})
           </p>
           <h2 className="text-xl font-semibold text-ink mb-2">{tarea.titulo}</h2>
+          {/* Ayuda HUMANA (docente de la comision), no el tutor. Sirve aunque no
+              haya episodio: p. ej. el ejercicio no termino de abrirse. */}
+          <div className="mb-2">
+            <PedirAyudaBoton
+              tareaPracticaId={tarea.id}
+              pantalla="lista_ejercicios"
+              entregaId={entrega?.id}
+              ejercicios={pairs.map((p) => ({ orden: p.orden, titulo: p.ejercicio.titulo }))}
+            />
+          </div>
           {entrega && (
             <span
               data-testid="entrega-estado-badge"

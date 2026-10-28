@@ -39,6 +39,11 @@ export const helpContent: HelpContentMap = {
           clasificacion pedagogica (3 coherencias N4).
         </li>
         <li>
+          <strong>Pedir ayuda a tu docente:</strong> Si algo no anda o te trabaste, usa el boton
+          &quot;Pedir ayuda a tu docente&quot;: le llega a tu docente con el ejercicio adjunto. No
+          es una pista; el tutor sigue siendo tu ayuda para resolver.
+        </li>
+        <li>
           <strong>Cambiar TP:</strong> Cierra el episodio actual y volves al selector. No perdes lo
           hecho: queda registrado en el CTR.
         </li>

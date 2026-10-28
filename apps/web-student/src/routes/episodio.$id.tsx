@@ -79,6 +79,7 @@ function EpisodioPage() {
               entregaId: ejercicioContext.entregaId,
               ejercicioId: ejercicioContext.ejercicioId,
               ejercicioOrden: ejercicioContext.ejercicioOrden,
+              tareaId: ejercicioContext.tareaId,
             } satisfies EjercicioContext,
           }
         : {})}
@@ -88,6 +89,7 @@ function EpisodioPage() {
 
 function readEjercicioContext(episodeId: string): {
   materiaId: string
+  tareaId: string
   entregaId: string
   ejercicioId: string
   ejercicioOrden: number
@@ -103,6 +105,7 @@ function readEjercicioContext(episodeId: string): {
     if (ctx.episode_id !== episodeId) return null
     return {
       materiaId: ctx.materia_id,
+      tareaId: ctx.tarea_id,
       entregaId: ctx.entrega_id,
       ejercicioId: ctx.ejercicio_id,
       ejercicioOrden: ctx.ejercicio_orden,

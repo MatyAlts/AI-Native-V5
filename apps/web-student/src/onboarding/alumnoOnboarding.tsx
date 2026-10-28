@@ -135,6 +135,29 @@ export const alumnoOnboarding: OnboardingFlow<EstadoAlumno> = {
       countsTowardProgress: false,
     },
 
+    /* ── Ayuda humana, dentro del episodio ────────────────────────────────
+       Explica, no pide accion: no cuenta para el progreso. Misma ruta y
+       mismas condiciones que los dos de arriba. Sin tildes (encoding). */
+    {
+      id: "episodio-pedir-ayuda",
+      route: "/episodio",
+      anchor: "pedir-ayuda",
+      placement: "bottom",
+      title: "Si algo no anda, pedile ayuda a tu docente",
+      body: (
+        <>
+          <p>
+            Este boton le manda un aviso a tu docente con el ejercicio y el episodio adjuntos. Sirve
+            si te trabaste o si la plataforma fallo.
+          </p>
+          <p>No es una pista: para resolver el ejercicio, el tutor sigue siendo tu ayuda.</p>
+        </>
+      ),
+      unlockWhen: cuando((e) => e.tieneInscripcion),
+      doneWhen: (e) => e.cantidadEpisodios > 1,
+      countsTowardProgress: false,
+    },
+
     /* ── 5. Primera vez mirando la pantalla de TPs / entregas ─────────────
        Tambien explica en vez de pedir: no cuenta para el progreso. */
     {
