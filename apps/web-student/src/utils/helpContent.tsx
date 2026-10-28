@@ -24,6 +24,10 @@ export const helpContent: HelpContentMap = {
           una para abrir el episodio.
         </li>
         <li>
+          <strong>Descargar:</strong> <em>Borrador</em> es lo que tenes ahora en el editor;{" "}
+          <em>lo entregado</em> es lo que vio tu docente al corregir.
+        </li>
+        <li>
           <strong>Enunciado:</strong> Panel colapsable arriba del editor con la consigna de la TP.
         </li>
         <li>
