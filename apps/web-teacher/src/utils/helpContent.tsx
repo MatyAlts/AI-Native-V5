@@ -660,6 +660,12 @@ export const helpContent: HelpContentMap = {
           los demas quedan como los entrego.
         </li>
         <li>
+          <strong>Re-entrega:</strong> la tarjeta de una entrega que el estudiante volvio a mandar
+          tras una devolucion dice "Re-entrega · antes N" (la nota anterior) y, si pediste corregir
+          ejercicios puntuales, cuales. "Solo re-entregas" deja en la lista unicamente esas, y
+          "Corregir en lote" arranca solo con ellas.
+        </li>
+        <li>
           <strong>Drill-down de episodios:</strong> en la vista de correccion, cada ejercicio
           completado muestra el id del episodio con un link al panel N1-N4 para ver la traza
           cognitiva del estudiante.
