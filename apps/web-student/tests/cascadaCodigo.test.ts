@@ -152,3 +152,58 @@ describe("esPlaceholder — la licencia para re-sembrar el buffer", () => {
     expect(esPlaceholder(resolverCascadaDeCodigo(TODOS))).toBe(false)
   })
 })
+
+describe("resolverCascadaDeCodigo — codigoEntregado (editor-muestra-codigo-entregado-al-reabrir)", () => {
+  const ENTREGADO = "print('lo que ya entregue')\n"
+
+  it("gana a los dos scaffolds y al placeholder", () => {
+    const r = resolverCascadaDeCodigo({
+      codigoEntregado: ENTREGADO,
+      scaffoldTp: SCAFFOLD_TP,
+      scaffoldEjercicio: SCAFFOLD_EJ,
+      placeholder: PLACEHOLDER,
+    })
+    expect(r).toEqual({ codigo: ENTREGADO, origen: "codigo-entregado" })
+  })
+
+  it("sin scaffolds tambien gana al placeholder", () => {
+    const r = resolverCascadaDeCodigo({ codigoEntregado: ENTREGADO, placeholder: PLACEHOLDER })
+    expect(r.origen).toBe("codigo-entregado")
+  })
+
+  it("pierde contra el snapshot (propio o heredado por REAPERTURA)", () => {
+    const r = resolverCascadaDeCodigo({
+      codigoEntregado: ENTREGADO,
+      snapshot: SNAPSHOT,
+      placeholder: PLACEHOLDER,
+    })
+    expect(r).toEqual({ codigo: SNAPSHOT, origen: "snapshot" })
+  })
+
+  it("pierde contra el borrador local", () => {
+    const r = resolverCascadaDeCodigo({
+      borradorLocal: "print('borrador')\n",
+      codigoEntregado: ENTREGADO,
+      snapshot: SNAPSHOT,
+      placeholder: PLACEHOLDER,
+    })
+    expect(r.origen).toBe("borrador-local")
+  })
+
+  it("un codigoEntregado vacio no cuenta: cae al scaffold", () => {
+    const r = resolverCascadaDeCodigo({
+      codigoEntregado: "",
+      scaffoldTp: SCAFFOLD_TP,
+      placeholder: PLACEHOLDER,
+    })
+    expect(r.origen).toBe("scaffold-tp")
+  })
+
+  it("no es placeholder: no habilita el re-seed por lenguaje", () => {
+    expect(
+      esPlaceholder(
+        resolverCascadaDeCodigo({ codigoEntregado: ENTREGADO, placeholder: PLACEHOLDER }),
+      ),
+    ).toBe(false)
+  })
+})
