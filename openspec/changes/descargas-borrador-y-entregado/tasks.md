@@ -32,5 +32,5 @@ Gobernanza BAJO, TDD estricto: cada grupo es RED (test que falla por la razón c
 
 - [x] 5.1 Tesis: `git diff origin/main --stat -- apps/ctr-service apps/classifier-service packages/contracts ai-native-prompts apps/tutor-service apps/evaluation-service` → **vacío** (si la base es la rama de #122, comparar contra esa base). Verificación: salida pegada en `STATUS.md`.
 - [x] 5.2 Suites web-student completas, `tsc`, `biome` contra la línea base de 1.2. Verificación: sin rojos nuevos; números en `STATUS.md`.
-- [ ] 5.3 Correr la "Prueba local reproducible" de `design.md` (pasos 1–8) y anotar el resultado por paso en `STATUS.md`.
+- [x] 5.3 Correr la "Prueba local reproducible" de `design.md` (pasos 1–8) y anotar el resultado por paso en `STATUS.md`.
 - [ ] 5.4 Deuda preexistente que bloquea el archive (no el apply): `openspec/specs/student-exercise-flow/spec.md` arranca con `## ADDED Requirements` en vez de `## Purpose` + `## Requirements`. Si `publicar-nota-y-pedir-correccion` (su tarea 7.5) no lo corrigió todavía, corregir sólo esos encabezados antes de `/opsx:archive`. Verificación: `openspec validate descargas-borrador-y-entregado --strict` sin "Archive would refuse".

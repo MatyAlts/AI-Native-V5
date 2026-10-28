@@ -22,5 +22,14 @@ Base: `origin/main` 5cf07fc (PR #122 ya mergeado; `getEntregaArtefacto` en `apps
 `git diff origin/main --stat -- ai-native-prompts apps/classifier-service apps/ctr-service packages/contracts apps/tutor-service apps/evaluation-service` → vacío.
 
 ## Pendiente
-- 5.3 prueba local con stack: sin correr (ver `prueba-local.md`).
+- 5.3 prueba local con stack: CORRIDA el 2026-10-28 (ver abajo).
 - 5.4 deuda de `openspec/specs/student-exercise-flow/spec.md` (`## ADDED Requirements` en el main spec): `openspec validate --strict` la sigue marcando; no se tocó, bloquea el archive, no el apply.
+
+## Prueba local 5.3 (2026-10-28, Playwright + chromium, stack local, TP SMK-PE92D 2 ejercicios Python)
+- Paso 3 borrador: ejercicio completado muestra SOLO 'Descargar borrador (.py)'; el archivo dice `print("v1")`. OK
+- Paso 4 entregada: cada ejercicio muestra SOLO 'Descargar lo entregado (.py)'; bajan `print("v1")` y `print("dos")`. OK
+- Paso 5 devuelta (calificar+devolver hechos por API, no por UI docente): ambos ejercicios sin completar muestran 'Descargar lo entregado'. OK
+- Paso 6: ejercicio 1 reabierto, `print("v2")`, cerrado sin entregar: aparecen los DOS botones; borrador baja v2, entregado baja v1. OK
+- Paso 7 Mis notas: rotulo 'Descargar lo entregado (.py)', baja `print("v1")`/`print("dos")`. OK
+- Paso 8 CTR: los cambios de conteo en ctr_store (edicion_codigo +3, episodio_abierto +1, episodio_cerrado +3) vienen de los episodios que se trabajaron; repetir descargas (Mis notas x2) no movio ningun event_type. Sin event_type nuevo. OK
+- Capturas: `capturas-prs-128-130/128-0*.png`.
