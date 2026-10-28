@@ -36,6 +36,10 @@ In a `returned` entrega, the web-student SHALL show a "A corregir" badge on each
 - **THEN** exercise 2 shows the "A corregir" badge
 - **AND** exercises 1 and 3 show as completed without a "Volver a abrir" button
 
+#### Scenario: Stale marks after re-submission are ignored
+- **WHEN** an entrega that was returned with `ordenes=[2]` has been re-submitted (`submitted` or `graded`) and still carries `reabierto_por_docente=true` on exercise 2
+- **THEN** the web-student shows no "A corregir" badge and applies no partial-return rules
+
 #### Scenario: Legacy returned entrega without marks
 - **WHEN** an entrega is `returned` and no exercise carries `reabierto_por_docente`
 - **THEN** the list behaves as before this change (no badge is required, every exercise is pending)

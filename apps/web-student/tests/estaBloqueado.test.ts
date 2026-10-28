@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest"
-import { estaBloqueado, ordenesACorregir } from "../src/lib/estaBloqueado"
+import { devolucionParcialVigente, estaBloqueado, ordenesACorregir } from "../src/lib/estaBloqueado"
 
 type E = { orden: number; completado: boolean; reabierto_por_docente?: boolean }
 const est = (orden: number, completado: boolean, marca?: boolean): E =>
@@ -55,5 +55,18 @@ describe("ordenesACorregir (espejo del backend)", () => {
   })
   it("lista vacia es vacio", () => {
     expect(ordenesACorregir([])).toEqual(new Set())
+  })
+})
+
+describe("devolucionParcialVigente: la marca persiste, pero solo manda en `returned`", () => {
+  const marcados = [est(1, true, false), est(2, false, true)]
+  it("returned con marca: parcial", () => {
+    expect(devolucionParcialVigente("returned", marcados)).toBe(true)
+  })
+  it.each(["submitted", "graded", "draft"])("%s con marca vieja: no es parcial", (estado) => {
+    expect(devolucionParcialVigente(estado, marcados)).toBe(false)
+  })
+  it("returned sin marcas (legacy / total): no es parcial", () => {
+    expect(devolucionParcialVigente("returned", [est(1, false), est(2, false)])).toBe(false)
   })
 })

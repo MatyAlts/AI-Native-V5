@@ -34,7 +34,7 @@ import {
   collectArtefactoDrafts,
 } from "../lib/artefactos"
 import { puedeEditarLaEntrega } from "../lib/entregaGuard"
-import { esDevolucionParcial, estaBloqueado, ordenesACorregir } from "../lib/estaBloqueado"
+import { devolucionParcialVigente, estaBloqueado, ordenesACorregir } from "../lib/estaBloqueado"
 import { buildEpisodioSourceFile } from "../utils/episodioDownload"
 
 export interface ExerciseListViewProps {
@@ -350,7 +350,7 @@ export function ExerciseListView({
   // Secuencial solo entre pendientes (ver `estaBloqueado`): con una devolucion
   // parcial los completados no bloquean ni se bloquean.
   const isLocked = (orden: number): boolean => estaBloqueado(orden, ejercicioEstados)
-  const devolucionParcial = esDevolucionParcial(ejercicioEstados)
+  const devolucionParcial = devolucionParcialVigente(entrega?.estado ?? "", ejercicioEstados)
   const aCorregir = ordenesACorregir(ejercicioEstados)
 
   const isCompleted = (orden: number): boolean => {

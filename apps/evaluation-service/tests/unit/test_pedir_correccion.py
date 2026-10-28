@@ -83,9 +83,10 @@ class TestReabrirSoloLosPedidos:
         assert por_orden[2]["completado"] is False
         assert por_orden[2]["completed_at"] is None
         assert por_orden[2]["reabierto_por_docente"] is True
-        # 1 y 3: intactos, episode_id incluido
-        assert por_orden[1] == original[0]
-        assert por_orden[3] == original[2]
+        # 1 y 3: intactos salvo la marca explicita en False (D4: la marca se
+        # reescribe en TODAS las filas en cada devolucion), episode_id incluido
+        assert por_orden[1] == {**original[0], "reabierto_por_docente": False}
+        assert por_orden[3] == {**original[2], "reabierto_por_docente": False}
         assert por_orden[2]["episode_id"] == original[1]["episode_id"]
 
     def test_copia_profunda_no_muta_el_original(self) -> None:
@@ -97,13 +98,16 @@ class TestReabrirSoloLosPedidos:
     def test_dos_ordenes(self) -> None:
         out = _reabrir_ejercicios([_est(i) for i in range(1, 6)], [2, 4])
         assert [e["completado"] for e in out] == [True, False, True, False, True]
-        assert [e.get("reabierto_por_docente", False) for e in out] == [
-            False,
-            True,
-            False,
-            True,
-            False,
-        ]
+        assert [e["reabierto_por_docente"] for e in out] == [False, True, False, True, False]
+
+    def test_una_devolucion_nueva_reescribe_la_marca_de_la_anterior(self) -> None:
+        # Triangulacion: la marca persiste entre ciclos, asi que la segunda
+        # devolucion ("solo el 3") tiene que apagar la del 2.
+        primera = _reabrir_ejercicios([_est(1), _est(2), _est(3)], [2])
+        for e in primera:
+            e["completado"] = True  # el alumno reentrego
+        segunda = _reabrir_ejercicios(primera, [3])
+        assert [e["reabierto_por_docente"] for e in segunda] == [False, False, True]
 
     def test_sin_ordenes_reabre_todos_y_los_marca(self) -> None:
         out = _reabrir_ejercicios([_est(1), _est(2), _est(3)])

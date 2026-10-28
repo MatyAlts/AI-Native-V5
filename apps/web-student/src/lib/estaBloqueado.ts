@@ -36,3 +36,15 @@ export function ordenesACorregir(estados: readonly EstadoEjercicioLike[]): Set<n
 export function esDevolucionParcial(estados: readonly EstadoEjercicioLike[]): boolean {
   return estados.some((e) => e.reabierto_por_docente)
 }
+
+/**
+ * La marca `reabierto_por_docente` persiste despues de re-entregar (para que el
+ * docente vea que ejercicios pidio), asi que solo manda para el alumno cuando
+ * la entrega esta `returned`. En `submitted`/`graded` es historia.
+ */
+export function devolucionParcialVigente(
+  estadoEntrega: string,
+  estados: readonly EstadoEjercicioLike[],
+): boolean {
+  return estadoEntrega === "returned" && esDevolucionParcial(estados)
+}

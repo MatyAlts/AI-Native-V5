@@ -28,7 +28,11 @@
 - **AND** the request carries code only for exercise 2, or carries different code for exercises 1 and 3
 - **THEN** the submit succeeds
 - **AND** the new artefacts of exercises 1 and 3 have the same `codigo`, `sha256` and `episode_id` as before the return
-- **AND** no exercise keeps `reabierto_por_docente=true` after the submit
+- **AND** exercise 2 keeps `reabierto_por_docente=true` and exercises 1 and 3 keep `false` after the submit (the teacher list reads it to show which exercises were requested)
+
+#### Scenario: A new return rewrites the marks of the previous one
+- **WHEN** an entrega previously returned with `ordenes=[2]` is re-submitted, graded again and returned with `ordenes=[3]`
+- **THEN** exercise 3 carries `reabierto_por_docente=true` and exercise 2 carries `false`
 
 #### Scenario: Existing returned entregas keep their behavior
 - **WHEN** an entrega is `returned` and no exercise carries `reabierto_por_docente`

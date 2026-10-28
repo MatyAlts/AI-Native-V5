@@ -157,10 +157,24 @@ class TestSubmitDeUnaDevolucionParcial:
         assert entrega.artefacto_sha256 == _hash_conjunto(entrega)
         assert entrega.artefacto_sha256 != "viejo"
 
-    async def test_ninguna_marca_sobrevive_al_submit(self) -> None:
+    async def test_las_marcas_sobreviven_al_submit(self) -> None:
+        # D4: la lista del docente muestra "Correccion pedida: ej. 2" sobre la
+        # re-entrega, asi que el submit NO borra la marca; la reescribe la
+        # proxima devolucion.
         entrega = _parcial_en_el_2()
         await _submit(entrega, [_item(2, "print(22)")], [1, 2, 3])
-        assert not any(e.get("reabierto_por_docente") for e in entrega.ejercicio_estados)
+        marcas = {e["orden"]: e.get("reabierto_por_docente") for e in entrega.ejercicio_estados}
+        assert marcas == {1: False, 2: True, 3: False}
+
+    async def test_submit_sin_marcas_no_inventa_ninguna(self) -> None:
+        # Triangulacion: una entrega legacy (sin la clave) sigue sin ella.
+        entrega = _parcial_en_el_2()
+        for e in entrega.ejercicio_estados:
+            e.pop("reabierto_por_docente", None)
+        await _submit(
+            entrega, [_item(1, "print(1)"), _item(2, "x"), _item(3, "print(3)")], [1, 2, 3]
+        )
+        assert not any("reabierto_por_docente" in e for e in entrega.ejercicio_estados)
 
     async def test_codigo_distinto_para_lo_no_reabierto_se_ignora(self) -> None:
         entrega = _parcial_en_el_2()
@@ -338,5 +352,5 @@ class TestCicloCompletoConRecalificacion:
         )
         por_orden = {e["orden"]: e for e in entrega.ejercicio_estados}
         assert [por_orden[o]["completado"] for o in (1, 2, 3)] == [True, True, False]
-        assert por_orden[2].get("reabierto_por_docente") is not True
+        assert por_orden[2]["reabierto_por_docente"] is False
         assert por_orden[3]["reabierto_por_docente"] is True

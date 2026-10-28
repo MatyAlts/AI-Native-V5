@@ -397,10 +397,10 @@ async def submit_entrega(
     if items:
         await _persistir_artefactos(db, entrega, items, estados, user.tenant_id)
 
-    # La próxima devolución arranca limpia. Dicts NUEVOS (no mutar los cargados):
-    # ver la trampa del JSONB sin MutableList en `mark_ejercicio_completado`.
-    estados = [{k: v for k, v in e.items() if k != "reabierto_por_docente"} for e in estados]
-    entrega.ejercicio_estados = estados
+    # La marca `reabierto_por_docente` NO se borra acá: la lista del docente la
+    # lee para mostrar "Corrección pedida: ej. 2" sobre la re-entrega (D4). La
+    # reescribe la próxima devolución (`_reabrir_ejercicios`), y sólo se consulta
+    # en `returned`.
 
     entrega.estado = "submitted"
     entrega.submitted_at = datetime.now(UTC)
@@ -932,7 +932,8 @@ def _reabrir_ejercicios(
 ) -> list[dict[str, Any]]:
     """Des-marca los ejercicios pedidos (todos si `ordenes` es None) para que el alumno vuelva a entrar.
 
-    Los reabiertos quedan con `reabierto_por_docente=True`; el resto no se toca.
+    Los reabiertos quedan con `reabierto_por_docente=True` y el resto con `False`
+    (reescritura explícita: la marca persiste tras el submit, ver D4).
 
     `deepcopy` y NO `list(...)`: `list()` copia la lista pero comparte los
     dicts, asi que mutarlos aca muta tambien el valor cargado. Al reasignar,
@@ -955,6 +956,9 @@ def _reabrir_ejercicios(
     reabiertos = copy.deepcopy(list(estados or []))
     for est in reabiertos:
         if ordenes is not None and est["orden"] not in ordenes:
+            # La marca se reescribe en TODAS las filas: la de una devolución
+            # anterior no puede sobrevivir (ya no se limpia en el submit).
+            est["reabierto_por_docente"] = False
             continue
         est["completado"] = False
         est["completed_at"] = None
