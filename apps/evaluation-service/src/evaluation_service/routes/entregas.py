@@ -884,7 +884,7 @@ def _artefactos_conservados(entrega: Entrega, a_corregir: set[int]) -> dict[int,
             ejercicio_id=a.ejercicio_id,
             episode_id=a.episode_id,
             codigo=a.codigo,
-            language=a.language,  # type: ignore[arg-type]
+            language=a.language,
         )
         for a in (entrega.artefactos or [])
         if a.orden not in a_corregir
