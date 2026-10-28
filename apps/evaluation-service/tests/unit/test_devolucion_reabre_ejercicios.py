@@ -151,7 +151,14 @@ class TestBordes:
 
         reabiertos = _reabrir_ejercicios([magro])
 
-        assert set(reabiertos[0]) == {"orden", "completado", "completed_at"}
+        # Unica clave nueva y deliberada: la marca `reabierto_por_docente`
+        # (change publicar-nota-y-pedir-correccion, D2). Nada mas.
+        assert set(reabiertos[0]) == {
+            "orden",
+            "completado",
+            "completed_at",
+            "reabierto_por_docente",
+        }
 
 
 # ── El cable entre el endpoint y el helper ────────────────────────────────

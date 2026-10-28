@@ -48,6 +48,7 @@ from evaluation_service.schemas.entrega import (
     EntregaOut,
     EntregaSubmitBody,
     MarkEjercicioBody,
+    ReturnEntregaBody,
 )
 
 router = APIRouter(prefix="/api/v1/entregas", tags=["entregas"])
@@ -345,10 +346,14 @@ async def submit_entrega(
     # `submitted` de las que no se sabe qué se entregó, y esas son
     # indistinguibles de las buenas hasta el momento de corregirlas.
     items = list(body.artefactos) if body is not None else []
+    # Devolución parcial (D4): lo que el docente NO pidió corregir conserva su
+    # código sellado. Sin marcas `ordenes_a_corregir` son todos (comportamiento
+    # de siempre). Solo se conserva lo que tiene artefacto previo.
+    conservados = _artefactos_conservados(entrega, ordenes_a_corregir(estados))
     if esperados:
         recibidos = {i.orden for i in items}
         ordenes_esperados = {e["orden"] for e in esperados}
-        faltantes = sorted(ordenes_esperados - recibidos)
+        faltantes = sorted(ordenes_esperados - recibidos - set(conservados))
         if faltantes:
             raise HTTPException(
                 status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
@@ -387,8 +392,15 @@ async def submit_entrega(
             detail=f"Hay más de un código para los ejercicios: {duplicados}.",
         )
 
+    items = _fusionar_conservados(entrega, items, conservados, esperados)
+
     if items:
         await _persistir_artefactos(db, entrega, items, estados, user.tenant_id)
+
+    # La próxima devolución arranca limpia. Dicts NUEVOS (no mutar los cargados):
+    # ver la trampa del JSONB sin MutableList en `mark_ejercicio_completado`.
+    estados = [{k: v for k, v in e.items() if k != "reabierto_por_docente"} for e in estados]
+    entrega.ejercicio_estados = estados
 
     entrega.estado = "submitted"
     entrega.submitted_at = datetime.now(UTC)
@@ -493,6 +505,21 @@ async def mark_ejercicio_completado(
     completado = body.completado if body else True
     episode_id = body.episode_id if body else None
     ejercicio_id = body.ejercicio_id if body else None
+
+    # Devolución parcial (D5): el alumno no toca lo que el docente no reabrió,
+    # en ningún sentido (des-marcar perdería el estado; marcar pisaría el
+    # `episode_id` del intento corregido). En `draft` y en devoluciones sin
+    # marcas (legacy) no cambia nada.
+    estados_actuales = list(entrega.ejercicio_estados or [])
+    if (
+        entrega.estado == "returned"
+        and any(e.get("reabierto_por_docente") for e in estados_actuales)
+        and orden not in ordenes_a_corregir(estados_actuales)
+    ):
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Tu docente no pidió corregir este ejercicio",
+        )
 
     # ADR-047: match prefiere `ejercicio_id` (UUID estable) sobre `orden`
     # cuando ambos están disponibles. Si a CUALQUIERA de los dos lados le
@@ -751,6 +778,7 @@ async def get_calificacion(
 @router.post("/{entrega_id}/return", response_model=EntregaOut)
 async def return_entrega(
     entrega_id: UUID,
+    body: ReturnEntregaBody | None = None,
     user: User = Depends(require_permission("calificacion", "create")),
     db: AsyncSession = Depends(get_db),
 ) -> EntregaOut:
@@ -808,18 +836,103 @@ async def return_entrega(
             detail=f"Solo se puede devolver una entrega en 'graded' (estado: '{entrega.estado}')",
         )
 
+    # "Pedir corrección": `ordenes` opcional. Sin él se reabren todos (compat).
+    pedidos = body.ordenes if body is not None else None
+    existentes = {e["orden"] for e in (entrega.ejercicio_estados or [])}
+    if pedidos is not None:
+        if not pedidos:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail="Elegí al menos un ejercicio para pedir corrección.",
+            )
+        if len(set(pedidos)) != len(pedidos):
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail="Hay ejercicios repetidos en la lista.",
+            )
+        inexistentes = sorted(set(pedidos) - existentes)
+        if inexistentes:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail=f"La entrega no tiene los ejercicios: {inexistentes}.",
+            )
+
     entrega.estado = "returned"
-    entrega.ejercicio_estados = _reabrir_ejercicios(entrega.ejercicio_estados)
+    entrega.ejercicio_estados = _reabrir_ejercicios(entrega.ejercicio_estados, pedidos)
     await db.flush()
     await db.refresh(entrega)
+
+    # Audit log (meta-evento, NO va al CTR chain — ADR-010)
+    structlog.get_logger().info(
+        "tp_correccion_pedida",
+        entrega_id=str(entrega.id),
+        tenant_id=str(entrega.tenant_id),
+        ordenes=sorted(pedidos) if pedidos is not None else sorted(existentes),
+        parcial=pedidos is not None and set(pedidos) != existentes,
+    )
     return EntregaOut.model_validate(entrega)
 
 
 # ── Helpers privados ──────────────────────────────────────────────────────
 
 
-def _reabrir_ejercicios(estados: list[dict[str, Any]] | None) -> list[dict[str, Any]]:
-    """Des-marca todos los ejercicios para que el alumno pueda volver a entrar.
+def _artefactos_conservados(entrega: Entrega, a_corregir: set[int]) -> dict[int, ArtefactoItem]:
+    """El código sellado de lo que el docente NO pidió corregir (D4)."""
+    return {
+        a.orden: ArtefactoItem(
+            orden=a.orden,
+            ejercicio_id=a.ejercicio_id,
+            episode_id=a.episode_id,
+            codigo=a.codigo,
+            language=a.language,  # type: ignore[arg-type]
+        )
+        for a in (entrega.artefactos or [])
+        if a.orden not in a_corregir
+    }
+
+
+def _fusionar_conservados(
+    entrega: Entrega,
+    items: list[ArtefactoItem],
+    conservados: dict[int, ArtefactoItem],
+    esperados: list[dict[str, Any]],
+) -> list[ArtefactoItem]:
+    """Lo que manda el cliente para un `orden` conservado se ignora (se loguea)."""
+    if not conservados:
+        return items
+    ignorados = sorted(i.orden for i in items if i.orden in conservados)
+    if ignorados:
+        structlog.get_logger().info(
+            "tp_resubmit_codigo_ignorado", entrega_id=str(entrega.id), ordenes=ignorados
+        )
+    # Solo los esperados: un conservado de un `orden` que la TP ya no declara
+    # no se arrastra.
+    vigentes = {e["orden"] for e in esperados} if esperados else set(conservados)
+    nuevos = [i for i in items if i.orden not in conservados]
+    return nuevos + [c for o, c in conservados.items() if o in vigentes]
+
+
+def ordenes_a_corregir(estados: list[dict[str, Any]] | None) -> set[int]:
+    """Los `orden` que el alumno tiene que rehacer en una entrega devuelta.
+
+    Única definición del alcance de una devolución (D3). Si algún ejercicio
+    lleva `reabierto_por_docente=True`, son esos. Si ninguno lo lleva (entregas
+    devueltas antes de este cambio, o devolución total de un cliente viejo), son
+    todos: es exactamente el comportamiento de antes.
+    """
+    estados = list(estados or [])
+    marcados = {e["orden"] for e in estados if e.get("reabierto_por_docente")}
+    if marcados:
+        return marcados
+    return {e["orden"] for e in estados}
+
+
+def _reabrir_ejercicios(
+    estados: list[dict[str, Any]] | None, ordenes: list[int] | None = None
+) -> list[dict[str, Any]]:
+    """Des-marca los ejercicios pedidos (todos si `ordenes` es None) para que el alumno vuelva a entrar.
+
+    Los reabiertos quedan con `reabierto_por_docente=True`; el resto no se toca.
 
     `deepcopy` y NO `list(...)`: `list()` copia la lista pero comparte los
     dicts, asi que mutarlos aca muta tambien el valor cargado. Al reasignar,
@@ -841,8 +954,11 @@ def _reabrir_ejercicios(estados: list[dict[str, Any]] | None) -> list[dict[str, 
     """
     reabiertos = copy.deepcopy(list(estados or []))
     for est in reabiertos:
+        if ordenes is not None and est["orden"] not in ordenes:
+            continue
         est["completado"] = False
         est["completed_at"] = None
+        est["reabierto_por_docente"] = True
     return reabiertos
 
 
