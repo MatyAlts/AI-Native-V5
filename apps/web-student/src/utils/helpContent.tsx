@@ -111,7 +111,7 @@ export const helpContent: HelpContentMap = {
       <ul className="list-disc list-inside space-y-2 ml-4">
         <li>
           <strong>Con nota:</strong> entregas ya calificadas. Hace click para ver la correccion
-          completa del docente.
+          completa del docente y el codigo que entregaste en cada ejercicio, que podes descargar.
         </li>
         <li>
           <strong>Sin corregir todavia:</strong> ya entregaste, el docente todavia no la reviso.

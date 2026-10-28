@@ -321,3 +321,45 @@ describe("MisNotasPage (orquestador)", () => {
     })
   })
 })
+
+describe("MisNotasPage — la fila abre el trabajo corregido (alumno-mis-trabajos-corregidos)", () => {
+  afterEach(() => {
+    cleanup()
+    vi.unstubAllGlobals()
+  })
+
+  function montarConEntrega(entrega: Entrega) {
+    setupFetchMock({
+      "/api/v1/materias/mias": () => ({ data: [makeMateriaInscripta()], meta: {} }),
+      "/artefacto": () => ({ entrega_id: entrega.id, legacy: false, artefactos: [] }),
+      "/calificacion": () => ({
+        id: "k",
+        entrega_id: entrega.id,
+        nota_final: 8,
+        feedback_general: "",
+        detalle_criterios: [],
+        graded_at: "2026-09-19T12:00:00Z",
+        graded_by: "d",
+      }),
+      "/api/v1/entregas": () => ({ data: [entrega], meta: { cursor_next: null } }),
+    })
+  }
+
+  it.each(["graded", "returned"] as const)(
+    "click en una fila %s monta el trabajo corregido (nota + codigo)",
+    async (estado) => {
+      montarConEntrega(makeEntrega({ id: "e-x", estado }))
+      render(<MisNotasPage />)
+      fireEvent.click(await screen.findByRole("button", { name: /Agenda de turnos/ }))
+      expect(await screen.findByTestId("trabajo-corregido-view")).toBeInTheDocument()
+    },
+  )
+
+  it("click en una fila submitted sigue montando solo el detalle de nota", async () => {
+    montarConEntrega(makeEntrega({ id: "e-s", estado: "submitted", nota_final: null }))
+    render(<MisNotasPage />)
+    fireEvent.click(await screen.findByRole("button", { name: /Agenda de turnos/ }))
+    expect(await screen.findByTestId("grade-detail-view")).toBeInTheDocument()
+    expect(screen.queryByTestId("trabajo-corregido-view")).not.toBeInTheDocument()
+  })
+})
