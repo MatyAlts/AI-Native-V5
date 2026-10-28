@@ -1445,6 +1445,48 @@ export async function reabrirEjercicio(
   return (await r.json()) as Entrega
 }
 
+/** Un artefacto sellado al entregar (espeja `ArtefactoOut` de evaluation-service). */
+export interface ArtefactoEntregado {
+  orden: number
+  ejercicio_id: string | null
+  episode_id: string | null
+  codigo: string
+  language: string
+  sha256: string
+  created_at: string
+}
+
+/** Espeja `EntregaArtefactoOut`. `legacy`: entrega anterior a que se guardara el codigo. */
+export interface EntregaArtefacto {
+  entrega_id: string
+  legacy: boolean
+  artefactos: ArtefactoEntregado[]
+}
+
+export class EntregaArtefactoError extends Error {
+  status: number
+  constructor(status: number) {
+    super(`get entrega artefacto failed: ${status}`)
+    this.status = status
+    this.name = "EntregaArtefactoError"
+  }
+}
+
+/**
+ * Codigo que el alumno entrego, por ejercicio. SOLO LECTURA: GET sin efectos
+ * laterales (dueno o docente; si no, 404). Change `alumno-mis-trabajos-corregidos`.
+ */
+export async function getEntregaArtefacto(
+  entregaId: string,
+  getToken?: TokenGetter,
+): Promise<EntregaArtefacto> {
+  const r = await fetch(`/api/v1/entregas/${entregaId}/artefacto`, {
+    headers: await authHeaders(getToken),
+  })
+  if (!r.ok) throw new EntregaArtefactoError(r.status)
+  return (await r.json()) as EntregaArtefacto
+}
+
 export const entregasApi = {
   createOrGet: createOrGetEntrega,
   submit: submitEntrega,

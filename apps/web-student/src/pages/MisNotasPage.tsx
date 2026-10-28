@@ -25,8 +25,10 @@ import { HelpButton } from "@platform/ui"
 import { useNavigate } from "@tanstack/react-router"
 import { useEffect, useState } from "react"
 import { GradeDetailView } from "../components/GradeDetailView"
+import { TrabajoCorregidoView } from "../components/TrabajoCorregidoView"
 import { type Entrega, type MateriaInscripta, listMisEntregas, listMisMaterias } from "../lib/api"
 import { helpContent } from "../utils/helpContent"
+import { esTrabajoCorregido } from "../utils/trabajoCorregido"
 
 const LIMITE_ENTREGAS = 50
 
@@ -276,7 +278,8 @@ export function MisNotasPage() {
   }, [comisionId])
 
   if (selected) {
-    return <GradeDetailView entrega={selected} onBack={() => setSelected(null)} />
+    const Detalle = esTrabajoCorregido(selected) ? TrabajoCorregidoView : GradeDetailView
+    return <Detalle entrega={selected} onBack={() => setSelected(null)} />
   }
 
   // BUG reportado por QA: `materias === null` solo no distingue "todavia no
