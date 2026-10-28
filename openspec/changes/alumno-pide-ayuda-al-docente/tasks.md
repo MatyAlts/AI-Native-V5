@@ -49,7 +49,7 @@ Gobernanza MEDIO-ALTO (tabla nueva con texto libre de alumnos + RLS), TDD estric
 
 ## 7. Integración
 
-- [ ] 7.1 Prueba local reproducible de design.md (pasos 1-7) corrida de punta a punta; resultado por paso en `STATUS.md`. Verificación: todos los pasos OK o el desvío anotado.
+- [x] 7.1 Prueba local reproducible de design.md (pasos 1-7) corrida de punta a punta; resultado por paso en `STATUS.md`. Verificación: todos los pasos OK o el desvío anotado.
 - [x] 7.2 Suites completas otra vez (las de 1.1) + `tsc --noEmit` + `biome check src` en los dos frontends. Verificación: sin rojos nuevos respecto de la línea base.
 
 ## 8. Tesis

@@ -112,6 +112,19 @@ Además: el módulo `routes/pedidos_ayuda.py` no importa nada de CTR/tutor/class
 
 ## 8. Sin verificar
 
-- Prueba local de punta a punta con navegador (7.1): pendiente, receta en `prueba-local.md`.
-- `make check-rls` sobre `academic_main` real: sólo se corrió el equivalente contra la base descartable.
+- (resuelto) Prueba local con navegador 7.1: corrida el 2026-10-28, ver sección 9.
+- (resuelto) `make check-rls` sobre `academic_main` local real: OK tras aplicar la migración 20261028_0001.
 - CI del PR (ver `gh pr checks` en el PR).
+
+## 9. Prueba local 7.1 (2026-10-28, Playwright + chromium, stack local, tenant aaaa)
+Migración `20261028_0001` aplicada a `academic_main` LOCAL (desde `apps/evaluation-service`, no desde la raíz: el `script_location` del alembic.ini es relativo). `make check-rls` OK.
+- Paso 1 pedido desde episodio: botón en el header, modal, 'No puedo avanzar' + 'no entiendo el while' -> 'Tu pedido le llegó a tu docente' y al reabrir figura Pendiente. Episodio sigue `estado: open` (GET /episodes). OK
+- Paso 2 anti-spam: segundo pedido enseguida -> 'Esperá 33 segundos antes de mandar otro pedido.', no se crea. OK
+- Paso 3 sin episodio desde la lista de ejercicios ('Error de la plataforma', sin ejercicio) pasado el minuto: enviado. OK
+- Paso 4 pantalla de error: reproducida forzando 404 del GET /episodes/{id} con `page.route`; 'El ejercicio no terminó de abrirse' con Reintentar / Pedir ayuda / Volver; el pedido sale con `episode_id` del intento y ejercicio 1. OK
+- Paso 5 docente: tarjeta de la comisión con '3 pedidos de ayuda'; vista 'Pedidos de ayuda' con alumno, TP, ejercicio, categoría, mensaje, 'El alumno veía: ...'; 'Ver episodio' sólo en los que tienen episodio y abre la timeline (Estado: open, Eventos: 1). OK
+- Paso 6 resolver: 'Marcar resuelto' -> pasa a Resueltos, contador baja a 2; en web-student el pedido figura Resuelto. OK
+- Paso 7 privacidad (404 a docente ajeno): NO corrido en navegador.
+- Paso 8 tesis: diff vacío en ctr/classifier/tutor/governance/contracts/prompts/academic_export. CTR en ctr_store antes/después de toda la sesión: único cambio `episodio_abierto` 28 -> 30 (los dos episodios que abrí a mano); cero eventos por los pedidos ni por abrir el modal; en el episodio del paso 1 sólo `episodio_abierto@0` antes y después de pedir ayuda.
+- Observación (no bloqueante): si el episodio se abre por URL directa/recarga (sin el contexto de ejercicio de la navegación), el pedido desde el header sale con `ejercicio_orden` vacío aunque el episodio es del ejercicio 1 (visto en la prueba, que recargó la URL). Desde el flujo normal (Empezar) el contexto existe.
+- Capturas: `capturas-prs-128-130/130-*.png`.
