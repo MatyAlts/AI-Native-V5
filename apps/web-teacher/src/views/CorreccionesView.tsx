@@ -54,6 +54,7 @@ import { correccionesTour } from "../tour/vistas"
 import { ejerciciosParaResumen, sugerirPuntajesDesdeCorrecciones } from "../utils/correccionIA"
 import { studentShortLabel } from "../utils/docenteLabels"
 import { helpContent } from "../utils/helpContent"
+import { textoPedidosReentrega } from "../utils/pedidosCorreccion"
 
 interface Props {
   comisionId: string
@@ -168,6 +169,8 @@ function EntregasListView({
 }: EntregasListViewProps) {
   const [tareasByID, setTareasByID] = useState<Record<string, TareaPractica>>({})
   const [estadoFilter, setEstadoFilter] = useState<EntregaEstado | "">("")
+  // "Sólo re-entregas": filtro server-side (entra en la queryKey y reinicia la paginación).
+  const [soloReentregas, setSoloReentregas] = useState(false)
   // Búsqueda por alumno (FR-5): filtra la lista en vivo por el dato de alumno
   // que la fila ya muestra — el nombre real (si el alumno se logueó) o el
   // pseudónimo corto (`Est. xxxxxx`). Se busca también contra el pseudónimo
@@ -186,12 +189,13 @@ function EntregasListView({
   // es server-side (parte de la queryKey → resetea la cache al cambiar); la
   // búsqueda por alumno (FR-5) es client-side sobre TODO el set acumulado.
   const query = useInfiniteQuery({
-    queryKey: ["entregas-docente", comisionId, estadoFilter],
+    queryKey: ["entregas-docente", comisionId, estadoFilter, soloReentregas],
     queryFn: ({ pageParam }) =>
       entregasDocenteApi.list(
         {
           comision_id: comisionId,
           ...(estadoFilter ? { estado: estadoFilter as EntregaEstado } : {}),
+          ...(soloReentregas ? { reentrega: true } : {}),
           ...(pageParam ? { cursor: pageParam } : {}),
         },
         getToken,
@@ -334,6 +338,20 @@ function EntregasListView({
             )
           })}
         </div>
+
+        <button
+          type="button"
+          aria-pressed={soloReentregas}
+          onClick={() => setSoloReentregas((v) => !v)}
+          data-testid="solo-reentregas-toggle"
+          className={`press-shrink inline-flex items-center gap-1.5 rounded-lg border px-3 py-1.5 text-xs font-medium transition-colors ${
+            soloReentregas
+              ? "border-ink bg-ink text-white"
+              : "border-border bg-surface text-muted hover:text-ink hover:bg-surface-alt"
+          }`}
+        >
+          Sólo re-entregas
+        </button>
 
         {/* Acciones a la derecha: corregir en lote (F5) + búsqueda por alumno (FR-5) */}
         {entregas.length > 0 && (
@@ -484,7 +502,20 @@ function EntregasListView({
                           {ESTADO_LABEL[entrega.estado]}
                         </Badge>
                       </span>
+                      {entrega.es_reentrega && (
+                        <span data-testid="badge-reentrega">
+                          <Badge variant="warning">
+                            Re-entrega
+                            {entrega.nota_final != null ? ` · antes ${entrega.nota_final}` : ""}
+                          </Badge>
+                        </span>
+                      )}
                     </div>
+                    {entrega.es_reentrega && textoPedidosReentrega(entrega.ejercicio_estados) && (
+                      <p className="text-xs text-muted" data-testid="pedidos-reentrega">
+                        Corrección pedida: {textoPedidosReentrega(entrega.ejercicio_estados)}
+                      </p>
+                    )}
                     <div className="min-w-0">
                       {tarea ? (
                         <>
