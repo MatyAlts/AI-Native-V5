@@ -147,3 +147,34 @@ def require_correccion_ia(user: User = Depends(get_current_user)) -> User:
             detail="Solo un docente puede operar la corrección asistida.",
         )
     return user
+
+
+# Pedidos de ayuda: el alumno pide, el docente de la comision lee y resuelve.
+#
+# Gates propios y no `require_permission`: sin Casbin, el alumno no tiene
+# `create` sobre un recurso nuevo, y meterlo en `STUDENT_READABLE` lo vuelve
+# mas confuso (mismo criterio que `require_correccion_ia`). El scope por
+# comision del docente va en la ruta (404), no aca.
+PEDIDOS_AYUDA_DOCENTE_ROLES = frozenset(
+    {"superadmin", "docente_admin", "docente", "jtp", "auxiliar"}
+)
+
+
+def require_estudiante(user: User = Depends(get_current_user)) -> User:
+    """Solo un alumno crea pedidos de ayuda."""
+    if "estudiante" not in user.roles:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Solo un estudiante puede pedir ayuda a su docente.",
+        )
+    return user
+
+
+def require_docente(user: User = Depends(get_current_user)) -> User:
+    """Solo un docente (o supervision) lee y resuelve pedidos de ayuda."""
+    if not (user.roles & PEDIDOS_AYUDA_DOCENTE_ROLES):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Solo un docente puede ver los pedidos de ayuda.",
+        )
+    return user

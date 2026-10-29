@@ -158,6 +158,7 @@ describe("alumnoOnboarding — ids", () => {
       "abrir-primer-tp",
       "episodio-tutor",
       "episodio-editor",
+      "episodio-pedir-ayuda",
       "como-se-entrega",
     ])
   })
@@ -243,7 +244,7 @@ describe("alumnoOnboarding — recorrido del alumno nuevo", () => {
     // Los dos comparten condiciones y ruta a proposito: el motor muestra uno solo, y
     // el segundo aparece recien cuando el primero se descarta.
     expect(pendientes(CON_EPISODIO)).toEqual(
-      expect.arrayContaining(["episodio-tutor", "episodio-editor"]),
+      expect.arrayContaining(["episodio-tutor", "episodio-editor", "episodio-pedir-ayuda"]),
     )
   })
 
@@ -251,6 +252,7 @@ describe("alumnoOnboarding — recorrido del alumno nuevo", () => {
     const segundoEpisodio = estado({ ...CON_EPISODIO, cantidadEpisodios: 2 })
     expect(pendientes(segundoEpisodio)).not.toContain("episodio-tutor")
     expect(pendientes(segundoEpisodio)).not.toContain("episodio-editor")
+    expect(pendientes(segundoEpisodio)).not.toContain("episodio-pedir-ayuda")
   })
 
   test("con episodios y sin entregar queda pendiente el de como se entrega", () => {
@@ -267,9 +269,15 @@ describe("alumnoOnboarding — recorrido del alumno nuevo", () => {
     expect(ESTADOS.slice(0, 6).map(({ nombre, estado: e }) => [nombre, pendientes(e)])).toEqual([
       ["desconocido (cargando)", []],
       ["nuevo", ["unirse-a-comision"]],
-      ["inscripto sin TPs", ["episodio-tutor", "episodio-editor"]],
-      ["inscripto con TPs", ["abrir-primer-tp", "episodio-tutor", "episodio-editor"]],
-      ["con un episodio", ["episodio-tutor", "episodio-editor", "como-se-entrega"]],
+      ["inscripto sin TPs", ["episodio-tutor", "episodio-editor", "episodio-pedir-ayuda"]],
+      [
+        "inscripto con TPs",
+        ["abrir-primer-tp", "episodio-tutor", "episodio-editor", "episodio-pedir-ayuda"],
+      ],
+      [
+        "con un episodio",
+        ["episodio-tutor", "episodio-editor", "episodio-pedir-ayuda", "como-se-entrega"],
+      ],
       ["terminal", []],
     ])
   })
@@ -289,7 +297,11 @@ describe("alumnoOnboarding — anti-zombie", () => {
   test("inscripto sin TPs: ningun cartel le pide hacer algo con un TP", () => {
     // El caso completo. No alcanza con que el cartel del TP no aparezca: no puede
     // aparecer otro en su lugar pidiendo algo que tampoco se puede hacer.
-    expect(pendientes(INSCRIPTO_SIN_TPS)).toEqual(["episodio-tutor", "episodio-editor"])
+    expect(pendientes(INSCRIPTO_SIN_TPS)).toEqual([
+      "episodio-tutor",
+      "episodio-editor",
+      "episodio-pedir-ayuda",
+    ])
     // Y los dos que quedan estan atados a `/episodio`, adonde este alumno no puede
     // llegar todavia: sin TP publicado no hay episodio que abrir.
     expect(porId("episodio-tutor").route).toBe("/episodio")

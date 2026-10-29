@@ -1742,3 +1742,93 @@ export const instrumentosApi = {
     me: listMyTransferencia,
   },
 }
+
+// ============================================================================
+// PEDIDOS DE AYUDA (change alumno-pide-ayuda-al-docente)
+// Ayuda HUMANA: el pedido va a los docentes de la comision, no al tutor, y no
+// emite nada al CTR. Vive en evaluation-service (tabla `pedidos_ayuda`).
+// ============================================================================
+
+export type PedidoAyudaCategoria =
+  | "no_puedo_avanzar"
+  | "error_plataforma"
+  | "duda_consigna"
+  | "otro"
+
+export interface PedidoAyudaCreate {
+  tarea_practica_id: string
+  categoria: PedidoAyudaCategoria
+  mensaje?: string
+  ejercicio_orden?: number
+  episode_id?: string
+  entrega_id?: string
+  contexto?: {
+    pantalla?: "episodio" | "episodio_error" | "lista_ejercicios"
+    error_visible?: string
+    user_agent?: string
+  }
+}
+
+export interface PedidoAyuda {
+  id: string
+  tarea_practica_id: string
+  ejercicio_orden: number | null
+  episode_id: string | null
+  categoria: PedidoAyudaCategoria
+  mensaje: string | null
+  estado: "pendiente" | "resuelto"
+  created_at: string
+  resuelto_at: string | null
+}
+
+/** Rechazo del servidor al crear un pedido (429 espera, 409 tope, 403 no inscripto...). */
+export class PedidoAyudaError extends Error {
+  readonly status: number
+  /** Texto del servidor, solo si es un string legible (los 422 de pydantic son listas). */
+  readonly detail: string | null
+  constructor(status: number, detail: string | null) {
+    super(`pedido de ayuda failed: ${status}`)
+    this.name = "PedidoAyudaError"
+    this.status = status
+    this.detail = detail
+  }
+}
+
+export async function crearPedidoAyuda(
+  payload: PedidoAyudaCreate,
+  getToken?: TokenGetter,
+): Promise<PedidoAyuda> {
+  const r = await fetch("/api/v1/pedidos-ayuda", {
+    method: "POST",
+    headers: await authHeaders(getToken),
+    body: JSON.stringify(payload),
+  })
+  if (!r.ok) {
+    let detail: string | null = null
+    try {
+      const body = (await r.json()) as { detail?: unknown }
+      if (typeof body.detail === "string") detail = body.detail
+    } catch {
+      // cuerpo no JSON: se cae a la frase generica del modal
+    }
+    throw new PedidoAyudaError(r.status, detail)
+  }
+  return (await r.json()) as PedidoAyuda
+}
+
+/** Los pedidos del alumno en una TP (ultimos 20). Si falla devuelve [] : es informativo. */
+export async function listarMisPedidosAyuda(
+  tareaPracticaId: string,
+  getToken?: TokenGetter,
+): Promise<PedidoAyuda[]> {
+  try {
+    const r = await fetch(
+      `/api/v1/pedidos-ayuda/mios?tarea_practica_id=${encodeURIComponent(tareaPracticaId)}`,
+      { headers: await authHeaders(getToken) },
+    )
+    if (!r.ok) return []
+    return (await r.json()) as PedidoAyuda[]
+  } catch {
+    return []
+  }
+}

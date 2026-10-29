@@ -9,7 +9,7 @@
  * con datos, los KPIs muestran "—" en color muted (PRODUCT.md auditabilidad).
  */
 import { Link } from "@tanstack/react-router"
-import { ArrowRight, ShieldAlert, Users } from "lucide-react"
+import { ArrowRight, LifeBuoy, ShieldAlert, Users } from "lucide-react"
 import type { CohortAlertsSummary, Comision } from "../lib/api"
 
 export interface ComisionKpis {
@@ -17,6 +17,8 @@ export interface ComisionKpis {
   episodiosSemana: number | null
   alertas: number | null
   adversosSemana: number | null
+  /** Pedidos de ayuda pendientes de los alumnos (null/0 = no se muestra nada). */
+  pedidosAyudaPendientes?: number | null
   // Breakdown opcional para tooltip del KPI alertas (ADR-022). Cuando es
   // `insufficient_data=true` la card muestra "—" + tooltip explicando
   // k-anonymity. Cuando hay data, tooltip lista counts por tipo.
@@ -114,6 +116,20 @@ export function ComisionDelDocenteCard({
           />
         </dl>
       </div>
+
+      {/* ═══ Pedidos de ayuda pendientes (solo si hay) ═══ */}
+      {kpis.pedidosAyudaPendientes != null && kpis.pedidosAyudaPendientes > 0 && (
+        <Link
+          to="/pedidos-ayuda"
+          search={{ comisionId: comision.id }}
+          data-testid="comision-card-pedidos-ayuda"
+          className="press-shrink inline-flex items-center gap-2 border-t border-border-soft bg-warning-soft px-5 py-2.5 text-sm font-medium text-warning hover:underline"
+        >
+          <LifeBuoy className="h-4 w-4" aria-hidden="true" />
+          {kpis.pedidosAyudaPendientes}{" "}
+          {kpis.pedidosAyudaPendientes === 1 ? "pedido de ayuda" : "pedidos de ayuda"}
+        </Link>
+      )}
 
       {/* ═══ Footer con CTAs ═══ */}
       <footer className="flex items-stretch border-t border-border-soft">

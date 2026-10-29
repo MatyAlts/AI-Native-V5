@@ -2786,3 +2786,70 @@ export async function descargarPdfCorreccion(
   await throwIfNotOk(r)
   return r.blob()
 }
+
+// ── Pedidos de ayuda (change alumno-pide-ayuda-al-docente) ─────────────
+//
+// El alumno le pide ayuda a los docentes de su comision desde el ejercicio. Lo
+// sirve evaluation-service (tabla `pedidos_ayuda`). Es ayuda HUMANA fuera del
+// CTR: leer o resolver un pedido no toca ningun episodio.
+
+export type PedidoAyudaCategoria =
+  | "no_puedo_avanzar"
+  | "error_plataforma"
+  | "duda_consigna"
+  | "otro"
+
+export type PedidoAyudaEstado = "pendiente" | "resuelto"
+
+export interface PedidoAyudaDocente {
+  id: string
+  comision_id: string
+  student_pseudonym: string
+  tarea_practica_id: string
+  entrega_id: string | null
+  ejercicio_orden: number | null
+  episode_id: string | null
+  categoria: PedidoAyudaCategoria
+  mensaje: string | null
+  contexto: { pantalla?: string; error_visible?: string; user_agent?: string }
+  estado: PedidoAyudaEstado
+  resuelto_por: string | null
+  resuelto_at: string | null
+  created_at: string
+}
+
+export interface PedidosAyudaResponse {
+  data: PedidoAyudaDocente[]
+  meta: { pendientes: number; total: number }
+}
+
+export async function listarPedidosAyuda(
+  params: { comision_id: string; estado?: PedidoAyudaEstado },
+  getToken?: TokenGetter,
+): Promise<PedidosAyudaResponse> {
+  const qs = new URLSearchParams({ comision_id: params.comision_id })
+  if (params.estado) qs.set("estado", params.estado)
+  const r = await fetch(`/api/v1/pedidos-ayuda?${qs.toString()}`, {
+    headers: await authHeaders(getToken),
+  })
+  await throwIfNotOk(r)
+  const body = (await r.json()) as Partial<PedidosAyudaResponse>
+  // Tolerante: si falta `meta` (respuesta incompleta) no se rompe la pantalla.
+  return {
+    data: body.data ?? [],
+    meta: { pendientes: body.meta?.pendientes ?? 0, total: body.meta?.total ?? 0 },
+  }
+}
+
+/** pendiente -> resuelto. Idempotente en el servidor. */
+export async function resolverPedidoAyuda(
+  id: string,
+  getToken?: TokenGetter,
+): Promise<PedidoAyudaDocente> {
+  const r = await fetch(`/api/v1/pedidos-ayuda/${id}/resolver`, {
+    method: "PATCH",
+    headers: await authHeaders(getToken),
+  })
+  await throwIfNotOk(r)
+  return r.json()
+}

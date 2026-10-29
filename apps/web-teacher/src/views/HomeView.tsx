@@ -26,6 +26,7 @@ import {
   getCohortAdversarialEvents,
   getCohortAlertsSummary,
   getCohortProgression,
+  listarPedidosAyuda,
 } from "../lib/api"
 import { helpContent } from "../utils/helpContent"
 
@@ -85,6 +86,16 @@ export function HomeView({ getToken }: Props) {
     })),
   })
 
+  // Pedidos de ayuda pendientes por comisión (change alumno-pide-ayuda-al-docente).
+  // Query aparte y FUERA de `metricsPending`: es un aviso, no un KPI; si falla o
+  // tarda, la card se pinta igual sin el contador.
+  const pedidosAyudaQueries = useQueries({
+    queries: comisiones.map((c) => ({
+      queryKey: ["pedidos-ayuda-pendientes", c.id],
+      queryFn: () => listarPedidosAyuda({ comision_id: c.id, estado: "pendiente" }, getToken),
+    })),
+  })
+
   // UX idéntica al patrón previo: skeleton único hasta que la lista y TODAS las
   // métricas de primera carga resuelven. Una métrica que falla degrada a null
   // por card (equivalente al Promise.allSettled anterior) sin bloquear el
@@ -110,6 +121,7 @@ export function HomeView({ getToken }: Props) {
         ? alertsSummary.alerts_summary.students_with_any_alert
         : null
     const alertsBreakdown: CohortAlertsSummary | null = alertsSummary ?? null
+    const pedidosAyudaPendientes = pedidosAyudaQueries[i]?.data?.meta.pendientes ?? null
     return {
       comision: c,
       displayName: comisionLabel(c),
@@ -118,6 +130,7 @@ export function HomeView({ getToken }: Props) {
         episodiosSemana,
         alertas,
         adversosSemana,
+        pedidosAyudaPendientes,
         ...(alertsBreakdown ? { alertsBreakdown } : {}),
       },
     }

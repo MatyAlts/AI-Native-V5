@@ -38,6 +38,7 @@ import {
 } from "react-resizable-panels"
 import { CodeEditor } from "../components/CodeEditor"
 import { NotesPanel } from "../components/NotesPanel"
+import { PedirAyudaBoton } from "../components/PedirAyudaModal"
 import { ReflectionModal } from "../components/ReflectionModal"
 import { useMediaQuery } from "../hooks/useMediaQuery"
 import { type LatchAbandono, crearLatchAbandono } from "../lib/abandonLatch"
@@ -109,6 +110,8 @@ export interface EjercicioContext {
   entregaId: string
   ejercicioId: string
   ejercicioOrden: number
+  /** TP del ejercicio. Opcional: lo usa "Pedir ayuda" cuando la TP aun no se cargo (pantalla de error). */
+  tareaId?: string
 }
 
 export interface EpisodeViewProps {
@@ -990,6 +993,22 @@ export function EpisodeView({ episodeId, onExit, ejercicioContext, getToken }: E
               Reintentar
             </button>
           )}
+          {/* Pedir ayuda a una PERSONA cuando el ejercicio no abrio. Sin la TP
+              (TP monolitica tras un F5, sin contexto) no hay a que adjuntarlo:
+              el boton no se muestra y queda "Volver". No toca el episodio. */}
+          {error === EPISODIO_NO_SE_ABRIO && ejercicioContext?.tareaId && (
+            <span className="mt-4 mr-2 inline-block">
+              <PedirAyudaBoton
+                tareaPracticaId={ejercicioContext.tareaId}
+                pantalla="episodio_error"
+                episodeId={episodeId}
+                entregaId={ejercicioContext.entregaId}
+                ejercicioOrden={ejercicioContext.ejercicioOrden}
+                errorVisible={EPISODIO_NO_SE_ABRIO}
+                getToken={getToken}
+              />
+            </span>
+          )}
           <button
             type="button"
             onClick={salir}
@@ -1479,6 +1498,16 @@ export function EpisodeView({ episodeId, onExit, ejercicioContext, getToken }: E
         )}
         <div className="ml-auto flex items-center gap-1">
           <HelpButton title="Tutor Socratico" content={helpContent.episode} />
+          {/* Ayuda HUMANA: va al docente de la comision, no al tutor ni al CTR.
+              Abrir el modal NO pausa ni cierra el episodio. */}
+          <PedirAyudaBoton
+            tareaPracticaId={tarea.id}
+            pantalla="episodio"
+            episodeId={episodeId}
+            entregaId={ejercicioContext?.entregaId}
+            ejercicioOrden={ejercicioContext?.ejercicioOrden}
+            getToken={getToken}
+          />
           {/* El docente decide por TP si se puede pausar/retomar (permite_pausa).
               undefined = backwards-compat (endpoint que no lo popula) → permitido. */}
           {tarea?.permite_pausa !== false && (
