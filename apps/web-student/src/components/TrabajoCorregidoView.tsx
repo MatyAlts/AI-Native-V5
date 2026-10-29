@@ -21,6 +21,7 @@ import {
   getEntregaArtefacto,
   getEpisodeState,
 } from "../lib/api"
+import { rotuloDescarga } from "../utils/descargas"
 import { archivoDeDescarga, ejerciciosDelTrabajo } from "../utils/trabajoCorregido"
 import { GradeDetailView } from "./GradeDetailView"
 
@@ -136,7 +137,6 @@ export function TrabajoCorregidoView({ entrega, onBack }: TrabajoCorregidoViewPr
         <div className="space-y-6">
           {ejercicios.map((ej) => {
             const { artefacto, titulo } = ej
-            const ext = artefacto.language === "java" ? ".java" : ".py"
             return (
               <article key={artefacto.orden}>
                 <div className="flex items-center justify-between mb-2">
@@ -147,7 +147,9 @@ export function TrabajoCorregidoView({ entrega, onBack }: TrabajoCorregidoViewPr
                     disabled={descargando === artefacto.orden}
                     className="text-xs rounded border border-border-soft px-3 py-1.5 text-body hover:bg-surface focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 disabled:opacity-60"
                   >
-                    {descargando === artefacto.orden ? "Descargando…" : `Descargar (${ext})`}
+                    {descargando === artefacto.orden
+                      ? "Descargando…"
+                      : rotuloDescarga("entregado", artefacto.language)}
                   </button>
                 </div>
                 <pre

@@ -1185,6 +1185,8 @@ export interface Entrega {
   estado: EntregaEstado
   ejercicio_estados: EjercicioEstado[]
   submitted_at: string | null
+  /** Entrega anterior a que se guardara el codigo sellado (`EntregaOut.legacy`). */
+  legacy?: boolean
   created_at: string
   updated_at: string
   /**

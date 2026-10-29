@@ -24,6 +24,7 @@ import {
   type Language,
   type TpEjercicio,
   entregasApi,
+  getEntregaArtefacto,
   getEpisodeState,
   listEjerciciosTp,
   reabrirEjercicio,
@@ -35,7 +36,9 @@ import {
 } from "../lib/artefactos"
 import { puedeEditarLaEntrega } from "../lib/entregaGuard"
 import { devolucionParcialVigente, estaBloqueado, ordenesACorregir } from "../lib/estaBloqueado"
+import { botonesDeDescarga, rotuloDescarga } from "../utils/descargas"
 import { buildEpisodioSourceFile } from "../utils/episodioDownload"
+import { archivoDeDescarga } from "../utils/trabajoCorregido"
 import { PedirAyudaBoton } from "./PedirAyudaModal"
 
 export interface ExerciseListViewProps {
@@ -161,6 +164,7 @@ export function ExerciseListView({
   // ADE-02: `orden` del ejercicio que se esta descargando, misma razon que
   // `reabriendo` — el spinner queda en SU boton, no en los cinco.
   const [descargando, setDescargando] = useState<number | null>(null)
+  const [descargandoEntregado, setDescargandoEntregado] = useState<number | null>(null)
   const [descargaError, setDescargaError] = useState<string | null>(null)
 
   // ADR-047: cargar entrega + composicion de ejercicios (tabla intermedia)
@@ -268,6 +272,55 @@ export function ExerciseListView({
       setDescargaError(`No se pudo descargar el ejercicio ${ejercicio.orden}: ${String(e)}`)
     } finally {
       setDescargando(null)
+    }
+  }
+
+  /**
+   * Descarga lo ENTREGADO (artefacto sellado) de un ejercicio. Solo lectura:
+   * GET /entregas/{id}/artefacto (al click, no al montar) + GET /episodes/{id}
+   * del episodio del artefacto para la charla. Change `descargas-borrador-y-entregado`.
+   */
+  async function handleDescargarEntregado(ejercicio: { orden: number; titulo: string }) {
+    if (!entrega) return
+    setDescargandoEntregado(ejercicio.orden)
+    setDescargaError(null)
+    try {
+      const datos = await getEntregaArtefacto(entrega.id)
+      const artefacto = datos.artefactos.find((a) => a.orden === ejercicio.orden)
+      if (!artefacto) {
+        setDescargaError(
+          `No encontramos el codigo entregado del ejercicio ${ejercicio.orden}. Proba con el borrador o consulta a tu docente.`,
+        )
+        return
+      }
+      let messages = null
+      let aviso = null
+      try {
+        if (!artefacto.episode_id) throw new Error("sin episodio")
+        messages = (await getEpisodeState(artefacto.episode_id)).messages
+      } catch {
+        aviso = `Descargamos el codigo del ejercicio ${ejercicio.orden}, pero la charla con el tutor no se pudo incluir.`
+      }
+      const { filename, content } = archivoDeDescarga(artefacto, messages, {
+        ejercicioTitulo: ejercicio.titulo,
+        fecha: new Date().toLocaleString(),
+      })
+      const blob = new Blob([content], { type: "text/plain;charset=utf-8" })
+      const url = URL.createObjectURL(blob)
+      const a = document.createElement("a")
+      a.href = url
+      a.download = filename
+      document.body.appendChild(a)
+      a.click()
+      a.remove()
+      URL.revokeObjectURL(url)
+      if (aviso) setDescargaError(aviso)
+    } catch (e) {
+      setDescargaError(
+        `No se pudo descargar lo entregado del ejercicio ${ejercicio.orden}: ${String(e)}`,
+      )
+    } finally {
+      setDescargandoEntregado(null)
     }
   }
 
@@ -500,6 +553,12 @@ export function ExerciseListView({
               completed && editable && (!devolucionParcial || aCorregir.has(ejercicio.orden))
             const reabiertoPorDocente = devolucionParcial && aCorregir.has(ejercicio.orden)
             const isFirst = idx === 0
+            const botones = botonesDeDescarga({
+              estado: entrega?.estado ?? "draft",
+              legacy: entrega?.legacy ?? false,
+              submittedAt: entrega?.submitted_at ?? null,
+              completado: completed,
+            })
 
             return (
               <li
@@ -581,7 +640,7 @@ export function ExerciseListView({
                   {completed && (
                     <span className="shrink-0 text-xs text-success font-medium">Completado</span>
                   )}
-                  {completed && (
+                  {botones.borrador && (
                     <button
                       type="button"
                       onClick={() => void handleDescargar(ejercicio)}
@@ -591,7 +650,20 @@ export function ExerciseListView({
                     >
                       {descargando === ejercicio.orden
                         ? "Descargando..."
-                        : `Descargar (.${resolveDownloadLanguage(ejercicio, tarea) === "java" ? "java" : "py"})`}
+                        : rotuloDescarga("borrador", resolveDownloadLanguage(ejercicio, tarea))}
+                    </button>
+                  )}
+                  {botones.entregado && (
+                    <button
+                      type="button"
+                      onClick={() => void handleDescargarEntregado(ejercicio)}
+                      disabled={descargandoEntregado === ejercicio.orden}
+                      data-testid={`ejercicio-descargar-entregado-${ejercicio.orden}`}
+                      className="shrink-0 rounded border border-border bg-surface px-3 py-1.5 text-xs font-medium text-body hover:bg-surface-alt disabled:opacity-60"
+                    >
+                      {descargandoEntregado === ejercicio.orden
+                        ? "Descargando..."
+                        : rotuloDescarga("entregado", resolveDownloadLanguage(ejercicio, tarea))}
                     </button>
                   )}
                   {canReopen && (

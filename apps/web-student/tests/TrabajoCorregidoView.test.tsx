@@ -198,6 +198,18 @@ describe("TrabajoCorregidoView — render", () => {
 })
 
 describe("TrabajoCorregidoView — descarga", () => {
+  it("el rotulo dice 'Descargar lo entregado' con la extension del artefacto", async () => {
+    stubRed(rutasOk([art(1), art(2, { language: "java", codigo: "class B {}" })]))
+    render(<TrabajoCorregidoView entrega={entrega()} onBack={vi.fn()} />)
+    expect(
+      await screen.findByRole("button", { name: "Descargar lo entregado (.py)" }),
+    ).toBeInTheDocument()
+    expect(
+      screen.getByRole("button", { name: "Descargar lo entregado (.java)" }),
+    ).toBeInTheDocument()
+    expect(screen.queryByRole("button", { name: /^Descargar \(/ })).toBeNull()
+  })
+
   it("descarga el codigo ENTREGADO (no el snapshot), pide el episodio del ARTEFACTO y comenta la charla", async () => {
     const log = stubRed(rutasOk([art(1, { episode_id: "ep-del-artefacto-1" })]))
     render(<TrabajoCorregidoView entrega={entrega()} onBack={vi.fn()} />)
