@@ -166,6 +166,12 @@ class EntregaOut(BaseModel):
     # igual que a esos dos, y el frontend ya los tipa `string`.
     graded_at: datetime | None = None
 
+    # Verdadero si la entrega esta `submitted` y ya tiene una calificacion vigente:
+    # la maquina de estados solo llega ahi por graded -> returned -> submitted.
+    # Derivado al leer en `_entrega_out_con_tp`, sin columna (change
+    # `reentregas-marcadas-en-pendientes`, D1).
+    es_reentrega: bool = False
+
     @field_validator("nota_final", mode="before")
     @classmethod
     def _nota_final_decimal_a_float(cls, v: object) -> object:
