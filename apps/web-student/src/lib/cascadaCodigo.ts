@@ -41,6 +41,7 @@
 export type OrigenCodigo =
   | "borrador-local"
   | "snapshot"
+  | "codigo-entregado"
   | "scaffold-tp"
   | "scaffold-ejercicio"
   | "placeholder"
@@ -54,6 +55,14 @@ export interface CandidatosCodigo {
   borradorLocal?: string | null
   /** Lo que el alumno escribio en ESTE episodio (`last_code_snapshot`). */
   snapshot?: string | null
+  /**
+   * El codigo que el alumno YA ENTREGO para este mismo ejercicio (artefacto
+   * sellado de la entrega). Va debajo del snapshot y encima de los scaffolds:
+   * cierra la "cadena cortada" de la reapertura (change
+   * `editor-muestra-codigo-entregado-al-reabrir`). Lo resuelve `EpisodePage`
+   * (match por `orden` y `ejercicio_id`); sembrarlo NO emite `edicion_codigo`.
+   */
+  codigoEntregado?: string | null
   /** `inicial_codigo` de la TP — el scaffold del docente. */
   scaffoldTp?: string | null
   /** `inicial_codigo` del ejercicio del banco — el otro scaffold del docente. */
@@ -76,10 +85,11 @@ export interface CodigoResuelto {
  *     episodio. Gana incluso al snapshot: ver el comentario del modulo.
  *  2. `snapshot` — lo que el alumno escribio en este episodio. Pisarlo es
  *     borrarle trabajo.
- *  3. `scaffoldTp` — el scaffold del docente a nivel TP.
- *  4. `scaffoldEjercicio` — el otro scaffold del docente, solo si la TP no
+ *  3. `codigoEntregado` — lo que el alumno ya entrego de ESTE ejercicio.
+ *  4. `scaffoldTp` — el scaffold del docente a nivel TP.
+ *  5. `scaffoldEjercicio` — el otro scaffold del docente, solo si la TP no
  *     trae el suyo.
- *  5. `placeholder` — el andamio del lenguaje.
+ *  6. `placeholder` — el andamio del lenguaje.
  *
  * Sin scaffold del docente cae directo al placeholder: el campo vacio de
  * `inicial_codigo` tambien es una decision del docente ("que arranque
@@ -94,6 +104,9 @@ export function resolverCascadaDeCodigo(candidatos: CandidatosCodigo): CodigoRes
     return { codigo: candidatos.borradorLocal, origen: "borrador-local" }
   }
   if (candidatos.snapshot) return { codigo: candidatos.snapshot, origen: "snapshot" }
+  if (candidatos.codigoEntregado) {
+    return { codigo: candidatos.codigoEntregado, origen: "codigo-entregado" }
+  }
   if (candidatos.scaffoldTp) return { codigo: candidatos.scaffoldTp, origen: "scaffold-tp" }
   if (candidatos.scaffoldEjercicio) {
     return { codigo: candidatos.scaffoldEjercicio, origen: "scaffold-ejercicio" }

@@ -1796,6 +1796,8 @@ export type EntregaEstado = "draft" | "submitted" | "graded" | "returned"
 export interface EjercicioEstado {
   orden: number
   completado: boolean
+  /** El docente pidio corregir este ejercicio ("Pedir correccion"). */
+  reabierto_por_docente?: boolean
   episode_id: string | null
   // ADR-047: identidad permanente del ejercicio reusable. Nullable en
   // entregas legacy (pre-refactor) — el match cae al `orden` como fallback.
@@ -1959,13 +1961,19 @@ export async function calificarEntrega(
   return r.json()
 }
 
+/**
+ * "Pedir correccion". Sin `ordenes` NO manda body y el backend reabre todos los
+ * ejercicios (compat con clientes viejos); con `ordenes` reabre solo esos.
+ */
 export async function devolverEntrega(
   entregaId: string,
+  ordenes?: number[],
   getToken?: TokenGetter,
 ): Promise<EntregaDocente> {
   const r = await fetch(`/api/v1/entregas/${entregaId}/return`, {
     method: "POST",
     headers: await authHeaders(getToken),
+    ...(ordenes ? { body: JSON.stringify({ ordenes }) } : {}),
   })
   await throwIfNotOk(r)
   return r.json()
@@ -2777,4 +2785,71 @@ export async function descargarPdfCorreccion(
   })
   await throwIfNotOk(r)
   return r.blob()
+}
+
+// ── Pedidos de ayuda (change alumno-pide-ayuda-al-docente) ─────────────
+//
+// El alumno le pide ayuda a los docentes de su comision desde el ejercicio. Lo
+// sirve evaluation-service (tabla `pedidos_ayuda`). Es ayuda HUMANA fuera del
+// CTR: leer o resolver un pedido no toca ningun episodio.
+
+export type PedidoAyudaCategoria =
+  | "no_puedo_avanzar"
+  | "error_plataforma"
+  | "duda_consigna"
+  | "otro"
+
+export type PedidoAyudaEstado = "pendiente" | "resuelto"
+
+export interface PedidoAyudaDocente {
+  id: string
+  comision_id: string
+  student_pseudonym: string
+  tarea_practica_id: string
+  entrega_id: string | null
+  ejercicio_orden: number | null
+  episode_id: string | null
+  categoria: PedidoAyudaCategoria
+  mensaje: string | null
+  contexto: { pantalla?: string; error_visible?: string; user_agent?: string }
+  estado: PedidoAyudaEstado
+  resuelto_por: string | null
+  resuelto_at: string | null
+  created_at: string
+}
+
+export interface PedidosAyudaResponse {
+  data: PedidoAyudaDocente[]
+  meta: { pendientes: number; total: number }
+}
+
+export async function listarPedidosAyuda(
+  params: { comision_id: string; estado?: PedidoAyudaEstado },
+  getToken?: TokenGetter,
+): Promise<PedidosAyudaResponse> {
+  const qs = new URLSearchParams({ comision_id: params.comision_id })
+  if (params.estado) qs.set("estado", params.estado)
+  const r = await fetch(`/api/v1/pedidos-ayuda?${qs.toString()}`, {
+    headers: await authHeaders(getToken),
+  })
+  await throwIfNotOk(r)
+  const body = (await r.json()) as Partial<PedidosAyudaResponse>
+  // Tolerante: si falta `meta` (respuesta incompleta) no se rompe la pantalla.
+  return {
+    data: body.data ?? [],
+    meta: { pendientes: body.meta?.pendientes ?? 0, total: body.meta?.total ?? 0 },
+  }
+}
+
+/** pendiente -> resuelto. Idempotente en el servidor. */
+export async function resolverPedidoAyuda(
+  id: string,
+  getToken?: TokenGetter,
+): Promise<PedidoAyudaDocente> {
+  const r = await fetch(`/api/v1/pedidos-ayuda/${id}/resolver`, {
+    method: "PATCH",
+    headers: await authHeaders(getToken),
+  })
+  await throwIfNotOk(r)
+  return r.json()
 }

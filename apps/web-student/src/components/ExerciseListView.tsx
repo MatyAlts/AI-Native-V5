@@ -35,9 +35,11 @@ import {
   collectArtefactoDrafts,
 } from "../lib/artefactos"
 import { puedeEditarLaEntrega } from "../lib/entregaGuard"
+import { devolucionParcialVigente, estaBloqueado, ordenesACorregir } from "../lib/estaBloqueado"
 import { botonesDeDescarga, rotuloDescarga } from "../utils/descargas"
 import { buildEpisodioSourceFile } from "../utils/episodioDownload"
 import { archivoDeDescarga } from "../utils/trabajoCorregido"
+import { PedirAyudaBoton } from "./PedirAyudaModal"
 
 export interface ExerciseListViewProps {
   tarea: AvailableTarea
@@ -399,12 +401,11 @@ export function ExerciseListView({
   const editable = puedeEditarLaEntrega(entrega?.estado ?? "")
   const canSubmit = todosCompletos && editable
 
-  const isLocked = (orden: number): boolean => {
-    if (orden === 1) return false
-    // Los ejercicios son secuenciales: el anterior debe estar completado
-    const prevEstado = ejercicioEstados.find((e) => e.orden === orden - 1)
-    return !prevEstado?.completado
-  }
+  // Secuencial solo entre pendientes (ver `estaBloqueado`): con una devolucion
+  // parcial los completados no bloquean ni se bloquean.
+  const isLocked = (orden: number): boolean => estaBloqueado(orden, ejercicioEstados)
+  const devolucionParcial = devolucionParcialVigente(entrega?.estado ?? "", ejercicioEstados)
+  const aCorregir = ordenesACorregir(ejercicioEstados)
 
   const isCompleted = (orden: number): boolean => {
     return ejercicioEstados.find((e) => e.orden === orden)?.completado ?? false
@@ -452,6 +453,16 @@ export function ExerciseListView({
             {tarea.codigo} (v{tarea.version})
           </p>
           <h2 className="text-xl font-semibold text-ink mb-2">{tarea.titulo}</h2>
+          {/* Ayuda HUMANA (docente de la comision), no el tutor. Sirve aunque no
+              haya episodio: p. ej. el ejercicio no termino de abrirse. */}
+          <div className="mb-2">
+            <PedirAyudaBoton
+              tareaPracticaId={tarea.id}
+              pantalla="lista_ejercicios"
+              entregaId={entrega?.id}
+              ejercicios={pairs.map((p) => ({ orden: p.orden, titulo: p.ejercicio.titulo }))}
+            />
+          </div>
           {entrega && (
             <span
               data-testid="entrega-estado-badge"
@@ -536,7 +547,11 @@ export function ExerciseListView({
             // una vez antes de entregar", que le pide justo lo que la pantalla
             // le hizo imposible. El backend siempre supo des-marcar; no habia
             // ninguna puerta que llevara ahi.
-            const canReopen = completed && editable
+            // En una devolucion parcial no se reabre lo que el docente no
+            // pidio (el backend responde 409).
+            const canReopen =
+              completed && editable && (!devolucionParcial || aCorregir.has(ejercicio.orden))
+            const reabiertoPorDocente = devolucionParcial && aCorregir.has(ejercicio.orden)
             const isFirst = idx === 0
             const botones = botonesDeDescarga({
               estado: entrega?.estado ?? "draft",
@@ -579,6 +594,14 @@ export function ExerciseListView({
                       }`}
                     >
                       Ejercicio {ejercicio.orden}: {ejercicio.titulo}
+                      {reabiertoPorDocente && (
+                        <span
+                          data-testid={`ejercicio-a-corregir-${ejercicio.orden}`}
+                          className="ml-2 rounded bg-warning-soft px-1.5 py-0.5 text-xs font-medium text-warning"
+                        >
+                          A corregir
+                        </span>
+                      )}
                     </p>
                     <p className="text-xs text-muted mt-0.5">
                       Peso: {Math.round(ejercicio.peso * 100)}%

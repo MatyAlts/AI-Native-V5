@@ -38,6 +38,7 @@ import {
 } from "react-resizable-panels"
 import { CodeEditor } from "../components/CodeEditor"
 import { NotesPanel } from "../components/NotesPanel"
+import { PedirAyudaBoton } from "../components/PedirAyudaModal"
 import { ReflectionModal } from "../components/ReflectionModal"
 import { useMediaQuery } from "../hooks/useMediaQuery"
 import { type LatchAbandono, crearLatchAbandono } from "../lib/abandonLatch"
@@ -59,6 +60,7 @@ import {
   emitLecturaEnunciado,
   emitPegaIntentada,
   emitTestsEjecutados,
+  getEntregaArtefacto,
   getEpisodeState,
   getTareaById,
   listEjerciciosTp,
@@ -72,7 +74,8 @@ import {
   readArtefactoDraft,
   saveArtefactoDraft,
 } from "../lib/artefactos"
-import { esPlaceholder, resolverCascadaDeCodigo } from "../lib/cascadaCodigo"
+import { type CodigoResuelto, esPlaceholder, resolverCascadaDeCodigo } from "../lib/cascadaCodigo"
+import { codigoEntregadoDe } from "../lib/codigoEntregado"
 import { mensajeAvisoDescartado } from "../lib/ctrDropAviso"
 import {
   marcarActividad,
@@ -107,6 +110,8 @@ export interface EjercicioContext {
   entregaId: string
   ejercicioId: string
   ejercicioOrden: number
+  /** TP del ejercicio. Opcional: lo usa "Pedir ayuda" cuando la TP aun no se cargo (pantalla de error). */
+  tareaId?: string
 }
 
 export interface EpisodeViewProps {
@@ -162,6 +167,11 @@ export function EpisodeView({ episodeId, onExit, ejercicioContext, getToken }: E
   // placeholder tiene que seguir al lenguaje. `usedPlaceholderRef` evita pisar
   // codigo real: solo se reemplaza lo que seguimos considerando andamio.
   const usedPlaceholderRef = useRef(true)
+  // Con que codigo arranco el editor (resultado de la cascada) y si el alumno
+  // llego a editar en ESTE episodio. Juntos deciden si cerrar sin tipear cuenta
+  // como completar el ejercicio (`markEjercicioCompletedOnce`).
+  const siembraRef = useRef<CodigoResuelto | null>(null)
+  const huboEdicionRef = useRef(false)
 
   /** Fija el lenguaje y, si el buffer sigue siendo el andamio por omision,
    * lo reemplaza por el del lenguaje resuelto. Nunca pisa codigo real: el
@@ -392,6 +402,7 @@ export function EpisodeView({ episodeId, onExit, ejercicioContext, getToken }: E
   // `ejercicioContext` entero no puede ir ahi (es un objeto nuevo en cada
   // render de `EpisodeView` si el caller no lo memoiza).
   const entregaId = ejercicioContext?.entregaId ?? null
+  const ejercicioIdCtx = ejercicioContext?.ejercicioId ?? null
 
   const scrollToBottom = useCallback(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" })
@@ -598,13 +609,32 @@ export function EpisodeView({ episodeId, onExit, ejercicioContext, getToken }: E
         // resultado. Antes estaba desparramada en tres `if` separados por 60
         // lineas, con `usedPlaceholderRef` mutando en el medio, y no habia
         // forma de ejercitarla sin montar la pagina contra el backend.
+        //
+        // Codigo YA ENTREGADO (reapertura con cadena cortada): solo se pide si
+        // no hay nada propio mas fresco, y solo en TP multi-ejercicio. Es el
+        // mismo ejercicio de la misma entrega, nunca otro (`codigoEntregadoDe`).
+        // Best-effort: cualquier falla deja el candidato en null y la cascada
+        // sigue como antes. Solo lectura, no emite nada.
+        let codigoEntregado: string | null = null
+        if (entregaId && ejercicioOrden != null && !borradorLocal && !state.last_code_snapshot) {
+          try {
+            const sellado = await getEntregaArtefacto(entregaId, getToken)
+            codigoEntregado = codigoEntregadoDe(sellado, ejercicioOrden, ejercicioIdCtx)
+          } catch {
+            // sin candidato: scaffold / placeholder, como antes de este cambio.
+          }
+          if (cancelled) return
+        }
+
         const siembra = resolverCascadaDeCodigo({
           borradorLocal,
           snapshot: state.last_code_snapshot,
+          codigoEntregado,
           scaffoldTp: resolveCodigoInicial(t),
           scaffoldEjercicio,
           placeholder: LANGUAGE_PLACEHOLDER[langEfectivo],
         })
+        siembraRef.current = siembra
         usedPlaceholderRef.current = esPlaceholder(siembra)
         setCode(siembra.codigo)
         setMessages(
@@ -646,7 +676,7 @@ export function EpisodeView({ episodeId, onExit, ejercicioContext, getToken }: E
     return () => {
       cancelled = true
     }
-  }, [episodeId, salir, ejercicioOrden, entregaId, applyLanguage, reloadKey])
+  }, [episodeId, salir, ejercicioOrden, entregaId, ejercicioIdCtx, applyLanguage, reloadKey])
 
   // UI-8: enviar un mensaje al tutor. Si el stream falla (LLM saturado, red,
   // sesion pausada), NO cerramos el episodio ni ofrecemos salir — un error
@@ -860,7 +890,28 @@ export function EpisodeView({ episodeId, onExit, ejercicioContext, getToken }: E
     const hayCodigo =
       collectArtefactoDrafts(ejercicioContext.entregaId, [ejercicioContext.ejercicioOrden]).length >
       0
-    if (!hayCodigo) return
+    if (!hayCodigo) {
+      // Cerrar SIN editar un ejercicio que el editor mostro con codigo propio
+      // del alumno (snapshot, incluido el heredado por REAPERTURA, o el codigo
+      // ya entregado): ese codigo pasa a ser el borrador y el ejercicio se
+      // marca, como si lo hubiera tipeado. Sin esto una TP devuelta quedaba
+      // trabada: el alumno ve su codigo, no toca nada porque estaba bien, y el
+      // guard (BUG-1) no lo dejaba avanzar. Scaffold, placeholder, o "edito y
+      // lo dejo vacio" NO entran: siguen sin marcarse (BUG-1 intacto).
+      const siembra = siembraRef.current
+      const esCodigoPropio =
+        siembra != null &&
+        (siembra.origen === "snapshot" || siembra.origen === "codigo-entregado") &&
+        siembra.codigo.trim() !== ""
+      if (huboEdicionRef.current || !esCodigoPropio) return
+      saveArtefactoDraft(ejercicioContext.entregaId, {
+        orden: ejercicioContext.ejercicioOrden,
+        ejercicio_id: ejercicioContext.ejercicioId,
+        episode_id: episodeId,
+        codigo: siembra.codigo,
+        language,
+      })
+    }
 
     markedCompletedRef.current = true
     try {
@@ -941,6 +992,22 @@ export function EpisodeView({ episodeId, onExit, ejercicioContext, getToken }: E
             >
               Reintentar
             </button>
+          )}
+          {/* Pedir ayuda a una PERSONA cuando el ejercicio no abrio. Sin la TP
+              (TP monolitica tras un F5, sin contexto) no hay a que adjuntarlo:
+              el boton no se muestra y queda "Volver". No toca el episodio. */}
+          {error === EPISODIO_NO_SE_ABRIO && ejercicioContext?.tareaId && (
+            <span className="mt-4 mr-2 inline-block">
+              <PedirAyudaBoton
+                tareaPracticaId={ejercicioContext.tareaId}
+                pantalla="episodio_error"
+                episodeId={episodeId}
+                entregaId={ejercicioContext.entregaId}
+                ejercicioOrden={ejercicioContext.ejercicioOrden}
+                errorVisible={EPISODIO_NO_SE_ABRIO}
+                getToken={getToken}
+              />
+            </span>
           )}
           <button
             type="button"
@@ -1089,6 +1156,7 @@ export function EpisodeView({ episodeId, onExit, ejercicioContext, getToken }: E
           )
         }}
         onEditDebounced={(snapshot, diffChars, origin) => {
+          huboEdicionRef.current = true
           setMaxActividad((a) => (a < 2 ? 2 : a))
           // Guardamos el snapshot para poder mandarlo en el submit. El alumno
           // entrega desde la lista de ejercicios, cuando ya salió de acá y el
@@ -1430,6 +1498,16 @@ export function EpisodeView({ episodeId, onExit, ejercicioContext, getToken }: E
         )}
         <div className="ml-auto flex items-center gap-1">
           <HelpButton title="Tutor Socratico" content={helpContent.episode} />
+          {/* Ayuda HUMANA: va al docente de la comision, no al tutor ni al CTR.
+              Abrir el modal NO pausa ni cierra el episodio. */}
+          <PedirAyudaBoton
+            tareaPracticaId={tarea.id}
+            pantalla="episodio"
+            episodeId={episodeId}
+            entregaId={ejercicioContext?.entregaId}
+            ejercicioOrden={ejercicioContext?.ejercicioOrden}
+            getToken={getToken}
+          />
           {/* El docente decide por TP si se puede pausar/retomar (permite_pausa).
               undefined = backwards-compat (endpoint que no lo popula) → permitido. */}
           {tarea?.permite_pausa !== false && (

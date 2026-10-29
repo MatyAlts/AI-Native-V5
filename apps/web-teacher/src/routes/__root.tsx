@@ -42,6 +42,7 @@ import {
   Group,
   Home,
   Layers,
+  LifeBuoy,
   PieChart,
   ShieldAlert,
   TrendingUp,
@@ -89,6 +90,8 @@ export const NAV_GROUPS: NavGroup[] = [
       { id: "/tareas-practicas", label: "Trabajos Prácticos", icon: ClipboardList },
       { id: "/materiales", label: "Materiales", icon: FolderOpen },
       { id: "/correcciones", label: "Correcciones", icon: CheckSquare },
+      // Ayuda HUMANA: lo que los alumnos le piden al docente desde el ejercicio.
+      { id: "/pedidos-ayuda", label: "Pedidos de ayuda", icon: LifeBuoy },
       { id: "/revision-cola", label: "Cola de revisión", icon: Gavel },
       // Va DEBAJO de Correcciones porque es su continuacion: acá el docente
       // conecta su cuenta de Active-IA y sincroniza las rubricas, que es lo

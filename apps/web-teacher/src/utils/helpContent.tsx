@@ -638,6 +638,44 @@ export const helpContent: HelpContentMap = {
     </div>
   ),
 
+  pedidosAyuda: (
+    <div className="space-y-4 text-sidebar-text-muted">
+      <p className="text-lg font-medium text-[var(--text-inverse)]">Pedidos de ayuda</p>
+      <p>
+        Lista lo que los alumnos de la comision te pidieron con el boton "Pedir ayuda a tu docente".
+        Cada pedido llega con el dato que normalmente falta: el trabajo, el ejercicio, el episodio y
+        la hora.
+      </p>
+      <ul className="list-disc list-inside space-y-2 ml-4">
+        <li>
+          <strong>Categoria:</strong> el alumno elige entre "No puedo avanzar", "Error de la
+          plataforma", "Duda sobre la consigna" y "Otro".
+        </li>
+        <li>
+          <strong>Ver episodio:</strong> abre la linea de tiempo del episodio. Aparece solo si el
+          pedido trae episodio; si el episodio no existe, la pantalla lo muestra vacio y eso ya es
+          un dato para diagnosticar.
+        </li>
+        <li>
+          <strong>Marcar resuelto:</strong> el alumno ve el pedido como "Resuelto". No hay respuesta
+          escrita en esta version: contestale como siempre (en clase o por Moodle) y despues
+          marcalo.
+        </li>
+        <li>
+          <strong>Sin aviso automatico:</strong> no llega mail ni notificacion. Entra a esta
+          pantalla o mira el contador de "Mis comisiones".
+        </li>
+      </ul>
+      <div className="bg-sidebar-bg-edge p-4 rounded-lg mt-2">
+        <p className="text-warning font-medium">Importante:</p>
+        <p className="text-sm mt-1">
+          Este pedido es ayuda humana fuera del tutor: no queda en la cadena del episodio, pero
+          queda registrado con el episodio y la hora.
+        </p>
+      </div>
+    </div>
+  ),
+
   correcciones: (
     <div className="space-y-4 text-sidebar-text-muted">
       <p className="text-lg font-medium text-[var(--text-inverse)]">Correcciones</p>
@@ -651,11 +689,13 @@ export const helpContent: HelpContentMap = {
           Usa el boton "Corregir" para abrir el formulario de calificacion.
         </li>
         <li>
-          <strong>Calificada:</strong> ya tiene nota y feedback. Podes usar "Devolver al estudiante"
-          si queres que revise la entrega.
+          <strong>Calificada:</strong> ya tiene la nota publicada (el estudiante la ve apenas la
+          guardas con "Publicar nota"). Si queres que corrija algo, usa "Pedir correccion": es
+          opcional y elegis que ejercicios tiene que rehacer.
         </li>
         <li>
-          <strong>Devuelta:</strong> el estudiante puede ver el feedback y la nota.
+          <strong>Devuelta:</strong> el estudiante tiene que corregir los ejercicios que pediste;
+          los demas quedan como los entrego.
         </li>
         <li>
           <strong>Drill-down de episodios:</strong> en la vista de correccion, cada ejercicio

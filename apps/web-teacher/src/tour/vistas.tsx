@@ -321,13 +321,13 @@ export const correccionesTour: TourFlow = {
           <p>
             <strong className="text-ink">Borrador</strong> es trabajo que el alumno todavia no
             envio. <strong className="text-ink">Enviada</strong> es lo que espera correccion.{" "}
-            <strong className="text-ink">Calificada</strong> ya tiene nota cargada.{" "}
-            <strong className="text-ink">Devuelta</strong> es la que el alumno ya puede leer con su
-            devolucion.
+            <strong className="text-ink">Calificada</strong> ya tiene la nota publicada: el alumno
+            la ve apenas la guardas. <strong className="text-ink">Devuelta</strong> es la que el
+            alumno tiene que corregir.
           </p>
           <p className="text-muted">
-            Calificar y devolver son dos pasos separados a proposito: podes cerrar las notas de toda
-            la comision y recien despues liberarlas.
+            "Publicar nota" es lo que guarda la nota. "Pedir correccion" es opcional: elegis que
+            ejercicios tiene que rehacer el alumno, y el resto queda como lo entrego.
           </p>
         </>
       ),

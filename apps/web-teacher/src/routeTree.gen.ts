@@ -16,6 +16,7 @@ import { Route as TareasPracticasRouteImport } from './routes/tareas-practicas'
 import { Route as StudentLongitudinalRouteImport } from './routes/student-longitudinal'
 import { Route as RevisionColaRouteImport } from './routes/revision-cola'
 import { Route as ProgressionRouteImport } from './routes/progression'
+import { Route as PedidosAyudaRouteImport } from './routes/pedidos-ayuda'
 import { Route as MaterialesRouteImport } from './routes/materiales'
 import { Route as KappaRouteImport } from './routes/kappa'
 import { Route as InterraterAdminRouteImport } from './routes/interrater-admin'
@@ -65,6 +66,11 @@ const RevisionColaRoute = RevisionColaRouteImport.update({
 const ProgressionRoute = ProgressionRouteImport.update({
   id: '/progression',
   path: '/progression',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const PedidosAyudaRoute = PedidosAyudaRouteImport.update({
+  id: '/pedidos-ayuda',
+  path: '/pedidos-ayuda',
   getParentRoute: () => rootRouteImport,
 } as any)
 const MaterialesRoute = MaterialesRouteImport.update({
@@ -160,6 +166,7 @@ export interface FileRoutesByFullPath {
   '/interrater-admin': typeof InterraterAdminRoute
   '/kappa': typeof KappaRoute
   '/materiales': typeof MaterialesRoute
+  '/pedidos-ayuda': typeof PedidosAyudaRoute
   '/progression': typeof ProgressionRoute
   '/revision-cola': typeof RevisionColaRoute
   '/student-longitudinal': typeof StudentLongitudinalRoute
@@ -184,6 +191,7 @@ export interface FileRoutesByTo {
   '/interrater-admin': typeof InterraterAdminRoute
   '/kappa': typeof KappaRoute
   '/materiales': typeof MaterialesRoute
+  '/pedidos-ayuda': typeof PedidosAyudaRoute
   '/progression': typeof ProgressionRoute
   '/revision-cola': typeof RevisionColaRoute
   '/student-longitudinal': typeof StudentLongitudinalRoute
@@ -209,6 +217,7 @@ export interface FileRoutesById {
   '/interrater-admin': typeof InterraterAdminRoute
   '/kappa': typeof KappaRoute
   '/materiales': typeof MaterialesRoute
+  '/pedidos-ayuda': typeof PedidosAyudaRoute
   '/progression': typeof ProgressionRoute
   '/revision-cola': typeof RevisionColaRoute
   '/student-longitudinal': typeof StudentLongitudinalRoute
@@ -235,6 +244,7 @@ export interface FileRouteTypes {
     | '/interrater-admin'
     | '/kappa'
     | '/materiales'
+    | '/pedidos-ayuda'
     | '/progression'
     | '/revision-cola'
     | '/student-longitudinal'
@@ -259,6 +269,7 @@ export interface FileRouteTypes {
     | '/interrater-admin'
     | '/kappa'
     | '/materiales'
+    | '/pedidos-ayuda'
     | '/progression'
     | '/revision-cola'
     | '/student-longitudinal'
@@ -283,6 +294,7 @@ export interface FileRouteTypes {
     | '/interrater-admin'
     | '/kappa'
     | '/materiales'
+    | '/pedidos-ayuda'
     | '/progression'
     | '/revision-cola'
     | '/student-longitudinal'
@@ -308,6 +320,7 @@ export interface RootRouteChildren {
   InterraterAdminRoute: typeof InterraterAdminRoute
   KappaRoute: typeof KappaRoute
   MaterialesRoute: typeof MaterialesRoute
+  PedidosAyudaRoute: typeof PedidosAyudaRoute
   ProgressionRoute: typeof ProgressionRoute
   RevisionColaRoute: typeof RevisionColaRoute
   StudentLongitudinalRoute: typeof StudentLongitudinalRoute
@@ -366,6 +379,13 @@ declare module '@tanstack/react-router' {
       path: '/progression'
       fullPath: '/progression'
       preLoaderRoute: typeof ProgressionRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/pedidos-ayuda': {
+      id: '/pedidos-ayuda'
+      path: '/pedidos-ayuda'
+      fullPath: '/pedidos-ayuda'
+      preLoaderRoute: typeof PedidosAyudaRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/materiales': {
@@ -492,6 +512,7 @@ const rootRouteChildren: RootRouteChildren = {
   InterraterAdminRoute: InterraterAdminRoute,
   KappaRoute: KappaRoute,
   MaterialesRoute: MaterialesRoute,
+  PedidosAyudaRoute: PedidosAyudaRoute,
   ProgressionRoute: ProgressionRoute,
   RevisionColaRoute: RevisionColaRoute,
   StudentLongitudinalRoute: StudentLongitudinalRoute,

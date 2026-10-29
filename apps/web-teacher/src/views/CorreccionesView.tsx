@@ -13,7 +13,7 @@
  *     - Boton "Calificar" → POST /api/v1/entregas/{id}/calificar.
  *     - Boton "Devolver" (visible si ya fue calificada) → POST .../return.
  */
-import { Badge, Input, PageContainer } from "@platform/ui"
+import { Badge, Input, Modal, PageContainer } from "@platform/ui"
 import { useInfiniteQuery } from "@tanstack/react-query"
 import { Link } from "@tanstack/react-router"
 import {
@@ -578,6 +578,13 @@ function EntregasListView({
 // de la TP (tp_ejercicios, ADR-047). Empareja por `ejercicio_id` (identidad
 // estable): si el orden cambio, el feedback sigue apuntando al ejercicio
 // correcto. Fallback a `orden` solo para entregas legacy sin `ejercicio_id`.
+/** Que ejercicios se pidieron corregir: las marcas, o "todos" si no hay (devolucion total / legacy). */
+function textoPedidos(estados: EjercicioEstado[]): string {
+  const marcados = estados.filter((e) => e.reabierto_por_docente).map((e) => e.orden)
+  if (marcados.length === 0) return "todos los ejercicios"
+  return `ejercicio${marcados.length > 1 ? "s" : ""} ${marcados.sort((a, b) => a - b).join(", ")}`
+}
+
 function resolveTituloEjercicio(ej: EjercicioEstado, tpEjercicios: TpEjercicio[]): string | null {
   const match = ej.ejercicio_id
     ? tpEjercicios.find((t) => t.ejercicio_id === ej.ejercicio_id)
@@ -1136,6 +1143,9 @@ function GradingFormView({
   const [calificacionError, setCalificacionError] = useState<string | null>(null)
   const [episodeResolveError, setEpisodeResolveError] = useState<string | null>(null)
   const [devolviendo, setDevolviendo] = useState(false)
+  // "Pedir correccion": modal con los ejercicios a reabrir (ninguno tildado).
+  const [pedirOpen, setPedirOpen] = useState(false)
+  const [seleccionPedido, setSeleccionPedido] = useState<Set<number>>(new Set())
   // Las correcciones asistidas de esta entrega, para el resumen. Se cargan
   // una vez y las refresca el panel de cada ejercicio al terminar.
   const [correccionesIA, setCorreccionesIA] = useState<CorreccionIA[]>([])
@@ -1569,11 +1579,14 @@ function GradingFormView({
     }
   }
 
-  async function handleDevolver() {
+  async function handlePedirCorreccion() {
+    if (seleccionPedido.size === 0) return
     setDevolviendo(true)
     setSubmitError(null)
     try {
-      const updated = await entregasDocenteApi.devolver(entrega.id, getToken)
+      const ordenes = [...seleccionPedido].sort((a, b) => a - b)
+      const updated = await entregasDocenteApi.devolver(entrega.id, ordenes, getToken)
+      setPedirOpen(false)
       onUpdated(updated)
     } catch (e) {
       setSubmitError(String(e))
@@ -2101,7 +2114,11 @@ function GradingFormView({
                     e.currentTarget.style.backgroundColor = "var(--color-accent-brand)"
                   }}
                 >
-                  {submitting ? "Guardando..." : queueMode ? "Guardar y siguiente" : "Calificar"}
+                  {submitting
+                    ? "Guardando..."
+                    : queueMode
+                      ? "Publicar y siguiente"
+                      : "Publicar nota"}
                 </button>
               )}
 
@@ -2164,13 +2181,83 @@ function GradingFormView({
               {entrega.estado === "graded" && !reediting && !queueMode && (
                 <button
                   type="button"
-                  onClick={() => void handleDevolver()}
+                  onClick={() => {
+                    setSeleccionPedido(new Set())
+                    setSubmitError(null)
+                    setPedirOpen(true)
+                  }}
                   disabled={devolviendo}
                   data-testid="devolver-btn"
                   className="press-shrink px-4 py-2 rounded-md text-sm font-medium border border-border bg-surface text-ink hover:bg-surface-alt disabled:opacity-60 transition-colors"
                 >
-                  {devolviendo ? "Devolviendo..." : "Devolver al estudiante"}
+                  Pedir corrección
                 </button>
+              )}
+
+              {pedirOpen && (
+                <Modal
+                  isOpen={true}
+                  onClose={() => setPedirOpen(false)}
+                  title="Pedir corrección"
+                  size="sm"
+                >
+                  <div data-testid="pedir-correccion-modal" className="space-y-3">
+                    <p className="text-sm text-body">
+                      Elegí qué ejercicios tiene que rehacer el alumno. Los demás quedan como están,
+                      con el código que entregó.
+                    </p>
+                    <ul className="space-y-2">
+                      {entrega.ejercicio_estados.map((ej) => {
+                        const titulo = resolveTituloEjercicio(ej, tpEjercicios)
+                        return (
+                          <li key={ej.orden}>
+                            <label className="flex items-center gap-2 text-sm text-ink">
+                              <input
+                                type="checkbox"
+                                data-testid={`pedir-correccion-ej-${ej.orden}`}
+                                checked={seleccionPedido.has(ej.orden)}
+                                onChange={(e) => {
+                                  const next = new Set(seleccionPedido)
+                                  if (e.target.checked) next.add(ej.orden)
+                                  else next.delete(ej.orden)
+                                  setSeleccionPedido(next)
+                                }}
+                              />
+                              Ejercicio {ej.orden}
+                              {titulo ? `: ${titulo}` : ""}
+                            </label>
+                          </li>
+                        )
+                      })}
+                    </ul>
+                    <div className="flex justify-end gap-2 pt-2">
+                      <button
+                        type="button"
+                        onClick={() => setPedirOpen(false)}
+                        disabled={devolviendo}
+                        className="press-shrink px-4 py-2 rounded-md text-sm font-medium border border-border bg-surface text-ink hover:bg-surface-alt disabled:opacity-60 transition-colors"
+                      >
+                        Cancelar
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => void handlePedirCorreccion()}
+                        disabled={devolviendo || seleccionPedido.size === 0}
+                        data-testid="pedir-correccion-confirmar-btn"
+                        className="px-4 py-2 rounded text-sm font-medium text-white disabled:opacity-60"
+                        style={{ backgroundColor: "var(--color-accent-brand)" }}
+                      >
+                        {devolviendo ? "Pidiendo..." : "Confirmar"}
+                      </button>
+                    </div>
+                  </div>
+                </Modal>
+              )}
+
+              {entrega.estado === "returned" && (
+                <p className="text-sm text-muted" data-testid="pedidos-correccion">
+                  Corrección pedida: {textoPedidos(entrega.ejercicio_estados)}
+                </p>
               )}
 
               {/* Controles de la cola (F5): saltar esta entrega sin calificar y

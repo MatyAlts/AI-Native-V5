@@ -1,4 +1,8 @@
-## ADDED Requirements
+## Purpose
+
+Flujo secuencial de ejercicios de una TP en web-student.
+
+## Requirements
 
 ### Requirement: Sequential exercise flow in web-student
 The web-student SHALL display exercises of a TP as a sequential list. The student SHALL complete exercises in order: exercise N+1 unlocks only after exercise N is marked complete.

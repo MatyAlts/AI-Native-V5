@@ -89,3 +89,35 @@ async def test_sessions_son_independientes(redis_client) -> None:
     loaded2 = await mgr.get(s2.episode_id)
     assert loaded1.seq == 2
     assert loaded2.seq == 0
+
+
+async def test_last_execution_round_trip(redis_client) -> None:
+    mgr = SessionManager(redis_client)
+    state = _make_state()
+    state.last_execution = {
+        "stdout": "hola",
+        "stderr": "boom",
+        "duration_ms": 9,
+        "code_sha256": "f" * 64,
+    }
+    await mgr.set(state)
+
+    loaded = await mgr.get(state.episode_id)
+    assert loaded is not None
+    assert loaded.last_execution == state.last_execution
+
+
+async def test_sesion_legacy_sin_last_execution_devuelve_none(redis_client) -> None:
+    import json
+
+    mgr = SessionManager(redis_client)
+    state = _make_state()
+    await mgr.set(state)
+    key = mgr._key(state.episode_id)
+    data = json.loads(await redis_client.get(key))
+    data.pop("last_execution", None)
+    await redis_client.set(key, json.dumps(data))
+
+    loaded = await mgr.get(state.episode_id)
+    assert loaded is not None
+    assert loaded.last_execution is None

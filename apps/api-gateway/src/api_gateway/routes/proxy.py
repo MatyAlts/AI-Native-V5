@@ -95,6 +95,9 @@ ROUTE_MAP: dict[str, str] = {
     # la integracion (disparo y resultado) cuelga de `/api/v1/entregas/...`,
     # que ya esta mapeado arriba.
     "/api/v1/activeia": settings.evaluation_service_url,
+    # alumno-pide-ayuda-al-docente: el alumno le pide ayuda a los docentes de su
+    # comision. Es ayuda HUMANA fuera del CTR: no pasa por tutor ni emite eventos.
+    "/api/v1/pedidos-ayuda": settings.evaluation_service_url,
     # ADR-059 (epic java-execution-engine): ejecucion server-side de Java via
     # execution-service (puerto 8013, reservado desde ADR-033). Lo consumen el
     # editor del alumno (web-student) y el panel de prueba del docente
