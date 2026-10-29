@@ -27,7 +27,7 @@ from uuid import UUID
 
 import structlog
 from fastapi import APIRouter, Depends, HTTPException, Query, Response, status
-from sqlalchemy import and_, bindparam, select, text
+from sqlalchemy import and_, bindparam, exists, not_, select, text
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
@@ -153,6 +153,10 @@ async def list_entregas(
     comision_id: UUID | None = None,
     estado: Literal["draft", "submitted", "graded", "returned"] | None = None,
     student_pseudonym: UUID | None = None,
+    # true: solo re-entregas (submitted con calificacion vigente); false: el
+    # resto. Default plano (no `Query(None)`) para que las llamadas directas
+    # a la funcion sin el kwarg no reciban un objeto `Query` truthy.
+    reentrega: bool | None = None,
     cursor: UUID | None = Query(None, description="UUID de la ultima entrega del batch anterior"),
     limit: int = Query(50, ge=1, le=200),
     user: User = Depends(require_permission("entrega", "read")),
@@ -232,6 +236,19 @@ async def list_entregas(
         conditions.append(Entrega.comision_id == comision_id)
     if estado:
         conditions.append(Entrega.estado == estado)
+    if reentrega is not None:
+        # Re-entrega = `submitted` + calificacion vigente (D1). En SQL y no en
+        # Python: la lista pagina con cursor y un recorte posterior daria
+        # paginas incompletas (D2). Va ANTES del aislamiento por comision, que
+        # se agrega despues sin tocarse.
+        es_reentrega = and_(
+            Entrega.estado == "submitted",
+            exists().where(
+                Calificacion.entrega_id == Entrega.id,
+                Calificacion.deleted_at.is_(None),
+            ),
+        )
+        conditions.append(es_reentrega if reentrega else not_(es_reentrega))
 
     if is_docente:
         if not is_oversight:
@@ -1094,6 +1111,8 @@ def _entrega_out_con_tp(
         nota, graded_at = nota_y_fecha
         out.nota_final = float(nota)
         out.graded_at = graded_at
+    # D1: `submitted` + calificacion vigente solo se alcanza re-entregando.
+    out.es_reentrega = entrega.estado == "submitted" and nota_y_fecha is not None
     return out
 
 

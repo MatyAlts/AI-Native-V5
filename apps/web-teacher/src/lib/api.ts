@@ -1826,6 +1826,10 @@ export interface EntregaDocente {
   legacy: boolean
   created_at: string
   updated_at: string
+  /** `submitted` con calificacion vigente: el alumno re-entrego tras una devolucion. */
+  es_reentrega?: boolean
+  /** Nota de la calificacion vigente (la anterior, si es una re-entrega). */
+  nota_final?: number | null
 }
 
 export interface ArtefactoEjercicio {
@@ -1892,6 +1896,8 @@ export async function listEntregas(
     comision_id: string
     estado?: EntregaEstado
     tarea_practica_id?: string
+    /** true: solo re-entregas (filtro en el servidor, no rompe la paginacion). */
+    reentrega?: boolean
     cursor?: string
     limit?: number
   },
@@ -1900,6 +1906,7 @@ export async function listEntregas(
   const qs = new URLSearchParams({ comision_id: params.comision_id })
   if (params.estado) qs.set("estado", params.estado)
   if (params.tarea_practica_id) qs.set("tarea_practica_id", params.tarea_practica_id)
+  if (params.reentrega !== undefined) qs.set("reentrega", String(params.reentrega))
   if (params.cursor) qs.set("cursor", params.cursor)
   if (params.limit) qs.set("limit", String(params.limit))
   const r = await fetch(`/api/v1/entregas?${qs.toString()}`, {
