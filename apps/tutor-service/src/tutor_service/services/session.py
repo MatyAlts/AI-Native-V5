@@ -148,6 +148,10 @@ class SessionState:
     # líneas específicas ("en la línea 7 estás haciendo X"). None = el alumno
     # no escribió nada todavía en este episodio.
     current_code: str | None = None
+    # tutor-ve-salida-de-ejecucion: salida de la ULTIMA ejecucion del alumno,
+    # ya truncada (stdout/stderr/duration_ms/code_sha256). Ver
+    # services/contexto_ejecucion.py. None = no ejecuto nada todavia.
+    last_execution: dict | None = None
 
 
 class SessionManager:
@@ -190,6 +194,8 @@ class SessionManager:
             rubrica_context=data.get("rubrica_context"),
             # Sesiones legacy no tienen current_code — default None.
             current_code=data.get("current_code"),
+            # Sesiones legacy no tienen last_execution — default None.
+            last_execution=data.get("last_execution"),
         )
 
     async def set(self, state: SessionState) -> None:
@@ -216,6 +222,7 @@ class SessionManager:
             "ejercicio_orden": state.ejercicio_orden,
             "rubrica_context": state.rubrica_context,
             "current_code": state.current_code,
+            "last_execution": state.last_execution,
         }
         await self.redis.setex(self._key(state.episode_id), SESSION_TTL, json.dumps(data))
 

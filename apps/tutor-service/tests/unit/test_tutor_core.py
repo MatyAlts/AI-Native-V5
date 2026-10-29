@@ -1116,3 +1116,186 @@ async def test_interact_sin_current_code_no_inyecta_mensaje(
         if m["role"] == "system" and "Código que el alumno tiene actualmente" in m["content"]
     ]
     assert code_msgs == [], "no debería inyectar system de código cuando current_code=None"
+
+
+# ── tutor-ve-salida-de-ejecucion ────────────────────────────────────
+
+_TRACEBACK = (
+    "Traceback (most recent call last):\n"
+    '  File "<exec>", line 1, in <module>\n'
+    "NameError: name 'resultado' is not defined"
+)
+
+
+async def _abrir(tutor: TutorCore) -> tuple[UUID, UUID]:
+    student = uuid4()
+    episode_id = await tutor.open_episode(
+        tenant_id=uuid4(),
+        comision_id=uuid4(),
+        student_pseudonym=student,
+        problema_id=uuid4(),
+        curso_config_hash="c" * 64,
+        classifier_config_hash="b" * 64,
+    )
+    return episode_id, student
+
+
+def _ejec(code: str = "print(resultado)", stdout: str = "", stderr: str = "") -> dict:
+    return {
+        "code": code,
+        "stdout": stdout,
+        "stderr": stderr,
+        "duration_ms": 12.5,
+        "runtime": "pyodide-0.26",
+    }
+
+
+def _sys_con_salida(msgs: list[dict]) -> list[dict]:
+    return [
+        m for m in msgs if m["role"] == "system" and "Salida de la ultima ejecucion" in m["content"]
+    ]
+
+
+@pytest.mark.asyncio
+async def test_emit_codigo_ejecutado_guarda_last_execution_y_current_code(
+    tutor: TutorCore,
+) -> None:
+    episode_id, student = await _abrir(tutor)
+    await tutor.emit_codigo_ejecutado(episode_id, student, _ejec(stderr="E" * 4000, stdout="ok"))
+
+    state = await tutor.sessions.get(episode_id)
+    assert state is not None
+    assert state.current_code == "print(resultado)"
+    assert state.last_execution is not None
+    assert state.last_execution["stdout"] == "ok"
+    assert state.last_execution["stderr"].startswith("[... 1000 caracteres omitidos ...]")
+    assert len(state.last_execution["stderr"]) < 4000
+
+
+@pytest.mark.asyncio
+async def test_emit_codigo_ejecutado_current_code_pisa_el_snapshot_anterior(
+    tutor: TutorCore,
+) -> None:
+    episode_id, student = await _abrir(tutor)
+    await tutor.record_edicion_codigo(
+        episode_id=episode_id,
+        snapshot="x = 1\n",
+        diff_chars=6,
+        language="python",
+        user_id=student,
+    )
+    await tutor.emit_codigo_ejecutado(episode_id, student, _ejec(code="x = 2\n"))
+    state = await tutor.sessions.get(episode_id)
+    assert state is not None
+    assert state.current_code == "x = 2\n"
+
+
+@pytest.mark.asyncio
+async def test_ctr_recibe_la_salida_completa_sin_truncar(
+    tutor: TutorCore, fake_ctr: FakeCTRClient
+) -> None:
+    episode_id, student = await _abrir(tutor)
+    stdout, stderr = "o" * 50_000, "e" * 9_000
+    await tutor.emit_codigo_ejecutado(episode_id, student, _ejec(stdout=stdout, stderr=stderr))
+
+    ev = fake_ctr.published_events[-1]
+    assert ev["event_type"] == "codigo_ejecutado"
+    assert ev["payload"]["stdout"] == stdout
+    assert ev["payload"]["stderr"] == stderr
+
+
+@pytest.mark.asyncio
+async def test_si_el_ctr_falla_la_sesion_no_guarda_la_ejecucion(
+    tutor: TutorCore, fake_ctr: FakeCTRClient
+) -> None:
+    episode_id, student = await _abrir(tutor)
+
+    async def _boom(*a, **k):
+        raise RuntimeError("ctr caido")
+
+    fake_ctr.publish_event = _boom  # type: ignore[method-assign]
+    with pytest.raises(RuntimeError):
+        await tutor.emit_codigo_ejecutado(episode_id, student, _ejec(stderr=_TRACEBACK))
+
+    state = await tutor.sessions.get(episode_id)
+    assert state is not None
+    assert state.last_execution is None
+    assert state.current_code is None
+
+
+@pytest.mark.asyncio
+async def test_interact_inyecta_la_salida_entre_el_codigo_y_el_mensaje(
+    tutor: TutorCore, fake_ai: FakeAIGatewayClient
+) -> None:
+    episode_id, student = await _abrir(tutor)
+    await tutor.emit_codigo_ejecutado(episode_id, student, _ejec(stderr=_TRACEBACK))
+
+    async for _ in tutor.interact(episode_id, "me tira error"):
+        pass
+
+    msgs = fake_ai.last_messages
+    idx_code = next(i for i, m in enumerate(msgs) if "Código que el alumno tiene" in m["content"])
+    idx_out = next(i for i, m in enumerate(msgs) if "Salida de la ultima ejecucion" in m["content"])
+    assert msgs[-1] == {"role": "user", "content": "me tira error"}
+    assert idx_code < idx_out < len(msgs) - 1
+    assert "NameError: name 'resultado' is not defined" in msgs[idx_out]["content"]
+
+
+@pytest.mark.asyncio
+async def test_interact_sin_ejecucion_no_inyecta_salida(
+    tutor: TutorCore, fake_ai: FakeAIGatewayClient
+) -> None:
+    episode_id, student = await _abrir(tutor)
+    await tutor.record_edicion_codigo(
+        episode_id=episode_id,
+        snapshot="x = 1\n",
+        diff_chars=6,
+        language="python",
+        user_id=student,
+    )
+    async for _ in tutor.interact(episode_id, "hola"):
+        pass
+    for m in fake_ai.last_messages:
+        assert "<salida_" not in m["content"]
+        assert "Salida de la ultima ejecucion" not in m["content"]
+
+
+@pytest.mark.asyncio
+async def test_flujo_error_luego_ok_solo_ve_la_ultima(
+    tutor: TutorCore, fake_ai: FakeAIGatewayClient
+) -> None:
+    episode_id, student = await _abrir(tutor)
+    await tutor.emit_codigo_ejecutado(episode_id, student, _ejec(stderr=_TRACEBACK))
+    await tutor.emit_codigo_ejecutado(episode_id, student, _ejec(code="print(42)", stdout="42\n"))
+
+    async for _ in tutor.interact(episode_id, "ahora anda?"):
+        pass
+
+    bloques = _sys_con_salida(fake_ai.last_messages)
+    assert len(bloques) == 1
+    assert "42" in bloques[0]["content"]
+    assert "NameError" not in bloques[0]["content"]
+    assert "edito el codigo despues de ejecutarlo" not in bloques[0]["content"]
+
+
+@pytest.mark.asyncio
+async def test_flujo_editar_despues_de_ejecutar_agrega_aviso(
+    tutor: TutorCore, fake_ai: FakeAIGatewayClient
+) -> None:
+    episode_id, student = await _abrir(tutor)
+    await tutor.emit_codigo_ejecutado(episode_id, student, _ejec(stderr=_TRACEBACK))
+    await tutor.record_edicion_codigo(
+        episode_id=episode_id,
+        snapshot="resultado = 1\nprint(resultado)\n",
+        diff_chars=14,
+        language="python",
+        user_id=student,
+    )
+
+    async for _ in tutor.interact(episode_id, "y ahora?"):
+        pass
+
+    bloques = _sys_con_salida(fake_ai.last_messages)
+    assert len(bloques) == 1
+    assert "edito el codigo despues de ejecutarlo" in bloques[0]["content"]
+    assert "NameError" in bloques[0]["content"]
