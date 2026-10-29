@@ -1166,6 +1166,8 @@ export interface EjercicioEstado {
   completado: boolean
   episode_id: string | null
   completado_at: string | null
+  /** El docente pidio corregir este ejercicio ("Pedir correccion"). */
+  reabierto_por_docente?: boolean
 }
 
 export type EntregaEstado = "draft" | "submitted" | "graded" | "returned"

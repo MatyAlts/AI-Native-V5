@@ -651,11 +651,13 @@ export const helpContent: HelpContentMap = {
           Usa el boton "Corregir" para abrir el formulario de calificacion.
         </li>
         <li>
-          <strong>Calificada:</strong> ya tiene nota y feedback. Podes usar "Devolver al estudiante"
-          si queres que revise la entrega.
+          <strong>Calificada:</strong> ya tiene la nota publicada (el estudiante la ve apenas la
+          guardas con "Publicar nota"). Si queres que corrija algo, usa "Pedir correccion": es
+          opcional y elegis que ejercicios tiene que rehacer.
         </li>
         <li>
-          <strong>Devuelta:</strong> el estudiante puede ver el feedback y la nota.
+          <strong>Devuelta:</strong> el estudiante tiene que corregir los ejercicios que pediste;
+          los demas quedan como los entrego.
         </li>
         <li>
           <strong>Drill-down de episodios:</strong> en la vista de correccion, cada ejercicio

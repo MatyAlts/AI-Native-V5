@@ -34,6 +34,7 @@ import {
   collectArtefactoDrafts,
 } from "../lib/artefactos"
 import { puedeEditarLaEntrega } from "../lib/entregaGuard"
+import { devolucionParcialVigente, estaBloqueado, ordenesACorregir } from "../lib/estaBloqueado"
 import { buildEpisodioSourceFile } from "../utils/episodioDownload"
 
 export interface ExerciseListViewProps {
@@ -346,12 +347,11 @@ export function ExerciseListView({
   const editable = puedeEditarLaEntrega(entrega?.estado ?? "")
   const canSubmit = todosCompletos && editable
 
-  const isLocked = (orden: number): boolean => {
-    if (orden === 1) return false
-    // Los ejercicios son secuenciales: el anterior debe estar completado
-    const prevEstado = ejercicioEstados.find((e) => e.orden === orden - 1)
-    return !prevEstado?.completado
-  }
+  // Secuencial solo entre pendientes (ver `estaBloqueado`): con una devolucion
+  // parcial los completados no bloquean ni se bloquean.
+  const isLocked = (orden: number): boolean => estaBloqueado(orden, ejercicioEstados)
+  const devolucionParcial = devolucionParcialVigente(entrega?.estado ?? "", ejercicioEstados)
+  const aCorregir = ordenesACorregir(ejercicioEstados)
 
   const isCompleted = (orden: number): boolean => {
     return ejercicioEstados.find((e) => e.orden === orden)?.completado ?? false
@@ -483,7 +483,11 @@ export function ExerciseListView({
             // una vez antes de entregar", que le pide justo lo que la pantalla
             // le hizo imposible. El backend siempre supo des-marcar; no habia
             // ninguna puerta que llevara ahi.
-            const canReopen = completed && editable
+            // En una devolucion parcial no se reabre lo que el docente no
+            // pidio (el backend responde 409).
+            const canReopen =
+              completed && editable && (!devolucionParcial || aCorregir.has(ejercicio.orden))
+            const reabiertoPorDocente = devolucionParcial && aCorregir.has(ejercicio.orden)
             const isFirst = idx === 0
 
             return (
@@ -520,6 +524,14 @@ export function ExerciseListView({
                       }`}
                     >
                       Ejercicio {ejercicio.orden}: {ejercicio.titulo}
+                      {reabiertoPorDocente && (
+                        <span
+                          data-testid={`ejercicio-a-corregir-${ejercicio.orden}`}
+                          className="ml-2 rounded bg-warning-soft px-1.5 py-0.5 text-xs font-medium text-warning"
+                        >
+                          A corregir
+                        </span>
+                      )}
                     </p>
                     <p className="text-xs text-muted mt-0.5">
                       Peso: {Math.round(ejercicio.peso * 100)}%

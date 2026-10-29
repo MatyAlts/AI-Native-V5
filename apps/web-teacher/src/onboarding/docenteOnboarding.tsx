@@ -128,8 +128,8 @@ export const docenteOnboarding: OnboardingFlow<EstadoDocente> = {
             de como llego ahi: que pregunto, cuando corrio los tests, que reescribio despues.
           </p>
           <p className="text-muted">
-            La nota se carga con la rubrica del TP. Calificar y devolver son dos pasos separados:
-            podes cerrar las notas de toda la comision y liberarlas despues.
+            La nota se carga con la rubrica del TP. "Publicar nota" la guarda y el alumno la ve
+            enseguida. "Pedir correccion" es opcional: elegis que ejercicios tiene que rehacer.
           </p>
         </>
       ),

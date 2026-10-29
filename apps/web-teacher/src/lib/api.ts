@@ -1796,6 +1796,8 @@ export type EntregaEstado = "draft" | "submitted" | "graded" | "returned"
 export interface EjercicioEstado {
   orden: number
   completado: boolean
+  /** El docente pidio corregir este ejercicio ("Pedir correccion"). */
+  reabierto_por_docente?: boolean
   episode_id: string | null
   // ADR-047: identidad permanente del ejercicio reusable. Nullable en
   // entregas legacy (pre-refactor) — el match cae al `orden` como fallback.
@@ -1959,13 +1961,19 @@ export async function calificarEntrega(
   return r.json()
 }
 
+/**
+ * "Pedir correccion". Sin `ordenes` NO manda body y el backend reabre todos los
+ * ejercicios (compat con clientes viejos); con `ordenes` reabre solo esos.
+ */
 export async function devolverEntrega(
   entregaId: string,
+  ordenes?: number[],
   getToken?: TokenGetter,
 ): Promise<EntregaDocente> {
   const r = await fetch(`/api/v1/entregas/${entregaId}/return`, {
     method: "POST",
     headers: await authHeaders(getToken),
+    ...(ordenes ? { body: JSON.stringify({ ordenes }) } : {}),
   })
   await throwIfNotOk(r)
   return r.json()

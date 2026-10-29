@@ -1,4 +1,8 @@
-## ADDED Requirements
+## Purpose
+
+Calificacion de entregas de TP: modelo, endpoints de calificar, devolver y vista docente.
+
+## Requirements
 
 ### Requirement: Calificacion model linked to entrega
 The system SHALL maintain a `calificaciones` table in `academic_main` with columns: `id` (UUID PK), `tenant_id` (UUID, RLS), `entrega_id` (FK UNIQUE to entregas), `graded_by` (UUID, docente user_id), `nota_final` (NUMERIC(5,2), CHECK 0-10), `feedback_general` (TEXT nullable), `detalle_criterios` (JSONB array of `{criterio, puntaje, max_puntaje, comentario}`), `graded_at` (timestamp), `deleted_at` (nullable).

@@ -28,6 +28,9 @@ class EjercicioEstadoSchema(BaseModel):
     episode_id: UUID | None = None
     completado: bool = False
     completed_at: datetime | None = None
+    # El docente pidió corregir este ejercicio ("Pedir corrección"). Sin la clave
+    # (filas anteriores al change) deserializa en False: ver `ordenes_a_corregir`.
+    reabierto_por_docente: bool = False
 
 
 class EntregaCreate(BaseModel):
@@ -190,6 +193,18 @@ class MarkEjercicioBody(BaseModel):
     completado: bool = True
     episode_id: UUID | None = None
     ejercicio_id: UUID | None = None
+
+
+class ReturnEntregaBody(BaseModel):
+    """Body OPCIONAL del POST /entregas/{id}/return ("Pedir corrección").
+
+    Sin body, o con `ordenes=None`: se reabren todos los ejercicios (el
+    comportamiento de antes; lo usan los clientes viejos y la TP monolítica).
+    Con `ordenes`: solo esos. La validación (no vacía, sin duplicados, `orden`
+    existente en la entrega) vive en el endpoint porque necesita la entrega.
+    """
+
+    ordenes: list[int] | None = None
 
 
 class CalificacionCreate(BaseModel):
