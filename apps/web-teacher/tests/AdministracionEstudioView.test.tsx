@@ -305,7 +305,7 @@ describe("AdministracionEstudioView: codebook", () => {
     })
     await montarInvestigador()
     const r = region("Codebook")
-    subir(within(r).getByLabelText("Texto del codebook (.md)"), new File(["# Codebook"], "cb.md"))
+    subir(await within(r).findByLabelText("Texto del codebook (.md)"), new File(["# Codebook"], "cb.md"))
     subir(within(r).getByLabelText("Esquema del formulario (.json)"), new File(['{"dimensiones":[]}'], "e.json"))
     fireEvent.click(within(r).getByRole("button", { name: "Guardar borrador v1" }))
     const alerta = await within(r).findByRole("alert")
@@ -334,7 +334,7 @@ describe("AdministracionEstudioView: codebook", () => {
     })
     await montarInvestigador()
     const r = region("Codebook")
-    subir(within(r).getByLabelText("Texto del codebook (.md)"), new File(["# Codebook"], "cb.md"))
+    subir(await within(r).findByLabelText("Texto del codebook (.md)"), new File(["# Codebook"], "cb.md"))
     subir(within(r).getByLabelText("Esquema del formulario (.json)"), new File(['{"dimensiones":[]}'], "e.json"))
     fireEvent.click(within(r).getByRole("button", { name: "Guardar borrador v1" }))
     const aviso = await within(r).findByText(/1 ancla no vale contra el esquema nuevo/)
@@ -346,7 +346,7 @@ describe("AdministracionEstudioView: codebook", () => {
     base({ [`${E}/codebook/v1`]: () => ({ ...VERSIONES[1], anclas_invalidas: [] }) })
     await montarInvestigador()
     const r = region("Codebook")
-    subir(within(r).getByLabelText("Texto del codebook (.md)"), new File(["# Codebook"], "cb.md"))
+    subir(await within(r).findByLabelText("Texto del codebook (.md)"), new File(["# Codebook"], "cb.md"))
     subir(within(r).getByLabelText("Esquema del formulario (.json)"), new File(['{"dimensiones":[]}'], "e.json"))
     fireEvent.click(within(r).getByRole("button", { name: "Guardar borrador v1" }))
     expect(await within(r).findByText("Borrador v1 guardado.")).toBeTruthy()
@@ -380,7 +380,7 @@ describe("AdministracionEstudioView: codebook", () => {
     base()
     await montarInvestigador()
     const r = region("Codebook")
-    subir(within(r).getByLabelText("Texto del codebook (.md)"), new File(["# C"], "cb.md"))
+    subir(await within(r).findByLabelText("Texto del codebook (.md)"), new File(["# C"], "cb.md"))
     subir(within(r).getByLabelText("Esquema del formulario (.json)"), new File(["{no json"], "e.json"))
     fireEvent.click(within(r).getByRole("button", { name: "Guardar borrador v1" }))
     expect(await within(r).findByRole("alert")).toHaveTextContent(/no es JSON válido/)
@@ -433,7 +433,7 @@ describe("AdministracionEstudioView: anclas, membresias, progreso, exportacion",
   it("anclas de la version vigente, con las pendientes de enunciado marcadas", async () => {
     base()
     await montarInvestigador()
-    const r = region("Anclas")
+    const r = await screen.findByRole("region", { name: "Anclas" })
     const fila = await within(r).findByTestId("ancla-an-1")
     expect(fila.textContent).toContain("práctica")
     expect(fila.textContent).toContain("enunciado pendiente")
@@ -450,7 +450,7 @@ describe("AdministracionEstudioView: anclas, membresias, progreso, exportacion",
 
   async function agregarAncla() {
     await montarInvestigador()
-    const r = region("Anclas")
+    const r = await screen.findByRole("region", { name: "Anclas" })
     await within(r).findByTestId("ancla-an-1")
     fireEvent.change(within(r).getByLabelText("episode_id"), { target: { value: "ep-nuevo" } })
     fireEvent.change(within(r).getByLabelText(/Respuesta esperada/), {
