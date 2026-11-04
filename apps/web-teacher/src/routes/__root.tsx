@@ -23,6 +23,7 @@ import {
 import {
   Outlet,
   createRootRouteWithContext,
+  redirect,
   useNavigate,
   useRouterState,
 } from "@tanstack/react-router"
@@ -70,7 +71,35 @@ function comisionGuardada(): string | null {
 export interface RouterContext {
   /** Función de auth, placeholder hasta integración Keycloak (F8). */
   getToken: () => Promise<string | null>
+  /**
+   * Lo resuelve `main.tsx` con `resolverAcceso` (design D13 del change
+   * cibse-codificacion-ciega). `restringido` es un miembro de un estudio de
+   * codificacion SIN comisiones: ve solo las dos secciones del estudio.
+   * Ausente equivale a `completo` (dev sin Clerk, tests que no lo declaran).
+   */
+  modoAcceso?: "completo" | "restringido"
 }
+
+/** Rutas que existen en modo restringido. Cualquier otra redirige a Codificacion. */
+export const RUTAS_MODO_RESTRINGIDO = ["/interrater", "/entrenamiento-recalibracion"] as const
+
+/**
+ * Menu del modo restringido. Mismos ids y etiquetas que en `NAV_GROUPS`: es el
+ * mismo panel con menos puertas, no otra aplicacion.
+ */
+export const NAV_RESTRINGIDO: NavGroup[] = [
+  {
+    label: "Estudio de codificación",
+    items: [
+      {
+        id: "/entrenamiento-recalibracion",
+        label: "Entrenamiento-Recalibración",
+        icon: GraduationCap,
+      },
+      { id: "/interrater", label: "Codificación (inter-jueces)", icon: Users },
+    ],
+  },
+]
 
 // Exportado SOLO para que un test pueda verificarlo. Ver
 // `navegacionAlcanzable.test.ts`: hasta el 2026-08-28 la ruta /activeia
@@ -202,7 +231,61 @@ function TourRelanzar() {
   )
 }
 
+/**
+ * Layout del modo restringido (design D13). NO monta `TourProvider`,
+ * `OnboardingDocente`, `TourAutoStart`, `ComisionSelectorRouted`,
+ * `TenantSelector` ni `ViewModeToggle`: todos piden comisiones o empujan al
+ * codificador hacia pantallas docentes que no le corresponden.
+ */
+function LayoutRestringido() {
+  const navigate = useNavigate()
+  const handleNavigate = useCallback((id: string) => navigate({ to: id as never }), [navigate])
+  return (
+    <div className="min-h-screen flex flex-col bg-canvas text-ink">
+      <header
+        data-testid="teacher-global-header"
+        className="border-b border-border bg-white px-6 h-12 flex items-center justify-between gap-4 shrink-0"
+      >
+        <div className="flex items-center gap-3 min-w-0">
+          <span
+            aria-hidden="true"
+            className="inline-block w-1.5 h-4 rounded-sm"
+            style={{ backgroundColor: "var(--color-accent-brand)" }}
+          />
+          <h1 className="text-sm font-semibold tracking-tight text-ink">
+            Plataforma N4 <span className="text-muted mx-1">·</span> Estudio de codificación
+          </h1>
+        </div>
+        {HAS_CLERK && (
+          <div className="flex items-center gap-3 shrink-0">
+            <UserButton afterSignOutUrl="/teacher/" />
+          </div>
+        )}
+      </header>
+      <div className="flex-1 flex min-h-0">
+        <Sidebar
+          navGroups={NAV_RESTRINGIDO}
+          headerLabel="Estudio"
+          collapsedHeaderLabel="E"
+          storageKey="web-teacher-sidebar-collapsed"
+          activeItemId={window.location.pathname}
+          onNavigate={handleNavigate}
+        />
+        <main className="flex-1 overflow-x-hidden overflow-y-auto bg-canvas">
+          <Outlet />
+        </main>
+      </div>
+    </div>
+  )
+}
+
 function RootLayout() {
+  const { modoAcceso } = Route.useRouteContext()
+  if (modoAcceso === "restringido") return <LayoutRestringido />
+  return <LayoutCompleto />
+}
+
+function LayoutCompleto() {
   const navigate = useNavigate()
   const search = useRouterState({
     select: (s) => s.location.search as Record<string, unknown>,
@@ -301,6 +384,13 @@ function RootLayout() {
 }
 
 export const Route = createRootRouteWithContext<RouterContext>()({
+  // El root corre su `beforeLoad` antes que el de cualquier hija: un codificador
+  // que abre /progression vuelve a Codificacion antes de que esa ruta pida nada.
+  beforeLoad: ({ context, location }) => {
+    if (context.modoAcceso !== "restringido") return
+    const permitida = (RUTAS_MODO_RESTRINGIDO as readonly string[]).includes(location.pathname)
+    if (!permitida) throw redirect({ to: "/interrater" })
+  },
   component: RootLayout,
   notFoundComponent: () => (
     <div className="flex-1 flex items-center justify-center p-8 min-h-screen">

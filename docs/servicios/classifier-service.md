@@ -37,6 +37,34 @@ Pertenece al **plano pedagógico-evaluativo**. Materializa el componente "Clasif
 | `GET` | `/api/v1/classifications/aggregated?comision_id=...&period_days=30` | Distribución + promedios de coherencias + timeseries diaria para dashboard docente. | Rol en `READ_ROLES`. |
 | `GET` | `/health`, `/health/ready` | Health real con `check_postgres` + `check_http(ctr)` (epic `real-health-checks`, 2026-05-04). | Ninguna. |
 
+**Estudio de codificación ciega** ([ADR-063](../adr/063-estudio-codificacion-ciega.md), change `cibse-codificacion-ciega`). Prefijo `/api/v1/interrater/estudios`, ya ruteado por el gateway vía `/api/v1/interrater`. Todo pasa por `require_gateway_auth`. El acceso es por **membresía** del estudio (email asignado, atado al `X-User-Id` en el primer uso), no por rol: los roles `superadmin`/`docente_admin` solo crean estudios y gestionan membresías.
+
+| Método | Path (relativo al prefijo) | Qué hace | Quién |
+|---|---|---|---|
+| `POST` | `` | Alta de estudio (`{clave, titulo}`); fija `traza_version` | `superadmin`/`docente_admin` |
+| `GET` | `/mis-membresias` | Membresías activas del caller (cuenta como primer uso: ata el `user_id`) | cualquiera |
+| `POST`/`GET` | `/{clave}/membresias` | Asignar (`{email, rol}`) / listar (email, alias, estado, fechas; nunca etiquetas) | investigador o admin |
+| `DELETE` | `/{clave}/membresias/{membresia_id}` | Revocar (no borra; una re-asignación crea membresía nueva) | investigador o admin |
+| `POST` | `/{clave}/codebook` | Versión nueva en borrador, vacía o `clonar_de` | investigador |
+| `PUT` | `/{clave}/codebook/{etiqueta}` | Texto y esquema de un borrador (400 si el esquema no valida; 409 si está congelada) | investigador |
+| `POST` | `/{clave}/codebook/{etiqueta}/congelar` | Congela con sha256 de texto, esquema y anclas | investigador |
+| `PUT` | `/{clave}/codebook-vigente` | Fija la vigente (`{etiqueta}`); 409 si ya hay etiquetas | investigador |
+| `GET` | `/{clave}/codebook/vigente` | Vigente (404 `sin_codebook` si no hay) | miembro |
+| `GET` | `/{clave}/codebook/versiones` y `/versiones/{etiqueta}` | Versiones; anclas completas solo para el investigador | miembro |
+| `GET`/`POST` | `/{clave}/codebook/{etiqueta}/anclas` | Listar / crear ancla (lee el CTR y fija evidencia) | investigador |
+| `PUT`/`DELETE` | `/{clave}/codebook/{etiqueta}/anclas/{item_id}` | Editar / borrar ancla de un borrador | investigador |
+| `POST` | `/{clave}/muestra[?sha256_esperado=]` | Muestra: cuerpo `text/csv` crudo; guarda solo `episode_id` + evidencia fija | investigador |
+| `POST`/`GET` | `/{clave}/enunciados` | Cargar enunciados (`text/csv` crudo) / cobertura, alertas y estado | investigador |
+| `POST` | `/{clave}/enunciados/{id}/revision` | Aprobar (`{"contenido_mostrado_md": null}`) o guardar versión editada | investigador |
+| `GET` | `/{clave}/items` | Ítems del codificador en su orden: `{item_id, posicion, estado}` | codificador |
+| `GET` | `/{clave}/items/{item_id}/traza` | Traza ciega (`traza_v1`) + enunciado; 409 `evidencia_alterada`/`traza_version_distinta`/`enunciado_pendiente`; 502 si el CTR no responde | miembro |
+| `GET`/`PUT` | `/{clave}/items/{item_id}/mi-etiqueta` | Etiqueta propia (vacía si no hay) / guardado incremental; 409 `codebook_borrador`, `codificacion_cerrada`, `enunciados_pendientes` | codificador |
+| `POST` | `/{clave}/mi-codificacion/cerrar` | Cierre (422 `{codigo: "incompleta", faltantes}`) | codificador |
+| `GET` | `/{clave}/progreso` | Cantidades por codificador, sin valores | investigador |
+| `GET` | `/{clave}/entrenamiento` | Codebook vigente, ejemplos con respuesta, prácticas a ciegas | miembro |
+| `POST` | `/{clave}/entrenamiento/{item_id}/respuesta` | Respuesta de práctica (append-only) y devolución de esa ancla | miembro |
+| `GET` | `/{clave}/exportacion?contenido=etiquetas\|entrenamiento\|historial&formato=csv\|json` | Exportación para análisis, sin emails ni contenido de episodios | investigador |
+
 **Nota de ordenamiento de rutas**: `/classifications/aggregated` se registra **antes** que `/classifications/{episode_id}` para que FastAPI no matchee `"aggregated"` como UUID path param. Es un detalle de implementación en `routes/classify_ep.py:116`.
 
 **Ejemplo de `POST /classify_episode/{id}` — response `ClassificationOut`**:
@@ -88,6 +116,7 @@ Sólo cuenta filas con `is_current=true` — una reclasificación posterior con 
 **Depende de (infraestructura):**
 - PostgreSQL — base lógica `classifier_db` (ADR-003), usuario dedicado.
 - [ctr-service](./ctr-service.md) — `GET /api/v1/episodes/{episode_id}` para traer los eventos del episodio a clasificar.
+- [ctr-service](./ctr-service.md), estudio de codificación — mismo endpoint, con la cuenta de servicio propia `ESTUDIO_LECTOR_SERVICE_USER_ID` (`00000000-0000-0000-0000-000000000c0d`, rol `classifier_worker`, firma HMAC si hay `GATEWAY_SHARED_SECRET`, timeout 15 s; `services/ctr_lectura.py`). Solo se usa con `episode_id` resueltos desde la muestra o las anclas del estudio, nunca desde un pedido.
 
 **Depende de (otros servicios):** sólo ctr-service.
 
@@ -113,6 +142,20 @@ Base lógica: **`classifier_db`** (ADR-003). Migraciones en `apps/classifier-ser
   - `classified_at`, `is_current` (bool).
   - Constraints: `UniqueConstraint(episode_id, classifier_config_hash)` — garantiza idempotencia por par episodio+config.
   - Index: `ix_classifications_episode_current` sobre `(episode_id, is_current)` para el lookup típico "cuál es la current de este episodio".
+
+**Tablas del estudio de codificación ciega** (migración `20261104_0007`, `models/estudio.py`, [ADR-063](../adr/063-estudio-codificacion-ciega.md)). Todas con `tenant_id` y RLS forzado. Solo las leen endpoints del estudio: ni el agregado κ del piloto ni `pedagogia.py` las tocan.
+
+| Tabla | Contenido | Inmutabilidad (trigger) |
+|---|---|---|
+| `estudio_codificacion` | `clave` (única por tenant), título, `codebook_vigente_id`, `muestra_sha256`, `muestra_cargada_at`, `traza_version` | — |
+| `estudio_membresia` | email (minúsculas), `rol` (`investigador`/`codificador`), `alias`, `semilla`, `user_id` (atado en el primer uso), `cerrada_at`, `revocada_at`; una activa por `(estudio, lower(email))` | — |
+| `estudio_muestra` | `item_id` opaco, `episode_id`, evidencia fija (`seq_tope`, `chain_hash_tope`, `events_count_carga`, `last_chain_hash_carga`, `estado_carga`), `problema_id`, `ejercicio_id`; único `(estudio, episode_id)` | sin UPDATE de evidencia ni ids |
+| `estudio_enunciado` | `fuente` (`tp`/`ejercicio`), `fuente_id`, `archivo_sha256`, original y su sha, mostrado y su sha, `alertas`, revisión | sin UPDATE ni DELETE una vez revisado |
+| `codebook_version` | `etiqueta`, `estado` (`borrador`/`congelada`), `contenido_md`, `esquema_formulario` (JSONB), `contenido_sha256`, `congelada_at/por` | congelada: sin UPDATE ni DELETE |
+| `estudio_ancla` | `item_id` opaco, versión, `episode_id`, evidencia fija, `uso`, `orden`, `respuesta_esperada`, `explicacion_md`, `consensuado_por` | de versión congelada: sin INSERT, UPDATE ni DELETE; evidencia sin UPDATE |
+| `estudio_etiqueta` | por `(membresía, ítem)`: `respuestas` (JSONB), `regimen`, `regimen_regla`, `regimen_propuesto`, `es_frontera`, `confianza`, `notas`, versión del codebook y de la traza | — (upsert) |
+| `estudio_etiqueta_historial` | snapshot de cada guardado | append-only |
+| `entrenamiento_respuesta` | respuesta a una práctica, con versión vigente y traza | append-only |
 
 **Append-only con `is_current`** (ADR-010): reclasificar NO borra la fila vieja — la marca `is_current=false` e inserta la nueva con `is_current=true`. El historial queda preservado para auditorías de cambios de profile. Las estadísticas agregadas sólo cuentan filas `is_current=true`.
 
@@ -323,3 +366,200 @@ El árbol N4 del Capítulo 6 de la tesis define las 3 categorías (`delegacion_p
 - 2026-04-29 ([ADR-023](../adr/023-anotacion-temporal-override.md)) — `LABELER_VERSION = "1.1.0"` con override temporal de `anotacion_creada`.
 - 2026-05-04 (epic `ai-native-completion-and-byok`) — `LABELER_VERSION = "1.2.0"` ([ADR-034](../adr/034-test-cases-tp.md)) con regla N3/N4 sobre `tests_ejecutados`. **`_EXCLUDED_FROM_FEATURES = {"reflexion_completada"}`** (RN-133) — bug genuino cerrado.
 - 2026-05-04 (epic `real-health-checks`) — `/health/ready` real con `check_postgres + check_http(ctr)`.
+
+## 12. Runbook: estudio de codificación ciega
+
+Procedimiento del investigador para el estudio de [ADR-063](../adr/063-estudio-codificacion-ciega.md). Todo va por la API: los IDs de la muestra nunca entran al repo, ni a este documento, ni a un issue. Los archivos de trabajo (`estudio/`) quedan fuera del repo.
+
+**Orden**: estudio y membresías → codebook en borrador → anclas → muestra → enunciados y su revisión → congelar y fijar la vigente → (codificación) → progreso → exportación. Los enunciados se cargan **después** de la muestra y de las anclas, porque la cobertura se calcula contra los `problema_id`/`ejercicio_id` que esas cargas fijan.
+
+### 12.0 Variables
+
+Local (dev): se le pega directo al classifier (`:8008`) con los headers que en producción inyecta el gateway. Los valores son de ejemplo; el investigador local no necesita ningún rol especial.
+
+Los comandos se corren desde el directorio de trabajo que contiene `estudio/` (fuera del repo); `REPO` apunta a la copia local del repo.
+
+```bash
+export REPO=$HOME/Proyectos/AI-Native/codigo
+export BASE=http://127.0.0.1:8008/api/v1/interrater/estudios
+export TENANT=aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa
+ADMIN=(-H "X-Tenant-Id: $TENANT" -H "X-User-Id: 11111111-1111-1111-1111-111111111111" -H "X-User-Email: admin@utn.test" -H "X-User-Roles: superadmin")
+INV=(-H "X-Tenant-Id: $TENANT" -H "X-User-Id: 22222222-2222-2222-2222-222222222222" -H "X-User-Email: investigador@utn.test" -H "X-User-Roles: estudiante,docente")
+```
+
+Producción: `BASE=https://<gateway>/api/v1/interrater/estudios`, y en lugar de los headers `X-*`, `-H "Authorization: Bearer $TOKEN"` con el token de Clerk de la cuenta correspondiente (el gateway inyecta la identidad). El alta del estudio exige una cuenta en `CLERK_ADMIN_EMAILS`.
+
+### 12.1 Estudio y membresías
+
+```bash
+curl -sS -X POST "$BASE" "${ADMIN[@]}" -H 'Content-Type: application/json' \
+  -d '{"clave": "cibse-2027", "titulo": "CIbSE 2027: referencia humana"}'
+curl -sS -X POST "$BASE/cibse-2027/membresias" "${ADMIN[@]}" -H 'Content-Type: application/json' \
+  -d '{"email": "investigador@utn.test", "rol": "investigador"}'
+# Desde acá, el investigador. Codificadores (solo después de responder la pregunta 1 del proposal si son externos):
+curl -sS -X POST "$BASE/cibse-2027/membresias" "${INV[@]}" -H 'Content-Type: application/json' \
+  -d '{"email": "codificador1@utn.test", "rol": "codificador"}'
+curl -sS -X POST "$BASE/cibse-2027/membresias" "${INV[@]}" -H 'Content-Type: application/json' \
+  -d '{"email": "codificador2@utn.test", "rol": "codificador"}'
+curl -sS "$BASE/cibse-2027/membresias" "${INV[@]}" | jq '.[] | {alias, rol, estado, atada}'
+```
+
+Revocar (por id, el email no viaja en la URL): `curl -sS -X DELETE "$BASE/cibse-2027/membresias/<membresia_id>" "${INV[@]}"`. Una re-asignación del mismo email crea una membresía nueva, sin etiquetas.
+
+### 12.2 Codebook: validar el esquema, cargar el borrador
+
+El esquema sigue el meta-esquema cerrado de `services/estudio_esquema.py::validar_esquema`. Su forma exacta está en «Forma exacta del meta-esquema», más abajo: **ese es el único lugar canónico** (ADR-063 D9 apunta acá). Validarlo antes de subir:
+
+```bash
+uv run --project "$REPO" python -c "import json; from classifier_service.services.estudio_esquema import validar_esquema; print(validar_esquema(json.load(open('estudio/esquema_v0.json'))) or 'esquema valido')"
+curl -sS -X POST "$BASE/cibse-2027/codebook" "${INV[@]}" -H 'Content-Type: application/json' -d '{"etiqueta": "v0"}'
+jq -n --rawfile md estudio/codebook_v0.md --slurpfile esq estudio/esquema_v0.json '{contenido_md: $md, esquema: $esq[0]}' \
+  | curl -sS -X PUT "$BASE/cibse-2027/codebook/v0" "${INV[@]}" -H 'Content-Type: application/json' --data-binary @-
+```
+
+Si el esquema no valida, el `PUT` responde 400 con `detail.errores` y no cambia nada. Una versión nueva que parte de otra: `-d '{"etiqueta": "v1", "clonar_de": "v0"}'`.
+
+Si el borrador ya tiene anclas, el `PUT` guarda el esquema igual y devuelve `anclas_invalidas`: cada ancla cuya respuesta esperada dejó de valer contra el esquema nuevo (`item_id`, `uso`, `orden`, `motivos`). No rechaza, porque al renombrar una dimensión el ancla tampoco vale contra el esquema viejo y no habría forma de corregirla; congelar sí rechaza (12.6).
+
+#### Forma exacta del meta-esquema
+
+Objeto cerrado: una clave desconocida, en cualquier nivel, es un error (400). Este ejemplo es completo y válido (`validar_esquema` devuelve `[]`):
+
+```json
+{
+  "dimensiones": [
+    {"clave": "d1", "nombre": "Verbaliza", "valores": ["presente", "ausente"], "cita_requerida_si": ["presente"]},
+    {"clave": "d2", "nombre": "Verifica", "valores": ["presente", "ausente"], "cita_requerida_si": ["presente"]},
+    {"clave": "d3", "nombre": "Justifica", "valores": ["presente", "ausente"], "cita_requerida_si": ["presente"]},
+    {"clave": "d4", "nombre": "Autonomía", "valores": ["interlocutor", "oraculo", "transferencia"], "cita_requerida_si": ["transferencia"]}
+  ],
+  "regimenes": [
+    {"clave": "reflexiva", "nombre": "Reflexiva"},
+    {"clave": "superficial", "nombre": "Superficial"},
+    {"clave": "pasiva", "nombre": "Pasiva"},
+    {"clave": "evidencia_insuficiente", "nombre": "Evidencia insuficiente"}
+  ],
+  "regimen_evidencia_insuficiente": "evidencia_insuficiente",
+  "regimenes_exentos": ["evidencia_insuficiente"],
+  "dimensiones_opcionales_si_regimen": ["evidencia_insuficiente"],
+  "notas_obligatorias_si_regimen": ["evidencia_insuficiente"],
+  "marca_frontera": true,
+  "notas_obligatorias_si_frontera": true,
+  "confianza": {"valores": ["alta", "media", "baja"], "obligatoria": false},
+  "reglas_regimen": [
+    {"regimen": "reflexiva", "condicion": [
+      [{"dimension": "d1", "en": ["presente"]}],
+      [{"dimension": "d2", "en": ["presente"]}, {"dimension": "d3", "en": ["presente"]}],
+      [{"dimension": "d4", "en": ["interlocutor"]}]
+    ]},
+    {"regimen": "pasiva", "condicion": [
+      [{"dimension": "d4", "en": ["transferencia"], "con_cita": true}],
+      [{"dimension": "d1", "en": ["ausente"]}],
+      [{"dimension": "d2", "en": ["ausente"]}],
+      [{"dimension": "d3", "en": ["ausente"]}]
+    ]}
+  ],
+  "regimen_por_defecto": "superficial"
+}
+```
+
+| Clave | Obligatoria | Forma |
+|---|---|---|
+| `dimensiones` | sí | lista de 1 a 8 objetos con exactamente `clave` (`^[a-z][a-z0-9_]{0,39}$`, única), `nombre` (texto no vacío), `valores` (2 a 6 textos distintos) y `cita_requerida_si` (subconjunto de `valores`; `[]` si ninguno) |
+| `regimenes` | sí | lista de 2 a 6 objetos con exactamente `clave` (misma regla, única) y `nombre` (texto no vacío) |
+| `regimen_evidencia_insuficiente` | sí | una clave de `regimenes` |
+| `regimenes_exentos` | no | claves de `regimenes`; default `[regimen_evidencia_insuficiente]`, y tiene que incluirlo. El codificador los elige explícitamente; la regla no los deriva |
+| `dimensiones_opcionales_si_regimen`, `notas_obligatorias_si_regimen` | no | listas de claves de `regimenes`; default `[]` |
+| `marca_frontera` | no | booleano; default `false` |
+| `notas_obligatorias_si_frontera` | no | booleano; default `false`; `true` exige `marca_frontera: true` |
+| `confianza` | no | `null` (default) u objeto con exactamente `valores` (1 o más textos distintos) y `obligatoria` (booleano) |
+| `reglas_regimen` | no | lista ORDENADA, default `[]` (sin reglas, el codificador elige el régimen). Cada regla tiene exactamente `regimen` (declarado y no exento) y `condicion`: lista no vacía de cláusulas (conjunción); cada cláusula es una lista no vacía de átomos (disyunción); cada átomo tiene `dimension` (declarada), `en` (lista no vacía de valores distintos de esa dimensión) y, opcional, `con_cita` (booleano) |
+| `regimen_por_defecto` | si hay reglas | clave de `regimenes`, no exenta; obligatoria con reglas y **prohibida** sin reglas |
+
+Toda clave de régimen o de dimensión tiene que ser texto: una lista u objeto en su lugar es error de validación (400), no un 500.
+
+Semántica:
+- Un átomo se cumple si el valor de la dimensión está en `en`; con `con_cita: true` además exige una cita no vacía (sin contar espacios).
+- Régimen de la regla: `null` si alguna dimensión referenciada por CUALQUIER regla no tiene valor; si no, el de la primera regla cuya condición se cumple, o `regimen_por_defecto`.
+- El régimen guardado es siempre el de la regla, salvo un exento elegido explícitamente; `regimen_regla` se calcula igual. Un régimen no exento distinto del de la regla, o con dimensiones incompletas, es 422; el desacuerdo va en `regimen_propuesto`, con nota obligatoria.
+- Cierre: exige régimen; las dimensiones, salvo si el régimen está en `dimensiones_opcionales_si_regimen`; cita cuando el valor está en `cita_requerida_si`; notas si el régimen está en `notas_obligatorias_si_regimen`, si hay frontera con `notas_obligatorias_si_frontera` o si hay `regimen_propuesto`; confianza si es obligatoria.
+- La respuesta esperada de un ancla sigue las mismas reglas que una etiqueta, contra el esquema vigente del borrador, y para congelar tiene que estar completa con la misma regla que el cierre de una codificación.
+
+### 12.3 Anclas (en el borrador)
+
+Cada ancla es un JSON `{episode_id, uso: "ejemplo"|"practica", orden, respuesta_esperada, explicacion_md, consensuado_por}`. La respuesta esperada tiene el formato de una etiqueta (`{"respuestas": {"<dim>": {"valor", "cita"}}, "regimen", ...}`) y se valida contra el esquema de la versión. En el borrador se admite incompleta: el alta y la edición devuelven `faltantes` (mismos códigos que el cierre) y congelar la rechaza hasta completarla. El episodio tiene que estar terminado y fuera de la muestra.
+
+```bash
+curl -sS -X POST "$BASE/cibse-2027/codebook/v0/anclas" "${INV[@]}" -H 'Content-Type: application/json' \
+  --data-binary @estudio/ancla_01.json
+curl -sS "$BASE/cibse-2027/codebook/v0/anclas" "${INV[@]}" | jq '.[] | {item_id, uso, orden, enunciados_listos}'
+```
+
+### 12.4 Muestra fija
+
+El CSV original (`estrato,origen,tp,episode_id`) se sube **crudo**: el servidor calcula el sha256 de los bytes, guarda solo `episode_id` y descarta el resto. Usar `--data-binary` y no `-d` (`-d` quita los saltos de línea y el sha no coincide).
+
+```bash
+SHA=$(sha256sum estudio/muestra.csv | cut -c1-64)
+curl -sS -X POST "$BASE/cibse-2027/muestra?sha256_esperado=$SHA" "${INV[@]}" -H 'Content-Type: text/csv' \
+  --data-binary @estudio/muestra.csv
+```
+
+Respuesta: `{"items": N, "sha256": "..."}`. Errores:
+- 422 `sha256_distinto`;
+- 422 `csv_invalido`, con la fila;
+- 422 `episodios_invalidos`, con la fila y el motivo: inexistente, `open`, `paused` sin abandono o integridad comprometida;
+- 409 `episodio_es_ancla`;
+- 409 `muestra_con_etiquetas`: con etiquetas ya no se reemplaza.
+
+La carga es todo o nada.
+
+### 12.5 Enunciados: carga y revisión obligatoria
+
+CSV `tipo,tp_id,ejercicio_id,enunciado`. Una fila `tp` lleva `tp_id`; una fila `ejercicio` lleva `ejercicio_id`. El texto va entre comillas si tiene comas, comillas o saltos de línea. Las filas que no corresponden a ningún ítem ni ancla se ignoran y se informan.
+
+```bash
+curl -sS -X POST "$BASE/cibse-2027/enunciados" "${INV[@]}" -H 'Content-Type: text/csv' \
+  --data-binary @estudio/enunciados.csv | jq '.cobertura, .ignoradas'
+curl -sS "$BASE/cibse-2027/enunciados" "${INV[@]}" | jq '.enunciados[] | {id, tipo, alertas, revisado}'
+```
+
+Revisar CADA enunciado. Mirar las `alertas` (fecha, email, docente, comision, horario, rubrica, tests, pista, solucion), pero leer igual el texto completo: las alertas no reemplazan la lectura. Aprobar tal cual o guardar una versión editada (el original y su sha256 se conservan):
+
+```bash
+ID=$(curl -sS "$BASE/cibse-2027/enunciados" "${INV[@]}" | jq -r '[.enunciados[] | select(.revisado | not)][0].id')
+curl -sS -X POST "$BASE/cibse-2027/enunciados/$ID/revision" "${INV[@]}" -H 'Content-Type: application/json' \
+  -d '{"contenido_mostrado_md": null}'
+```
+
+Mientras falte o no esté revisado algún enunciado de la muestra, nadie puede guardar etiquetas (409 `enunciados_pendientes`). Un enunciado revisado no cambia más (409 `enunciado_revisado` si se sube otro texto).
+
+### 12.6 Congelar y fijar la vigente
+
+```bash
+curl -sS -X POST "$BASE/cibse-2027/codebook/v0/congelar" "${INV[@]}" | jq '{etiqueta, estado, contenido_sha256}'
+curl -sS -X PUT "$BASE/cibse-2027/codebook-vigente" "${INV[@]}" -H 'Content-Type: application/json' -d '{"etiqueta": "v0"}'
+curl -sS "$BASE/cibse-2027/codebook/versiones" "${INV[@]}"
+```
+
+Congelar revalida cada ancla contra el esquema de la versión: si alguna no vale (dimensión o valor que el esquema ya no tiene, o un régimen esperado que la regla no da; los exentos explícitos valen) o está incompleta (lo que exigiría el cierre de una codificación: régimen, dimensiones, citas, notas, confianza; motivos `incompleta: <código>`), responde 422 `anclas_invalidas` con `detail.anclas` (`item_id`, `uso`, `orden`, `motivos`) y `detail.errores`, y la versión sigue en borrador. Se corrige editando la respuesta esperada del ancla (o borrándola) y se vuelve a congelar.
+
+Anotar el `contenido_sha256`: es el que se cita en el método. Con etiquetas del estudio, la vigente ya no cambia (409). El entrenamiento funciona con la vigente en borrador; la codificación exige que esté congelada.
+
+### 12.7 Seguimiento y exportación
+
+```bash
+curl -sS "$BASE/cibse-2027/progreso" "${INV[@]}"
+curl -sS "$BASE/cibse-2027/exportacion?contenido=etiquetas&formato=csv" "${INV[@]}" -o estudio/etiquetas.csv
+curl -sS "$BASE/cibse-2027/exportacion?contenido=entrenamiento&formato=json" "${INV[@]}" -o estudio/entrenamiento.json
+curl -sS "$BASE/cibse-2027/exportacion?contenido=historial&formato=csv" "${INV[@]}" -o estudio/historial.csv
+```
+
+La exportación trae `episode_id`, semilla y posición; con la semilla, el orden de cada codificador se recomputa con `printf '%s' "<semilla>:<item_id>" | sha256sum` ordenando el hex en forma ascendente (ADR-063 D7).
+
+### 12.8 Notas para el investigador y para el método
+
+- **`tests_ejecutados` trae solo conteos**: la mayoría de las corridas de pruebas del CTR registran totales, pasados y fallidos, sin la salida. Aunque el codebook §2 hable de "lo que imprimió y el error", eso solo está en las ejecuciones (`codigo_ejecutado`: `stdout`/`stderr`), no en las corridas de pruebas.
+- **Diferencia de evidencia humano/juez**: el codificador ve más que el juez (salidas, estados intermedios, copias, pegados, lecturas, fin cerrado o abandonado). Declararlo en el método (ADR-063 D4).
+- **Enunciados cargados a mano**: el sistema no verifica que el texto sea el de academic-service, y `Ejercicio.enunciado_md` se edita en el lugar. Declarar en el método que se cargaron desde una exportación del investigador, con `archivo_sha256` registrado.
+- **Evidencia fija**: lo que se ve de cada ítem es lo que había al cargarlo. Si el CTR cambia la cadena hasta el tope, la traza responde 409 `evidencia_alterada`.

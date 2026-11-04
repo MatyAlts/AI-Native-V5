@@ -8,7 +8,14 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from classifier_service.config import settings
 from classifier_service.observability import setup_observability
-from classifier_service.routes import classify_ep, health, interrater, review
+from classifier_service.routes import (
+    classify_ep,
+    estudio,
+    estudio_trabajo,
+    health,
+    interrater,
+    review,
+)
 
 
 @asynccontextmanager
@@ -43,6 +50,10 @@ app.include_router(health.config_router)
 app.include_router(review.router)
 app.include_router(classify_ep.router)
 app.include_router(interrater.router)
+# Estudio de codificación ciega (cibse-codificacion-ciega): prefijo propio
+# `/api/v1/interrater/estudios`, ya ruteado por el gateway vía `/api/v1/interrater`.
+app.include_router(estudio.router)
+app.include_router(estudio_trabajo.router)
 
 
 # Marcador de build: bump para forzar rebuild/recreación del container en EasyPanel

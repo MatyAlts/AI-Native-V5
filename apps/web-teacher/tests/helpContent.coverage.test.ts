@@ -18,11 +18,15 @@ import { helpContent } from "../src/utils/helpContent"
 
 const VIEWS_DIR = path.resolve(__dirname, "../src/views")
 
-function listViewFiles(): string[] {
-  return fs
-    .readdirSync(VIEWS_DIR)
-    .filter((f) => f.endsWith(".tsx"))
-    .map((f) => path.join(VIEWS_DIR, f))
+// Recursivo: las vistas del estudio de codificacion viven en `views/estudio/`
+// (change cibse-codificacion-ciega). Con un solo nivel, una key faltante en una
+// subcarpeta pasaba sin aviso.
+function listViewFiles(dir: string = VIEWS_DIR): string[] {
+  return fs.readdirSync(dir, { withFileTypes: true }).flatMap((e) => {
+    const ruta = path.join(dir, e.name)
+    if (e.isDirectory()) return listViewFiles(ruta)
+    return e.name.endsWith(".tsx") ? [ruta] : []
+  })
 }
 
 function extractHelpContentKeys(content: string): string[] {
