@@ -68,7 +68,7 @@ export function SeccionEstudio({
         <label className="flex items-center gap-2 text-sm">
           Estudio
           <select
-            className="rounded border border-border p-1.5 text-sm"
+            className="rounded border border-border bg-surface p-1.5 text-sm text-ink"
             value={membresia.clave}
             onChange={(ev) => setElegida(ev.target.value)}
           >

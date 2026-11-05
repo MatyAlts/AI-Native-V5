@@ -20,6 +20,7 @@ import type {
   RespuestaFormulario,
 } from "../src/lib/estudioApi"
 import { FormularioEsquema } from "../src/views/estudio/FormularioEsquema"
+import { esperarSelectsLegibles } from "./_selectLegible"
 
 const CON_REGLA: EsquemaFormulario = {
   dimensiones: [
@@ -269,5 +270,14 @@ describe("FormularioEsquema: errores y faltantes", () => {
     expect((screen.getByRole("button", { name: "Guardar" }) as HTMLButtonElement).disabled).toBe(
       true,
     )
+  })
+})
+
+describe("FormularioEsquema: desplegables legibles", () => {
+  it("cada select declara fondo y color de letra (Chrome en Windows lo pinta negro si no)", () => {
+    const { container } = render(
+      <FormularioEsquema esquema={CON_REGLA} inicial={null} onGuardar={vi.fn()} />,
+    )
+    esperarSelectsLegibles(container)
   })
 })

@@ -82,7 +82,7 @@ function Alerta({ mensaje }: { mensaje: string | null }) {
 const BOTON = "rounded border border-border px-3 py-1.5 text-sm hover:bg-canvas disabled:opacity-50"
 const BOTON_PRIMARIO =
   "rounded bg-blue-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-blue-700 disabled:opacity-50"
-const CAMPO = "rounded border border-border p-1.5 text-sm"
+const CAMPO = "rounded border border-border bg-surface p-1.5 text-sm text-ink"
 
 function Administracion({ clave, getToken }: { clave: string; getToken: TokenGetter }) {
   const [versiones, setVersiones] = useState<VersionResumen[] | null>(null)

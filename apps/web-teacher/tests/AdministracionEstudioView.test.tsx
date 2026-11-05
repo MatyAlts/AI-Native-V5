@@ -17,6 +17,7 @@ import { fireEvent, screen, waitFor, within } from "@testing-library/react"
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 import { AdministracionEstudioView } from "../src/views/estudio/AdministracionEstudioView"
 import { renderWithRouter, setupFetchMock } from "./_mocks"
+import { esperarSelectsLegibles } from "./_selectLegible"
 
 const getToken = async () => null
 const E = "/api/v1/interrater/estudios/cibse-2027"
@@ -559,5 +560,19 @@ describe("AdministracionEstudioView: anclas, membresias, progreso, exportacion",
       ),
     )
     await waitFor(() => expect(URL.createObjectURL).toHaveBeenCalled())
+  })
+})
+
+describe("AdministracionEstudioView: desplegables legibles", () => {
+  it("cada select del panel declara fondo y color de letra", async () => {
+    base()
+    const { container } = renderWithRouter(
+      <AdministracionEstudioView clave="cibse-2027" rol="investigador" getToken={getToken} />,
+    )
+    await screen.findByRole("heading", { name: "Administración del estudio" })
+    await waitFor(() =>
+      expect(container.querySelectorAll("select").length).toBeGreaterThanOrEqual(3),
+    )
+    esperarSelectsLegibles(container, 3)
   })
 })

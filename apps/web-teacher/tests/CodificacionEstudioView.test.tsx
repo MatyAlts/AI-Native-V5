@@ -17,6 +17,7 @@ import { afterEach, describe, expect, it, vi } from "vitest"
 import type { EsquemaFormulario } from "../src/lib/estudioApi"
 import { CodificacionEstudioView } from "../src/views/estudio/CodificacionEstudioView"
 import { renderWithRouter, setupFetchMock } from "./_mocks"
+import { esperarSelectsLegibles } from "./_selectLegible"
 
 const getToken = async () => null
 const E = "/api/v1/interrater/estudios"
@@ -351,5 +352,19 @@ describe("CodificacionEstudioView: errores y roles", () => {
     renderWithRouter(<CodificacionEstudioView getToken={getToken} />)
     expect(await screen.findByRole("heading", { name: "Administración del estudio" })).toBeTruthy()
     expect(screen.queryByRole("list", { name: "Ítems en tu orden" })).toBeNull()
+  })
+})
+
+describe("CodificacionEstudioView: desplegables legibles", () => {
+  it("el selector de estudio (dos membresias) declara fondo y color de letra", async () => {
+    mockCodificador({
+      [`${E}/mis-membresias`]: () => [
+        ...CODIFICADOR,
+        { clave: "otro-estudio", titulo: "Otro estudio", rol: "codificador", cerrada: false },
+      ],
+    })
+    renderWithRouter(<CodificacionEstudioView getToken={getToken} />)
+    const selector = await screen.findByLabelText("Estudio")
+    esperarSelectsLegibles(selector.parentElement as ParentNode)
   })
 })

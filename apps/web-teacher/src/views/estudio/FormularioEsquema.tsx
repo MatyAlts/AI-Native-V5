@@ -177,7 +177,7 @@ export function FormularioEsquema({
               </label>
               <select
                 id={idPropuesto}
-                className="mt-1 rounded border border-border p-1.5 text-sm"
+                className="mt-1 rounded border border-border bg-surface p-1.5 text-sm text-ink"
                 value={propuesto ?? ""}
                 disabled={deshabilitado}
                 onChange={(ev) => setPropuesto(ev.target.value === "" ? null : ev.target.value)}
@@ -233,7 +233,7 @@ export function FormularioEsquema({
           </label>
           <select
             id={idConfianza}
-            className="mt-1 rounded border border-border p-1.5 text-sm"
+            className="mt-1 rounded border border-border bg-surface p-1.5 text-sm text-ink"
             value={confianza ?? ""}
             disabled={deshabilitado}
             onChange={(ev) => setConfianza(ev.target.value === "" ? null : ev.target.value)}
