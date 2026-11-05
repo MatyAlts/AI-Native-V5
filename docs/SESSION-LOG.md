@@ -6,6 +6,26 @@ Bitácora de sesiones de trabajo significativas. Lo que vive acá es **changelog
 
 ---
 
+## 2026-11-04 — Estudio de codificación ciega para CIbSE 2027 (change `cibse-codificacion-ciega`, ADR-063)
+
+Change CRITICAL aprobado por Juani el 04/11 (alcance: solo classifier-service y web-teacher; enunciados cargados a mano). Las dos secciones del web-teacher del piloto inter-jueces (Codificación y Entrenamiento-Recalibración) se rehicieron para el estudio del paper: dos profesores codifican a ciegas una muestra fija de 150 episodios contra un codebook versionado, para comparar el juez LLM actual con uno revisado.
+
+- **Backend (classifier-service)**: migración `20261104_0007`, con nueve tablas nuevas con RLS y triggers de inmutabilidad. Dos routers bajo `/api/v1/interrater/estudios`: `routes/estudio.py` (acceso, membresías y codebook) y `routes/estudio_trabajo.py` (traza ciega, muestra, enunciados, anclas, etiquetas, entrenamiento y exportación).
+  - El acceso es por membresía atada al `user_id` en el primer uso, porque con Clerk toda cuenta trae `docente`.
+  - La traza ciega aplica una lista blanca `traza_v1` que falla cerrada, con evidencia fija por ítem.
+  - El régimen siempre lo deriva la regla del esquema del codebook; el desacuerdo va en `regimen_propuesto`, con nota.
+  - El CTR se lee con una cuenta de servicio propia, sin tocar ctr-service.
+- **Frontend (web-teacher)**: modo restringido para miembros sin comisiones; traza ciega con enunciado, formulario derivado del esquema, panel del investigador. Se retiró el entrenamiento del piloto (anclas y reglas hardcodeadas).
+- **Verificación**: TDD con RED por aserción, mutantes sobre cada aserción de seguridad o datos y una barrera real de concurrencia. Los tests `_db` corrieron contra un Postgres efímero porque el 5432 local lo ocupaba otro proyecto.
+- **Lo que quedó afuera o pendiente**:
+  - el recorrido con Clerk real (requisito CRITICAL antes de archivar);
+  - el consentimiento para codificadores externos (pregunta 1, con Alberto);
+  - la consulta de exportación de enunciados (orquestador);
+  - correr los tests `_db` del classifier en CI (propuesta en `informes/apply-1-constructor-B.md`).
+- **Detalle**: `openspec/changes/cibse-codificacion-ciega/` y `docs/servicios/classifier-service.md` § 12 (runbook).
+
+---
+
 ## 2026-06-12 — Fixes plataforma N4 (lista 2026-06-10) + incidente Clerk en prod
 
 Sesión doble: cierre de los 7 fixes pedidos por la cátedra el 10/06 (`fixes-plataforma-n4.md`) y un incidente de producción en el medio.

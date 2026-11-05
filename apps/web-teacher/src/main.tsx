@@ -8,7 +8,9 @@ import { createRoot } from "react-dom/client"
 import "./index.css"
 import { SELECTED_TENANT_STORAGE_KEY } from "./constants"
 import { comisionesApi } from "./lib/api"
+import { estudioApi } from "./lib/estudioApi"
 import { routeTree } from "./routeTree.gen"
+import { type ModoAcceso, consultarAcceso } from "./utils/accesoPanel"
 
 const CLERK_PUBLISHABLE_KEY = import.meta.env.VITE_CLERK_PUBLISHABLE_KEY as string
 // Dev sin Clerk: si no hay publishable key, la identidad (docente) la inyecta
@@ -63,7 +65,7 @@ const queryClient = new QueryClient({
 const router = createRouter({
   routeTree,
   basepath: "/teacher",
-  context: { getToken: async () => null },
+  context: { getToken: async () => null, modoAcceso: "completo" },
   defaultPreload: "intent",
 })
 
@@ -76,8 +78,10 @@ declare module "@tanstack/react-router" {
 function InnerApp() {
   const { getToken } = useAuth()
   const { user } = useUser()
-  // null = resolviendo; true = staff de al menos una comision; false = no docente.
-  const [esDocente, setEsDocente] = useState<boolean | null>(null)
+  // null = resolviendo. Ver `utils/accesoPanel.ts` (design D13 del change
+  // cibse-codificacion-ciega): con comisiones, panel completo; sin comisiones y con
+  // membresia de un estudio de codificacion, modo restringido; sin nada, al alumno.
+  const [acceso, setAcceso] = useState<ModoAcceso | null>(null)
 
   // Re-vincula la identidad de Clerk con las comisiones que el admin le asigno
   // por email (POST /users/me/profile, idempotente) y RECIEN DESPUES resuelve si
@@ -103,12 +107,12 @@ function InnerApp() {
           /* best-effort: la re-vinculacion no debe bloquear el chequeo siguiente */
         }
       }
-      try {
-        const res = await comisionesApi.listMine()
-        if (!cancelled) setEsDocente(res.items.length > 0)
-      } catch {
-        if (!cancelled) setEsDocente(false)
-      }
+      // Las dos consultas en paralelo; la falla de una no tapa a la otra.
+      const { modo } = await consultarAcceso({
+        listarComisiones: async () => (await comisionesApi.listMine()).items.length,
+        listarMembresias: () => estudioApi.misMembresias(),
+      })
+      if (!cancelled) setAcceso(modo)
     })()
     return () => {
       cancelled = true
@@ -120,23 +124,28 @@ function InnerApp() {
   // son alumnos hasta que el admin los asigne como docentes de una comision.
   // replace() para no dejar /teacher en el historial (evita volver con "atras").
   useEffect(() => {
-    if (esDocente === false) window.location.replace("/")
-  }, [esDocente])
+    if (acceso === "redirigir") window.location.replace("/")
+  }, [acceso])
 
-  if (esDocente !== true) {
+  if (acceso === null || acceso === "redirigir") {
     return (
       <div className="min-h-screen flex items-center justify-center bg-canvas text-sm text-muted">
-        {esDocente === null ? "Verificando tu acceso…" : "Te llevamos a tu pantalla…"}
+        {acceso === null ? "Verificando tu acceso…" : "Te llevamos a tu pantalla…"}
       </div>
     )
   }
 
-  return <RouterProvider router={router} context={{ getToken }} />
+  return <RouterProvider router={router} context={{ getToken, modoAcceso: acceso }} />
 }
 
 // Dev sin Clerk: router sin token (el proxy mete los headers de identidad).
 function DevApp() {
-  return <RouterProvider router={router} context={{ getToken: async () => null }} />
+  return (
+    <RouterProvider
+      router={router}
+      context={{ getToken: async () => null, modoAcceso: "completo" }}
+    />
+  )
 }
 
 const rootElement = document.getElementById("root")

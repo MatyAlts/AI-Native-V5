@@ -20,7 +20,7 @@
  * Este test cierra esa clase entera: si mañana alguien agrega una ruta y se
  * olvida del item, se entera acá y no tres meses despues.
  */
-import { readdirSync } from "node:fs"
+import { readFileSync, readdirSync, statSync } from "node:fs"
 import { dirname, join } from "node:path"
 import { fileURLToPath } from "node:url"
 import { describe, expect, it } from "vitest"
@@ -39,8 +39,12 @@ const FUERA_DEL_MENU: Record<string, string> = {
   __root: "es el layout, no una pantalla",
   index: "es la home; entra por 'Mis comisiones'",
   "episode-timeline": "detalle de UN episodio: se llega desde Progresion, no del menu",
-  kappa: "detalle de una corrida de inter-jueces: se llega desde Codificacion",
-  "interrater-admin": "vista de administracion: se llega desde Codificacion",
+  // Corregido por cibse-codificacion-ciega (11.9): decia "se llega desde Codificacion",
+  // pero ninguna pantalla enlaza a /kappa (verificado con rg sobre src/ el 04/11/2026).
+  kappa:
+    "calibracion kappa del piloto (lote sintetico, o ?comisionId= para episodios reales): ninguna pantalla la enlaza, se abre por URL",
+  "interrater-admin":
+    "agregado del piloto: se llega desde el aviso de Codificacion y Entrenamiento a docentes sin membresia del estudio",
   templates: "detalle de plantillas: se llega desde Trabajos Practicos",
 }
 
@@ -48,6 +52,13 @@ function rutasEnDisco(): string[] {
   return readdirSync(RUTAS_DIR)
     .filter((f) => f.endsWith(".tsx"))
     .map((f) => f.replace(/\.tsx$/, ""))
+}
+
+function archivosDe(dir: string): string[] {
+  return readdirSync(dir).flatMap((nombre) => {
+    const ruta = join(dir, nombre)
+    return statSync(ruta).isDirectory() ? archivosDe(ruta) : [ruta]
+  })
 }
 
 function idsDelMenu(): string[] {
@@ -75,6 +86,16 @@ describe("toda ruta del panel es alcanzable desde el menu", () => {
       .map((id) => id.replace(/^\//, ""))
       .filter((r) => r !== "" && !enDisco.has(r))
     expect(rotos, `items del menu sin ruta: ${rotos.join(", ")}`).toEqual([])
+  })
+
+  it("/interrater-admin tiene la puerta que declara su motivo", () => {
+    // Desde cibse-codificacion-ciega la unica entrada al agregado del piloto es el
+    // aviso de las secciones del estudio. Si ese enlace se borra, la vista queda sin
+    // puerta y el motivo de FUERA_DEL_MENU pasa a mentir.
+    const conEnlace = archivosDe(join(RUTAS_DIR, "..")).filter((ruta) =>
+      readFileSync(ruta, "utf-8").includes('to="/interrater-admin"'),
+    )
+    expect(conEnlace.length).toBeGreaterThan(0)
   })
 
   it("la lista de excepciones no tiene entradas muertas", () => {

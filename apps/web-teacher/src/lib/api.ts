@@ -116,7 +116,7 @@ export interface ExportJobStatus {
 
 export type TokenGetter = () => Promise<string | null>
 
-async function authHeaders(getToken?: TokenGetter): Promise<Record<string, string>> {
+export async function authHeaders(getToken?: TokenGetter): Promise<Record<string, string>> {
   const headers: Record<string, string> = { "Content-Type": "application/json" }
   if (getToken) {
     const token = await getToken()
@@ -125,7 +125,7 @@ async function authHeaders(getToken?: TokenGetter): Promise<Record<string, strin
   return headers
 }
 
-async function throwIfNotOk(r: Response): Promise<void> {
+export async function throwIfNotOk(r: Response): Promise<void> {
   if (r.ok) return
   const raw = await r.text()
   let detail: unknown = raw

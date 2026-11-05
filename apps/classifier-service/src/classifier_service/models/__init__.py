@@ -219,3 +219,38 @@ class ClassificationReview(Base, TenantMixin):
     )
 
     __table_args__ = (Index("ix_classification_reviews_tenant_episode", "tenant_id", "episode_id"),)
+
+
+# Tablas del estudio de codificación ciega (cibse-codificacion-ciega, design D1).
+# Import al final a propósito: `models.estudio` necesita `Base`, `TenantMixin` y
+# `utc_now_f` ya definidos. Importarlo acá registra sus tablas en `Base.metadata`
+# (Alembic y los `create_all` de otros paquetes las ven sin importar nada más).
+from classifier_service.models.estudio import (
+    CodebookVersion,
+    EntrenamientoRespuesta,
+    EstudioAncla,
+    EstudioCodificacion,
+    EstudioEnunciado,
+    EstudioEtiqueta,
+    EstudioEtiquetaHistorial,
+    EstudioMembresia,
+    EstudioMuestra,
+)
+
+__all__ = [
+    "Base",
+    "Classification",
+    "ClassificationReview",
+    "CodebookVersion",
+    "EntrenamientoRespuesta",
+    "EstudioAncla",
+    "EstudioCodificacion",
+    "EstudioEnunciado",
+    "EstudioEtiqueta",
+    "EstudioEtiquetaHistorial",
+    "EstudioMembresia",
+    "EstudioMuestra",
+    "InterraterRating",
+    "TenantMixin",
+    "utc_now_f",
+]

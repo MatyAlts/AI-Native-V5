@@ -790,27 +790,73 @@ export const helpContent: HelpContentMap = {
 
   interraterCoding: (
     <div className="space-y-4 text-sidebar-text-muted">
-      <p className="text-lg font-medium text-[var(--text-inverse)]">Codificacion a ciegas</p>
+      <p className="text-lg font-medium text-[var(--text-inverse)]">
+        Codificacion a ciegas del estudio
+      </p>
       <p>
-        Etiquetas episodios reales de la comision SIN ver la etiqueta del clasificador. Es la
-        codificacion inter-jueces: varios docentes codifican el mismo set, y despues se mide el
-        acuerdo (kappa) entre ellos y contra la maquina.
+        Codificas la muestra fija del estudio con el formulario del codebook vigente, sin ver
+        ninguna etiqueta ni marca del sistema. Solo entra quien fue asignado al estudio.
       </p>
       <ul className="list-disc list-inside space-y-2 ml-4">
         <li>
-          <strong>Ver proceso:</strong> abre la traza cruda del episodio (prompts, ediciones de
-          codigo, ejecuciones). Es la unica evidencia que ves para codificar; la etiqueta de la
-          maquina queda oculta a proposito.
+          <strong>Items en tu orden:</strong> cada codificador recorre los mismos items en un orden
+          propio. El item se nombra por su posicion; nunca ves el identificador del episodio.
         </li>
         <li>
-          <strong>Perfiles (3 ejes):</strong> Delegacion pasiva, Apropiacion superficial,
-          Apropiacion reflexiva. Elegi el que mejor describe el proceso del alumno.
+          <strong>Traza ciega:</strong> la consigna arriba y despues lo que hizo el alumno, con
+          localizadores (turno k, codigo k, ejecucion k, prueba k, nota k, lectura k) y tiempo
+          relativo. Usalos para escribir tus citas.
         </li>
         <li>
-          <strong>Re-etiquetar:</strong> podes cambiar tu codificacion cuando quieras; se guarda por
-          upsert. El avance muestra cuantos codificaste sobre el total.
+          <strong>Formulario:</strong> las dimensiones, los valores y la regla salen del codebook
+          congelado. El regimen lo calcula el sistema con la regla al guardar; si crees que no
+          corresponde, proponelo aparte con una nota.
+        </li>
+        <li>
+          <strong>Cerrar:</strong> cuando todos los items estan completos, cerras tu codificacion.
+          Despues no se puede modificar.
         </li>
       </ul>
+      <div className="bg-sidebar-bg-edge p-4 rounded-lg mt-4">
+        <p className="text-accent-brand font-medium">Nota:</p>
+        <p className="text-sm mt-1">
+          Si no estas asignado al estudio, esta seccion no muestra datos. Los resultados de la
+          codificacion del piloto siguen en el acuerdo del piloto (interrater-admin).
+        </p>
+      </div>
+    </div>
+  ),
+
+  estudioEntrenamiento: (
+    <div className="space-y-4 text-sidebar-text-muted">
+      <p className="text-lg font-medium text-[var(--text-inverse)]">
+        Entrenamiento y recalibracion
+      </p>
+      <p>
+        Lees el codebook vigente del estudio y calibras tu criterio con casos ya consensuados por el
+        equipo. No es obligatorio para codificar.
+      </p>
+      <ul className="list-disc list-inside space-y-2 ml-4">
+        <li>
+          <strong>Codebook:</strong> el texto de la version vigente. Si dice borrador, todavia puede
+          cambiar; la codificacion se habilita recien con una version congelada.
+        </li>
+        <li>
+          <strong>Ejemplos:</strong> episodios resueltos, con su traza ciega, la respuesta esperada
+          y la explicacion.
+        </li>
+        <li>
+          <strong>Practica:</strong> respondes a ciegas y recien despues ves la respuesta esperada y
+          la explicacion. Cada intento queda registrado aparte de la codificacion.
+        </li>
+      </ul>
+      <div className="bg-sidebar-bg-edge p-4 rounded-lg mt-4">
+        <p className="text-accent-brand font-medium">Consejo:</p>
+        <p className="text-sm mt-1">
+          Compara el regimen que calcula la regla con el esperado: si difieren, revisa que valor de
+          dimension te separo del consenso.
+        </p>
+      </div>
     </div>
   ),
 
