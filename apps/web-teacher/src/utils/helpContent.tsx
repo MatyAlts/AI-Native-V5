@@ -914,6 +914,21 @@ export const helpContent: HelpContentMap = {
           por debajo de 0,70.
         </li>
         <li>
+          <strong>El juez no respaldó su lectura con evidencia:</strong> el juez marcó una dimensión
+          sin citar lo que escribió el estudiante. Sin esa cita su lectura no se toma: mirá el
+          episodio y decidí la etiqueta.
+        </li>
+        <li>
+          <strong>El juez citó algo que no está en la traza:</strong> el juez respondió, pero citó
+          texto que el estudiante no escribió o un mensaje que no existe. No hay veredicto que se
+          pueda comprobar: mirá el episodio y decidí la etiqueta.
+        </li>
+        <li>
+          <strong>No había un modelo de IA real conectado:</strong> el clasificador corrió sin un
+          modelo real detrás, así que no hay veredicto. No es una decisión pedagógica: estos
+          episodios hay que volver a clasificarlos con el servicio activo, y no se ofrece decidir.
+        </li>
+        <li>
           <strong>Decidir:</strong> abre el formulario en la misma fila. Elegís el veredicto y
           escribís el motivo (obligatorio). Tu decisión reemplaza la etiqueta oficial del sistema y
           queda como la que se cita en la tesis — no queda al lado, como un comentario.
@@ -926,7 +941,7 @@ export const helpContent: HelpContentMap = {
       </ul>
       <div className="bg-sidebar-bg-edge p-4 rounded-lg mt-2">
         <p className="text-accent-brand font-medium">
-          Un quinto grupo, "Estados que esta pantalla no conoce":
+          Un grupo aparte, "Estados que esta pantalla no conoce":
         </p>
         <p className="text-sm mt-1">
           Aparece solo si el clasificador emite un motivo que esta pantalla todavía no tiene

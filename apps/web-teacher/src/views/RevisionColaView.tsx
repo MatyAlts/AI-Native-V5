@@ -7,21 +7,23 @@
  * fila, no en un modal, porque el docente necesita ver el contexto de la fila
  * mientras decide.
  *
- * Los 47 retenidos de hoy NO son una lista plana: son CUATRO preguntas
- * distintas, agrupadas por `estado_juez` en el orden inconsistente →
- * abstencion_traza_insuficiente → error_parseo → baja_confianza. El cuarto
+ * Los 47 retenidos de hoy NO son una lista plana: son preguntas distintas,
+ * agrupadas por `estado_juez` en el orden inconsistente →
+ * abstencion_traza_insuficiente → error_parseo → baja_confianza, seguidos de
+ * los tres estados que suman los jueces v2/v3 (HU-008):
+ * derivado_evidencia_insuficiente → salida_invalida → proveedor_no_disponible. El cuarto
  * estado (caso 4 de la Tabla 3.11, `regimen_llm.py:243`) no tiene casos en el
  * corpus de hoy porque el corpus todavía se clasificó con la regla booleana
  * vieja — pero el juez trivaluado YA lo puede emitir, así que está nombrado
  * acá desde el día uno y no cuando aparezca el primer caso real.
  *
- * Un QUINTO grupo, genérico, existe solo para lo verdaderamente desconocido:
- * un `estado_juez` que no es ninguno de los cuatro nombrados. Eso no es
+ * Un grupo genérico aparte existe solo para lo verdaderamente desconocido:
+ * un `estado_juez` que no es ninguno de los nombrados en `GROUP_ORDER`. Eso no es
  * información sobre el episodio — es evidencia de que el backend emitió un
  * estado que esta pantalla todavía no conoce (backend y frontend
  * desincronizados), y el copy lo dice así en vez de tratarlo como un motivo
- * más. Sirve de canario: si se agrega un sexto estado al `Literal` de
- * `regimen_llm.py` y nadie actualiza esta vista, el docente lo ve acá en vez
+ * más. Sirve de canario: si se agrega un estado al `Literal` de
+ * `regimen_llm.py`/`juez_v2.py` y nadie actualiza esta vista, el docente lo ve acá en vez
  * de que el episodio se pierda silenciosamente.
  *
  * `ReviewQueueItemOut` no trae cantidad de eventos ni transcripción — esos
@@ -47,7 +49,8 @@ interface GroupConfig {
   badge: "warning" | "danger" | "info" | "default"
   /**
    * `false` = el episodio NO tiene veredicto que juzgar, asi que no se ofrece
-   * decidir. Hoy solo el grupo "el juez no llego a correr": ahi el fallo es de
+   * decidir. Hoy el grupo "el juez no llego a correr" y el de
+   * `proveedor_no_disponible`: ahi el fallo es de
    * infraestructura y lo que corresponde es reclasificar, no que un docente
    * invente una etiqueta. La pantalla avisa que la decision REEMPLAZA la
    * etiqueta oficial y que esa es la que se cita en la tesis — ofrecer el boton
@@ -98,9 +101,36 @@ const GROUP_ORDER: GroupConfig[] = [
     descripcion: "El umbral de 0,70 actuó sobre este episodio.",
     badge: "info",
   },
+  // Estados de los jueces v2/v3 (HU-008; `juez_v2.py::_verificar_evidencia`).
+  // Los dos primeros son veredictos que el verificador de evidencia NO aceptó:
+  // hubo lectura del modelo, pero no se pudo respaldar con lo que escribió el
+  // alumno, así que el docente decide. El tercero no es un veredicto: el
+  // ai-gateway respondió con el proveedor mock y no hubo LLM real detrás.
+  {
+    estado: "derivado_evidencia_insuficiente",
+    titulo: "El juez no respaldo su lectura con evidencia",
+    descripcion:
+      "El juez marco una dimension sin citar lo que escribio el alumno, asi que su lectura no se toma. Mira el episodio y decidi la etiqueta.",
+    badge: "warning",
+  },
+  {
+    estado: "salida_invalida",
+    titulo: "El juez cito algo que no esta en la traza",
+    descripcion:
+      "El juez respondio, pero cito texto que el alumno no escribio o un mensaje que no existe. No hay veredicto que se pueda comprobar: mira el episodio y decidi la etiqueta.",
+    badge: "danger",
+  },
+  {
+    estado: "proveedor_no_disponible",
+    titulo: "No habia un modelo de IA real conectado",
+    descripcion:
+      "El clasificador corrio sin un modelo de IA real detras, asi que no hay veredicto que revisar. No es una decision pedagogica: es configuracion del servicio. Estos episodios hay que volver a clasificarlos con el servicio activo; no hace falta que decidas nada.",
+    badge: "danger",
+    decidible: false,
+  },
 ]
 
-// Grupo defensivo (quinto): NO es un motivo del episodio, es información
+// Grupo defensivo: NO es un motivo del episodio, es información
 // sobre una desincronización entre backend y frontend — el clasificador
 // emitió un `estado_juez` que esta pantalla no tiene nombrado en
 // `GROUP_ORDER`. El copy tiene que decir eso, no inventar una pregunta al

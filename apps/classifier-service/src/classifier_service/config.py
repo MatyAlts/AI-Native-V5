@@ -1,6 +1,7 @@
 """Config del classifier-service."""
 
 from functools import lru_cache
+from typing import Literal
 
 from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -41,7 +42,8 @@ class Settings(BaseSettings):
     # GOBIERNA la etiqueta oficial `appropriation` de los episodios CON-TUTOR que
     # NO son delegacion pasiva (REFLEXIVA -> apropiacion_reflexiva, SUPERFICIAL ->
     # apropiacion_superficial). Ya NO es modo sombra. La delegacion pasiva la
-    # resuelve la etapa dura; el brazo autonomo (prompts == 0) no pasa por el juez.
+    # resuelve la etapa dura (con el juez v1; ver `eje_fino_juez_version`); el
+    # brazo autonomo (prompts == 0) no pasa por el juez.
     # FALLBACK obligatorio (classify_ep): si el juez no responde "ok" o el gateway
     # falla, se conserva la etiqueta del proxy conductual (subgrupo) y el episodio
     # se marca needs_review — cerrar el episodio NUNCA debe fallar por el LLM.
@@ -59,6 +61,14 @@ class Settings(BaseSettings):
     # piloto terminaron en `error_parseo` (medido 2026-08-06). Por eso ahora es
     # configurable: la próxima vez se mueve sin tocar código ni redeployar imagen.
     eje_fino_max_tokens: int = 6000
+    # HU-001: qué juez corre. "v1" (default) = `regimen_llm.py`, el de siempre.
+    # "v2" = `juez_v2.py`, alineado al codebook MTAC v1: decide también la
+    # delegación pasiva y verifica las citas contra la traza. No entra al
+    # `classifier_config_hash`; cada veredicto persiste `prompt_version` y
+    # `juez_version`, así que cambiarlo no invalida clasificaciones existentes.
+    # HU-005: "v3" = `juez_v3.py`, el v2 aplicando el codebook MTAC v2 (D4 por
+    # quién decide en cada intercambio); se enruta igual que el v2.
+    eje_fino_juez_version: Literal["v1", "v2", "v3"] = "v1"
 
     # ADR-023 / ADR-045 (Mejora 3 plan post-piloto-1, sub-componente G8b):
     # override lexico de `anotacion_creada` sobre contenido textual con
