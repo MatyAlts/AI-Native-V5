@@ -33,13 +33,20 @@ import pytest
 
 RAIZ = pathlib.Path(__file__).resolve().parents[4]
 HUELLAS = json.loads(
-    (RAIZ / "apps/classifier-service/tests/aceptacion_hu001/datos/huellas_muestra_150.json").read_text()
+    (
+        RAIZ / "apps/classifier-service/tests/aceptacion_hu001/datos/huellas_muestra_150.json"
+    ).read_text()
 )
 TENANT = UUID("00000000-0000-0000-0000-0000000000aa")
 
 
 def _ev(seq, tipo, payload):
-    return {"seq": seq, "event_type": tipo, "ts": f"2026-11-20T11:00:{seq:02d}Z", "payload": payload}
+    return {
+        "seq": seq,
+        "event_type": tipo,
+        "ts": f"2026-11-20T11:00:{seq:02d}Z",
+        "payload": payload,
+    }
 
 
 MSG1 = "escribí el while pero no sé si la condición de corte va con cero"
@@ -64,9 +71,16 @@ def _dim(v, loc="", cita=""):
     return {"valor": v, "localizador": loc, "cita": cita}
 
 
-def salida(regimen="REFLEXIVA", d4=("interlocutor", "mensaje 2", "creo que el problema es que leo el dato afuera del ciclo"), es_frontera=False, frontera_entre=None):
+def salida(
+    regimen="REFLEXIVA",
+    d4=("interlocutor", "mensaje 2", "creo que el problema es que leo el dato afuera del ciclo"),
+    es_frontera=False,
+    frontera_entre=None,
+):
     return {
-        "d1_verbalizacion": _dim("presente", "mensaje 2", "creo que el problema es que leo el dato afuera del ciclo"),
+        "d1_verbalizacion": _dim(
+            "presente", "mensaje 2", "creo que el problema es que leo el dato afuera del ciclo"
+        ),
         "d2_verificacion": _dim("presente", "ejecución 1", ""),
         "d3_justificacion": _dim("ausente"),
         "d4_autonomia": _dim(*d4),
@@ -80,11 +94,18 @@ def salida(regimen="REFLEXIVA", d4=("interlocutor", "mensaje 2", "creo que el pr
 
 class Completar:
     def __init__(self, contenido, output_tokens=200, provider="openrouter"):
-        self.contenido, self.output_tokens, self.provider, self.llamadas = contenido, output_tokens, provider, []
+        self.contenido, self.output_tokens, self.provider, self.llamadas = (
+            contenido,
+            output_tokens,
+            provider,
+            [],
+        )
 
     async def __call__(self, **kw):
         self.llamadas.append(kw)
-        return SimpleNamespace(content=self.contenido, output_tokens=self.output_tokens, provider=self.provider)
+        return SimpleNamespace(
+            content=self.contenido, output_tokens=self.output_tokens, provider=self.provider
+        )
 
 
 async def juzgar(datos, **kw):
@@ -116,8 +137,10 @@ def test_c01_default_v1_y_v3_disponible():
 def test_c01_juez_v2_intacto():
     from classifier_service.services import juez_v2
 
-    assert juez_v2.huella_prompt_v2() == juez_v2.HUELLA_PROMPT_V2 == (
-        "553e0f33001f4c261670574070fa36de8b3e09284e8584612fbd34d3744c62e8"
+    assert (
+        juez_v2.huella_prompt_v2()
+        == juez_v2.HUELLA_PROMPT_V2
+        == ("553e0f33001f4c261670574070fa36de8b3e09284e8584612fbd34d3744c62e8")
     )
     assert juez_v2.PROMPT_VERSION_V2 == "mtac_v1_juez_v2.0.0"
 
@@ -139,13 +162,19 @@ def test_c02_misma_traza():
 
 
 async def test_c02_verificacion_de_evidencia_igual_que_v2():
-    res, _ = await juzgar(salida(d4=("interlocutor", "mensaje 2", "Mirá dónde se actualiza la variable")))
+    res, _ = await juzgar(
+        salida(d4=("interlocutor", "mensaje 2", "Mirá dónde se actualiza la variable"))
+    )
     assert res.estado == "salida_invalida"  # cita del tutor
     res, _ = await juzgar(salida(regimen="SUPERFICIAL"))
     assert res.estado == "inconsistente"  # la regla dice REFLEXIVA
     res, _ = await juzgar(salida(), completar=Completar(json.dumps(salida()), provider="mock"))
     assert res.estado == "proveedor_no_disponible"
-    res, completar = await juzgar(salida(), completar=Completar(json.dumps(salida())[:80], output_tokens=6000), max_tokens=6000)
+    res, completar = await juzgar(
+        salida(),
+        completar=Completar(json.dumps(salida())[:80], output_tokens=6000),
+        max_tokens=6000,
+    )
     assert res.estado == "error_parseo" and len(completar.llamadas) == 1
 
 
@@ -157,17 +186,20 @@ async def test_c02_ok_con_juez_version_v3():
 
 # ── C03: la salida nueva marca frontera ─────────────────────────────────────
 def test_c03_schema_exige_marca_de_frontera():
+    from classifier_service.services.juez_v3 import RESPONSE_JSON_SCHEMA_V3, RegimenV3Raw
     from pydantic import ValidationError
 
-    from classifier_service.services.juez_v3 import RESPONSE_JSON_SCHEMA_V3, RegimenV3Raw
-
-    RegimenV3Raw.model_validate(salida(es_frontera=True, frontera_entre=["REFLEXIVA", "SUPERFICIAL"]))
+    RegimenV3Raw.model_validate(
+        salida(es_frontera=True, frontera_entre=["REFLEXIVA", "SUPERFICIAL"])
+    )
     sin = salida()
     del sin["es_frontera"]
     with pytest.raises(ValidationError):
         RegimenV3Raw.model_validate(sin)
     with pytest.raises(ValidationError):
-        RegimenV3Raw.model_validate(salida(es_frontera=True, frontera_entre=["REFLEXIVA", "INTERLOCUTOR"]))
+        RegimenV3Raw.model_validate(
+            salida(es_frontera=True, frontera_entre=["REFLEXIVA", "INTERLOCUTOR"])
+        )
     props = RESPONSE_JSON_SCHEMA_V3["json_schema"]["schema"]
     assert {"es_frontera", "frontera_entre"} <= set(props["required"])
 
@@ -256,7 +288,9 @@ def _instrumentar(monkeypatch, res_v3):
 
 def _res(estado, regimen):
     return SimpleNamespace(
-        estado=estado, regimen=regimen, razon="r",
+        estado=estado,
+        regimen=regimen,
+        razon="r",
         model_dump=lambda mode="json": {"estado": estado, "regimen": regimen, "juez_version": "v3"},
     )
 
@@ -274,7 +308,9 @@ def _res(estado, regimen):
 async def test_c06_enruta_como_el_v2(monkeypatch, subgrupo, estado, regimen, esperado):
     classify_ep, llamados = _instrumentar(monkeypatch, _res(estado, regimen))
     proxy = "delegacion_pasiva" if subgrupo.startswith("dependiente") else "apropiacion_superficial"
-    res = SimpleNamespace(appropriation=proxy, reason="proxy", features={"subgrupo": {"key": subgrupo}})
+    res = SimpleNamespace(
+        appropriation=proxy, reason="proxy", features={"subgrupo": {"key": subgrupo}}
+    )
     await classify_ep._aplicar_juez_eje_fino(res, episodio(), UUID(int=1), {}, TENANT)
     assert llamados == {"v1": 0, "v2": 0, "v3": 1}
     assert res.appropriation == esperado
@@ -283,7 +319,9 @@ async def test_c06_enruta_como_el_v2(monkeypatch, subgrupo, estado, regimen, esp
 
 async def test_c06_autonomo_no_pasa_por_el_juez(monkeypatch):
     classify_ep, llamados = _instrumentar(monkeypatch, _res("ok", "PASIVA"))
-    res = SimpleNamespace(appropriation="autonomo", reason="p", features={"subgrupo": {"key": "autonomo_resolutor"}})
+    res = SimpleNamespace(
+        appropriation="autonomo", reason="p", features={"subgrupo": {"key": "autonomo_resolutor"}}
+    )
     await classify_ep._aplicar_juez_eje_fino(res, episodio(), UUID(int=1), {}, TENANT)
     assert llamados["v3"] == 0 and res.appropriation == "autonomo"
 
@@ -316,7 +354,13 @@ def test_n01_ningun_episodio_de_los_150():
     ).lower()
     ids = set(HUELLAS["ids"])
     frag = set(HUELLAS["fragmentos"])
-    malos = [t for t in re.findall(r"[0-9a-f]{8}(?:-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})?", texto) if _h(t) in ids]
+    malos = [
+        t
+        for t in re.findall(
+            r"[0-9a-f]{8}(?:-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})?", texto
+        )
+        if _h(t) in ids
+    ]
     p = re.findall(r"\w+", texto)
     malos += [i for i in range(len(p) - 7) if _h(" ".join(p[i : i + 8])) in frag]
     assert malos == []
@@ -332,11 +376,19 @@ def test_n02_intactos():
                 h.update(f.read_bytes())
         return h.hexdigest()
 
-    assert arbol(RAIZ / "ai-native-prompts/prompts/tutor") == "d862193c219a9f45bceb3cfcdc42e2441c6327d2c5d5cf11a15ea8102c0dc595"
+    assert (
+        arbol(RAIZ / "ai-native-prompts/prompts/tutor")
+        == "d862193c219a9f45bceb3cfcdc42e2441c6327d2c5d5cf11a15ea8102c0dc595"
+    )
     f15 = RAIZ / "apps/evaluation-service/src/evaluation_service/services/correccion_nativa.py"
-    assert hashlib.sha256(f15.read_bytes()).hexdigest() == "bf5463c59f9df30e1aa2eaa45f2da70bbaa6e7663d4e6fd91a5cb064af3d5745"
+    assert (
+        hashlib.sha256(f15.read_bytes()).hexdigest()
+        == "bf5463c59f9df30e1aa2eaa45f2da70bbaa6e7663d4e6fd91a5cb064af3d5745"
+    )
     acept = RAIZ / "apps/classifier-service/tests/aceptacion_hu001/test_hu001_aceptacion.py"
     assert hashlib.sha256(acept.read_bytes()).hexdigest() == HUELLA_ACEPTACION_HU001
 
 
-HUELLA_ACEPTACION_HU001 = "f813d2d0f0f7dbf46673e1fd89dafccdcf67b63d9b344dc3991f68532ca0a622"
+# Huella tras el reformateo de ruff del 20/11 (sólo orden de imports, formato y
+# `zip(..., strict=False)`); antes: f813d2d0f0f7dbf46673e1fd89dafccdcf67b63d9b344dc3991f68532ca0a622.
+HUELLA_ACEPTACION_HU001 = "d16f3f120544c599dbd341160620ae252fed618d7b9a6290ad0c6071d92be23d"

@@ -68,7 +68,9 @@ MSG1 = "uso un while porque no sé cuántas veces el usuario va a ingresar datos
 MSG2 = "corta cuando ingresa cero, espero que la suma dé 15 si cargo 5 y 10"
 MSG3 = "dio 15 como esperaba, entonces el acumulador arranca bien en cero"
 TUTOR1 = "¿Qué condición debería cortar el ciclo? Pensá en el valor centinela."
-CODIGO = "suma = 0\nn = int(input())\nwhile n != 0:\n    suma += n\n    n = int(input())\nprint(suma)"
+CODIGO = (
+    "suma = 0\nn = int(input())\nwhile n != 0:\n    suma += n\n    n = int(input())\nprint(suma)"
+)
 
 
 def episodio() -> list[dict]:
@@ -80,7 +82,11 @@ def episodio() -> list[dict]:
         _ev(4, "edicion_codigo", {"snapshot": CODIGO, "language": "python"}),
         _ev(5, "codigo_ejecutado", {"code": CODIGO, "stdout": "15\n", "stderr": ""}),
         _ev(6, "intento_adverso_detectado", {"category": "overuse", "severity": 1}),
-        _ev(7, "tests_ejecutados", {"test_count_total": 2, "test_count_passed": 2, "test_count_failed": 0}),
+        _ev(
+            7,
+            "tests_ejecutados",
+            {"test_count_total": 2, "test_count_passed": 2, "test_count_failed": 0},
+        ),
         _ev(8, "prompt_enviado", {"content": MSG3}),
         _ev(9, "episodio_cerrado", {}),
     ]
@@ -252,12 +258,15 @@ def test_c02_schema_acepta_la_salida_valida():
 
 @pytest.mark.parametrize(
     "campo,valor",
-    [("d4_autonomia", "presente"), ("d1_verbalizacion", "interlocutor"), ("d2_verificacion", "oraculo")],
+    [
+        ("d4_autonomia", "presente"),
+        ("d1_verbalizacion", "interlocutor"),
+        ("d2_verificacion", "oraculo"),
+    ],
 )
 def test_c02_schema_rechaza_valores_fuera_de_dominio(campo, valor):
-    from pydantic import ValidationError
-
     from classifier_service.services.juez_v2 import RegimenV2Raw
+    from pydantic import ValidationError
 
     datos = salida()
     datos[campo]["valor"] = valor
@@ -266,9 +275,8 @@ def test_c02_schema_rechaza_valores_fuera_de_dominio(campo, valor):
 
 
 def test_c02_schema_rechaza_claves_extra():
-    from pydantic import ValidationError
-
     from classifier_service.services.juez_v2 import RegimenV2Raw
+    from pydantic import ValidationError
 
     datos = salida()
     datos["subgrupo"] = "dependiente_sobreuso"
@@ -354,8 +362,12 @@ def test_c03_coincide_con_la_regla_del_estudio_en_las_24_combinaciones_evaluable
     from classifier_service.services.regla_mtac import regimen_segun_regla_mtac
 
     claves = ("d1_verbalizacion", "d2_verificacion", "d3_justificacion", "d4_autonomia")
-    for combo in product(("presente", "ausente"), ("presente", "ausente"), ("presente", "ausente"), D4[:3]):
-        respuestas = {k: {"valor": v, "cita": "mensaje 1"} for k, v in zip(claves, combo)}
+    for combo in product(
+        ("presente", "ausente"), ("presente", "ausente"), ("presente", "ausente"), D4[:3]
+    ):
+        respuestas = {
+            k: {"valor": v, "cita": "mensaje 1"} for k, v in zip(claves, combo, strict=False)
+        }
         estudio = derivar_regimen(ESQUEMA_ESTUDIO, respuestas).upper()
         assert regimen_segun_regla_mtac(*combo) == estudio, combo
 
@@ -379,7 +391,9 @@ def test_c03_anclas_consensuadas(dims, esperado):
 
 # ── C04 / N03: el régimen lo decide la regla, no el modelo ──────────────────
 async def test_c04_n03_reflexiva_con_d4_oraculo_no_termina_reflexiva():
-    res, _ = await juzgar(salida(d4=("oraculo", "mensaje 2", "espero que la suma dé 15"), regimen="REFLEXIVA"))
+    res, _ = await juzgar(
+        salida(d4=("oraculo", "mensaje 2", "espero que la suma dé 15"), regimen="REFLEXIVA")
+    )
     assert res.estado == "inconsistente"
     assert res.regimen is None
     assert res.raw is not None  # se conserva todo para auditar
@@ -478,7 +492,15 @@ def test_traza_v2_tiene_localizadores_salidas_y_pruebas():
     from classifier_service.services.juez_v2 import armar_traza_v2
 
     traza = armar_traza_v2(episodio())
-    for esperado in ("mensaje 1", "mensaje 2", "mensaje 3", "ejecución 1", "prueba 1", MSG1, TUTOR1):
+    for esperado in (
+        "mensaje 1",
+        "mensaje 2",
+        "mensaje 3",
+        "ejecución 1",
+        "prueba 1",
+        MSG1,
+        TUTOR1,
+    ):
         assert esperado in traza, esperado
     assert "15" in traza.split("ejecución 1", 1)[1]  # la salida de la ejecución viaja
     assert "2/2" in traza.split("prueba 1", 1)[1] or "2 de 2" in traza.split("prueba 1", 1)[1]
@@ -585,7 +607,10 @@ async def test_c08_proveedor_mock_da_estado_explicito_y_log(caplog):
     res, _ = await juzgar(salida(), completar=completar)
     assert res.estado == "proveedor_no_disponible"
     assert res.regimen is None
-    assert any("mock" in r.getMessage().lower() or "mock" in str(r.__dict__).lower() for r in caplog.records)
+    assert any(
+        "mock" in r.getMessage().lower() or "mock" in str(r.__dict__).lower()
+        for r in caplog.records
+    )
 
 
 # ── C09: reproducibilidad y truncado ────────────────────────────────────────
@@ -681,7 +706,9 @@ def coincidencias_con_la_muestra(texto: str) -> list[str]:
     ids = set(HUELLAS["ids"])
     frag = set(HUELLAS["fragmentos"])
     hallados = []
-    for tok in re.findall(r"[0-9a-f]{8}(?:-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})?", texto.lower()):
+    for tok in re.findall(
+        r"[0-9a-f]{8}(?:-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})?", texto.lower()
+    ):
         if _h(tok) in ids:
             hallados.append(f"id:{_h(tok)}")
     palabras = re.findall(r"\w+", texto.lower())
