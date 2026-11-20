@@ -17,6 +17,40 @@ export const APPROPRIATION_DOCENTE: Record<string, string> = {
   sin_clasificar: "En este episodio: sin clasificar (el arbol no pudo decidir un perfil)",
 }
 
+// ── Pasiva por sobreuso (change sobreuso-no-es-delegacion, P1 del plan CIbSE 2027) ──
+// El estudio de 150 episodios mostro que la regla de sobreuso (subgrupo
+// `dependiente_sobreuso`, roll-up a `delegacion_pasiva`) mide FRECUENCIA de
+// consultas, no delegacion: produccion marco pasiva 47 de 50 y los codificadores
+// casi nunca. La etiqueta persistida NO cambia; esto decide solo como se muestra.
+// Coincide con `SUBGRUPO_SOBREUSO` de platform_ops/longitudinal.py.
+export const SUBGRUPO_SOBREUSO = "dependiente_sobreuso"
+
+/** True si la pasiva vino SOLO de la regla de sobreuso. Exige las dos
+ *  condiciones: si una revision humana cambio la etiqueta, manda la revision;
+ *  una clasificacion vieja sin subgrupo sigue siendo delegacion pasiva. */
+export function esPasivaPorSobreuso(
+  appropriation: string | null | undefined,
+  subgrupoKey: string | null | undefined,
+): boolean {
+  return appropriation === "delegacion_pasiva" && subgrupoKey === SUBGRUPO_SOBREUSO
+}
+
+export const USO_INTENSIVO_LABEL = "Uso intensivo del tutor"
+export const USO_INTENSIVO_DOCENTE =
+  "En este episodio: uso intensivo del tutor (alerta de frecuencia)"
+// Color de alerta, NO el rojo de delegacion. Se dibuja como anillo (sin relleno)
+// para que se lea como alerta y no como un punto mas de la escala.
+export const USO_INTENSIVO_COLOR_VAR = "var(--color-warning)"
+
+/** Label docente de un punto de trayectoria, respetando la pasiva por sobreuso. */
+export function apropiacionDocenteDePunto(
+  appropriation: string,
+  subgrupoKey?: string | null,
+): string {
+  if (esPasivaPorSobreuso(appropriation, subgrupoKey)) return USO_INTENSIVO_DOCENTE
+  return APPROPRIATION_DOCENTE[appropriation] ?? appropriation
+}
+
 // Subgrupos en lenguaje docente (selector de protocolo del inter-rater).
 // Coinciden con classifier-service/services/subgrupo.py.
 export const SUBGRUPO_DOCENTE: Record<string, string> = {
@@ -28,6 +62,7 @@ export const SUBGRUPO_DOCENTE: Record<string, string> = {
   colaborador_reflexivo: "Colaboro con la IA reflexionando",
   colaborador_funcional: "Uso la IA de forma funcional",
   dependiente_delegador: "Dependio de la IA",
+  dependiente_sobreuso: "Consulto al tutor muy seguido",
   indeterminado: "Sesion muy corta / sin señal",
 }
 
@@ -290,6 +325,11 @@ const SUBGRUPO_RESUMEN_DOCENTE: Record<string, string> = {
     "Uso el tutor de forma funcional: pidio lo que necesitaba y avanzo, aunque con poca experimentacion propia.",
   dependiente_delegador:
     "Se apoyo en el tutor para resolver, con poca elaboracion propia. Conviene conversarlo con el alumno.",
+  // Alerta de frecuencia, no un regimen: la regla cuenta mensajes en rafaga y no
+  // lee lo que escribio el alumno. Solo se usa si la etiqueta sigue siendo la del
+  // sobreuso (ver el guard en `explicarEstadoDocente`).
+  dependiente_sobreuso:
+    "Consulto al tutor muchas veces en poco tiempo. Es una alerta de frecuencia, no una conclusion sobre si penso o delego: para saberlo hay que leer la conversacion.",
 }
 
 // Subgrupos de la rama "sin prompts" del arbol (el alumno NO uso el tutor).
@@ -355,7 +395,13 @@ export function explicarEstadoDocente(
 
   // Resumen por subgrupo: describe el perfil REAL del episodio.
   // Sin subgrupo (classifications viejas) o `indeterminado` → eje macro.
-  const porSubgrupo = subgrupoKey ? SUBGRUPO_RESUMEN_DOCENTE[subgrupoKey] : undefined
+  // El resumen del sobreuso solo vale mientras la etiqueta sea la de la regla:
+  // si una revision humana la cambio, manda el eje revisado.
+  const subgrupoVigente =
+    subgrupoKey === SUBGRUPO_SOBREUSO && !esPasivaPorSobreuso(c.appropriation, subgrupoKey)
+      ? undefined
+      : subgrupoKey
+  const porSubgrupo = subgrupoVigente ? SUBGRUPO_RESUMEN_DOCENTE[subgrupoVigente] : undefined
   if (porSubgrupo) {
     return { resumen: porSubgrupo, acciones }
   }

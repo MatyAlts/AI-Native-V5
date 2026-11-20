@@ -51,6 +51,52 @@ APPROPRIATION_ORDINAL: dict[str, int] = {
     "apropiacion_reflexiva": 2,
 }
 
+# Subgrupo que emite la regla de sobreuso (`dependiente_sobreuso` en
+# apps/classifier-service/.../services/subgrupo.py). Mantener sincronizado.
+SUBGRUPO_SOBREUSO = "dependiente_sobreuso"
+
+
+def subgrupo_key_de(features: object) -> str | None:
+    """`features['subgrupo']['key']` de una clasificación, o None si falta.
+
+    Defensivo: clasificaciones viejas no tienen subgrupo y `features` es JSONB
+    libre, así que cualquier forma inesperada devuelve None (= como hoy).
+    """
+    if not isinstance(features, dict):
+        return None
+    subgrupo = features.get("subgrupo")
+    if not isinstance(subgrupo, dict):
+        return None
+    key = subgrupo.get("key")
+    return key if isinstance(key, str) else None
+
+
+def es_pasiva_por_sobreuso(appropriation: str | None, subgrupo_key: str | None) -> bool:
+    """True si la pasiva vino SOLO de la regla de sobreuso (change
+    `sobreuso-no-es-delegacion`, P1 del plan CIbSE 2027).
+
+    Exige las DOS condiciones: si una revisión humana cambió la etiqueta, el
+    subgrupo viejo no la pisa. Una clasificación vieja sin subgrupo sigue
+    siendo delegación pasiva. La etiqueta persistida no se toca: esto decide
+    solo presentación y progreso.
+    """
+    return appropriation == "delegacion_pasiva" and subgrupo_key == SUBGRUPO_SOBREUSO
+
+
+def ordinal_progreso(appropriation: str | None, subgrupo_key: str | None = None) -> int | None:
+    """Posición en la escala ordinal de progreso, o None si no participa.
+
+    No participan: `autonomo` y `sin_clasificar` (fuera de APPROPRIATION_ORDINAL)
+    y la pasiva por sobreuso (A1 del plan CIbSE 2027): el estudio de 150
+    episodios mostró que esa regla mide frecuencia de consultas, no delegación,
+    así que contarla como 0 haría aparecer "empeorando" a quien consultó mucho.
+    """
+    if appropriation is None or appropriation not in APPROPRIATION_ORDINAL:
+        return None
+    if es_pasiva_por_sobreuso(appropriation, subgrupo_key):
+        return None
+    return APPROPRIATION_ORDINAL[appropriation]
+
 
 @dataclass
 class ClassificationPoint:
@@ -65,6 +111,8 @@ class ClassificationPoint:
     ccd_orphan_ratio: float | None = None
     cii_stability: float | None = None
     cii_evolution: float | None = None
+    # `features.subgrupo.key` de la clasificación (aditivo, puede faltar).
+    subgrupo_key: str | None = None
 
 
 @dataclass
@@ -94,9 +142,9 @@ class StudentTrajectory:
         saltean — no participan del continuo longitudinal.
         """
         scores = [
-            APPROPRIATION_ORDINAL[p.appropriation]
+            o
             for p in self.points
-            if p.appropriation in APPROPRIATION_ORDINAL
+            if (o := ordinal_progreso(p.appropriation, p.subgrupo_key)) is not None
         ]
         if len(scores) < 3:
             return None
@@ -137,9 +185,9 @@ class StudentTrajectory:
         punto. Episodios con etiqueta ortogonal (sin ordinal, ej. `autonomo`) se
         saltean; si NINGÚN punto tiene ordinal, devuelve None."""
         ordinals = [
-            APPROPRIATION_ORDINAL[p.appropriation]
+            o
             for p in self.points
-            if p.appropriation in APPROPRIATION_ORDINAL
+            if (o := ordinal_progreso(p.appropriation, p.subgrupo_key)) is not None
         ]
         if not ordinals:
             return None
@@ -238,6 +286,7 @@ async def build_trajectories(
                     ccd_orphan_ratio=row.get("ccd_orphan_ratio"),
                     cii_stability=row.get("cii_stability"),
                     cii_evolution=row.get("cii_evolution"),
+                    subgrupo_key=row.get("subgrupo_key"),
                 )
             )
         # Sort defensivo por si el data source no garantiza orden
@@ -269,9 +318,13 @@ def summarize_cohort(comision_id: UUID, trajectories: list[StudentTrajectory]) -
 
 __all__ = [
     "APPROPRIATION_ORDINAL",
+    "SUBGRUPO_SOBREUSO",
     "ClassificationPoint",
     "CohortProgression",
     "StudentTrajectory",
     "build_trajectories",
+    "es_pasiva_por_sobreuso",
+    "ordinal_progreso",
+    "subgrupo_key_de",
     "summarize_cohort",
 ]

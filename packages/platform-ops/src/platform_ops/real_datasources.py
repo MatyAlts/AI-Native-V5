@@ -33,6 +33,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from platform_ops.language_segmentation import DEFAULT_LANGUAGE, resolve_episode_languages
+from platform_ops.longitudinal import subgrupo_key_de
 
 logger = logging.getLogger(__name__)
 
@@ -245,6 +246,7 @@ class RealLongitudinalDataSource:
                     "ccd_orphan_ratio": c.ccd_orphan_ratio,
                     "cii_stability": c.cii_stability,
                     "cii_evolution": c.cii_evolution,
+                    "subgrupo_key": subgrupo_key_de(c.features),
                 }
             )
 
@@ -475,6 +477,7 @@ class RealLongitudinalDataSource:
             c.episode_id: {
                 "appropriation": c.appropriation,
                 "classified_at": c.classified_at,
+                "subgrupo_key": subgrupo_key_de(c.features),
             }
             for c in cls_result.scalars().all()
         }
@@ -499,6 +502,7 @@ class RealLongitudinalDataSource:
                     else None,
                     "events_count": row.events_count,
                     "appropriation": cls["appropriation"] if cls else None,
+                    "subgrupo_key": cls["subgrupo_key"] if cls else None,
                     "classified_at": (
                         cls["classified_at"].isoformat().replace("+00:00", "Z")
                         if cls and cls["classified_at"]
@@ -594,6 +598,7 @@ class RealLongitudinalDataSource:
                     ),  # None si sin unidad → "sin_unidad" downstream
                     "classified_at": c.classified_at,
                     "appropriation": c.appropriation,
+                    "subgrupo_key": subgrupo_key_de(c.features),
                 }
             )
 

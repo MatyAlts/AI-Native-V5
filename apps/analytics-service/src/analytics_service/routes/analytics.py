@@ -744,6 +744,9 @@ class TrajectoryPoint(BaseModel):
     episode_id: str
     classified_at: str
     appropriation: str
+    # `features.subgrupo.key` (aditivo): con `appropriation` permite a la UI
+    # distinguir la pasiva por sobreuso (change sobreuso-no-es-delegacion).
+    subgrupo_key: str | None = None
 
 
 class StudentTrajectoryOut(BaseModel):
@@ -905,6 +908,7 @@ async def get_cohort_progression(
                         episode_id=str(p.episode_id),
                         classified_at=p.classified_at.isoformat().replace("+00:00", "Z"),
                         appropriation=p.appropriation,
+                        subgrupo_key=p.subgrupo_key,
                     )
                     for p in t.points
                 ],
@@ -1297,6 +1301,8 @@ class StudentEpisodeOut(BaseModel):
     closed_at: str | None
     events_count: int
     appropriation: str | None
+    # Ver `TrajectoryPoint.subgrupo_key`.
+    subgrupo_key: str | None = None
     classified_at: str | None
 
 

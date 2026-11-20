@@ -1,7 +1,7 @@
 import { HelpButton, StateMessage } from "@platform/ui"
 import { Link } from "@tanstack/react-router"
 import { ChevronDown, ChevronRight, TrendingUp, TriangleAlert } from "lucide-react"
-import { useCallback, useEffect, useState } from "react"
+import { type CSSProperties, useCallback, useEffect, useState } from "react"
 import { useComisionLabel } from "../components/ComisionSelector"
 import { useStudentProfiles } from "../hooks/useStudentProfiles"
 import { useViewMode } from "../hooks/useViewMode"
@@ -18,9 +18,12 @@ import {
 } from "../lib/api"
 import { MIN_STUDENTS_FOR_COHORT_BALANCE, cohortBalanceLabel } from "../utils/cohortBalanceLabel"
 import {
-  APPROPRIATION_DOCENTE,
   APPROPRIATION_REIFICATION_DISCLAIMER,
   PROGRESSION_DOCENTE,
+  USO_INTENSIVO_COLOR_VAR,
+  USO_INTENSIVO_LABEL,
+  apropiacionDocenteDePunto,
+  esPasivaPorSobreuso,
   studentShortLabel,
 } from "../utils/docenteLabels"
 import { helpContent } from "../utils/helpContent"
@@ -51,6 +54,19 @@ const LEYENDA_APROPIACION: { valor: string; etiqueta: string }[] = [
   { valor: "autonomo", etiqueta: "Autonomo (sin tutor)" },
   { valor: "sin_clasificar", etiqueta: "Sin clasificar" },
 ]
+
+/** Estilo del punto de un episodio. La pasiva por sobreuso (alerta de
+ *  frecuencia, no regimen) va como anillo de color warning, sin relleno: no es
+ *  un punto mas de la escala. */
+function estiloPunto(appropriation: string, subgrupoKey?: string | null): CSSProperties {
+  if (esPasivaPorSobreuso(appropriation, subgrupoKey)) {
+    return {
+      backgroundColor: "transparent",
+      boxShadow: `inset 0 0 0 2px ${USO_INTENSIVO_COLOR_VAR}`,
+    }
+  }
+  return { backgroundColor: LABEL_COLOR_VAR[appropriation] ?? "var(--color-level-meta)" }
+}
 
 interface Props {
   comisionId: string
@@ -477,6 +493,13 @@ function TrajectoriesSection({
               {etiqueta}
             </span>
           ))}
+          <span className="flex items-center gap-1.5">
+            <span
+              className="inline-block w-2 h-2 rounded-full shrink-0"
+              style={estiloPunto("delegacion_pasiva", "dependiente_sobreuso")}
+            />
+            {USO_INTENSIVO_LABEL} (alerta, no cuenta en el progreso)
+          </span>
         </div>
       )}
       {isDocente && Object.keys(entregaStats).length > 0 && (
@@ -718,7 +741,12 @@ function TrajectoryDots({
   points,
   isDocente,
 }: {
-  points: Array<{ appropriation: string; classified_at: string; episode_id: string }>
+  points: Array<{
+    appropriation: string
+    classified_at: string
+    episode_id: string
+    subgrupo_key?: string | null
+  }>
   isDocente: boolean
 }) {
   if (points.length === 0) {
@@ -731,18 +759,14 @@ function TrajectoryDots({
         <span
           key={p.episode_id}
           className="inline-block w-3 h-3 rounded-full shrink-0"
-          style={{
-            backgroundColor: LABEL_COLOR_VAR[p.appropriation] ?? "var(--color-level-meta)",
-          }}
+          style={estiloPunto(p.appropriation, p.subgrupo_key)}
           title={
             isDocente
-              ? `${new Date(p.classified_at).toLocaleDateString("es-AR")} · ${APPROPRIATION_DOCENTE[p.appropriation] ?? p.appropriation}`
+              ? `${new Date(p.classified_at).toLocaleDateString("es-AR")} · ${apropiacionDocenteDePunto(p.appropriation, p.subgrupo_key)}`
               : `${new Date(p.classified_at).toLocaleDateString()} · ${p.appropriation}`
           }
           aria-label={
-            isDocente
-              ? (APPROPRIATION_DOCENTE[p.appropriation] ?? p.appropriation)
-              : p.appropriation
+            isDocente ? apropiacionDocenteDePunto(p.appropriation, p.subgrupo_key) : p.appropriation
           }
         />
       ))}

@@ -15,7 +15,15 @@ import {
 } from "../lib/api"
 import { useTutorialDeVista } from "../tour/useTutorialDeVista"
 import { nivelesTour } from "../tour/vistas"
-import { NLEVEL_DOCENTE, NLEVEL_INVESTIGADOR, explicarEstadoDocente } from "../utils/docenteLabels"
+import {
+  NLEVEL_DOCENTE,
+  NLEVEL_INVESTIGADOR,
+  SUBGRUPO_DOCENTE,
+  SUBGRUPO_SOBREUSO,
+  USO_INTENSIVO_LABEL,
+  esPasivaPorSobreuso,
+  explicarEstadoDocente,
+} from "../utils/docenteLabels"
 import { helpContent } from "../utils/helpContent"
 
 interface Props {
@@ -575,6 +583,17 @@ const APPROPRIATION_DISPLAY: Partial<
   },
 }
 
+// sobreuso-no-es-delegacion (P1 del plan CIbSE 2027): la pasiva que vino SOLO
+// de la regla de sobreuso se muestra como alerta de frecuencia, no como
+// delegacion. Warning, no danger: no es un regimen de apropiacion.
+const USO_INTENSIVO_DISPLAY = {
+  label: USO_INTENSIVO_LABEL,
+  chip: "bg-warning text-white",
+  container: "border-warning/30 bg-warning-soft",
+  headline:
+    "El alumno consulto al tutor muchas veces en poco tiempo. Es una alerta de frecuencia: no dice si penso o delego. Para saberlo, conviene leer la conversacion.",
+}
+
 // B2b (6.4/6.5): fallback para `sin_clasificar` (y cualquier valor futuro sin
 // entrada propia). "Sin clasificar" no es un estado de error: es informacion
 // sobre el episodio — mismo tratamiento visual neutro que "autonomo" (gris),
@@ -617,8 +636,9 @@ function DocenteAppropriationVerdict({
   // reflexiva"). Colores/severidad siguen mapeando al eje canonico.
   const subgrupoKey = classification.subgrupo?.key ?? null
   const explicacion = explicarEstadoDocente(classification, eventosCognitivos, subgrupoKey)
-  const display =
-    APPROPRIATION_DISPLAY[classification.appropriation] ?? APPROPRIATION_DISPLAY_FALLBACK
+  const display = esPasivaPorSobreuso(classification.appropriation, subgrupoKey)
+    ? USO_INTENSIVO_DISPLAY
+    : (APPROPRIATION_DISPLAY[classification.appropriation] ?? APPROPRIATION_DISPLAY_FALLBACK)
 
   // Episodio sin actividad: chip neutro en vez del veredicto de apropiación
   // (no tiene sentido decir "superficial" si el alumno no trabajó).
@@ -626,8 +646,17 @@ function DocenteAppropriationVerdict({
   const chipCls = explicacion.sinActividad
     ? "bg-surface border border-border text-muted"
     : display.chip
-  const subgrupoChip =
-    subgrupoKey && subgrupoKey !== "indeterminado" ? classification.subgrupo?.label : null
+  // El label y la accion del subgrupo de sobreuso vienen del backend como
+  // "Dependiente (sobreuso)" / "Intervenir ..." (subgrupo.py, persistido). Mientras
+  // la etiqueta sea la de la regla se reemplazan por el lenguaje de alerta.
+  const sobreuso = esPasivaPorSobreuso(classification.appropriation, subgrupoKey)
+  const subgrupoLabel = sobreuso
+    ? SUBGRUPO_DOCENTE[SUBGRUPO_SOBREUSO]
+    : classification.subgrupo?.label
+  const subgrupoAccion = sobreuso
+    ? "Leer la conversacion antes de concluir. Si pide respuestas, invitarlo a proponer una idea propia antes de consultar."
+    : classification.subgrupo?.accion_docente
+  const subgrupoChip = subgrupoKey && subgrupoKey !== "indeterminado" ? subgrupoLabel : null
   // El EJE (grupo macro de apropiacion) es el chip principal con color; el
   // SUBGRUPO va al lado como chip neutro. Antes se mostraba SOLO el subgrupo
   // y el eje quedaba invisible — el docente no veia a que grupo pertenecia.
@@ -674,7 +703,7 @@ function DocenteAppropriationVerdict({
               Perfil detallado
             </span>
             <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-surface border border-border text-ink">
-              {classification.subgrupo.label}
+              {subgrupoLabel}
             </span>
           </div>
           <div className="grid grid-cols-2 gap-x-4 gap-y-1.5 max-w-md">
@@ -700,10 +729,10 @@ function DocenteAppropriationVerdict({
               </div>
             ))}
           </div>
-          {classification.subgrupo.accion_docente && (
+          {subgrupoAccion && (
             <p className="mt-2.5 text-xs text-muted leading-relaxed">
               <span className="font-medium text-ink">Sugerencia: </span>
-              {classification.subgrupo.accion_docente}
+              {subgrupoAccion}
             </p>
           )}
         </div>

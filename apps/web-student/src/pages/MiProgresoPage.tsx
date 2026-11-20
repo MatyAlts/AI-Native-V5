@@ -122,7 +122,7 @@ async function fetchStudentAlerts(pseudonym: string, comisionId: string): Promis
 // que usa el panel docente. NO usar `level-n4` (terracota): es el nivel N4, no una
 // categoria de apropiacion. Siguen siendo cualitativos, no un puntaje.
 
-interface ModoApropiacion {
+export interface ModoApropiacion {
   label: string
   short: string
   color: string
@@ -140,6 +140,23 @@ export const MODOS: Record<number, ModoApropiacion> = {
     short: "Reflexiva",
     color: "var(--color-appropriation-reflexiva)",
   },
+}
+
+// sobreuso-no-es-delegacion: la pasiva que vino SOLO de la regla de sobreuso
+// mide frecuencia de consultas, no delegacion. No se le muestra al alumno como
+// "Delegacion": se le muestra como alerta de ritmo, con color de alerta.
+const MODO_SOBREUSO: ModoApropiacion = {
+  label: "Muchas consultas seguidas",
+  short: "Muchas consultas",
+  color: "var(--color-warning)",
+}
+
+function esPasivaPorSobreuso(
+  episode: Pick<StudentEpisode, "appropriation" | "subgrupo_key">,
+): boolean {
+  return (
+    episode.appropriation === "delegacion_pasiva" && episode.subgrupo_key === "dependiente_sobreuso"
+  )
 }
 
 const APPROPRIATION_TO_ORDINAL: Record<string, number> = {
@@ -649,15 +666,23 @@ function EpisodiosSection({
   )
 }
 
+/** Chip de apropiacion de un episodio; `undefined` = sin clasificar. */
+export function modoDeEpisodio(
+  episode: Pick<StudentEpisode, "appropriation" | "subgrupo_key">,
+): ModoApropiacion | undefined {
+  if (esPasivaPorSobreuso(episode)) return MODO_SOBREUSO
+  const ordinal =
+    episode.appropriation != null ? APPROPRIATION_TO_ORDINAL[episode.appropriation] : undefined
+  return ordinal != null ? MODOS[ordinal] : undefined
+}
+
 function EpisodioRow({ episode }: { episode: StudentEpisode }) {
   const label =
     episode.tarea_codigo && episode.tarea_titulo
       ? `${episode.tarea_codigo} · ${episode.tarea_titulo}`
       : (episode.tarea_titulo ?? episode.tarea_codigo ?? "Tarea (sin titulo)")
   const fecha = episode.closed_at ?? episode.opened_at
-  const ordinal =
-    episode.appropriation != null ? APPROPRIATION_TO_ORDINAL[episode.appropriation] : undefined
-  const modo = ordinal != null ? MODOS[ordinal] : undefined
+  const modo = modoDeEpisodio(episode)
   const paused = episode.estado === "paused"
 
   return (

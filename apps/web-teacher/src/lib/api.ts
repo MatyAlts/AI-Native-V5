@@ -54,6 +54,9 @@ export interface TrajectoryPoint {
   episode_id: string
   classified_at: string
   appropriation: AppropriationLabel
+  // `features.subgrupo.key` (aditivo; ausente en backends viejos). Con
+  // `appropriation` distingue la pasiva por sobreuso (`esPasivaPorSobreuso`).
+  subgrupo_key?: string | null
 }
 
 export interface StudentTrajectory {
@@ -1603,6 +1606,8 @@ export interface StudentEpisode {
   closed_at: string | null
   events_count: number
   appropriation: AppropriationLabel | null
+  // Ver `TrajectoryPoint.subgrupo_key`.
+  subgrupo_key?: string | null
   classified_at: string | null
 }
 

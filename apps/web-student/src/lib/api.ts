@@ -930,6 +930,9 @@ export interface StudentEpisode {
     | "autonomo"
     | "sin_clasificar"
     | null
+  /** `features.subgrupo.key` (aditivo; ausente en backends viejos). Con
+   *  `appropriation` distingue la pasiva por sobreuso. */
+  subgrupo_key?: string | null
   classified_at: string | null
 }
 
