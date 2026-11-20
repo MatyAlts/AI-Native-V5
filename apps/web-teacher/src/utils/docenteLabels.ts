@@ -22,18 +22,14 @@ export const APPROPRIATION_DOCENTE: Record<string, string> = {
 // `dependiente_sobreuso`, roll-up a `delegacion_pasiva`) mide FRECUENCIA de
 // consultas, no delegacion: produccion marco pasiva 47 de 50 y los codificadores
 // casi nunca. La etiqueta persistida NO cambia; esto decide solo como se muestra.
-// Coincide con `SUBGRUPO_SOBREUSO` de platform_ops/longitudinal.py.
+//
+// HU-007: la UI NO decide si una pasiva es "por sobreuso". Usa el booleano
+// `pasiva_por_sobreuso` que calcula el backend (`platform_ops.pasiva_por_sobreuso`,
+// unico lugar de la regla): una pasiva que confirmo un docente o decidio el juez
+// conserva el subgrupo pero llega con `false` y se muestra como delegacion.
+// Ausente (backend viejo) = false.
+// Clave del subgrupo, solo para buscar su label/resumen (no para decidir).
 export const SUBGRUPO_SOBREUSO = "dependiente_sobreuso"
-
-/** True si la pasiva vino SOLO de la regla de sobreuso. Exige las dos
- *  condiciones: si una revision humana cambio la etiqueta, manda la revision;
- *  una clasificacion vieja sin subgrupo sigue siendo delegacion pasiva. */
-export function esPasivaPorSobreuso(
-  appropriation: string | null | undefined,
-  subgrupoKey: string | null | undefined,
-): boolean {
-  return appropriation === "delegacion_pasiva" && subgrupoKey === SUBGRUPO_SOBREUSO
-}
 
 export const USO_INTENSIVO_LABEL = "Uso intensivo del tutor"
 export const USO_INTENSIVO_DOCENTE =
@@ -42,12 +38,13 @@ export const USO_INTENSIVO_DOCENTE =
 // para que se lea como alerta y no como un punto mas de la escala.
 export const USO_INTENSIVO_COLOR_VAR = "var(--color-warning)"
 
-/** Label docente de un punto de trayectoria, respetando la pasiva por sobreuso. */
+/** Label docente de un punto de trayectoria. `pasivaPorSobreuso` es el booleano
+ *  del backend (`pasiva_por_sobreuso`); ausente = delegacion como siempre. */
 export function apropiacionDocenteDePunto(
   appropriation: string,
-  subgrupoKey?: string | null,
+  pasivaPorSobreuso?: boolean | null,
 ): string {
-  if (esPasivaPorSobreuso(appropriation, subgrupoKey)) return USO_INTENSIVO_DOCENTE
+  if (pasivaPorSobreuso === true) return USO_INTENSIVO_DOCENTE
   return APPROPRIATION_DOCENTE[appropriation] ?? appropriation
 }
 
@@ -326,8 +323,8 @@ const SUBGRUPO_RESUMEN_DOCENTE: Record<string, string> = {
   dependiente_delegador:
     "Se apoyo en el tutor para resolver, con poca elaboracion propia. Conviene conversarlo con el alumno.",
   // Alerta de frecuencia, no un regimen: la regla cuenta mensajes en rafaga y no
-  // lee lo que escribio el alumno. Solo se usa si la etiqueta sigue siendo la del
-  // sobreuso (ver el guard en `explicarEstadoDocente`).
+  // lee lo que escribio el alumno. Solo se usa si el backend marco la pasiva
+  // como `pasiva_por_sobreuso` (ver el guard en `explicarEstadoDocente`).
   dependiente_sobreuso:
     "Consulto al tutor muchas veces en poco tiempo. Es una alerta de frecuencia, no una conclusion sobre si penso o delego: para saberlo hay que leer la conversacion.",
 }
@@ -351,6 +348,8 @@ export function explicarEstadoDocente(
     ccd_mean: number | null
     ccd_orphan_ratio: number | null
     cii_stability: number | null
+    // Booleano del backend (HU-007). Ausente = false.
+    pasiva_por_sobreuso?: boolean | null
   },
   eventosCognitivos?: number | null,
   subgrupoKey?: string | null,
@@ -395,12 +394,12 @@ export function explicarEstadoDocente(
 
   // Resumen por subgrupo: describe el perfil REAL del episodio.
   // Sin subgrupo (classifications viejas) o `indeterminado` → eje macro.
-  // El resumen del sobreuso solo vale mientras la etiqueta sea la de la regla:
-  // si una revision humana la cambio, manda el eje revisado.
+  // El resumen del sobreuso solo vale si el backend dice que la pasiva vino de
+  // la regla y nadie la confirmo (`pasiva_por_sobreuso`). Si un docente la
+  // confirmo, el juez la decidio o una revision cambio la etiqueta, el subgrupo
+  // sigue ahi pero manda el eje.
   const subgrupoVigente =
-    subgrupoKey === SUBGRUPO_SOBREUSO && !esPasivaPorSobreuso(c.appropriation, subgrupoKey)
-      ? undefined
-      : subgrupoKey
+    subgrupoKey === SUBGRUPO_SOBREUSO && c.pasiva_por_sobreuso !== true ? undefined : subgrupoKey
   const porSubgrupo = subgrupoVigente ? SUBGRUPO_RESUMEN_DOCENTE[subgrupoVigente] : undefined
   if (porSubgrupo) {
     return { resumen: porSubgrupo, acciones }

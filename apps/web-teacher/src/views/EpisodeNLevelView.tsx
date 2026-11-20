@@ -21,7 +21,6 @@ import {
   SUBGRUPO_DOCENTE,
   SUBGRUPO_SOBREUSO,
   USO_INTENSIVO_LABEL,
-  esPasivaPorSobreuso,
   explicarEstadoDocente,
 } from "../utils/docenteLabels"
 import { helpContent } from "../utils/helpContent"
@@ -636,7 +635,9 @@ function DocenteAppropriationVerdict({
   // reflexiva"). Colores/severidad siguen mapeando al eje canonico.
   const subgrupoKey = classification.subgrupo?.key ?? null
   const explicacion = explicarEstadoDocente(classification, eventosCognitivos, subgrupoKey)
-  const display = esPasivaPorSobreuso(classification.appropriation, subgrupoKey)
+  // HU-007: el booleano lo calcula el backend; la UI no recalcula la regla.
+  const sobreuso = classification.pasiva_por_sobreuso === true
+  const display = sobreuso
     ? USO_INTENSIVO_DISPLAY
     : (APPROPRIATION_DISPLAY[classification.appropriation] ?? APPROPRIATION_DISPLAY_FALLBACK)
 
@@ -648,8 +649,7 @@ function DocenteAppropriationVerdict({
     : display.chip
   // El label y la accion del subgrupo de sobreuso vienen del backend como
   // "Dependiente (sobreuso)" / "Intervenir ..." (subgrupo.py, persistido). Mientras
-  // la etiqueta sea la de la regla se reemplazan por el lenguaje de alerta.
-  const sobreuso = esPasivaPorSobreuso(classification.appropriation, subgrupoKey)
+  // el backend marque `pasiva_por_sobreuso` se reemplazan por el lenguaje de alerta.
   const subgrupoLabel = sobreuso
     ? SUBGRUPO_DOCENTE[SUBGRUPO_SOBREUSO]
     : classification.subgrupo?.label

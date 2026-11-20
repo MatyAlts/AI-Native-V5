@@ -23,7 +23,6 @@ import {
   USO_INTENSIVO_COLOR_VAR,
   USO_INTENSIVO_LABEL,
   apropiacionDocenteDePunto,
-  esPasivaPorSobreuso,
   studentShortLabel,
 } from "../utils/docenteLabels"
 import { helpContent } from "../utils/helpContent"
@@ -58,8 +57,8 @@ const LEYENDA_APROPIACION: { valor: string; etiqueta: string }[] = [
 /** Estilo del punto de un episodio. La pasiva por sobreuso (alerta de
  *  frecuencia, no regimen) va como anillo de color warning, sin relleno: no es
  *  un punto mas de la escala. */
-function estiloPunto(appropriation: string, subgrupoKey?: string | null): CSSProperties {
-  if (esPasivaPorSobreuso(appropriation, subgrupoKey)) {
+function estiloPunto(appropriation: string, pasivaPorSobreuso?: boolean | null): CSSProperties {
+  if (pasivaPorSobreuso === true) {
     return {
       backgroundColor: "transparent",
       boxShadow: `inset 0 0 0 2px ${USO_INTENSIVO_COLOR_VAR}`,
@@ -496,7 +495,7 @@ function TrajectoriesSection({
           <span className="flex items-center gap-1.5">
             <span
               className="inline-block w-2 h-2 rounded-full shrink-0"
-              style={estiloPunto("delegacion_pasiva", "dependiente_sobreuso")}
+              style={estiloPunto("delegacion_pasiva", true)}
             />
             {USO_INTENSIVO_LABEL} (alerta, no cuenta en el progreso)
           </span>
@@ -745,7 +744,7 @@ function TrajectoryDots({
     appropriation: string
     classified_at: string
     episode_id: string
-    subgrupo_key?: string | null
+    pasiva_por_sobreuso?: boolean | null
   }>
   isDocente: boolean
 }) {
@@ -759,14 +758,16 @@ function TrajectoryDots({
         <span
           key={p.episode_id}
           className="inline-block w-3 h-3 rounded-full shrink-0"
-          style={estiloPunto(p.appropriation, p.subgrupo_key)}
+          style={estiloPunto(p.appropriation, p.pasiva_por_sobreuso)}
           title={
             isDocente
-              ? `${new Date(p.classified_at).toLocaleDateString("es-AR")} · ${apropiacionDocenteDePunto(p.appropriation, p.subgrupo_key)}`
+              ? `${new Date(p.classified_at).toLocaleDateString("es-AR")} · ${apropiacionDocenteDePunto(p.appropriation, p.pasiva_por_sobreuso)}`
               : `${new Date(p.classified_at).toLocaleDateString()} · ${p.appropriation}`
           }
           aria-label={
-            isDocente ? apropiacionDocenteDePunto(p.appropriation, p.subgrupo_key) : p.appropriation
+            isDocente
+              ? apropiacionDocenteDePunto(p.appropriation, p.pasiva_por_sobreuso)
+              : p.appropriation
           }
         />
       ))}

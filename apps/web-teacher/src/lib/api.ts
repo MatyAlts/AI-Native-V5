@@ -54,9 +54,11 @@ export interface TrajectoryPoint {
   episode_id: string
   classified_at: string
   appropriation: AppropriationLabel
-  // `features.subgrupo.key` (aditivo; ausente en backends viejos). Con
-  // `appropriation` distingue la pasiva por sobreuso (`esPasivaPorSobreuso`).
+  // `features.subgrupo.key` (aditivo, informativo; ausente en backends viejos).
   subgrupo_key?: string | null
+  // HU-007: lo calcula el backend (`platform_ops.pasiva_por_sobreuso`); la UI no
+  // recalcula la regla. Ausente en backends viejos = false (delegacion).
+  pasiva_por_sobreuso?: boolean
 }
 
 export interface StudentTrajectory {
@@ -1381,6 +1383,8 @@ export interface EpisodeClassification {
   is_current: boolean
   subgrupo: Subgrupo | null
   regimen_llm: RegimenLLM | null
+  // Ver `TrajectoryPoint.pasiva_por_sobreuso` (HU-007). Ausente = false.
+  pasiva_por_sobreuso?: boolean
 }
 
 export async function getEpisodeClassification(
@@ -1606,8 +1610,9 @@ export interface StudentEpisode {
   closed_at: string | null
   events_count: number
   appropriation: AppropriationLabel | null
-  // Ver `TrajectoryPoint.subgrupo_key`.
+  // Ver `TrajectoryPoint.subgrupo_key` y `TrajectoryPoint.pasiva_por_sobreuso`.
   subgrupo_key?: string | null
+  pasiva_por_sobreuso?: boolean
   classified_at: string | null
 }
 

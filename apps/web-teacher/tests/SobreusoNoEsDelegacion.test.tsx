@@ -2,15 +2,15 @@
  * Change `sobreuso-no-es-delegacion` (P1 del plan CIbSE 2027).
  *
  * La pasiva que vino SOLO de la regla de sobreuso (`delegacion_pasiva` +
- * subgrupo `dependiente_sobreuso`) se muestra al docente como "Uso intensivo
- * del tutor", no como delegacion. La etiqueta persistida no cambia.
+ * subgrupo `dependiente_sobreuso`, sin confirmar; HU-007) se muestra al docente
+ * como "Uso intensivo del tutor", no como delegacion. La UI lo sabe por el
+ * booleano `pasiva_por_sobreuso` del backend. La etiqueta persistida no cambia.
  */
 import { screen, waitFor } from "@testing-library/react"
 import { afterEach, describe, expect, test, vi } from "vitest"
 import {
   USO_INTENSIVO_DOCENTE,
   apropiacionDocenteDePunto,
-  esPasivaPorSobreuso,
   explicarEstadoDocente,
 } from "../src/utils/docenteLabels"
 import { EpisodeNLevelView } from "../src/views/EpisodeNLevelView"
@@ -40,6 +40,7 @@ const clasificacionBase = {
   is_current: true,
   subgrupo: subgrupoSobreuso,
   regimen_llm: null,
+  pasiva_por_sobreuso: true,
 }
 
 const distribucion = {
@@ -55,34 +56,29 @@ afterEach(() => {
   localStorage.removeItem("analytics-view-mode")
 })
 
-describe("esPasivaPorSobreuso", () => {
-  test.each([
-    ["delegacion_pasiva", "dependiente_sobreuso", true],
-    ["delegacion_pasiva", "dependiente_delegador", false],
-    ["delegacion_pasiva", null, false],
-    ["delegacion_pasiva", undefined, false],
-    // Revision humana cambio la etiqueta: manda la revision.
-    ["apropiacion_reflexiva", "dependiente_sobreuso", false],
-  ])("(%s, %s) -> %s", (appropriation, subgrupo, esperado) => {
-    expect(esPasivaPorSobreuso(appropriation, subgrupo)).toBe(esperado)
-  })
-
+describe("pasiva por sobreuso: la UI usa el booleano del backend", () => {
   test("label de punto: sobreuso es alerta, delegacion real sigue igual", () => {
-    expect(apropiacionDocenteDePunto("delegacion_pasiva", "dependiente_sobreuso")).toBe(
-      USO_INTENSIVO_DOCENTE,
-    )
-    expect(apropiacionDocenteDePunto("delegacion_pasiva", "dependiente_delegador")).toMatch(
-      /dependio de la IA/i,
-    )
+    expect(apropiacionDocenteDePunto("delegacion_pasiva", true)).toBe(USO_INTENSIVO_DOCENTE)
+    expect(apropiacionDocenteDePunto("delegacion_pasiva", false)).toMatch(/dependio de la IA/i)
+    expect(apropiacionDocenteDePunto("delegacion_pasiva", null)).toMatch(/dependio de la IA/i)
     expect(apropiacionDocenteDePunto("delegacion_pasiva")).toMatch(/dependio de la IA/i)
   })
 
-  test("resumen: sobreuso habla de frecuencia; revisado manda el eje", () => {
+  test("resumen: sobreuso habla de frecuencia; sin el booleano manda el eje", () => {
     const c = { ...clasificacionBase }
     expect(explicarEstadoDocente(c, 10, "dependiente_sobreuso").resumen).toMatch(
       /alerta de frecuencia/i,
     )
-    const revisada = { ...clasificacionBase, appropriation: "apropiacion_reflexiva" }
+    // Backend viejo (sin el campo): se ve como delegacion, como antes.
+    const { pasiva_por_sobreuso: _omitido, ...vieja } = clasificacionBase
+    expect(explicarEstadoDocente(vieja, 10, "dependiente_sobreuso").resumen).toMatch(
+      /se apoyo en el tutor/i,
+    )
+    const revisada = {
+      ...clasificacionBase,
+      appropriation: "apropiacion_reflexiva",
+      pasiva_por_sobreuso: false,
+    }
     expect(explicarEstadoDocente(revisada, 10, "dependiente_sobreuso").resumen).toMatch(
       /trabajo reflexivo/i,
     )
@@ -112,6 +108,7 @@ describe("veredicto del episodio en vista docente", () => {
       "/n-level-distribution": () => distribucion,
       "/api/v1/classifications/": () => ({
         ...clasificacionBase,
+        pasiva_por_sobreuso: false,
         subgrupo: {
           ...subgrupoSobreuso,
           key: "dependiente_delegador",

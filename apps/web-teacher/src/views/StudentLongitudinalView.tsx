@@ -21,7 +21,6 @@ import {
   APPROPRIATION_REIFICATION_DISCLAIMER,
   USO_INTENSIVO_COLOR_VAR,
   apropiacionDocenteDePunto,
-  esPasivaPorSobreuso,
   slopeToDocente,
   studentShortLabel,
 } from "../utils/docenteLabels"
@@ -1025,10 +1024,10 @@ function EpisodesList({
                 // (sobreuso-no-es-delegacion). El investigador ve la etiqueta tal cual.
                 const aprText = aprKey
                   ? isDocente
-                    ? apropiacionDocenteDePunto(aprKey, ep.subgrupo_key)
+                    ? apropiacionDocenteDePunto(aprKey, ep.pasiva_por_sobreuso)
                     : (aprLabels[aprKey] ?? aprKey)
                   : null
-                const sobreuso = esPasivaPorSobreuso(ep.appropriation, ep.subgrupo_key)
+                const sobreuso = ep.pasiva_por_sobreuso === true
                 return (
                   <li key={ep.episode_id} className="flex items-center">
                     <Link
