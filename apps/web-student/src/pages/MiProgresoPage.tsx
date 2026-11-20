@@ -145,18 +145,12 @@ export const MODOS: Record<number, ModoApropiacion> = {
 // sobreuso-no-es-delegacion: la pasiva que vino SOLO de la regla de sobreuso
 // mide frecuencia de consultas, no delegacion. No se le muestra al alumno como
 // "Delegacion": se le muestra como alerta de ritmo, con color de alerta.
+// HU-007: quien decide es el backend (`pasiva_por_sobreuso`); una pasiva que
+// confirmo un docente o decidio el juez llega con `false` y sigue como Delegacion.
 const MODO_SOBREUSO: ModoApropiacion = {
   label: "Muchas consultas seguidas",
   short: "Muchas consultas",
   color: "var(--color-warning)",
-}
-
-function esPasivaPorSobreuso(
-  episode: Pick<StudentEpisode, "appropriation" | "subgrupo_key">,
-): boolean {
-  return (
-    episode.appropriation === "delegacion_pasiva" && episode.subgrupo_key === "dependiente_sobreuso"
-  )
 }
 
 const APPROPRIATION_TO_ORDINAL: Record<string, number> = {
@@ -668,9 +662,9 @@ function EpisodiosSection({
 
 /** Chip de apropiacion de un episodio; `undefined` = sin clasificar. */
 export function modoDeEpisodio(
-  episode: Pick<StudentEpisode, "appropriation" | "subgrupo_key">,
+  episode: Pick<StudentEpisode, "appropriation" | "pasiva_por_sobreuso">,
 ): ModoApropiacion | undefined {
-  if (esPasivaPorSobreuso(episode)) return MODO_SOBREUSO
+  if (episode.pasiva_por_sobreuso === true) return MODO_SOBREUSO
   const ordinal =
     episode.appropriation != null ? APPROPRIATION_TO_ORDINAL[episode.appropriation] : undefined
   return ordinal != null ? MODOS[ordinal] : undefined

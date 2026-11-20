@@ -66,6 +66,10 @@ export interface Classification {
   is_current: boolean
   // null en classifications viejas (pre-modo-sombra) → feedback cae al eje.
   subgrupo?: Subgrupo | null
+  /** HU-007: pasiva que vino SOLO de la regla de sobreuso y nadie confirmo. La
+   *  calcula el backend (`platform_ops.pasiva_por_sobreuso`); la UI no recalcula
+   *  la regla. Ausente en backends viejos = false (delegacion). */
+  pasiva_por_sobreuso?: boolean
 }
 
 export type TokenGetter = () => Promise<string | null>
@@ -930,9 +934,10 @@ export interface StudentEpisode {
     | "autonomo"
     | "sin_clasificar"
     | null
-  /** `features.subgrupo.key` (aditivo; ausente en backends viejos). Con
-   *  `appropriation` distingue la pasiva por sobreuso. */
+  /** `features.subgrupo.key` (aditivo, informativo; ausente en backends viejos). */
   subgrupo_key?: string | null
+  /** Ver `Classification.pasiva_por_sobreuso` (HU-007). Ausente = false. */
+  pasiva_por_sobreuso?: boolean
   classified_at: string | null
 }
 

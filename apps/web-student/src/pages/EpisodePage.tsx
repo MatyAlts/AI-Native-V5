@@ -2167,10 +2167,12 @@ export function buildPedagogicalFeedback(c: Classification): {
   // El SUBGRUPO manda la narrativa (misma historia que el docente). Las
   // coherencias de arriba quedan como sugerencias accionables subordinadas.
   // Sin subgrupo (classifications viejas) cae al switch por eje de abajo.
-  // El mensaje del sobreuso solo vale mientras la etiqueta sea la de la regla:
-  // si una revision humana la cambio, manda el eje revisado (switch de abajo).
+  // El mensaje del sobreuso solo vale si el backend marco la pasiva como
+  // `pasiva_por_sobreuso` (HU-007; la UI no recalcula la regla). Si un docente
+  // la confirmo, el juez la decidio o una revision cambio la etiqueta, el
+  // subgrupo sigue ahi pero manda el eje (switch de abajo).
   const subgrupoKey =
-    c.subgrupo?.key === "dependiente_sobreuso" && c.appropriation !== "delegacion_pasiva"
+    c.subgrupo?.key === "dependiente_sobreuso" && c.pasiva_por_sobreuso !== true
       ? undefined
       : c.subgrupo?.key
   const porSubgrupo = subgrupoKey ? FEEDBACK_SUBGRUPO[subgrupoKey] : undefined
