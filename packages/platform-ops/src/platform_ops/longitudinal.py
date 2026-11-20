@@ -71,29 +71,48 @@ def subgrupo_key_de(features: object) -> str | None:
     return key if isinstance(key, str) else None
 
 
-def es_pasiva_por_sobreuso(appropriation: str | None, subgrupo_key: str | None) -> bool:
-    """True si la pasiva vino SOLO de la regla de sobreuso (change
-    `sobreuso-no-es-delegacion`, P1 del plan CIbSE 2027).
+def pasiva_por_sobreuso(appropriation: str | None, features: object) -> bool:
+    """True si la pasiva vino SOLO de la regla de sobreuso y nadie la confirmó
+    (change `sobreuso-no-es-delegacion`, P1 del plan CIbSE 2027; HU-007).
 
-    Exige las DOS condiciones: si una revisión humana cambió la etiqueta, el
-    subgrupo viejo no la pisa. Una clasificación vieja sin subgrupo sigue
-    siendo delegación pasiva. La etiqueta persistida no se toca: esto decide
-    solo presentación y progreso.
+    Es el ÚNICO lugar donde vive esta regla: datasources, API y frontends usan
+    el booleano que devuelve, no la recalculan. Exige las cuatro condiciones:
+
+    - `appropriation == "delegacion_pasiva"` (si una revisión humana cambió la
+      etiqueta, el subgrupo viejo no la pisa);
+    - `features.subgrupo.key == "dependiente_sobreuso"`;
+    - sin `features.revision_humana`: `services/review.py` copia `features` al
+      anular, así que un docente que confirmó la pasiva conserva el subgrupo;
+    - sin `features.regimen_llm.estado == "ok"`: si el juez del eje fino
+      gobernó, la pasiva la decidió él, no la regla de frecuencia.
+
+    Defensiva: `features` es JSONB libre; cualquier forma inesperada devuelve
+    False (= se ve como delegación, como antes del change). La etiqueta
+    persistida no se toca: esto decide solo presentación y progreso.
     """
-    return appropriation == "delegacion_pasiva" and subgrupo_key == SUBGRUPO_SOBREUSO
+    if appropriation != "delegacion_pasiva" or not isinstance(features, dict):
+        return False
+    if subgrupo_key_de(features) != SUBGRUPO_SOBREUSO:
+        return False
+    if features.get("revision_humana"):
+        return False
+    regimen = features.get("regimen_llm")
+    return not (isinstance(regimen, dict) and regimen.get("estado") == "ok")
 
 
-def ordinal_progreso(appropriation: str | None, subgrupo_key: str | None = None) -> int | None:
+def ordinal_progreso(appropriation: str | None, pasiva_por_sobreuso: bool = False) -> int | None:
     """Posición en la escala ordinal de progreso, o None si no participa.
 
     No participan: `autonomo` y `sin_clasificar` (fuera de APPROPRIATION_ORDINAL)
     y la pasiva por sobreuso (A1 del plan CIbSE 2027): el estudio de 150
     episodios mostró que esa regla mide frecuencia de consultas, no delegación,
     así que contarla como 0 haría aparecer "empeorando" a quien consultó mucho.
+    `pasiva_por_sobreuso` es el booleano ya calculado por la función homónima;
+    acá no se vuelve a decidir.
     """
     if appropriation is None or appropriation not in APPROPRIATION_ORDINAL:
         return None
-    if es_pasiva_por_sobreuso(appropriation, subgrupo_key):
+    if pasiva_por_sobreuso:
         return None
     return APPROPRIATION_ORDINAL[appropriation]
 
@@ -113,6 +132,8 @@ class ClassificationPoint:
     cii_evolution: float | None = None
     # `features.subgrupo.key` de la clasificación (aditivo, puede faltar).
     subgrupo_key: str | None = None
+    # Calculado por `pasiva_por_sobreuso()` en el datasource; si falta, False.
+    pasiva_por_sobreuso: bool = False
 
 
 @dataclass
@@ -144,7 +165,7 @@ class StudentTrajectory:
         scores = [
             o
             for p in self.points
-            if (o := ordinal_progreso(p.appropriation, p.subgrupo_key)) is not None
+            if (o := ordinal_progreso(p.appropriation, p.pasiva_por_sobreuso)) is not None
         ]
         if len(scores) < 3:
             return None
@@ -187,7 +208,7 @@ class StudentTrajectory:
         ordinals = [
             o
             for p in self.points
-            if (o := ordinal_progreso(p.appropriation, p.subgrupo_key)) is not None
+            if (o := ordinal_progreso(p.appropriation, p.pasiva_por_sobreuso)) is not None
         ]
         if not ordinals:
             return None
@@ -287,6 +308,7 @@ async def build_trajectories(
                     cii_stability=row.get("cii_stability"),
                     cii_evolution=row.get("cii_evolution"),
                     subgrupo_key=row.get("subgrupo_key"),
+                    pasiva_por_sobreuso=bool(row.get("pasiva_por_sobreuso", False)),
                 )
             )
         # Sort defensivo por si el data source no garantiza orden
@@ -323,8 +345,8 @@ __all__ = [
     "CohortProgression",
     "StudentTrajectory",
     "build_trajectories",
-    "es_pasiva_por_sobreuso",
     "ordinal_progreso",
+    "pasiva_por_sobreuso",
     "subgrupo_key_de",
     "summarize_cohort",
 ]

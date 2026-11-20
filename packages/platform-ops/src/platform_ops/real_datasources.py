@@ -33,7 +33,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from platform_ops.language_segmentation import DEFAULT_LANGUAGE, resolve_episode_languages
-from platform_ops.longitudinal import subgrupo_key_de
+from platform_ops.longitudinal import pasiva_por_sobreuso, subgrupo_key_de
 
 logger = logging.getLogger(__name__)
 
@@ -247,6 +247,7 @@ class RealLongitudinalDataSource:
                     "cii_stability": c.cii_stability,
                     "cii_evolution": c.cii_evolution,
                     "subgrupo_key": subgrupo_key_de(c.features),
+                    "pasiva_por_sobreuso": pasiva_por_sobreuso(c.appropriation, c.features),
                 }
             )
 
@@ -478,6 +479,7 @@ class RealLongitudinalDataSource:
                 "appropriation": c.appropriation,
                 "classified_at": c.classified_at,
                 "subgrupo_key": subgrupo_key_de(c.features),
+                "pasiva_por_sobreuso": pasiva_por_sobreuso(c.appropriation, c.features),
             }
             for c in cls_result.scalars().all()
         }
@@ -503,6 +505,7 @@ class RealLongitudinalDataSource:
                     "events_count": row.events_count,
                     "appropriation": cls["appropriation"] if cls else None,
                     "subgrupo_key": cls["subgrupo_key"] if cls else None,
+                    "pasiva_por_sobreuso": cls["pasiva_por_sobreuso"] if cls else False,
                     "classified_at": (
                         cls["classified_at"].isoformat().replace("+00:00", "Z")
                         if cls and cls["classified_at"]
@@ -599,6 +602,7 @@ class RealLongitudinalDataSource:
                     "classified_at": c.classified_at,
                     "appropriation": c.appropriation,
                     "subgrupo_key": subgrupo_key_de(c.features),
+                    "pasiva_por_sobreuso": pasiva_por_sobreuso(c.appropriation, c.features),
                 }
             )
 

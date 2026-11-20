@@ -52,7 +52,10 @@ def _scores_ordinales(items: list[dict[str, Any]]) -> list[int]:
     return [
         o
         for c in items
-        if (o := ordinal_progreso(c.get("appropriation"), c.get("subgrupo_key"))) is not None
+        if (
+            o := ordinal_progreso(c.get("appropriation"), bool(c.get("pasiva_por_sobreuso", False)))
+        )
+        is not None
     ]
 
 

@@ -750,8 +750,9 @@ async def test_classifications_with_templates_sin_language_preserva_comportamien
 async def test_grouped_by_student_trae_subgrupo_key(
     ctr_session: AsyncSession, classifier_session: AsyncSession
 ) -> None:
-    """Las filas suman `subgrupo_key` (aditivo) para que el progreso pueda
-    excluir la pasiva por sobreuso; sin subgrupo, viene None."""
+    """Las filas suman `subgrupo_key` (aditivo) y `pasiva_por_sobreuso` para
+    que el progreso pueda excluir la pasiva por sobreuso; sin subgrupo, viene
+    None / False."""
     comision_id = uuid4()
     student = uuid4()
     ep_sobreuso = await _add_episode(ctr_session, TENANT_A, comision_id, student)
@@ -779,5 +780,7 @@ async def test_grouped_by_student_trae_subgrupo_key(
     grouped = await ds.list_classifications_grouped_by_student(comision_id)
     filas = grouped[str(student)]
     assert [f["subgrupo_key"] for f in filas] == ["dependiente_sobreuso", None]
+    # HU-007: el booleano ya calculado viaja en la fila.
+    assert [f["pasiva_por_sobreuso"] for f in filas] == [True, False]
     # La etiqueta persistida no cambia.
     assert [f["appropriation"] for f in filas] == ["delegacion_pasiva", "delegacion_pasiva"]
