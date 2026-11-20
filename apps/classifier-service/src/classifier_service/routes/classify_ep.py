@@ -12,6 +12,7 @@ from uuid import UUID
 
 import httpx
 from fastapi import APIRouter, Depends, HTTPException, Query, Response, status
+from platform_ops import pasiva_por_sobreuso
 from pydantic import BaseModel
 from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
@@ -78,6 +79,11 @@ class ClassificationOut(BaseModel):
     # traza insuficiente), se conserva el proxy conductual y el episodio queda
     # marcado `needs_review` (ver features).
     regimen_llm: dict | None = None
+    # HU-007: pasiva que vino SOLO de la regla de sobreuso y que nadie confirmó
+    # (ni revisión humana ni juez con veredicto `ok`). La calcula
+    # `platform_ops.pasiva_por_sobreuso`, único lugar de la regla; los
+    # frontends usan este booleano y no la recalculan. Solo lo completa el GET.
+    pasiva_por_sobreuso: bool = False
 
     class Config:
         from_attributes = True
@@ -436,4 +442,5 @@ async def get_current_classification(
     # (`oraculo`, sin `presente`) llega al cliente sin esa dimensión. Ver
     # docstring de `normalizar_regimen_llm_persistido`.
     out.regimen_llm = normalizar_regimen_llm_persistido(feats.get("regimen_llm"))
+    out.pasiva_por_sobreuso = pasiva_por_sobreuso(c.appropriation, c.features)
     return out
