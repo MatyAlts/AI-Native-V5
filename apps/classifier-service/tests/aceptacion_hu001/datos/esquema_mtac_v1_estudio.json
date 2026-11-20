@@ -1,0 +1,165 @@
+{
+  "dimensiones": [
+    {
+      "clave": "d1_verbalizacion",
+      "nombre": "D1 Verbalización del razonamiento",
+      "valores": [
+        "presente",
+        "ausente"
+      ],
+      "cita_requerida_si": [
+        "presente"
+      ]
+    },
+    {
+      "clave": "d2_verificacion",
+      "nombre": "D2 Verificación",
+      "valores": [
+        "presente",
+        "ausente"
+      ],
+      "cita_requerida_si": [
+        "presente"
+      ]
+    },
+    {
+      "clave": "d3_justificacion",
+      "nombre": "D3 Justificación de decisiones",
+      "valores": [
+        "presente",
+        "ausente"
+      ],
+      "cita_requerida_si": [
+        "presente"
+      ]
+    },
+    {
+      "clave": "d4_autonomia",
+      "nombre": "D4 Autonomía cognitiva",
+      "valores": [
+        "interlocutor",
+        "oraculo",
+        "transferencia"
+      ],
+      "cita_requerida_si": [
+        "interlocutor",
+        "oraculo",
+        "transferencia"
+      ]
+    }
+  ],
+  "regimenes": [
+    {
+      "clave": "reflexiva",
+      "nombre": "Apropiación reflexiva"
+    },
+    {
+      "clave": "superficial",
+      "nombre": "Apropiación superficial"
+    },
+    {
+      "clave": "pasiva",
+      "nombre": "Delegación pasiva"
+    },
+    {
+      "clave": "evidencia_insuficiente",
+      "nombre": "Evidencia insuficiente"
+    }
+  ],
+  "regimen_evidencia_insuficiente": "evidencia_insuficiente",
+  "regimenes_exentos": [
+    "evidencia_insuficiente"
+  ],
+  "dimensiones_opcionales_si_regimen": [
+    "evidencia_insuficiente"
+  ],
+  "notas_obligatorias_si_regimen": [
+    "evidencia_insuficiente"
+  ],
+  "marca_frontera": true,
+  "notas_obligatorias_si_frontera": true,
+  "confianza": {
+    "valores": [
+      "alta",
+      "media",
+      "baja"
+    ],
+    "obligatoria": true
+  },
+  "reglas_regimen": [
+    {
+      "regimen": "reflexiva",
+      "condicion": [
+        [
+          {
+            "dimension": "d1_verbalizacion",
+            "en": [
+              "presente"
+            ]
+          }
+        ],
+        [
+          {
+            "dimension": "d2_verificacion",
+            "en": [
+              "presente"
+            ]
+          },
+          {
+            "dimension": "d3_justificacion",
+            "en": [
+              "presente"
+            ]
+          }
+        ],
+        [
+          {
+            "dimension": "d4_autonomia",
+            "en": [
+              "interlocutor"
+            ]
+          }
+        ]
+      ]
+    },
+    {
+      "regimen": "pasiva",
+      "condicion": [
+        [
+          {
+            "dimension": "d4_autonomia",
+            "en": [
+              "transferencia"
+            ],
+            "con_cita": true
+          }
+        ],
+        [
+          {
+            "dimension": "d1_verbalizacion",
+            "en": [
+              "ausente"
+            ]
+          }
+        ],
+        [
+          {
+            "dimension": "d2_verificacion",
+            "en": [
+              "ausente"
+            ]
+          }
+        ],
+        [
+          {
+            "dimension": "d3_justificacion",
+            "en": [
+              "ausente"
+            ]
+          }
+        ]
+      ]
+    }
+  ],
+  "regimen_por_defecto": "superficial"
+}
