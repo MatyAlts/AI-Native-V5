@@ -25,8 +25,15 @@
 - [x] 4.1 `EpisodePage.tsx`: `FEEDBACK_SUBGRUPO.dependiente_sobreuso` con tono neutro.
 - [x] 4.2 `MiProgresoPage.tsx`: el chip del episodio dice "Muchas consultas" (color de alerta) en vez de "Delegacion" (hallazgo durante apply: también lo ve el alumno).
 
-## 5. Verificación
+## 5. HU-007: la regla en un solo lugar y sin esconder pasivas confirmadas
 
-- [x] 5.1 pytest de platform-ops y analytics-service (scope del change) y vitest de web-teacher/web-student.
-- [x] 5.2 ruff + biome + typecheck.
-- [ ] 5.3 PR contra `main` (el merge lo hace Neyén).
+- [x] 5.1 `longitudinal.py`: `pasiva_por_sobreuso(appropriation, features)` (excluye revisión humana y juez con `estado == "ok"`) reemplaza a `es_pasiva_por_sobreuso`; `ordinal_progreso` recibe el booleano; `ClassificationPoint.pasiva_por_sobreuso`.
+- [x] 5.2 `real_datasources.py`, `cohort_slopes.py`, `TrajectoryPoint`, `StudentEpisodeOut` y `ClassificationOut` (classifier-service, que suma la dependencia `platform-ops`) traen el booleano.
+- [x] 5.3 web-teacher y web-student usan `pasiva_por_sobreuso` del backend; se borran las tres copias de la regla en TypeScript.
+- [x] 5.4 Aceptación HU-007 (`test_hu007_aceptacion.py`, `Hu007Aceptacion.test.tsx`, `Hu007Aceptacion.test.ts`).
+
+## 6. Verificación
+
+- [x] 6.1 pytest de platform-ops y analytics-service (scope del change) y vitest de web-teacher/web-student.
+- [x] 6.2 ruff + biome + typecheck.
+- [ ] 6.3 PR contra `main` (el merge lo hace Neyén).

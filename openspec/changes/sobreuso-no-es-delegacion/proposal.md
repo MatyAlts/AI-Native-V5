@@ -10,7 +10,7 @@ Es el P1 y el A1 del *Plan de actualización: paper CIbSE 2027, plataforma y apr
 
 Solo **presentación** y **cálculo de progreso**. La etiqueta persistida NO cambia (decisión de Neyén, 20/11: opción a).
 
-- **P1, vista docente**: un episodio con `appropriation = delegacion_pasiva` **y** subgrupo `dependiente_sobreuso` se muestra como **"Uso intensivo del tutor"**, con color de alerta (no de peligro) y un texto que dice que es una alerta de frecuencia y no un régimen. Aplica al veredicto del episodio, al resumen por subgrupo y a los puntos de las vistas longitudinales.
+- **P1, vista docente**: un episodio con `appropriation = delegacion_pasiva` **y** subgrupo `dependiente_sobreuso`, que ni un docente ni el juez confirmaron (HU-007, ver design D1), se muestra como **"Uso intensivo del tutor"**, con color de alerta (no de peligro) y un texto que dice que es una alerta de frecuencia y no un régimen. Aplica al veredicto del episodio, al resumen por subgrupo y a los puntos de las vistas longitudinales.
 - **P1, vista alumno**: el feedback del episodio deja de decirle al alumno que "el tutor hizo el trabajo" cuando la pasiva vino del sobreuso; recibe un mensaje sobre el ritmo de consultas.
 - **A1, progreso**: esos episodios **no entran a la escala ordinal** (igual que hoy `autonomo` y `sin_clasificar`): no cuentan en tercios, pendiente ni "máximo alcanzado". Afecta a la progresión de cohorte, la trayectoria del alumno (docente y "Mi progreso") y los cuartiles.
 - Las clasificaciones viejas sin subgrupo se siguen viendo como hoy.
@@ -27,8 +27,9 @@ Solo **presentación** y **cálculo de progreso**. La etiqueta persistida NO cam
 
 ## Impact
 
-- **platform-ops**: `longitudinal.py` y `cii_longitudinal.py` (predicado único de exclusión), `real_datasources.py` (las filas suman `subgrupo_key`, campo aditivo).
-- **analytics-service**: la salida de puntos longitudinales suma `subgrupo_key` (aditivo, opcional).
+- **platform-ops**: `longitudinal.py` (`pasiva_por_sobreuso`, único lugar de la regla) y `cii_longitudinal.py`, `real_datasources.py` (las filas suman `pasiva_por_sobreuso` y `subgrupo_key`, campos aditivos).
+- **analytics-service**: la salida de puntos longitudinales suma `pasiva_por_sobreuso` y `subgrupo_key` (aditivos, opcionales).
+- **classifier-service**: `GET /classifications/{episode_id}` suma `pasiva_por_sobreuso` (aditivo).
 - **web-teacher**: `docenteLabels.ts`, `EpisodeNLevelView.tsx`, `ProgressionView.tsx`, `StudentLongitudinalView.tsx`.
 - **web-student**: `EpisodePage.tsx` (feedback por subgrupo).
 - **Datos**: ninguna migración y ninguna reclasificación. Reversible con un revert.

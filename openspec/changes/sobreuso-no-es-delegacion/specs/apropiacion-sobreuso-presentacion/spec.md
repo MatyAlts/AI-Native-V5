@@ -2,7 +2,7 @@
 
 ### Requirement: Identificación de la pasiva por sobreuso
 
-El sistema SHALL considerar "pasiva por sobreuso" a toda clasificación con `appropriation = "delegacion_pasiva"` **y** `features.subgrupo.key = "dependiente_sobreuso"`. Ninguna otra combinación cuenta como tal. La etiqueta persistida no se modifica.
+El sistema SHALL considerar "pasiva por sobreuso" a toda clasificación con `appropriation = "delegacion_pasiva"`, `features.subgrupo.key = "dependiente_sobreuso"`, **sin** `features.revision_humana` y **sin** `features.regimen_llm.estado = "ok"`. Ninguna otra combinación cuenta como tal. La regla vive solo en `platform_ops.pasiva_por_sobreuso`; los datasources y la API devuelven el booleano `pasiva_por_sobreuso` ya calculado y los frontends no la recalculan. La etiqueta persistida no se modifica.
 
 #### Scenario: Pasiva originada por la regla de sobreuso
 - **WHEN** una clasificación tiene `appropriation = "delegacion_pasiva"` y subgrupo `dependiente_sobreuso`
@@ -15,6 +15,18 @@ El sistema SHALL considerar "pasiva por sobreuso" a toda clasificación con `app
 #### Scenario: Subgrupo de sobreuso con etiqueta distinta de pasiva
 - **WHEN** una clasificación tiene subgrupo `dependiente_sobreuso` pero `appropriation` distinto de `delegacion_pasiva` (por ejemplo, una revisión humana la cambió)
 - **THEN** NO se trata como pasiva por sobreuso y se muestra según su `appropriation`
+
+#### Scenario: Pasiva confirmada por un docente
+- **WHEN** una clasificación tiene `appropriation = "delegacion_pasiva"`, subgrupo `dependiente_sobreuso` y `features.revision_humana` (un docente revisó y confirmó la pasiva)
+- **THEN** NO se trata como pasiva por sobreuso: se muestra como delegación y cuenta en el progreso
+
+#### Scenario: Pasiva decidida por el juez del eje fino
+- **WHEN** una clasificación tiene `appropriation = "delegacion_pasiva"`, subgrupo `dependiente_sobreuso` y `features.regimen_llm.estado = "ok"`
+- **THEN** NO se trata como pasiva por sobreuso
+
+#### Scenario: Backend viejo sin el booleano
+- **WHEN** un frontend recibe una clasificación o un punto sin el campo `pasiva_por_sobreuso`
+- **THEN** lo trata como `false` y lo muestra como delegación, igual que antes del cambio
 
 #### Scenario: Clasificación vieja sin subgrupo
 - **WHEN** una clasificación con `appropriation = "delegacion_pasiva"` no tiene `features.subgrupo`
