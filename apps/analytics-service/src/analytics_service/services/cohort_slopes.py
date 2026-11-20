@@ -41,7 +41,7 @@ async def batch_classifications_with_templates_by_student(
     Cada `classification_dict` tiene la misma forma que produce
     `RealLongitudinalDataSource.list_classifications_with_templates_for_student`:
     `{episode_id, problema_id, template_id, unidad_id, classified_at,
-    appropriation}`. Los estudiantes sin clasificaciones current simplemente no
+    appropriation, subgrupo_key, pasiva_por_sobreuso}`. Los estudiantes sin clasificaciones current simplemente no
     aparecen en el dict (el caller trata la ausencia como lista vacía → slope
     None), consistente con la función per-alumno.
 
@@ -55,7 +55,12 @@ async def batch_classifications_with_templates_by_student(
     from academic_service.models.operacional import TareaPractica
     from classifier_service.models import Classification
     from ctr_service.models import Episode
-    from platform_ops import DEFAULT_LANGUAGE, resolve_episode_languages
+    from platform_ops import (
+        DEFAULT_LANGUAGE,
+        pasiva_por_sobreuso,
+        resolve_episode_languages,
+        subgrupo_key_de,
+    )
 
     # 1. Todos los episodios de la comisión → episode_id → (student, problema).
     ep_stmt = (
@@ -128,6 +133,8 @@ async def batch_classifications_with_templates_by_student(
                 "unidad_id": tp.get("unidad_id"),
                 "classified_at": c.classified_at,
                 "appropriation": c.appropriation,
+                "subgrupo_key": subgrupo_key_de(c.features),
+                "pasiva_por_sobreuso": pasiva_por_sobreuso(c.appropriation, c.features),
             }
         )
 

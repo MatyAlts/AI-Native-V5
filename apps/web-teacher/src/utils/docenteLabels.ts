@@ -17,6 +17,37 @@ export const APPROPRIATION_DOCENTE: Record<string, string> = {
   sin_clasificar: "En este episodio: sin clasificar (el arbol no pudo decidir un perfil)",
 }
 
+// ── Pasiva por sobreuso (change sobreuso-no-es-delegacion, P1 del plan CIbSE 2027) ──
+// El estudio de 150 episodios mostro que la regla de sobreuso (subgrupo
+// `dependiente_sobreuso`, roll-up a `delegacion_pasiva`) mide FRECUENCIA de
+// consultas, no delegacion: produccion marco pasiva 47 de 50 y los codificadores
+// casi nunca. La etiqueta persistida NO cambia; esto decide solo como se muestra.
+//
+// HU-007: la UI NO decide si una pasiva es "por sobreuso". Usa el booleano
+// `pasiva_por_sobreuso` que calcula el backend (`platform_ops.pasiva_por_sobreuso`,
+// unico lugar de la regla): una pasiva que confirmo un docente o decidio el juez
+// conserva el subgrupo pero llega con `false` y se muestra como delegacion.
+// Ausente (backend viejo) = false.
+// Clave del subgrupo, solo para buscar su label/resumen (no para decidir).
+export const SUBGRUPO_SOBREUSO = "dependiente_sobreuso"
+
+export const USO_INTENSIVO_LABEL = "Uso intensivo del tutor"
+export const USO_INTENSIVO_DOCENTE =
+  "En este episodio: uso intensivo del tutor (alerta de frecuencia)"
+// Color de alerta, NO el rojo de delegacion. Se dibuja como anillo (sin relleno)
+// para que se lea como alerta y no como un punto mas de la escala.
+export const USO_INTENSIVO_COLOR_VAR = "var(--color-warning)"
+
+/** Label docente de un punto de trayectoria. `pasivaPorSobreuso` es el booleano
+ *  del backend (`pasiva_por_sobreuso`); ausente = delegacion como siempre. */
+export function apropiacionDocenteDePunto(
+  appropriation: string,
+  pasivaPorSobreuso?: boolean | null,
+): string {
+  if (pasivaPorSobreuso === true) return USO_INTENSIVO_DOCENTE
+  return APPROPRIATION_DOCENTE[appropriation] ?? appropriation
+}
+
 // Subgrupos en lenguaje docente (selector de protocolo del inter-rater).
 // Coinciden con classifier-service/services/subgrupo.py.
 export const SUBGRUPO_DOCENTE: Record<string, string> = {
@@ -28,6 +59,7 @@ export const SUBGRUPO_DOCENTE: Record<string, string> = {
   colaborador_reflexivo: "Colaboro con la IA reflexionando",
   colaborador_funcional: "Uso la IA de forma funcional",
   dependiente_delegador: "Dependio de la IA",
+  dependiente_sobreuso: "Consulto al tutor muy seguido",
   indeterminado: "Sesion muy corta / sin señal",
 }
 
@@ -290,6 +322,11 @@ const SUBGRUPO_RESUMEN_DOCENTE: Record<string, string> = {
     "Uso el tutor de forma funcional: pidio lo que necesitaba y avanzo, aunque con poca experimentacion propia.",
   dependiente_delegador:
     "Se apoyo en el tutor para resolver, con poca elaboracion propia. Conviene conversarlo con el alumno.",
+  // Alerta de frecuencia, no un regimen: la regla cuenta mensajes en rafaga y no
+  // lee lo que escribio el alumno. Solo se usa si el backend marco la pasiva
+  // como `pasiva_por_sobreuso` (ver el guard en `explicarEstadoDocente`).
+  dependiente_sobreuso:
+    "Consulto al tutor muchas veces en poco tiempo. Es una alerta de frecuencia, no una conclusion sobre si penso o delego: para saberlo hay que leer la conversacion.",
 }
 
 // Subgrupos de la rama "sin prompts" del arbol (el alumno NO uso el tutor).
@@ -311,6 +348,8 @@ export function explicarEstadoDocente(
     ccd_mean: number | null
     ccd_orphan_ratio: number | null
     cii_stability: number | null
+    // Booleano del backend (HU-007). Ausente = false.
+    pasiva_por_sobreuso?: boolean | null
   },
   eventosCognitivos?: number | null,
   subgrupoKey?: string | null,
@@ -355,7 +394,13 @@ export function explicarEstadoDocente(
 
   // Resumen por subgrupo: describe el perfil REAL del episodio.
   // Sin subgrupo (classifications viejas) o `indeterminado` → eje macro.
-  const porSubgrupo = subgrupoKey ? SUBGRUPO_RESUMEN_DOCENTE[subgrupoKey] : undefined
+  // El resumen del sobreuso solo vale si el backend dice que la pasiva vino de
+  // la regla y nadie la confirmo (`pasiva_por_sobreuso`). Si un docente la
+  // confirmo, el juez la decidio o una revision cambio la etiqueta, el subgrupo
+  // sigue ahi pero manda el eje.
+  const subgrupoVigente =
+    subgrupoKey === SUBGRUPO_SOBREUSO && c.pasiva_por_sobreuso !== true ? undefined : subgrupoKey
+  const porSubgrupo = subgrupoVigente ? SUBGRUPO_RESUMEN_DOCENTE[subgrupoVigente] : undefined
   if (porSubgrupo) {
     return { resumen: porSubgrupo, acciones }
   }

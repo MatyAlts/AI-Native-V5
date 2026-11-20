@@ -72,10 +72,14 @@ from platform_ops.ldap_federation import (
 )
 from platform_ops.longitudinal import (
     APPROPRIATION_ORDINAL,
+    SUBGRUPO_SOBREUSO,
     ClassificationPoint,
     CohortProgression,
     StudentTrajectory,
     build_trajectories,
+    ordinal_progreso,
+    pasiva_por_sobreuso,
+    subgrupo_key_de,
     summarize_cohort,
 )
 from platform_ops.privacy import (
@@ -111,6 +115,7 @@ __all__ = [
     "DEFAULT_LANGUAGE",
     "MIN_EPISODES_FOR_LONGITUDINAL",
     "MIN_STUDENTS_FOR_QUARTILES",
+    "SUBGRUPO_SOBREUSO",
     "ABComparisonReport",
     "AcademicExporter",
     "AccessEvent",
@@ -170,8 +175,11 @@ __all__ = [
     "format_report",
     "get_resolver",
     "languages_present",
+    "ordinal_progreso",
+    "pasiva_por_sobreuso",
     "position_in_quartiles",
     "resolve_episode_languages",
     "set_tenant_rls",
+    "subgrupo_key_de",
     "summarize_cohort",
 ]

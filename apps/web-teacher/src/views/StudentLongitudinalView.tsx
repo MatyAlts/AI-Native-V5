@@ -19,6 +19,8 @@ import {
   APPROPRIATION_DOCENTE,
   APPROPRIATION_INVESTIGADOR,
   APPROPRIATION_REIFICATION_DISCLAIMER,
+  USO_INTENSIVO_COLOR_VAR,
+  apropiacionDocenteDePunto,
   slopeToDocente,
   studentShortLabel,
 } from "../utils/docenteLabels"
@@ -1018,7 +1020,14 @@ function EpisodesList({
             <ul className="divide-y divide-[#EAEAEA]">
               {group.episodes.map((ep, idx) => {
                 const aprKey = ep.appropriation
-                const aprText = aprKey ? (aprLabels[aprKey] ?? aprKey) : null
+                // Docente: la pasiva por sobreuso se lee como alerta de frecuencia
+                // (sobreuso-no-es-delegacion). El investigador ve la etiqueta tal cual.
+                const aprText = aprKey
+                  ? isDocente
+                    ? apropiacionDocenteDePunto(aprKey, ep.pasiva_por_sobreuso)
+                    : (aprLabels[aprKey] ?? aprKey)
+                  : null
+                const sobreuso = ep.pasiva_por_sobreuso === true
                 return (
                   <li key={ep.episode_id} className="flex items-center">
                     <Link
@@ -1030,7 +1039,14 @@ function EpisodesList({
                       <span
                         aria-hidden="true"
                         className="inline-block w-2.5 h-2.5 rounded-full shrink-0"
-                        style={{ backgroundColor: appropriationDot(ep.appropriation) }}
+                        style={
+                          sobreuso
+                            ? {
+                                backgroundColor: "transparent",
+                                boxShadow: `inset 0 0 0 2px ${USO_INTENSIVO_COLOR_VAR}`,
+                              }
+                            : { backgroundColor: appropriationDot(ep.appropriation) }
+                        }
                       />
                       <span className="flex-1 min-w-0 truncate text-sm text-ink">
                         {group.episodes.length > 1
