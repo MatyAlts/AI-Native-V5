@@ -1354,6 +1354,34 @@ export interface RegimenLLMRaw {
   confianza: number
   justificacion_global: string
 }
+// Jueces v2 (HU-001, codebook MTAC v1) y v3 (HU-005, codebook MTAC v2):
+// OTRA forma de `raw`, normalizada en el backend por
+// `regimen_llm.py::normalizar_regimen_llm_persistido` segun `juez_version`.
+// Cada dimension trae `valor`, `localizador` y la `cita` textual del alumno;
+// la autonomia (D4) tiene cuatro valores propios. El v3 suma la marca de
+// frontera. La vista no lee estas formas directo: pasa por
+// `utils/lecturaJuez.ts`, que unifica v1/v2/v3 en lo que se dibuja.
+export interface RegimenLLMDimensionMTAC<V extends string> {
+  valor: V
+  localizador: string
+  cita: string
+}
+export type RegimenMTAC = "REFLEXIVA" | "SUPERFICIAL" | "PASIVA" | "EVIDENCIA_INSUFICIENTE"
+export interface RegimenLLMRawMTAC {
+  d1_verbalizacion: RegimenLLMDimensionMTAC<"presente" | "ausente" | "no_evaluable">
+  d2_verificacion: RegimenLLMDimensionMTAC<"presente" | "ausente" | "no_evaluable">
+  d3_justificacion: RegimenLLMDimensionMTAC<"presente" | "ausente" | "no_evaluable">
+  d4_autonomia: RegimenLLMDimensionMTAC<
+    "interlocutor" | "oraculo" | "transferencia" | "no_evaluable"
+  >
+  regimen: RegimenMTAC
+  confianza: number
+  justificacion_global: string
+  // Solo v3.
+  es_frontera?: boolean
+  frontera_entre?: RegimenMTAC[]
+}
+
 export interface RegimenLLM {
   estado:
     | "ok"
@@ -1361,12 +1389,18 @@ export interface RegimenLLM {
     | "baja_confianza"
     | "error_parseo"
     | "abstencion_traza_insuficiente"
-  regimen: "REFLEXIVA" | "SUPERFICIAL" | null
+    // Solo jueces v2/v3 (`juez_v2.py`).
+    | "derivado_evidencia_insuficiente"
+    | "salida_invalida"
+    | "proveedor_no_disponible"
+  regimen: RegimenMTAC | null
   confianza: number | null
-  raw: RegimenLLMRaw | null
+  raw: RegimenLLMRaw | RegimenLLMRawMTAC | null
   razon: string
   model_used: string
   prompt_version: string
+  // Ausente en los veredictos del juez v1.
+  juez_version?: "v2" | "v3"
 }
 
 export interface EpisodeClassification {

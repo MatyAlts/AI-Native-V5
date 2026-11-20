@@ -9,7 +9,6 @@ import {
   type NLevel,
   type NLevelDistribution,
   type RegimenLLM,
-  type RegimenLLMValorDimension,
   getEpisodeClassification,
   getEpisodeNLevelDistribution,
 } from "../lib/api"
@@ -24,6 +23,7 @@ import {
   explicarEstadoDocente,
 } from "../utils/docenteLabels"
 import { helpContent } from "../utils/helpContent"
+import { lecturaJuez } from "../utils/lecturaJuez"
 
 interface Props {
   getToken: () => Promise<string | null>
@@ -384,11 +384,6 @@ export function EpisodeNLevelView({ getToken, initialEpisodeId }: Props) {
   )
 }
 
-const REGIMEN_JUEZ_DISPLAY: Record<"REFLEXIVA" | "SUPERFICIAL", { label: string; dot: string }> = {
-  REFLEXIVA: { label: "Reflexiva", dot: "bg-success" },
-  SUPERFICIAL: { label: "Superficial", dot: "bg-warning" },
-}
-
 const JUEZ_REVISION_MSG: Record<string, string> = {
   inconsistente:
     "La lectura del modelo no fue consistente con la regla; el episodio va a revision humana.",
@@ -396,36 +391,20 @@ const JUEZ_REVISION_MSG: Record<string, string> = {
   error_parseo: "El modelo no devolvio una lectura valida para este episodio.",
   abstencion_traza_insuficiente:
     "La regla no pudo decidir con la traza disponible (una dimension no evaluable); el episodio va a revision humana.",
-}
-
-// D3 del design.md: las cuatro dimensiones son trivaluadas. `presente` puede
-// llegar como booleano (clasificaciones persistidas antes de esta change) o
-// como el string nuevo — el frontend lee las dos formas sin distinguirlas
-// para el docente, que solo necesita ver el valor final.
-function estadoDimension(valor: RegimenLLMValorDimension): "presente" | "ausente" | "no_evaluable" {
-  if (typeof valor === "boolean") return valor ? "presente" : "ausente"
-  return valor
-}
-
-// Vocabulario generico para V/E/J.
-const DIM_LABEL: Record<"presente" | "ausente" | "no_evaluable", string> = {
-  presente: "presente",
-  ausente: "ausente",
-  no_evaluable: "no evaluable",
-}
-
-// Autonomia conserva su vocabulario propio (interlocutor/oraculo) para las
-// dos ramas que ya se auditaban; "no evaluable" es el tercer valor nuevo — no
-// inventa color, mismo tratamiento neutro que "ausente" (4.3 del design.md).
-const AUTONOMIA_LABEL: Record<"presente" | "ausente" | "no_evaluable", string> = {
-  presente: "interlocutor",
-  ausente: "oraculo",
-  no_evaluable: "no evaluable",
+  // Estados de los jueces v2/v3 (`juez_v2.py::_verificar_evidencia` y el
+  // chequeo del proveedor mock). Texto pensado para el docente, sin jerga.
+  derivado_evidencia_insuficiente:
+    "El modelo afirmo algo sobre el alumno sin citar lo que el alumno escribio. Sin esa evidencia no se toma su lectura; el episodio va a revision humana.",
+  salida_invalida:
+    "El modelo respondio, pero su lectura no se pudo comprobar: cito algo que el alumno no escribio o un mensaje que no existe en la traza. No se toma como veredicto; el episodio va a revision humana.",
+  proveedor_no_disponible:
+    "No habia un modelo de IA real conectado cuando se clasifico este episodio, asi que no hay veredicto. No es una lectura sobre el alumno: hay que volver a clasificarlo con el servicio activo.",
 }
 
 // Veredicto del juez LLM del eje fino. Es la clasificacion OFICIAL del episodio
 // (ya no es modo sombra): gobierna la etiqueta de apropiacion. Cita la evidencia
-// textual del alumno por cada una de las 4 dimensiones de la rubrica.
+// textual del alumno por cada una de las 4 dimensiones de la rubrica. Las
+// formas del juez v1 y de los v2/v3 se unifican en `utils/lecturaJuez.ts`.
 function DocenteJuezLLM({ regimen }: { regimen: RegimenLLM }) {
   const kicker = (
     <div className="text-xs uppercase tracking-wider text-muted">
@@ -433,7 +412,8 @@ function DocenteJuezLLM({ regimen }: { regimen: RegimenLLM }) {
     </div>
   )
 
-  if (regimen.estado !== "ok" || regimen.regimen === null || regimen.raw === null) {
+  const lectura = lecturaJuez(regimen)
+  if (lectura === null) {
     return (
       <div className="rounded-xl border border-dashed border-border bg-canvas px-6 py-4">
         {kicker}
@@ -444,64 +424,42 @@ function DocenteJuezLLM({ regimen }: { regimen: RegimenLLM }) {
     )
   }
 
-  const raw = regimen.raw
-  const disp = REGIMEN_JUEZ_DISPLAY[regimen.regimen]
   const conf = regimen.confianza !== null ? Math.round(regimen.confianza * 100) : null
-  const vVerbalizacion = estadoDimension(raw.verbalizacion.presente)
-  const vVerificacion = estadoDimension(raw.verificacion.presente)
-  const vJustificacion = estadoDimension(raw.justificacion.presente)
-  const vAutonomia = estadoDimension(raw.autonomia.presente)
-  const dims = [
-    {
-      nombre: "Verbalizacion",
-      on: vVerbalizacion === "presente",
-      estado: DIM_LABEL[vVerbalizacion],
-      ev: raw.verbalizacion.evidencia,
-    },
-    {
-      nombre: "Verificacion",
-      on: vVerificacion === "presente",
-      estado: DIM_LABEL[vVerificacion],
-      ev: raw.verificacion.evidencia,
-    },
-    {
-      nombre: "Justificacion",
-      on: vJustificacion === "presente",
-      estado: DIM_LABEL[vJustificacion],
-      ev: raw.justificacion.evidencia,
-    },
-    {
-      nombre: "Autonomia",
-      on: vAutonomia === "presente",
-      estado: AUTONOMIA_LABEL[vAutonomia],
-      ev: raw.autonomia.evidencia,
-    },
-  ]
 
   return (
     <div className="rounded-xl border border-border bg-canvas px-6 py-5">
       {kicker}
       <div className="flex items-baseline gap-3 mt-3 mb-4">
-        <span className={`inline-block w-2 h-2 rounded-full ${disp.dot}`} aria-hidden />
-        <span className="text-lg font-semibold text-ink">{disp.label}</span>
+        <span className={`inline-block w-2 h-2 rounded-full ${lectura.dot}`} aria-hidden />
+        <span className="text-lg font-semibold text-ink">{lectura.label}</span>
         {conf !== null && <span className="text-sm text-muted">confianza {conf}%</span>}
+        {lectura.frontera !== null && (
+          <span className="text-xs rounded-full border border-warning px-2 py-0.5 text-ink">
+            {lectura.frontera}
+          </span>
+        )}
       </div>
 
       <dl className="space-y-2.5">
-        {dims.map((d) => (
+        {lectura.dims.map((d) => (
           <div
             key={d.nombre}
             className="grid grid-cols-[7.5rem_5.5rem_1fr] gap-x-3 items-baseline text-sm"
           >
             <dt className="text-ink">{d.nombre}</dt>
             <dd className={d.on ? "text-ink" : "text-muted"}>{d.estado}</dd>
-            <dd className="text-muted italic">{d.ev ? `“${d.ev}”` : ""}</dd>
+            <dd className="text-muted italic">
+              {d.ev ? `“${d.ev}”` : ""}
+              {d.ev && d.localizador ? (
+                <span className="not-italic text-xs"> · {d.localizador}</span>
+              ) : null}
+            </dd>
           </div>
         ))}
       </dl>
 
       <p className="text-sm text-ink mt-4 pt-3 border-t border-border">
-        {raw.justificacion_global}
+        {lectura.justificacionGlobal}
       </p>
       <p className="text-xs text-muted mt-2">
         Esta es la clasificacion oficial del episodio. Modelo {regimen.model_used} ·{" "}
