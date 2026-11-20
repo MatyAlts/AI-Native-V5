@@ -20,7 +20,11 @@ Diseño: `Diseno-clasificador-cognitivo-LLM-v4`. Principios:
   - REPRODUCIBILIDAD por configuración fijada: temperatura 0 + pinneo de modelo
     y versión de prompt (se registran en el resultado para auditoría).
 
-La delegación pasiva NO pasa por acá: la resuelve la etapa dura (overuse).
+La delegación pasiva NO pasa por este juez: con el juez v1 (default) la
+resuelve la etapa dura (overuse). Con `eje_fino_juez_version = "v2"` corre en su
+lugar `juez_v2.py` (HU-001, codebook MTAC v1), que sí decide la pasiva con
+evidencia positiva de transferencia; este módulo queda intacto como v1.
+`normalizar_regimen_llm_persistido` lee los registros de los dos jueces.
 """
 
 from __future__ import annotations
@@ -298,6 +302,12 @@ def normalizar_regimen_llm_persistido(data: dict[str, Any] | None) -> dict[str, 
     if data is None:
         return None
     try:
+        if isinstance(data, dict) and data.get("juez_version") == "v2":
+            # Registro del juez v2 (HU-001): otra forma, otro modelo. Import
+            # local porque `juez_v2` importa de este módulo.
+            from classifier_service.services.juez_v2 import RegimenV2Result
+
+            return RegimenV2Result.model_validate(data).model_dump(mode="json")
         return RegimenLLMResult.model_validate(data).model_dump(mode="json")
     except ValidationError as exc:
         logger.warning(
