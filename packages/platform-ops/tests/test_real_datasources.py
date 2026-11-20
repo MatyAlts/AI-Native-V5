@@ -173,6 +173,7 @@ async def _add_classification(
     classified_at: datetime | None = None,
     coherences: dict | None = None,
     config_hash: str = "c" * 64,
+    features: dict | None = None,
 ) -> None:
     from classifier_service.models import Classification
     from sqlalchemy import func
@@ -193,7 +194,7 @@ async def _add_classification(
         appropriation_reason="test reason",
         classified_at=classified_at or datetime.now(UTC),
         is_current=is_current,
-        features={},
+        features=features or {},
         **(coherences or {}),
     )
     session.add(cls)
@@ -741,3 +742,45 @@ async def test_classifications_with_templates_sin_language_preserva_comportamien
     )
 
     assert len(result) == 2
+
+
+# ── sobreuso-no-es-delegacion: el subgrupo viaja en las filas ─────────
+
+
+async def test_grouped_by_student_trae_subgrupo_key(
+    ctr_session: AsyncSession, classifier_session: AsyncSession
+) -> None:
+    """Las filas suman `subgrupo_key` (aditivo) y `pasiva_por_sobreuso` para
+    que el progreso pueda excluir la pasiva por sobreuso; sin subgrupo, viene
+    None / False."""
+    comision_id = uuid4()
+    student = uuid4()
+    ep_sobreuso = await _add_episode(ctr_session, TENANT_A, comision_id, student)
+    ep_viejo = await _add_episode(ctr_session, TENANT_A, comision_id, student)
+    base_time = datetime(2026, 3, 1, 10, 0, 0, tzinfo=UTC)
+    await _add_classification(
+        classifier_session,
+        TENANT_A,
+        ep_sobreuso,
+        comision_id,
+        "delegacion_pasiva",
+        classified_at=base_time,
+        features={"subgrupo": {"key": "dependiente_sobreuso"}},
+    )
+    await _add_classification(
+        classifier_session,
+        TENANT_A,
+        ep_viejo,
+        comision_id,
+        "delegacion_pasiva",
+        classified_at=base_time + timedelta(days=1),
+    )
+
+    ds = RealLongitudinalDataSource(ctr_session, classifier_session, TENANT_A)
+    grouped = await ds.list_classifications_grouped_by_student(comision_id)
+    filas = grouped[str(student)]
+    assert [f["subgrupo_key"] for f in filas] == ["dependiente_sobreuso", None]
+    # HU-007: el booleano ya calculado viaja en la fila.
+    assert [f["pasiva_por_sobreuso"] for f in filas] == [True, False]
+    # La etiqueta persistida no cambia.
+    assert [f["appropriation"] for f in filas] == ["delegacion_pasiva", "delegacion_pasiva"]

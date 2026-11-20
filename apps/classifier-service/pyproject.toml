@@ -22,6 +22,9 @@ dependencies = [
     "httpx>=0.27",
     "platform-contracts",
     "platform-observability",
+    # `pasiva_por_sobreuso` en GET /classifications/{id} (HU-007): la regla vive
+    # en platform_ops y el classifier no la copia.
+    "platform-ops",
 ]
 
 [dependency-groups]

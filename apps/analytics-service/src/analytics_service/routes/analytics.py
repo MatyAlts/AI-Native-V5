@@ -744,6 +744,11 @@ class TrajectoryPoint(BaseModel):
     episode_id: str
     classified_at: str
     appropriation: str
+    # `features.subgrupo.key` (aditivo, informativo).
+    subgrupo_key: str | None = None
+    # Calculado por `platform_ops.pasiva_por_sobreuso` (HU-007): la UI lo usa
+    # tal cual, sin recalcular desde appropriation + subgrupo. Ausente = False.
+    pasiva_por_sobreuso: bool = False
 
 
 class StudentTrajectoryOut(BaseModel):
@@ -905,6 +910,8 @@ async def get_cohort_progression(
                         episode_id=str(p.episode_id),
                         classified_at=p.classified_at.isoformat().replace("+00:00", "Z"),
                         appropriation=p.appropriation,
+                        subgrupo_key=p.subgrupo_key,
+                        pasiva_por_sobreuso=p.pasiva_por_sobreuso,
                     )
                     for p in t.points
                 ],
@@ -1297,6 +1304,9 @@ class StudentEpisodeOut(BaseModel):
     closed_at: str | None
     events_count: int
     appropriation: str | None
+    # Ver `TrajectoryPoint.subgrupo_key` y `TrajectoryPoint.pasiva_por_sobreuso`.
+    subgrupo_key: str | None = None
+    pasiva_por_sobreuso: bool = False
     classified_at: str | None
 
 

@@ -28,7 +28,7 @@ from __future__ import annotations
 from datetime import datetime
 from typing import Any
 
-from platform_ops.longitudinal import APPROPRIATION_ORDINAL
+from platform_ops.longitudinal import ordinal_progreso
 
 CII_LONGITUDINAL_VERSION = "1.0.0"
 
@@ -43,6 +43,20 @@ def _coerce_ts(ts: Any) -> datetime:
     if isinstance(ts, datetime):
         return ts
     return datetime.fromisoformat(str(ts).replace("Z", "+00:00"))
+
+
+def _scores_ordinales(items: list[dict[str, Any]]) -> list[int]:
+    """Scores ordinales de clasificaciones YA ordenadas, salteando las que no
+    participan de la escala (`autonomo`, `sin_clasificar` y la pasiva por
+    sobreuso; ver `longitudinal.ordinal_progreso`)."""
+    return [
+        o
+        for c in items
+        if (
+            o := ordinal_progreso(c.get("appropriation"), bool(c.get("pasiva_por_sobreuso", False)))
+        )
+        is not None
+    ]
 
 
 def _compute_slope_ordinal(scores: list[int]) -> float:
@@ -98,18 +112,13 @@ def compute_evolution_per_template(
     for template_id, items in groups.items():
         # Ordenar por classified_at ascendente
         items_sorted = sorted(items, key=lambda c: _coerce_ts(c["classified_at"]))
-        # B2b (6.3, explícito 2026-09-27): el membership check contra
-        # APPROPRIATION_ORDINAL ya excluye `sin_clasificar` (y `autonomo`)
-        # sin necesidad de nombrarlos acá — misma disciplina con la que el
+        # B2b (6.3, explícito 2026-09-27) + sobreuso-no-es-delegacion: el
+        # `_scores_ordinales` excluye `sin_clasificar`, `autonomo` y la pasiva
+        # por sobreuso sin nombrarlos acá — misma disciplina con la que el
         # `if template_id is None: continue` de arriba excluye TPs huérfanas.
-        # Ninguno de los dos es un punto válido del continuo: son ausencia de
-        # dato (de template, en un caso; de veredicto del árbol, en el otro),
-        # no un cero silencioso en la escala ordinal.
-        scores = [
-            APPROPRIATION_ORDINAL[c["appropriation"]]
-            for c in items_sorted
-            if c.get("appropriation") in APPROPRIATION_ORDINAL
-        ]
+        # Ninguno es un punto válido del continuo: no se convierten en un cero
+        # silencioso en la escala ordinal.
+        scores = _scores_ordinales(items_sorted)
         n = len(scores)
 
         entry: dict[str, Any] = {
@@ -175,11 +184,7 @@ def compute_evolution_per_unidad(
     result: list[dict[str, Any]] = []
     for uid_key, items in groups.items():
         items_sorted = sorted(items, key=lambda c: _coerce_ts(c["classified_at"]))
-        scores = [
-            APPROPRIATION_ORDINAL[c["appropriation"]]
-            for c in items_sorted
-            if c.get("appropriation") in APPROPRIATION_ORDINAL
-        ]
+        scores = _scores_ordinales(items_sorted)
         n = len(scores)
 
         if uid_key == _SENTINEL:
@@ -225,11 +230,8 @@ def compute_evolution_general(classifications: list[dict[str, Any]]) -> dict[str
     es una señal pedagogica general de progreso, NO una medida academica fina.
     Requiere >=MIN_EPISODES_FOR_LONGITUDINAL episodios en total.
     """
-    items = sorted(
-        (c for c in classifications if c.get("appropriation") in APPROPRIATION_ORDINAL),
-        key=lambda c: _coerce_ts(c["classified_at"]),
-    )
-    scores = [APPROPRIATION_ORDINAL[c["appropriation"]] for c in items]
+    items = sorted(classifications, key=lambda c: _coerce_ts(c["classified_at"]))
+    scores = _scores_ordinales(items)
     n = len(scores)
     if n < MIN_EPISODES_FOR_LONGITUDINAL:
         return {"n_episodes": n, "slope": None, "insufficient_data": True, "scores_ordinal": scores}

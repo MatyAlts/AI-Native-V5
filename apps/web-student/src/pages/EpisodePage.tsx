@@ -2115,6 +2115,15 @@ const FEEDBACK_SUBGRUPO: Record<
     mensaje:
       "En este episodio, la mayor parte del trabajo lo hizo el tutor, no vos. La IA esta para ayudarte a pensar, no para reemplazarte. La proxima, pone TU idea primero (aunque este incompleta) y usa al tutor para discutirla, no para que te de la respuesta.",
   },
+  // sobreuso-no-es-delegacion (P1 del plan CIbSE 2027): la regla de sobreuso
+  // cuenta mensajes en rafaga, no lee lo que escribiste. NO se le dice al alumno
+  // que el tutor hizo el trabajo: solo se le habla del ritmo de consultas.
+  dependiente_sobreuso: {
+    tono: "neutro",
+    titulo: "Muchas consultas seguidas",
+    mensaje:
+      "Consultaste al tutor muy seguido. Proba dar un paso propio entre consulta y consulta.",
+  },
   indeterminado: {
     tono: "neutro",
     titulo: "Episodio corto",
@@ -2123,7 +2132,7 @@ const FEEDBACK_SUBGRUPO: Record<
   },
 }
 
-function buildPedagogicalFeedback(c: Classification): {
+export function buildPedagogicalFeedback(c: Classification): {
   tono: "positivo" | "neutro" | "atencion"
   titulo: string
   mensaje: string
@@ -2158,7 +2167,15 @@ function buildPedagogicalFeedback(c: Classification): {
   // El SUBGRUPO manda la narrativa (misma historia que el docente). Las
   // coherencias de arriba quedan como sugerencias accionables subordinadas.
   // Sin subgrupo (classifications viejas) cae al switch por eje de abajo.
-  const porSubgrupo = c.subgrupo?.key ? FEEDBACK_SUBGRUPO[c.subgrupo.key] : undefined
+  // El mensaje del sobreuso solo vale si el backend marco la pasiva como
+  // `pasiva_por_sobreuso` (HU-007; la UI no recalcula la regla). Si un docente
+  // la confirmo, el juez la decidio o una revision cambio la etiqueta, el
+  // subgrupo sigue ahi pero manda el eje (switch de abajo).
+  const subgrupoKey =
+    c.subgrupo?.key === "dependiente_sobreuso" && c.pasiva_por_sobreuso !== true
+      ? undefined
+      : c.subgrupo?.key
+  const porSubgrupo = subgrupoKey ? FEEDBACK_SUBGRUPO[subgrupoKey] : undefined
   if (porSubgrupo) {
     return {
       tono: porSubgrupo.tono,
