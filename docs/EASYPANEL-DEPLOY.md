@@ -153,7 +153,21 @@ Su paso 0 avisa si Docker corre **rootless** — en ese caso el runner sobra.
 `SERVICE_NAME, SERVICE_PORT, ENVIRONMENT, LOG_LEVEL, LOG_FORMAT, CORS_ORIGINS, OTEL_ENDPOINT, SENTRY_DSN, KEYCLOAK_URL, KEYCLOAK_REALM, CTR_DB_URL, DB_ECHO, REDIS_URL, NUM_PARTITIONS`
 
 ### classifier-service
-`SERVICE_NAME, SERVICE_PORT, ENVIRONMENT, LOG_LEVEL, LOG_FORMAT, CORS_ORIGINS, OTEL_ENDPOINT, SENTRY_DSN, CLASSIFIER_DB_URL, DB_ECHO, REDIS_URL, CTR_SERVICE_URL, AI_GATEWAY_URL, LEXICAL_ANOTACION_OVERRIDE_ENABLED, GUARDRAIL_MODIFIER_ENABLED, EJE_FINO_MAX_TOKENS`
+`SERVICE_NAME, SERVICE_PORT, ENVIRONMENT, LOG_LEVEL, LOG_FORMAT, CORS_ORIGINS, OTEL_ENDPOINT, SENTRY_DSN, CLASSIFIER_DB_URL, DB_ECHO, REDIS_URL, CTR_SERVICE_URL, AI_GATEWAY_URL, LEXICAL_ANOTACION_OVERRIDE_ENABLED, GUARDRAIL_MODIFIER_ENABLED, EJE_FINO_MAX_TOKENS, EJE_FINO_JUEZ_VERSION`
+
+> `EJE_FINO_JUEZ_VERSION` elige qué juez corre el eje fino: `v1` (default si no se setea, el de
+> siempre), `v2` (codebook MTAC v1) o `v3` (codebook MTAC v2, el elegido en la HU-002). Los tres usan
+> el mismo modelo (`EJE_FINO_MODEL`, Gemini por OpenRouter vía ai-gateway). Mergear el código no
+> prende nada: **para activar el v3 se setea `EJE_FINO_JUEZ_VERSION=v3` sólo en el classifier-service
+> y se reinicia ese servicio**; para volver atrás, se borra la variable (o `v1`) y se reinicia. No
+> hace falta reclasificar: cada veredicto guarda `prompt_version` y `juez_version`. Con `v2`/`v3` la
+> pasiva también la decide el juez, y lo que no sale `ok` va a la cola de revisión: mirar cuántos
+> episodios caen ahí los primeros días con
+> ```sql
+> SELECT features->'regimen_llm'->>'estado', COUNT(*) FROM classifications
+> WHERE is_current AND features->'regimen_llm'->>'juez_version' = 'v3'
+> GROUP BY 1 ORDER BY 2 DESC;
+> ```
 
 > `EJE_FINO_MAX_TOKENS` (default **6000**) es el techo de salida del juez LLM. Gemini 2.5 gasta
 > tokens de *thinking* del mismo presupuesto con el que escribe, así que si queda corto el JSON
