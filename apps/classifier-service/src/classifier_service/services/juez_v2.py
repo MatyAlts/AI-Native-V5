@@ -37,6 +37,7 @@ import json
 import logging
 import re
 import unicodedata
+from collections.abc import Callable
 from typing import Any, Literal
 from uuid import UUID
 
@@ -604,28 +605,35 @@ _NOMBRE_D4 = {
 }
 
 
-def _bloque_ejemplos() -> str:
+def _bloque_ejemplos(ejemplos: list[dict[str, str]]) -> str:
     lineas: list[str] = []
     for valor in ("interlocutor", "oraculo", "transferencia", "no_evaluable"):
         lineas.append(f"{_NOMBRE_D4[valor]}:")
-        lineas.extend(f"- {e['texto']}" for e in EJEMPLOS_FRONTERA_V2 if e["d4"] == valor)
+        lineas.extend(f"- {e['texto']}" for e in ejemplos if e["d4"] == valor)
     return "\n".join(lineas)
 
 
-_SYSTEM_PROMPT_BASE = """\
-Sos un codificador experto en didáctica de la programación. Aplicás el codebook MTAC v1 a UN episodio: la sesión de un alumno que resuelve un ejercicio con un tutor de IA. Codificás cómo se relaciona el alumno con el tutor, no si el resultado está bien ni qué tan difícil era el tema.
+# El system prompt v2 se arma por secciones para que el juez v3 (codebook MTAC
+# v2) reuse las que no cambian. El texto resultante es byte a byte el mismo:
+# lo fija `HUELLA_PROMPT_V2`. Las secciones pasan por `.format` (de ahí las
+# llaves dobles en la salida).
+_SECCION_INTRO_V2 = """\
+Sos un codificador experto en didáctica de la programación. Aplicás el codebook MTAC v1 a UN episodio: la sesión de un alumno que resuelve un ejercicio con un tutor de IA. Codificás cómo se relaciona el alumno con el tutor, no si el resultado está bien ni qué tan difícil era el tema."""
 
+_SECCION_POR_QUE_V2 = """\
 POR QUÉ ESTE JUEZ EXISTE
-En el estudio que valida este codebook, D4 (autonomía) fue la dimensión con más desacuerdo entre los codificadores humanos, y la delegación pasiva fue muy sobrediagnosticada por reglas automáticas que contaban mensajes. Por eso: leé contenido, no cuentes actividad, y no asignes transferencia sin evidencia positiva.
+En el estudio que valida este codebook, D4 (autonomía) fue la dimensión con más desacuerdo entre los codificadores humanos, y la delegación pasiva fue muy sobrediagnosticada por reglas automáticas que contaban mensajes. Por eso: leé contenido, no cuentes actividad, y no asignes transferencia sin evidencia positiva."""
 
+_SECCION_PRINCIPIOS_Y_TRAZA = """\
 PRINCIPIOS
 1. Se codifica lo que el alumno hace y dice, no lo que el tutor logra explicarle.
 2. Se lee contenido, no se cuenta actividad. La cantidad o el ritmo de mensajes y de ejecuciones no deciden nada por sí solos.
 3. Se codifica la conducta observable, no lo que el alumno dice de sí mismo.
 
 LA TRAZA
-Ves la misma línea de tiempo que los codificadores humanos, con estos localizadores: "mensaje N" (lo que escribe el ALUMNO), "ejecución N" (con su salida y su error), "prueba N" (pasadas/total), "nota N" (nota del alumno) y "edición N" (cambios en el código del alumno). Las líneas TUTOR son respuestas del tutor: no son evidencia de lo que hizo el alumno y nunca se citan.
+Ves la misma línea de tiempo que los codificadores humanos, con estos localizadores: "mensaje N" (lo que escribe el ALUMNO), "ejecución N" (con su salida y su error), "prueba N" (pasadas/total), "nota N" (nota del alumno) y "edición N" (cambios en el código del alumno). Las líneas TUTOR son respuestas del tutor: no son evidencia de lo que hizo el alumno y nunca se citan."""
 
+_SECCION_D1_D3 = """\
 LAS CUATRO DIMENSIONES
 Alcanza con UNA evidencia citable para marcar D1, D2 o D3 como presente.
 
@@ -642,16 +650,19 @@ D2. Verificación: ¿el alumno pone a prueba lo que piensa y reacciona a lo que 
 
 D3. Justificación de decisiones: ¿el alumno defiende una elección con criterio propio?
 - presente: elige entre alternativas y dice por qué; contrasta su solución con la consigna.
-- ausente: acepta lo que el tutor sugiere sin evaluarlo; cambia el código sin explicar por qué.
+- ausente: acepta lo que el tutor sugiere sin evaluarlo; cambia el código sin explicar por qué."""
 
+_SECCION_D4_V2 = """\
 D4. Autonomía cognitiva: ¿usa la IA para pensar o para que piense por él? Un valor:
 - interlocutor: pregunta para entender, contrastar una idea propia o confirmar una hipótesis que él formuló; pide una pista o una explicación conceptual y después decide él.
 - oraculo: pide la solución, la corrección o el veredicto y lo aplica sin razonarlo ("¿cómo lo arreglo?", "corregime", "¿está bien así?"), o vuelca el error esperando que el tutor se lo resuelva.
 - transferencia: no asume la tarea. Insiste en que el tutor le dé la solución y se resiste a pensar, o no integra nada de lo que el tutor le devuelve: repite el pedido, contesta con monosílabos, no avanza a partir de las repreguntas.
-- D4 se marca según el patrón PREDOMINANTE del episodio. Un pedido de solución seguido de discusión (la discute, la pone a prueba o la reformula con sus palabras) cuenta como interlocutor. Si pide soluciones o veredictos en la mayor parte de los intercambios, es oráculo aunque discuta alguno.
+- D4 se marca según el patrón PREDOMINANTE del episodio. Un pedido de solución seguido de discusión (la discute, la pone a prueba o la reformula con sus palabras) cuenta como interlocutor. Si pide soluciones o veredictos en la mayor parte de los intercambios, es oráculo aunque discuta alguno."""
 
-"no_evaluable" en cualquier dimensión significa que la traza no tiene material para juzgarla (episodio muy breve, la conversación no toca el ejercicio, faltan eventos). Es un juicio sobre la traza, no sobre tu confianza: si hay material pero el caso es ambiguo, decidí y bajá "confianza".
+_SECCION_NO_EVALUABLE = """\
+"no_evaluable" en cualquier dimensión significa que la traza no tiene material para juzgarla (episodio muy breve, la conversación no toca el ejercicio, faltan eventos). Es un juicio sobre la traza, no sobre tu confianza: si hay material pero el caso es ambiguo, decidí y bajá "confianza"."""
 
+_SECCION_REGIMENES_Y_REGLA = """\
 LOS REGÍMENES
 - REFLEXIVA: el alumno conduce el proceso; el asistente ayuda, pero el pensamiento es suyo. Equivocarse no baja el régimen: importa cómo trabaja el error.
 - SUPERFICIAL: seguimiento competente. Integra las pistas en su propio código y avanza, hace consultas conceptuales puntuales o muestra conocimiento previo, pero reacciona a lo que el tutor le señala sin proponer, verificar ni justificar por su cuenta.
@@ -663,24 +674,30 @@ REGLA DE DECISIÓN (la aplica el código sobre tus dimensiones; tu "regimen" tie
 - PASIVA si D4 transferencia, con cita, Y ninguna de D1, D2, D3 presente.
 - SUPERFICIAL en el resto de los episodios con algún aporte del alumno.
 - EVIDENCIA_INSUFICIENTE si con lo que marcaste la regla no puede decidir.
-Vos proponés las dimensiones con su evidencia; el régimen lo decide la regla en código. Si tu régimen no coincide con la regla aplicada a tus propias dimensiones, el veredicto se descarta.
+Vos proponés las dimensiones con su evidencia; el régimen lo decide la regla en código. Si tu régimen no coincide con la regla aplicada a tus propias dimensiones, el veredicto se descarta."""
 
+_SECCION_FRONTERAS_COMUNES = """\
 FRONTERAS
 - Pasiva o superficial: ¿el alumno incorpora y construye sobre lo que el tutor le devuelve? Si avanza a partir de las pistas, aunque sea poco y con respuestas cortas: superficial. Si extrae correcciones sueltas, repite, contesta con monosílabos y no progresa: pasiva.
-- Superficial o reflexiva: ¿el alumno reacciona a las pistas o conduce el proceso? Si entiende lo que el tutor le marca y lo arregla, en respuestas breves y guiadas: superficial. Si propone, anticipa, verifica o explica por su cuenta: reflexiva, si se cumple la regla.
-- Conducta mixta: si cambia a lo largo del episodio, cuenta lo que predomina para D4; D1, D2 y D3 se marcan presentes con una evidencia citable.
+- Superficial o reflexiva: ¿el alumno reacciona a las pistas o conduce el proceso? Si entiende lo que el tutor le marca y lo arregla, en respuestas breves y guiadas: superficial. Si propone, anticipa, verifica o explica por su cuenta: reflexiva, si se cumple la regla."""
 
+_SECCION_CONDUCTA_MIXTA_V2 = """\
+- Conducta mixta: si cambia a lo largo del episodio, cuenta lo que predomina para D4; D1, D2 y D3 se marcan presentes con una evidencia citable."""
+
+_SECCION_TRAMPAS_V2 = """\
 LAS SEIS TRAMPAS
 1. Narrar no es razonar.
 2. Pedir la solución es oráculo, aunque después el alumno explique lo que le dieron sin discutirlo.
 3. Ejecutar mucho no es verificar: cuenta la reacción al resultado, no la cantidad de ejecuciones.
 4. Escribir mucho o rápido no es delegar: el ritmo y la cantidad de mensajes no son criterio.
 5. Equivocarse no baja el régimen.
-6. Poco rastro no es pasiva: sin material para juzgar es evidencia insuficiente, no delegación.
+6. Poco rastro no es pasiva: sin material para juzgar es evidencia insuficiente, no delegación."""
 
+_SECCION_EJEMPLOS = """\
 EJEMPLOS DE FRONTERA (de fuera del estudio; los números de mensaje y ejecución son de esos episodios, no del que vas a codificar)
-{ejemplos}
+{ejemplos}"""
 
+_SECCION_SALIDA_V2 = """\
 SALIDA
 Devolvé EXCLUSIVAMENTE un JSON con esta forma, sin texto adicional:
 - "d1_verbalizacion", "d2_verificacion", "d3_justificacion": {{"valor": "presente" | "ausente" | "no_evaluable", "localizador": ..., "cita": ...}}
@@ -691,7 +708,29 @@ Devolvé EXCLUSIVAMENTE un JSON con esta forma, sin texto adicional:
 Reglas del "localizador": lista separada por comas, cada elemento "<tipo> <N>" tal como aparece en la traza ("mensaje 3", "ejecución 2", "prueba 1", "nota 1", "edición 4"). Sin rangos ni "y": "ejecución 7, ejecución 8". Cadena vacía si no hay evidencia. Nunca inventes un número que no esté en la traza.
 Reglas de la "cita": copia TEXTUAL de algo que escribió el alumno (un mensaje, una nota o su código), sin parafrasear ni traducir; podés recortar y unir fragmentos con "...". Nunca cites al tutor. Cadena vacía si la dimensión es ausente o no_evaluable. D1 y D3 presentes necesitan cita; D4 (salvo no_evaluable) necesita cita; D2 presente necesita cita o al menos un localizador de ejecución o prueba. Una cita que no está textual en lo que escribió el alumno invalida todo el veredicto."""
 
-SYSTEM_PROMPT_V2 = _SYSTEM_PROMPT_BASE.format(ejemplos=_bloque_ejemplos())
+
+def _armar_prompt(*secciones: str, ejemplos: str) -> str:
+    """Une secciones con una línea en blanco y completa `{ejemplos}`."""
+    return "\n\n".join(secciones).format(ejemplos=ejemplos)
+
+
+_SYSTEM_PROMPT_BASE_SECCIONES = (
+    _SECCION_INTRO_V2,
+    _SECCION_POR_QUE_V2,
+    _SECCION_PRINCIPIOS_Y_TRAZA,
+    _SECCION_D1_D3,
+    _SECCION_D4_V2,
+    _SECCION_NO_EVALUABLE,
+    _SECCION_REGIMENES_Y_REGLA,
+    _SECCION_FRONTERAS_COMUNES + "\n" + _SECCION_CONDUCTA_MIXTA_V2,
+    _SECCION_TRAMPAS_V2,
+    _SECCION_EJEMPLOS,
+    _SECCION_SALIDA_V2,
+)
+
+SYSTEM_PROMPT_V2 = _armar_prompt(
+    *_SYSTEM_PROMPT_BASE_SECCIONES, ejemplos=_bloque_ejemplos(EJEMPLOS_FRONTERA_V2)
+)
 
 
 def _mensaje_usuario(traza: str, enunciado: str, episode_id: str) -> str:
@@ -776,9 +815,9 @@ _SALIDAS_FEWSHOT: dict[str, dict[str, Any]] = {
 }
 
 
-def _fewshot() -> list[dict[str, str]]:
+def _fewshot(salidas: dict[str, dict[str, Any]]) -> list[dict[str, str]]:
     mensajes: list[dict[str, str]] = []
-    for sid, salida in _SALIDAS_FEWSHOT.items():
+    for sid, salida in salidas.items():
         sintetico = SINTETICOS_ALBERTO[sid]
         traza = _renderizar(sintetico["elementos"])
         mensajes.append(
@@ -793,7 +832,7 @@ def _fewshot() -> list[dict[str, str]]:
     return mensajes
 
 
-FEWSHOT_V2: list[dict[str, str]] = _fewshot()
+FEWSHOT_V2: list[dict[str, str]] = _fewshot(_SALIDAS_FEWSHOT)
 
 
 def construir_mensajes_v2(traza: str, enunciado: str, episode_id: str) -> list[dict[str, str]]:
@@ -822,7 +861,139 @@ HUELLA_PROMPT_V2 = "553e0f33001f4c261670574070fa36de8b3e09284e8584612fbd34d3744c
 
 
 # ── Juez ───────────────────────────────────────────────────────────────────
-async def clasificar_regimen_v2(  # noqa: PLR0911 — un return por estado terminal
+async def _juzgar_mtac(  # noqa: PLR0911 — un return por estado terminal
+    *,
+    events: list[dict],
+    enunciado: str,
+    episode_id: str,
+    complete: CompleteFn,
+    model: str,
+    tenant_id: UUID,
+    materia_id: UUID | None,
+    confianza_min: float,
+    max_tokens: int,
+    max_reintentos: int,
+    construir_mensajes: Callable[[str, str, str], list[dict[str, str]]],
+    clase_raw: type[RegimenV2Raw],
+    response_format: dict[str, Any],
+    resultado: Callable[[EstadoV2, str, Any, str | None], Any],
+    etiqueta: str,
+) -> Any:
+    """Flujo común de los jueces MTAC (v2 y v3): llamada, parseo, evidencia, regla.
+
+    Lo que cambia entre jueces viene por parámetro: los mensajes (prompt), la
+    clase de la salida cruda, el schema y cómo se arma el resultado. La traza,
+    el verificador de evidencia y la regla son los mismos.
+    """
+    elementos = _elementos(events)
+    messages = construir_mensajes(_renderizar(elementos), enunciado, episode_id)
+
+    raw: RegimenV2Raw | None = None
+    motivo_fallo = "el modelo no devolvió un JSON válido"
+    for intento in range(max_reintentos + 1):
+        res = await complete(
+            messages=messages,
+            model=model,
+            feature="episode_eje_fino",
+            tenant_id=tenant_id,
+            materia_id=materia_id,
+            temperature=0.0,
+            max_tokens=max_tokens,
+            response_format=response_format,
+        )
+        # C08: el ai-gateway en modo mock devuelve texto inventado. Nunca se
+        # toma como veredicto, y se avisa: un mock silencioso parece un juez.
+        if getattr(res, "provider", None) == "mock":
+            logger.warning(
+                f"{etiqueta}_proveedor_mock: el ai-gateway respondió con el proveedor mock; "
+                "no hay veredicto",
+                extra={"episode_id": episode_id, "provider": "mock"},
+            )
+            return resultado(
+                "proveedor_no_disponible",
+                "El ai-gateway respondió con el proveedor mock: no hay un LLM real "
+                "detrás, así que no hay veredicto. Va a revisión humana.",
+                None,
+                None,
+            )
+        output_tokens = getattr(res, "output_tokens", 0) or 0
+        try:
+            raw = clase_raw.model_validate(json.loads(_limpiar_json(res.content)))
+            break
+        except (json.JSONDecodeError, ValidationError) as exc:
+            # Truncado: con temperatura 0 reintentar devuelve el mismo corte.
+            truncado = output_tokens >= max_tokens
+            motivo_fallo = (
+                f"respuesta truncada en {output_tokens} tokens (techo {max_tokens})"
+                if truncado
+                else f"{type(exc).__name__}: {exc}"
+            )
+            logger.warning(
+                f"{etiqueta}_parseo_fallo",
+                extra={
+                    "episode_id": episode_id,
+                    "intento": intento,
+                    "truncado": truncado,
+                    "output_tokens": output_tokens,
+                    "error": str(exc),
+                },
+            )
+            raw = None
+            if truncado:
+                break
+
+    if raw is None:
+        return resultado(
+            "error_parseo",
+            f"El juez no devolvió un veredicto usable: {motivo_fallo}. Va a revisión humana.",
+            None,
+            None,
+        )
+
+    fallo = _verificar_evidencia(raw, elementos)
+    if fallo is not None:
+        estado, motivo = fallo
+        return resultado(estado, f"{motivo} Va a revisión humana.", raw, None)
+
+    esperado = regimen_segun_regla_mtac(
+        raw.d1_verbalizacion.valor,
+        raw.d2_verificacion.valor,
+        raw.d3_justificacion.valor,
+        raw.d4_autonomia.valor,
+    )
+    if esperado == "INDETERMINADO":
+        return resultado(
+            "abstencion_traza_insuficiente",
+            "La regla MTAC v1 no puede decidir: el valor no evaluable de alguna dimensión "
+            "cambia el resultado. Va a revisión humana.",
+            raw,
+            None,
+        )
+    if raw.regimen != esperado:
+        return resultado(
+            "inconsistente",
+            f"El régimen del modelo ({raw.regimen}) no respeta la regla MTAC v1 aplicada a "
+            f"sus propias dimensiones (esperado: {esperado}). Va a revisión humana.",
+            raw,
+            None,
+        )
+    if raw.confianza < confianza_min:
+        return resultado(
+            "baja_confianza",
+            f"Confianza {raw.confianza:.2f} < umbral {confianza_min}. Va a revisión humana.",
+            raw,
+            None,
+        )
+    return resultado(
+        "ok",
+        "Dimensiones con evidencia verificada en la traza y régimen consistente con la "
+        "regla MTAC v1.",
+        raw,
+        esperado,
+    )
+
+
+async def clasificar_regimen_v2(
     *,
     events: list[dict],
     enunciado: str,
@@ -841,14 +1012,9 @@ async def clasificar_regimen_v2(  # noqa: PLR0911 — un return por estado termi
     régimen; cualquier otro estado conserva lo que haya (raw incluido) para
     auditar y el episodio va a revisión humana.
     """
-    elementos = _elementos(events)
-    messages = construir_mensajes_v2(_renderizar(elementos), enunciado, episode_id)
 
     def _result(
-        estado: EstadoV2,
-        razon: str,
-        raw: RegimenV2Raw | None = None,
-        regimen: str | None = None,
+        estado: EstadoV2, razon: str, raw: RegimenV2Raw | None, regimen: str | None
     ) -> RegimenV2Result:
         return RegimenV2Result(
             estado=estado,
@@ -860,99 +1026,20 @@ async def clasificar_regimen_v2(  # noqa: PLR0911 — un return por estado termi
             prompt_version=PROMPT_VERSION_V2,
         )
 
-    raw: RegimenV2Raw | None = None
-    motivo_fallo = "el modelo no devolvió un JSON válido"
-    for intento in range(max_reintentos + 1):
-        res = await complete(
-            messages=messages,
-            model=model,
-            feature="episode_eje_fino",
-            tenant_id=tenant_id,
-            materia_id=materia_id,
-            temperature=0.0,
-            max_tokens=max_tokens,
-            response_format=RESPONSE_JSON_SCHEMA_V2,
-        )
-        # C08: el ai-gateway en modo mock devuelve texto inventado. Nunca se
-        # toma como veredicto, y se avisa: un mock silencioso parece un juez.
-        if getattr(res, "provider", None) == "mock":
-            logger.warning(
-                "juez_v2_proveedor_mock: el ai-gateway respondió con el proveedor mock; "
-                "no hay veredicto",
-                extra={"episode_id": episode_id, "provider": "mock"},
-            )
-            return _result(
-                "proveedor_no_disponible",
-                "El ai-gateway respondió con el proveedor mock: no hay un LLM real "
-                "detrás, así que no hay veredicto. Va a revisión humana.",
-            )
-        output_tokens = getattr(res, "output_tokens", 0) or 0
-        try:
-            raw = RegimenV2Raw.model_validate(json.loads(_limpiar_json(res.content)))
-            break
-        except (json.JSONDecodeError, ValidationError) as exc:
-            # Truncado: con temperatura 0 reintentar devuelve el mismo corte.
-            truncado = output_tokens >= max_tokens
-            motivo_fallo = (
-                f"respuesta truncada en {output_tokens} tokens (techo {max_tokens})"
-                if truncado
-                else f"{type(exc).__name__}: {exc}"
-            )
-            logger.warning(
-                "juez_v2_parseo_fallo",
-                extra={
-                    "episode_id": episode_id,
-                    "intento": intento,
-                    "truncado": truncado,
-                    "output_tokens": output_tokens,
-                    "error": str(exc),
-                },
-            )
-            raw = None
-            if truncado:
-                break
-
-    if raw is None:
-        return _result(
-            "error_parseo",
-            f"El juez no devolvió un veredicto usable: {motivo_fallo}. Va a revisión humana.",
-        )
-
-    fallo = _verificar_evidencia(raw, elementos)
-    if fallo is not None:
-        estado, motivo = fallo
-        return _result(estado, f"{motivo} Va a revisión humana.", raw)
-
-    esperado = regimen_segun_regla_mtac(
-        raw.d1_verbalizacion.valor,
-        raw.d2_verificacion.valor,
-        raw.d3_justificacion.valor,
-        raw.d4_autonomia.valor,
-    )
-    if esperado == "INDETERMINADO":
-        return _result(
-            "abstencion_traza_insuficiente",
-            "La regla MTAC v1 no puede decidir: el valor no evaluable de alguna dimensión "
-            "cambia el resultado. Va a revisión humana.",
-            raw,
-        )
-    if raw.regimen != esperado:
-        return _result(
-            "inconsistente",
-            f"El régimen del modelo ({raw.regimen}) no respeta la regla MTAC v1 aplicada a "
-            f"sus propias dimensiones (esperado: {esperado}). Va a revisión humana.",
-            raw,
-        )
-    if raw.confianza < confianza_min:
-        return _result(
-            "baja_confianza",
-            f"Confianza {raw.confianza:.2f} < umbral {confianza_min}. Va a revisión humana.",
-            raw,
-        )
-    return _result(
-        "ok",
-        "Dimensiones con evidencia verificada en la traza y régimen consistente con la "
-        "regla MTAC v1.",
-        raw,
-        esperado,
+    return await _juzgar_mtac(
+        events=events,
+        enunciado=enunciado,
+        episode_id=episode_id,
+        complete=complete,
+        model=model,
+        tenant_id=tenant_id,
+        materia_id=materia_id,
+        confianza_min=confianza_min,
+        max_tokens=max_tokens,
+        max_reintentos=max_reintentos,
+        construir_mensajes=construir_mensajes_v2,
+        clase_raw=RegimenV2Raw,
+        response_format=RESPONSE_JSON_SCHEMA_V2,
+        resultado=_result,
+        etiqueta="juez_v2",
     )
