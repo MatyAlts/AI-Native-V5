@@ -257,12 +257,12 @@ def test_c03_trayectoria_saltea_solo_la_de_la_regla():
             uuid4(), t0 + timedelta(days=2), "delegacion_pasiva", pasiva_por_sobreuso=False
         ),
     ]
-    tray = StudentTrajectory(student_alias="a", points=puntos)
+    tray = StudentTrajectory(student_pseudonym="a", points=puntos)
     # La confirmada (False) cuenta y es la más baja; la de la regla no.
     assert tray.max_appropriation_reached() == "apropiacion_reflexiva"
-    solo_regla = StudentTrajectory(student_alias="b", points=puntos[1:2])
+    solo_regla = StudentTrajectory(student_pseudonym="b", points=puntos[1:2])
     assert solo_regla.max_appropriation_reached() is None
-    solo_confirmada = StudentTrajectory(student_alias="c", points=puntos[2:3])
+    solo_confirmada = StudentTrajectory(student_pseudonym="c", points=puntos[2:3])
     assert solo_confirmada.max_appropriation_reached() == "delegacion_pasiva"
 
 
