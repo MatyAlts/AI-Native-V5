@@ -133,6 +133,35 @@ def test_cita_del_tutor_es_salida_invalida_aunque_la_dimension_sea_ausente():
     assert fallo is not None and fallo[0] == "salida_invalida"
 
 
+# ── Citas copiadas de un diff de la traza ──────────────────────────────────
+@pytest.mark.parametrize(
+    "cita",
+    [
+        "+for i in range(3):",  # línea agregada
+        "+    print(i * 2)",  # con la indentación del código
+        "-for i in range(4):",  # línea borrada: también la escribió el alumno
+        " for i in range(3):",  # línea de contexto
+        "-for i in range(4):\n+for i in range(3):",  # bloque del diff
+    ],
+)
+def test_cita_de_codigo_con_marcas_de_diff_vale(cita):
+    raw = _raw(d3_justificacion=_dim("presente", "edición 3", cita))
+    assert _verificar_evidencia(raw, _elementos(_episodio())) is None
+
+
+@pytest.mark.parametrize("cita", ["+Revisá el rango del for", "-Revisá el rango del for."])
+def test_marcas_de_diff_no_habilitan_texto_del_tutor(cita):
+    raw = _raw(d3_justificacion=_dim("presente", "edición 3", cita))
+    fallo = _verificar_evidencia(raw, _elementos(_episodio()))
+    assert fallo is not None and fallo[0] == "salida_invalida"
+
+
+def test_marcas_de_diff_no_habilitan_codigo_que_el_alumno_no_escribio():
+    raw = _raw(d3_justificacion=_dim("presente", "edición 3", "+while True:"))
+    fallo = _verificar_evidencia(raw, _elementos(_episodio()))
+    assert fallo is not None and fallo[0] == "salida_invalida"
+
+
 def test_d4_oraculo_sin_cita_es_derivado():
     raw = _raw(d4_autonomia=_dim("oraculo", "mensaje 2", ""))
     fallo = _verificar_evidencia(raw, _elementos(_episodio()))

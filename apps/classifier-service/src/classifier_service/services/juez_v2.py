@@ -370,11 +370,45 @@ def _cita_textual(cita: str, textos_alumno: list[str]) -> bool:
     return any(all(f in t for f in fragmentos) for t in textos_alumno)
 
 
+def _codigo_del_alumno(elementos: list[dict[str, Any]]) -> list[str]:
+    """Todo el código que escribió el alumno: cada snapshot y cada código ejecutado."""
+    codigos = [
+        e["datos"].get("snapshot" if e["tipo"] == "codigo" else "code") or ""
+        for e in elementos
+        if e["tipo"] in ("codigo", "ejecucion")
+    ]
+    return [_norm(c) for c in codigos if c]
+
+
+def _cita_de_diff(cita: str, codigo_alumno: list[str]) -> bool:
+    """Cita copiada de un bloque diff de la traza (`+`, `-` o contexto al comienzo).
+
+    La traza muestra las ediciones como diff, así que el modelo puede citar
+    `+while n != 0:`. Vale solo contra el CÓDIGO del alumno: cada línea, sin su
+    marca, tiene que estar en alguno de sus snapshots o códigos ejecutados. Una
+    línea `-` es código borrado, que también escribió el alumno (está en un
+    snapshot anterior). Los mensajes y el texto del tutor no entran acá.
+    """
+    lineas = [linea for linea in cita.strip(_COMILLAS).splitlines() if linea.strip()]
+    if not lineas or not any(linea.startswith(("+", "-")) for linea in lineas):
+        return False
+    sin_marca = [
+        _norm(linea[1:] if linea.startswith(("+", "-", " ")) else linea)
+        for linea in lineas
+        if not linea.startswith("@@")
+    ]
+    sin_marca = [linea for linea in sin_marca if linea]
+    return bool(sin_marca) and all(
+        any(linea in codigo for codigo in codigo_alumno) for linea in sin_marca
+    )
+
+
 def _verificar_evidencia(  # noqa: PLR0911 — un return por motivo, cada uno con su razón auditable
     raw: RegimenV2Raw, elementos: list[dict[str, Any]]
 ) -> tuple[EstadoV2, str] | None:
     existentes = _localizadores_existentes(elementos)
     textos = _textos_del_alumno(elementos)
+    codigo = _codigo_del_alumno(elementos)
     dims = (
         ("D1", raw.d1_verbalizacion),
         ("D2", raw.d2_verificacion),
@@ -396,7 +430,11 @@ def _verificar_evidencia(  # noqa: PLR0911 — un return por motivo, cada uno co
                 "salida_invalida",
                 f"{nombre}: localizador inexistente en la traza ({', '.join(faltan)}).",
             )
-        if dim.cita.strip() and not _cita_textual(dim.cita, textos):
+        if (
+            dim.cita.strip()
+            and not _cita_textual(dim.cita, textos)
+            and not _cita_de_diff(dim.cita, codigo)
+        ):
             return (
                 "salida_invalida",
                 f"{nombre}: la cita {dim.cita!r} no aparece textual en lo que escribió el "
