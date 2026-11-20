@@ -23,8 +23,9 @@ Diseño: `Diseno-clasificador-cognitivo-LLM-v4`. Principios:
 La delegación pasiva NO pasa por este juez: con el juez v1 (default) la
 resuelve la etapa dura (overuse). Con `eje_fino_juez_version = "v2"` corre en su
 lugar `juez_v2.py` (HU-001, codebook MTAC v1), que sí decide la pasiva con
-evidencia positiva de transferencia; este módulo queda intacto como v1.
-`normalizar_regimen_llm_persistido` lee los registros de los dos jueces.
+evidencia positiva de transferencia; con "v3", `juez_v3.py` (HU-005, codebook
+MTAC v2). Este módulo queda intacto como v1.
+`normalizar_regimen_llm_persistido` lee los registros de los tres jueces.
 """
 
 from __future__ import annotations
@@ -302,6 +303,11 @@ def normalizar_regimen_llm_persistido(data: dict[str, Any] | None) -> dict[str, 
     if data is None:
         return None
     try:
+        if isinstance(data, dict) and data.get("juez_version") == "v3":
+            # Registro del juez v3 (HU-005). Import local por la misma razón.
+            from classifier_service.services.juez_v3 import RegimenV3Result
+
+            return RegimenV3Result.model_validate(data).model_dump(mode="json")
         if isinstance(data, dict) and data.get("juez_version") == "v2":
             # Registro del juez v2 (HU-001): otra forma, otro modelo. Import
             # local porque `juez_v2` importa de este módulo.

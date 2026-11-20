@@ -41,6 +41,7 @@ from classifier_service.services.juez_v2 import (
     SUBGRUPOS_PASIVA_ETAPA_DURA,
     clasificar_regimen_v2,
 )
+from classifier_service.services.juez_v3 import clasificar_regimen_v3
 from classifier_service.services.regimen_llm import (
     REGIMEN_TO_APPROPRIATION,
     SUBGRUPOS_JUZGADOS_POR_JUEZ,
@@ -183,12 +184,14 @@ async def _aplicar_juez_eje_fino(
     Cerrar el episodio jamás puede fallar por el LLM — todo error degrada a fallback.
 
     Todo lo anterior describe el juez v1 (`eje_fino_juez_version == "v1"`, el
-    default). Con "v2" delega en `_aplicar_juez_v2`, que sí juzga la pasiva.
+    default). Con "v2" o "v3" delega en `_aplicar_juez_mtac`, que sí juzga la pasiva.
     """
     if not settings.eje_fino_llm_enabled:
         return
-    if settings.eje_fino_juez_version == "v2":
-        await _aplicar_juez_v2(result, events, episode_id, episode, tenant_id)
+    if settings.eje_fino_juez_version in ("v2", "v3"):
+        await _aplicar_juez_mtac(
+            result, events, episode_id, episode, tenant_id, settings.eje_fino_juez_version
+        )
         return
     features = getattr(result, "features", None) or {}
     sg = features.get("subgrupo") or {}
@@ -245,14 +248,17 @@ async def _aplicar_juez_eje_fino(
         )
 
 
-async def _aplicar_juez_v2(
+async def _aplicar_juez_mtac(
     result: object,
     events: list[dict],
     episode_id: UUID,
     episode: dict,
     tenant_id: UUID,
+    version: str,
 ) -> None:
-    """Juez v2 (HU-001, codebook MTAC v1), con `eje_fino_juez_version == "v2"`.
+    """Jueces MTAC: v2 (HU-001, codebook MTAC v1) y v3 (HU-005, codebook MTAC v2).
+
+    Los dos se enrutan igual; solo cambia la función que juzga (`version`).
 
     Diferencias con el v1:
       - juzga también la delegación pasiva de la etapa dura
@@ -269,6 +275,8 @@ async def _aplicar_juez_v2(
     sg_key = (features.get("subgrupo") or {}).get("key")
     if sg_key not in SUBGRUPOS_JUZGADOS_POR_JUEZ_V2:
         return
+    juzgar = clasificar_regimen_v3 if version == "v3" else clasificar_regimen_v2
+    etiqueta = f"juez_{version}"
 
     def _sin_veredicto(razon: str) -> None:
         if sg_key in SUBGRUPOS_PASIVA_ETAPA_DURA:
@@ -278,7 +286,7 @@ async def _aplicar_juez_v2(
     try:
         materia = episode.get("materia_id")
         client = AIGatewayClient(base_url=settings.ai_gateway_url)
-        res = await clasificar_regimen_v2(
+        res = await juzgar(
             events=events,
             enunciado=episode.get("enunciado", "") or "",
             episode_id=str(episode_id),
@@ -289,9 +297,9 @@ async def _aplicar_juez_v2(
             max_tokens=settings.eje_fino_max_tokens,
         )
     except Exception as exc:
-        _sin_veredicto(f"juez_v2_error_gateway: {exc}")
+        _sin_veredicto(f"{etiqueta}_error_gateway: {exc}")
         logger.warning(
-            "juez_v2_fallback_gateway",
+            f"{etiqueta}_fallback_gateway",
             extra={"episode_id": str(episode_id), "error": str(exc)},
         )
         return
@@ -302,11 +310,11 @@ async def _aplicar_juez_v2(
         appropriation = REGIMEN_V2_TO_APPROPRIATION[res.regimen]
         result.appropriation = appropriation  # type: ignore[attr-defined]
         result.reason = (  # type: ignore[attr-defined]
-            f"Juez v2 (MTAC v1) gobierna: regimen {res.regimen} -> {appropriation}. {res.razon}"
+            f"Juez {version} (MTAC) gobierna: regimen {res.regimen} -> {appropriation}. {res.razon}"
         )
         result.features = features  # type: ignore[attr-defined]
         logger.info(
-            "juez_v2_gobierna",
+            f"{etiqueta}_gobierna",
             extra={
                 "episode_id": str(episode_id),
                 "regimen": res.regimen,
@@ -314,9 +322,9 @@ async def _aplicar_juez_v2(
             },
         )
     else:
-        _sin_veredicto(f"juez_v2_{res.estado}: {res.razon}")
+        _sin_veredicto(f"{etiqueta}_{res.estado}: {res.razon}")
         logger.info(
-            "juez_v2_fallback",
+            f"{etiqueta}_fallback",
             extra={"episode_id": str(episode_id), "estado": res.estado, "subgrupo": sg_key},
         )
 
