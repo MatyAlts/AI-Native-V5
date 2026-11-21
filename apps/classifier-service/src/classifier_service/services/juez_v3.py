@@ -15,6 +15,7 @@ por `HUELLA_PROMPT_V3`. Ningún texto sale de la muestra de 150 del estudio.
 from __future__ import annotations
 
 import copy
+import functools
 import hashlib
 import json
 from typing import Any, Literal
@@ -302,7 +303,7 @@ Devolvé EXCLUSIVAMENTE un JSON con esta forma, sin texto adicional:
 Reglas del "localizador": lista separada por comas, cada elemento "<tipo> <N>" tal como aparece en la traza ("mensaje 3", "ejecución 2", "prueba 1", "nota 1", "edición 4"). Sin rangos ni "y": "ejecución 7, ejecución 8". Cadena vacía si no hay evidencia. Nunca inventes un número que no esté en la traza.
 Reglas de la "cita": copia TEXTUAL de algo que escribió el alumno (un mensaje, una nota o su código), sin parafrasear ni traducir; podés recortar y unir fragmentos con "...". Nunca cites al tutor. Cadena vacía si la dimensión es ausente o no_evaluable. D1 y D3 presentes necesitan cita; D4 (salvo no_evaluable) necesita cita; D2 presente necesita cita o al menos un localizador de ejecución o prueba. Una cita que no está textual en lo que escribió el alumno invalida todo el veredicto."""
 
-SYSTEM_PROMPT_V3 = _armar_prompt(
+_SECCIONES_HASTA_TRAMPAS_V3 = (
     _SECCION_INTRO_V3,
     _SECCION_POR_QUE_V3,
     _SECCION_PRINCIPIOS_Y_TRAZA,
@@ -312,11 +313,35 @@ SYSTEM_PROMPT_V3 = _armar_prompt(
     _SECCION_REGIMENES_Y_REGLA,
     _SECCION_FRONTERAS_COMUNES + "\n" + _SECCION_CONDUCTA_MIXTA_V3,
     _SECCION_TRAMPAS_V3,
-    _SECCION_PEDIR_SOLUCION_V3,
-    _SECCION_EJEMPLOS,
-    _SECCION_SALIDA_V3,
-    ejemplos=_bloque_ejemplos(EJEMPLOS_FRONTERA_V3),
 )
+_SECCIONES_FINALES_V3 = (_SECCION_EJEMPLOS, _SECCION_SALIDA_V3)
+
+# N03 (HU-009): cada versión del prompt sigue pudiéndose armar; una versión nueva
+# se agrega acá y nunca reescribe una anterior. La que corre la elige
+# `settings.eje_fino_juez_v3_prompt`; el default es `PROMPT_VERSION_V3`.
+PROMPTS_V3: dict[str, str] = {
+    "mtac_v2_juez_v3.0.0": _armar_prompt(
+        *_SECCIONES_HASTA_TRAMPAS_V3,
+        *_SECCIONES_FINALES_V3,
+        ejemplos=_bloque_ejemplos(EJEMPLOS_FRONTERA_V3),
+    ),
+    "mtac_v2_juez_v3.1.0": _armar_prompt(
+        *_SECCIONES_HASTA_TRAMPAS_V3,
+        _SECCION_PEDIR_SOLUCION_V3,
+        *_SECCIONES_FINALES_V3,
+        ejemplos=_bloque_ejemplos(EJEMPLOS_FRONTERA_V3),
+    ),
+}
+
+SYSTEM_PROMPT_V3 = PROMPTS_V3[PROMPT_VERSION_V3]
+
+
+def _prompt_v3(version: str | None) -> str:
+    """System prompt de `version` (None = `PROMPT_VERSION_V3`); KeyError si no existe."""
+    v = PROMPT_VERSION_V3 if version is None else version
+    if v not in PROMPTS_V3:
+        raise KeyError(f"versión de prompt del juez v3 desconocida: {v!r}")
+    return PROMPTS_V3[v]
 
 
 # Few-shot con los sintéticos de Alberto, salida v3. Mismo régimen que su clave;
@@ -397,19 +422,21 @@ _SALIDAS_FEWSHOT_V3: dict[str, dict[str, Any]] = {
 FEWSHOT_V3: list[dict[str, str]] = _fewshot(_SALIDAS_FEWSHOT_V3)
 
 
-def construir_mensajes_v3(traza: str, enunciado: str, episode_id: str) -> list[dict[str, str]]:
-    """System v3, few-shot sintéticos y el episodio a codificar (último)."""
+def construir_mensajes_v3(
+    traza: str, enunciado: str, episode_id: str, version: str | None = None
+) -> list[dict[str, str]]:
+    """System v3 de `version`, few-shot sintéticos y el episodio a codificar (último)."""
     return [
-        {"role": "system", "content": SYSTEM_PROMPT_V3},
+        {"role": "system", "content": _prompt_v3(version)},
         *FEWSHOT_V3,
         {"role": "user", "content": _mensaje_usuario(traza, enunciado, episode_id)},
     ]
 
 
-def huella_prompt_v3() -> str:
-    """sha256 del prompt congelado: system + ejemplos + few-shot + schema."""
+def huella_prompt_v3(version: str | None = None) -> str:
+    """sha256 del prompt congelado de `version`: system + ejemplos + few-shot + schema."""
     contenido = (
-        SYSTEM_PROMPT_V3
+        _prompt_v3(version)
         + json.dumps(EJEMPLOS_FRONTERA_V3, ensure_ascii=False, sort_keys=True)
         + json.dumps(FEWSHOT_V3, ensure_ascii=False, sort_keys=True)
         + json.dumps(RESPONSE_JSON_SCHEMA_V3, ensure_ascii=False, sort_keys=True)
@@ -419,7 +446,7 @@ def huella_prompt_v3() -> str:
 
 # Literal congelado (C05): si `huella_prompt_v3()` deja de dar esto, el prompt
 # cambió y hay que bumpear `PROMPT_VERSION_V3` antes de actualizar el literal.
-# v3.0.0 era e3ae5d5c6f6cf1e2a93c889992f1513543178e55cfa610858cdf239baf1da4ed.
+# v3.0.0 sigue dando e3ae5d5c6f6cf1e2a93c889992f1513543178e55cfa610858cdf239baf1da4ed.
 HUELLA_PROMPT_V3 = "1e3e477898af36ae13a60a7fd080d5c4f2fd28049899ad79304da48eab24b24f"
 
 
@@ -435,8 +462,15 @@ async def clasificar_regimen_v3(
     confianza_min: float = 0.70,
     max_tokens: int = 6000,
     max_reintentos: int = 2,
+    prompt_version: str | None = None,
 ) -> RegimenV3Result:
-    """Codifica el episodio con el codebook MTAC v2; mismo flujo que el v2."""
+    """Codifica el episodio con el codebook MTAC v2; mismo flujo que el v2.
+
+    `prompt_version` elige el prompt (None = `PROMPT_VERSION_V3`) y queda
+    registrada en el resultado.
+    """
+    version = PROMPT_VERSION_V3 if prompt_version is None else prompt_version
+    _prompt_v3(version)  # una versión desconocida falla antes de llamar al modelo
 
     def _result(
         estado: EstadoV2, razon: str, raw: RegimenV3Raw | None, regimen: str | None
@@ -448,7 +482,7 @@ async def clasificar_regimen_v3(
             raw=raw,
             razon=razon,
             model_used=model,
-            prompt_version=PROMPT_VERSION_V3,
+            prompt_version=version,
         )
 
     return await _juzgar_mtac(
@@ -462,7 +496,7 @@ async def clasificar_regimen_v3(
         confianza_min=confianza_min,
         max_tokens=max_tokens,
         max_reintentos=max_reintentos,
-        construir_mensajes=construir_mensajes_v3,
+        construir_mensajes=functools.partial(construir_mensajes_v3, version=version),
         clase_raw=RegimenV3Raw,
         response_format=RESPONSE_JSON_SCHEMA_V3,
         resultado=_result,

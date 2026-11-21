@@ -69,6 +69,11 @@ class Settings(BaseSettings):
     # HU-005: "v3" = `juez_v3.py`, el v2 aplicando el codebook MTAC v2 (D4 por
     # quién decide en cada intercambio); se enruta igual que el v2.
     eje_fino_juez_version: Literal["v1", "v2", "v3"] = "v1"
+    # HU-009 (N03): qué prompt usa el juez v3. Las versiones viven juntas en
+    # `juez_v3.PROMPTS_V3`; cada veredicto persiste la `prompt_version` usada.
+    eje_fino_juez_v3_prompt: Literal["mtac_v2_juez_v3.0.0", "mtac_v2_juez_v3.1.0"] = (
+        "mtac_v2_juez_v3.1.0"
+    )
 
     # ADR-023 / ADR-045 (Mejora 3 plan post-piloto-1, sub-componente G8b):
     # override lexico de `anotacion_creada` sobre contenido textual con

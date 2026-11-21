@@ -7,6 +7,7 @@ GET  /api/v1/classifications/aggregated        estadísticas agregadas por comis
 
 from __future__ import annotations
 
+import functools
 import logging
 from uuid import UUID
 
@@ -288,7 +289,12 @@ async def _aplicar_juez_mtac(
     sg_key = (features.get("subgrupo") or {}).get("key")
     if sg_key not in SUBGRUPOS_JUZGADOS_POR_JUEZ_V2:
         return
-    juzgar = clasificar_regimen_v3 if version == "v3" else clasificar_regimen_v2
+    # El v2 tiene un solo prompt; el v3 recibe la versión elegida (HU-009, N03).
+    juzgar = (
+        functools.partial(clasificar_regimen_v3, prompt_version=settings.eje_fino_juez_v3_prompt)
+        if version == "v3"
+        else clasificar_regimen_v2
+    )
     etiqueta = f"juez_{version}"
 
     def _sin_veredicto(razon: str) -> None:
