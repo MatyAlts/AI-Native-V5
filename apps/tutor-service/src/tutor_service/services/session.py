@@ -152,6 +152,9 @@ class SessionState:
     # ya truncada (stdout/stderr/duration_ms/code_sha256). Ver
     # services/contexto_ejecucion.py. None = no ejecuto nada todavia.
     last_execution: dict | None = None
+    # HU-009 C07: resultado del ULTIMO Probar (conteos, sin casos). Se reemplaza
+    # en cada Probar. Ver services/contexto_ejecucion.py. None = no probo todavia.
+    last_probar: dict | None = None
 
 
 class SessionManager:
@@ -196,6 +199,8 @@ class SessionManager:
             current_code=data.get("current_code"),
             # Sesiones legacy no tienen last_execution — default None.
             last_execution=data.get("last_execution"),
+            # Sesiones previas a HU-009 no tienen last_probar — default None.
+            last_probar=data.get("last_probar"),
         )
 
     async def set(self, state: SessionState) -> None:
@@ -223,6 +228,7 @@ class SessionManager:
             "rubrica_context": state.rubrica_context,
             "current_code": state.current_code,
             "last_execution": state.last_execution,
+            "last_probar": state.last_probar,
         }
         await self.redis.setex(self._key(state.episode_id), SESSION_TTL, json.dumps(data))
 

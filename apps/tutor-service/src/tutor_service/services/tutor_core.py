@@ -39,7 +39,9 @@ from tutor_service.services.clients import (
 )
 from tutor_service.services.contexto_ejecucion import (
     construir_ultima_ejecucion,
+    construir_ultimo_probar,
     formatear_bloque,
+    formatear_bloque_probar,
 )
 from tutor_service.services.guardrails import (
     GUARDRAILS_CORPUS_HASH,
@@ -864,6 +866,16 @@ class TutorCore:
                     "content": formatear_bloque(state.last_execution, state.current_code),
                 }
             )
+        # HU-009 C07: resultado del ULTIMO Probar. Un solo bloque, armado en
+        # cada turno desde la sesion (no se guarda en el historial), asi que un
+        # Probar nuevo reemplaza al anterior en vez de acumularse.
+        if state.last_probar:
+            messages.append(
+                {
+                    "role": "system",
+                    "content": formatear_bloque_probar(state.last_probar, state.current_code),
+                }
+            )
 
         # 4.ter (tutor-context-rag-rubrica): inyectar rubrica de evaluacion como
         # contexto separado del RAG. El tutor usa esta informacion para orientar
@@ -1334,6 +1346,7 @@ class TutorCore:
         messages: list[dict[str, str]] = [{"role": "system", "content": system_content}]
         current_code: str | None = None
         last_execution: dict[str, Any] | None = None
+        last_probar: dict[str, Any] | None = None
         for ev in events:
             et = ev.get("event_type")
             payload = ev.get("payload") or {}
@@ -1351,6 +1364,10 @@ class TutorCore:
                     current_code = code
                 if et == "codigo_ejecutado":
                     last_execution = construir_ultima_ejecucion(payload)
+            elif et == "tests_ejecutados":
+                # HU-009 C07: mismo armado que la sesion viva, con el codigo
+                # que habia al momento de ese Probar.
+                last_probar = construir_ultimo_probar(payload, current_code)
 
         state = SessionState(
             episode_id=episode_id,
@@ -1371,6 +1388,7 @@ class TutorCore:
             rubrica_context=rubrica_context,
             current_code=current_code,
             last_execution=last_execution,
+            last_probar=last_probar,
         )
         await self.sessions.set(state)
         # FIX A: reponer el contador atómico de seq desde el max seq ya
@@ -1930,6 +1948,10 @@ class TutorCore:
         # Caller = estudiante (su accion directa), no service account.
         await self._publicar_evento(event, state, seq, user_id)
         await self._record_overuse_non_prompt_event(event)
+        # HU-009 C07: recien con el evento publicado, la sesion "ve" el Probar
+        # (misma disciplina que emit_codigo_ejecutado). Reemplaza al anterior.
+        state.last_probar = construir_ultimo_probar(payload, state.current_code)
+        await self.sessions.set(state)
         return seq
 
     # ── Reflexion metacognitiva post-cierre (ADR-035) ────────────────────
