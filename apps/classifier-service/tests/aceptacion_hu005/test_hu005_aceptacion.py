@@ -391,6 +391,6 @@ def test_n02_intactos():
     assert hashlib.sha256(acept.read_bytes()).hexdigest() == HUELLA_ACEPTACION_HU001
 
 
-# HU-009 (20/11): n05 excluye la carpeta v1.11.0 del tutor. Antes, huella tras el reformateo de ruff del 20/11 (sólo orden de imports, formato y
+# HU-009 (20/11): n05 excluye la carpeta v1.11.0 del tutor y c01 fija el hash de v4.1.0 con su tree_version. Antes, huella tras el reformateo de ruff del 20/11 (sólo orden de imports, formato y
 # `zip(..., strict=False)`); antes: f813d2d0f0f7dbf46673e1fd89dafccdcf67b63d9b344dc3991f68532ca0a622.
-HUELLA_ACEPTACION_HU001 = "243e590e8d5c9ea1dfa14e43de277bc539a241e13bbc2f077ecba165fa657dc6"
+HUELLA_ACEPTACION_HU001 = "ae210a412ab9c7546e45ee5838f6008eac8da54b4d5bed0cab16f2004edd1f13"

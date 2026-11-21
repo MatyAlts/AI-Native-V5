@@ -181,8 +181,12 @@ def test_c01_classifier_config_hash_intacto():
         compute_classifier_config_hash,
     )
 
+    # Lo que este criterio protege es que el JUEZ no entre al hash. HU-009
+    # (20/11) sube tree_version a proposito (Probar cuenta en el subgrupo), asi
+    # que se fija el hash de v4.1.0 con su tree_version explicito: si el juez
+    # entrara a la formula, este valor se moveria igual.
     assert (
-        compute_classifier_config_hash(DEFAULT_REFERENCE_PROFILE)
+        compute_classifier_config_hash(DEFAULT_REFERENCE_PROFILE, "v4.1.0")
         == "56f3905858c19def2f20741a03378e9d5e3dfe1a4f0e4dd75d7440367fdc1180"
     )
 
