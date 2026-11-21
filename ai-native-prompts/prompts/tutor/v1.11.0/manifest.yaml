@@ -1,0 +1,54 @@
+# Manifest del prompt tutor v1.11.0 (bump MINOR: lo que el tutor ve del episodio y lo que no).
+# El governance-service verifica fail-loud que sha256(system.md) == hash declarado.
+# Si el archivo se modifica sin re-firmar este manifest, el servicio falla al cargar.
+version: v1.11.0
+parent_version: v1.10.0
+bump_kind: minor_lo_que_ve_el_tutor
+files:
+  system.md: 1c0e9d358ab2531630dab4e13ce34d0a5674a571dc218184ff20f249956a2db8
+notas:
+  - Origen - prueba 2 como alumno en produccion, el 2026-11-20 (17 ejercicios
+    de Secuenciales 2027, HU-009). Log en
+    ~/Descargas/Prueba2-alumno-Secuenciales-2027/log.md.
+  - Autorizacion - Juani levanto, para HU-009, la regla de prompts intactos
+    byte a byte - "los promts podes tocarlos tranquilo". Va como version
+    nueva; v1.10.0 y las anteriores no cambian ni un byte.
+  - CAMBIO UNICO - seccion nueva "Lo que ves de este episodio, y lo que no",
+    entre "El codigo que el estudiante esta escribiendo" y "Usar el material
+    del ejercicio", con cinco reglas.
+  - REGLA 1 (ej17) - no tiene acceso a otros ejercicios del estudiante y no
+    finge recordarlos. Contesto "Claro que me acuerdo" con datos inventados.
+  - REGLA 2 (ej1, ej3, ej4, ej11, ej15) - si Probar paso todo y la salida
+    coincide, no inventa errores. Preguntaba "a que te referis con pasar" e
+    insistia con errores que no habia con 2 de 2. Va junto con el bloque del
+    ultimo Probar que tutor_core.py ahora le inyecta (HU-009 C07) y con los
+    casos ocultos reducidos al nombre (HU-009 C06).
+  - REGLA 3 (ej8) - nunca sugiere pegar; explica como tipear el caracter con
+    el teclado. Recomendo pegar el "²" con pegar bloqueado. Los atajos que
+    nombra (Alt + 0178 y Alt + 0176 en Windows, Shift + la tecla a la
+    izquierda del 1 para "°" en teclado latinoamericano, y el escape \u00b2
+    o \u00b0 dentro de un texto entre comillas) se verificaron en Linux (xkb) y en
+    Python; los
+    de Windows no se probaron en una maquina Windows.
+  - REGLA 4 (ej2) - no dicta la linea de la solucion. La notacion se sigue
+    respondiendo directo.
+  - REGLA 5 (ej6) - si el codigo imprime el resultado escrito a mano, lo
+    señala. No vio el hardcodeo que la consigna prohibe.
+  - INTACTO respecto de v1.10.0, byte a byte - todas las demas secciones.
+    Verificado por
+    apps/tutor-service/tests/unit/test_prompt_v1_11_0_lo_que_ve_el_tutor.py.
+  - LIMITE - los tests anclan frases, no prueban que el modelo las cumpla. Se
+    ve en la demo, repitiendo en produccion los ej2, ej4, ej13 y ej17.
+  - No afecta classifier_config_hash - es prompt de runtime, no etiquetador
+    (ADR-020).
+  - REVISION COAUTORAL CON ANA GARIS - PENDIENTE. Hay que avisarle.
+  - El pin de la version vive en CUATRO lugares del repo y los cuatro se
+    movieron juntos - el manifest raiz, config.py,
+    apps/tutor-service/tests/unit/test_config_prompt_version.py
+    (EXPECTED_TUTOR_VERSION) y
+    apps/governance-service/tests/unit/test_prompt_v1_0_1_bump.py
+    (ACTIVE_TUTOR_VERSION). El quinto es la imagen desplegada del
+    governance-service, que copia ai-native-prompts al construirse - hay que
+    redeployar governance y tutor juntos, governance primero.
+  - v1.10.0 y anteriores siguen en disco para reproducibilidad historica del
+    piloto.
