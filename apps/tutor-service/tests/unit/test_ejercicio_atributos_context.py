@@ -4,8 +4,8 @@ Verifica que `TutorCore.open_episode` inyecta al system message del LLM TODOS
 los atributos relevantes del ejercicio (ADR-048 + F2), en dos casos:
 
   1. Ejercicio del banco (ADR-047): `tutor_rules` (flags + instrucciones),
-     `test_cases` (incluyendo los ocultos con su `expected`, porque el tutor
-     es servicio interno), `misconceptions`, `anti_patrones`, `heuristica_cierre`,
+     `test_cases` (los públicos completos; de los ocultos, solo el nombre,
+     HU-009 C06), `misconceptions`, `anti_patrones`, `heuristica_cierre`,
      `banco_preguntas`.
   2. TP monolítica (sin `ejercicio_id`): los atributos vienen de la propia TP —
      al menos `enunciado`, `rubrica` y `test_cases`.
@@ -227,12 +227,13 @@ async def test_ejercicio_banco_inyecta_todos_los_atributos(fake_redis) -> None:
     assert "una pregunta" in system  # forzar_pregunta_antes_de_hint
     assert "N3" in system  # nivel_socratico_minimo
     assert "función sum() nativa" in system  # instrucciones_adicionales
-    # test_cases — incluye el oculto y su expected (el tutor es interno).
+    # test_cases — el público completo; del oculto, solo el nombre (HU-009 C06).
     assert "Casos de prueba que se evalúan" in system
     assert "lista basica" in system
+    assert "Salida esperada: 6" in system
     assert "lista vacia oculta" in system
     assert "[oculto]" in system
-    assert "Salida esperada: 0" in system
+    assert "Salida esperada: 0" not in system
     # Resto del andamiaje pedagógico.
     assert "Misconceptions anticipadas" in system
     assert "Anti-patrones específicos del ejercicio" in system
@@ -285,7 +286,8 @@ async def test_tp_monolitica_inyecta_atributos_de_la_tp(fake_redis) -> None:
     assert "Casos de prueba que se evalúan" in system
     assert "impar oculto" in system
     assert "[oculto]" in system
-    assert "Salida esperada: impar" in system
+    assert "Salida esperada: par" in system
+    assert "Salida esperada: impar" not in system
     assert state.prompt_system_hash == PROMPT_HASH
 
 
@@ -323,7 +325,7 @@ async def test_tp_monolitica_falla_soft_si_academic_no_responde(fake_redis) -> N
 
 def test_build_ejercicio_context_incluye_flags_y_test_cases() -> None:
     """Unit directo de _build_ejercicio_context: flags de tutor_rules y
-    test_cases (con expected de ocultos) presentes en la salida."""
+    test_cases presentes; el oculto, solo con su nombre (HU-009 C06)."""
     tutor = TutorCore(
         governance=_FakeGov(),
         content=_FakeContent(),
@@ -343,7 +345,8 @@ def test_build_ejercicio_context_incluye_flags_y_test_cases() -> None:
     assert "función sum() nativa" in out
     assert "lista vacia oculta" in out
     assert "[oculto]" in out
-    assert "Salida esperada: 0" in out
+    assert "Salida esperada: 0" not in out
+    assert "Salida esperada: 6" in out
 
 
 def test_build_ejercicio_context_tp_kind_y_enunciado_fallback() -> None:

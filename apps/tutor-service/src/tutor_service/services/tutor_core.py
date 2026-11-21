@@ -2446,8 +2446,8 @@ class TutorCore:
              pregunta antes de pista, nivel socrático mínimo) + instrucciones.
           3. Mapa privado de navegación: rúbrica + heurística de cierre +
              prerrequisitos.
-          4. Casos de prueba que se evalúan (privados — el tutor es servicio
-             interno y los usa para orientar sin revelarlos).
+          4. Casos de prueba que se evalúan: los públicos completos; de los
+             ocultos, solo el nombre (HU-009 C06).
           5. Banco socrático N1-N4 (preguntas + señales ✓/✗).
           6. Misconceptions anticipadas + pregunta diagnóstica.
           7. Respuesta-pista por nivel (anti-soluciones).
@@ -2540,13 +2540,14 @@ class TutorCore:
                 "\n\n## Mapa privado de navegación (NO revelar al estudiante)\n" + "\n".join(nav)
             )
 
-        # Bloque 3.bis — casos de prueba que se evalúan (F2). El tutor es un
-        # servicio interno: PUEDE ver los tests ocultos (`is_public=false`) y su
-        # `expected` para saber qué comportamiento se verifica. El system
-        # message le prohíbe explícitamente filtrarlos al estudiante — mismo
-        # criterio que el mapa privado de navegación. Esto NO toca el filtrado
-        # `is_public` del academic-service hacia el alumno (A0.3), que sigue
-        # intacto: acá el destinatario es el LLM, no el cliente.
+        # Bloque 3.bis — casos de prueba que se evalúan (F2). Los PÚBLICOS van
+        # completos (entrada y salida esperada): el alumno ya los ve en Probar.
+        # De los OCULTOS (`is_public=false`) va SOLO el nombre (HU-009 C06): con
+        # la entrada y la salida esperada a la vista, el tutor se los dictaba al
+        # alumno pese a la prohibición del system message (prueba 2 del
+        # 20/11/2026: dio "250 km / 8 l", los datos del oculto, 2 de 2 veces).
+        # Prohibirle filtrarlos no alcanzó; no dárselos sí. Esto NO toca el
+        # filtrado `is_public` del academic-service hacia el alumno (A0.3).
         test_cases = ejercicio.get("test_cases") or []
         if isinstance(test_cases, list) and test_cases:
             tc_lines: list[str] = []
@@ -2554,11 +2555,15 @@ class TutorCore:
                 if not isinstance(tc, dict):
                     continue
                 nombre = tc.get("name") or tc.get("id") or "(test)"
-                visibilidad = "público" if tc.get("is_public") is True else "oculto"
+                es_publico = tc.get("is_public") is True
+                visibilidad = "público" if es_publico else "oculto"
                 linea = f"- [{visibilidad}] {nombre}"
                 tipo = tc.get("type")
                 if tipo:
                     linea += f" ({tipo})"
+                if not es_publico:
+                    tc_lines.append(linea)
+                    continue
                 entrada = tc.get("code")
                 if entrada:
                     linea += f"\n  - Entrada/código:\n    ```\n    {entrada}\n    ```"
