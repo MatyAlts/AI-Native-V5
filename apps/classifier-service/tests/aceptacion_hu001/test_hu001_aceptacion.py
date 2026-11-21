@@ -741,18 +741,21 @@ def test_n01_ningun_episodio_de_los_150_en_el_prompt_ni_en_los_ejemplos():
 
 
 # ── N05: no se tocan los prompts del tutor ni F15 ───────────────────────────
-def _huella_arbol(p: pathlib.Path) -> str:
+def _huella_arbol(p: pathlib.Path, excluir: str | None = None) -> str:
     h = hashlib.sha256()
     for f in sorted(p.rglob("*")):
-        if f.is_file():
+        if f.is_file() and f.relative_to(p).parts[0] != excluir:
             h.update(str(f.relative_to(p)).encode())
             h.update(f.read_bytes())
     return h.hexdigest()
 
 
 def test_n05_prompts_del_tutor_intactos():
+    # HU-009 (20/11/2026): Juani autorizo un prompt nuevo del tutor ("los promts
+    # podes tocarlos tranquilo"). Lo que sigue intacto son las versiones que ya
+    # existian: se excluye solo la carpeta v1.11.0.
     assert (
-        _huella_arbol(RAIZ / "ai-native-prompts/prompts/tutor")
+        _huella_arbol(RAIZ / "ai-native-prompts/prompts/tutor", excluir="v1.11.0")
         == "d862193c219a9f45bceb3cfcdc42e2441c6327d2c5d5cf11a15ea8102c0dc595"
     )
 

@@ -368,16 +368,18 @@ def test_n01_ningun_episodio_de_los_150():
 
 # ── N02: no se tocan prompts del tutor, F15 ni la aceptación de la HU-001 ───
 def test_n02_intactos():
-    def arbol(p):
+    def arbol(p, excluir=None):
         h = hashlib.sha256()
         for f in sorted(p.rglob("*")):
-            if f.is_file():
+            if f.is_file() and f.relative_to(p).parts[0] != excluir:
                 h.update(str(f.relative_to(p)).encode())
                 h.update(f.read_bytes())
         return h.hexdigest()
 
+    # HU-009 (20/11/2026): Juani autorizo el prompt v1.11.0 del tutor; las
+    # versiones anteriores siguen intactas.
     assert (
-        arbol(RAIZ / "ai-native-prompts/prompts/tutor")
+        arbol(RAIZ / "ai-native-prompts/prompts/tutor", excluir="v1.11.0")
         == "d862193c219a9f45bceb3cfcdc42e2441c6327d2c5d5cf11a15ea8102c0dc595"
     )
     f15 = RAIZ / "apps/evaluation-service/src/evaluation_service/services/correccion_nativa.py"
@@ -389,6 +391,6 @@ def test_n02_intactos():
     assert hashlib.sha256(acept.read_bytes()).hexdigest() == HUELLA_ACEPTACION_HU001
 
 
-# Huella tras el reformateo de ruff del 20/11 (sólo orden de imports, formato y
+# HU-009 (20/11): n05 excluye la carpeta v1.11.0 del tutor. Antes, huella tras el reformateo de ruff del 20/11 (sólo orden de imports, formato y
 # `zip(..., strict=False)`); antes: f813d2d0f0f7dbf46673e1fd89dafccdcf67b63d9b344dc3991f68532ca0a622.
-HUELLA_ACEPTACION_HU001 = "d16f3f120544c599dbd341160620ae252fed618d7b9a6290ad0c6071d92be23d"
+HUELLA_ACEPTACION_HU001 = "243e590e8d5c9ea1dfa14e43de277bc539a241e13bbc2f077ecba165fa657dc6"
