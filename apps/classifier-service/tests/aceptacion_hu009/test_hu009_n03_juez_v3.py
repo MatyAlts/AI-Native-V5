@@ -28,7 +28,6 @@ from types import SimpleNamespace
 from uuid import uuid4
 
 import pytest
-
 from classifier_service.config import Settings
 from classifier_service.services import juez_v3
 
@@ -50,7 +49,7 @@ def test_n03c_v310_es_la_de_siempre_por_defecto() -> None:
     assert juez_v3.huella_prompt_v3() == HUELLA_V310
     assert juez_v3.huella_prompt_v3(V310) == HUELLA_V310
     assert SECCION_NUEVA in juez_v3.PROMPTS_V3[V310]
-    assert juez_v3.SYSTEM_PROMPT_V3 == juez_v3.PROMPTS_V3[V310]
+    assert juez_v3.PROMPTS_V3[V310] == juez_v3.SYSTEM_PROMPT_V3
 
 
 def test_n03b_las_dos_versiones_solo_difieren_en_la_seccion_nueva() -> None:
@@ -84,7 +83,7 @@ def test_n03d_la_configuracion_elige_y_por_defecto_es_v310() -> None:
 async def test_n03d_el_resultado_registra_la_version_usada(version: str) -> None:
     vistos: list[str] = []
 
-    async def complete(*, messages, **_kw):  # noqa: ANN001, ANN003
+    async def complete(*, messages, **_kw):
         vistos.append(messages[0]["content"])
         return SimpleNamespace(
             content=json.dumps({"no": "es un json valido para el juez"}),
