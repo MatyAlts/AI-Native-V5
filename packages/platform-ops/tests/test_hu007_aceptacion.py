@@ -327,12 +327,14 @@ async def test_c02_get_classification_del_classifier(monkeypatch):
 
 
 # ── N03 · lo que no se toca ──────────────────────────────────────────────
+# HU-009 (20/11) cambia a proposito `subgrupo.py` (Probar cuenta como ejecucion,
+# tree_version v4.2.0) y `pipeline.py` (`cii_iteraciones` en features): salen de
+# esta lista. Lo que HU-007 protegia de esos dos archivos, que la regla de
+# sobreuso no cambie, lo sigue afirmando test_hu009 N02 y la suite de subgrupo.
 
 _INTACTOS = {
     "packages/platform-ops/src/platform_ops/academic_export.py": "611fb20669759553525239df19d9b9c10b8545723d966f3e995907bae819d741",
     "packages/platform-ops/src/platform_ops/kappa_analysis.py": "4b91c9927d79270748e049d7638b2acb3fbb554d2dddbca6f9587decda2ea2fe",
-    "apps/classifier-service/src/classifier_service/services/subgrupo.py": "1d67502548d280670a4cebd798c111cf69128b94a2baf5ac071ff24e06980f46",
-    "apps/classifier-service/src/classifier_service/services/pipeline.py": "b534d59382f2ec0a36cbee0df6efc5e9ce36e1aeb39c607c521ffe07492a660f",
     "apps/classifier-service/src/classifier_service/services/review.py": "c0571aadc382361aec6bf72f7d58bc9326d46351d97b03663aefd40d8e0e3cb3",
 }
 
