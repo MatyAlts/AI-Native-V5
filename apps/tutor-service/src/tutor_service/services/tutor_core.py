@@ -39,7 +39,9 @@ from tutor_service.services.clients import (
 )
 from tutor_service.services.contexto_ejecucion import (
     construir_ultima_ejecucion,
+    construir_ultimo_probar,
     formatear_bloque,
+    formatear_bloque_probar,
 )
 from tutor_service.services.guardrails import (
     GUARDRAILS_CORPUS_HASH,
@@ -864,6 +866,16 @@ class TutorCore:
                     "content": formatear_bloque(state.last_execution, state.current_code),
                 }
             )
+        # HU-009 C07: resultado del ULTIMO Probar. Un solo bloque, armado en
+        # cada turno desde la sesion (no se guarda en el historial), asi que un
+        # Probar nuevo reemplaza al anterior en vez de acumularse.
+        if state.last_probar:
+            messages.append(
+                {
+                    "role": "system",
+                    "content": formatear_bloque_probar(state.last_probar, state.current_code),
+                }
+            )
 
         # 4.ter (tutor-context-rag-rubrica): inyectar rubrica de evaluacion como
         # contexto separado del RAG. El tutor usa esta informacion para orientar
@@ -1334,6 +1346,7 @@ class TutorCore:
         messages: list[dict[str, str]] = [{"role": "system", "content": system_content}]
         current_code: str | None = None
         last_execution: dict[str, Any] | None = None
+        last_probar: dict[str, Any] | None = None
         for ev in events:
             et = ev.get("event_type")
             payload = ev.get("payload") or {}
@@ -1351,6 +1364,10 @@ class TutorCore:
                     current_code = code
                 if et == "codigo_ejecutado":
                     last_execution = construir_ultima_ejecucion(payload)
+            elif et == "tests_ejecutados":
+                # HU-009 C07: mismo armado que la sesion viva, con el codigo
+                # que habia al momento de ese Probar.
+                last_probar = construir_ultimo_probar(payload, current_code)
 
         state = SessionState(
             episode_id=episode_id,
@@ -1371,6 +1388,7 @@ class TutorCore:
             rubrica_context=rubrica_context,
             current_code=current_code,
             last_execution=last_execution,
+            last_probar=last_probar,
         )
         await self.sessions.set(state)
         # FIX A: reponer el contador atómico de seq desde el max seq ya
@@ -1930,6 +1948,10 @@ class TutorCore:
         # Caller = estudiante (su accion directa), no service account.
         await self._publicar_evento(event, state, seq, user_id)
         await self._record_overuse_non_prompt_event(event)
+        # HU-009 C07: recien con el evento publicado, la sesion "ve" el Probar
+        # (misma disciplina que emit_codigo_ejecutado). Reemplaza al anterior.
+        state.last_probar = construir_ultimo_probar(payload, state.current_code)
+        await self.sessions.set(state)
         return seq
 
     # ── Reflexion metacognitiva post-cierre (ADR-035) ────────────────────
@@ -2446,8 +2468,8 @@ class TutorCore:
              pregunta antes de pista, nivel socrático mínimo) + instrucciones.
           3. Mapa privado de navegación: rúbrica + heurística de cierre +
              prerrequisitos.
-          4. Casos de prueba que se evalúan (privados — el tutor es servicio
-             interno y los usa para orientar sin revelarlos).
+          4. Casos de prueba que se evalúan: los públicos completos; de los
+             ocultos, solo el nombre (HU-009 C06).
           5. Banco socrático N1-N4 (preguntas + señales ✓/✗).
           6. Misconceptions anticipadas + pregunta diagnóstica.
           7. Respuesta-pista por nivel (anti-soluciones).
@@ -2540,13 +2562,14 @@ class TutorCore:
                 "\n\n## Mapa privado de navegación (NO revelar al estudiante)\n" + "\n".join(nav)
             )
 
-        # Bloque 3.bis — casos de prueba que se evalúan (F2). El tutor es un
-        # servicio interno: PUEDE ver los tests ocultos (`is_public=false`) y su
-        # `expected` para saber qué comportamiento se verifica. El system
-        # message le prohíbe explícitamente filtrarlos al estudiante — mismo
-        # criterio que el mapa privado de navegación. Esto NO toca el filtrado
-        # `is_public` del academic-service hacia el alumno (A0.3), que sigue
-        # intacto: acá el destinatario es el LLM, no el cliente.
+        # Bloque 3.bis — casos de prueba que se evalúan (F2). Los PÚBLICOS van
+        # completos (entrada y salida esperada): el alumno ya los ve en Probar.
+        # De los OCULTOS (`is_public=false`) va SOLO el nombre (HU-009 C06): con
+        # la entrada y la salida esperada a la vista, el tutor se los dictaba al
+        # alumno pese a la prohibición del system message (prueba 2 del
+        # 20/11/2026: dio "250 km / 8 l", los datos del oculto, 2 de 2 veces).
+        # Prohibirle filtrarlos no alcanzó; no dárselos sí. Esto NO toca el
+        # filtrado `is_public` del academic-service hacia el alumno (A0.3).
         test_cases = ejercicio.get("test_cases") or []
         if isinstance(test_cases, list) and test_cases:
             tc_lines: list[str] = []
@@ -2554,11 +2577,15 @@ class TutorCore:
                 if not isinstance(tc, dict):
                     continue
                 nombre = tc.get("name") or tc.get("id") or "(test)"
-                visibilidad = "público" if tc.get("is_public") is True else "oculto"
+                es_publico = tc.get("is_public") is True
+                visibilidad = "público" if es_publico else "oculto"
                 linea = f"- [{visibilidad}] {nombre}"
                 tipo = tc.get("type")
                 if tipo:
                     linea += f" ({tipo})"
+                if not es_publico:
+                    tc_lines.append(linea)
+                    continue
                 entrada = tc.get("code")
                 if entrada:
                     linea += f"\n  - Entrada/código:\n    ```\n    {entrada}\n    ```"

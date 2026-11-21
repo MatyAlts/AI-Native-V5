@@ -102,8 +102,11 @@ class Settings(BaseSettings):
     # v1.10.0 (2026-10-09, QA sobre prod 08/10): regla de primer turno (no
     # preguntar en que ejercicio esta cuando el enunciado llego) y respuesta
     # directa acotada a la forma de lo que el alumno ya sabe que necesita.
+    # v1.11.0 (2026-11-20, HU-009): seccion "Lo que ves de este episodio, y lo
+    # que no" (no finge recordar otros ejercicios, no inventa errores si Probar
+    # paso todo, no sugiere pegar, no dicta la linea, señala el hardcodeo).
     default_prompt_name: str = "tutor"
-    default_prompt_version: str = "v1.10.0"
+    default_prompt_version: str = "v1.11.0"
     # Cambiado 2026-05-19: default a gpt-4o-mini para usar copilot-api proxy
     # (Mistral free tier saturado, ver SESSION-LOG). Restaurar a
     # mistral-small-latest si se vuelve a usar la BYOK key de Mistral.

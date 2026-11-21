@@ -70,6 +70,9 @@ export interface Classification {
    *  calcula el backend (`platform_ops.pasiva_por_sobreuso`); la UI no recalcula
    *  la regla. Ausente en backends viejos = false (delegacion). */
   pasiva_por_sobreuso?: boolean
+  /** HU-009 C12: cuantas consultas al tutor entraron al calculo de CII. Sin el
+   *  dato (clasificaciones viejas o backend viejo) no se da el consejo de CII. */
+  cii_iteraciones?: number | null
 }
 
 export type TokenGetter = () => Promise<string | null>

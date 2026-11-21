@@ -47,6 +47,7 @@ import { type PasteOrigen, resolverEdicionPendiente } from "../lib/edicionPendie
 import { armarMensajeDeInput } from "../lib/inputDialogo"
 import { parseJavaError } from "../lib/javaError"
 import { registerJavaSnippets } from "../lib/javaSnippets"
+import { describirDiferencia, primeraDiferencia } from "../lib/primeraDiferencia"
 import { extractPyodideErrorLine, extractPyodideErrorLineNumber } from "../lib/pyodideError"
 import { registerPythonSnippets } from "../lib/pythonSnippets"
 import { runRemote } from "../lib/runRemote"
@@ -2339,6 +2340,13 @@ function TestResultsView({
 
 function TestResultCard({ result, index }: { result: TestCaseResult; index: number }): ReactNode {
   const r = result
+  // HU-009 C11: "º" contra "°" se ven iguales. Si falla y hubo salida, se
+  // marca el primer carácter distinto con su código. Sin salida, ya lo dice
+  // "tu programa no imprimio nada".
+  const diferencia =
+    r.type === "stdin_stdout" && !r.passed && r.comparacion !== ""
+      ? primeraDiferencia(r.expected ?? "", r.comparacion)
+      : null
   return (
     <li
       data-testid="test-result-card"
@@ -2399,6 +2407,16 @@ function TestResultCard({ result, index }: { result: TestCaseResult; index: numb
               al ejecutar y otra acá. */}
           {!r.passed && r.actual !== r.comparacion && (
             <TestKV label="En pantalla" value={r.actual} nota="el texto de input() no se compara" />
+          )}
+          {diferencia && (
+            <div className="grid grid-cols-[88px_1fr] gap-2" data-testid="primer-diferencia">
+              <dt className="text-[10px] uppercase tracking-wider text-muted-soft pt-0.5">
+                Diferencia
+              </dt>
+              <dd className="min-w-0 break-words text-amber-300">
+                {describirDiferencia(diferencia)}
+              </dd>
+            </div>
           )}
         </dl>
       )}

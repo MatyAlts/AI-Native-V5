@@ -4,6 +4,12 @@ Change `tutor-ve-salida-de-ejecucion`. Funciones puras, compartidas por la
 sesión viva (`emit_codigo_ejecutado`) y la reanudada (`resume_episode`) para
 que las dos produzcan exactamente el mismo bloque.
 
+HU-009 C07 suma el resultado del último Probar (`emit_tests_ejecutados`), con
+la misma disciplina: lo arman las mismas funciones en la sesión viva y en la
+reanudada, se REEMPLAZA en cada Probar (no se acumula) y el bloque es
+descriptivo. Antes el tutor veía Ejecutar y no Probar, y le preguntaba al
+alumno "¿a qué te referís con pasar?" o insistía con errores con 2 de 2.
+
 El truncado aplica SÓLO a lo que se guarda en la sesión y se manda al LLM. El
 evento `codigo_ejecutado` del CTR conserva stdout/stderr completos (el
 classifier los lee crudos).
@@ -85,4 +91,43 @@ def formatear_bloque(ultima: dict[str, Any], current_code: str | None) -> str:
     for tag, contenido in (("salida_stdout", stdout), ("salida_stderr", stderr)):
         if contenido:
             lineas.append(f"<{tag}>\n{_neutralizar(contenido)}\n</{tag}>")
+    return "\n".join(lineas)
+
+
+def construir_ultimo_probar(payload: dict[str, Any], current_code: str | None) -> dict[str, Any]:
+    """Arma el dict que se guarda en `SessionState.last_probar`.
+
+    `current_code` es el código del editor al momento de Probar (Probar hace
+    flush de la edición antes de correr): sirve para avisar si el alumno lo
+    cambió después, igual que el bloque de Ejecutar.
+    """
+    return {
+        "total": int(payload.get("test_count_total") or 0),
+        "passed": int(payload.get("test_count_passed") or 0),
+        "failed": int(payload.get("test_count_failed") or 0),
+        "publicos": int(payload.get("tests_publicos") or 0),
+        "ocultos": int(payload.get("tests_hidden") or 0),
+        "code_sha256": _sha256(current_code) if current_code is not None else None,
+    }
+
+
+def formatear_bloque_probar(ultimo: dict[str, Any], current_code: str | None) -> str:
+    """Texto del mensaje `system` con el resultado del último Probar."""
+    total = ultimo.get("total", 0)
+    passed = ultimo.get("passed", 0)
+    ocultos = ultimo.get("ocultos", 0)
+    detalle = f" ({ultimo.get('publicos', 0)} publicos y {ocultos} ocultos)" if ocultos else ""
+    lineas = [
+        "Resultado del ultimo Probar del alumno (el boton que corre los casos de "
+        "prueba del ejercicio contra su programa).",
+        f"Pasaron {passed} de {total} casos{detalle}.",
+    ]
+    if total > 0 and passed == total:
+        lineas.append("Todos los casos pasaron: la salida coincidio con la esperada en cada uno.")
+    sha = ultimo.get("code_sha256")
+    if current_code is not None and sha is not None and _sha256(current_code) != sha:
+        lineas.append(
+            "[Aviso: el alumno edito el codigo despues de Probar. Este resultado "
+            "corresponde a la version que probo, no a la que tiene ahora en el editor.]"
+        )
     return "\n".join(lineas)

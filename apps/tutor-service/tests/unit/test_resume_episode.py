@@ -453,3 +453,65 @@ async def test_resume_sin_codigo_ejecutado_deja_last_execution_none(
 ) -> None:
     state = await _reanudar(tutor, fake_ctr, [])
     assert state.last_execution is None
+
+
+# ── HU-009 C07: el resultado de Probar sobrevive a reanudar ─────────
+
+
+def _probar(total: int, passed: int) -> dict:
+    return {
+        "test_count_total": total,
+        "test_count_passed": passed,
+        "test_count_failed": total - passed,
+        "tests_publicos": total,
+        "tests_hidden": 0,
+        "ejecucion_ms": 10,
+    }
+
+
+async def test_resume_reconstruye_el_ultimo_probar(tutor: TutorCore, fake_ctr: _FakeCTR) -> None:
+    from tutor_service.services.contexto_ejecucion import (
+        construir_ultimo_probar,
+        formatear_bloque_probar,
+    )
+
+    state = await _reanudar(
+        tutor,
+        fake_ctr,
+        [
+            ("edicion_codigo", {"snapshot": "a = 1", "origin": "typed"}),
+            ("tests_ejecutados", _probar(2, 1)),
+            ("tests_ejecutados", _probar(2, 2)),
+        ],
+    )
+    # Igual que la sesion viva, y gana el ultimo (no se acumulan).
+    assert state.last_probar == construir_ultimo_probar(_probar(2, 2), "a = 1")
+    bloque = formatear_bloque_probar(state.last_probar, state.current_code)
+    assert "2 de 2" in bloque
+    assert "edito el codigo despues de Probar" not in bloque
+
+
+async def test_resume_probar_con_edicion_posterior_avisa(
+    tutor: TutorCore, fake_ctr: _FakeCTR
+) -> None:
+    from tutor_service.services.contexto_ejecucion import formatear_bloque_probar
+
+    state = await _reanudar(
+        tutor,
+        fake_ctr,
+        [
+            ("edicion_codigo", {"snapshot": "a = 1", "origin": "typed"}),
+            ("tests_ejecutados", _probar(2, 2)),
+            ("edicion_codigo", {"snapshot": "a = 2", "origin": "typed"}),
+        ],
+    )
+    assert "edito el codigo despues de Probar" in formatear_bloque_probar(
+        state.last_probar, state.current_code
+    )
+
+
+async def test_resume_sin_probar_deja_last_probar_none(
+    tutor: TutorCore, fake_ctr: _FakeCTR
+) -> None:
+    state = await _reanudar(tutor, fake_ctr, [])
+    assert state.last_probar is None

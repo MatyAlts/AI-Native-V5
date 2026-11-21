@@ -152,9 +152,21 @@
 #   - Deploy: la imagen del governance-service hornea este directorio. Hay que
 #     reconstruirla y redeployarla junto con el tutor-service (governance
 #     primero), o el tutor pide v1.10.0 y recibe 404.
+# Activacion tutor v1.11.0 (2026-11-20, HU-009, prueba 2 como alumno en prod):
+#   - Seccion nueva "Lo que ves de este episodio, y lo que no": no finge
+#     recordar otros ejercicios, no inventa errores si Probar paso todo, nunca
+#     sugiere pegar (explica como tipear el caracter), no dicta la linea de la
+#     solucion y señala el resultado escrito a mano.
+#   - Todas las demas secciones intactas byte a byte contra v1.10.0
+#     (test_prompt_v1_11_0_lo_que_ve_el_tutor.py).
+#   - Autorizacion de Juani para HU-009: "los promts podes tocarlos tranquilo".
+#   - Revision coautoral con Ana Garis: PENDIENTE.
+#   - No afecta classifier_config_hash: es prompt de runtime, no etiquetador.
+#   - Deploy: reconstruir y redeployar governance-service y despues
+#     tutor-service, o el tutor pide v1.11.0 y recibe 404.
 active:
   default:
-    tutor: v1.10.0
+    tutor: v1.11.0
     classifier: v1.0.0
     correccion: v1.0.0
     reflection: v1.0.0

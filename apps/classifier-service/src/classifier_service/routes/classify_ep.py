@@ -89,8 +89,15 @@ class ClassificationOut(BaseModel):
     # HU-007: pasiva que vino SOLO de la regla de sobreuso y que nadie confirmó
     # (ni revisión humana ni juez con veredicto `ok`). La calcula
     # `platform_ops.pasiva_por_sobreuso`, único lugar de la regla; los
-    # frontends usan este booleano y no la recalculan. Solo lo completa el GET.
+    # frontends usan este booleano y no la recalculan. Lo completan el GET y el
+    # POST (HU-009 C01: antes solo el GET, y la pantalla de cierre del alumno,
+    # que usa el POST, recibia `false` para un sobreuso).
     pasiva_por_sobreuso: bool = False
+    # HU-009 C12: cantidad de consultas al tutor (`prompt_enviado`) sobre las
+    # que se calcularon las metricas CII (`compute_cii`). La pantalla de cierre
+    # no da el consejo de CII con menos de 3. None en clasificaciones previas a
+    # HU-009, que no lo persistieron: el front no muestra el consejo.
+    cii_iteraciones: int | None = None
 
     class Config:
         from_attributes = True
@@ -335,6 +342,29 @@ async def _aplicar_juez_mtac(
         )
 
 
+def _salida(c: Classification) -> ClassificationOut:
+    """`ClassificationOut` con los campos derivados de `features`.
+
+    Unico armado de la respuesta para el GET y las tres salidas del POST
+    (nueva, ya existente y carrera). Antes el POST devolvia solo las columnas,
+    sin `subgrupo`, `regimen_llm` ni `pasiva_por_sobreuso`, y la pantalla de
+    cierre del alumno (que usa el POST) mostraba el mensaje equivocado
+    (HU-009 C01, bug del PR #139).
+    """
+    out = ClassificationOut.model_validate(c)
+    feats = c.features or {}
+    out.subgrupo = feats.get("subgrupo")
+    # Normalizado en el borde de lectura (bug QA 2026-09-25): sin esto, un
+    # registro juzgado bajo `eje_fino_v1.1.0` con autonomía en su forma legada
+    # (`oraculo`, sin `presente`) llega al cliente sin esa dimensión. Ver
+    # docstring de `normalizar_regimen_llm_persistido`.
+    out.regimen_llm = normalizar_regimen_llm_persistido(feats.get("regimen_llm"))
+    out.pasiva_por_sobreuso = pasiva_por_sobreuso(c.appropriation, c.features)
+    iteraciones = (feats.get("cii") or {}).get("iterations")
+    out.cii_iteraciones = iteraciones if isinstance(iteraciones, int) else None
+    return out
+
+
 @router.post(
     "/classify_episode/{episode_id}",
     response_model=ClassificationOut,
@@ -376,7 +406,7 @@ async def classify_episode(
         existing = await _find_current_classification(session, episode_id, config_hash)
         if existing is not None:
             response.status_code = status.HTTP_200_OK
-            return ClassificationOut.model_validate(existing)
+            return _salida(existing)
 
     # No existe — flujo normal: fetch eventos del CTR + clasificar + persistir.
     try:
@@ -426,10 +456,10 @@ async def classify_episode(
                     detail="Race condition irrecuperable en classify_episode",
                 ) from None
             response.status_code = status.HTTP_200_OK
-            return ClassificationOut.model_validate(existing)
+            return _salida(existing)
 
     # Path normal: classification recién insertada → 201 (default del router).
-    return ClassificationOut.model_validate(persisted)
+    return _salida(persisted)
 
 
 # ── Agregación por comisión ───────────────────────────────────────────
@@ -530,13 +560,4 @@ async def get_current_classification(
             status_code=status.HTTP_404_NOT_FOUND,
             detail=f"Sin clasificación actual para episodio {episode_id}",
         )
-    out = ClassificationOut.model_validate(c)
-    feats = c.features or {}
-    out.subgrupo = feats.get("subgrupo")
-    # Normalizado en el borde de lectura (bug QA 2026-09-25): sin esto, un
-    # registro juzgado bajo `eje_fino_v1.1.0` con autonomía en su forma legada
-    # (`oraculo`, sin `presente`) llega al cliente sin esa dimensión. Ver
-    # docstring de `normalizar_regimen_llm_persistido`.
-    out.regimen_llm = normalizar_regimen_llm_persistido(feats.get("regimen_llm"))
-    out.pasiva_por_sobreuso = pasiva_por_sobreuso(c.appropriation, c.features)
-    return out
+    return _salida(c)

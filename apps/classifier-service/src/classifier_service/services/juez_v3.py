@@ -48,7 +48,9 @@ from classifier_service.services.regla_mtac import (  # noqa: F401 — reexporta
 
 JUEZ_VERSION = "v3"
 # Bumpear ante cualquier cambio del prompt, los ejemplos, los few-shot o el schema.
-PROMPT_VERSION_V3 = "mtac_v2_juez_v3.0.0"
+# v3.1.0 (HU-009, 2026-11-20): regla de Juani sobre CUÁNDO se pide la solución
+# (`_SECCION_PEDIR_SOLUCION_V3`). El juez v2 no cambia.
+PROMPT_VERSION_V3 = "mtac_v2_juez_v3.1.0"
 
 _REGIMENES = ["REFLEXIVA", "SUPERFICIAL", "PASIVA", "EVIDENCIA_INSUFICIENTE"]
 RegimenFrontera = Literal["REFLEXIVA", "SUPERFICIAL", "PASIVA", "EVIDENCIA_INSUFICIENTE"]
@@ -280,6 +282,13 @@ LAS SIETE TRAMPAS
 6. Poco rastro no es pasiva: sin material para juzgar es evidencia insuficiente, no delegación.
 7. D4 no es D1. Que el alumno razone poco no lo hace oráculo: D4 mira quién decide en cada intercambio."""
 
+# HU-009 (v3.1.0): regla de Juani (20/11/2026): "si es para ver si todo le
+# quedó perfecto y comparar es reflexiva; si es al principio es un indicio de
+# pasiva". Un solo párrafo, después de las trampas porque precisa la 2.
+_SECCION_PEDIR_SOLUCION_V3 = """\
+CUÁNDO SE PIDE LA SOLUCIÓN
+El momento en que el alumno pide la solución cambia lo que significa, y precisa la trampa 2. Si la pide al principio, antes de intentar el ejercicio por su cuenta (sin producción propia sobre ese punto, P1), es un indicio de pasiva: ese intercambio es oráculo. Si la pide al final, con el ejercicio ya resuelto por él, para ver si todo le quedó perfecto y comparar la solución con la suya, es conducta reflexiva y no un indicio de pasiva: verifica su propia producción, cuenta para D2 si contrasta las dos versiones, y para D4 se trata como P1b, porque la decisión ya la había tomado él. Un indicio no es un veredicto: la transferencia sigue necesitando la evidencia positiva de P8, y el régimen sigue saliendo de la regla sobre las cuatro dimensiones."""
+
 _SECCION_SALIDA_V3 = """\
 SALIDA
 Devolvé EXCLUSIVAMENTE un JSON con esta forma, sin texto adicional:
@@ -303,6 +312,7 @@ SYSTEM_PROMPT_V3 = _armar_prompt(
     _SECCION_REGIMENES_Y_REGLA,
     _SECCION_FRONTERAS_COMUNES + "\n" + _SECCION_CONDUCTA_MIXTA_V3,
     _SECCION_TRAMPAS_V3,
+    _SECCION_PEDIR_SOLUCION_V3,
     _SECCION_EJEMPLOS,
     _SECCION_SALIDA_V3,
     ejemplos=_bloque_ejemplos(EJEMPLOS_FRONTERA_V3),
@@ -409,7 +419,8 @@ def huella_prompt_v3() -> str:
 
 # Literal congelado (C05): si `huella_prompt_v3()` deja de dar esto, el prompt
 # cambió y hay que bumpear `PROMPT_VERSION_V3` antes de actualizar el literal.
-HUELLA_PROMPT_V3 = "e3ae5d5c6f6cf1e2a93c889992f1513543178e55cfa610858cdf239baf1da4ed"
+# v3.0.0 era e3ae5d5c6f6cf1e2a93c889992f1513543178e55cfa610858cdf239baf1da4ed.
+HUELLA_PROMPT_V3 = "1e3e477898af36ae13a60a7fd080d5c4f2fd28049899ad79304da48eab24b24f"
 
 
 async def clasificar_regimen_v3(
