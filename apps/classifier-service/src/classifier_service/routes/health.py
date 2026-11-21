@@ -60,8 +60,12 @@ VERSION = "0.1.0"
 # `apropiacion_superficial` (ver `pipeline.py::_EJE_TO_APPROPRIATION`). El
 # árbol no cambió de criterio: dejó de mentir sobre lo que ya decidía — por
 # eso es un bump MINOR y no MAJOR (mismo precedente que `LABELER_VERSION`).
+# v4.2.0 (HU-009, 2026-11-20): Probar (`tests_ejecutados`) cuenta como
+# ejecución en el subgrupo (`services/subgrupo.py`): suma al "poco trabajo" y el
+# último Probar que pasa todo cuenta como resuelto. Cambia cómo se etiquetan
+# episodios que antes caían en `desenganchado` / `autonomo_desenganchado`.
 # Bump fuerza re-clasificacion (cambia el hash). Idéntico al que usa /classify_episode/{id}.
-_TREE_VERSION = "v4.1.0"
+_TREE_VERSION = "v4.2.0"
 
 
 @router.get("", response_model=HealthResponse)

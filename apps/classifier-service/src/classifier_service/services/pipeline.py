@@ -43,7 +43,7 @@ logger = logging.getLogger(__name__)
 
 
 def compute_classifier_config_hash(
-    reference_profile: dict[str, Any], tree_version: str = "v4.1.0"
+    reference_profile: dict[str, Any], tree_version: str = "v4.2.0"
 ) -> str:
     """Hash determinista del config del classifier.
 

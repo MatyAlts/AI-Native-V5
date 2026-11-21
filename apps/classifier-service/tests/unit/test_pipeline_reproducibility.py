@@ -127,8 +127,14 @@ def test_classifier_config_hash_golden() -> None:
     (determinismo) en verde — es la prueba de que el hash cambió por el bump
     deliberado y no por un efecto colateral: si hubiera sido colateral, algún
     otro test de determinismo también se habría movido de forma inconsistente.
+
+    **Actualizado por HU-009 (2026-11-20): bump deliberado de `tree_version` a
+    `v4.2.0`** (Probar cuenta como ejecución en el subgrupo). Falló así al
+    aplicar el bump: `golden=56f39058... actual=f471c511...`. El de `v4.1.0`
+    (`56f3905858c19def2f20741a03378e9d5e3dfe1a4f0e4dd75d7440367fdc1180`) ya no
+    vale.
     """
-    golden = "56f3905858c19def2f20741a03378e9d5e3dfe1a4f0e4dd75d7440367fdc1180"
+    golden = "f471c511a629b700a28f82d970ed0f2e306c550e3e4198395a8f9ceb1d0c5930"
     actual = compute_classifier_config_hash(DEFAULT_REFERENCE_PROFILE)
     assert actual == golden, (
         f"classifier_config_hash se movió: golden={golden} actual={actual}. "
