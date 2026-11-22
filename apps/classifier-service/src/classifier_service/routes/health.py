@@ -64,8 +64,12 @@ VERSION = "0.1.0"
 # ejecución en el subgrupo (`services/subgrupo.py`): suma al "poco trabajo" y el
 # último Probar que pasa todo cuenta como resuelto. Cambia cómo se etiquetan
 # episodios que antes caían en `desenganchado` / `autonomo_desenganchado`.
+# v4.3.0 (HU-010, 2026-11-22): quien resuelve no trabajó poco. El "poco
+# trabajo" del subgrupo ya no cuenta un episodio resuelto (última ejecución
+# limpia o último Probar que pasa todo), así que el que escribe la solución de
+# una y la Proba una vez deja de salir `desenganchado` / `autonomo_desenganchado`.
 # Bump fuerza re-clasificacion (cambia el hash). Idéntico al que usa /classify_episode/{id}.
-_TREE_VERSION = "v4.2.0"
+_TREE_VERSION = "v4.3.0"
 
 
 @router.get("", response_model=HealthResponse)

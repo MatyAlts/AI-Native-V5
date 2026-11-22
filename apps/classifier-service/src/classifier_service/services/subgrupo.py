@@ -24,6 +24,16 @@ un alumno que solo usaba Probar y pasaba todo caía en "poco trabajo"
 (`desenganchado` / `autonomo_desenganchado`). Ahora suma al conteo de
 ejecuciones y el último Probar que pasa todo (`test_count_failed == 0` y
 `test_count_total > 0`) cuenta como resuelto. Ejecutar sigue contando igual.
+
+HU-010 (tree_version v4.3.0): quien resuelve NO trabajó poco. La regla de "poco
+trabajo" (menos de `EDIT_MIN` ediciones y menos de `TRABADO_MIN_EJEC`
+ejecuciones) no miraba si el alumno había resuelto, así que el que escribía la
+solución de una y la Probaba una sola vez, pasando todo, salía `desenganchado`
+("Quedó a mitad de camino", prueba como alumno del 21/11/2026). Ahora un
+episodio con `_resolvio` verdadero nunca es "poco trabajo", en los dos brazos:
+sin tutor sale `autonomo_competente`; con tutor sigue el árbol, y el sobreuso y
+la delegación por solicitud directa se siguen chequeando ANTES (el que pidió la
+solución sigue siendo `dependiente_delegador` aunque después Probar pase todo).
 """
 
 from __future__ import annotations
@@ -233,7 +243,9 @@ def clasificar_subgrupo(events: list[dict]) -> Subgrupo:  # noqa: PLR0911
         for e in events
         if e.get("event_type") == "prompt_enviado" and _kind(e) == "solicitud_directa"
     )
-    poco_trabajo = ediciones < EDIT_MIN and ejec < TRABADO_MIN_EJEC
+    resolvio = _resolvio(events)
+    # Quien resolvió no trabajó poco, aunque lo haya hecho de una (HU-010, v4.3.0).
+    poco_trabajo = ediciones < EDIT_MIN and ejec < TRABADO_MIN_EJEC and not resolvio
     overuse = sum(
         1
         for e in events
@@ -248,7 +260,7 @@ def clasificar_subgrupo(events: list[dict]) -> Subgrupo:  # noqa: PLR0911
         # brazo con-tutor de mas abajo.
         if poco_trabajo:
             return AUTONOMO_DESENGANCHADO
-        if _resolvio(events):
+        if resolvio:
             return AUTONOMO_COMPETENTE
         if ejec >= TRABADO_MIN_EJEC:
             return AUTONOMO_TRABADO
