@@ -24,6 +24,20 @@ un alumno que solo usaba Probar y pasaba todo caía en "poco trabajo"
 (`desenganchado` / `autonomo_desenganchado`). Ahora suma al conteo de
 ejecuciones y el último Probar que pasa todo (`test_count_failed == 0` y
 `test_count_total > 0`) cuenta como resuelto. Ejecutar sigue contando igual.
+
+HU-010 (tree_version v4.3.0): quien Probó y pasó todo NO trabajó poco. La regla
+de "poco trabajo" (menos de `EDIT_MIN` ediciones y menos de `TRABADO_MIN_EJEC`
+ejecuciones) no miraba si el alumno había resuelto, así que el que escribía la
+solución de una y la Probaba una sola vez, pasando todo, salía `desenganchado`
+("Quedó a mitad de camino", prueba como alumno del 21/11/2026). Ahora, si el
+ÚLTIMO Probar pasó todos sus casos (`_probar_paso_todo`), el episodio nunca es
+"poco trabajo". La excepción mira SOLO Probar, no `_resolvio` entero: un único
+Ejecutar que imprime algo sin error (un `print("hola")`) no compara contra lo
+esperado y no prueba que resolvió, así que sigue siendo poco trabajo. Vale en
+los dos brazos:
+sin tutor sale `autonomo_competente`; con tutor sigue el árbol, y el sobreuso y
+la delegación por solicitud directa se siguen chequeando ANTES (el que pidió la
+solución sigue siendo `dependiente_delegador` aunque después Probar pase todo).
 """
 
 from __future__ import annotations
@@ -186,6 +200,16 @@ def _ultimo(events: list[dict], et: str) -> dict | None:
     return del_tipo[-1] if del_tipo else None
 
 
+def _probar_paso_todo(events: list[dict]) -> bool:
+    """El ÚLTIMO Probar pasó todos sus casos (`test_count_total > 0` y
+    `test_count_failed == 0`). Es la única señal que compara contra lo esperado."""
+    probar = _ultimo(events, "tests_ejecutados")
+    if probar is None:
+        return False
+    p = probar.get("payload") or {}
+    return (p.get("test_count_total") or 0) > 0 and p.get("test_count_failed") == 0
+
+
 def _resolvio(events: list[dict]) -> bool:
     """La ÚLTIMA ejecución terminó limpia (stdout no vacío, sin stderr), o el
     ÚLTIMO Probar pasó todos sus casos (HU-009).
@@ -199,11 +223,7 @@ def _resolvio(events: list[dict]) -> bool:
         p = ejec.get("payload") or {}
         if (p.get("stdout") or "") != "" and (p.get("stderr") or "") == "":
             return True
-    probar = _ultimo(events, "tests_ejecutados")
-    if probar is not None:
-        p = probar.get("payload") or {}
-        return (p.get("test_count_total") or 0) > 0 and p.get("test_count_failed") == 0
-    return False
+    return _probar_paso_todo(events)
 
 
 def _verbaliza(events: list[dict]) -> bool:
@@ -233,7 +253,11 @@ def clasificar_subgrupo(events: list[dict]) -> Subgrupo:  # noqa: PLR0911
         for e in events
         if e.get("event_type") == "prompt_enviado" and _kind(e) == "solicitud_directa"
     )
-    poco_trabajo = ediciones < EDIT_MIN and ejec < TRABADO_MIN_EJEC
+    # Quien Probó y pasó todo no trabajó poco, aunque lo haya hecho de una
+    # (HU-010, v4.3.0). Solo Probar: un Ejecutar limpio no alcanza (N03).
+    poco_trabajo = (
+        ediciones < EDIT_MIN and ejec < TRABADO_MIN_EJEC and not _probar_paso_todo(events)
+    )
     overuse = sum(
         1
         for e in events

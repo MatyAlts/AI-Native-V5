@@ -80,12 +80,14 @@ Al correr contra `ctr_store` de prod (305 episodios cerrados), el modelo de even
 
 **Actualización HU-009 (2026-11-20, `tree_version` v4.2.0):** `tests_ejecutados` ya existe como evento (lo emite el execution-service al tocar Probar), y la fila de arriba quedó vieja. Probar cuenta como ejecución: suma al conteo del «poco trabajo» y del «trabado», y `resolvió` también es verdadero si el ÚLTIMO Probar pasó todos sus casos (`test_count_failed == 0` y `test_count_total > 0`). Ejecutar sigue contando igual. Sin esto, un alumno que solo usaba Probar y pasaba todo salía `desenganchado` o `autonomo_desenganchado`.
 
+**Actualización HU-010 (2026-11-22, `tree_version` v4.3.0):** quien Probó y pasó todo no trabajó poco. El «poco trabajo» ya no cuenta un episodio cuyo ÚLTIMO Probar pasó todos sus casos (`test_count_total > 0` y `test_count_failed == 0`): el alumno que escribe la solución de una y la Proba una sola vez, pasando todo, salía `desenganchado` («Quedó a mitad de camino», prueba como alumno del 21/11/2026). Sin tutor sale `autonomo_competente`; con tutor sigue el árbol, y el sobreuso y la delegación por solicitud directa se siguen evaluando antes. La excepción mira solo Probar, no `resolvió` entero: un único Ejecutar que imprime algo sin error (un `print("hola")`) no compara contra lo esperado, así que sigue siendo poco trabajo (`autonomo_desenganchado` o `desenganchado`).
+
 **8º subgrupo (agregado por calibración):** **Escribió sin validar 📝** — ≥10 ediciones pero
 casi sin ejecutar (escribió código y no lo probó). Roll-up → superficial. Acción: fomentar el
 hábito de ejecutar/probar. (Confirmado con datos: ejecutar funcionaba; fue elección del alumno.)
 
 **Reglas de actividad calibradas:**
-- **Desenganchado 💤** = trabajó poco EN GENERAL (<10 ediciones Y <2 ejecuciones). Editar mucho ya es trabajo.
+- **Desenganchado 💤** = trabajó poco EN GENERAL (<10 ediciones Y <2 ejecuciones). Editar mucho ya es trabajo. Probar y pasar todo también (HU-010): ese episodio nunca es desenganchado; un Ejecutar limpio solo, no alcanza.
 - **Autónomo trabado 🆘** = ejecutó ≥2 veces sin lograrlo (peleó) → scaffolding (panel docente; tutor proactivo = tarea futura en `tutor-service`).
 - En la rama con-tutor, la delegación se evalúa ANTES que "poco trabajo" (el delegador labura poco *porque* copia).
 

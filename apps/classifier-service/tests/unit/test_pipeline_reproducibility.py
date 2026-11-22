@@ -133,8 +133,14 @@ def test_classifier_config_hash_golden() -> None:
     aplicar el bump: `golden=56f39058... actual=f471c511...`. El de `v4.1.0`
     (`56f3905858c19def2f20741a03378e9d5e3dfe1a4f0e4dd75d7440367fdc1180`) ya no
     vale.
+
+    **Actualizado por HU-010 (2026-11-22): bump deliberado de `tree_version` a
+    `v4.3.0`** (quien Probó y pasó todo no cuenta como "poco trabajo" en el subgrupo).
+    Falló así al aplicar el bump: `golden=f471c511... actual=9a70c3a3...`. El
+    de `v4.2.0` (`f471c511a629b700a28f82d970ed0f2e306c550e3e4198395a8f9ceb1d0c5930`)
+    ya no vale.
     """
-    golden = "f471c511a629b700a28f82d970ed0f2e306c550e3e4198395a8f9ceb1d0c5930"
+    golden = "9a70c3a38997284c2e343d3cc7cbad835624fb7140379aa9548dbd2fc33bc901"
     actual = compute_classifier_config_hash(DEFAULT_REFERENCE_PROFILE)
     assert actual == golden, (
         f"classifier_config_hash se movió: golden={golden} actual={actual}. "

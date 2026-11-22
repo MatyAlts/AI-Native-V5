@@ -85,12 +85,12 @@ async def test_root(client: AsyncClient) -> None:
 async def test_config_hash_reporta_v4_consistente_con_classify_ep(
     client: AsyncClient,
 ) -> None:
-    """`GET /api/v1/classifier/config-hash` reporta tree_version v4.2.0 y un hash
+    """`GET /api/v1/classifier/config-hash` reporta tree_version v4.3.0 y un hash
     idéntico al que `classify_ep.classify_episode` persiste.
 
     Invariante doctoral (ADR-020): el hash que el endpoint expone DEBE ser el
     mismo que la fila persiste, o la reproducibilidad se rompe. Ambos calculan
-    `compute_classifier_config_hash(DEFAULT_REFERENCE_PROFILE, "v4.2.0")` — este
+    `compute_classifier_config_hash(DEFAULT_REFERENCE_PROFILE, "v4.3.0")` — este
     test ancla esa igualdad para que un futuro bump no desincronice los callers.
 
     Actualizado por B2b (6.6, 2026-09-27): bump deliberado `v4.0.0 → v4.1.0`
@@ -103,6 +103,10 @@ async def test_config_hash_reporta_v4_consistente_con_classify_ep(
     Actualizado por HU-009 (2026-11-20): bump deliberado `v4.1.0 → v4.2.0`,
     otra vez en los dos sitios, porque Probar pasa a contar como ejecución en
     el subgrupo.
+
+    Actualizado por HU-010 (2026-11-22): bump deliberado `v4.2.0 → v4.3.0`,
+    en los dos sitios, porque quien Probó y pasó todo deja de contar como "poco trabajo"
+    en el subgrupo.
     """
     from classifier_service.services import (
         DEFAULT_REFERENCE_PROFILE,
@@ -112,9 +116,9 @@ async def test_config_hash_reporta_v4_consistente_con_classify_ep(
     response = await client.get("/api/v1/classifier/config-hash")
     assert response.status_code == 200
     body = response.json()
-    assert body["tree_version"] == "v4.2.0"
+    assert body["tree_version"] == "v4.3.0"
 
-    # Mismo cómputo que hace classify_ep.classify_episode (config_hash con "v4.2.0").
-    esperado = compute_classifier_config_hash(DEFAULT_REFERENCE_PROFILE, "v4.2.0")
+    # Mismo cómputo que hace classify_ep.classify_episode (config_hash con "v4.3.0").
+    esperado = compute_classifier_config_hash(DEFAULT_REFERENCE_PROFILE, "v4.3.0")
     assert body["classifier_config_hash"] == esperado
     assert len(body["classifier_config_hash"]) == 64
