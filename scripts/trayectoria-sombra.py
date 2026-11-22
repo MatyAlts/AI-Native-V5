@@ -8,9 +8,11 @@ Uso:
     uv run python scripts/trayectoria-sombra.py episodios.json [clasificaciones.json]
 
 `episodios.json`: lista de episodios de UN alumno,
-    [{"episode_id", "tarea_practica_id", "opened_at", "events": [...]}]
+    [{"episode_id", "tarea_practica_id", "opened_at", "events": [...],
+      "language": "python" | "java"}]
     donde `events` son los eventos CTR del episodio (`seq`, `event_type`,
-    `payload`).
+    `payload`). `language` es opcional: si viene, manda (un episodio Java no
+    tiene tropiezos); si no, se usa la heuristica de Java del modulo.
 
 `clasificaciones.json` (opcional):
     [{"episode_id", "opened_at", "features": {"regimen_llm": {...}}}]
@@ -46,6 +48,19 @@ def _ascii(x: object) -> str:
 
 def _fecha(opened_at: object) -> str:
     return _ascii(opened_at)[:10] if opened_at else "?"
+
+
+def imprimir_lenguajes(episodios: list[dict[str, Any]]) -> None:
+    conteo: dict[str, int] = {}
+    for ep in episodios:
+        lenguaje = ep.get("language")
+        clave = lenguaje if isinstance(lenguaje, str) and lenguaje else "sin dato"
+        conteo[clave] = conteo.get(clave, 0) + 1
+    partes = ", ".join(f"{_ascii(k)} {v}" for k, v in sorted(conteo.items()))
+    print(f"EPISODIOS: {len(episodios)} (lenguaje: {partes})")
+    if conteo.get("java"):
+        print("  Los episodios Java no aportan tropiezos.")
+    print()
 
 
 def imprimir_trayectoria(tray: dict[str, Any]) -> None:
@@ -98,7 +113,9 @@ def main(argv: list[str] | None = None) -> int:
     )
     args = parser.parse_args(argv)
 
-    imprimir_trayectoria(trayectoria_alumno(_leer(args.episodios)))
+    episodios = _leer(args.episodios)
+    imprimir_lenguajes(episodios)
+    imprimir_trayectoria(trayectoria_alumno(episodios))
     if args.clasificaciones:
         clasif = _leer(args.clasificaciones)
         fechas = {str(c.get("episode_id")): _fecha(c.get("opened_at")) for c in clasif}

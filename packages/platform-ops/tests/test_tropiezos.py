@@ -167,3 +167,69 @@ def test_serie_juez_valor_desconocido_es_no_evaluable() -> None:
             "d4": "transferencia",
         }
     ]
+
+
+# ── Segunda ronda: lenguaje, Java por el codigo, mensajes anclados, fechas ──
+
+
+def _ep(eid: str, opened_at: object, err: str = "NameError: x") -> dict:
+    return {
+        "episode_id": eid,
+        "tarea_practica_id": "TP1",
+        "opened_at": opened_at,
+        "events": [_ejec(1, err), _ejec(2)],
+    }
+
+
+def _orden(eps: list[dict]) -> list[str]:
+    ap = trayectoria_alumno(eps)["por_tipo"]["NameError"]["apariciones"]
+    return [a["episode_id"] for a in ap]
+
+
+def test_fecha_faltante_o_invalida_va_al_final() -> None:
+    eps = [
+        _ep("a_sin", None),
+        _ep("b_mala", "ayer a la tarde"),
+        _ep("c_nov", "2026-11-05T10:00:00Z"),
+        _ep("d_oct", "2026-10-20T10:00:00+00:00"),
+    ]
+    assert _orden(eps) == ["d_oct", "c_nov", "a_sin", "b_mala"]
+
+
+def test_fecha_sin_huso_se_toma_como_utc() -> None:
+    # 2026-11-02T11:00 sin huso (UTC) va antes que 09:00 en -03:00 (12:00 UTC).
+    eps = [_ep("ar", "2026-11-02T09:00:00-03:00"), _ep("naive", "2026-11-02T11:00:00")]
+    assert _orden(eps) == ["naive", "ar"]
+
+
+def test_serie_juez_ordena_por_fecha_real() -> None:
+    raw = {"verbalizacion": {"presente": True}, "autonomia": {"presente": True}}
+    juez = {"regimen_llm": {"estado": "ok", "raw": raw}}
+    c = [
+        {"episode_id": "ar", "opened_at": "2026-11-02T09:00:00-03:00", "features": juez},
+        {"episode_id": "z", "opened_at": "2026-11-02T10:00:00Z", "features": juez},
+    ]
+    assert [s["episode_id"] for s in serie_juez(c)] == ["z", "ar"]
+
+
+def test_sin_lenguaje_la_clase_java_fuera_de_strings_sigue_descartando() -> None:
+    code = 'public class Main {\n  public static void main(String[] a) { int x = "#"; }\n}'
+    assert tipo_de_error("TypeError: x", code) is None
+
+
+def test_clase_java_dentro_de_un_docstring_python_no_descarta() -> None:
+    code = '"""\npublic class Main {\n"""\nint("hola")'
+    assert tipo_de_error("ValueError: x", code) == "ValueError"
+
+
+def test_numeral_dentro_de_un_string_no_oculta_codigo_java() -> None:
+    code = 's = "#"; public static void main(String[] a) {}'
+    assert tipo_de_error("TypeError: x", code) is None
+
+
+def test_con_python_ni_el_formato_de_javac_descarta() -> None:
+    assert tipo_de_error("Main.java:3: error: ';' expected", "", "python") == "OtroError"
+
+
+def test_reloj_en_el_medio_de_un_error_real_cuenta() -> None:
+    assert tipo_de_error("ValueError: tarde ⏱ mucho") == "ValueError"
