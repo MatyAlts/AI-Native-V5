@@ -366,22 +366,7 @@ export function sugerirPuntajesDesdeCorrecciones(
   correcciones: CorreccionIA[],
   actuales: Record<string, string> = {},
 ): Record<string, string> {
-  const porId = new Map<string, CorreccionIA>()
-  const porOrden = new Map<number, CorreccionIA>()
-
-  const masNueva = (a: CorreccionIA, b: CorreccionIA | undefined): boolean => {
-    if (!b) return true
-    return a.created_at !== b.created_at ? a.created_at > b.created_at : a.id > b.id
-  }
-
-  for (const c of correcciones) {
-    if (c.estado !== "done" || !c.desglose || c.desglose.length === 0) continue
-    if (c.tp_ejercicio_id) {
-      if (masNueva(c, porId.get(c.tp_ejercicio_id))) porId.set(c.tp_ejercicio_id, c)
-    }
-    if (masNueva(c, porOrden.get(c.orden))) porOrden.set(c.orden, c)
-  }
-
+  const correccionDe = elegirCorreccionPorFila(correcciones)
   const scores: Record<string, string> = {}
   const normalizar = (v: unknown) =>
     String(v ?? "")
@@ -390,13 +375,8 @@ export function sugerirPuntajesDesdeCorrecciones(
   const aNumero = (v: unknown) => (typeof v === "number" ? v : Number.parseFloat(String(v ?? "")))
 
   for (const row of rows) {
-    if ((actuales[row.key] ?? "").trim() !== "") continue
-    const porIdentidad = row.ejercicioId ? porId.get(row.ejercicioId) : undefined
-    const porPosicion = porOrden.get(row.orden)
-    // Igual que en `resumirCorrecciones`: si la correccion que ocupa esa
-    // posicion declara `tp_ejercicio_id` de OTRO ejercicio, no es candidata
-    // para el fallback por orden.
-    const c = porIdentidad ?? (porPosicion?.tp_ejercicio_id ? undefined : porPosicion)
+    if (tieneValor(actuales[row.key])) continue
+    const c = correccionDe(row)
     if (!c) continue
 
     const buscado = normalizar(row.nombre)
@@ -421,4 +401,92 @@ export function sugerirPuntajesDesdeCorrecciones(
     scores[row.key] = String(num)
   }
   return scores
+}
+
+const tieneValor = (v: string | undefined) => (v ?? "").trim() !== ""
+
+/**
+ * La correccion que corresponde a cada fila: la mas nueva `done` con desglose,
+ * por `tp_ejercicio_id` y, si no lo tiene, por `orden`. Es UNA sola regla para
+ * completar y para decir que falta: si difieren, el aviso nombra como faltante
+ * un ejercicio que se acaba de completar (o al reves).
+ */
+function elegirCorreccionPorFila(
+  correcciones: CorreccionIA[],
+): (row: RubricaRowInput) => CorreccionIA | undefined {
+  const porId = new Map<string, CorreccionIA>()
+  const porOrden = new Map<number, CorreccionIA>()
+
+  const masNueva = (a: CorreccionIA, b: CorreccionIA | undefined): boolean => {
+    if (!b) return true
+    return a.created_at !== b.created_at ? a.created_at > b.created_at : a.id > b.id
+  }
+
+  for (const c of correcciones) {
+    if (c.estado !== "done" || !c.desglose || c.desglose.length === 0) continue
+    if (c.tp_ejercicio_id) {
+      if (masNueva(c, porId.get(c.tp_ejercicio_id))) porId.set(c.tp_ejercicio_id, c)
+    }
+    if (masNueva(c, porOrden.get(c.orden))) porOrden.set(c.orden, c)
+  }
+
+  return (row) => {
+    const porIdentidad = row.ejercicioId ? porId.get(row.ejercicioId) : undefined
+    const porPosicion = porOrden.get(row.orden)
+    // Igual que en `resumirCorrecciones`: si la correccion que ocupa esa
+    // posicion declara `tp_ejercicio_id` de OTRO ejercicio, no es candidata
+    // para el fallback por orden.
+    return porIdentidad ?? (porPosicion?.tp_ejercicio_id ? undefined : porPosicion)
+  }
+}
+
+export interface ResultadoCompletarCriterios {
+  /** Puntajes a escribir: solo casilleros vacios. */
+  sugeridos: Record<string, string>
+  completados: number
+  /** Filas de rubrica de la TP. */
+  total: number
+  /**
+   * Casilleros que Active-IA podia completar pero ya tenian valor, y por eso
+   * no se tocaron. En una re-calificacion los valores guardados cuentan: sin
+   * este numero, "se completaron 0" no explica nada.
+   */
+  yaConValor: number
+  /**
+   * Titulos de los ejercicios CON rubrica que no tienen correccion terminada
+   * con desglose. Misma regla que el completado.
+   */
+  faltantes: string[]
+}
+
+/**
+ * Lo que hace "Completar criterios desde Active-IA" (HU-013), con el resultado
+ * que se le muestra al docente. No escribe nada: devuelve que escribir.
+ */
+export function completarCriteriosDesdeCorrecciones(
+  rows: Array<RubricaRowInput & { ejercicioTitulo?: string }>,
+  correcciones: CorreccionIA[],
+  actuales: Record<string, string>,
+): ResultadoCompletarCriterios {
+  const sugeridos = sugerirPuntajesDesdeCorrecciones(rows, correcciones, actuales)
+  const posibles = sugerirPuntajesDesdeCorrecciones(rows, correcciones)
+  const yaConValor = Object.keys(posibles).filter((k) => tieneValor(actuales[k])).length
+
+  const correccionDe = elegirCorreccionPorFila(correcciones)
+  const faltantes: string[] = []
+  const vistos = new Set<string>()
+  for (const row of rows) {
+    const id = row.ejercicioId ?? `orden-${row.orden}`
+    if (vistos.has(id)) continue
+    vistos.add(id)
+    if (!correccionDe(row)) faltantes.push(row.ejercicioTitulo ?? `Ejercicio ${row.orden}`)
+  }
+
+  return {
+    sugeridos,
+    completados: Object.keys(sugeridos).length,
+    total: rows.length,
+    yaConValor,
+    faltantes,
+  }
 }

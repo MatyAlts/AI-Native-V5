@@ -745,7 +745,10 @@ export const helpContent: HelpContentMap = {
           <strong>"Completar criterios desde Active-IA" no espera a que esten todas.</strong> Carga
           los puntos de los ejercicios que ya tienen correccion y te dice cuantos completo y de cual
           falta. Solo llena casilleros vacios: no pisa lo que escribiste, no toca la nota final y no
-          guarda nada hasta que apretes "Calificar". "Usar como base" sigue la misma regla.
+          guarda nada hasta que apretes "Calificar". Al re-calificar, los puntajes ya guardados
+          cuentan como escritos: el aviso dice cuantos ya tenian valor, y si queres reemplazarlos
+          con lo de Active-IA, borralos y volve a apretar el boton. "Usar como base" sigue la misma
+          regla.
         </li>
         <li>
           <strong>Un criterio se completa solo si coincide.</strong> Tiene que tener el mismo nombre

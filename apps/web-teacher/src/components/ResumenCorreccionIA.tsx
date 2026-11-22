@@ -36,10 +36,13 @@ interface Props {
   onCompletarCriterios?: (() => ResultadoCompletarCriterios) | undefined
 }
 
+/** Lo que el componente necesita para el aviso de "Completar criterios". */
 export interface ResultadoCompletarCriterios {
   completados: number
   total: number
-  /** Titulos de los ejercicios sin correccion terminada. */
+  /** Casilleros que ya tenian valor y no se tocaron. */
+  yaConValor: number
+  /** Titulos de los ejercicios con rubrica sin correccion terminada. */
   faltantes: string[]
 }
 
@@ -145,6 +148,10 @@ export function ResumenCorreccionIA({
           {resultado && (
             <p className="text-xs text-body" data-testid="completar-criterios-resultado">
               Se completaron {resultado.completados} de {resultado.total} criterios.
+              {resultado.yaConValor > 0 &&
+                (resultado.yaConValor === 1
+                  ? ` 1 ya tenia valor y no se toco (borralo si queres reemplazarlo con lo de ${motorLabel}).`
+                  : ` ${resultado.yaConValor} ya tenian valor y no se tocaron (borralos si queres reemplazarlos con lo de ${motorLabel}).`)}
               {resultado.faltantes.length > 0 &&
                 ` Falta la correccion de: ${resultado.faltantes.join(", ")}.`}
             </p>

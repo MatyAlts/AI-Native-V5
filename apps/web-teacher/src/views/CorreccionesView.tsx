@@ -52,8 +52,8 @@ import {
 import { useTutorialDeVista } from "../tour/useTutorialDeVista"
 import { correccionesTour } from "../tour/vistas"
 import {
+  completarCriteriosDesdeCorrecciones,
   ejerciciosParaResumen,
-  resumirCorrecciones,
   sugerirPuntajesDesdeCorrecciones,
 } from "../utils/correccionIA"
 import { studentShortLabel } from "../utils/docenteLabels"
@@ -1872,7 +1872,7 @@ function GradingFormView({
               ...sugerirPuntajesDesdeCorrecciones(rubricaRows, correccionesIA, prev),
             }))
           }
-          setReediting(true)
+          if (yaCalificada) setReediting(true)
           window.requestAnimationFrame(() => {
             document.getElementById("nota-final")?.focus()
           })
@@ -1882,21 +1882,17 @@ function GradingFormView({
         onCompletarCriterios={
           tieneRubrica
             ? () => {
-                const sugeridos = sugerirPuntajesDesdeCorrecciones(
+                const r = completarCriteriosDesdeCorrecciones(
                   rubricaRows,
                   correccionesIA,
                   criterioScores,
                 )
-                setCriterioScores((prev) => ({ ...prev, ...sugeridos }))
-                setReediting(true)
-                return {
-                  completados: Object.keys(sugeridos).length,
-                  total: rubricaRows.length,
-                  faltantes: resumirCorrecciones(
-                    ejerciciosParaResumen(tpEjercicios),
-                    correccionesIA,
-                  ).faltantes,
-                }
+                setCriterioScores((prev) => ({ ...prev, ...r.sugeridos }))
+                // Solo una entrega ya calificada necesita el modo
+                // re-calificacion para que los casilleros sean editables. En
+                // una sin calificar, el boton sigue siendo "Calificar".
+                if (yaCalificada) setReediting(true)
+                return r
               }
             : undefined
         }
