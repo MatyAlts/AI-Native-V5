@@ -11,12 +11,14 @@
  *    ver de donde sale el numero que va a usar como base.
  * 2. **Si falta una correccion, no promedia.** Nombra los que faltan en vez
  *    de dar un numero que se lee como la nota del TP y no lo es.
- * 3. **Los criterios de Active-IA van SOLOS, sin cruzarlos con la rubrica
- *    local.** Emparejar por nombre pone el puntaje de un criterio en otro que
- *    se llama parecido, y eso no se ve.
+ * 3. **El desglose de Active-IA se muestra SOLO, tal cual vino.** Pasarlo a
+ *    la rubrica es aparte: "Completar criterios desde Active-IA" (HU-013) y
+ *    "Usar como base" delegan en `sugerirPuntajesDesdeCorrecciones`, que solo
+ *    llena casilleros vacios con nombre y maximo iguales.
  */
 import { HelpButton } from "@platform/ui"
 import { AlertTriangle, Calculator } from "lucide-react"
+import { useState } from "react"
 import type { CorreccionIA } from "../lib/api"
 import { type EjercicioDelTP, chequearAritmetica, resumirCorrecciones } from "../utils/correccionIA"
 import { helpContent } from "../utils/helpContent"
@@ -26,10 +28,32 @@ interface Props {
   correcciones: CorreccionIA[]
   /** Rellena el campo de nota. NO guarda: eso lo hace el form de siempre. */
   onUsarComoBase: (nota10: number) => void
+  /**
+   * HU-013: completa los puntos por criterio con los ejercicios ya corregidos,
+   * aunque falten otros. No toca la nota final ni guarda. Devuelve lo que
+   * hizo para mostrarlo. Sin esta prop el boton no aparece (TP sin rubrica).
+   */
+  onCompletarCriterios?: (() => ResultadoCompletarCriterios) | undefined
 }
 
-export function ResumenCorreccionIA({ ejercicios, correcciones, onUsarComoBase }: Props) {
+export interface ResultadoCompletarCriterios {
+  completados: number
+  total: number
+  /** Titulos de los ejercicios sin correccion terminada. */
+  faltantes: string[]
+}
+
+export function ResumenCorreccionIA({
+  ejercicios,
+  correcciones,
+  onUsarComoBase,
+  onCompletarCriterios,
+}: Props) {
   const r = resumirCorrecciones(ejercicios, correcciones)
+  const [resultado, setResultado] = useState<ResultadoCompletarCriterios | null>(null)
+  const hayDesglose = correcciones.some(
+    (c) => c.estado === "done" && Array.isArray(c.desglose) && c.desglose.length > 0,
+  )
 
   // Decision de producto (Juani, 2026-09-24): la sugerencia se presenta SIEMPRE
   // como "Active-IA", aunque bajo el capo corra el corrector propio. Es branding
@@ -39,7 +63,7 @@ export function ResumenCorreccionIA({ ejercicios, correcciones, onUsarComoBase }
   // Sin ninguna correccion terminada no hay nada que resumir, y una card
   // vacia que dice "faltan 4" antes de que el docente pida la primera seria
   // ruido.
-  if (r.terminos.length === 0) return null
+  if (r.terminos.length === 0 && !hayDesglose) return null
 
   return (
     <section
@@ -100,6 +124,31 @@ export function ResumenCorreccionIA({ ejercicios, correcciones, onUsarComoBase }
             </button>
             <span className="text-xs text-muted">Rellena el campo. No guarda nada.</span>
           </div>
+        </div>
+      )}
+
+      {onCompletarCriterios && hayDesglose && (
+        <div className="space-y-2">
+          <div className="flex flex-wrap items-center gap-3">
+            <button
+              type="button"
+              onClick={() => setResultado(onCompletarCriterios())}
+              data-testid="completar-criterios-ia"
+              className="rounded border border-subtle px-3 py-1.5 text-xs text-secondary hover:bg-surface-hover"
+            >
+              Completar criterios desde {motorLabel}
+            </button>
+            <span className="text-xs text-muted">
+              Solo los casilleros vacios. No toca la nota ni guarda nada.
+            </span>
+          </div>
+          {resultado && (
+            <p className="text-xs text-body" data-testid="completar-criterios-resultado">
+              Se completaron {resultado.completados} de {resultado.total} criterios.
+              {resultado.faltantes.length > 0 &&
+                ` Falta la correccion de: ${resultado.faltantes.join(", ")}.`}
+            </p>
+          )}
         </div>
       )}
 

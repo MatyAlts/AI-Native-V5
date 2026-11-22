@@ -742,9 +742,21 @@ export const helpContent: HelpContentMap = {
           ~61). Suma los criterios antes de dar el numero por bueno.
         </li>
         <li>
-          <strong>Los criterios de Active-IA van solos</strong>, no cruzados con tu rubrica.
-          Emparejarlos por nombre pondria el puntaje de uno en otro que se llama parecido, y eso no
-          se ve.
+          <strong>"Completar criterios desde Active-IA" no espera a que esten todas.</strong> Carga
+          los puntos de los ejercicios que ya tienen correccion y te dice cuantos completo y de cual
+          falta. Solo llena casilleros vacios: no pisa lo que escribiste, no toca la nota final y no
+          guarda nada hasta que apretes "Calificar". "Usar como base" sigue la misma regla.
+        </li>
+        <li>
+          <strong>Un criterio se completa solo si coincide.</strong> Tiene que tener el mismo nombre
+          que en tu rubrica (no importan mayusculas ni espacios) y el mismo puntaje maximo. Un
+          criterio "sin verificar" porque el codigo no compilaba queda vacio: su cero no dice que el
+          alumno no lo hizo.
+        </li>
+        <li>
+          <strong>El desglose de Active-IA se muestra tal cual vino</strong>, aparte de tu rubrica.
+          Solo pasa a tus casilleros un criterio que coincide en nombre y maximo: uno que se llama
+          parecido no se completa, porque pondria el puntaje de un criterio en otro y eso no se ve.
         </li>
       </ul>
       <p>

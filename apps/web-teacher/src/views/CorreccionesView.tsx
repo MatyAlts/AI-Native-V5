@@ -51,7 +51,11 @@ import {
 } from "../lib/api"
 import { useTutorialDeVista } from "../tour/useTutorialDeVista"
 import { correccionesTour } from "../tour/vistas"
-import { ejerciciosParaResumen, sugerirPuntajesDesdeCorrecciones } from "../utils/correccionIA"
+import {
+  ejerciciosParaResumen,
+  resumirCorrecciones,
+  sugerirPuntajesDesdeCorrecciones,
+} from "../utils/correccionIA"
 import { studentShortLabel } from "../utils/docenteLabels"
 import { helpContent } from "../utils/helpContent"
 import { textoPedidosReentrega } from "../utils/pedidosCorreccion"
@@ -1861,15 +1865,41 @@ function GradingFormView({
           // calificaba con la nota sugerida pero los inputs de criterio
           // quedaban vacios — y eso es lo que se guardaba como puntaje 0 en
           // la devolucion que ve el alumno (BUG-19).
+          // HU-013: sin pisar lo que el docente ya escribio.
           if (tieneRubrica) {
-            const sugeridos = sugerirPuntajesDesdeCorrecciones(rubricaRows, correccionesIA)
-            setCriterioScores((prev) => ({ ...prev, ...sugeridos }))
+            setCriterioScores((prev) => ({
+              ...prev,
+              ...sugerirPuntajesDesdeCorrecciones(rubricaRows, correccionesIA, prev),
+            }))
           }
           setReediting(true)
           window.requestAnimationFrame(() => {
             document.getElementById("nota-final")?.focus()
           })
         }}
+        // HU-013: completa los criterios de los ejercicios ya corregidos aunque
+        // falten otros. No toca la nota final ni guarda: eso es "Calificar".
+        onCompletarCriterios={
+          tieneRubrica
+            ? () => {
+                const sugeridos = sugerirPuntajesDesdeCorrecciones(
+                  rubricaRows,
+                  correccionesIA,
+                  criterioScores,
+                )
+                setCriterioScores((prev) => ({ ...prev, ...sugeridos }))
+                setReediting(true)
+                return {
+                  completados: Object.keys(sugeridos).length,
+                  total: rubricaRows.length,
+                  faltantes: resumirCorrecciones(
+                    ejerciciosParaResumen(tpEjercicios),
+                    correccionesIA,
+                  ).faltantes,
+                }
+              }
+            : undefined
+        }
       />
 
       {/* Ejercicios (F17): una tarjeta colapsable por ejercicio, con el codigo
