@@ -143,12 +143,20 @@ function montarCon(ejercicios: unknown[], correcciones: CorreccionIA[]) {
   renderWithRouter(<CorreccionesView comisionId={COMISION_ID} getToken={getToken} />)
 }
 
+// Margen de espera: con la suite entera en paralelo el montaje puede pasar
+// el segundo por defecto (R01 fallo 1 de 7 corridas por tiempo, 22/11).
+// Solo cambia cuanto se espera, no que se comprueba.
+const ESPERA = { timeout: 5000 }
+
 describe("HU-013 · segunda ronda", () => {
   it("R01: en una entrega sin calificar no entra en modo re-calificacion", async () => {
     montar(SOLO_EJ1)
     await abrirEntrega()
-    fireEvent.click(await screen.findByTestId("completar-criterios-ia"))
-    await waitFor(() => expect(screen.getByTestId("criterio-puntaje-ej-1#0")).toHaveValue(3))
+    fireEvent.click(await screen.findByTestId("completar-criterios-ia", {}, ESPERA))
+    await waitFor(
+      () => expect(screen.getByTestId("criterio-puntaje-ej-1#0")).toHaveValue(3),
+      ESPERA,
+    )
     expect(screen.getByTestId("calificar-btn")).toBeDefined()
     expect(screen.queryByTestId("guardar-recalificacion-btn")).toBeNull()
     expect(screen.queryByTestId("cancelar-recalificacion-btn")).toBeNull()
@@ -157,10 +165,10 @@ describe("HU-013 · segunda ronda", () => {
   it("R02: avisa cuantos casilleros ya tenian valor", async () => {
     montar(SOLO_EJ1)
     await abrirEntrega()
-    const input = await screen.findByTestId("criterio-puntaje-ej-1#0")
+    const input = await screen.findByTestId("criterio-puntaje-ej-1#0", {}, ESPERA)
     fireEvent.change(input, { target: { value: "2" } })
-    fireEvent.click(await screen.findByTestId("completar-criterios-ia"))
-    const resultado = await screen.findByTestId("completar-criterios-resultado")
+    fireEvent.click(await screen.findByTestId("completar-criterios-ia", {}, ESPERA))
+    const resultado = await screen.findByTestId("completar-criterios-resultado", {}, ESPERA)
     expect(resultado.textContent).toMatch(/1 de 4/)
     expect(resultado.textContent).toMatch(/1 ya ten[ií]a valor/)
     expect(screen.getByTestId("criterio-puntaje-ej-1#0")).toHaveValue(2)
@@ -173,8 +181,8 @@ describe("HU-013 · segunda ronda", () => {
     }
     montarCon([tpEj(1), sinRubrica], SOLO_EJ1)
     await abrirEntrega()
-    fireEvent.click(await screen.findByTestId("completar-criterios-ia"))
-    const resultado = await screen.findByTestId("completar-criterios-resultado")
+    fireEvent.click(await screen.findByTestId("completar-criterios-ia", {}, ESPERA))
+    const resultado = await screen.findByTestId("completar-criterios-resultado", {}, ESPERA)
     expect(resultado.textContent).toMatch(/2 de 2/)
     expect(resultado.textContent).not.toMatch(/Ejercicio 2/)
   })
@@ -191,8 +199,8 @@ describe("HU-013 · segunda ronda", () => {
     ]
     montar(ej1SinNota)
     await abrirEntrega()
-    fireEvent.click(await screen.findByTestId("completar-criterios-ia"))
-    const resultado = await screen.findByTestId("completar-criterios-resultado")
+    fireEvent.click(await screen.findByTestId("completar-criterios-ia", {}, ESPERA))
+    const resultado = await screen.findByTestId("completar-criterios-resultado", {}, ESPERA)
     expect(resultado.textContent).toMatch(/2 de 4/)
     expect(resultado.textContent).not.toMatch(/Ejercicio 1/)
     expect(resultado.textContent).toMatch(/Ejercicio 2/)
