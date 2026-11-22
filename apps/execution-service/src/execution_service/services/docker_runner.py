@@ -1,4 +1,4 @@
-"""Ejecucion de Java en un contenedor Docker efimero, sin privilegios (ADR-060).
+"""Ejecucion de Java y Python en un contenedor Docker efimero, sin privilegios (ADR-060).
 
 Motor de ejecucion del servicio. Reemplaza a Judge0, que quedo superado por el
 ADR-060 tras medir el spike.
@@ -165,6 +165,62 @@ def _acotar(crudo: bytes) -> str:
 
 
 def _docker_args(source_code: str) -> list[str]:
+    """`docker run` de Java. El comando no cambio con HU-015."""
+    return _docker_args_base(
+        source_code,
+        imagen=settings.java_image,
+        # Se compila y ejecuta en /work (tmpfs). El exit code 101 se reserva
+        # para "no compilo", que es distinto de "el programa fallo".
+        comando='printf %s "$SRC" > Main.java && javac Main.java 2>&1 || exit 101; java Main',
+    )
+
+
+# Preludio de Python (HU-015). PARIDAD con el shim de Pyodide
+# (`web-teacher/src/lib/pyodideRunner.ts::_fake_input` y el de
+# `web-student/CodeEditor.tsx`): el prompt de `input(prompt)` NO entra a la
+# salida que se compara contra la esperada (change
+# `comparacion-ignora-el-prompt-del-input`). CPython lo escribiria a stdout, y
+# entonces un `input("Ingrese n: ")` correcto fallaria TODOS los casos en el
+# servidor y pasaria en el navegador — que es exactamente el "la IA lee que
+# fallo todo" que HU-015 vino a cerrar. Fin de stdin = `EOFError`, igual que
+# el shim.
+_PRELUDIO_PYTHON = (
+    "import builtins, runpy\n"
+    "_leer = builtins.input\n"
+    "def _input(prompt=''):\n"
+    "    return _leer()\n"
+    "builtins.input = _input\n"
+    "runpy.run_path('main.py', run_name='__main__')\n"
+)
+
+
+def _docker_args_python(source_code: str) -> list[str]:
+    """`docker run` de Python: mismas banderas que Java, otra imagen y comando.
+
+    No hay paso de compilacion: un `SyntaxError` es un error de ejecucion
+    (`exit_code` != 0), y el 101 no significa nada especial (ver `run_python`).
+    """
+    return _docker_args_base(
+        source_code,
+        imagen=settings.python_image,
+        comando='printf %s "$SRC" > main.py && python3 -c "$PRELUDIO"',
+        env_extra={"PRELUDIO": _PRELUDIO_PYTHON},
+    )
+
+
+def _docker_args_base(
+    source_code: str,
+    *,
+    imagen: str,
+    comando: str,
+    env_extra: dict[str, str] | None = None,
+) -> list[str]:
+    """Banderas de aislamiento COMPARTIDAS por todos los lenguajes.
+
+    Imagen y comando los fija el codigo de este modulo, nunca el caller: el
+    runner solo recibe `{source_code, stdin, language}` (ADR-060 D3).
+    """
+    env = [a for k, v in (env_extra or {}).items() for a in ("-e", f"{k}={v}")]
     return [
         "docker",
         "run",
@@ -228,14 +284,13 @@ def _docker_args(source_code: str) -> list[str]:
         # asimetria dev/prod de raiz.
         "-e",
         f"SRC={source_code}",
+        *env,
         "-w",
         "/work",
-        settings.java_image,
+        imagen,
         "sh",
         "-c",
-        # Se compila y ejecuta en /work (tmpfs). El exit code 101 se reserva
-        # para "no compilo", que es distinto de "el programa fallo".
-        'printf %s "$SRC" > Main.java && javac Main.java 2>&1 || exit 101; java Main',
+        comando,
     ]
 
 
@@ -256,10 +311,39 @@ async def run_java(source_code: str, stdin: str = "") -> DockerRunResult:
         return await _run_java_sin_techo(source_code, stdin)
 
 
+async def run_python(source_code: str, stdin: str = "") -> DockerRunResult:
+    """Ejecuta un archivo Python unico en un contenedor aislado (HU-015).
+
+    Lo usa la correccion con IA para tener el resultado real de cada caso. El
+    "Probar" del alumno NO pasa por aca: sigue en Pyodide (ADR-033).
+
+    Mismo semaforo y mismo wall-time que Java: una corrida de Python le saca
+    un cupo al techo igual que una de Java.
+    """
+    semaforo = _obtener_semaforo()
+    if semaforo.locked():
+        logger.info(
+            "sandbox_saturado techo=%s — la corrida espera turno",
+            settings.execution_max_concurrent_runs,
+        )
+    async with semaforo:
+        return await _correr(_docker_args_python(source_code), stdin, compila=False)
+
+
 async def _run_java_sin_techo(source_code: str, stdin: str = "") -> DockerRunResult:
     """El cuerpo real. Separado para que el wall-time NO cuente la espera."""
+    return await _correr(_docker_args(source_code), stdin, compila=True)
+
+
+async def _correr(args: list[str], stdin: str, *, compila: bool) -> DockerRunResult:
+    """Lanza el `docker run` y aplica el wall-time.
+
+    `compila=False` (Python): el 101 no se lee como fallo de compilacion. Un
+    `sys.exit(101)` del alumno es un error de ejecucion comun, y tratarlo como
+    "no compila" le cortaria la correccion con un motivo falso.
+    """
     proc = await asyncio.create_subprocess_exec(
-        *_docker_args(source_code),
+        *args,
         stdin=asyncio.subprocess.PIPE,
         stdout=asyncio.subprocess.PIPE,
         stderr=asyncio.subprocess.PIPE,
@@ -284,8 +368,9 @@ async def _run_java_sin_techo(source_code: str, stdin: str = "") -> DockerRunRes
         stdout=_acotar(out),
         stderr=_acotar(err),
         timed_out=False,
-        # 101 es el codigo que el comando reserva para fallo de compilacion.
-        compile_failed=code == 101,
+        # 101 es el codigo que el comando de JAVA reserva para fallo de
+        # compilacion. En Python no hay compilacion: siempre False.
+        compile_failed=compila and code == 101,
     )
 
 

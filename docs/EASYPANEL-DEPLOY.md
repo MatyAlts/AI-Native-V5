@@ -60,13 +60,15 @@ Para cada servicio en EasyPanel (tipo **App > Dockerfile**):
 `execution-service` y `execution-runner` **no existían antes**: hay que crearlos,
 no redeployarlos. De a uno por vez — el VPS tiene la RAM justa.
 
-**Variables obligatorias.** Las tres primeras son las que hacen que el runner ni
-arranque si faltan; la cuarta falla en silencio, que es peor:
+**Variables obligatorias.** `RUNNER_TOKEN`, `JAVA_IMAGE` y `PYTHON_IMAGE` son las
+que hacen que el runner ni arranque si faltan o están mal; `INTERNAL_SERVICE_TOKEN`
+falla en silencio, que es peor:
 
 | Variable | Dónde | Por qué |
 |---|---|---|
 | `RUNNER_TOKEN` | ambos, **mismo valor** | Secreto compartido. Sin él el runner **no arranca** fuera de dev. `openssl rand -base64 32` |
 | `JAVA_IMAGE` | ambos | Pineada por **digest**, no por tag. Con tag mutable el runner **no arranca**. `docker inspect --format='{{index .RepoDigests 0}}' <imagen>` |
+| `PYTHON_IMAGE` | execution-runner | Desde HU-015. Imagen de Python (`python:3.12-slim`) pineada por **digest** de 64 hex, mismo control que `JAVA_IMAGE`: con tag el runner **no arranca**. Se usa SOLO para la corrección con IA; el Probar del alumno en Python sigue en Pyodide. `docker pull python:3.12-slim && docker inspect --format='{{index .RepoDigests 0}}' python:3.12-slim` |
 | `RUNNER_URL` | execution-service | Apunta al runner por la red interna |
 | **`INTERNAL_SERVICE_TOKEN`** | execution-service y **tutor-service**, **mismo valor** | ⚠️ Si no coincide, los ejercicios **con casos ocultos** pierden su `tests_ejecutados`: el tutor los rechaza con 422 y la emisión falla soft. **No se cae nada** — queda un agujero en el corpus, justo en los ejercicios que sostienen el claim del ADR-060. Vigilar `execution_ctr_emissions_failed_total`. |
 | `EXECUTION_ENABLED` | execution-service | Default **`false`** (falla cerrado, como el resto del servicio): un deploy que no la toque deja la ejecución **apagada**, que es el estado seguro. Para encender hay que ponerla explícitamente en `true`, y recién después abrir de a una comisión con `EXECUTION_ENABLED_COMISIONES`. Hasta el 2026-08-03 el default era `true` y esta fila advertía lo contrario: era la única pieza del ADR-060 que fallaba abierto. |

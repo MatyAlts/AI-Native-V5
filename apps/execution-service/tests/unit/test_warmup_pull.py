@@ -59,10 +59,33 @@ async def test_el_warmup_pide_pull_de_la_imagen_configurada(monkeypatch) -> None
     monkeypatch.setattr(
         runner_main.settings, "java_image", "eclipse-temurin:21-jdk@sha256:deadbeef"
     )
+    monkeypatch.setattr(runner_main.settings, "python_image", "python:3.12-slim@sha256:cafe")
 
     await _warmup_image()
 
-    assert visto == [("docker", "pull", "eclipse-temurin:21-jdk@sha256:deadbeef")]
+    # HU-015: tambien la de Python, que usa la correccion con IA.
+    assert visto == [
+        ("docker", "pull", "eclipse-temurin:21-jdk@sha256:deadbeef"),
+        ("docker", "pull", "python:3.12-slim@sha256:cafe"),
+    ]
+
+
+@pytest.mark.asyncio
+async def test_si_falla_el_pull_de_java_igual_se_baja_python(monkeypatch) -> None:
+    """Cada imagen es best-effort por separado: una caida no arrastra a la otra."""
+    visto: list[str] = []
+
+    async def _fake(*args: str, **_kwargs: object) -> _ProcFalso:
+        visto.append(args[2])
+        return _ProcFalso(returncode=1 if len(visto) == 1 else 0, stderr=b"manifest unknown")
+
+    monkeypatch.setattr(asyncio, "create_subprocess_exec", _fake)
+    monkeypatch.setattr(runner_main.settings, "java_image", "j")
+    monkeypatch.setattr(runner_main.settings, "python_image", "p")
+
+    await _warmup_image()
+
+    assert visto == ["j", "p"]
 
 
 @pytest.mark.asyncio

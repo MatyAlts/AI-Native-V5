@@ -33,10 +33,15 @@ from execution_service.services.result_mapper import (
 from execution_service.services.runner_client import RunnerClient
 from execution_service.services.sandbox_types import SandboxUnavailableError
 
-# Lenguajes que este servicio sabe ejecutar server-side. Python NO esta acá:
-# sigue corriendo en el navegador con Pyodide (ADR-033), que es instantaneo y
-# gratis. Agregar un lenguaje es una imagen y un comando en `docker_runner`.
-LENGUAJES_SOPORTADOS: frozenset[str] = frozenset({"java"})
+# Lenguajes que este servicio sabe ejecutar server-side. Agregar uno es una
+# imagen y un comando en `docker_runner`.
+#
+# Python esta desde HU-015, y SOLO por la correccion con IA: sin el resultado
+# real de cada caso, el motor leia "fallo todo" sobre codigo correcto. El
+# "Probar" del alumno en Python sigue en el navegador con Pyodide (ADR-033),
+# que es instantaneo y gratis: el web-student no llama a este servicio para
+# Python.
+LENGUAJES_SOPORTADOS: frozenset[str] = frozenset({"java", "python"})
 
 # Rotulo generico de un caso oculto. El numero es su posicion entre los ocultos,
 # no su id ni su nombre real: el alumno puede contar cuantos hay sin saber que
@@ -64,11 +69,12 @@ async def run_cases(
 
     cases: list[CaseResult] = []
     runner = RunnerClient()
+    correr = runner.run_python if ejercicio.language == "python" else runner.run_java
 
     try:
         for tc in ejercicio.test_cases:
             stdin = tc.code if tc.type == "stdin_stdout" else ""
-            crudo = await runner.run_java(source_code, stdin)
+            crudo = await correr(source_code, stdin)
             result = to_sandbox_result(crudo, tc.expected)
             cases.append(
                 map_case(
@@ -141,7 +147,11 @@ async def run_libre(*, source_code: str, language: str, stdin: str = "") -> Corr
             ejecutado=False,
         )
 
-    crudo = await RunnerClient().run_java(source_code, stdin)
+    # Desde HU-015 Python tambien esta en `LENGUAJES_SOPORTADOS`: sin este
+    # despacho, un Ejecutar de Python le mandaria el fuente al comando de Java.
+    runner = RunnerClient()
+    correr = runner.run_python if language == "python" else runner.run_java
+    crudo = await correr(source_code, stdin)
     return CorridaLibre(
         stdout=crudo.stdout,
         stderr=crudo.stderr,

@@ -279,7 +279,9 @@ async def _run_and_store(execution_id: UUID, *, req: ExecutionRequest, user: Use
                 run_emitido,
                 hidden_case_ids={c.id for c in ejercicio_emitido.hidden_cases},
                 ejecucion_ms=ejecucion_ms,
-                engine="docker-java",
+                # Informativo (el classifier no lo lee). Java sigue en
+                # "docker-java"; un Python con episodio diria "docker-python".
+                engine=f"docker-{ejercicio_emitido.language}",
             ),
         )
 

@@ -7,10 +7,13 @@ superficie de ataque entra en una pantalla.
 
 ## La propiedad que sostiene
 
-El caller manda **unicamente** `{source_code, stdin}`. No puede elegir la
-imagen, ni las banderas, ni los limites, ni montar nada: todo eso esta fijo en
+El caller manda **unicamente** `{source_code, stdin, language}`. `language` es
+`java` o `python` y elige entre dos comandos fijos; no puede elegir la imagen,
+ni las banderas, ni los limites, ni montar nada: todo eso esta fijo en
 `docker_runner.py`. Comprometer al `execution-service` permite, como maximo,
-pedir que se ejecute un Java — que es lo mismo que ya puede hacer un alumno.
+pedir que se ejecute un Java o un Python — lo mismo que ya puede hacer un
+alumno. Python se ejecuta aca SOLO para la correccion con IA (HU-015); el
+"Probar" del alumno sigue en Pyodide.
 
 Esto es lo que un socket-proxy NO da: permitir `POST /containers/create` implica
 permitir `Privileged: true` y `Binds: ["/:/host"]`, porque esos proxies filtran
@@ -24,7 +27,8 @@ por ruta y no por cuerpo del pedido.
     unico cliente legitimo es el execution-service. Es lo unico de los tres
     controles que el codigo no puede garantizar solo — se verifica sobre el
     despliegue con `scripts/verificar-despliegue-ejecucion.sh`.
-  - `RUNNER_TOKEN` compartido entre ambos, e imagen pineada por digest. Fuera de
+  - `RUNNER_TOKEN` compartido entre ambos, e imagenes (`JAVA_IMAGE`,
+    `PYTHON_IMAGE`) pineadas por digest. Fuera de
     desarrollo los dos son OBLIGATORIOS: sin ellos el proceso **no arranca**
     (ver `verificar_configuracion_segura`). Antes fallaban abiertos, que es
     justo el modo de falla que el ADR-060 no puede permitirse.
@@ -38,12 +42,13 @@ import logging
 import re
 import secrets
 from collections.abc import AsyncIterator
+from typing import Literal
 
 from fastapi import FastAPI, Header, HTTPException, status
 from pydantic import BaseModel, Field
 
 from execution_service.config import settings
-from execution_service.services.docker_runner import run_java
+from execution_service.services.docker_runner import run_java, run_python
 
 logger = logging.getLogger(__name__)
 
@@ -53,7 +58,17 @@ _WARMUP_PULL_TIMEOUT_SECONDS = 600.0
 
 
 async def _warmup_image() -> None:
-    """Baja la imagen del sandbox al arrancar, para que no la baje una corrida.
+    """Baja las imagenes del sandbox (Java y Python) al arrancar.
+
+    Una por vez y cada una best-effort: que falle la de Python no impide
+    precalentar la de Java, ni al reves.
+    """
+    for imagen in (settings.java_image, settings.python_image):
+        await _pull(imagen)
+
+
+async def _pull(imagen: str) -> None:
+    """Baja una imagen del sandbox al arrancar, para que no la baje una corrida.
 
     `docker_runner.py` aplica el wall-time limit (10s) sobre el `docker run`
     ENTERO. Si la imagen no esta local, ese `docker run` incluye la descarga, y
@@ -69,7 +84,6 @@ async def _warmup_image() -> None:
     presupuesto de preparacion del contenedor del de ejecucion del codigo, que
     es un cambio de comportamiento del sandbox y va aparte.
     """
-    imagen = settings.java_image
     try:
         proc = await asyncio.create_subprocess_exec(
             "docker",
@@ -145,25 +159,36 @@ def verificar_configuracion_segura() -> list[str]:
     # sandbox que ejecuta codigo de terceros, el digest es lo que hace
     # reproducible QUE se corrio — y es parte de la defensa de la tesis, no
     # solo higiene operativa.
-    if "@sha256:" not in settings.java_image:
-        problemas.append(
-            f"JAVA_IMAGE por tag mutable ({settings.java_image}): pinear por digest. "
-            "Obtenerlo con `docker inspect --format='{{index .RepoDigests 0}}' <imagen>`."
-        )
-    else:
-        # El digest se valida ENTERO. Preguntar solo por el substring `@sha256:`
-        # dejaba pasar un digest cortado: el 2026-08-05 produccion corria con 55
-        # de 64 caracteres, el runner arrancaba sin chistar y toda corrida moria
-        # despues, en el `docker run`. Un control que un valor roto satisface no
-        # es un control — y este el ADR-060 lo declara falla-cerrado.
-        digest = settings.java_image.split("@sha256:", 1)[1]
-        if not re.fullmatch(r"[0-9a-f]{64}", digest):
-            problemas.append(
-                f"JAVA_IMAGE con digest mal formado ({len(digest)} chars, deberian ser 64 "
-                "hex): se corta al pegarlo. Verificar con `docker images --digests <imagen>`."
-            )
+    for variable, imagen in (
+        ("JAVA_IMAGE", settings.java_image),
+        ("PYTHON_IMAGE", settings.python_image),
+    ):
+        problema = _problema_de_imagen(variable, imagen)
+        if problema:
+            problemas.append(problema)
 
     return problemas
+
+
+def _problema_de_imagen(variable: str, imagen: str) -> str | None:
+    """Control C1 para una imagen del sandbox. `None` = pineada bien."""
+    if "@sha256:" not in imagen:
+        return (
+            f"{variable} por tag mutable ({imagen}): pinear por digest. "
+            "Obtenerlo con `docker inspect --format='{{index .RepoDigests 0}}' <imagen>`."
+        )
+    # El digest se valida ENTERO. Preguntar solo por el substring `@sha256:`
+    # dejaba pasar un digest cortado: el 2026-08-05 produccion corria con 55
+    # de 64 caracteres, el runner arrancaba sin chistar y toda corrida moria
+    # despues, en el `docker run`. Un control que un valor roto satisface no
+    # es un control — y este el ADR-060 lo declara falla-cerrado.
+    digest = imagen.split("@sha256:", 1)[1]
+    if not re.fullmatch(r"[0-9a-f]{64}", digest):
+        return (
+            f"{variable} con digest mal formado ({len(digest)} chars, deberian ser 64 "
+            "hex): se corta al pegarlo. Verificar con `docker images --digests <imagen>`."
+        )
+    return None
 
 
 @contextlib.asynccontextmanager
@@ -212,6 +237,10 @@ class RunRequest(BaseModel):
 
     source_code: str = Field(min_length=1, max_length=100_000)
     stdin: str = Field(default="", max_length=100_000)
+    # Elige entre dos comandos FIJOS de `docker_runner`. No es una imagen ni un
+    # comando: un valor fuera del Literal es 422. Default "java" para que un
+    # execution-service viejo (que no manda el campo) siga andando igual.
+    language: Literal["java", "python"] = "java"
 
 
 def _check_token(token: str | None) -> None:
@@ -239,7 +268,8 @@ async def run(
     x_runner_token: str | None = Header(default=None),
 ) -> dict[str, object]:
     _check_token(x_runner_token)
-    result = await run_java(req.source_code, req.stdin)
+    correr = run_python if req.language == "python" else run_java
+    result = await correr(req.source_code, req.stdin)
     return {
         "exit_code": result.exit_code,
         "stdout": result.stdout,

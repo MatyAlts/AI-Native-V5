@@ -204,7 +204,8 @@ async def test_un_lenguaje_sin_runtime_no_emite_evento(
     monkeypatch: pytest.MonkeyPatch, espia: _Espia
 ) -> None:
     """Todos los casos `skipped`, que `RunResult.total` excluye por definicion."""
-    ejercicio = _ejercicio(language="python", casos=[_test_case("t1"), _test_case("t2")])
+    # "cobol" y no "python": desde HU-015 Python tiene runtime en el sandbox.
+    ejercicio = _ejercicio(language="cobol", casos=[_test_case("t1"), _test_case("t2")])
     await _correr(monkeypatch, ejercicio=ejercicio)
 
     assert espia.guardado is not None and espia.guardado["outcome"] == "completed", (
@@ -239,7 +240,8 @@ async def test_no_emitir_no_le_saca_el_resultado_al_alumno(
     dejaria al alumno mirando una pantalla vacia por un ejercicio que alguien
     autoro sin casos.
     """
-    ejercicio = _ejercicio(language="python", casos=[_test_case("t1"), _test_case("t2")])
+    # "cobol" y no "python": desde HU-015 Python tiene runtime en el sandbox.
+    ejercicio = _ejercicio(language="cobol", casos=[_test_case("t1"), _test_case("t2")])
     await _correr(monkeypatch, ejercicio=ejercicio)
 
     assert espia.guardado is not None, "no se guardo resultado para el alumno"

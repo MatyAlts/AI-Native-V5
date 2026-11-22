@@ -31,12 +31,16 @@ class Settings(BaseSettings):
     # Imagen con JDK. En produccion se pinea por DIGEST, no por tag: un tag
     # mutable permite que cambie el JDK bajo los pies (control C1).
     java_image: str = Field(default="eclipse-temurin:21-jdk")
+    # Imagen con Python (HU-015). La usa SOLO la correccion con IA, para tener
+    # el resultado real de cada caso: el "Probar" del alumno sigue en Pyodide.
+    # Mismo control C1 que Java: en produccion, por digest (`PYTHON_IMAGE`).
+    python_image: str = Field(default="python:3.12-slim")
 
     # ── Runner (gate D3 del ADR-060) ─────────────────────────────────────────
     # Este servicio NO monta `/var/run/docker.sock`: ese socket es equivalente a
     # root en el host, y con el se puede crear un contenedor privilegiado que
     # monte `/`. El acceso a Docker vive en un proceso aparte —el runner— que
-    # solo acepta `{source_code, stdin}` y arma el comando el mismo.
+    # solo acepta `{source_code, stdin, language}` y arma el comando el mismo.
     #
     # Un socket-proxy NO resuelve esto: filtra por ruta, no por payload, y
     # permitir `POST /containers/create` es permitir crear uno privilegiado.
