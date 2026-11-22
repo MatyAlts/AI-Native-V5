@@ -388,6 +388,20 @@ function Resultado({
           )}
         </p>
       )}
+      {/* HU-015: si el sandbox no ejecuto ningun caso (lenguaje sin runtime),
+          la nota sale de leer el codigo. Sin este aviso, un `total: 0` se
+          parecia a "fallo todo" y el docente no tenia como distinguirlo.
+          Una correccion vieja sin el campo NO lo muestra: `undefined` no es
+          `false`. */}
+      {correccion.tests_snapshot?.ejecutado === false && (
+        <p
+          className="rounded border border-warning/30 bg-warning-soft p-2 text-warning"
+          data-testid="correccion-ia-sin-ejecutar"
+        >
+          <strong>Pruebas no ejecutadas.</strong> La nota sugerida sale de leer el codigo, no de
+          ejecutarlo: ningun caso de prueba la respalda.
+        </p>
+      )}
       {correccion.tiene_pdf && (
         <button
           type="button"
