@@ -172,13 +172,17 @@ function EntregasListView({
   // "Sólo re-entregas": filtro server-side (entra en la queryKey y reinicia la paginación).
   const [soloReentregas, setSoloReentregas] = useState(false)
   // Filtro por TP (HU-012): server-side como los otros dos. Se guarda junto a
-  // la comision en la que se eligio: al cambiar de comision el TP elegido deja
-  // de valer y el filtro vuelve a "Todos los TP" en el mismo render, sin
-  // disparar un pedido con la comision nueva y el TP viejo.
+  // la comision en la que se eligio. Cualquier cambio de comision lo descarta:
+  // en ese mismo render el filtro ya vale "" (ningun pedido sale con la
+  // comision nueva y el TP viejo) y la seleccion se borra, para que volver a
+  // la comision anterior no la restaure (patron "ajustar estado en render").
   const [tpSeleccion, setTpSeleccion] = useState<{ comisionId: string; tpId: string }>({
     comisionId,
     tpId: "",
   })
+  if (tpSeleccion.comisionId !== comisionId) {
+    setTpSeleccion({ comisionId, tpId: "" })
+  }
   const tpFilter = tpSeleccion.comisionId === comisionId ? tpSeleccion.tpId : ""
   // Búsqueda por alumno (FR-5): filtra la lista en vivo por el dato de alumno
   // que la fila ya muestra — el nombre real (si el alumno se logueó) o el
