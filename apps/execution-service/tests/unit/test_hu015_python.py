@@ -183,8 +183,13 @@ async def test_c06_el_runner_recibe_el_lenguaje(monkeypatch) -> None:
         status_code = 200
 
         def json(self) -> dict:
-            return {"exit_code": 0, "stdout": "6\n", "stderr": "", "timed_out": False,
-                    "compile_failed": False}
+            return {
+                "exit_code": 0,
+                "stdout": "6\n",
+                "stderr": "",
+                "timed_out": False,
+                "compile_failed": False,
+            }
 
     class _Cliente:
         def __init__(self, *a, **k) -> None:
