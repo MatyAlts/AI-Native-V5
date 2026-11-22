@@ -181,8 +181,12 @@ def test_c01_classifier_config_hash_intacto():
         compute_classifier_config_hash,
     )
 
+    # Lo que este criterio protege es que el JUEZ no entre al hash. HU-009
+    # (20/11) sube tree_version a proposito (Probar cuenta en el subgrupo), asi
+    # que se fija el hash de v4.1.0 con su tree_version explicito: si el juez
+    # entrara a la formula, este valor se moveria igual.
     assert (
-        compute_classifier_config_hash(DEFAULT_REFERENCE_PROFILE)
+        compute_classifier_config_hash(DEFAULT_REFERENCE_PROFILE, "v4.1.0")
         == "56f3905858c19def2f20741a03378e9d5e3dfe1a4f0e4dd75d7440367fdc1180"
     )
 
@@ -741,18 +745,21 @@ def test_n01_ningun_episodio_de_los_150_en_el_prompt_ni_en_los_ejemplos():
 
 
 # ── N05: no se tocan los prompts del tutor ni F15 ───────────────────────────
-def _huella_arbol(p: pathlib.Path) -> str:
+def _huella_arbol(p: pathlib.Path, excluir: str | None = None) -> str:
     h = hashlib.sha256()
     for f in sorted(p.rglob("*")):
-        if f.is_file():
+        if f.is_file() and f.relative_to(p).parts[0] != excluir:
             h.update(str(f.relative_to(p)).encode())
             h.update(f.read_bytes())
     return h.hexdigest()
 
 
 def test_n05_prompts_del_tutor_intactos():
+    # HU-009 (20/11/2026): Juani autorizo un prompt nuevo del tutor ("los promts
+    # podes tocarlos tranquilo"). Lo que sigue intacto son las versiones que ya
+    # existian: se excluye solo la carpeta v1.11.0.
     assert (
-        _huella_arbol(RAIZ / "ai-native-prompts/prompts/tutor")
+        _huella_arbol(RAIZ / "ai-native-prompts/prompts/tutor", excluir="v1.11.0")
         == "d862193c219a9f45bceb3cfcdc42e2441c6327d2c5d5cf11a15ea8102c0dc595"
     )
 

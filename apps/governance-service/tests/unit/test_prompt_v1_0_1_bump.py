@@ -120,12 +120,17 @@ def test_v101_corrige_cuenta_de_guardarrailes(loader: PromptLoader) -> None:
 # El nombre
 # del test NO lleva la version a proposito: antes se llamaba `..._activa_v101_...`
 # mientras asserteaba v1.2.0, y el nombre quedo mintiendo dos bumps seguidos.
-ACTIVE_TUTOR_VERSION = "v1.10.0"
+ACTIVE_TUTOR_VERSION = "v1.11.0"
 
 
 def test_manifest_global_activa_la_version_vigente_del_tutor(loader: PromptLoader) -> None:
     """El manifest global del repo declara la version activa del `tutor` para el
-    tenant `default`. Hoy: v1.10.0 (2026-10-09) — dos fixes de QA sobre prod
+    tenant `default`. Hoy: v1.11.0 (2026-11-20, HU-009) — seccion nueva sobre lo
+    que el tutor ve del episodio y lo que no (no finge recordar otros
+    ejercicios, no inventa errores si Probar paso todo, no sugiere pegar, no
+    dicta la linea de la solucion, señala el resultado escrito a mano).
+
+    Antes: v1.10.0 (2026-10-09) — dos fixes de QA sobre prod
     (08/10): el tutor deja de preguntar "en que ejercicio estas trabajando"
     cuando el enunciado ya le llega en el contexto (regla de primer turno), y
     la respuesta directa de sintaxis se acota a quien ya sabe que herramienta

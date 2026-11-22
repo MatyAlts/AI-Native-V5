@@ -78,6 +78,8 @@ Al correr contra `ctr_store` de prod (305 episodios cerrados), el modelo de even
 
 **`resolvió` refinado:** la ÚLTIMA ejecución terminó limpia (no "alguna vez le anduvo").
 
+**Actualización HU-009 (2026-11-20, `tree_version` v4.2.0):** `tests_ejecutados` ya existe como evento (lo emite el execution-service al tocar Probar), y la fila de arriba quedó vieja. Probar cuenta como ejecución: suma al conteo del «poco trabajo» y del «trabado», y `resolvió` también es verdadero si el ÚLTIMO Probar pasó todos sus casos (`test_count_failed == 0` y `test_count_total > 0`). Ejecutar sigue contando igual. Sin esto, un alumno que solo usaba Probar y pasaba todo salía `desenganchado` o `autonomo_desenganchado`.
+
 **8º subgrupo (agregado por calibración):** **Escribió sin validar 📝** — ≥10 ediciones pero
 casi sin ejecutar (escribió código y no lo probó). Roll-up → superficial. Acción: fomentar el
 hábito de ejecutar/probar. (Confirmado con datos: ejecutar funcionaba; fue elección del alumno.)

@@ -16,8 +16,14 @@ Corrige la inversión del motor viejo (alumnos autónomos sin tutor marcados com
 `edicion_codigo.origin` ∈ {student_typed, pasted_external} (no existe copied_from_tutor;
 `snippet_expanded` se agregó después y NO cuenta como pegada — un snippet de ceremonia
 del editor no es delegación, así que no baja la autonomía),
-`anotacion_creada` = 0, `resolvió` = última ejecución limpia (stdout sin stderr),
-sin `tests_ejecutados`/`tp_entregada` en el CTR.
+`anotacion_creada` = 0, `resolvió` = última ejecución limpia (stdout sin stderr).
+
+HU-009 (tree_version v4.2.0): Probar (`tests_ejecutados`) cuenta como ejecución.
+Cuando se calibró, Probar no emitía evento; hoy lo emite el execution-service, y
+un alumno que solo usaba Probar y pasaba todo caía en "poco trabajo"
+(`desenganchado` / `autonomo_desenganchado`). Ahora suma al conteo de
+ejecuciones y el último Probar que pasa todo (`test_count_failed == 0` y
+`test_count_total > 0`) cuenta como resuelto. Ejecutar sigue contando igual.
 """
 
 from __future__ import annotations
@@ -173,17 +179,31 @@ def dim_foco(events: list[dict]) -> float:
     return 1.0 / (1.0 + distr / FOCUS_SCALE)
 
 
-def _resolvio(events: list[dict]) -> bool:
-    """La ÚLTIMA ejecución terminó limpia (stdout no vacío, sin stderr)."""
-    ejec = [
-        e
-        for e in sorted(events, key=lambda e: e.get("seq", 0))
-        if e.get("event_type") == "codigo_ejecutado"
+def _ultimo(events: list[dict], et: str) -> dict | None:
+    del_tipo = [
+        e for e in sorted(events, key=lambda e: e.get("seq", 0)) if e.get("event_type") == et
     ]
-    if not ejec:
-        return False
-    p = ejec[-1].get("payload") or {}
-    return (p.get("stdout") or "") != "" and (p.get("stderr") or "") == ""
+    return del_tipo[-1] if del_tipo else None
+
+
+def _resolvio(events: list[dict]) -> bool:
+    """La ÚLTIMA ejecución terminó limpia (stdout no vacío, sin stderr), o el
+    ÚLTIMO Probar pasó todos sus casos (HU-009).
+
+    Son dos señales independientes y alcanza con una: Probar pasa todo y
+    después un Ejecutar sin datos de entrada termina en error de `input()` es
+    un patrón común, y no deshace lo que Probar ya verificó.
+    """
+    ejec = _ultimo(events, "codigo_ejecutado")
+    if ejec is not None:
+        p = ejec.get("payload") or {}
+        if (p.get("stdout") or "") != "" and (p.get("stderr") or "") == "":
+            return True
+    probar = _ultimo(events, "tests_ejecutados")
+    if probar is not None:
+        p = probar.get("payload") or {}
+        return (p.get("test_count_total") or 0) > 0 and p.get("test_count_failed") == 0
+    return False
 
 
 def _verbaliza(events: list[dict]) -> bool:
@@ -204,7 +224,8 @@ def clasificar_subgrupo(events: list[dict]) -> Subgrupo:  # noqa: PLR0911
         return INDETERMINADO
 
     prompts = _count(events, "prompt_enviado")
-    ejec = _count(events, "codigo_ejecutado")
+    # Ejecutar y Probar cuentan como ejecución (HU-009, tree_version v4.2.0).
+    ejec = _count(events, "codigo_ejecutado") + _count(events, "tests_ejecutados")
     ediciones = _count(events, "edicion_codigo")
     exp = dim_experimentacion(events)
     sol_directa = sum(

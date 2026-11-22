@@ -977,6 +977,13 @@ export function EpisodeView({ episodeId, onExit, ejercicioContext, getToken }: E
     return <ClassificationFallbackPanel onReset={salir} />
   }
 
+  // HU-009 C05: el alumno cerró el modal de reflexión antes de que llegara la
+  // clasificación. Se espera acá (y no en la lista de ejercicios) para que el
+  // cierre termine siempre en la misma pantalla.
+  if (closed && reflectionTargetId === null) {
+    return <ClosingWaitPanel />
+  }
+
   if (!tarea) {
     return (
       <div className="flex-1 flex items-center justify-center p-8">
@@ -1670,22 +1677,19 @@ export function EpisodeView({ episodeId, onExit, ejercicioContext, getToken }: E
               window.localStorage.setItem(`episode_${episodeId}_reflection_skipped`, "1")
             }
           }
-          // Cierre/skip del modal de reflexión:
-          // - Si ya hay classification cargada, el render condicional muestra
-          //   ClassificationPanel (la pantalla N4) y desde ahí el alumno
-          //   navega con "Siguiente ejercicio →".
-          // - Si NO hay classification (classify falló silent o tardó >timeout
-          //   y el user cerró el modal antes), el alumno quedaba ATASCADO en
-          //   la EpisodePage con `closed=true` sin acción clara. Ahora si es
-          //   multi-ejercicio marcamos el ejercicio completo + onExit; si es
-          //   TP single, solo onExit (vuelve a /materia/$id).
-          if (!classification) {
-            // NB-12: dedupe compartido con el camino del ClassificationPanel.
-            // Best-effort: si falla, la TP queda con el ejercicio sin marcar
-            // pero el alumno puede volver a entrar y completar.
-            await markEjercicioCompletedOnce()
-            salir()
-          }
+          // Cierre/skip del modal de reflexión. El destino es SIEMPRE una
+          // pantalla de cierre, nunca la salida directa (HU-009 C05):
+          // - classification cargada: ClassificationPanel.
+          // - classify falló: ClassificationFallbackPanel.
+          // - classify todavía en vuelo: ClosingWaitPanel hasta que resuelva o
+          //   falle, y después una de las dos de arriba.
+          // Antes, si la clasificación no había llegado, se salía con
+          // `salir()`: el mismo cierre terminaba a veces en la pantalla y a
+          // veces en la lista, según cuánto tardara el classifier.
+          // NB-12: dedupe compartido con el camino del ClassificationPanel.
+          // handleClose ya marcó el ejercicio; esto es no-op salvo que aquel
+          // marcado haya fallado (best-effort).
+          await markEjercicioCompletedOnce()
         }}
       />
 
@@ -2055,11 +2059,12 @@ function buildSinReflexionFeedback(): {
   mensaje: string
   sugerencias: string[]
 } {
+  // Sin jerga (HU-009 C05): nada de "N4" ni "apropiación". Lo lee un alumno.
   return {
     tono: "neutro",
-    titulo: "Tu trabajo quedo registrado",
+    titulo: "Tu trabajo quedó registrado",
     mensaje:
-      "Cerraste el episodio sin pasar por la reflexion final. Esa instancia es opcional pero es donde el modelo N4 captura la apropiacion reflexiva del trabajo que hiciste. La proxima vez, si tenes 2 minutos, dedicalos a contestar las 3 preguntas — sirve mas para vos que para el sistema.",
+      "Cerraste el ejercicio sin contestar las preguntas del final. Son opcionales, así que está bien. La próxima vez, si tenés dos minutos, contestalas: pensar qué aprendiste y qué te costó te sirve a vos más que a nadie.",
     sugerencias: [],
   }
 }
@@ -2132,6 +2137,9 @@ const FEEDBACK_SUBGRUPO: Record<
   },
 }
 
+// HU-009 C12: piso de consultas al tutor para el consejo que sale de CII.
+const MIN_CONSULTAS_CONSEJO_CII = 3
+
 export function buildPedagogicalFeedback(c: Classification): {
   tono: "positivo" | "neutro" | "atencion"
   titulo: string
@@ -2158,11 +2166,24 @@ export function buildPedagogicalFeedback(c: Classification): {
       "Trabajaste de forma intermitente. Sesiones más continuas (sin tantas pausas) te van a rendir mejor.",
     )
   }
-  if ((c.cii_stability ?? 1) < 0.3 && (c.cii_evolution ?? 1) < 0.3) {
-    sugerencias.push(
-      "Cambiaste mucho de estrategia entre intentos. Probá quedarte con una idea y refinarla, en lugar de empezar de cero.",
-    )
-  }
+  // CII mide las CONSULTAS AL TUTOR (similitud y largo entre prompts
+  // seguidos), no el codigo. Con dos mensajes no dice nada: el consejo sale
+  // recien con 3 consultas o mas, y nunca sin el dato (HU-009 C12; salio con
+  // un solo cambio de una linea en la prueba 2 del 20/11). Va APARTE de las
+  // otras: se suma al consejo de cada rama en vez de reemplazar el de por
+  // defecto, porque habla de otra cosa (como se usa el tutor).
+  const consejoCii: string[] =
+    (c.cii_iteraciones ?? 0) >= MIN_CONSULTAS_CONSEJO_CII &&
+    (c.cii_stability ?? 1) < 0.3 &&
+    (c.cii_evolution ?? 1) < 0.3
+      ? [
+          "Tus consultas al tutor fueron saltando de un tema a otro. Probá quedarte con una duda hasta resolverla antes de pasar a la siguiente.",
+        ]
+      : []
+  const con = (porDefecto: string[]): string[] => [
+    ...(sugerencias.length > 0 ? sugerencias : porDefecto),
+    ...consejoCii,
+  ]
 
   // El SUBGRUPO manda la narrativa (misma historia que el docente). Las
   // coherencias de arriba quedan como sugerencias accionables subordinadas.
@@ -2181,12 +2202,11 @@ export function buildPedagogicalFeedback(c: Classification): {
       tono: porSubgrupo.tono,
       titulo: porSubgrupo.titulo,
       mensaje: porSubgrupo.mensaje,
-      sugerencias:
-        sugerencias.length > 0
-          ? sugerencias
-          : porSubgrupo.tono === "positivo"
-            ? ["Proba un ejercicio mas desafiante para seguir creciendo."]
-            : [],
+      sugerencias: con(
+        porSubgrupo.tono === "positivo"
+          ? ["Proba un ejercicio mas desafiante para seguir creciendo."]
+          : [],
+      ),
     }
   }
 
@@ -2197,10 +2217,7 @@ export function buildPedagogicalFeedback(c: Classification): {
         titulo: "¡Muy bien!",
         mensaje:
           "Mostraste un trabajo reflexivo. Tomaste decisiones con criterio y fuiste verbalizando tu razonamiento. Seguí así.",
-        sugerencias:
-          sugerencias.length > 0
-            ? sugerencias
-            : ["Probá un ejercicio más desafiante para seguir creciendo."],
+        sugerencias: con(["Probá un ejercicio más desafiante para seguir creciendo."]),
       }
     case "apropiacion_superficial":
       return {
@@ -2208,10 +2225,9 @@ export function buildPedagogicalFeedback(c: Classification): {
         titulo: "Buen trabajo",
         mensaje:
           "Resolviste el ejercicio. Para la próxima vez, intentá profundizar en el porqué de cada decisión, no solo en hacer que funcione.",
-        sugerencias:
-          sugerencias.length > 0
-            ? sugerencias
-            : ["Cuando termines un ejercicio, repasá qué aprendiste y contátelo al tutor."],
+        sugerencias: con([
+          "Cuando termines un ejercicio, repasá qué aprendiste y contátelo al tutor.",
+        ]),
       }
     case "delegacion_pasiva":
       return {
@@ -2219,12 +2235,9 @@ export function buildPedagogicalFeedback(c: Classification): {
         titulo: "Hay algo importante que repasar",
         mensaje:
           "Cerraste el episodio, pero el sistema detectó que la mayor parte del trabajo cognitivo lo hizo el tutor — no vos. La IA está acá para ayudarte a pensar, no para reemplazarte. Para la próxima, intentá poner TU idea primero (aunque esté incompleta) y usá al tutor para discutirla, no para que te dé la respuesta.",
-        sugerencias:
-          sugerencias.length > 0
-            ? sugerencias
-            : [
-                "Cuando arranques el próximo ejercicio, escribí en el chat 'Mi idea es X' antes de pedir cualquier ayuda. Eso ya empieza a construir tu razonamiento.",
-              ],
+        sugerencias: con([
+          "Cuando arranques el próximo ejercicio, escribí en el chat 'Mi idea es X' antes de pedir cualquier ayuda. Eso ya empieza a construir tu razonamiento.",
+        ]),
       }
     default: {
       // Defensa contra `appropriation` desconocido (clasificador con
@@ -2235,10 +2248,7 @@ export function buildPedagogicalFeedback(c: Classification): {
         titulo: "Episodio cerrado",
         mensaje:
           "Cerramos tu episodio. La clasificación pedagógica no pudo determinar un nivel claro de apropiación esta vez — puede deberse a un episodio muy corto o con datos insuficientes para evaluar las coherencias.",
-        sugerencias:
-          sugerencias.length > 0
-            ? sugerencias
-            : ["Probá un episodio más largo donde puedas dialogar con el tutor."],
+        sugerencias: con(["Probá un episodio más largo donde puedas dialogar con el tutor."]),
       }
     }
   }
@@ -2274,7 +2284,7 @@ function ClassificationPanel({
       {/* Header empático, sin etiqueta diagnóstica técnica. */}
       <div className={`rounded-2xl border p-7 mb-8 ${tonoStyles[feedback.tono]}`}>
         <p className="text-xs font-mono uppercase tracking-[0.15em] opacity-70 mb-2">
-          {skippedReflection ? "Cierre del ejercicio · sin reflexion" : "Cierre del ejercicio"}
+          {skippedReflection ? "Cierre del ejercicio · sin reflexión" : "Cierre del ejercicio"}
         </p>
         <h2 className="font-serif text-3xl font-medium leading-tight">{feedback.titulo}</h2>
         <p className="mt-4 text-base leading-relaxed opacity-90">{feedback.mensaje}</p>
@@ -2313,6 +2323,30 @@ function ClassificationPanel({
           {isMultiExercise ? "Siguiente ejercicio →" : "Volver a mis materias"}
         </button>
       </div>
+    </div>
+  )
+}
+
+function ClosingWaitPanel() {
+  // HU-009 C05: puente mientras llega la clasificación después de saltear la
+  // reflexión. Mismo marco que el fallback; sin botón, porque en segundos se
+  // reemplaza por la pantalla de cierre (o por el fallback si classify falla).
+  return (
+    <div className="flex-1 p-6 overflow-y-auto max-w-2xl mx-auto w-full">
+      <output
+        className="block rounded-2xl border border-border-soft bg-surface p-7 mb-6"
+        aria-live="polite"
+      >
+        <p className="text-xs font-mono uppercase tracking-[0.15em] text-muted mb-2">
+          Cierre del ejercicio
+        </p>
+        <h2 className="font-serif text-3xl font-medium leading-tight text-ink">
+          Cerrando tu ejercicio
+        </h2>
+        <p className="mt-4 text-base leading-relaxed text-body animate-pulse-soft">
+          Estamos armando tu devolución. Tarda unos segundos.
+        </p>
+      </output>
     </div>
   )
 }

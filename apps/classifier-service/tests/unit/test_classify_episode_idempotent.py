@@ -284,7 +284,7 @@ async def test_classify_episode_201_cuando_cambia_config_hash(
     """
     episode_id = uuid4()
     comision_id = uuid4()
-    # El pre-check busca por el config_hash CURRENT (el vigente, hoy v4.1.0).
+    # El pre-check busca por el config_hash CURRENT (el vigente, hoy v4.2.0).
     # Como la fila vieja tiene hash distinto, el pre-check devuelve None
     # (mismo path que el caso "episodio nuevo" en el handler — la distincion
     # la hace persist_classification, no el handler).
