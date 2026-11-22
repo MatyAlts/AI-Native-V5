@@ -33,9 +33,16 @@ const LS_AUDIT_CHAIN_KEY = "audit-chain-state"
 //
 // BUG-05 (QA 2026-09-23): divergio. El manifest y config.py corren v1.5.0 y
 // esta constante seguia en v1.3.0 desde los bumps v1.4.0/v1.5.0 — el pie mentia
-// la version en prod. Bump de emergencia a v1.5.0. FIX REAL (pendiente): leer
-// `GET /api/v1/active_configs` para que no vuelva a divergir en el proximo bump.
-const PROMPT_VERSION = "tutor/v1.5.0"
+// la version en prod. Bump de emergencia a v1.5.0.
+//
+// HU-010 (2026-11-22): volvio a divergir (el pie decia v1.5.0 con el tutor en
+// v1.11.0). Ahora esta en v1.11.0 y lo ata una prueba:
+// `apps/web-student/tests/Hu010Pie.test.tsx` lee `default_prompt_version` de
+// `apps/tutor-service/src/tutor_service/config.py` y exige que el pie muestre
+// esa misma version. Un bump del prompt que no mueva esta constante pone ese
+// test en rojo. Leer `GET /api/v1/active_configs` sigue siendo la alternativa
+// para no depender de un literal, pero no hace falta mientras el test lo ate.
+const PROMPT_VERSION = "tutor/v1.11.0"
 // NO es el prompt: es el etiquetador N1-N4 (ADR-020). Se bumpea por sus propias
 // reglas y cambiarlo re-etiqueta historicos. No tocar en bumps de prompt.
 const LABELER_VERSION = "1.2.0"
