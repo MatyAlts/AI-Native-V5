@@ -14,7 +14,7 @@
  *     - Boton "Devolver" (visible si ya fue calificada) → POST .../return.
  */
 import { Badge, Input, Modal, PageContainer } from "@platform/ui"
-import { useInfiniteQuery } from "@tanstack/react-query"
+import { useInfiniteQuery, useQuery } from "@tanstack/react-query"
 import { Link } from "@tanstack/react-router"
 import {
   ArrowRight,
@@ -171,6 +171,19 @@ function EntregasListView({
   const [estadoFilter, setEstadoFilter] = useState<EntregaEstado | "">("")
   // "Sólo re-entregas": filtro server-side (entra en la queryKey y reinicia la paginación).
   const [soloReentregas, setSoloReentregas] = useState(false)
+  // Filtro por TP (HU-012): server-side como los otros dos. Se guarda junto a
+  // la comision en la que se eligio. Cualquier cambio de comision lo descarta:
+  // en ese mismo render el filtro ya vale "" (ningun pedido sale con la
+  // comision nueva y el TP viejo) y la seleccion se borra, para que volver a
+  // la comision anterior no la restaure (patron "ajustar estado en render").
+  const [tpSeleccion, setTpSeleccion] = useState<{ comisionId: string; tpId: string }>({
+    comisionId,
+    tpId: "",
+  })
+  if (tpSeleccion.comisionId !== comisionId) {
+    setTpSeleccion({ comisionId, tpId: "" })
+  }
+  const tpFilter = tpSeleccion.comisionId === comisionId ? tpSeleccion.tpId : ""
   // Búsqueda por alumno (FR-5): filtra la lista en vivo por el dato de alumno
   // que la fila ya muestra — el nombre real (si el alumno se logueó) o el
   // pseudónimo corto (`Est. xxxxxx`). Se busca también contra el pseudónimo
@@ -189,12 +202,13 @@ function EntregasListView({
   // es server-side (parte de la queryKey → resetea la cache al cambiar); la
   // búsqueda por alumno (FR-5) es client-side sobre TODO el set acumulado.
   const query = useInfiniteQuery({
-    queryKey: ["entregas-docente", comisionId, estadoFilter, soloReentregas],
+    queryKey: ["entregas-docente", comisionId, estadoFilter, soloReentregas, tpFilter],
     queryFn: ({ pageParam }) =>
       entregasDocenteApi.list(
         {
           comision_id: comisionId,
           ...(estadoFilter ? { estado: estadoFilter as EntregaEstado } : {}),
+          ...(tpFilter ? { tarea_practica_id: tpFilter } : {}),
           ...(soloReentregas ? { reentrega: true } : {}),
           ...(pageParam ? { cursor: pageParam } : {}),
         },
@@ -204,6 +218,29 @@ function EntregasListView({
     getNextPageParam: (lastPage) => lastPage.meta.cursor_next ?? undefined,
     enabled: !!comisionId,
   })
+
+  // TPs de la comision para el selector (HU-012). 200 es el tope del endpoint.
+  const tpsQuery = useQuery({
+    queryKey: ["tareas-practicas-comision", comisionId],
+    queryFn: () => tareasPracticasApi.list({ comision_id: comisionId, limit: 200 }, getToken),
+    enabled: !!comisionId,
+  })
+  const tpsComision = useMemo<TareaPractica[]>(
+    () => [...(tpsQuery.data?.data ?? [])].sort((a, b) => a.codigo.localeCompare(b.codigo)),
+    [tpsQuery.data],
+  )
+
+  // Los TP de la lista sirven tambien para el enriquecimiento de las filas:
+  // los marcamos como ya intentados para no pedirlos de a uno.
+  useEffect(() => {
+    if (tpsComision.length === 0) return
+    const map: Record<string, TareaPractica> = {}
+    for (const t of tpsComision) {
+      map[t.id] = t
+      attemptedTareaIds.current.add(t.id)
+    }
+    setTareasByID((prev) => ({ ...prev, ...map }))
+  }, [tpsComision])
 
   // Entregas acumuladas across todas las páginas cargadas. El filtro de estado y
   // la búsqueda operan sobre este set (que crece con cada "Cargar más").
@@ -292,8 +329,7 @@ function EntregasListView({
   // sea "lo que el docente ya tenía seleccionado". Orden de cola client-side por
   // `submitted_at` ascendente (la más vieja primero) — el backend no garantiza
   // ese orden. `tarea` se toma del enriquecimiento best-effort ya cargado.
-  // FOLLOW-UP: cuando existan filtros de TP/ejercicio en la lista (FR-1/FR-3),
-  // la cola los heredará automáticamente al derivarse de `filteredEntregas`.
+  // El filtro por TP (HU-012) es server-side, así que la cola ya lo hereda.
   const pendientesQueue: QueueItem[] = filteredEntregas
     .filter((e) => e.estado === "submitted")
     .slice()
@@ -352,6 +388,21 @@ function EntregasListView({
         >
           Sólo re-entregas
         </button>
+
+        <select
+          aria-label="Filtro por TP"
+          value={tpFilter}
+          onChange={(e) => setTpSeleccion({ comisionId, tpId: e.target.value })}
+          data-testid="filtro-tp"
+          className="max-w-xs rounded-lg border border-border bg-surface px-3 py-1.5 text-xs font-medium text-ink"
+        >
+          <option value="">Todos los TP</option>
+          {tpsComision.map((t) => (
+            <option key={t.id} value={t.id}>
+              {t.codigo} · {t.titulo}
+            </option>
+          ))}
+        </select>
 
         {/* Acciones a la derecha: corregir en lote (F5) + búsqueda por alumno (FR-5) */}
         {entregas.length > 0 && (
@@ -432,9 +483,11 @@ function EntregasListView({
             <FileCheck className="h-7 w-7 text-muted" />
           </div>
           <p className="text-sm text-muted leading-relaxed max-w-md mx-auto">
-            {estadoFilter
-              ? `No hay entregas con estado "${ESTADO_LABEL[estadoFilter as EntregaEstado]}".`
-              : "Esta comision aun no tiene entregas registradas."}
+            {tpFilter
+              ? "No hay entregas de este TP."
+              : estadoFilter
+                ? `No hay entregas con estado "${ESTADO_LABEL[estadoFilter as EntregaEstado]}".`
+                : "Esta comision aun no tiene entregas registradas."}
           </p>
         </div>
       )}
