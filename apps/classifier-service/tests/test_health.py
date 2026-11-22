@@ -105,7 +105,7 @@ async def test_config_hash_reporta_v4_consistente_con_classify_ep(
     el subgrupo.
 
     Actualizado por HU-010 (2026-11-22): bump deliberado `v4.2.0 → v4.3.0`,
-    en los dos sitios, porque quien resuelve deja de contar como "poco trabajo"
+    en los dos sitios, porque quien Probó y pasó todo deja de contar como "poco trabajo"
     en el subgrupo.
     """
     from classifier_service.services import (

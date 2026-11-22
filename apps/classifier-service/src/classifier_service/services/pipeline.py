@@ -47,8 +47,8 @@ def compute_classifier_config_hash(
 ) -> str:
     """Hash determinista del config del classifier.
 
-    El default de `tree_version` es v4.3.0 (HU-010, 2026-11-22: quien resuelve
-    no cuenta como "poco trabajo" en el subgrupo). Se mueve junto con
+    El default de `tree_version` es v4.3.0 (HU-010, 2026-11-22: quien Probó y
+    pasó todo no cuenta como "poco trabajo" en el subgrupo). Se mueve junto con
     `routes/health.py::_TREE_VERSION`.
 
     Este hash acompaña cada clasificación (classifier_config_hash) y es lo

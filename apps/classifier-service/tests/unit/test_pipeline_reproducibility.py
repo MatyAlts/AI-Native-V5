@@ -135,7 +135,7 @@ def test_classifier_config_hash_golden() -> None:
     vale.
 
     **Actualizado por HU-010 (2026-11-22): bump deliberado de `tree_version` a
-    `v4.3.0`** (quien resuelve no cuenta como "poco trabajo" en el subgrupo).
+    `v4.3.0`** (quien Probó y pasó todo no cuenta como "poco trabajo" en el subgrupo).
     Falló así al aplicar el bump: `golden=f471c511... actual=9a70c3a3...`. El
     de `v4.2.0` (`f471c511a629b700a28f82d970ed0f2e306c550e3e4198395a8f9ceb1d0c5930`)
     ya no vale.
