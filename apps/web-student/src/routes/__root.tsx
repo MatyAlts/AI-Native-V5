@@ -1,9 +1,17 @@
-import { SignInButton, SignUpButton, UserButton, useAuth, useUser } from "@clerk/clerk-react"
+import {
+  SignInButton,
+  SignUpButton,
+  SignedOut,
+  UserButton,
+  useAuth,
+  useUser,
+} from "@clerk/clerk-react"
 import { AuditFooter, HelpButton } from "@platform/ui"
 import { Outlet, createRootRouteWithContext, useRouterState } from "@tanstack/react-router"
 import { type ReactNode, useCallback, useEffect, useState } from "react"
 import { DEV_NO_CLERK, DEV_STUDENT_UUID, clearClerkUserId, setClerkUserId } from "../auth"
 import { BotonVolverPanelDocente } from "../components/BotonVolverPanelDocente"
+import { OlvidarModoVista } from "../components/OlvidarModoVista"
 import { TenantSelector } from "../components/TenantSelector"
 import { OnboardingAlumno } from "../onboarding/OnboardingAlumno"
 import { helpContent } from "../utils/helpContent"
@@ -325,6 +333,10 @@ function ClerkRootLayout() {
     <LayoutShell headerActions={headerActions} showAudit={!!isSignedIn}>
       {!isSignedIn ? (
         <div className="flex-1 flex items-center justify-center">
+          {/* HU-022: sin sesion se olvida la eleccion "Ver como alumno". */}
+          <SignedOut>
+            <OlvidarModoVista />
+          </SignedOut>
           <div className="text-center space-y-4">
             <h2 className="text-2xl font-bold text-ink">Bienvenido a Plataforma N4</h2>
             <p className="text-muted-soft">

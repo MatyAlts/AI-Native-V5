@@ -6,6 +6,7 @@ import { RouterProvider, createRouter } from "@tanstack/react-router"
 import { StrictMode, useEffect, useState } from "react"
 import { createRoot } from "react-dom/client"
 import "./index.css"
+import { OlvidarModoVista } from "./components/OlvidarModoVista"
 import { SELECTED_TENANT_STORAGE_KEY } from "./constants"
 import { comisionesApi } from "./lib/api"
 import { estudioApi } from "./lib/estudioApi"
@@ -166,6 +167,8 @@ createRoot(rootElement).render(
         {/* Sin sesion: pantalla de login de Clerk. Con sesion: la app (y el
             push de perfil que vincula al docente con sus comisiones). */}
         <SignedOut>
+          {/* HU-022: al cerrar sesion se olvida la eleccion "Ver como alumno". */}
+          <OlvidarModoVista />
           <div className="min-h-screen flex items-center justify-center bg-canvas">
             {/* forceRedirectUrl: sin esto Clerk redirige a "/" (que es el
                 web-student) tras el login. Forzamos quedarnos en /teacher. */}

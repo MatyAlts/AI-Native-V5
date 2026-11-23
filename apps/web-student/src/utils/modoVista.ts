@@ -29,6 +29,18 @@ export function elegirPanelDocente(): void {
   guardar("docente")
 }
 
+/**
+ * Sin sesion no hay eleccion: al cerrar sesion se borra, asi el proximo que
+ * entre en esa compu no queda en la vista de alumno.
+ */
+export function olvidarModoVista(): void {
+  try {
+    window.localStorage.removeItem(MODO_VISTA_KEY)
+  } catch {
+    /* sin localStorage no hay nada guardado */
+  }
+}
+
 /** Un docente va a su panel salvo que haya elegido ver como alumno. */
 export function debeIrAlPanelDocente(esDocente: boolean): boolean {
   if (!esDocente) return false
