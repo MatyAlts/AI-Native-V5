@@ -197,6 +197,9 @@ export function EpisodeView({ episodeId, onExit, ejercicioContext, getToken }: E
   const [ejercicioId, setEjercicioId] = useState<string | null>(
     ejercicioContext?.ejercicioId ?? null,
   )
+  // HU-022 (F30): si es el último ejercicio de la TP, el cierre no ofrece un
+  // "Siguiente ejercicio" que no existe. Se resuelve en la hidratación.
+  const [esUltimoEjercicio, setEsUltimoEjercicio] = useState(false)
   const [messages, setMessages] = useState<Message[]>([])
   // Indicador de ACTIVIDAD en curso (no es la clasificacion final del classifier,
   // que se deriva post-cierre — ADR-020). Refleja el CANAL de actividad que el
@@ -549,6 +552,9 @@ export function EpisodeView({ episodeId, onExit, ejercicioContext, getToken }: E
             const tpEjs = await listEjerciciosTp(state.tarea_practica_id)
             if (cancelled) return
             const match = tpEjs.find((te) => te.orden === ordenEfectivo)
+            setEsUltimoEjercicio(
+              tpEjs.length > 0 && ordenEfectivo === Math.max(...tpEjs.map((te) => te.orden)),
+            )
             resolvedTests = (match?.ejercicio?.test_cases ?? []).filter(
               (tc) => tc.is_public !== false,
             )
@@ -960,6 +966,7 @@ export function EpisodeView({ episodeId, onExit, ejercicioContext, getToken }: E
         classification={classification}
         skippedReflection={skippedReflection}
         isMultiExercise={ejercicioContext != null}
+        esUltimoEjercicio={esUltimoEjercicio}
         onReset={async () => {
           setClassification(null)
           // NB-12: dedupe compartido con el camino del ReflectionModal.
@@ -2290,6 +2297,7 @@ function ClassificationPanel({
   classification,
   skippedReflection,
   isMultiExercise,
+  esUltimoEjercicio,
   onReset,
 }: {
   classification: Classification
@@ -2299,6 +2307,7 @@ function ClassificationPanel({
   // La honestidad tecnica es asset academico (PRODUCT.md §"Design Principles").
   skippedReflection?: boolean
   isMultiExercise?: boolean
+  esUltimoEjercicio?: boolean
   onReset: () => void
 }) {
   const feedback = skippedReflection
@@ -2352,7 +2361,11 @@ function ClassificationPanel({
           onClick={onReset}
           className="press-shrink px-5 py-2.5 bg-accent-brand hover:bg-accent-brand-deep text-white rounded-lg text-sm font-medium transition-colors"
         >
-          {isMultiExercise ? "Siguiente ejercicio →" : "Volver a mis materias"}
+          {!isMultiExercise
+            ? "Volver a mis materias"
+            : esUltimoEjercicio
+              ? "Volver al TP"
+              : "Siguiente ejercicio →"}
         </button>
       </div>
     </div>

@@ -157,6 +157,12 @@ async def list_entregas(
     # resto. Default plano (no `Query(None)`) para que las llamadas directas
     # a la funcion sin el kwarg no reciban un objeto `Query` truthy.
     reentrega: bool | None = None,
+    # HU-022: true pide "mis entregas" aunque el caller sea docente asignado
+    # (la vista alumno del interruptor docente/alumno). Fuerza la rama del
+    # alumno COMPLETA: filtra por `user.id`, ignora `student_pseudonym` y deja
+    # ver el propio draft. Sin el flag nada cambia. Default plano, igual que
+    # `reentrega`, por las llamadas directas.
+    propias: bool = False,
     cursor: UUID | None = Query(None, description="UUID de la ultima entrega del batch anterior"),
     limit: int = Query(50, ge=1, le=200),
     user: User = Depends(require_permission("entrega", "read")),
@@ -174,10 +180,11 @@ async def list_entregas(
 
     Orden estable por `id` ASC para que el cursor sea determinista.
     """
-    is_docente = bool(
+    # Con `propias` la vista alumno no depende del rol: entra como alumno.
+    is_docente = not propias and bool(
         user.roles & frozenset({"superadmin", "docente_admin", "docente", "jtp", "auxiliar"})
     )
-    is_oversight = bool(user.roles & frozenset({"superadmin", "docente_admin"}))
+    is_oversight = not propias and bool(user.roles & frozenset({"superadmin", "docente_admin"}))
 
     # Las comisiones donde el caller es docente asignado. Se resuelve ACA,
     # antes de la bifurcacion, porque su resultado decide por que rama entra.

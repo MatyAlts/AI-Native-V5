@@ -215,7 +215,8 @@ function Desgloses({ correcciones }: { correcciones: CorreccionIA[] }) {
         return (
           <div key={c.id} className="rounded-lg border border-border-soft p-2">
             <p className="mb-1 text-[10px] font-mono uppercase tracking-wider text-muted-soft">
-              Ejercicio {c.orden} · rubrica {c.rubrica_id}
+              {/* Sin el id interno de la rubrica ("nativa:<hash>"), HU-022 F31. */}
+              Ejercicio {c.orden} · rubrica del ejercicio
             </p>
             <ul className="space-y-0.5 text-xs">
               {c.desglose.map((criterio, i) => {

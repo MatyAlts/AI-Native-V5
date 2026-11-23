@@ -586,7 +586,10 @@ export function ExerciseListView({
                       : "border-border bg-surface"
                 }`}
               >
-                <div className="flex items-center gap-3">
+                {/* HU-022 (F30): `flex-wrap` + un ancho base para el titulo. Con los
+                    tres botones de una re-entrega el titulo quedaba en "E…":
+                    ahora los botones bajan de linea antes de comerse el titulo. */}
+                <div className="flex flex-wrap items-center gap-3">
                   {/* Indicador visual */}
                   <div
                     aria-hidden="true"
@@ -601,9 +604,9 @@ export function ExerciseListView({
                     {completed ? "✓" : ejercicio.orden}
                   </div>
 
-                  <div className="flex-1 min-w-0">
+                  <div className="flex-1 basis-48 min-w-0">
                     <p
-                      className={`text-sm font-medium truncate ${
+                      className={`text-sm font-medium break-words ${
                         locked ? "text-muted" : completed ? "text-success" : "text-ink"
                       }`}
                     >
@@ -648,7 +651,11 @@ export function ExerciseListView({
                         e.currentTarget.style.backgroundColor = "var(--color-accent-brand)"
                       }}
                     >
-                      {idx === 0 && completados === 0 ? "Empezar" : "Continuar"}
+                      {/* HU-022 (F30): "Abrir" siempre. `episode_id` se escribe en la
+                          entrega recien al CERRAR el episodio, asi que la
+                          pantalla no sabe si el ejercicio se abrio y quedo sin
+                          cerrar: "Empezar"/"Continuar" podian mentir. */}
+                      Abrir
                     </button>
                   )}
                   {completed && (

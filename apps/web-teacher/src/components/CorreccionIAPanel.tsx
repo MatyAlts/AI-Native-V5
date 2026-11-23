@@ -232,8 +232,8 @@ function PreviewCard({
       data-testid="correccion-ia-preview"
     >
       <p className="text-body">
-        Se va a corregir <strong>{preview.ejercicio_titulo}</strong> con la rubrica{" "}
-        <span className="font-mono">{preview.rubrica_id}</span>.
+        {/* Sin el id interno de la rubrica ("nativa:<hash>"), HU-022 F31. */}
+        Se va a corregir <strong>{preview.ejercicio_titulo}</strong> con la rubrica del ejercicio.
       </p>
       {/* Una rubrica desactualizada no da una nota floja: corrige otra cosa. */}
       {desactualizada && (

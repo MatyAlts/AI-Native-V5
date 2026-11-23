@@ -56,7 +56,7 @@ export function MisReflexionesPage() {
         <header className="animate-fade-in-down mb-8 flex items-start justify-between gap-4">
           <div className="min-w-0">
             <p className="text-[11px] font-mono uppercase tracking-[0.12em] text-muted mb-2">
-              Tus reflexiones · ADR-035
+              Tus reflexiones
             </p>
             <h1 className="text-3xl font-semibold tracking-tight text-ink leading-none">
               Mis reflexiones

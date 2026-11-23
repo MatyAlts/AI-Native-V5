@@ -70,6 +70,8 @@ function montar(op: Opciones = {}) {
       return { id: ENTREGA_ID }
     },
     "/resume": () => ({ ok: true }),
+    // TP de un solo ejercicio: es el último, así que el cierre dice "Volver al
+    // TP" (HU-022) y no "Siguiente ejercicio". El botón hace lo mismo.
     [`/api/v1/tareas-practicas/${TAREA_ID}/ejercicios`]: () => [
       {
         id: "tpe-1",
@@ -206,7 +208,7 @@ describe("cerrar sin editar completa el ejercicio cuando el editor mostraba codi
     await cerrar(vista)
     await waitFor(() => expect(patches(llamadas)).toHaveLength(1))
     await saltarReflexion(vista)
-    const siguiente = await vista.findByRole("button", { name: /siguiente ejercicio/i })
+    const siguiente = await vista.findByRole("button", { name: /volver al tp/i })
     await act(async () => {
       fireEvent.click(siguiente)
     })
@@ -219,7 +221,7 @@ describe("cerrar sin editar completa el ejercicio cuando el editor mostraba codi
     await cerrar(vista)
     await waitFor(() => expect(patches(llamadas)).toHaveLength(1))
     await saltarReflexion(vista)
-    const siguiente = await vista.findByRole("button", { name: /siguiente ejercicio/i })
+    const siguiente = await vista.findByRole("button", { name: /volver al tp/i })
     await act(async () => {
       fireEvent.click(siguiente)
     })

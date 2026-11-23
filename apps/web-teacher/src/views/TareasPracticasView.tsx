@@ -1053,7 +1053,7 @@ function TareaFormModal({
           <span className="text-muted">
             componer la TP con ejercicios del banco. Después de guardar, abrí el modal
             &quot;Composición&quot; desde la card para asociar ejercicios. Los ejercicios viven en{" "}
-            <code>/ejercicios</code> y son reusables entre TPs (ADR-047).
+            <code>/ejercicios</code> y se pueden reusar en otras TPs.
           </span>
         </div>
 
@@ -1073,8 +1073,7 @@ function TareaFormModal({
           />
           <p className="mt-1 text-xs text-muted leading-snug">
             Sólo si esta TP <em>no</em> va a usar ejercicios del banco. Si la componés con
-            ejercicios, el alumno verá el enunciado de cada ejercicio y este campo queda ignorado en
-            runtime (fallback histórico pre-ADR-047).
+            ejercicios, el alumno verá el enunciado de cada ejercicio y este campo no se muestra.
           </p>
         </div>
 
