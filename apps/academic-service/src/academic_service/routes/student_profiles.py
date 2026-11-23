@@ -2,7 +2,9 @@
 
 POST /api/v1/users/me/profile
     Upsert idempotente: el web-student lo invoca al loguearse con Clerk.
-    Body: {full_name, email}. Caller_id = student_pseudonym del header.
+    Body: {full_name, email}. Caller_id = student_pseudonym del header. El
+    email que se guarda y con el que se vinculan las asignaciones docentes es
+    el del token, no el del body (HU-017).
 
 GET /api/v1/comisiones/{comision_id}/students/profiles
     Listado de perfiles de los alumnos inscriptos en la comision. Solo
@@ -38,20 +40,30 @@ async def upsert_my_profile(
 
     El web-student lo invoca al iniciar sesion con Clerk con el nombre
     y email del usuario. Si ya existia, actualiza los campos.
+
+    HU-017: el email que cuenta es el del TOKEN (`user.email`: el gateway lo
+    saca del claim `email` del JWT de Clerk y pisa `X-User-Email`), nunca el
+    del body. Antes se vinculaba `usuarios_comision` con `data.email` sin
+    verificar, y un alumno que mandaba el email de un docente pasaba a ser
+    miembro de sus comisiones. El `email` del body se acepta por compatibilidad
+    con el frontend pero se ignora; sin email en el token no se guarda email ni
+    se vincula nada.
     """
+    email_token = (user.email or "").strip()
+    email_perfil = email_token or None
     stmt = (
         pg_insert(StudentProfile)
         .values(
             student_pseudonym=user.id,
             tenant_id=user.tenant_id,
             full_name=data.full_name,
-            email=str(data.email) if data.email else None,
+            email=email_perfil,
         )
         .on_conflict_do_update(
             index_elements=["student_pseudonym"],
             set_={
                 "full_name": data.full_name,
-                "email": str(data.email) if data.email else None,
+                "email": email_perfil,
                 "tenant_id": user.tenant_id,
             },
         )
@@ -64,12 +76,13 @@ async def upsert_my_profile(
     # por email (antes de que se loguee). Al loguearse, vinculamos esas
     # asignaciones a su user_id REAL (derivado del token). Idempotente y
     # re-vinculante: el registro con ese email siempre queda con la identidad
-    # del login actual (cubre el caso de un user_id viejo/demo previo).
-    if data.email:
+    # del login actual (cubre el caso de un user_id viejo/demo previo). El
+    # email es el del token (HU-017), comparado sin mayúsculas.
+    if email_token:
         await db.execute(
             update(UsuarioComision)
             .where(
-                func.lower(UsuarioComision.email) == data.email.strip().lower(),
+                func.lower(UsuarioComision.email) == email_token.lower(),
                 UsuarioComision.tenant_id == user.tenant_id,
             )
             .values(user_id=user.id)

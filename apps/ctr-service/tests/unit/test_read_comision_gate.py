@@ -6,8 +6,9 @@ alcanza porque en prod todos los docentes comparten un tenant fijo.
 
 Cubre dos capas:
   1. `assert_comision_member` (la lógica de autorización): oversight y
-     service-accounts pasan; el flag OFF / sin academic_db_url es no-op;
-     un docente NO-miembro recibe 403 y un docente miembro pasa.
+     service-accounts pasan; el flag OFF es no-op; sin academic_db_url falla
+     cerrado con 503 (HU-017); un docente NO-miembro recibe 403 y un docente
+     miembro pasa.
   2. El handler `get_episode` (wiring): el gate se llama ANTES de servir los
      eventos, así que un docente ajeno recibe 403 y no ve el episodio. Como los
      aliases `/api/v1/audit/*` (ADR-031) apuntan al MISMO handler, el gate
@@ -69,8 +70,14 @@ async def test_flag_off_es_noop(monkeypatch) -> None:
     await assert_comision_member(_user({"docente"}), COMISION_A)  # no raise
 
 
-async def test_sin_academic_db_url_es_noop(monkeypatch) -> None:
-    """Dev/stub/tests con DB mockeada: guard inerte para no romper auditoría."""
+async def test_sin_academic_db_url_falla_cerrado(monkeypatch) -> None:
+    """Sin academic_db_url el guard responde 503, no deja pasar (HU-017).
+
+    Antes este test afirmaba lo contrario (no-op "para no romper la
+    auditoria"). Ese fallo ABIERTO fue el hallazgo F19 de HU-014: produccion
+    no tenia ACADEMIC_DB_URL y cualquier cuenta leia el CTR ajeno. Ahora el
+    unico opt-out es explicito: `enforce_comision_access=False`.
+    """
     monkeypatch.setattr(deps.settings, "enforce_comision_access", True)
     monkeypatch.setattr(deps.settings, "academic_db_url", "")
 
@@ -78,7 +85,9 @@ async def test_sin_academic_db_url_es_noop(monkeypatch) -> None:
         raise AssertionError("sin academic_db_url no debe consultar membresía")
 
     monkeypatch.setattr(deps, "_is_comision_member", _boom)
-    await assert_comision_member(_user({"docente"}), COMISION_A)  # no raise
+    with pytest.raises(HTTPException) as ei:
+        await assert_comision_member(_user({"docente"}), COMISION_A)
+    assert ei.value.status_code == 503
 
 
 async def test_docente_miembro_pasa(monkeypatch) -> None:
@@ -162,7 +171,7 @@ def _fake_episode(comision_id: UUID) -> types.SimpleNamespace:
 
 async def test_get_episode_bloquea_docente_ajeno(monkeypatch) -> None:
     """El handler llama al gate ANTES de servir: docente ajeno → 403."""
-    monkeypatch.setattr(events_route, "assert_comision_member", deps.assert_comision_member)
+    monkeypatch.setattr(events_route, "assert_puede_leer_episodio", deps.assert_puede_leer_episodio)
     monkeypatch.setattr(deps.settings, "enforce_comision_access", True)
     monkeypatch.setattr(deps.settings, "academic_db_url", "postgresql://x")
 
@@ -178,7 +187,7 @@ async def test_get_episode_bloquea_docente_ajeno(monkeypatch) -> None:
 
 
 async def test_get_episode_permite_docente_miembro(monkeypatch) -> None:
-    monkeypatch.setattr(events_route, "assert_comision_member", deps.assert_comision_member)
+    monkeypatch.setattr(events_route, "assert_puede_leer_episodio", deps.assert_puede_leer_episodio)
     monkeypatch.setattr(deps.settings, "enforce_comision_access", True)
     monkeypatch.setattr(deps.settings, "academic_db_url", "postgresql://x")
 
@@ -195,7 +204,7 @@ async def test_get_episode_permite_docente_miembro(monkeypatch) -> None:
 
 async def test_get_episode_permite_oversight(monkeypatch) -> None:
     """superadmin lee cualquier episodio sin consultar membresía."""
-    monkeypatch.setattr(events_route, "assert_comision_member", deps.assert_comision_member)
+    monkeypatch.setattr(events_route, "assert_puede_leer_episodio", deps.assert_puede_leer_episodio)
     monkeypatch.setattr(deps.settings, "enforce_comision_access", True)
     monkeypatch.setattr(deps.settings, "academic_db_url", "postgresql://x")
 

@@ -171,10 +171,33 @@ Su paso 0 avisa si Docker corre **rootless** — en ese caso el runner sobra.
 `SERVICE_NAME, SERVICE_PORT, ENVIRONMENT, LOG_LEVEL, LOG_FORMAT, CORS_ORIGINS, OTEL_ENDPOINT, SENTRY_DSN, REDIS_URL, GOVERNANCE_SERVICE_URL, CONTENT_SERVICE_URL, AI_GATEWAY_URL, CTR_SERVICE_URL, ACADEMIC_SERVICE_URL, EVALUATION_SERVICE_URL, DEFAULT_PROMPT_NAME, DEFAULT_PROMPT_VERSION, DEFAULT_MODEL, OPUS_MODEL, FEATURE_FLAGS_PATH, FEATURE_FLAGS_RELOAD_SECONDS, EPISODE_IDLE_TIMEOUT_SECONDS, ABANDONMENT_CHECK_INTERVAL_SECONDS, ENABLE_ABANDONMENT_WORKER, DISTRACTION_THRESHOLD_SECONDS, DISTRACTION_CHECK_INTERVAL_SECONDS, ENABLE_DISTRACTION_WORKER, SOCRATIC_COMPLIANCE_ENABLED`
 
 ### ctr-service
-`SERVICE_NAME, SERVICE_PORT, ENVIRONMENT, LOG_LEVEL, LOG_FORMAT, CORS_ORIGINS, OTEL_ENDPOINT, SENTRY_DSN, KEYCLOAK_URL, KEYCLOAK_REALM, CTR_DB_URL, DB_ECHO, REDIS_URL, NUM_PARTITIONS`
+`SERVICE_NAME, SERVICE_PORT, ENVIRONMENT, LOG_LEVEL, LOG_FORMAT, CORS_ORIGINS, OTEL_ENDPOINT, SENTRY_DSN, KEYCLOAK_URL, KEYCLOAK_REALM, CTR_DB_URL, DB_ECHO, REDIS_URL, NUM_PARTITIONS, ACADEMIC_DB_URL`
+
+> **`ACADEMIC_DB_URL` es obligatoria en el ctr-service y en el classifier-service (HU-017).**
+> Con Clerk toda cuenta trae `estudiante,docente`, así que el rol no separa a un alumno de un
+> docente: lo que separa es la membresía en `usuarios_comision` (academic_main), y para leerla
+> hace falta esta variable. **Copiar el valor del academic-service** (mismo
+> `postgresql+asyncpg://...academic_main`, solo se usa para leer).
+>
+> Sin ella, los dos servicios **fallan cerrado**: responden **503** a todo el que no sea
+> oversight (`superadmin`, `docente_admin`, service-accounts) ni dueño del episodio. El alumno
+> sigue viendo su propio CTR y su clasificación; el docente pierde la auditoría, la cola de
+> revisión y el detalle de clasificaciones hasta que se cargue. Antes de HU-017 la falta era
+> silenciosa y dejaba que cualquiera leyera el CTR de otro alumno.
+>
+> `ENFORCE_COMISION_ACCESS=false` apaga el chequeo: es **solo para dev** sin base académica.
+> Nunca en producción.
+>
+> **El redeploy del ctr-service va en una ventana sin alumnos** (regla de siempre: nunca en
+> caliente con usuarios activos). Orden: cargar `ACADEMIC_DB_URL` primero, redeployar el
+> ctr-service, después el classifier-service, de a uno.
 
 ### classifier-service
-`SERVICE_NAME, SERVICE_PORT, ENVIRONMENT, LOG_LEVEL, LOG_FORMAT, CORS_ORIGINS, OTEL_ENDPOINT, SENTRY_DSN, CLASSIFIER_DB_URL, DB_ECHO, REDIS_URL, CTR_SERVICE_URL, AI_GATEWAY_URL, LEXICAL_ANOTACION_OVERRIDE_ENABLED, GUARDRAIL_MODIFIER_ENABLED, EJE_FINO_MAX_TOKENS, EJE_FINO_JUEZ_VERSION`
+`SERVICE_NAME, SERVICE_PORT, ENVIRONMENT, LOG_LEVEL, LOG_FORMAT, CORS_ORIGINS, OTEL_ENDPOINT, SENTRY_DSN, CLASSIFIER_DB_URL, DB_ECHO, REDIS_URL, CTR_SERVICE_URL, AI_GATEWAY_URL, LEXICAL_ANOTACION_OVERRIDE_ENABLED, GUARDRAIL_MODIFIER_ENABLED, EJE_FINO_MAX_TOKENS, EJE_FINO_JUEZ_VERSION, ACADEMIC_DB_URL`
+
+> `ACADEMIC_DB_URL` obligatoria (HU-017): ver la nota del ctr-service. Sin ella, revisar una
+> clasificación, la cola de revisión y `GET /classifications/{id}` responden 503 a quien no sea
+> `superadmin`/`docente_admin` (el alumno dueño igual ve la suya).
 
 > `EJE_FINO_JUEZ_VERSION` elige qué juez corre el eje fino: `v1` (default si no se setea, el de
 > siempre), `v2` (codebook MTAC v1) o `v3` (codebook MTAC v2, el elegido en la HU-002). Los tres usan

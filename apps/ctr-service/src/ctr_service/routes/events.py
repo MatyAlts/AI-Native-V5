@@ -26,7 +26,7 @@ from ctr_service.auth import (
     PUBLISH_ROLES,
     READ_ROLES,
     User,
-    assert_comision_member,
+    assert_puede_leer_episodio,
     get_db,
     require_role,
 )
@@ -222,10 +222,11 @@ async def get_episode(
             detail=f"Episode {episode_id} no encontrado",
         )
 
-    # Gate A0.6: un docente solo lee episodios de sus comisiones. Oversight y
-    # service-accounts pasan derecho. No toca el append-only ni el hashing —
-    # solo autoriza antes de servir la lectura.
-    await assert_comision_member(user, ep.comision_id)
+    # Gate A0.6 + HU-017: oversight y service-accounts pasan derecho; el dueño
+    # lee su propio episodio; el resto tiene que ser miembro de la comisión, y
+    # sin base académica configurada falla cerrado (503). No toca el
+    # append-only ni el hashing — solo autoriza antes de servir la lectura.
+    await assert_puede_leer_episodio(user, ep)
 
     events_result = await db.execute(
         select(Event).where(Event.episode_id == episode_id).order_by(Event.seq)
@@ -270,10 +271,10 @@ async def verify_episode_chain(
             detail=f"Episode {episode_id} no encontrado",
         )
 
-    # Gate A0.6: un docente solo verifica episodios de sus comisiones. Oversight
-    # y service-accounts pasan derecho. NO altera la lógica de verificación de la
-    # cadena — solo autoriza antes de recomputar/servir el resultado.
-    await assert_comision_member(user, ep.comision_id)
+    # Gate A0.6 + HU-017: mismo gate que get_episode (dueño, oversight o
+    # miembro; sin base académica falla cerrado). NO altera la lógica de
+    # verificación de la cadena — solo autoriza antes de recomputar/servir.
+    await assert_puede_leer_episodio(user, ep)
 
     events_result = await db.execute(
         select(Event).where(Event.episode_id == episode_id).order_by(Event.seq)

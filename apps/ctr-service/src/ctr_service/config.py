@@ -49,9 +49,11 @@ class Settings(BaseSettings):
     # solo-lectura a academic_main existe únicamente para resolver la membresía
     # docente↔comisión, replicando el patrón de analytics-service.
     #
-    # `enforce_comision_access=True` (default prod) prende el gate; sin
-    # `academic_db_url` (dev/stub o tests con DB mockeada) el guard es no-op —
-    # así no rompe el dev loop ni la auditoría legítima service-to-service.
+    # `enforce_comision_access=True` (default prod) prende el gate. HU-017: sin
+    # `academic_db_url` el gate falla CERRADO (503 a todo el que no sea
+    # oversight ni dueño del episodio) — antes era no-op, y producción no tenía
+    # la variable. En dev sin base académica, opt-out explícito con
+    # `ENFORCE_COMISION_ACCESS=false`.
     academic_db_url: str = Field(default="")
     enforce_comision_access: bool = Field(default=True)
 

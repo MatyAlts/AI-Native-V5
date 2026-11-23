@@ -229,6 +229,10 @@ async def test_classify_episode_200_cuando_existe_misma_config(
     is_current=true -> 200 OK con la classification existente.
 
     CRITICA: no debe haber fetch al CTR (ahorro de roundtrip) ni INSERT.
+
+    HU-017: el corte sin CTR queda para `classifier_worker` y oversight; un
+    `docente` pelado ahora se valida contra el CTR antes de recibir la fila
+    (`test_hu017_classify_post_ajeno.py`). Por eso este test usa docente_admin.
     """
     episode_id = uuid4()
     comision_id = uuid4()
@@ -252,7 +256,10 @@ async def test_classify_episode_200_cuando_existe_misma_config(
             ctr_mock,
         ),
     ):
-        r = await client.post(f"/api/v1/classify_episode/{episode_id}", headers=_auth_headers())
+        r = await client.post(
+            f"/api/v1/classify_episode/{episode_id}",
+            headers={**_auth_headers(), "X-User-Roles": "docente_admin"},
+        )
 
     assert r.status_code == 200, r.text
     body = r.json()

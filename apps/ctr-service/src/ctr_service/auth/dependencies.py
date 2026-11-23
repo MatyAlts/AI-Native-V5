@@ -2,13 +2,15 @@
 
 El CTR es escrito principalmente por service-accounts (tutor-service),
 no por usuarios finales directamente. Los docentes pueden LEER episodios
-completos de sus comisiones. Superadmin puede leer cualquiera.
+completos de sus comisiones; el alumno, los suyos (HU-017).
+Superadmin puede leer cualquiera.
 """
 
 from __future__ import annotations
 
 from collections.abc import AsyncIterator
 from dataclasses import dataclass
+from typing import Any
 from uuid import UUID
 
 from fastapi import Depends, Header, HTTPException, status
@@ -133,8 +135,9 @@ async def _is_comision_member(tenant_id: UUID, user_id: UUID, comision_id: UUID)
     """`True` si `user_id` es docente asignado a `comision_id` en academic_main.
 
     Query de solo-lectura contra `usuarios_comision` (academic_main) con RLS por
-    tenant. El CTR no hace joins cross-base — usa una conexión separada. Seam
-    aislado para poder testear el gate sin una DB académica real.
+    tenant. Solo asignaciones no borradas y vigentes (`fecha_hasta` nula o no
+    vencida, HU-017). El CTR no hace joins cross-base — usa una conexión
+    separada. Seam aislado para poder testear el gate sin una DB académica real.
     """
     from platform_ops import set_tenant_rls
     from sqlalchemy import text
@@ -150,7 +153,8 @@ async def _is_comision_member(tenant_id: UUID, user_id: UUID, comision_id: UUID)
                 text(
                     "SELECT 1 FROM usuarios_comision "
                     "WHERE comision_id = :c AND user_id = :u "
-                    "AND deleted_at IS NULL LIMIT 1"
+                    "AND deleted_at IS NULL "
+                    "AND (fecha_hasta IS NULL OR fecha_hasta >= CURRENT_DATE) LIMIT 1"
                 ),
                 {"c": str(comision_id), "u": str(user_id)},
             )
@@ -164,16 +168,49 @@ async def assert_comision_member(user: User, comision_id: UUID) -> None:
     Cierra el leak: en prod todos los docentes comparten un tenant fijo, así que
     la RLS por tenant NO los separa — el aislamiento entre comisiones lo da la
     asignación `usuarios_comision`. Roles oversight y service-accounts internos
-    (``CTR_OVERSIGHT_ROLES``) ven todo. Con el flag OFF o sin ``academic_db_url``
-    (dev/stub/tests) el guard es no-op para no romper la auditoría legítima ni el
-    dev loop. Mismo patrón que analytics-service.
+    (``CTR_OVERSIGHT_ROLES``) ven todo. Con ``enforce_comision_access=False``
+    (opt-out explícito de dev) el guard es no-op.
+
+    HU-017: sin ``academic_db_url`` el guard falla CERRADO con 503. Antes era
+    no-op, y como en producción el ctr-service no tenía la variable, cualquier
+    cuenta (con Clerk toda cuenta trae ``estudiante,docente``) leía el CTR de
+    cualquier episodio. El dueño del episodio no pasa por acá: lo resuelve
+    ``assert_puede_leer_episodio`` antes de llegar a la membresía.
     """
     if user.roles & CTR_OVERSIGHT_ROLES:
         return
-    if not settings.enforce_comision_access or not settings.academic_db_url:
+    if not settings.enforce_comision_access:
         return
+    if not settings.academic_db_url:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail=(
+                "No se puede verificar el acceso a la comision: falta ACADEMIC_DB_URL "
+                "en el ctr-service."
+            ),
+        )
     if not await _is_comision_member(user.tenant_id, user.id, comision_id):
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="No tenes acceso al CTR de esta comision (no sos docente asignado).",
         )
+
+
+async def assert_puede_leer_episodio(user: User, ep: Any) -> None:
+    """Autoriza leer o verificar el CTR de `ep` (HU-017). Lanza 403/503.
+
+    Orden (el contrato de la aceptación HU-017, no cambiarlo sin ella):
+      1. ``CTR_OVERSIGHT_ROLES``: pasan sin consultar nada.
+      2. El dueño (``ep.student_pseudonym == user.id``): pasa sin consultar
+         nada. De esto dependen el pie de auditoría del alumno y la
+         clasificación al cierre (el classifier-service reenvía la identidad
+         del alumno al pedir el episodio).
+      3. ``enforce_comision_access=False`` (opt-out de dev): no-op.
+      4. Sin ``academic_db_url``: 503 (falla cerrado).
+      5. Membresía real en ``usuarios_comision``; si no, 403.
+    """
+    if user.roles & CTR_OVERSIGHT_ROLES:
+        return
+    if str(ep.student_pseudonym) == str(user.id):
+        return
+    await assert_comision_member(user, ep.comision_id)

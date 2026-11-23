@@ -76,6 +76,26 @@ DOCENTE_USER_ID = UUID("11111111-1111-1111-1111-111111111111")
 TENANT_ID = UUID("00000000-0000-0000-0000-000000000001")
 
 
+@pytest.fixture(autouse=True)
+def _docente_miembro(monkeypatch: pytest.MonkeyPatch) -> None:
+    """HU-017: estas pruebas no son de acceso. El docente de los headers es
+    miembro de la comisión (seam de `acceso`), con la base académica "cargada";
+    el acceso lo cubre `test_hu017_review_ajena.py`."""
+    from classifier_service.auth import acceso
+    from classifier_service.config import settings
+
+    async def _miembro(*_a: Any, **_k: Any) -> bool:
+        return True
+
+    async def _no_duenio(*_a: Any, **_k: Any) -> bool:
+        return False
+
+    monkeypatch.setattr(settings, "enforce_comision_access", True)
+    monkeypatch.setattr(settings, "academic_db_url", "postgresql://x")
+    monkeypatch.setattr(acceso, "es_miembro_de_comision", _miembro)
+    monkeypatch.setattr(acceso, "es_duenio_del_episodio", _no_duenio)
+
+
 def _auth_headers() -> dict[str, str]:
     return {
         "X-User-Id": str(DOCENTE_USER_ID),

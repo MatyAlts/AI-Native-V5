@@ -351,6 +351,9 @@ services:
       OTEL_SERVICE_NAME_PREFIX: platform
       CTR_STORE_URL: postgresql+asyncpg://ctr_user:${CTR_DB_PASSWORD}@postgres:5432/ctr_store
       REDIS_URL: redis://:${REDIS_PASSWORD}@redis:6379/0
+      # HU-017: membresía docente<->comisión para el gate de lectura. Sin ella el
+      # ctr-service responde 503 a todo el que no sea oversight ni dueño.
+      ACADEMIC_DB_URL: postgresql+asyncpg://academic_user:${ACADEMIC_DB_PASSWORD}@postgres:5432/academic_main
       # CTR_MODE=http => HTTP-only, SIN workers in-process. Los 8 partition_worker
       # corren en containers dedicados ctr-worker-0..7 (uno por particion). Esto
       # preserva el INVARIANTE single-writer por particion (ADR-010): exactamente
@@ -385,6 +388,8 @@ services:
       CLASSIFIER_DB_URL: postgresql+asyncpg://classifier_user:${CLASSIFIER_DB_PASSWORD}@postgres:5432/classifier_db
       CTR_STORE_URL: postgresql+asyncpg://ctr_user:${CTR_DB_PASSWORD}@postgres:5432/ctr_store
       REDIS_URL: redis://:${REDIS_PASSWORD}@redis:6379/0
+      # HU-017: membresía para revisar/ver clasificaciones (falla cerrado sin ella).
+      ACADEMIC_DB_URL: postgresql+asyncpg://academic_user:${ACADEMIC_DB_PASSWORD}@postgres:5432/academic_main
     depends_on:
       postgres:
         condition: service_healthy
