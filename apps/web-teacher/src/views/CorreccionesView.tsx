@@ -982,18 +982,23 @@ function mapSavedToInputs(
   return { scores, comments }
 }
 
-// Serializa las filas al shape que espera el backend. Puntaje vacio = 0.
+// Serializa las filas al shape que espera el backend. Solo viajan los criterios
+// con un puntaje escrito: un casillero vacio no se manda (antes se guardaba como
+// 0 y el alumno veia criterios en 0 que el docente nunca puso, F13 de HU-014).
+// Un "0" escrito si viaja, como 0. Sin ninguno escrito devuelve [].
 function serializeCriterios(
   rows: RubricaRow[],
   scores: Record<string, string>,
   comments: Record<string, string>,
 ): DetalleCriterioPayload[] {
-  return rows.map((row) => ({
-    criterio: row.criterioLabel,
-    puntaje: Number.parseFloat(scores[row.key] ?? "") || 0,
-    max_puntaje: row.puntajeMax,
-    comentario: (comments[row.key] ?? "").trim() || null,
-  }))
+  return rows
+    .filter((row) => (scores[row.key] ?? "").trim() !== "")
+    .map((row) => ({
+      criterio: row.criterioLabel,
+      puntaje: Number.parseFloat((scores[row.key] ?? "").trim()),
+      max_puntaje: row.puntajeMax,
+      comentario: (comments[row.key] ?? "").trim() || null,
+    }))
 }
 
 // Nota total sugerida desde los criterios: proporcion del puntaje asignado sobre
