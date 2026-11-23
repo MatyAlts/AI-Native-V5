@@ -19,7 +19,7 @@
  *    episodio activo cae al ultimo conocido + label "ultima verificacion:
  *    hace X". NO live counter falso.
  *
- * Tambien expone `labeler` (default 1.1.0) para extension futura.
+ * Tambien muestra la version del labeler (`LABELER_VERSION`, abajo).
  */
 import { useEffect, useState } from "react"
 
@@ -45,7 +45,11 @@ const LS_AUDIT_CHAIN_KEY = "audit-chain-state"
 const PROMPT_VERSION = "tutor/v1.11.0"
 // NO es el prompt: es el etiquetador N1-N4 (ADR-020). Se bumpea por sus propias
 // reglas y cambiarlo re-etiqueta historicos. No tocar en bumps de prompt.
-const LABELER_VERSION = "1.2.0"
+// HU-018 (F04): el pie decia 1.2.0 con el labeler en 1.3.0. Tiene que ser el
+// `LABELER_VERSION` de `apps/classifier-service/.../services/event_labeler.py`,
+// y lo vigila `apps/classifier-service/tests/unit/test_hu018_version_labeler_en_pie.py`:
+// un bump del labeler que no mueva esta constante pone ese test en rojo.
+const LABELER_VERSION = "1.3.0"
 
 interface ChainState {
   events: number
