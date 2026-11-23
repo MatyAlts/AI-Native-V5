@@ -12,8 +12,11 @@ class StudentProfileUpsert(BaseModel):
     """Payload que envia el web-student al loguearse con Clerk.
 
     Nota: email viene como str (no EmailStr) para no depender del extra
-    `pydantic[email]` que no esta instalado en el container slim. Clerk
-    ya valida el email del lado del frontend antes de mandarlo.
+    `pydantic[email]` que no esta instalado en el container slim.
+
+    HU-017: el `email` del body NO es confiable (lo manda el cliente) y el
+    endpoint lo ignora: guarda y vincula con el email del token. Se mantiene
+    en el schema para no romper al web-student, que lo sigue mandando.
     """
 
     full_name: str | None = Field(default=None, max_length=200)
