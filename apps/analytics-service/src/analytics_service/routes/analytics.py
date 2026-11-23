@@ -162,6 +162,10 @@ async def require_student_progress_access(
         (`X-User-Id` que inyecta el api-gateway — ver `/student/me/episodes`);
         si el path pide otro UUID → 403.
 
+    El propio progreso (`student_pseudonym == X-User-Id`) se permite antes de
+    mirar los roles y sin consultar la comisión (HU-018): con Clerk el alumno
+    trae también `docente` y caía en la rama de staff.
+
     Gateado por `settings.enforce_comision_access` igual que
     `require_comision_access` (no-op en tests/dev; True en prod).
     """
@@ -181,6 +185,13 @@ async def require_student_progress_access(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="X-User-Id must be a valid UUID",
         )
+
+    # El propio progreso pasa siempre, sin consultar la comisión (HU-018 F15):
+    # con Clerk toda cuenta trae `estudiante,docente`, así que el alumno caía
+    # en la rama de staff y `assert_comision_member` le daba 403 (no está en
+    # `usuarios_comision`). Pedir el de OTRO sigue por las ramas de abajo.
+    if student_pseudonym == user_id:
+        return
 
     roles = {r.strip() for r in (x_user_roles or "").split(",") if r.strip()}
     if roles & _STAFF_ROLES:
