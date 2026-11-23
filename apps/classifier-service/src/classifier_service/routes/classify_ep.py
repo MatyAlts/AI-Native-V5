@@ -128,6 +128,24 @@ async def _fetch_episode_from_ctr(episode_id: UUID, user: User) -> dict:
 _LECTURA_SIN_CTR = frozenset({"classifier_worker", "superadmin", "docente_admin"})
 
 
+def _error_de_acceso_del_ctr(e: httpx.HTTPStatusError) -> HTTPException:
+    """Traduce la respuesta de error del CTR al pedir un episodio.
+
+    403/404/503 son respuestas de acceso (no es tuyo, no existe, el CTR no
+    pudo decidir) y se devuelven tal cual. Cualquier otro codigo es una falla
+    real del CTR: 502. Lo usan los dos caminos que piden el episodio (HU-022:
+    antes el que clasifica de cero convertia un 403 en 502).
+    """
+    code = e.response.status_code
+    if code in (
+        status.HTTP_403_FORBIDDEN,
+        status.HTTP_404_NOT_FOUND,
+        status.HTTP_503_SERVICE_UNAVAILABLE,
+    ):
+        return HTTPException(status_code=code, detail="No tenes acceso a este episodio.")
+    return HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail="CTR error")
+
+
 async def _exigir_lectura_en_ctr(episode_id: UUID, user: User) -> None:
     """HU-017: devolver una clasificación ya hecha es una LECTURA del episodio.
 
@@ -142,16 +160,7 @@ async def _exigir_lectura_en_ctr(episode_id: UUID, user: User) -> None:
     try:
         await _fetch_episode_from_ctr(episode_id, user)
     except httpx.HTTPStatusError as e:
-        code = e.response.status_code
-        if code in (
-            status.HTTP_403_FORBIDDEN,
-            status.HTTP_404_NOT_FOUND,
-            status.HTTP_503_SERVICE_UNAVAILABLE,
-        ):
-            raise HTTPException(
-                status_code=code, detail="No tenes acceso a este episodio."
-            ) from None
-        raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail="CTR error") from None
+        raise _error_de_acceso_del_ctr(e) from None
     except httpx.HTTPError:
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
@@ -459,12 +468,7 @@ async def classify_episode(
     try:
         episode = await _fetch_episode_from_ctr(episode_id, user)
     except httpx.HTTPStatusError as e:
-        if e.response.status_code == 404:
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND,
-                detail=f"Episode {episode_id} no encontrado en CTR",
-            )
-        raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=f"CTR error: {e}")
+        raise _error_de_acceso_del_ctr(e) from None
 
     events = episode.get("events", [])
     result = classify_episode_from_events(events, reference_profile=profile)
