@@ -122,6 +122,43 @@ async def _fetch_episode_from_ctr(episode_id: UUID, user: User) -> dict:
         return r.json()
 
 
+# Roles que reciben una clasificación ya hecha sin pasar por el CTR (HU-017):
+# el worker de reclasificación (`reclassify_all.py`, `reclassify-legacy-106.py`)
+# y el oversight del tenant.
+_LECTURA_SIN_CTR = frozenset({"classifier_worker", "superadmin", "docente_admin"})
+
+
+async def _exigir_lectura_en_ctr(episode_id: UUID, user: User) -> None:
+    """HU-017: devolver una clasificación ya hecha es una LECTURA del episodio.
+
+    Con Clerk toda cuenta trae `docente` (está en `CLASSIFY_ROLES`), así que
+    sin esto un alumno obtenía con un POST la clasificación de un episodio
+    ajeno. El que decide es el ctr-service: se le pide el episodio con la
+    identidad del usuario, como en el camino que clasifica de cero, y el CTR
+    deja pasar al dueño, a los miembros de la comisión y al oversight (y falla
+    cerrado sin base académica). Su 403/404/503 se devuelve tal cual; un error
+    de red es 503: sin poder preguntar, no se entrega.
+    """
+    try:
+        await _fetch_episode_from_ctr(episode_id, user)
+    except httpx.HTTPStatusError as e:
+        code = e.response.status_code
+        if code in (
+            status.HTTP_403_FORBIDDEN,
+            status.HTTP_404_NOT_FOUND,
+            status.HTTP_503_SERVICE_UNAVAILABLE,
+        ):
+            raise HTTPException(
+                status_code=code, detail="No tenes acceso a este episodio."
+            ) from None
+        raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail="CTR error") from None
+    except httpx.HTTPError:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="No se pudo verificar el acceso al episodio.",
+        ) from None
+
+
 async def _find_current_classification(
     session: AsyncSession,
     episode_id: UUID,
@@ -411,9 +448,12 @@ async def classify_episode(
     # hash, devolvemos 200 sin pegarle al ctr-service (ahorro de roundtrip).
     async with tenant_session(user.tenant_id) as session:
         existing = await _find_current_classification(session, episode_id, config_hash)
-        if existing is not None:
-            response.status_code = status.HTTP_200_OK
-            return _salida(existing)
+    if existing is not None:
+        # HU-017: el corte temprano no puede saltear el control de acceso.
+        if not user.roles & _LECTURA_SIN_CTR and settings.enforce_comision_access:
+            await _exigir_lectura_en_ctr(episode_id, user)
+        response.status_code = status.HTTP_200_OK
+        return _salida(existing)
 
     # No existe — flujo normal: fetch eventos del CTR + clasificar + persistir.
     try:
@@ -462,6 +502,9 @@ async def classify_episode(
                     status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
                     detail="Race condition irrecuperable en classify_episode",
                 ) from None
+            # HU-017: acá no hace falta otro control. El usuario ya leyó el
+            # episodio del CTR con su identidad (arriba), y el CTR solo se lo
+            # dio por ser dueño, miembro u oversight.
             response.status_code = status.HTTP_200_OK
             return _salida(existing)
 
