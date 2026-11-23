@@ -1004,20 +1004,46 @@ function serializeCriterios(
 // Nota total sugerida desde los criterios: proporcion del puntaje asignado sobre
 // el maximo posible, escalada a 0-10 y redondeada a 0.5 (el step del input). El
 // docente sigue gobernando la nota — esto solo la sugiere.
+//
+// Solo cuentan los criterios completados (HU-016): la suma de los puntajes
+// escritos sobre la suma de los maximos de ESOS criterios. Un vacio no es 0,
+// igual que en lo que se guarda (`serializeCriterios`); contarlo como 0
+// sugeria un 3.3 con un solo criterio corregido al maximo. Un valor fuera de
+// rango tampoco cuenta (lo frena `validateCriterios` al publicar). Sin ningun
+// criterio completado no hay sugerencia (null).
 function suggestNota(rows: RubricaRow[], scores: Record<string, string>): number | null {
-  const sumMax = rows.reduce((acc, r) => acc + r.puntajeMax, 0)
+  let sumP = 0
+  let sumMax = 0
+  for (const r of rows) {
+    const raw = (scores[r.key] ?? "").trim()
+    if (raw === "") continue
+    const v = Number.parseFloat(raw)
+    if (Number.isNaN(v) || v < 0 || v > r.puntajeMax) continue
+    sumP += v
+    sumMax += r.puntajeMax
+  }
   if (sumMax <= 0) return null
-  const sumP = rows.reduce((acc, r) => acc + (Number.parseFloat(scores[r.key] ?? "") || 0), 0)
   const clamped = Math.max(0, Math.min(10, (sumP / sumMax) * 10))
   return Math.round(clamped * 2) / 2
 }
 
 // Valida los puntajes ingresados: cada valor no-vacio debe ser numerico y estar
-// entre 0 y el maximo del criterio. Devuelve el mensaje de error o null.
-function validateCriterios(rows: RubricaRow[], scores: Record<string, string>): string | null {
+// entre 0 y el maximo del criterio. Un criterio con comentario y sin puntaje
+// tampoco pasa (HU-016): `serializeCriterios` no manda los criterios vacios, asi
+// que ese comentario se perderia en silencio. Devuelve el mensaje de error o null.
+function validateCriterios(
+  rows: RubricaRow[],
+  scores: Record<string, string>,
+  comments: Record<string, string>,
+): string | null {
   for (const row of rows) {
     const raw = (scores[row.key] ?? "").trim()
-    if (raw === "") continue
+    if (raw === "") {
+      if ((comments[row.key] ?? "").trim() !== "") {
+        return `Falta el puntaje de "${row.nombre}": tiene un comentario pero no un puntaje. Ponele un puntaje o borra el comentario.`
+      }
+      continue
+    }
     const v = Number.parseFloat(raw)
     if (Number.isNaN(v) || v < 0 || v > row.puntajeMax) {
       return `El puntaje de "${row.nombre}" debe estar entre 0 y ${row.puntajeMax}.`
@@ -1623,7 +1649,7 @@ function GradingFormView({
       return
     }
     if (tieneRubrica) {
-      const critError = validateCriterios(rubricaRows, criterioScores)
+      const critError = validateCriterios(rubricaRows, criterioScores, criterioComments)
       if (critError) {
         setSubmitError(critError)
         return
@@ -1704,7 +1730,7 @@ function GradingFormView({
       return
     }
     if (tieneRubrica) {
-      const critError = validateCriterios(rubricaRows, criterioScores)
+      const critError = validateCriterios(rubricaRows, criterioScores, criterioComments)
       if (critError) {
         setSubmitError(critError)
         return
