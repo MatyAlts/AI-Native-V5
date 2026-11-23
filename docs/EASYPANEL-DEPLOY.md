@@ -73,6 +73,25 @@ falla en silencio, que es peor:
 | **`INTERNAL_SERVICE_TOKEN`** | execution-service y **tutor-service**, **mismo valor** | ⚠️ Si no coincide, los ejercicios **con casos ocultos** pierden su `tests_ejecutados`: el tutor los rechaza con 422 y la emisión falla soft. **No se cae nada** — queda un agujero en el corpus, justo en los ejercicios que sostienen el claim del ADR-060. Vigilar `execution_ctr_emissions_failed_total`. |
 | `EXECUTION_ENABLED` | execution-service | Default **`false`** (falla cerrado, como el resto del servicio): un deploy que no la toque deja la ejecución **apagada**, que es el estado seguro. Para encender hay que ponerla explícitamente en `true`, y recién después abrir de a una comisión con `EXECUTION_ENABLED_COMISIONES`. Hasta el 2026-08-03 el default era `true` y esta fila advertía lo contrario: era la única pieza del ADR-060 que fallaba abierto. |
 
+**Orden del deploy de HU-015 (Python en el sandbox).** El runner que trae HU-015
+exige `PYTHON_IMAGE` por digest al arrancar, igual que `JAVA_IMAGE`. Si falta o
+va por tag, el runner **no arranca, y con él se cae también la ejecución de
+Java**: no es "Python apagado", es el sandbox entero abajo. Por eso:
+
+1. **Cargar `PYTHON_IMAGE` en el execution-runner**, por digest de 64 hex
+   (comando en la tabla de arriba), antes de tocar ningún build.
+2. **Redeployar el execution-runner** y comprobar que arrancó (`/health` 200 y,
+   en el host, `bash scripts/verificar-despliegue-ejecucion.sh`, que valida las
+   dos imágenes).
+3. **Recién después, redeployar el execution-service.** Al revés, el servicio
+   nuevo le pide `language=python` a un runner viejo que no lo entiende.
+
+De a un servicio por vez, como siempre. El runner nuevo además mata el
+contenedor cuando un programa vence el wall time (`--name` + `docker kill`):
+antes moría solo el CLI de `docker run` y el contenedor seguía al 100% de CPU.
+Y con `episode_id` el servidor no ejecuta Python: el Probar del alumno sigue
+en Pyodide; server-side corre solo la corrección con IA, que llega sin episodio.
+
 **El runner NO debe ser alcanzable desde fuera de la red interna.** Su Dockerfile
 bindea `0.0.0.0`, así que esto depende de que EasyPanel no publique el puerto
 8015. Es el control D3 del ADR-060: el runner es el único con el socket de

@@ -65,7 +65,12 @@ redeployan en caliente: son los que están en el medio de un episodio.
 | 5 | `ai-gateway` | medio | `/health/ready` — el check de `byok_resolver` sale KO si `BYOK_MASTER_KEY` está vacía |
 | 6 | `academic-service` | **alto** | ver abajo |
 | 7 | `execution-service` | bajo | queda **apagado** (`EXECUTION_ENABLED=false`) |
-| 8 | `execution-runner` | bajo | no arranca sin `RUNNER_TOKEN` y `JAVA_IMAGE` por digest |
+| 8 | `execution-runner` | bajo | no arranca sin `RUNNER_TOKEN`, `JAVA_IMAGE` y (desde HU-015) `PYTHON_IMAGE` por digest |
+
+> **Desde HU-015 el orden de 7 y 8 se invierte** para un runner que ya existe: primero se carga
+> `PYTHON_IMAGE` por digest en el runner, después se redeploya el runner, y recién después el
+> execution-service. Sin `PYTHON_IMAGE` el runner no arranca y se cae también Java. Detalle en
+> `docs/EASYPANEL-DEPLOY.md`, sección de ejecución server-side.
 | 9 | `evaluation-service` | **alto** | migración de G3 **ya aplicada** |
 | 10 | `tutor-service` | **alto** | sin usuarios activos |
 | 11 | `ctr-service` | **el más alto** | sin usuarios activos. Es la cadena de evidencia |

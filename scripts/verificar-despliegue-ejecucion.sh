@@ -32,6 +32,10 @@ RUNNER_PORT="${RUNNER_PORT:-8015}"
 # ningun lado: el gate 4 media algo que nadie configuraba y reportaba contra el
 # default. Se acepta `EXECUTION_IMAGE` como alias por si quedo en algun runbook.
 IMAGEN="${JAVA_IMAGE:-${EXECUTION_IMAGE:-eclipse-temurin:21-jdk}}"
+# `PYTHON_IMAGE` desde HU-015: el runner la exige por digest igual que la de
+# Java, y si falta no arranca (y se cae tambien Java). Por eso se verifica con
+# los mismos dos gates.
+IMAGEN_PYTHON="${PYTHON_IMAGE:-python:3.12-slim}"
 
 # ── 0. Rootless: si esta, el runner sobra ────────────────────────────────────
 # ADR-060 (Alternativas): "Conviene evaluar rootless en el VPS antes de
@@ -107,45 +111,62 @@ if [ -n "$listen" ]; then
     esac
 fi
 
-# ── 4. Imagen pineada por digest ─────────────────────────────────────────────
+# ── 4. Imagenes pineadas por digest ──────────────────────────────────────────
 # Un tag es mutable: `21-jdk` de hoy no es el de manana. Para un sandbox que
 # ejecuta codigo de terceros, el digest es lo que hace reproducible QUE se corrio.
-titulo "4. Imagen del sandbox pineada por digest (8.4)"
+#
 # El digest se valida ENTERO, no por la presencia del `@sha256:`. El 2026-08-05
 # produccion tenia uno de 55 de los 64 caracteres —cortado en un paste— y pasaba
 # igual, porque el chequeo era `grep '@sha256:'`. Un control que se satisface con
 # un valor roto no es un control, y este es de los que el ADR-060 declara "falla
 # cerrado". Mismo arreglo en `runner_main.py`.
-DIGEST="${IMAGEN##*@sha256:}"
-if printf '%s' "$IMAGEN" | grep -q '@sha256:' &&
-    printf '%s' "$DIGEST" | grep -qE '^[0-9a-f]{64}$'; then
-    pasa "JAVA_IMAGE pineada por digest, 64 chars hex."
-    dato "$IMAGEN"
-elif printf '%s' "$IMAGEN" | grep -q '@sha256:'; then
-    falla "El digest esta MAL FORMADO: ${#DIGEST} chars, deberian ser 64."
-    dato "$IMAGEN"
-    dato "Se corta facil al pegarlo. Obtenerlo entero con:"
-    dato "  docker images --digests ${IMAGEN%%@*}"
-else
-    falla "La imagen usa un TAG mutable, no un digest: ${IMAGEN}"
-    dato "Un tag puede cambiar debajo tuyo. Obtener el digest con:"
-    dato "  docker inspect --format='{{index .RepoDigests 0}}' ${IMAGEN}"
-    if command -v docker >/dev/null 2>&1; then
-        d="$(docker inspect --format='{{index .RepoDigests 0}}' "$IMAGEN" 2>/dev/null || true)"
-        [ -n "$d" ] && dato "Digest actual en este host: $d"
+verificar_digest() {
+    local nombre="$1" imagen="$2" digest
+    digest="${imagen##*@sha256:}"
+    if printf '%s' "$imagen" | grep -q '@sha256:' &&
+        printf '%s' "$digest" | grep -qE '^[0-9a-f]{64}$'; then
+        pasa "${nombre} pineada por digest, 64 chars hex."
+        dato "$imagen"
+    elif printf '%s' "$imagen" | grep -q '@sha256:'; then
+        falla "${nombre}: el digest esta MAL FORMADO: ${#digest} chars, deberian ser 64."
+        dato "$imagen"
+        dato "Se corta facil al pegarlo. Obtenerlo entero con:"
+        dato "  docker images --digests ${imagen%%@*}"
+    else
+        falla "${nombre} usa un TAG mutable, no un digest: ${imagen}"
+        dato "Un tag puede cambiar debajo tuyo, y con tag el runner NO arranca."
+        dato "Obtener el digest con:"
+        dato "  docker inspect --format='{{index .RepoDigests 0}}' ${imagen}"
+        if command -v docker >/dev/null 2>&1; then
+            local d
+            d="$(docker inspect --format='{{index .RepoDigests 0}}' "$imagen" 2>/dev/null || true)"
+            [ -n "$d" ] && dato "Digest actual en este host: $d"
+        fi
     fi
-fi
+}
 
-# ── 5. La imagen tiene que estar bajada ──────────────────────────────────────
+titulo "4. Imagenes del sandbox pineadas por digest (8.4)"
+verificar_digest "JAVA_IMAGE" "$IMAGEN"
+if [ -z "${PYTHON_IMAGE:-}" ]; then
+    avisa "PYTHON_IMAGE no esta en ESTE shell (HU-015): se mide el default."
+    dato "En el runner es obligatoria: sin ella NO arranca y se cae tambien Java."
+    dato "Si solo esta en el contenedor:  docker exec <runner> printenv PYTHON_IMAGE"
+    dato "y volver a correr con  PYTHON_IMAGE=<valor> bash $0"
+fi
+verificar_digest "PYTHON_IMAGE" "$IMAGEN_PYTHON"
+
+# ── 5. Las imagenes tienen que estar bajadas ─────────────────────────────────
 # Si no esta, el `docker pull` (~450MB) entra en el presupuesto de 10s de la
 # corrida del alumno y se come su timeout. Es lo que rompia el smoke en CI.
-titulo "5. Imagen ya presente en el host (evita comerse el timeout del alumno)"
-if docker image inspect "$IMAGEN" >/dev/null 2>&1; then
-    pasa "La imagen esta local: ninguna corrida paga la descarga."
-else
-    falla "La imagen NO esta bajada — la primera corrida se come el pull en su timeout."
-    dato "docker pull ${IMAGEN}"
-fi
+titulo "5. Imagenes ya presentes en el host (evita comerse el timeout del alumno)"
+for img in "$IMAGEN" "$IMAGEN_PYTHON"; do
+    if docker image inspect "$img" >/dev/null 2>&1; then
+        pasa "Imagen local: ${img}"
+    else
+        falla "La imagen NO esta bajada — la primera corrida se come el pull en su timeout."
+        dato "docker pull ${img}"
+    fi
+done
 
 # ── 6. INTERNAL_SERVICE_TOKEN coincide entre los dos servicios ───────────────
 # El modo de falla que este paso ataca: si el token NO coincide,
