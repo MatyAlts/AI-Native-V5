@@ -13,6 +13,7 @@ import {
   setDevStudentId,
 } from "./auth"
 import { routeTree } from "./routeTree.gen"
+import { debeIrAlPanelDocente } from "./utils/modoVista"
 
 const CLERK_PUBLISHABLE_KEY = import.meta.env.VITE_CLERK_PUBLISHABLE_KEY as string
 
@@ -58,7 +59,7 @@ function InnerApp() {
   // Re-vincula la identidad de Clerk con las comisiones que el admin asigno por
   // email (POST /users/me/profile, idempotente: tambien llena el perfil del
   // alumno). Si resulta STAFF de alguna comision (es docente), lo manda al panel
-  // docente automaticamente. Si no, se queda aca, en el panel de alumno, donde
+  // docente automaticamente, salvo que haya elegido ver como alumno (HU-022). Si no, se queda aca, en el panel de alumno, donde
   // puede ingresar el codigo de su comision. Optimista: no bloquea al alumno
   // (caso comun); solo el docente ve un instante esta pantalla antes de redirigir.
   useEffect(() => {
@@ -84,7 +85,8 @@ function InnerApp() {
         if (!r.ok) return
         const data = await r.json()
         const items = data?.data ?? data?.items ?? []
-        if (!cancelled && Array.isArray(items) && items.length > 0) {
+        // HU-022: si eligio "Ver como alumno", se queda aca.
+        if (!cancelled && debeIrAlPanelDocente(Array.isArray(items) && items.length > 0)) {
           window.location.replace("/teacher/")
         }
       } catch {
