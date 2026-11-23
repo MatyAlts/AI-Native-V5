@@ -8,6 +8,9 @@ import { ApiError } from "../lib/api"
 
 export const MENSAJE_PLAZO_VENCIDO = "Venció el plazo de esta TP. Ya no se puede trabajar en ella."
 export const MENSAJE_NO_SE_PUDO_ABRIR = "No se pudo abrir el ejercicio. Probá de nuevo en un rato."
+/** Aviso en la home cuando la entrega automatica al salir se rechazo por plazo. */
+export const MENSAJE_ENTREGA_VENCIDA =
+  "Venció el plazo de entrega de esta TP, así que no se entregó. Si necesitás entregarla, consultalo con tu docente."
 export const MENSAJE_NO_SE_PUDO_ENTREGAR = "No se pudo entregar la TP. Probá de nuevo en un rato."
 
 // El tutor-service responde 403 "Tarea práctica fuera de plazo (deadline
@@ -51,12 +54,26 @@ export function mensajeAlAbrirEpisodio(e: unknown): string {
 }
 
 /**
- * En la entrega el `detail` del evaluation-service ya esta escrito para el
- * alumno ("Ejercicios incompletos: [2]. Completa todos antes de entregar.", el
- * del plazo, etc.), asi que se muestra tal cual. Sin un `detail` legible (red
- * caida, 500, 422 de pydantic) va la frase generica.
+ * Textos del evaluation-service que estan escritos para el alumno y se muestran
+ * tal cual. Lista blanca a proposito: el resto de los rechazos del submit
+ * ("No se puede enviar una entrega en estado 'graded'", "Permiso denegado...",
+ * "Missing auth headers...") hablan de estados internos o de autorizacion y no
+ * le dicen nada util al alumno.
+ */
+const DETAIL_PARA_EL_ALUMNO = /^(venci[oó] el plazo|ejercicios incompletos|falta el c[oó]digo)/i
+
+/**
+ * Sin un `detail` de la lista (red caida, 500, 422 de pydantic, rechazos
+ * internos) va la frase generica.
  */
 export function mensajeAlEntregar(e: unknown): string {
-  if (e instanceof ApiError && e.detail && e.status < 500) return e.detail
+  if (e instanceof ApiError && e.detail && DETAIL_PARA_EL_ALUMNO.test(e.detail.trim())) {
+    return e.detail
+  }
   return MENSAJE_NO_SE_PUDO_ENTREGAR
+}
+
+/** La entrega fue rechazada por plazo vencido (409 del evaluation-service). */
+export function esEntregaVencida(e: unknown): boolean {
+  return e instanceof ApiError && e.status === 409 && esPlazoVencido(e)
 }

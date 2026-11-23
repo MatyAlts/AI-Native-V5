@@ -16,7 +16,7 @@
  * ExerciseListView de la TP correspondiente.
  */
 import { createFileRoute, useNavigate, useParams } from "@tanstack/react-router"
-import { enviarEntregaAlSalir } from "../lib/entregaAlSalir"
+import { destinoAlSalir, enviarEntregaAlSalir } from "../lib/entregaAlSalir"
 import { debeEnviarLaEntrega } from "../lib/entregaGuard"
 import { type EjercicioContext, EpisodeView } from "../pages/EpisodePage"
 import { ACTIVE_EXERCISE_CONTEXT_KEY, type ActiveExerciseContext } from "./materia.$id"
@@ -64,8 +64,11 @@ function EpisodioPage() {
     // La logica vive en `lib/entregaAlSalir` y no aca: enterrada adentro de esta
     // ruta nadie podia testearla, y es el camino por el que una entrega en
     // `returned` se re-enviaria borrandole la devolucion al docente.
-    await enviarEntregaAlSalir(id, getToken)
-    navigate({ to: "/" })
+    //
+    // Si el servidor la rechazo por plazo vencido (HU-016), el alumno tiene que
+    // enterarse: la home muestra el aviso que viaja en `?aviso=plazo-vencido`.
+    // Sin `alert()` y sin trabar la salida.
+    navigate(destinoAlSalir(await enviarEntregaAlSalir(id, getToken)))
   }
 
   return (
