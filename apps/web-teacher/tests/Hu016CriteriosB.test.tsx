@@ -100,14 +100,6 @@ async function abrirEntrega() {
   await waitFor(() => expect(screen.getByTestId("criterio-puntaje-ej-1#0")).toBeDefined())
 }
 
-async function publicar(posts: { body: Record<string, unknown> }[]) {
-  fireEvent.change(screen.getByTestId("nota-final-input"), { target: { value: "8" } })
-  fireEvent.change(screen.getByTestId("feedback-input"), { target: { value: "Bien" } })
-  fireEvent.click(screen.getByTestId("calificar-btn"))
-  await waitFor(() => expect(posts.length).toBeGreaterThan(0), { timeout: 5000 })
-  return posts[0]?.body ?? {}
-}
-
 afterEach(() => {
   cleanup()
   vi.unstubAllGlobals()
