@@ -161,6 +161,16 @@ const MODO_SOBREUSO: ModoApropiacion = {
   color: "var(--color-warning)",
 }
 
+// HU-018 R04: el autonomo (sin tutor) es un eje ortogonal, no un punto de la
+// escala: tiene chip propio en la lista de episodios, pero NO entra a
+// `APPROPRIATION_TO_ORDINAL` ni a la trayectoria. Color neutro, como en la
+// lista de TPs (`TareaSelector.appropriationColor`).
+const MODO_AUTONOMO: ModoApropiacion = {
+  label: "Trabajaste sin tutor",
+  short: "Trabajaste sin tutor",
+  color: "var(--color-neutral)",
+}
+
 const APPROPRIATION_TO_ORDINAL: Record<string, number> = {
   delegacion_pasiva: 0,
   apropiacion_superficial: 1,
@@ -688,6 +698,7 @@ export function modoDeEpisodio(
   episode: Pick<StudentEpisode, "appropriation" | "pasiva_por_sobreuso">,
 ): ModoApropiacion | undefined {
   if (episode.pasiva_por_sobreuso === true) return MODO_SOBREUSO
+  if (episode.appropriation === "autonomo") return MODO_AUTONOMO
   const ordinal =
     episode.appropriation != null ? APPROPRIATION_TO_ORDINAL[episode.appropriation] : undefined
   return ordinal != null ? MODOS[ordinal] : undefined
