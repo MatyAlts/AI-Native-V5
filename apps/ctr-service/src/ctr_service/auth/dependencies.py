@@ -135,8 +135,9 @@ async def _is_comision_member(tenant_id: UUID, user_id: UUID, comision_id: UUID)
     """`True` si `user_id` es docente asignado a `comision_id` en academic_main.
 
     Query de solo-lectura contra `usuarios_comision` (academic_main) con RLS por
-    tenant. El CTR no hace joins cross-base — usa una conexión separada. Seam
-    aislado para poder testear el gate sin una DB académica real.
+    tenant. Solo asignaciones no borradas y vigentes (`fecha_hasta` nula o no
+    vencida, HU-017). El CTR no hace joins cross-base — usa una conexión
+    separada. Seam aislado para poder testear el gate sin una DB académica real.
     """
     from platform_ops import set_tenant_rls
     from sqlalchemy import text
@@ -152,7 +153,8 @@ async def _is_comision_member(tenant_id: UUID, user_id: UUID, comision_id: UUID)
                 text(
                     "SELECT 1 FROM usuarios_comision "
                     "WHERE comision_id = :c AND user_id = :u "
-                    "AND deleted_at IS NULL LIMIT 1"
+                    "AND deleted_at IS NULL "
+                    "AND (fecha_hasta IS NULL OR fecha_hasta >= CURRENT_DATE) LIMIT 1"
                 ),
                 {"c": str(comision_id), "u": str(user_id)},
             )

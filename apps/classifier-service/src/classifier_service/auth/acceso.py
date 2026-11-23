@@ -21,10 +21,12 @@ monkeypatch.
 from __future__ import annotations
 
 import logging
+import time
 from uuid import UUID
 
 import httpx
 from fastapi import HTTPException, status
+from platform_observability import sign_headers
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncEngine, async_sessionmaker, create_async_engine
 
@@ -57,7 +59,8 @@ async def es_miembro_de_comision(tenant_id: UUID, user_id: UUID, comision_id: UU
     """`True` si `user_id` está asignado a `comision_id` en `usuarios_comision`.
 
     Mismo SQL que ``ctr_service.auth.dependencies._is_comision_member``, con RLS
-    por tenant. Conexión aparte: no hay joins cross-base.
+    por tenant: asignación no borrada y vigente (``fecha_hasta`` nula o no
+    vencida). Conexión aparte: no hay joins cross-base.
     """
     from platform_ops import set_tenant_rls
 
@@ -69,7 +72,8 @@ async def es_miembro_de_comision(tenant_id: UUID, user_id: UUID, comision_id: UU
                 text(
                     "SELECT 1 FROM usuarios_comision "
                     "WHERE comision_id = :c AND user_id = :u "
-                    "AND deleted_at IS NULL LIMIT 1"
+                    "AND deleted_at IS NULL "
+                    "AND (fecha_hasta IS NULL OR fecha_hasta >= CURRENT_DATE) LIMIT 1"
                 ),
                 {"c": str(comision_id), "u": str(user_id)},
             )
@@ -90,8 +94,20 @@ async def es_duenio_del_episodio(user: User, episode_id: UUID) -> bool:
         "X-User-Id": str(user.id),
         "X-Tenant-Id": str(user.tenant_id),
         "X-User-Email": user.email,
-        "X-User-Roles": ",".join(user.roles),
+        "X-User-Roles": ",".join(sorted(user.roles)),
     }
+    # Misma firma que `services/ctr_lectura.py`: si el ctr-service exige la
+    # firma del gateway, este pedido directo la necesita.
+    if settings.gateway_shared_secret:
+        ts = int(time.time())
+        headers["X-Gateway-Ts"] = str(ts)
+        headers["X-Gateway-Signature"] = sign_headers(
+            settings.gateway_shared_secret,
+            headers["X-User-Id"],
+            headers["X-Tenant-Id"],
+            headers["X-User-Roles"],
+            ts,
+        )
     try:
         async with httpx.AsyncClient(timeout=10.0) as client:
             r = await client.get(

@@ -20,6 +20,7 @@ from sqlalchemy import select
 
 from classifier_service.auth import User, require_gateway_auth, require_role
 from classifier_service.auth.acceso import OVERSIGHT_ROLES, assert_docente_de_comision
+from classifier_service.config import settings
 from classifier_service.db import tenant_session
 from classifier_service.models import Classification
 from classifier_service.services.review import (
@@ -109,9 +110,17 @@ async def get_review_queue(
     HU-017: solo los de comisiones donde el usuario es docente asignado
     (oversight ve todo). Pedir una comisión ajena devuelve la cola vacía.
     """
+    filtrar = not user.roles & OVERSIGHT_ROLES and settings.enforce_comision_access
+    if filtrar and not settings.academic_db_url:
+        # Falla cerrado aunque la cola esté vacía: sin base académica no se
+        # puede saber qué comisiones son del usuario.
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="No se puede verificar el acceso: falta ACADEMIC_DB_URL en el classifier-service.",
+        )
     async with tenant_session(user.tenant_id) as session:
         items = await list_review_queue(session, comision_id=comision_id)
-    if not user.roles & OVERSIGHT_ROLES:
+    if filtrar:
         visibles: dict[UUID, bool] = {}
         for c in {i.comision_id for i in items}:
             try:
