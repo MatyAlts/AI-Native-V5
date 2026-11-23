@@ -44,6 +44,13 @@ JAVA_IMAGE="${JAVA_IMAGE:-eclipse-temurin:21-jdk}"
 echo "[pull] ${JAVA_IMAGE} (sandbox de Java — evita que la descarga entre en el timeout)"
 docker pull "${JAVA_IMAGE}" || echo "[warn] no se pudo bajar ${JAVA_IMAGE}; las corridas de Java van a fallar"
 
+# Imagen de Python (HU-015). Misma razon que la de Java: sin bajarla antes, la
+# primera correccion con IA de un ejercicio de Python se come la descarga
+# dentro del wall-time y muere por timeout.
+PYTHON_IMAGE="${PYTHON_IMAGE:-python:3.12-slim}"
+echo "[pull] ${PYTHON_IMAGE} (sandbox de Python para la correccion con IA)"
+docker pull "${PYTHON_IMAGE}" || echo "[warn] no se pudo bajar ${PYTHON_IMAGE}; la correccion con IA de Python va a fallar"
+
 start_svc() {
   local module="$1"
   local port="$2"

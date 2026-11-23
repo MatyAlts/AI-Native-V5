@@ -22,14 +22,23 @@ from execution_service import runner_main
 from execution_service.config import settings
 
 DIGEST = "eclipse-temurin@sha256:" + "a" * 64
+DIGEST_PY = "python@sha256:" + "b" * 64
 TOKEN_OK = "x" * 40
 
 
 @pytest.fixture(autouse=True)
 def _restaurar():
-    prev = (settings.environment, settings.runner_token, settings.java_image)
+    prev = (settings.environment, settings.runner_token, settings.java_image, settings.python_image)
+    # HU-015: el runner tambien exige PYTHON_IMAGE por digest. Estos tests miden
+    # token e imagen de Java, asi que Python arranca bien pineada.
+    settings.python_image = DIGEST_PY
     yield
-    settings.environment, settings.runner_token, settings.java_image = prev
+    (
+        settings.environment,
+        settings.runner_token,
+        settings.java_image,
+        settings.python_image,
+    ) = prev
 
 
 def _configurar(*, entorno: str, token: str, imagen: str) -> None:

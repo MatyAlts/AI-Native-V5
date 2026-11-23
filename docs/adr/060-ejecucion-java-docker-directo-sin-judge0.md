@@ -163,6 +163,18 @@ Antes de habilitar en producción:
 - [ ] `RUNNER_TOKEN` configurado y el runner NO alcanzable desde fuera de la red interna
 - [ ] Habilitación progresiva: una comisión antes que todas
 
+## Nota 2026-11-22 (HU-015): Python server-side, solo para la corrección con IA
+
+Este ADR decía que Python no se tocaba (ver la referencia al ADR-033). Desde HU-015 el mismo sandbox ejecuta también Python, con las mismas banderas de aislamiento, la misma cuota de concurrencia y una imagen propia (`PYTHON_IMAGE`, pineada por digest igual que `JAVA_IMAGE`). El alcance es acotado:
+
+- Python se ejecuta server-side **solo para la corrección asistida por IA**, que necesita el resultado real de cada caso y llega **sin episodio**. Con `episode_id` el servidor no ejecuta Python ni emite `tests_ejecutados`.
+- El **Probar del alumno en Python sigue en Pyodide** (ADR-033): el web-student no llama a este servicio para Python.
+- Los casos de Python que no son `stdin_stdout` (por ejemplo `pytest_assert`) quedan `skipped`: no hay forma honesta de correrlos como entrada.
+- `exit()`, `quit()` y `sys.exit(...)` son error de ejecución, como en los shims de Pyodide, para que el mismo código no apruebe en el servidor y falle en el navegador.
+- Al vencer el wall time se mata el **contenedor** (`--name` único + `docker kill`), no solo el CLI de `docker run`. Vale para Java y Python.
+
+El resto del ADR sigue vigente tal como está escrito.
+
 ## Referencias
 
 - [ADR-059](059-aislamiento-ejecucion-java-judge0-gestionado.md) — decisión previa (Judge0 gestionado), que este ADR reemplaza en la elección de motor.

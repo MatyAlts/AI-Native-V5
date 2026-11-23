@@ -31,6 +31,7 @@ from execution_service.services.executor import (
     CorridaLibre,
     run_cases,
     run_libre,
+    sin_ejecutar,
     to_client_payload,
 )
 from execution_service.services.quotas import QuotaUnavailableError, check_and_consume
@@ -211,7 +212,28 @@ async def _run_and_store(execution_id: UUID, *, req: ExecutionRequest, user: Use
             tenant_id=user.tenant_id,
         )
         ejercicio = await AcademicClient().get_ejercicio(req.ejercicio_id, user.tenant_id)
-        if req.modo == "libre":
+        if ejercicio.language == "python" and req.episode_id is not None:
+            # HU-015, C11. Python se ejecuta server-side SOLO para la correccion
+            # con IA, que llega sin episodio. Dentro de un episodio el alumno
+            # prueba en Pyodide (ADR-033) y ese es el evento que vale: correrlo
+            # aca tambien gastaria un cupo del sandbox y podria emitir un
+            # segundo `tests_ejecutados` sobre la misma accion. `run` queda en
+            # None: no hay nada que emitir.
+            if req.modo == "libre":
+                payload = _payload_libre(
+                    CorridaLibre(
+                        stdout="",
+                        stderr="Python no se ejecuta en el servidor dentro de un episodio.",
+                        exit_code=0,
+                        timed_out=False,
+                        compile_failed=False,
+                        ejecutado=False,
+                    )
+                )
+            else:
+                payload = to_client_payload(sin_ejecutar(ejercicio), ejercicio)
+            outcome = "completed"
+        elif req.modo == "libre":
             # `run` queda en None a proposito: sin `RunResult` no hay conteos
             # que puedan filtrarse al emisor, aunque alguien toque el `if` de
             # mas abajo. El tipo distinto de `CorridaLibre` es la otra mitad de
@@ -279,7 +301,9 @@ async def _run_and_store(execution_id: UUID, *, req: ExecutionRequest, user: Use
                 run_emitido,
                 hidden_case_ids={c.id for c in ejercicio_emitido.hidden_cases},
                 ejecucion_ms=ejecucion_ms,
-                engine="docker-java",
+                # Informativo (el classifier no lo lee). Java sigue en
+                # "docker-java"; un Python con episodio diria "docker-python".
+                engine=f"docker-{ejercicio_emitido.language}",
             ),
         )
 

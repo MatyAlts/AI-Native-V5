@@ -2753,6 +2753,9 @@ export interface CorreccionIA {
     total?: number
     passed?: number
     failed?: number
+    /** HU-015: `false` si el sandbox no ejecuto ningun caso (todos saltados).
+     *  Ausente en correcciones viejas: tratarlo como ejecutado. */
+    ejecutado?: boolean
   } & Record<string, unknown>
   artefacto_sha256: string
   error_code: string | null

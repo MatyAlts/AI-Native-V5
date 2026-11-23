@@ -72,6 +72,12 @@ class ResultadoTests:
     # aplica al enunciado aplica acá.
     casos: list[dict[str, Any]] = field(default_factory=list)
     error_compilacion: str | None = None
+    # `False` cuando el sandbox no ejecutó NINGÚN caso (lenguaje sin runtime:
+    # todos `skipped`). No es lo mismo que "falló todo": sin esto la IA leía
+    # `total: 0` con casos `paso: false` y le bajaba puntos a código correcto
+    # (HU-015, hallazgo F11 de HU-014). Se persiste en `tests_snapshot` para
+    # que el docente vea "Pruebas no ejecutadas" junto a la nota sugerida.
+    ejecutado: bool = True
 
     def as_dict(self) -> dict[str, Any]:
         return {
@@ -81,6 +87,7 @@ class ResultadoTests:
             "failed": self.failed,
             "casos": self.casos,
             "error_compilacion": self.error_compilacion,
+            "ejecutado": self.ejecutado,
         }
 
 
@@ -253,6 +260,16 @@ def _mapear(result: dict[str, Any]) -> ResultadoTests:
             error_code="SANDBOX_ERROR",
         )
 
+    crudos = [c for c in result.get("cases") or [] if isinstance(c, dict)]
+    # Un caso `skipped` NO corrió: no es evidencia de que el código pase ni de
+    # que falle. Hasta HU-015 se traducía a `paso: false` con salida vacía, y
+    # el motor lo leía como un fallo del alumno. Se descarta del detalle.
+    ejecutados = [c for c in crudos if str(c.get("status") or "").lower() != "skipped"]
+    if crudos and not ejecutados:
+        # Había casos y no se ejecutó ninguno: la nota va a salir de leer el
+        # código. Se dice explícito en vez de mandar ceros que parecen fallos.
+        return ResultadoTests(compila=True, ejecutado=False)
+
     casos = [
         {
             "id": c.get("id"),
@@ -263,14 +280,13 @@ def _mapear(result: dict[str, Any]) -> ResultadoTests:
             "salida_obtenida": str(c.get("got") or "")[:2000],
             "es_publico": c.get("is_public", True) is not False,
         }
-        for c in result.get("cases") or []
-        if isinstance(c, dict)
+        for c in ejecutados
     ]
 
-    # Los conteos salen del sandbox, no se recalculan desde `casos`: él sabe de
-    # casos que no emitió detalle (un `skipped` sin runtime, por ejemplo), y dos
+    # Los conteos salen del sandbox, no se recalculan desde `casos`: dos
     # números que pueden contradecirse le dan al motor la chance de creerle al
-    # equivocado.
+    # equivocado. El `total` del sandbox ya excluye los `skipped`
+    # (`RunResult.total`), así que coincide con los casos de arriba.
     total = int(result.get("total") or 0)
     passed = int(result.get("passed") or 0)
     failed = int(result.get("failed") or max(total - passed, 0))

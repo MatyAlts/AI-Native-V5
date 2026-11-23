@@ -22,12 +22,14 @@ crear contenedores es permitir crear uno privilegiado.
 ## La solucion
 
 No se expone la API de Docker en ninguna forma. Un componente aparte —el
-**runner**— recibe unicamente `{source_code, stdin}` y construye el comando el
-mismo, con la imagen y las banderas fijas en su codigo. El caller no puede
-influir en un solo parametro del contenedor.
+**runner**— recibe unicamente `{source_code, stdin, language}` y construye el
+comando el mismo, con la imagen y las banderas fijas en su codigo. `language`
+elige entre dos comandos cerrados (`java` | `python`), no una imagen. El caller
+no puede influir en un solo parametro del contenedor.
 
 Comprometer el `execution-service` pasa a permitir, como maximo, **pedir que se
-ejecute un Java** — que es exactamente lo que ya puede hacer cualquier alumno.
+ejecute un Java o un Python** con las mismas protecciones — que es lo que ya
+puede hacer cualquier alumno en el navegador.
 
 El runner es deliberadamente minimo (un endpoint, sin base de datos, sin
 dependencias) para que su superficie sea auditable de una sentada. El
@@ -61,6 +63,14 @@ class RunnerClient:
         self._timeout = settings.execution_wall_time_limit_seconds + 15.0
 
     async def run_java(self, source_code: str, stdin: str = "") -> DockerRunResult:
+        """Pide una ejecucion de Java al runner."""
+        return await self._run(source_code, stdin, "java")
+
+    async def run_python(self, source_code: str, stdin: str = "") -> DockerRunResult:
+        """Pide una ejecucion de Python al runner (HU-015, correccion con IA)."""
+        return await self._run(source_code, stdin, "python")
+
+    async def _run(self, source_code: str, stdin: str, language: str) -> DockerRunResult:
         """Pide una ejecucion al runner.
 
         Raises:
@@ -76,7 +86,7 @@ class RunnerClient:
                 resp = await client.post(
                     f"{self._base_url}/run",
                     headers=headers,
-                    json={"source_code": source_code, "stdin": stdin},
+                    json={"source_code": source_code, "stdin": stdin, "language": language},
                 )
         except (httpx.HTTPError, OSError) as exc:
             raise SandboxUnavailableError(f"runner no alcanzable: {type(exc).__name__}") from exc
