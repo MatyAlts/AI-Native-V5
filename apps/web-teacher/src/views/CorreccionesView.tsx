@@ -1438,11 +1438,31 @@ function GradingFormView({
   // Pre-llena los inputs de criterios desde la calificacion guardada una vez que
   // la rubrica y el detalle guardado estan disponibles. Para una entrega aun no
   // calificada, `savedCriterios` es `[]` → inputs vacios.
+  //
+  // HU-022: en una re-entrega (`submitted`) los criterios vienen de la
+  // calificacion anterior, salvo los de los ejercicios que el docente pidio
+  // rehacer (`reabierto_por_docente`): esos arrancan vacios, porque el codigo
+  // cambio y la nota vieja no lo describe. Asi "Aplicar" no aparece hasta que
+  // se corrige lo pedido. Se pasa como string para no re-disparar el effect
+  // (y borrar lo tipeado) cada vez que `ejercicioGrupos` cambia de identidad.
+  const clavesARehacer = useMemo(() => {
+    if (entrega.estado !== "submitted") return ""
+    const pedidos = new Set(
+      (entrega.ejercicio_estados ?? []).filter((e) => e.reabierto_por_docente).map((e) => e.orden),
+    )
+    return ejercicioGrupos
+      .filter((g) => pedidos.has(g.orden))
+      .flatMap((g) => g.rows.map((r) => r.key))
+      .sort()
+      .join("\n")
+  }, [entrega.estado, entrega.ejercicio_estados, ejercicioGrupos])
   useEffect(() => {
-    const { scores, comments } = mapSavedToInputs(rubricaRows, savedCriterios)
+    const excluir = new Set(clavesARehacer === "" ? [] : clavesARehacer.split("\n"))
+    const filas = rubricaRows.filter((r) => !excluir.has(r.key))
+    const { scores, comments } = mapSavedToInputs(filas, savedCriterios)
     setCriterioScores(scores)
     setCriterioComments(comments)
-  }, [rubricaRows, savedCriterios])
+  }, [rubricaRows, savedCriterios, clavesARehacer])
 
   useEffect(() => {
     const estados = entrega.ejercicio_estados ?? []
