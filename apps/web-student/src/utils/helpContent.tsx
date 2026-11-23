@@ -39,8 +39,8 @@ export const helpContent: HelpContentMap = {
           linea.
         </li>
         <li>
-          <strong>Cerrar episodio:</strong> Cuando termines, cerras el episodio y recibis tu
-          clasificacion pedagogica (3 coherencias N4).
+          <strong>Cerrar episodio:</strong> Cuando termines, cerras el episodio y recibis una
+          devolucion sobre como trabajaste.
         </li>
         <li>
           <strong>Pedir ayuda a tu docente:</strong> Si algo no anda o te trabaste, usa el boton
@@ -60,18 +60,18 @@ export const helpContent: HelpContentMap = {
         </p>
       </div>
       <div className="bg-sidebar-bg-edge p-4 rounded-lg mt-2">
-        <p className="text-warning font-medium">Las tres coherencias N4:</p>
+        <p className="text-warning font-medium">Que mira la devolucion:</p>
         <ul className="text-sm mt-2 space-y-1">
           <li>
-            <strong>Temporal (CT):</strong> Patron de trabajo sostenido en el tiempo.
+            <strong>Constancia:</strong> si trabajaste de forma sostenida, sin tantas pausas.
           </li>
           <li>
-            <strong>Codigo-Discurso (CCD):</strong> Alineacion entre lo que codeas y lo que
-            verbalizas con el tutor.
+            <strong>Codigo y charla:</strong> si lo que escribis en el codigo va de la mano con lo
+            que le contas al tutor.
           </li>
           <li>
-            <strong>Inter-iteracion (CII):</strong> Estabilidad y evolucion de tu trabajo entre
-            intentos.
+            <strong>Tus consultas:</strong> si tus preguntas al tutor siguen un hilo, en vez de
+            saltar de un tema a otro.
           </li>
         </ul>
       </div>
@@ -97,8 +97,8 @@ export const helpContent: HelpContentMap = {
           del episodio (ADR-035). No se editan ni se borran.
         </li>
         <li>
-          <strong>No afectan tu clasificacion N4:</strong> el clasificador ignora las reflexiones
-          (ADR-027). Las podes dejar en blanco sin penalizacion.
+          <strong>No cambian tu devolucion:</strong> el sistema no las usa para mirar como
+          trabajaste (ADR-027). Las podes dejar en blanco sin penalizacion.
         </li>
       </ul>
       <div className="bg-sidebar-bg-edge p-4 rounded-lg mt-2">
