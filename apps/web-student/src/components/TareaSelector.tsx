@@ -121,7 +121,11 @@ function partitionTareas(
     }
 
     const entrega = entregasByTareaId[t.id]
-    if (entrega?.estado === "graded" || entrega?.estado === "returned") {
+    // HU-022 (F30): una entrega devuelta (`returned`) NO esta lista: el docente
+    // pidio que se rehaga. Va a Pendiente, la zona de trabajo activo, con su
+    // marca y el boton para abrirla y re-entregar. La nota se sigue viendo
+    // desde adentro del TP.
+    if (entrega?.estado === "graded") {
       listo.push(t)
     } else if (entrega?.estado === "submitted") {
       porCorregir.push(t)
@@ -387,12 +391,14 @@ function ZonePendiente({
         {tareas.map((t) => {
           const entrega = entregasByTareaId[t.id]
           const hasDraft = entrega?.estado === "draft"
+          const devuelta = entrega?.estado === "returned"
           return (
             <li key={t.id}>
               <PendienteCard
                 tarea={t}
                 episodes={episodes}
                 hasDraft={hasDraft}
+                devuelta={devuelta}
                 onSelect={() => onSelect(t)}
               />
             </li>
@@ -407,11 +413,13 @@ function PendienteCard({
   tarea,
   episodes,
   hasDraft,
+  devuelta = false,
   onSelect,
 }: {
   tarea: AvailableTarea
   episodes: StudentEpisode[]
   hasDraft: boolean
+  devuelta?: boolean
   onSelect: () => void
 }) {
   const trajectory = useMemo(() => {
@@ -442,6 +450,7 @@ function PendienteCard({
               {tarea.codigo} (v{tarea.version})
             </p>
             <LanguageBadge tarea={tarea} />
+            {devuelta && <EntregaBadge estado="returned" />}
           </div>
           <h3 className="text-lg font-semibold text-ink">{tarea.titulo}</h3>
         </div>
@@ -486,7 +495,7 @@ function PendienteCard({
             e.currentTarget.style.backgroundColor = "var(--color-accent-brand)"
           }}
         >
-          {hasDraft ? "Continuar" : "Empezar"}
+          {devuelta ? "Rehacer y re-entregar" : hasDraft ? "Continuar" : "Empezar"}
         </button>
       </footer>
     </article>
