@@ -1291,8 +1291,8 @@ function GradingFormView({
 
   const yaCalificada = entrega.estado === "graded" || entrega.estado === "returned"
   // Re-entrega (NB-4): el alumno re-envio una TP devuelta y la entrega quedo
-  // `submitted` CON la calificacion vieja adherida. No es `yaCalificada` (el
-  // form arranca vacio para la version nueva) pero `POST /calificar` daria 409:
+  // `submitted` CON la calificacion vieja adherida. No es `yaCalificada` (nota
+  // y feedback arrancan vacios; los criterios, precargados, HU-022) pero `POST /calificar` daria 409:
   // se la sondea aparte, solo como referencia y para elegir PATCH al guardar.
   const [calificacionPrevia, setCalificacionPrevia] = useState<Calificacion | null>(null)
 
@@ -1423,6 +1423,10 @@ function GradingFormView({
   ).length
   const pctCorregido =
     totalCalificables > 0 ? Math.round((gruposCorregidos / totalCalificables) * 100) : 0
+  // HU-022 (F27): "Aplicar" la nota sugerida solo con TODO corregido. Con un
+  // ejercicio sin revisar, un clic le ponia nota a la entrega entera. La
+  // sugerencia se sigue mostrando como referencia (HU-016 R02).
+  const todoCorregido = totalCalificables > 0 && gruposCorregidos === totalCalificables
 
   // Colapso: por default la primera tarjeta abierta, el resto colapsado; el
   // click del docente sobreescribe.
@@ -1570,7 +1574,13 @@ function GradingFormView({
     entregasDocenteApi
       .getCalificacion(entrega.id, getToken)
       .then((c) => {
-        if (!cancelled && c && typeof c.nota_final === "number") setCalificacionPrevia(c)
+        if (cancelled || !c || typeof c.nota_final !== "number") return
+        setCalificacionPrevia(c)
+        // HU-022 (F29): los criterios de la calificacion anterior arrancan
+        // precargados en los casilleros (el effect de pre-llenado los toma de
+        // `savedCriterios`). Antes arrancaban vacios y el docente los perdia
+        // al re-calificar. Los puede cambiar antes de publicar.
+        setSavedCriterios(c.detalle_criterios ?? [])
       })
       .catch(() => {
         /* sin sondeo: el fallback 409 -> PATCH cubre el caso */
@@ -1842,14 +1852,20 @@ function GradingFormView({
                 Nota sugerida:{" "}
                 <span className="font-mono tabular-nums text-ink">{notaSugerida.toFixed(1)}</span>
               </span>
-              <button
-                type="button"
-                onClick={() => setNota(String(notaSugerida))}
-                data-testid="aplicar-nota-sugerida-btn"
-                className="press-shrink px-2.5 py-1 rounded-md text-xs font-medium border border-border bg-surface text-ink hover:bg-surface-alt transition-colors"
-              >
-                Aplicar
-              </button>
+              {todoCorregido ? (
+                <button
+                  type="button"
+                  onClick={() => setNota(String(notaSugerida))}
+                  data-testid="aplicar-nota-sugerida-btn"
+                  className="press-shrink px-2.5 py-1 rounded-md text-xs font-medium border border-border bg-surface text-ink hover:bg-surface-alt transition-colors"
+                >
+                  Aplicar
+                </button>
+              ) : (
+                <span className="text-xs text-muted" data-testid="nota-sugerida-falta-corregir">
+                  · se aplica con todos los ejercicios corregidos
+                </span>
+              )}
             </div>
           )}
         </div>
