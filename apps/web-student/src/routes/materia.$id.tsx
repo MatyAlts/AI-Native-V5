@@ -40,6 +40,7 @@ import {
   openEpisode,
   resumeEpisode,
 } from "../lib/api"
+import { mensajeAlAbrirEpisodio } from "../utils/mensajesPlazo"
 
 /** Contexto que se persiste en sessionStorage cuando el alumno entra a un ejercicio. */
 export const ACTIVE_EXERCISE_CONTEXT_KEY = "active-exercise-context"
@@ -272,7 +273,7 @@ function MateriaPage() {
         tarea,
         ejercicioId: ejercicio?.id ?? null,
         ejercicioOrden: ejercicio?.orden ?? null,
-        error: `Error abriendo episodio: ${e}`,
+        error: mensajeAlAbrirEpisodio(e),
       })
     } finally {
       // NB-10: liberar el guard. En el camino feliz ya navegamos (unmount),
