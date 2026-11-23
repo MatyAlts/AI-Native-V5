@@ -519,6 +519,8 @@ async def mark_ejercicio_completado(
                 episodio para que el alumno lo retome, así que el ejercicio vuelve a
                 quedar pendiente). Solo aplica si el ejercicio ya existía; si no
                 estaba, es un no-op (no se agrega un estado "incompleto" vacío).
+                En `draft` con la TP vencida se rechaza con 409 (HU-020); en
+                `returned` se permite aunque haya vencido.
 
     Si el ejercicio ya existe en ejercicio_estados, lo actualiza.
     Si no existe y se marca completado, lo agrega.
@@ -536,6 +538,20 @@ async def mark_ejercicio_completado(
     completado = body.completado if body else True
     episode_id = body.episode_id if body else None
     ejercicio_id = body.ejercicio_id if body else None
+
+    # Plazo al des-marcar (F20 de HU-020): con la TP vencida, "Volver a abrir"
+    # dejaba el ejercicio pendiente y después no se podía abrir el episodio,
+    # así que el alumno quedaba trabado sin poder entregar. Solo bloquea
+    # des-marcar en `draft`: marcar completado no se toca, y una entrega
+    # `returned` la reabrió el docente a propósito (mismo criterio que el
+    # submit de HU-016). Va antes de cualquier escritura.
+    if not completado and entrega.estado == "draft":
+        fecha_fin = await _fecha_fin_de_la_tp(db, entrega.tarea_practica_id)
+        if fecha_fin is not None and _ya_vencio(fecha_fin):
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="Venció el plazo de esta TP: ya no se puede reabrir el ejercicio.",
+            )
 
     # Devolución parcial (D5): el alumno no toca lo que el docente no reabrió,
     # en ningún sentido (des-marcar perdería el estado; marcar pisaría el

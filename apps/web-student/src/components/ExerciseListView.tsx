@@ -38,7 +38,7 @@ import { puedeEditarLaEntrega } from "../lib/entregaGuard"
 import { devolucionParcialVigente, estaBloqueado, ordenesACorregir } from "../lib/estaBloqueado"
 import { botonesDeDescarga, rotuloDescarga } from "../utils/descargas"
 import { buildEpisodioSourceFile } from "../utils/episodioDownload"
-import { mensajeAlEntregar } from "../utils/mensajesPlazo"
+import { mensajeAlEntregar, mensajeAlReabrir } from "../utils/mensajesPlazo"
 import { porcentajesDePeso } from "../utils/pesoEjercicio"
 import { archivoDeDescarga } from "../utils/trabajoCorregido"
 import { PedirAyudaBoton } from "./PedirAyudaModal"
@@ -224,7 +224,7 @@ export function ExerciseListView({
       )
       setEntrega(actualizada)
     } catch (e) {
-      setSubmitError(`No se pudo reabrir el ejercicio ${ejercicio.orden}: ${String(e)}`)
+      setSubmitError(mensajeAlReabrir(e))
     } finally {
       setReabriendo(null)
     }
@@ -410,6 +410,12 @@ export function ExerciseListView({
   const isLocked = (orden: number): boolean => estaBloqueado(orden, ejercicioEstados)
   const devolucionParcial = devolucionParcialVigente(entrega?.estado ?? "", ejercicioEstados)
   const aCorregir = ordenesACorregir(ejercicioEstados)
+  // HU-020 (F20): con la TP vencida, reabrir un ejercicio en `draft` lo dejaba
+  // pendiente y despues no se podia abrir el episodio: el alumno quedaba
+  // trabado. El backend lo rechaza con 409; aca no se ofrece la puerta. Una
+  // re-entrega pedida por el docente (`returned`) si puede reabrir.
+  const plazoVencido = tarea.fecha_fin != null && new Date(tarea.fecha_fin).getTime() < Date.now()
+  const reabrirBloqueadoPorPlazo = plazoVencido && entrega?.estado !== "returned"
 
   const isCompleted = (orden: number): boolean => {
     return ejercicioEstados.find((e) => e.orden === orden)?.completado ?? false
@@ -552,9 +558,13 @@ export function ExerciseListView({
             // le hizo imposible. El backend siempre supo des-marcar; no habia
             // ninguna puerta que llevara ahi.
             // En una devolucion parcial no se reabre lo que el docente no
-            // pidio (el backend responde 409).
+            // pidio (el backend responde 409). Tampoco con la TP vencida,
+            // salvo en una re-entrega (`reabrirBloqueadoPorPlazo`, HU-020).
             const canReopen =
-              completed && editable && (!devolucionParcial || aCorregir.has(ejercicio.orden))
+              completed &&
+              editable &&
+              !reabrirBloqueadoPorPlazo &&
+              (!devolucionParcial || aCorregir.has(ejercicio.orden))
             const reabiertoPorDocente = devolucionParcial && aCorregir.has(ejercicio.orden)
             const isFirst = idx === 0
             const botones = botonesDeDescarga({

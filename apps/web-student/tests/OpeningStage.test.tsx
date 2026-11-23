@@ -31,8 +31,9 @@ describe("OpeningStage", () => {
     expect(screen.getByText(/Tutor inicializando/)).toBeInTheDocument()
 
     // Detalles fijos (no dependen de tick)
-    expect(screen.getByText(/estado=published/)).toBeInTheDocument()
-    expect(screen.getByText(/seq=0/)).toBeInTheDocument()
+    // (en palabras simples desde HU-020)
+    expect(screen.getByText(/dentro del plazo/)).toBeInTheDocument()
+    expect(screen.getByText(/comienzo de tu trabajo/)).toBeInTheDocument()
   })
 
   test("estado inicial: TP inflight, las demas pending", () => {

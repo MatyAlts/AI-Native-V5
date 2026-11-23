@@ -281,7 +281,15 @@ class TestPatchTrasDevolucionParcial:
     async def test_en_draft_nada_cambia(self) -> None:
         entrega = _devuelta_parcial_en_el_2()
         entrega.estado = "draft"
-        salida = await _patch(entrega, 1, False)
+        # Des-marcar en `draft` lee el plazo de la TP (HU-020): sin plazo.
+        sin_plazo = MagicMock(first=MagicMock(return_value=None))
+        salida = await mark_ejercicio_completado(
+            entrega.id,
+            1,
+            MarkEjercicioBody(completado=False, ejercicio_id=EJ[1]),
+            _student(entrega),
+            _db(_res(entrega), _tp_viva(), sin_plazo),
+        )
         assert next(e for e in salida.ejercicio_estados if e["orden"] == 1)["completado"] is False
 
     async def test_devolucion_legacy_sin_marcas_deja_tocar_cualquiera(self) -> None:

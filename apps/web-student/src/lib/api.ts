@@ -1492,7 +1492,9 @@ export async function reabrirEjercicio(
       ejercicio_id: ejercicioId,
     }),
   })
-  if (!r.ok) throw new Error(`reabrir ejercicio failed: ${r.status}`)
+  // ApiError con `detail`: el 409 por plazo vencido (HU-020) trae un texto
+  // para el alumno que `mensajeAlReabrir` muestra tal cual.
+  if (!r.ok) throw await apiErrorDe("reabrir ejercicio", r)
   return (await r.json()) as Entrega
 }
 

@@ -179,6 +179,13 @@ const APPROPRIATION_TO_ORDINAL: Record<string, number> = {
 
 // ── Pagina ───────────────────────────────────────────────────────────────
 
+/**
+ * Letra chica de la tendencia (HU-020, F23). Antes decia "pendiente ordinal
+ * ... ADR-018": jerga que el alumno no tiene por que conocer.
+ */
+export const NOTA_TENDENCIA =
+  "La tendencia resume como vino cambiando tu forma de trabajar con el tutor en tareas parecidas. Es una mirada general de tu recorrido, no una nota."
+
 export function MiProgresoPage() {
   const navigate = useNavigate()
 
@@ -388,10 +395,7 @@ function TrayectoriaBody({
         </p>
       )}
 
-      <p className="text-[11px] text-muted-soft leading-relaxed">
-        La tendencia es una lectura conservadora del recorrido (pendiente ordinal sobre los tres
-        modos, ADR-018), no una calificacion.
-      </p>
+      <p className="text-[11px] text-muted-soft leading-relaxed">{NOTA_TENDENCIA}</p>
     </div>
   )
 }
@@ -907,8 +911,8 @@ const progresoHelp: ReactNode = (
     <div className="bg-sidebar-bg-edge p-4 rounded-lg mt-2">
       <p className="text-warning font-medium">Sobre la tendencia</p>
       <p className="text-sm mt-1">
-        "En ascenso", "Estable" o "En descenso" son una lectura conservadora de tu recorrido
-        (ADR-018), no una verdad absoluta ni una calificacion.
+        "En ascenso", "Estable" o "En descenso" son una mirada general de tu recorrido, no una
+        verdad absoluta ni una calificacion.
       </p>
     </div>
   </div>

@@ -73,6 +73,26 @@ export function mensajeAlEntregar(e: unknown): string {
   return MENSAJE_NO_SE_PUDO_ENTREGAR
 }
 
+export const MENSAJE_NO_SE_PUDO_REABRIR =
+  "No se pudo volver a abrir el ejercicio. Probá de nuevo en un rato."
+
+/**
+ * Textos del PATCH de reapertura que estan escritos para el alumno (HU-020):
+ * el 409 por plazo vencido ("Venció el plazo de esta TP: ya no se puede
+ * reabrir el ejercicio.", que llega si la lista se dibujo antes del
+ * vencimiento) y el de la devolucion parcial. Lista blanca, igual que al
+ * entregar: "No se puede modificar ejercicios en estado 'submitted'" habla de
+ * estados internos.
+ */
+const DETAIL_AL_REABRIR = /^(venci[oó] el plazo|tu docente no pidi[oó])/i
+
+export function mensajeAlReabrir(e: unknown): string {
+  if (e instanceof ApiError && e.detail && DETAIL_AL_REABRIR.test(e.detail.trim())) {
+    return e.detail
+  }
+  return MENSAJE_NO_SE_PUDO_REABRIR
+}
+
 /** La entrega fue rechazada por plazo vencido (409 del evaluation-service). */
 export function esEntregaVencida(e: unknown): boolean {
   return e instanceof ApiError && e.status === 409 && esPlazoVencido(e)

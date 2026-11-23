@@ -41,6 +41,7 @@ import {
   resumeEpisode,
 } from "../lib/api"
 import { mensajeAlAbrirEpisodio } from "../utils/mensajesPlazo"
+import { argumentosDeReintento } from "../utils/reintentoApertura"
 
 /** Contexto que se persiste en sessionStorage cuando el alumno entra a un ejercicio. */
 export const ACTIVE_EXERCISE_CONTEXT_KEY = "active-exercise-context"
@@ -93,6 +94,9 @@ type MateriaPageView =
       tarea: AvailableTarea
       ejercicioId: string | null
       ejercicioOrden: number | null
+      /** Se guarda para que "Reintentar" vuelva a atar el episodio al
+       * ejercicio (HU-020, F21). */
+      entregaId: string | null
       error: string | null
     }
 
@@ -187,6 +191,7 @@ function MateriaPage() {
       tarea,
       ejercicioId: ejercicio?.id ?? null,
       ejercicioOrden: ejercicio?.orden ?? null,
+      entregaId: entregaId ?? null,
       error: null,
     })
     try {
@@ -273,6 +278,7 @@ function MateriaPage() {
         tarea,
         ejercicioId: ejercicio?.id ?? null,
         ejercicioOrden: ejercicio?.orden ?? null,
+        entregaId: entregaId ?? null,
         error: mensajeAlAbrirEpisodio(e),
       })
     } finally {
@@ -372,11 +378,8 @@ function MateriaPage() {
             // El error ya esta visible en el banner rojo de arriba.
           }}
           onRetry={() => {
-            const ej =
-              currentView.ejercicioId && currentView.ejercicioOrden != null
-                ? { id: currentView.ejercicioId, orden: currentView.ejercicioOrden }
-                : null
-            void openEpisodeAndNavigate(currentView.tarea, ej)
+            const { ejercicio, entregaId } = argumentosDeReintento(currentView)
+            void openEpisodeAndNavigate(currentView.tarea, ejercicio, entregaId ?? undefined)
           }}
           onCancel={() => {
             // Si veniamos de un ejercicio dentro de TP multi, volvemos a
