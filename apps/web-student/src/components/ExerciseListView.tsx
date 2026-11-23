@@ -420,11 +420,6 @@ export function ExerciseListView({
   const isCompleted = (orden: number): boolean => {
     return ejercicioEstados.find((e) => e.orden === orden)?.completado ?? false
   }
-  // HU-022 (F30): "Continuar" solo si ESE ejercicio ya tiene un episodio
-  // abierto. Antes se miraba la TP entera y el 2 decia "Continuar" sin haberse
-  // empezado nunca.
-  const fueEmpezado = (orden: number): boolean =>
-    ejercicioEstados.some((e) => e.orden === orden && e.episode_id != null)
 
   if (loading) {
     return (
@@ -656,7 +651,11 @@ export function ExerciseListView({
                         e.currentTarget.style.backgroundColor = "var(--color-accent-brand)"
                       }}
                     >
-                      {fueEmpezado(ejercicio.orden) ? "Continuar" : "Empezar"}
+                      {/* HU-022 (F30): "Abrir" siempre. `episode_id` se escribe en la
+                          entrega recien al CERRAR el episodio, asi que la
+                          pantalla no sabe si el ejercicio se abrio y quedo sin
+                          cerrar: "Empezar"/"Continuar" podian mentir. */}
+                      Abrir
                     </button>
                   )}
                   {completed && (
