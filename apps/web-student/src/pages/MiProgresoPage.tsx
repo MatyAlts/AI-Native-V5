@@ -13,15 +13,15 @@
  *
  * Endpoints (analytics-service, via ROUTE_MAP `/api/v1/analytics`):
  *   - GET /student/me/episodes?comision_id=X          (listStudentEpisodes, ya en api.ts)
- *   - GET /student/{pseudonym}/cii-evolution-longitudinal?comision_id=X  (fetch inline)
- *   - GET /student/{pseudonym}/alerts?comision_id=X                       (fetch inline)
+ *   - GET /student/me/cii-evolution-longitudinal?comision_id=X  (fetch inline)
+ *   - GET /student/me/alerts?comision_id=X                       (fetch inline, HU-018)
  *
- * Pseudonimo del alumno: el backend autoriza estos dos endpoints exigiendo
- * `student_pseudonym == X-User-Id` (rama estudiante de require_student_progress_access).
- * Resolvemos ese id con `getCurrentUserUuid()` (el mismo UUID que el fetch-patch
- * manda como X-User-Id), con fallback al `student_pseudonym` que devuelve
- * `/student/me/episodes` (resuelto server-side desde el header). Asi el path
- * SIEMPRE coincide con la identidad que ve el gateway, en dev y con Clerk.
+ * Los tres son `/me`: el backend toma el pseudonimo del token. Los endpoints
+ * con `{pseudonym}` en el path aplican `require_student_progress_access`, y
+ * con Clerk el alumno trae `estudiante,docente`, cae en la rama de staff y
+ * recibe 403. El pseudonimo (`getCurrentUserUuid()`, con fallback al que
+ * devuelve `/student/me/episodes`) solo queda en las query keys, para que el
+ * cache no mezcle identidades.
  *
  * k-anonymity: si CII devuelve `sufficient_data=false` (todos los grupos con
  * N<3) o alerts trae `cohort_stats.insufficient_data=true` (cohorte N<5), lo
@@ -110,9 +110,11 @@ async function fetchCiiEvolution(comisionId: string): Promise<CIIEvolutionLongit
   return (await r.json()) as CIIEvolutionLongitudinal
 }
 
-async function fetchStudentAlerts(pseudonym: string, comisionId: string): Promise<StudentAlerts> {
+async function fetchStudentAlerts(comisionId: string): Promise<StudentAlerts> {
   const qs = new URLSearchParams({ comision_id: comisionId })
-  const r = await fetch(`/api/v1/analytics/student/${pseudonym}/alerts?${qs.toString()}`)
+  // HU-018 (F15): `/me`, mismo motivo que `fetchCiiEvolution` arriba. Ver el
+  // docstring de `get_my_student_alerts` en analytics-service.
+  const r = await fetch(`/api/v1/analytics/student/me/alerts?${qs.toString()}`)
   if (!r.ok) throw new Error(`student alerts failed: ${r.status}`)
   return (await r.json()) as StudentAlerts
 }
@@ -255,7 +257,7 @@ function ProgresoContent({ comisionId }: { comisionId: string }) {
 
   const alertsQuery = useQuery({
     queryKey: ["mi-progreso", "alerts", comisionId, pseudonym],
-    queryFn: () => fetchStudentAlerts(pseudonym as string, comisionId),
+    queryFn: () => fetchStudentAlerts(comisionId),
     enabled: !!pseudonym,
     staleTime: 60 * 1000,
   })

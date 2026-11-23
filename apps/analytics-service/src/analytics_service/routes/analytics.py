@@ -162,10 +162,6 @@ async def require_student_progress_access(
         (`X-User-Id` que inyecta el api-gateway — ver `/student/me/episodes`);
         si el path pide otro UUID → 403.
 
-    El propio progreso (`student_pseudonym == X-User-Id`) se permite antes de
-    mirar los roles y sin consultar la comisión (HU-018): con Clerk el alumno
-    trae también `docente` y caía en la rama de staff.
-
     Gateado por `settings.enforce_comision_access` igual que
     `require_comision_access` (no-op en tests/dev; True en prod).
     """
@@ -185,13 +181,6 @@ async def require_student_progress_access(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="X-User-Id must be a valid UUID",
         )
-
-    # El propio progreso pasa siempre, sin consultar la comisión (HU-018 F15):
-    # con Clerk toda cuenta trae `estudiante,docente`, así que el alumno caía
-    # en la rama de staff y `assert_comision_member` le daba 403 (no está en
-    # `usuarios_comision`). Pedir el de OTRO sigue por las ramas de abajo.
-    if student_pseudonym == user_id:
-        return
 
     roles = {r.strip() for r in (x_user_roles or "").split(",") if r.strip()}
     if roles & _STAFF_ROLES:
@@ -1575,6 +1564,47 @@ class StudentAlertsOut(BaseModel):
     # multi-language-research-integrity sección 4.6: declaración SIEMPRE
     # presente (no depende del filtro `language`).
     languages_present: list[str] = Field(default_factory=list)
+
+
+@router.get(
+    "/student/me/alerts",
+    response_model=StudentAlertsOut,
+)
+async def get_my_student_alerts(
+    comision_id: UUID,
+    language: str | None = None,
+    tenant_id: UUID = Depends(get_tenant_id),
+    user_id: UUID = Depends(get_user_id),
+) -> StudentAlertsOut:
+    """Alertas longitudinales del PROPIO alumno autenticado (HU-018, F15).
+
+    Mismo patron que `/student/me/cii-evolution-longitudinal` y
+    `/student/me/episodes`. "Mi progreso" pedia `/student/{id}/alerts` con su
+    propio UUID y recibia 403: con Clerk el alumno trae `estudiante,docente`,
+    cae en la rama de staff de `require_student_progress_access` y no esta en
+    `usuarios_comision`.
+
+    Abrir el guard para el propio pseudonimo se probo y se descarto en la
+    verificacion del PR #148: dejaba pedir `/student/{yo}/alerts` con cualquier
+    `comision_id` a TODA cuenta, con los `cohort_stats` de esa comision. Aca el
+    pseudonimo sale del token y no se acepta por path.
+
+    Limite conocido (HU-017): `comision_id` no se valida contra las
+    inscripciones del alumno, igual que en los otros `/me`.
+
+    DEBE quedar registrado ANTES de `/student/{student_pseudonym}/alerts` o
+    FastAPI captura "me" como path param y tira 422.
+    """
+    # `_access=None` saltea la dependencia a proposito: la unica identidad
+    # posible es la del token, no hay escalacion que impedir.
+    return await get_student_alerts(
+        student_pseudonym=user_id,
+        comision_id=comision_id,
+        language=language,
+        tenant_id=tenant_id,
+        user_id=user_id,
+        _access=None,
+    )
 
 
 @router.get(
