@@ -1,11 +1,21 @@
-import { SignInButton, SignUpButton, UserButton, useAuth, useUser } from "@clerk/clerk-react"
+import {
+  SignInButton,
+  SignUpButton,
+  SignedOut,
+  UserButton,
+  useAuth,
+  useUser,
+} from "@clerk/clerk-react"
 import { AuditFooter, HelpButton } from "@platform/ui"
 import { Outlet, createRootRouteWithContext, useRouterState } from "@tanstack/react-router"
 import { type ReactNode, useCallback, useEffect, useState } from "react"
 import { DEV_NO_CLERK, DEV_STUDENT_UUID, clearClerkUserId, setClerkUserId } from "../auth"
+import { BotonVolverPanelDocente } from "../components/BotonVolverPanelDocente"
+import { OlvidarModoVista } from "../components/OlvidarModoVista"
 import { TenantSelector } from "../components/TenantSelector"
 import { OnboardingAlumno } from "../onboarding/OnboardingAlumno"
 import { helpContent } from "../utils/helpContent"
+import { debeIrAlPanelDocente } from "../utils/modoVista"
 
 const ENROLLED_COMISION_KEY = "enrolledComisionId"
 
@@ -54,12 +64,16 @@ interface AuthUser {
 function useEnrollment(authUser: AuthUser | null, isDev: boolean) {
   const [state, setState] = useState<EnrollState>("loading")
   const [error, setError] = useState<string | null>(null)
+  // HU-022: tiene comisiones como docente. Sale del mismo GET /comisiones/mis
+  // que decide el rebote; sirve para mostrarle "Volver al panel docente".
+  const [esDocente, setEsDocente] = useState(false)
 
   // biome-ignore lint/correctness/useExhaustiveDependencies: `authUser` es un objeto literal recreado en cada render de ClerkRootLayout (no memoizado) — agregarlo crudo (o sus campos) refiraria este efecto en cada render y dispararia POST/GET repetidos (mismo patron de loop documentado en CLAUDE.md "Frontends React"). `authUser?.id` es el primitivo estable que representa "cambio real de usuario".
   useEffect(() => {
     if (!authUser) {
       clearClerkUserId()
       setState("loading")
+      setEsDocente(false)
       return
     }
     if (!isDev) setClerkUserId(authUser.id)
@@ -82,11 +96,16 @@ function useEnrollment(authUser: AuthUser | null, isDev: boolean) {
 
       // Ruteo por rol: si es docente (tiene comisiones asignadas), va al panel
       // docente. Así, tras ser promovido, un F5 lo lleva solo a /teacher/.
+      // HU-022: salvo que haya elegido "Ver como alumno"; entonces sigue el
+      // flujo alumno (y sin inscripciones ve la pantalla del codigo).
       try {
         const r = await fetch("/api/v1/comisiones/mis")
         if (r.ok) {
           const j = await r.json()
-          if (!cancelled && Array.isArray(j.data) && j.data.length > 0) {
+          const tieneComisiones = Array.isArray(j.data) && j.data.length > 0
+          if (cancelled) return
+          setEsDocente(tieneComisiones)
+          if (debeIrAlPanelDocente(tieneComisiones)) {
             window.location.href = "/teacher/"
             return
           }
@@ -160,7 +179,7 @@ function useEnrollment(authUser: AuthUser | null, isDev: boolean) {
     [authUser?.id],
   )
 
-  return { state, error, enroll }
+  return { state, error, enroll, esDocente }
 }
 
 function InviteCodeScreen({
@@ -283,10 +302,11 @@ function ClerkRootLayout() {
           email: user.primaryEmailAddress?.emailAddress ?? null,
         }
       : null
-  const { state, error, enroll } = useEnrollment(authUser, false)
+  const { state, error, enroll, esDocente } = useEnrollment(authUser, false)
 
   const headerActions = isSignedIn ? (
     <>
+      <BotonVolverPanelDocente esDocente={esDocente} />
       <TenantSelector />
       <HelpButton title="Tutor Socratico" content={helpContent.episode} />
       <UserButton afterSignOutUrl="/" />
@@ -313,6 +333,10 @@ function ClerkRootLayout() {
     <LayoutShell headerActions={headerActions} showAudit={!!isSignedIn}>
       {!isSignedIn ? (
         <div className="flex-1 flex items-center justify-center">
+          {/* HU-022: sin sesion se olvida la eleccion "Ver como alumno". */}
+          <SignedOut>
+            <OlvidarModoVista />
+          </SignedOut>
           <div className="text-center space-y-4">
             <h2 className="text-2xl font-bold text-ink">Bienvenido a Plataforma N4</h2>
             <p className="text-muted-soft">
@@ -344,10 +368,11 @@ function DevRootLayout() {
     fullName: "Alumno 01 (dev)",
     email: "alumno01@demo-uni.edu",
   }
-  const { state, error, enroll } = useEnrollment(authUser, true)
+  const { state, error, enroll, esDocente } = useEnrollment(authUser, true)
 
   const headerActions = (
     <>
+      <BotonVolverPanelDocente esDocente={esDocente} />
       <TenantSelector />
       <HelpButton title="Tutor Socratico" content={helpContent.episode} />
       <span className="text-xs text-muted-soft">alumno01 · dev</span>
