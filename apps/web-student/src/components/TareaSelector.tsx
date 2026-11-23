@@ -702,22 +702,24 @@ function appropriationColor(a: StudentEpisode["appropriation"] | null): string {
  * funcion devolviera `undefined` y el label quedara "Tu episodio: " con los
  * dos puntos colgando. Exportada para test unitario directo (pura, sin
  * React) — mismo patron que `cohortBalanceLabel` en web-teacher.
+ * HU-018 C02: el alumno no lee la jerga del modelo ("apropiacion",
+ * "delegacion"); lo vigila `tests/Hu018TextosAlumno.test.ts`.
  */
 export function appropriationLabel(a: NonNullable<StudentEpisode["appropriation"]>): string {
   switch (a) {
     case "apropiacion_reflexiva":
-      return "apropiacion reflexiva"
+      return "pensaste con el tutor"
     case "apropiacion_superficial":
-      return "apropiacion superficial"
+      return "resolviste, con poca reflexion"
     case "delegacion_pasiva":
-      return "delegacion pasiva"
+      return "el tutor hizo gran parte"
     case "autonomo":
-      return "trabajo autonomo (sin tutor)"
+      return "trabajaste sin tutor"
     // B2b (v4.1.0, 2026-09-27): el arbol corrio y no pudo decidir un eje.
     // Mismo patron de bug que BUG-04 (switch exhaustivo sin default sobre un
     // tipo literal): agregar el caso acá previene el mismo ": " colgando.
     case "sin_clasificar":
-      return "sin clasificar"
+      return "sin datos suficientes"
   }
 }
 

@@ -128,16 +128,22 @@ export interface ModoApropiacion {
   color: string
 }
 
+// HU-018 C02: `label` y `short` los lee el alumno, sin la jerga del modelo
+// ("apropiacion", "delegacion"). Lo vigila `tests/Hu018TextosAlumno.test.ts`.
 export const MODOS: Record<number, ModoApropiacion> = {
-  0: { label: "Delegacion", short: "Delegacion", color: "var(--color-appropriation-delegacion)" },
+  0: {
+    label: "El tutor hizo gran parte",
+    short: "Lo hizo el tutor",
+    color: "var(--color-appropriation-delegacion)",
+  },
   1: {
-    label: "Apropiacion superficial",
-    short: "Superficial",
+    label: "Resolviste, con poca reflexion",
+    short: "Poca reflexion",
     color: "var(--color-appropriation-superficial)",
   },
   2: {
-    label: "Apropiacion reflexiva",
-    short: "Reflexiva",
+    label: "Pensaste con el tutor",
+    short: "Pensaste con el tutor",
     color: "var(--color-appropriation-reflexiva)",
   },
 }
@@ -309,7 +315,7 @@ function TrayectoriaBody({
   // piloto no tiene templates configurados, caemos a los grupos por unidad.
   const templateGroups = data.evolution_per_template.map((g) => ({
     key: g.template_id,
-    nombre: templateTitles.get(g.template_id) ?? "Problema analogo",
+    nombre: templateTitles.get(g.template_id) ?? "Problema parecido",
     grupo: g as CIIEvolutionGroup,
   }))
   const unidadGroups = data.evolution_per_unidad.map((g) => ({
@@ -393,7 +399,7 @@ function TrayectoriaRow({
         <div className="min-w-0">
           <p className="text-sm font-medium text-ink truncate">{nombre}</p>
           <p className="text-xs text-muted mt-0.5">
-            {grupo.n_episodes} episodios analogos
+            {grupo.n_episodes} intentos en tareas parecidas
             {modo && (
               <>
                 <span className="text-muted-soft mx-1.5">·</span>
@@ -547,7 +553,22 @@ function SeñalesSection({
     )
   }
   // Un error en alertas NO debe romper la pagina: es una seccion secundaria.
-  if (query.error || !query.data) return null
+  // HU-018 (F15): tampoco se calla ni muestra el error crudo (un 403 decia
+  // "student alerts failed: 403"); avisa corto y el resto sigue.
+  if (query.error) {
+    return (
+      <section className="animate-fade-in-up">
+        <SectionHeader
+          icon={<Info className="h-4 w-4 text-accent-brand" aria-hidden="true" />}
+          title="Señales para acompañarte"
+        />
+        <p data-testid="mi-progreso-señales-error" className="mt-4 text-sm text-muted">
+          Ahora no pudimos cargar las señales. Proba de nuevo mas tarde.
+        </p>
+      </section>
+    )
+  }
+  if (!query.data) return null
 
   const data = query.data
   const cohortInsufficient = data.cohort_stats?.insufficient_data === true
@@ -710,7 +731,7 @@ function EpisodioRow({ episode }: { episode: StudentEpisode }) {
           {modo.short}
         </span>
       ) : (
-        <span className="shrink-0 text-[11px] text-muted-soft">sin clasificar</span>
+        <span className="shrink-0 text-[11px] text-muted-soft">Sin datos suficientes</span>
       )}
     </div>
   )
@@ -854,12 +875,13 @@ const progresoHelp: ReactNode = (
     </p>
     <ul className="list-disc list-inside space-y-2 ml-4">
       <li>
-        <strong>Trayectoria:</strong> junta tus episodios de tareas parecidas y marca tu modo de
-        apropiacion en cada uno, del primero al ultimo.
+        <strong>Trayectoria:</strong> junta tus intentos en tareas parecidas y marca como trabajaste
+        en cada uno, del primero al ultimo.
       </li>
       <li>
-        <strong>Tres modos:</strong> delegacion (dejas que el tutor resuelva), apropiacion
-        superficial y apropiacion reflexiva (te apropiaste de la solucion pensandola).
+        <strong>Tres formas de trabajar:</strong> el tutor hizo gran parte (dejaste que el tutor
+        resuelva), resolviste con poca reflexion, y pensaste con el tutor (entendiste la solucion
+        porque la pensaste vos).
       </li>
       <li>
         <strong>Señales:</strong> pistas pedagogicas para acompañarte. Solo aparecen si hay datos

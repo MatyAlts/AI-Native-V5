@@ -27,8 +27,10 @@ import { describe, expect, test } from "vitest"
 import { appropriationLabel } from "../src/components/TareaSelector"
 
 describe("appropriationLabel", () => {
+  // HU-018 C02: el texto ya no es la jerga del modelo ("apropiacion
+  // superficial"); el alumno lee palabras simples.
   test("apropiacion_superficial: texto legible (caso feliz, ya funcionaba)", () => {
-    expect(appropriationLabel("apropiacion_superficial")).toBe("apropiacion superficial")
+    expect(appropriationLabel("apropiacion_superficial")).toBe("resolviste, con poca reflexion")
   })
 
   test("autonomo: NO debe quedar vacio (el bug real reportado en QA)", () => {
