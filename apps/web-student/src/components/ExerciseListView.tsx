@@ -420,6 +420,11 @@ export function ExerciseListView({
   const isCompleted = (orden: number): boolean => {
     return ejercicioEstados.find((e) => e.orden === orden)?.completado ?? false
   }
+  // HU-022 (F30): "Continuar" solo si ESE ejercicio ya tiene un episodio
+  // abierto. Antes se miraba la TP entera y el 2 decia "Continuar" sin haberse
+  // empezado nunca.
+  const fueEmpezado = (orden: number): boolean =>
+    ejercicioEstados.some((e) => e.orden === orden && e.episode_id != null)
 
   if (loading) {
     return (
@@ -648,7 +653,7 @@ export function ExerciseListView({
                         e.currentTarget.style.backgroundColor = "var(--color-accent-brand)"
                       }}
                     >
-                      {idx === 0 && completados === 0 ? "Empezar" : "Continuar"}
+                      {fueEmpezado(ejercicio.orden) ? "Continuar" : "Empezar"}
                     </button>
                   )}
                   {completed && (
