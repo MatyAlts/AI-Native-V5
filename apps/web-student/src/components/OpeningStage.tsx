@@ -5,8 +5,9 @@
  * hacer auditabilidad criptografica visible ANTES de que el alumno
  * arranque la TP. 4 chequeos secuenciales con estado:
  *
- *   1. TP validada (estado=published, ventana fechas OK). Si la apertura
- *      fallo, queda sin confirmar (HU-020): el error puede ser el plazo.
+ *   1. TP validada (publicada y dentro del plazo). La valida el servidor:
+ *      queda en curso hasta que responde, y si la apertura fallo queda sin
+ *      confirmar (HU-020): el error puede ser el plazo.
  *   2. Episodio registrado en CTR (seq=0, evento EpisodioAbierto).
  *   3. Cadena criptografica firmando (chain_hash inicial).
  *   4. Tutor inicializando con prompt vigente.
@@ -55,22 +56,22 @@ const STEP_DEFS: Array<Pick<Step, "key" | "label" | "detail">> = [
   {
     key: "tp",
     label: "TP validada",
-    detail: "estado=published, ventana fechas OK",
+    detail: "se revisa que la TP este publicada y dentro del plazo",
   },
   {
     key: "ctr",
     label: "Episodio registrado en CTR",
-    detail: "seq=0, evento EpisodioAbierto",
+    detail: "se guarda el comienzo de tu trabajo",
   },
   {
     key: "chain",
     label: "Cadena criptografica firmando",
-    detail: "chain_hash inicial pendiente",
+    detail: "se protege el registro para que nadie pueda cambiarlo",
   },
   {
     key: "tutor",
     label: "Tutor inicializando con prompt",
-    detail: "tutor/v1.3.0 (cargando contexto)",
+    detail: "el tutor se prepara para ayudarte con esta TP",
   },
 ]
 
@@ -115,9 +116,11 @@ export function OpeningStage({
     if (errorMessage && idx === 1) {
       status = "error"
     } else if (idx === 0) {
-      // TP validada: done despues del primer tick (la validacion ya
-      // ocurrio en el flujo de seleccion).
-      status = tick >= 1 ? "done" : "inflight"
+      // TP validada: la valida el servidor al abrir (estado, comision y
+      // plazo), asi que queda en curso hasta que responde. Antes se ponia en
+      // verde al primer tick y afirmaba un plazo que despues el servidor
+      // podia rechazar (HU-020, F22).
+      status = episodeReady && tick >= 1 ? "done" : "inflight"
     } else if (idx === 1) {
       // CTR: done una vez que tenemos episode_id.
       if (episodeReady) status = "done"
