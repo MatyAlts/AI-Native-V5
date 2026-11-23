@@ -5,7 +5,8 @@
  * hacer auditabilidad criptografica visible ANTES de que el alumno
  * arranque la TP. 4 chequeos secuenciales con estado:
  *
- *   1. TP validada (estado=published, ventana fechas OK).
+ *   1. TP validada (estado=published, ventana fechas OK). Si la apertura
+ *      fallo, queda sin confirmar (HU-020): el error puede ser el plazo.
  *   2. Episodio registrado en CTR (seq=0, evento EpisodioAbierto).
  *   3. Cadena criptografica firmando (chain_hash inicial).
  *   4. Tutor inicializando con prompt vigente.
@@ -105,6 +106,12 @@ export function OpeningStage({
 
   const steps: Step[] = STEP_DEFS.map((def, idx) => {
     let status: StepStatus
+    if (errorMessage && idx === 0) {
+      // HU-020 (F22): si abrir fallo (por ejemplo, por plazo vencido) no se
+      // puede afirmar que la TP paso la validacion: el paso queda sin
+      // confirmar en vez de mostrar "ventana fechas OK" en verde.
+      return { ...def, detail: "no se pudo confirmar", status: "pending" }
+    }
     if (errorMessage && idx === 1) {
       status = "error"
     } else if (idx === 0) {
