@@ -911,8 +911,8 @@ const progresoHelp: ReactNode = (
     <div className="bg-sidebar-bg-edge p-4 rounded-lg mt-2">
       <p className="text-warning font-medium">Sobre la tendencia</p>
       <p className="text-sm mt-1">
-        "En ascenso", "Estable" o "En descenso" son una lectura conservadora de tu recorrido
-        (ADR-018), no una verdad absoluta ni una calificacion.
+        "En ascenso", "Estable" o "En descenso" son una mirada general de tu recorrido, no una
+        verdad absoluta ni una calificacion.
       </p>
     </div>
   </div>
