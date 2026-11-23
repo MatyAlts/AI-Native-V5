@@ -50,6 +50,7 @@ import {
   Users,
 } from "lucide-react"
 import { type ReactNode, useCallback, useEffect } from "react"
+import { BotonVerComoAlumno } from "../components/BotonVerComoAlumno"
 import { ComisionSelectorRouted } from "../components/ComisionSelectorRouted"
 import { TenantSelector } from "../components/TenantSelector"
 import { ViewModeToggle } from "../components/ViewModeToggle"
@@ -346,6 +347,8 @@ function LayoutCompleto() {
               </h1>
             </div>
             <div className="flex items-center gap-3 shrink-0">
+              <BotonVerComoAlumno />
+              <span className="w-px h-5 bg-border" aria-hidden="true" />
               <TourRelanzar />
               <span className="w-px h-5 bg-border" aria-hidden="true" />
               <ViewModeToggle />
