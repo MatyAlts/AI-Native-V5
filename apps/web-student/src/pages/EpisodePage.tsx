@@ -2140,6 +2140,15 @@ const FEEDBACK_SUBGRUPO: Record<
 // HU-009 C12: piso de consultas al tutor para el consejo que sale de CII.
 const MIN_CONSULTAS_CONSEJO_CII = 3
 
+// HU-018 R06: eje del subgrupo (`Subgrupo.eje`, roll-up de `subgrupo.py`) que
+// corresponde a cada etiqueta oficial que puede dar el juez. Lo que no esta
+// aca (autonomo, sin_clasificar) nunca coincide: con juez manda el switch.
+const EJE_DE_APPROPRIATION: Partial<Record<Classification["appropriation"], string>> = {
+  apropiacion_reflexiva: "reflexiva",
+  apropiacion_superficial: "superficial",
+  delegacion_pasiva: "delegacion_pasiva",
+}
+
 export function buildPedagogicalFeedback(c: Classification): {
   tono: "positivo" | "neutro" | "atencion"
   titulo: string
@@ -2192,8 +2201,18 @@ export function buildPedagogicalFeedback(c: Classification): {
   // `pasiva_por_sobreuso` (HU-007; la UI no recalcula la regla). Si un docente
   // la confirmo, el juez la decidio o una revision cambio la etiqueta, el
   // subgrupo sigue ahi pero manda el eje (switch de abajo).
-  const subgrupoKey =
-    c.subgrupo?.key === "dependiente_sobreuso" && c.pasiva_por_sobreuso !== true
+  // HU-018 C01: si el juez del eje fino dio veredicto (`regimen_llm.estado ===
+  // "ok"`), la etiqueta oficial es la suya y el subgrupo (que sale del arbol)
+  // puede contradecirla: el cierre sigue al eje. Con abstencion o sin juez, el
+  // subgrupo sigue mandando (N01). R06: si el subgrupo es del MISMO eje que la
+  // etiqueta del juez no la contradice, y su mensaje es mas preciso que el
+  // generico del switch: se conserva.
+  const juezDecidio = c.regimen_llm?.estado === "ok"
+  const subgrupoContradiceAlJuez =
+    juezDecidio && EJE_DE_APPROPRIATION[c.appropriation] !== c.subgrupo?.eje
+  const subgrupoKey = subgrupoContradiceAlJuez
+    ? undefined
+    : c.subgrupo?.key === "dependiente_sobreuso" && c.pasiva_por_sobreuso !== true
       ? undefined
       : c.subgrupo?.key
   const porSubgrupo = subgrupoKey ? FEEDBACK_SUBGRUPO[subgrupoKey] : undefined
@@ -2239,15 +2258,28 @@ export function buildPedagogicalFeedback(c: Classification): {
           "Cuando arranques el próximo ejercicio, escribí en el chat 'Mi idea es X' antes de pedir cualquier ayuda. Eso ya empieza a construir tu razonamiento.",
         ]),
       }
+    // HU-018 R07: el autonomo sin subgrupo tenia que caer al default, que
+    // hablaba de "apropiacion" y "coherencias". Mensaje propio, simple.
+    case "autonomo":
+      return {
+        tono: "neutro",
+        titulo: "Resolviste sin el tutor",
+        mensaje:
+          "Trabajaste este ejercicio por tu cuenta, sin consultar al tutor. Está bien: el tutor está para cuando te trabes o quieras pensar en voz alta una idea.",
+        sugerencias: con([
+          "Si en el próximo te trabás, contale al tutor qué probaste. Te puede ayudar a ordenar la idea sin darte la respuesta.",
+        ]),
+      }
     default: {
       // Defensa contra `appropriation` desconocido (clasificador con
       // categoría nueva, valor null, etc.). Sin este default la función
       // retornaba undefined y rompía el ClassificationPanel en runtime.
+      // HU-018 R07: sin jerga del modelo ("apropiacion", "coherencias").
       return {
         tono: "neutro",
         titulo: "Episodio cerrado",
         mensaje:
-          "Cerramos tu episodio. La clasificación pedagógica no pudo determinar un nivel claro de apropiación esta vez — puede deberse a un episodio muy corto o con datos insuficientes para evaluar las coherencias.",
+          "Cerramos tu episodio. Esta vez no tenemos datos suficientes para contarte cómo trabajaste: puede pasar si el episodio fue muy corto.",
         sugerencias: con(["Probá un episodio más largo donde puedas dialogar con el tutor."]),
       }
     }

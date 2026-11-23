@@ -39,6 +39,7 @@ import { devolucionParcialVigente, estaBloqueado, ordenesACorregir } from "../li
 import { botonesDeDescarga, rotuloDescarga } from "../utils/descargas"
 import { buildEpisodioSourceFile } from "../utils/episodioDownload"
 import { mensajeAlEntregar } from "../utils/mensajesPlazo"
+import { porcentajesDePeso } from "../utils/pesoEjercicio"
 import { archivoDeDescarga } from "../utils/trabajoCorregido"
 import { PedirAyudaBoton } from "./PedirAyudaModal"
 
@@ -391,6 +392,8 @@ export function ExerciseListView({
       peso: Number.parseFloat(p.peso_en_tp),
       language: p.ejercicio.language,
     }))
+  // HU-018 C03: el peso que se muestra es la parte de cada ejercicio en el total.
+  const porcentajes = porcentajesDePeso(ejercicios.map((e) => e.peso))
   const ejercicioEstados = entrega?.ejercicio_estados ?? []
   const completados = ejercicioEstados.filter((e) => e.completado).length
   const totalEjercicios = ejercicios.length
@@ -605,7 +608,7 @@ export function ExerciseListView({
                       )}
                     </p>
                     <p className="text-xs text-muted mt-0.5">
-                      Peso: {Math.round(ejercicio.peso * 100)}%
+                      Peso: {porcentajes[idx]}%
                       {locked && !isFirst && (
                         <span className="ml-2 text-muted-soft">
                           · Completar ejercicio anterior primero

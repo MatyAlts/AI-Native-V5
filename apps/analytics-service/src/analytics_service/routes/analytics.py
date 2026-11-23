@@ -1567,6 +1567,47 @@ class StudentAlertsOut(BaseModel):
 
 
 @router.get(
+    "/student/me/alerts",
+    response_model=StudentAlertsOut,
+)
+async def get_my_student_alerts(
+    comision_id: UUID,
+    language: str | None = None,
+    tenant_id: UUID = Depends(get_tenant_id),
+    user_id: UUID = Depends(get_user_id),
+) -> StudentAlertsOut:
+    """Alertas longitudinales del PROPIO alumno autenticado (HU-018, F15).
+
+    Mismo patron que `/student/me/cii-evolution-longitudinal` y
+    `/student/me/episodes`. "Mi progreso" pedia `/student/{id}/alerts` con su
+    propio UUID y recibia 403: con Clerk el alumno trae `estudiante,docente`,
+    cae en la rama de staff de `require_student_progress_access` y no esta en
+    `usuarios_comision`.
+
+    Abrir el guard para el propio pseudonimo se probo y se descarto en la
+    verificacion del PR #148: dejaba pedir `/student/{yo}/alerts` con cualquier
+    `comision_id` a TODA cuenta, con los `cohort_stats` de esa comision. Aca el
+    pseudonimo sale del token y no se acepta por path.
+
+    Limite conocido (HU-017): `comision_id` no se valida contra las
+    inscripciones del alumno, igual que en los otros `/me`.
+
+    DEBE quedar registrado ANTES de `/student/{student_pseudonym}/alerts` o
+    FastAPI captura "me" como path param y tira 422.
+    """
+    # `_access=None` saltea la dependencia a proposito: la unica identidad
+    # posible es la del token, no hay escalacion que impedir.
+    return await get_student_alerts(
+        student_pseudonym=user_id,
+        comision_id=comision_id,
+        language=language,
+        tenant_id=tenant_id,
+        user_id=user_id,
+        _access=None,
+    )
+
+
+@router.get(
     "/student/{student_pseudonym}/alerts",
     response_model=StudentAlertsOut,
 )

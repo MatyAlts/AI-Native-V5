@@ -454,15 +454,17 @@ function PendienteCard({
           </p>
         ) : (
           <div className="flex items-center gap-2 flex-wrap" data-testid="trajectory-dots">
-            <span className="text-muted">Tu trayectoria en TPs analogas:</span>
+            <span className="text-muted">Tu trayectoria en TPs parecidas:</span>
             <span className="inline-flex items-center gap-1.5">
               {trajectory.map((ep, idx) => (
                 <span
                   key={`${ep.episode_id}-${idx}`}
-                  aria-label={appropriationAriaLabel(ep.appropriation)}
+                  aria-label={appropriationAriaLabel(ep.appropriation, ep.pasiva_por_sobreuso)}
                   data-testid={`trajectory-dot-${ep.appropriation ?? "unknown"}`}
                   className="inline-block w-2 h-2 rounded-full"
-                  style={{ backgroundColor: appropriationColor(ep.appropriation) }}
+                  style={{
+                    backgroundColor: appropriationColor(ep.appropriation, ep.pasiva_por_sobreuso),
+                  }}
                 />
               ))}
             </span>
@@ -663,9 +665,15 @@ function ZoneVencidas({
                   <span
                     aria-hidden="true"
                     className="inline-block w-2 h-2 rounded-full"
-                    style={{ backgroundColor: appropriationColor(lastResult.appropriation) }}
+                    style={{
+                      backgroundColor: appropriationColor(
+                        lastResult.appropriation,
+                        lastResult.pasiva_por_sobreuso,
+                      ),
+                    }}
                   />
-                  Tu episodio: {appropriationLabel(lastResult.appropriation)}
+                  Tu episodio:{" "}
+                  {appropriationLabel(lastResult.appropriation, lastResult.pasiva_por_sobreuso)}
                 </p>
               )}
             </li>
@@ -678,7 +686,12 @@ function ZoneVencidas({
 
 // ─── Helpers ──────────────────────────────────────────────────────────
 
-function appropriationColor(a: StudentEpisode["appropriation"] | null): string {
+function appropriationColor(
+  a: StudentEpisode["appropriation"] | null,
+  pasivaPorSobreuso?: boolean,
+): string {
+  // HU-018 R03: misma regla que `MODO_SOBREUSO` de Mi progreso (color de alerta).
+  if (a === "delegacion_pasiva" && pasivaPorSobreuso === true) return "var(--color-warning)"
   switch (a) {
     case "apropiacion_reflexiva":
       return "var(--color-appropriation-reflexiva)"
@@ -702,28 +715,40 @@ function appropriationColor(a: StudentEpisode["appropriation"] | null): string {
  * funcion devolviera `undefined` y el label quedara "Tu episodio: " con los
  * dos puntos colgando. Exportada para test unitario directo (pura, sin
  * React) — mismo patron que `cohortBalanceLabel` en web-teacher.
+ * HU-018 C02: el alumno no lee la jerga del modelo ("apropiacion",
+ * "delegacion"); lo vigila `tests/Hu018TextosAlumno.test.ts`.
  */
-export function appropriationLabel(a: NonNullable<StudentEpisode["appropriation"]>): string {
+export function appropriationLabel(
+  a: NonNullable<StudentEpisode["appropriation"]>,
+  pasivaPorSobreuso?: boolean,
+): string {
+  // HU-018 R03: la pasiva que vino SOLO de la regla de sobreuso (lo decide el
+  // backend, `pasiva_por_sobreuso`) mide frecuencia de consultas, no que el
+  // tutor haya hecho el trabajo. Mismo texto que `MODO_SOBREUSO` de Mi progreso.
+  if (a === "delegacion_pasiva" && pasivaPorSobreuso === true) return "muchas consultas seguidas"
   switch (a) {
     case "apropiacion_reflexiva":
-      return "apropiacion reflexiva"
+      return "pensaste con el tutor"
     case "apropiacion_superficial":
-      return "apropiacion superficial"
+      return "resolviste, con poca reflexion"
     case "delegacion_pasiva":
-      return "delegacion pasiva"
+      return "el tutor hizo gran parte"
     case "autonomo":
-      return "trabajo autonomo (sin tutor)"
+      return "trabajaste sin tutor"
     // B2b (v4.1.0, 2026-09-27): el arbol corrio y no pudo decidir un eje.
     // Mismo patron de bug que BUG-04 (switch exhaustivo sin default sobre un
     // tipo literal): agregar el caso acá previene el mismo ": " colgando.
     case "sin_clasificar":
-      return "sin clasificar"
+      return "sin datos suficientes"
   }
 }
 
-function appropriationAriaLabel(a: StudentEpisode["appropriation"] | null): string {
+function appropriationAriaLabel(
+  a: StudentEpisode["appropriation"] | null,
+  pasivaPorSobreuso?: boolean,
+): string {
   if (!a) return "resultado pendiente"
-  return appropriationLabel(a)
+  return appropriationLabel(a, pasivaPorSobreuso)
 }
 
 interface DeadlineInfo {

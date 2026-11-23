@@ -73,6 +73,10 @@ export interface Classification {
   /** HU-009 C12: cuantas consultas al tutor entraron al calculo de CII. Sin el
    *  dato (clasificaciones viejas o backend viejo) no se da el consejo de CII. */
   cii_iteraciones?: number | null
+  /** HU-018: veredicto del juez del eje fino (`ClassificationOut.regimen_llm`).
+   *  Con `estado === "ok"` el cierre sigue a `appropriation`, no al subgrupo.
+   *  Ausente o null en clasificaciones sin juez. */
+  regimen_llm?: { estado?: string } | null
 }
 
 export type TokenGetter = () => Promise<string | null>

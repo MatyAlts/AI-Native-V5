@@ -13,15 +13,15 @@
  *
  * Endpoints (analytics-service, via ROUTE_MAP `/api/v1/analytics`):
  *   - GET /student/me/episodes?comision_id=X          (listStudentEpisodes, ya en api.ts)
- *   - GET /student/{pseudonym}/cii-evolution-longitudinal?comision_id=X  (fetch inline)
- *   - GET /student/{pseudonym}/alerts?comision_id=X                       (fetch inline)
+ *   - GET /student/me/cii-evolution-longitudinal?comision_id=X  (fetch inline)
+ *   - GET /student/me/alerts?comision_id=X                       (fetch inline, HU-018)
  *
- * Pseudonimo del alumno: el backend autoriza estos dos endpoints exigiendo
- * `student_pseudonym == X-User-Id` (rama estudiante de require_student_progress_access).
- * Resolvemos ese id con `getCurrentUserUuid()` (el mismo UUID que el fetch-patch
- * manda como X-User-Id), con fallback al `student_pseudonym` que devuelve
- * `/student/me/episodes` (resuelto server-side desde el header). Asi el path
- * SIEMPRE coincide con la identidad que ve el gateway, en dev y con Clerk.
+ * Los tres son `/me`: el backend toma el pseudonimo del token. Los endpoints
+ * con `{pseudonym}` en el path aplican `require_student_progress_access`, y
+ * con Clerk el alumno trae `estudiante,docente`, cae en la rama de staff y
+ * recibe 403. El pseudonimo (`getCurrentUserUuid()`, con fallback al que
+ * devuelve `/student/me/episodes`) solo queda en las query keys, para que el
+ * cache no mezcle identidades.
  *
  * k-anonymity: si CII devuelve `sufficient_data=false` (todos los grupos con
  * N<3) o alerts trae `cohort_stats.insufficient_data=true` (cohorte N<5), lo
@@ -110,9 +110,11 @@ async function fetchCiiEvolution(comisionId: string): Promise<CIIEvolutionLongit
   return (await r.json()) as CIIEvolutionLongitudinal
 }
 
-async function fetchStudentAlerts(pseudonym: string, comisionId: string): Promise<StudentAlerts> {
+async function fetchStudentAlerts(comisionId: string): Promise<StudentAlerts> {
   const qs = new URLSearchParams({ comision_id: comisionId })
-  const r = await fetch(`/api/v1/analytics/student/${pseudonym}/alerts?${qs.toString()}`)
+  // HU-018 (F15): `/me`, mismo motivo que `fetchCiiEvolution` arriba. Ver el
+  // docstring de `get_my_student_alerts` en analytics-service.
+  const r = await fetch(`/api/v1/analytics/student/me/alerts?${qs.toString()}`)
   if (!r.ok) throw new Error(`student alerts failed: ${r.status}`)
   return (await r.json()) as StudentAlerts
 }
@@ -128,16 +130,22 @@ export interface ModoApropiacion {
   color: string
 }
 
+// HU-018 C02: `label` y `short` los lee el alumno, sin la jerga del modelo
+// ("apropiacion", "delegacion"). Lo vigila `tests/Hu018TextosAlumno.test.ts`.
 export const MODOS: Record<number, ModoApropiacion> = {
-  0: { label: "Delegacion", short: "Delegacion", color: "var(--color-appropriation-delegacion)" },
+  0: {
+    label: "El tutor hizo gran parte",
+    short: "Lo hizo el tutor",
+    color: "var(--color-appropriation-delegacion)",
+  },
   1: {
-    label: "Apropiacion superficial",
-    short: "Superficial",
+    label: "Resolviste, con poca reflexion",
+    short: "Poca reflexion",
     color: "var(--color-appropriation-superficial)",
   },
   2: {
-    label: "Apropiacion reflexiva",
-    short: "Reflexiva",
+    label: "Pensaste con el tutor",
+    short: "Pensaste con el tutor",
     color: "var(--color-appropriation-reflexiva)",
   },
 }
@@ -151,6 +159,16 @@ const MODO_SOBREUSO: ModoApropiacion = {
   label: "Muchas consultas seguidas",
   short: "Muchas consultas",
   color: "var(--color-warning)",
+}
+
+// HU-018 R04: el autonomo (sin tutor) es un eje ortogonal, no un punto de la
+// escala: tiene chip propio en la lista de episodios, pero NO entra a
+// `APPROPRIATION_TO_ORDINAL` ni a la trayectoria. Color neutro, como en la
+// lista de TPs (`TareaSelector.appropriationColor`).
+const MODO_AUTONOMO: ModoApropiacion = {
+  label: "Trabajaste sin tutor",
+  short: "Trabajaste sin tutor",
+  color: "var(--color-neutral)",
 }
 
 const APPROPRIATION_TO_ORDINAL: Record<string, number> = {
@@ -249,7 +267,7 @@ function ProgresoContent({ comisionId }: { comisionId: string }) {
 
   const alertsQuery = useQuery({
     queryKey: ["mi-progreso", "alerts", comisionId, pseudonym],
-    queryFn: () => fetchStudentAlerts(pseudonym as string, comisionId),
+    queryFn: () => fetchStudentAlerts(comisionId),
     enabled: !!pseudonym,
     staleTime: 60 * 1000,
   })
@@ -309,7 +327,7 @@ function TrayectoriaBody({
   // piloto no tiene templates configurados, caemos a los grupos por unidad.
   const templateGroups = data.evolution_per_template.map((g) => ({
     key: g.template_id,
-    nombre: templateTitles.get(g.template_id) ?? "Problema analogo",
+    nombre: templateTitles.get(g.template_id) ?? "Problema parecido",
     grupo: g as CIIEvolutionGroup,
   }))
   const unidadGroups = data.evolution_per_unidad.map((g) => ({
@@ -393,7 +411,7 @@ function TrayectoriaRow({
         <div className="min-w-0">
           <p className="text-sm font-medium text-ink truncate">{nombre}</p>
           <p className="text-xs text-muted mt-0.5">
-            {grupo.n_episodes} episodios analogos
+            {grupo.n_episodes} intentos en tareas parecidas
             {modo && (
               <>
                 <span className="text-muted-soft mx-1.5">·</span>
@@ -547,7 +565,22 @@ function SeñalesSection({
     )
   }
   // Un error en alertas NO debe romper la pagina: es una seccion secundaria.
-  if (query.error || !query.data) return null
+  // HU-018 (F15): tampoco se calla ni muestra el error crudo (un 403 decia
+  // "student alerts failed: 403"); avisa corto y el resto sigue.
+  if (query.error) {
+    return (
+      <section className="animate-fade-in-up">
+        <SectionHeader
+          icon={<Info className="h-4 w-4 text-accent-brand" aria-hidden="true" />}
+          title="Señales para acompañarte"
+        />
+        <p data-testid="mi-progreso-señales-error" className="mt-4 text-sm text-muted">
+          Ahora no pudimos cargar las señales. Proba de nuevo mas tarde.
+        </p>
+      </section>
+    )
+  }
+  if (!query.data) return null
 
   const data = query.data
   const cohortInsufficient = data.cohort_stats?.insufficient_data === true
@@ -665,6 +698,7 @@ export function modoDeEpisodio(
   episode: Pick<StudentEpisode, "appropriation" | "pasiva_por_sobreuso">,
 ): ModoApropiacion | undefined {
   if (episode.pasiva_por_sobreuso === true) return MODO_SOBREUSO
+  if (episode.appropriation === "autonomo") return MODO_AUTONOMO
   const ordinal =
     episode.appropriation != null ? APPROPRIATION_TO_ORDINAL[episode.appropriation] : undefined
   return ordinal != null ? MODOS[ordinal] : undefined
@@ -710,7 +744,7 @@ function EpisodioRow({ episode }: { episode: StudentEpisode }) {
           {modo.short}
         </span>
       ) : (
-        <span className="shrink-0 text-[11px] text-muted-soft">sin clasificar</span>
+        <span className="shrink-0 text-[11px] text-muted-soft">Sin datos suficientes</span>
       )}
     </div>
   )
@@ -854,12 +888,13 @@ const progresoHelp: ReactNode = (
     </p>
     <ul className="list-disc list-inside space-y-2 ml-4">
       <li>
-        <strong>Trayectoria:</strong> junta tus episodios de tareas parecidas y marca tu modo de
-        apropiacion en cada uno, del primero al ultimo.
+        <strong>Trayectoria:</strong> junta tus intentos en tareas parecidas y marca como trabajaste
+        en cada uno, del primero al ultimo.
       </li>
       <li>
-        <strong>Tres modos:</strong> delegacion (dejas que el tutor resuelva), apropiacion
-        superficial y apropiacion reflexiva (te apropiaste de la solucion pensandola).
+        <strong>Tres formas de trabajar:</strong> el tutor hizo gran parte (dejaste que el tutor
+        resuelva), resolviste con poca reflexion, y pensaste con el tutor (entendiste la solucion
+        porque la pensaste vos).
       </li>
       <li>
         <strong>Señales:</strong> pistas pedagogicas para acompañarte. Solo aparecen si hay datos
