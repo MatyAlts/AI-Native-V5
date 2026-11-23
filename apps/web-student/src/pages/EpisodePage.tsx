@@ -2192,8 +2192,14 @@ export function buildPedagogicalFeedback(c: Classification): {
   // `pasiva_por_sobreuso` (HU-007; la UI no recalcula la regla). Si un docente
   // la confirmo, el juez la decidio o una revision cambio la etiqueta, el
   // subgrupo sigue ahi pero manda el eje (switch de abajo).
-  const subgrupoKey =
-    c.subgrupo?.key === "dependiente_sobreuso" && c.pasiva_por_sobreuso !== true
+  // HU-018 C01: si el juez del eje fino dio veredicto (`regimen_llm.estado ===
+  // "ok"`), la etiqueta oficial es la suya y el subgrupo (que sale del arbol)
+  // puede contradecirla: el cierre sigue al eje. Con abstencion o sin juez, el
+  // subgrupo sigue mandando (N01).
+  const juezDecidio = c.regimen_llm?.estado === "ok"
+  const subgrupoKey = juezDecidio
+    ? undefined
+    : c.subgrupo?.key === "dependiente_sobreuso" && c.pasiva_por_sobreuso !== true
       ? undefined
       : c.subgrupo?.key
   const porSubgrupo = subgrupoKey ? FEEDBACK_SUBGRUPO[subgrupoKey] : undefined
