@@ -26,6 +26,7 @@ from classifier_service.auth import (
     require_gateway_auth,
     require_role,
 )
+from classifier_service.auth.acceso import assert_puede_ver_clasificacion
 from classifier_service.config import settings
 from classifier_service.db import tenant_session
 from classifier_service.models import Classification
@@ -566,4 +567,6 @@ async def get_current_classification(
             status_code=status.HTTP_404_NOT_FOUND,
             detail=f"Sin clasificación actual para episodio {episode_id}",
         )
+    # HU-017: dueño del episodio, miembro de la comisión u oversight.
+    await assert_puede_ver_clasificacion(user, episode_id, c.comision_id)
     return _salida(c)

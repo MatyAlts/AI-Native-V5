@@ -33,6 +33,17 @@ class Settings(BaseSettings):
 
     redis_url: str = "redis://127.0.0.1:6379/3"
 
+    # ── Acceso por comisión (HU-017) ─────────────────────────────────────────
+    # Con Clerk toda cuenta trae `estudiante,docente`, así que el rol no alcanza
+    # para revisar o ver una clasificación: hace falta ser miembro de la
+    # comisión (`usuarios_comision` en academic_main, conexión de solo lectura,
+    # mismo patrón que el ctr-service) o, para ver, el dueño del episodio.
+    # Sin `academic_db_url` las rutas protegidas responden 503 a todo el que no
+    # sea oversight (falla CERRADO). En dev sin base académica, opt-out
+    # explícito con `ENFORCE_COMISION_ACCESS=false`.
+    academic_db_url: str = ""
+    enforce_comision_access: bool = True
+
     # URLs de servicios dependientes
     ctr_service_url: str = "http://127.0.0.1:8007"
     ai_gateway_url: str = "http://127.0.0.1:8011"

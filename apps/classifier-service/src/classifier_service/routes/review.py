@@ -16,9 +16,12 @@ from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from pydantic import BaseModel, Field
+from sqlalchemy import select
 
 from classifier_service.auth import User, require_gateway_auth, require_role
+from classifier_service.auth.acceso import OVERSIGHT_ROLES, assert_docente_de_comision
 from classifier_service.db import tenant_session
+from classifier_service.models import Classification
 from classifier_service.services.review import (
     ReviewConflictError,
     ReviewTargetNotFoundError,
@@ -101,9 +104,24 @@ async def get_review_queue(
     comision_id: UUID | None = Query(default=None),
     user: User = Depends(require_role(*REVIEW_ROLES)),
 ) -> ReviewQueueOut:
-    """Episodios con `needs_review=true` vigente y sin revisión posterior."""
+    """Episodios con `needs_review=true` vigente y sin revisión posterior.
+
+    HU-017: solo los de comisiones donde el usuario es docente asignado
+    (oversight ve todo). Pedir una comisión ajena devuelve la cola vacía.
+    """
     async with tenant_session(user.tenant_id) as session:
         items = await list_review_queue(session, comision_id=comision_id)
+    if not user.roles & OVERSIGHT_ROLES:
+        visibles: dict[UUID, bool] = {}
+        for c in {i.comision_id for i in items}:
+            try:
+                await assert_docente_de_comision(user, c)
+                visibles[c] = True
+            except HTTPException as exc:
+                if exc.status_code != status.HTTP_403_FORBIDDEN:
+                    raise
+                visibles[c] = False
+        items = [i for i in items if visibles[i.comision_id]]
     return ReviewQueueOut(
         n=len(items),
         items=[
@@ -156,6 +174,23 @@ async def post_review(
         )
 
     async with tenant_session(user.tenant_id) as session:
+        # HU-017: la comisión sale de la clasificación vigente, y la membresía
+        # se chequea ANTES de tocar nada. Con Clerk toda cuenta trae `docente`:
+        # sin esto un alumno reemplazaba la etiqueta oficial de cualquiera.
+        vigente = (
+            await session.execute(
+                select(Classification).where(
+                    Classification.episode_id == episode_id,
+                    Classification.is_current.is_(True),
+                )
+            )
+        ).scalar_one_or_none()
+        if vigente is None:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"Sin clasificación vigente para el episodio {episode_id}",
+            )
+        await assert_docente_de_comision(user, vigente.comision_id)
         try:
             result = await submit_review(
                 session,

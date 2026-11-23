@@ -12,6 +12,8 @@ Postgres real.
 from __future__ import annotations
 
 import contextlib
+from types import SimpleNamespace
+from typing import Any
 from unittest.mock import AsyncMock, patch
 from uuid import UUID, uuid4
 
@@ -36,9 +38,39 @@ def _headers(role: str) -> dict[str, str]:
     }
 
 
+class _SesionConVigente:
+    """HU-017: `post_review` busca la clasificación vigente (para saber su
+    comisión) antes de llamar al service; esta sesión devuelve una cualquiera.
+    El resto lo hace el service, que se patchea."""
+
+    async def execute(self, *_a: Any, **_k: Any) -> Any:
+        vigente = SimpleNamespace(comision_id=uuid4())
+        return SimpleNamespace(scalar_one_or_none=lambda: vigente)
+
+
 @contextlib.asynccontextmanager
 async def _fake_tenant_session(_tenant_id):
-    yield None  # el handler no usa la sesión directamente en estos tests (se patchea el service)
+    yield _SesionConVigente()
+
+
+@pytest.fixture(autouse=True)
+def _docente_miembro(monkeypatch: pytest.MonkeyPatch) -> None:
+    """HU-017: estas pruebas no son de acceso. El docente de los headers es
+    miembro de la comisión (seam de `acceso`), con la base académica "cargada";
+    el acceso lo cubre `test_hu017_review_ajena.py`."""
+    from classifier_service.auth import acceso
+    from classifier_service.config import settings
+
+    async def _miembro(*_a: Any, **_k: Any) -> bool:
+        return True
+
+    async def _no_duenio(*_a: Any, **_k: Any) -> bool:
+        return False
+
+    monkeypatch.setattr(settings, "enforce_comision_access", True)
+    monkeypatch.setattr(settings, "academic_db_url", "postgresql://x")
+    monkeypatch.setattr(acceso, "es_miembro_de_comision", _miembro)
+    monkeypatch.setattr(acceso, "es_duenio_del_episodio", _no_duenio)
 
 
 @pytest.fixture
