@@ -4,8 +4,11 @@
  * C01 (F24): la vista alumno pide SUS entregas con `propias=true`. Sin eso,
  *   un docente que pasa a "Ver como alumno" recibe la comisión entera y ve
  *   como propias las entregas de los demás (prueba en producción del 23/11).
- * C05 (F30): un ejercicio que nunca se empezó dice "Empezar", aunque el
- *   anterior ya esté completo; uno empezado y sin terminar dice "Continuar".
+ * C05 (F30): un ejercicio sin completar dice "Abrir" (decisión de Juani
+ *   tras la revisión, 23/11): la pantalla no sabe si el alumno lo abrió y lo
+ *   dejó sin cerrar, porque el episodio se anota en la entrega recién al
+ *   cerrar. "Abrir" no miente en ningún caso; antes un ejercicio nunca
+ *   empezado decía "Continuar".
  * C06 (F31): sin jerga ("ADR-035", "chars") en lo que ve el alumno.
  *
  * Lo que se prueba en navegador real en la demo (no acá): el cierre del
@@ -141,22 +144,32 @@ async function botonDel(orden: number, entrega: Entrega): Promise<string> {
   return textos.join(" | ")
 }
 
-describe("C05 · Empezar o Continuar según el propio ejercicio", () => {
-  it("el ejercicio 2, nunca empezado, dice Empezar aunque el 1 esté completo", async () => {
+describe("C05 · un ejercicio sin completar dice Abrir", () => {
+  it("el ejercicio 2, nunca empezado y con el 1 completo, dice Abrir", async () => {
     const botones = await botonDel(
       2,
       entregaCon([estado(1, true, "ep-1"), estado(2, false, null), estado(3, false, null)]),
     )
-    expect(botones).toMatch(/Empezar/)
-    expect(botones).not.toMatch(/Continuar/)
+    expect(botones).toMatch(/Abrir/)
+    expect(botones).not.toMatch(/Continuar|Empezar/)
   })
 
-  it("un ejercicio empezado y sin terminar sigue diciendo Continuar", async () => {
+  it("un ejercicio con episodio y sin completar también dice Abrir", async () => {
     const botones = await botonDel(
       2,
       entregaCon([estado(1, true, "ep-1"), estado(2, false, "ep-2"), estado(3, false, null)]),
     )
-    expect(botones).toMatch(/Continuar/)
+    expect(botones).toMatch(/Abrir/)
+    expect(botones).not.toMatch(/Continuar|Empezar/)
+  })
+
+  it("el primer ejercicio de un TP sin empezar dice Abrir", async () => {
+    const botones = await botonDel(
+      1,
+      entregaCon([estado(1, false, null), estado(2, false, null), estado(3, false, null)]),
+    )
+    expect(botones).toMatch(/Abrir/)
+    expect(botones).not.toMatch(/Continuar|Empezar/)
   })
 })
 

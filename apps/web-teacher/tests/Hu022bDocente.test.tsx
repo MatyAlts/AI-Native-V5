@@ -96,7 +96,7 @@ const previa = {
   graded_by: "docente-1",
 }
 
-function montar(opts: { conPrevia: boolean }) {
+function montar(opts: { conPrevia: boolean; reabierto2?: boolean }) {
   const json = (status: number, body: unknown) =>
     Promise.resolve({
       ok: status >= 200 && status < 300,
@@ -114,8 +114,16 @@ function montar(opts: { conPrevia: boolean }) {
       if (u.endsWith("/calificacion")) {
         return opts.conPrevia ? json(200, previa) : json(404, { detail: "no hay" })
       }
-      if (u.includes(`/api/v1/entregas/${ENTREGA_ID}`)) return json(200, entrega)
-      return json(200, { data: [entrega], meta: { cursor_next: null } })
+      const e = opts.reabierto2
+        ? {
+            ...entrega,
+            ejercicio_estados: entrega.ejercicio_estados.map((x) =>
+              x.orden === 2 ? { ...x, reabierto_por_docente: true } : x,
+            ),
+          }
+        : entrega
+      if (u.includes(`/api/v1/entregas/${ENTREGA_ID}`)) return json(200, e)
+      return json(200, { data: [e], meta: { cursor_next: null } })
     }),
   )
   renderWithRouter(<CorreccionesView comisionId={COMISION_ID} getToken={getToken} />)
@@ -171,6 +179,61 @@ describe("C03 · re-calificar precarga los criterios anteriores", () => {
     })
     const muestra = screen.getByTestId("criterio-puntaje-ej-1#1") as HTMLInputElement
     expect(muestra.value).toBe("3")
+  })
+})
+
+describe("C02+C03 · re-entrega: lo que se pidió rehacer arranca vacío", () => {
+  const previaCompleta = {
+    ...previa,
+    detalle_criterios: [
+      { criterio: "Ejercicio 1: Lee el dato", puntaje: "4", max_puntaje: "5", comentario: null },
+      { criterio: "Ejercicio 1: Muestra", puntaje: "3", max_puntaje: "5", comentario: null },
+      { criterio: "Ejercicio 2: Lee el dato", puntaje: "1", max_puntaje: "5", comentario: null },
+      { criterio: "Ejercicio 2: Muestra", puntaje: "0", max_puntaje: "5", comentario: null },
+    ],
+  }
+
+  function montarRehacer() {
+    const json = (status: number, body: unknown) =>
+      Promise.resolve({
+        ok: status >= 200 && status < 300,
+        status,
+        json: () => Promise.resolve(body),
+        text: () => Promise.resolve(JSON.stringify(body)),
+      } as Response)
+    const e = {
+      ...entrega,
+      ejercicio_estados: entrega.ejercicio_estados.map((x) =>
+        x.orden === 2 ? { ...x, reabierto_por_docente: true } : x,
+      ),
+    }
+    vi.stubGlobal(
+      "fetch",
+      vi.fn((url: string | URL | Request) => {
+        const u = typeof url === "string" ? url : url.toString()
+        if (u.includes("/correccion-ia")) return json(200, { correcciones: [] })
+        if (u.includes("/ejercicios")) return json(200, [tpEj(1), tpEj(2)])
+        if (u.includes("/api/v1/tareas-practicas/")) return json(200, tarea)
+        if (u.endsWith("/calificacion")) return json(200, previaCompleta)
+        if (u.includes(`/api/v1/entregas/${ENTREGA_ID}`)) return json(200, e)
+        return json(200, { data: [e], meta: { cursor_next: null } })
+      }),
+    )
+    renderWithRouter(<CorreccionesView comisionId={COMISION_ID} getToken={getToken} />)
+  }
+
+  it("el ejercicio no pedido se precarga; el pedido arranca vacío; no hay Aplicar", async () => {
+    montarRehacer()
+    await abrirEntrega()
+    await waitFor(() =>
+      expect((screen.getByTestId("criterio-puntaje-ej-1#0") as HTMLInputElement).value).toBe("4"),
+    )
+    const cabecera = screen.getByTestId("ej-estado-2").querySelector("button[aria-expanded]")
+    if (cabecera?.getAttribute("aria-expanded") === "false") fireEvent.click(cabecera)
+    await waitFor(() => expect(screen.getByTestId("criterio-puntaje-ej-2#0")).toBeDefined())
+    expect((screen.getByTestId("criterio-puntaje-ej-2#0") as HTMLInputElement).value).toBe("")
+    expect((screen.getByTestId("criterio-puntaje-ej-2#1") as HTMLInputElement).value).toBe("")
+    expect(screen.queryByTestId("aplicar-nota-sugerida-btn")).toBeNull()
   })
 })
 
