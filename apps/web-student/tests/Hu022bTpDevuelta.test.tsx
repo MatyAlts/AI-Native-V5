@@ -55,7 +55,10 @@ function montar(onSelect = vi.fn()) {
     "/student/me/episodes": () => ({ episodes: [] }),
     "tarea_practica_id=tp-dev": () => ({ data: [entrega("tp-dev", "returned")], meta: {} }),
     "tarea_practica_id=tp-cal": () => ({ data: [entrega("tp-cal", "graded")], meta: {} }),
-    "/api/v1/tareas-practicas": () => ({ data: [devuelta, calificada], meta: { cursor_next: null } }),
+    "/api/v1/tareas-practicas": () => ({
+      data: [devuelta, calificada],
+      meta: { cursor_next: null },
+    }),
   })
   render(<TareaSelector comisionId={COMISION_ID} onSelect={onSelect} />)
   return { devuelta, onSelect }

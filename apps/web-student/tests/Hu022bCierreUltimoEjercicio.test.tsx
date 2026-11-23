@@ -75,7 +75,11 @@ function montar(orden: number, onExit: () => void = () => {}) {
     <EpisodeView
       episodeId={EPISODIO_ID}
       onExit={onExit}
-      ejercicioContext={{ entregaId: ENTREGA_ID, ejercicioId: `ej-${orden}`, ejercicioOrden: orden }}
+      ejercicioContext={{
+        entregaId: ENTREGA_ID,
+        ejercicioId: `ej-${orden}`,
+        ejercicioOrden: orden,
+      }}
     />,
   )
 }
