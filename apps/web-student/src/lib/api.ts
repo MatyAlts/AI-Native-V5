@@ -1390,7 +1390,13 @@ export async function getEntregaForTp(
   comisionId: string,
   getToken?: TokenGetter,
 ): Promise<Entrega | null> {
-  const qs = new URLSearchParams({ tarea_practica_id: tareaId, comision_id: comisionId })
+  // `propias=true` (HU-022): la vista alumno pide SOLO lo propio aunque quien
+  // mira sea un docente que paso a "Ver como alumno".
+  const qs = new URLSearchParams({
+    tarea_practica_id: tareaId,
+    comision_id: comisionId,
+    propias: "true",
+  })
   const r = await fetch(`/api/v1/entregas?${qs.toString()}`, {
     headers: await authHeaders(getToken),
   })
@@ -1404,8 +1410,8 @@ export async function getEntregaForTp(
  *
  * Mismo endpoint que `getEntregaForTp`, sin el filtro por TP: el backend
  * (`evaluation-service/routes/entregas.py::list_entregas`) tiene ambos query
- * params opcionales y para un usuario sin rol docente fuerza
- * `student_pseudonym = user.id`, asi que un alumno solo puede ver las propias.
+ * params opcionales y con `propias=true` fuerza `student_pseudonym = user.id`
+ * aunque el usuario sea ademas docente (HU-022), asi que solo ve las propias.
  *
  * La usa el onboarding progresivo para responder "¿entrego alguna vez?" sin
  * pedir una TP por vez ni agregar un endpoint nuevo.
@@ -1414,7 +1420,7 @@ export async function listMisEntregas(
   comisionId: string,
   getToken?: TokenGetter,
 ): Promise<Entrega[]> {
-  const qs = new URLSearchParams({ comision_id: comisionId, limit: "50" })
+  const qs = new URLSearchParams({ comision_id: comisionId, limit: "50", propias: "true" })
   const r = await fetch(`/api/v1/entregas?${qs.toString()}`, {
     headers: await authHeaders(getToken),
   })
