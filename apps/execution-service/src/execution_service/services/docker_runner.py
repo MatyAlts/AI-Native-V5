@@ -36,6 +36,8 @@ Todos desde el arranque, no agregados despues:
   --user                      no corre como root dentro del contenedor
   --memory / --cpus / --pids-limit   limites por corrida, explicitos
   timeout externo             `docker run` tambien se puede colgar
+  --name + docker kill        al vencer el wall-time se mata el CONTENEDOR,
+                              no solo el CLI (HU-015, C08)
 """
 
 from __future__ import annotations
@@ -43,6 +45,7 @@ from __future__ import annotations
 import asyncio
 import logging
 from dataclasses import dataclass
+from uuid import uuid4
 
 from execution_service.config import settings
 from execution_service.services.sandbox_types import SandboxResult, SandboxStatus
@@ -184,13 +187,30 @@ def _docker_args(source_code: str) -> list[str]:
 # servidor y pasaria en el navegador — que es exactamente el "la IA lee que
 # fallo todo" que HU-015 vino a cerrar. Fin de stdin = `EOFError`, igual que
 # el shim.
+#
+# `SystemExit` es error (HU-015, C10). Los dos shims de Pyodide
+# (`web-student/src/components/CodeEditor.tsx` y
+# `web-teacher/src/lib/pyodideRunner.ts`) atrapan `BaseException`, asi que un
+# `exit()`, `quit()` o `sys.exit(0)` es un error en el Probar del alumno. En
+# CPython `sys.exit(0)` termina con codigo 0 y el servidor lo aprobaba: el mismo
+# codigo pasaba en la correccion y fallaba en el navegador. Aca se convierte en
+# salida distinta de 0 con el motivo en stderr. Un codigo entero distinto de 0
+# se conserva (`sys.exit(101)` sigue saliendo con 101, que en Python NO es
+# "no compila", N05); `None`, 0 o un texto salen con 1.
 _PRELUDIO_PYTHON = (
-    "import builtins, runpy\n"
+    "import builtins, runpy, sys\n"
     "_leer = builtins.input\n"
     "def _input(prompt=''):\n"
     "    return _leer()\n"
     "builtins.input = _input\n"
-    "runpy.run_path('main.py', run_name='__main__')\n"
+    "try:\n"
+    "    runpy.run_path('main.py', run_name='__main__')\n"
+    "except SystemExit as _e:\n"
+    "    _c = _e.code\n"
+    "    sys.stderr.write('SystemExit: el programa termino con exit(), quit() o '\n"
+    "                     'sys.exit(%r). En la plataforma eso cuenta como error, '\n"
+    "                     'igual que en el navegador.\\n' % (_c,))\n"
+    "    sys.exit(_c if isinstance(_c, int) and not isinstance(_c, bool) and _c != 0 else 1)\n"
 )
 
 
@@ -335,6 +355,48 @@ async def _run_java_sin_techo(source_code: str, stdin: str = "") -> DockerRunRes
     return await _correr(_docker_args(source_code), stdin, compila=True)
 
 
+# Techo del `docker kill` de limpieza. Corto a proposito: si el daemon no
+# responde en este tiempo, el alumno ya espero el wall-time entero y no tiene
+# que esperar otro tanto por una limpieza.
+_KILL_TIMEOUT_SECONDS = 5.0
+
+
+def _nombre_de_corrida() -> str:
+    """Nombre unico por corrida. `uuid4` evita choques entre corridas en paralelo."""
+    return f"exec-{uuid4().hex}"
+
+
+def _con_nombre(args: list[str], nombre: str) -> list[str]:
+    """Inserta `--name` despues de `docker run`, sin tocar el resto del comando."""
+    return [*args[:2], f"--name={nombre}", *args[2:]]
+
+
+async def _matar_contenedor(nombre: str) -> None:
+    """`docker kill <nombre>`, sin propagar nada.
+
+    Si el contenedor ya termino (o nunca llego a crearse), `docker kill` falla
+    y eso esta bien: lo unico que importa es que no quede vivo. Un error acá no
+    puede convertir un timeout del alumno en un fallo de infraestructura.
+    """
+    try:
+        proc = await asyncio.create_subprocess_exec(
+            "docker",
+            "kill",
+            nombre,
+            stdout=asyncio.subprocess.DEVNULL,
+            stderr=asyncio.subprocess.DEVNULL,
+        )
+    except OSError:
+        logger.warning("docker_kill_no_se_pudo_lanzar nombre=%s", nombre)
+        return
+    try:
+        await asyncio.wait_for(proc.wait(), timeout=_KILL_TIMEOUT_SECONDS)
+    except TimeoutError:
+        proc.kill()
+        await proc.wait()
+        logger.warning("docker_kill_timeout nombre=%s", nombre)
+
+
 async def _correr(args: list[str], stdin: str, *, compila: bool) -> DockerRunResult:
     """Lanza el `docker run` y aplica el wall-time.
 
@@ -342,8 +404,9 @@ async def _correr(args: list[str], stdin: str, *, compila: bool) -> DockerRunRes
     `sys.exit(101)` del alumno es un error de ejecucion comun, y tratarlo como
     "no compila" le cortaria la correccion con un motivo falso.
     """
+    nombre = _nombre_de_corrida()
     proc = await asyncio.create_subprocess_exec(
-        *args,
+        *_con_nombre(args, nombre),
         stdin=asyncio.subprocess.PIPE,
         stdout=asyncio.subprocess.PIPE,
         stderr=asyncio.subprocess.PIPE,
@@ -358,6 +421,11 @@ async def _correr(args: list[str], stdin: str, *, compila: bool) -> DockerRunRes
         # cubre el caso de que el daemon no responda.
         proc.kill()
         await proc.wait()
+        # Matar el CLI NO mata el contenedor (HU-015, C08). El `docker run` es
+        # solo un cliente del daemon: muerto el CLI, el contenedor sigue al
+        # 100% de CPU y `--rm` recien actua cuando termina, o sea nunca en un
+        # `while True`. Se lo mata por nombre.
+        await _matar_contenedor(nombre)
         return DockerRunResult(
             exit_code=-1, stdout="", stderr="", timed_out=True, compile_failed=False
         )

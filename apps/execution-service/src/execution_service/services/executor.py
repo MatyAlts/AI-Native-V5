@@ -72,7 +72,16 @@ async def run_cases(
     correr = runner.run_python if ejercicio.language == "python" else runner.run_java
 
     try:
-        for tc in ejercicio.test_cases:
+        for i, tc in enumerate(ejercicio.test_cases):
+            if ejercicio.language == "python" and tc.type != "stdin_stdout":
+                # HU-015, C09. Un `pytest_assert` es codigo de prueba, no una
+                # entrada: mandarlo como stdin no lo ejecuta, y con `expected`
+                # nulo cualquier programa que termine bien lo "aprobaba". No
+                # hay como correrlo de verdad server-side, asi que queda
+                # `skipped` (la correccion lo muestra como no ejecutado) y no
+                # cuenta en `total`. Java no pasa por aca.
+                cases.append(_skipped(tc, i, motivo=_MOTIVO_TIPO_NO_EJECUTABLE))
+                continue
             stdin = tc.code if tc.type == "stdin_stdout" else ""
             crudo = await correr(source_code, stdin)
             result = to_sandbox_result(crudo, tc.expected)
@@ -162,7 +171,29 @@ async def run_libre(*, source_code: str, language: str, stdin: str = "") -> Corr
     )
 
 
-def _skipped(tc: TestCase, index: int) -> CaseResult:
+_MOTIVO_SIN_RUNTIME = "No hay entorno de ejecucion para este lenguaje."
+_MOTIVO_TIPO_NO_EJECUTABLE = "Este tipo de caso no se ejecuta en el servidor."
+_MOTIVO_EPISODIO = "Python no se ejecuta en el servidor dentro de un episodio."
+
+
+def sin_ejecutar(ejercicio: Ejercicio) -> RunResult:
+    """Todos los casos `skipped`, sin llamar al runner (HU-015, C11).
+
+    Es la respuesta para un Python dentro de un episodio: el Probar del alumno
+    corre en Pyodide y el servidor no ejecuta nada. Es la misma forma que
+    devolvia el servicio antes de HU-015 (Python sin runtime), asi que el
+    cliente ya la entiende como "sin ejecutar" y no como fallo de
+    infraestructura. `total == 0`, y `should_emit` no la deja emitir.
+    """
+    return RunResult(
+        outcome=RunOutcome.COMPLETED,
+        cases=[
+            _skipped(tc, i, motivo=_MOTIVO_EPISODIO) for i, tc in enumerate(ejercicio.test_cases)
+        ],
+    )
+
+
+def _skipped(tc: TestCase, index: int, *, motivo: str = _MOTIVO_SIN_RUNTIME) -> CaseResult:
     return CaseResult(
         id=tc.id,
         name=tc.name,
@@ -171,7 +202,7 @@ def _skipped(tc: TestCase, index: int) -> CaseResult:
         input="",
         expected=None,
         got="",
-        error="No hay entorno de ejecucion para este lenguaje.",
+        error=motivo,
         weight=tc.weight,
     )
 
