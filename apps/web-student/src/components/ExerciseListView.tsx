@@ -38,7 +38,7 @@ import { puedeEditarLaEntrega } from "../lib/entregaGuard"
 import { devolucionParcialVigente, estaBloqueado, ordenesACorregir } from "../lib/estaBloqueado"
 import { botonesDeDescarga, rotuloDescarga } from "../utils/descargas"
 import { buildEpisodioSourceFile } from "../utils/episodioDownload"
-import { mensajeAlEntregar } from "../utils/mensajesPlazo"
+import { mensajeAlEntregar, mensajeAlReabrir } from "../utils/mensajesPlazo"
 import { porcentajesDePeso } from "../utils/pesoEjercicio"
 import { archivoDeDescarga } from "../utils/trabajoCorregido"
 import { PedirAyudaBoton } from "./PedirAyudaModal"
@@ -224,7 +224,7 @@ export function ExerciseListView({
       )
       setEntrega(actualizada)
     } catch (e) {
-      setSubmitError(`No se pudo reabrir el ejercicio ${ejercicio.orden}: ${String(e)}`)
+      setSubmitError(mensajeAlReabrir(e))
     } finally {
       setReabriendo(null)
     }
