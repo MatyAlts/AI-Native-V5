@@ -19,6 +19,7 @@ from uuid import UUID, uuid4
 import pytest
 from evaluation_service.auth.dependencies import User
 from evaluation_service.models.entregas import Entrega, EntregaArtefacto
+from evaluation_service.routes import entregas as entregas_mod
 from evaluation_service.routes.entregas import (
     _persistir_artefactos,
     _reconciliar_estados,
@@ -256,6 +257,17 @@ class TestPersistirArtefactos:
 
 
 class TestSubmit:
+    @pytest.fixture(autouse=True)
+    def _tp_sin_plazo(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        # HU-016: el submit de un `draft` consulta `fecha_fin` antes de escribir.
+        # Estas pruebas no son sobre el plazo (lo cubre `test_hu016_plazo.py`) y
+        # su `db.execute` tiene una secuencia fija de respuestas: sin esto, la
+        # consulta del plazo se comeria la respuesta de los ejercicios esperados.
+        async def _sin_plazo(db: object, tarea_practica_id: UUID) -> None:
+            return None
+
+        monkeypatch.setattr(entregas_mod, "_fecha_fin_de_la_tp", _sin_plazo)
+
     async def test_persiste_una_fila_por_ejercicio(self) -> None:
         sid = uuid4()
         estados = [_estado(1, EJ1, True), _estado(2, EJ2, True)]

@@ -20,6 +20,7 @@
  * submit?"— y no contra el nombre de una funcion. Sobrevive al refactor.
  */
 
+import { esEntregaVencida } from "../utils/mensajesPlazo"
 import {
   DEFAULT_LANGUAGE,
   type TokenGetter,
@@ -32,12 +33,19 @@ import { MONOLITHIC_ORDEN, clearArtefactoDrafts, collectArtefactoDrafts } from "
 import { debeEnviarLaEntrega } from "./entregaGuard"
 
 /** Que paso, para que el caller (y el test) puedan distinguirlo del silencio. */
-export type ResultadoDeSalida = "enviada" | "episodio-no-cerrado" | "entrega-no-enviable" | "error"
+export type ResultadoDeSalida =
+  | "enviada"
+  | "episodio-no-cerrado"
+  | "entrega-no-enviable"
+  /** El servidor rechazo el envio porque vencio el plazo de la TP (HU-016). */
+  | "vencida"
+  | "error"
 
 /**
  * Si el episodio quedo cerrado y su entrega admite envio, la manda.
  *
- * Best-effort por diseño: cualquier fallo devuelve `"error"` y NO propaga, para
+ * Best-effort por diseño: cualquier fallo devuelve `"error"` (o `"vencida"`
+ * si el servidor la rechazo por plazo) y NO propaga, para
  * no dejar al alumno atrapado en el episodio por un problema de red. El caller
  * navega igual.
  */
@@ -88,8 +96,24 @@ export async function enviarEntregaAlSalir(
     await submitEntrega(entrega.id, artefactos, getToken)
     clearArtefactoDrafts(episodeId, [MONOLITHIC_ORDEN])
     return "enviada"
-  } catch {
+  } catch (e) {
+    // El plazo vencido se distingue del resto: el alumno tiene que enterarse de
+    // que su TP no se entrego (HU-016). Igual no se propaga: la salida no se
+    // bloquea, el caller decide como avisar.
+    if (esEntregaVencida(e)) return "vencida"
     // best-effort: no bloquear la navegacion si falla la creacion/envio.
     return "error"
   }
+}
+
+/**
+ * A donde va el alumno al salir de una TP de un solo ejercicio. Con la entrega
+ * rechazada por plazo, la home muestra el aviso que viaja en la URL (HU-016):
+ * sin `alert()` y sin trabar la salida.
+ */
+export function destinoAlSalir(resultado: ResultadoDeSalida): {
+  to: "/"
+  search: { aviso?: "plazo-vencido" }
+} {
+  return { to: "/", search: resultado === "vencida" ? { aviso: "plazo-vencido" } : {} }
 }

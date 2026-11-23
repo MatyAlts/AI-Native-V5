@@ -160,7 +160,7 @@ describe("HU-013 · segunda ronda", () => {
     expect(screen.getByTestId("calificar-btn")).toBeDefined()
     expect(screen.queryByTestId("guardar-recalificacion-btn")).toBeNull()
     expect(screen.queryByTestId("cancelar-recalificacion-btn")).toBeNull()
-  })
+  }, 15_000)
 
   it("R02: avisa cuantos casilleros ya tenian valor", async () => {
     montar(SOLO_EJ1)

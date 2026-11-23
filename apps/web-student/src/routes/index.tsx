@@ -14,17 +14,28 @@ import { Link, createFileRoute, useNavigate } from "@tanstack/react-router"
 import { BookOpenText, ClipboardCheck, LineChart, Plus, Sparkles } from "lucide-react"
 import { useEffect, useState } from "react"
 import { createPortal } from "react-dom"
+import { z } from "zod"
 import { MateriaCard } from "../components/MateriaCard"
 import { type MateriaInscripta, listMisMaterias } from "../lib/api"
+import { MENSAJE_ENTREGA_VENCIDA } from "../utils/mensajesPlazo"
 
 const ACTIVE_EPISODE_KEY = "active-episode-id"
 
+// `aviso` lo pone la salida de un episodio cuando la entrega automatica no se
+// pudo hacer (HU-016: `enviarEntregaAlSalir` devolvio "vencida"). Viaja en la
+// URL para que el aviso llegue a la pantalla de destino sin bloquear la salida.
+const searchSchema = z.object({
+  aviso: z.enum(["plazo-vencido"]).optional(),
+})
+
 export const Route = createFileRoute("/")({
+  validateSearch: searchSchema,
   component: HomePage,
 })
 
 function HomePage() {
   const navigate = useNavigate()
+  const { aviso } = Route.useSearch()
 
   useEffect(() => {
     if (typeof window === "undefined") return
@@ -41,12 +52,40 @@ function HomePage() {
   })
 
   return (
-    <HomeContent
-      isLoading={isLoading}
-      error={error ? String(error) : null}
-      materias={data ?? []}
-      onEnter={(materia) => navigate({ to: "/materia/$id", params: { id: materia.materia_id } })}
-    />
+    <>
+      {aviso === "plazo-vencido" && (
+        <AvisoEntregaVencida onClose={() => navigate({ to: "/", search: {}, replace: true })} />
+      )}
+      <HomeContent
+        isLoading={isLoading}
+        error={error ? String(error) : null}
+        materias={data ?? []}
+        onEnter={(materia) => navigate({ to: "/materia/$id", params: { id: materia.materia_id } })}
+      />
+    </>
+  )
+}
+
+/** Banda de advertencia no bloqueante, mismo patron que los avisos del episodio. */
+export function AvisoEntregaVencida({ onClose }: { onClose: () => void }) {
+  return (
+    <div className="px-6 pt-6">
+      <div
+        role="alert"
+        data-testid="aviso-entrega-vencida"
+        className="animate-fade-in-down max-w-3xl mx-auto flex items-start justify-between gap-3 rounded-lg border border-warning/40 bg-warning-soft px-4 py-3 text-sm text-warning"
+      >
+        <span className="leading-relaxed">{MENSAJE_ENTREGA_VENCIDA}</span>
+        <button
+          type="button"
+          onClick={onClose}
+          aria-label="Cerrar aviso"
+          className="press-shrink shrink-0 text-warning/80 hover:text-warning"
+        >
+          ×
+        </button>
+      </div>
+    </div>
   )
 }
 

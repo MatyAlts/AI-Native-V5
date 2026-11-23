@@ -86,6 +86,41 @@ async function authHeaders(getToken?: TokenGetter): Promise<Record<string, strin
   return headers
 }
 
+/**
+ * Error de una llamada al backend que conserva el `status` y el `detail` del
+ * servidor (HU-016). Antes `openEpisode`/`submitEntrega` tiraban un `Error` con
+ * el texto armado ("open episode failed: 403") y la UI lo mostraba crudo: el
+ * alumno no se enteraba de que habia vencido el plazo. El `message` sigue
+ * siendo tecnico (para logs); lo que ve el alumno sale de `utils/mensajesPlazo`.
+ */
+export class ApiError extends Error {
+  readonly status: number
+  /** Texto del servidor, solo si es un string legible (los 422 de pydantic son listas). */
+  readonly detail: string | null
+  constructor(operacion: string, status: number, detail: string | null) {
+    super(`${operacion} failed: ${status}${detail ? ` ${detail}` : ""}`)
+    this.name = "ApiError"
+    this.status = status
+    this.detail = detail
+  }
+}
+
+async function apiErrorDe(operacion: string, r: Response): Promise<ApiError> {
+  let detail: string | null = null
+  try {
+    const texto = await r.text()
+    try {
+      const body = JSON.parse(texto) as { detail?: unknown }
+      if (typeof body.detail === "string") detail = body.detail
+    } catch {
+      // cuerpo no JSON: sin detail, el mensaje para el alumno es el generico
+    }
+  } catch {
+    // sin cuerpo legible
+  }
+  return new ApiError(operacion, r.status, detail)
+}
+
 export async function openEpisode(
   req: OpenEpisodeRequest,
   getToken?: TokenGetter,
@@ -95,7 +130,7 @@ export async function openEpisode(
     headers: await authHeaders(getToken),
     body: JSON.stringify(req),
   })
-  if (!r.ok) throw new Error(`open episode failed: ${r.status}`)
+  if (!r.ok) throw await apiErrorDe("open episode", r)
   return r.json()
 }
 
@@ -1285,10 +1320,7 @@ export async function submitEntrega(
     headers: { ...(await authHeaders(getToken)), "Content-Type": "application/json" },
     body: JSON.stringify({ artefactos }),
   })
-  if (!r.ok) {
-    const body = await r.text()
-    throw new Error(`submit entrega failed: ${r.status} ${body}`)
-  }
+  if (!r.ok) throw await apiErrorDe("submit entrega", r)
   return (await r.json()) as Entrega
 }
 

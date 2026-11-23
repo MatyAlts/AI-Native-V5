@@ -340,6 +340,20 @@ async def submit_entrega(
             detail=f"No se puede enviar una entrega en estado '{entrega.estado}'",
         )
 
+    # Plazo (F18 de HU-014): con la TP vencida el servidor aceptaba la primera
+    # entrega igual. Va antes de cualquier escritura, incluida la reconciliación
+    # de `ejercicio_estados`, para que un 409 deje la entrega como estaba. Solo
+    # aplica a `draft`: una entrega `returned` la reabrió el docente a propósito
+    # (pidió corrección) y no tiene otra forma de habilitarla, así que se acepta
+    # aunque el plazo haya pasado.
+    if entrega.estado == "draft":
+        fecha_fin = await _fecha_fin_de_la_tp(db, entrega.tarea_practica_id)
+        if fecha_fin is not None and _ya_vencio(fecha_fin):
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="Venció el plazo de entrega de esta TP.",
+            )
+
     # Los ejercicios que la TP declara HOY. La entrega nace sembrada con
     # ellos, pero una TP puede haber sumado ejercicios después: si nos
     # quedamos con la lista guardada, un ejercicio agregado post-creación
@@ -1002,6 +1016,34 @@ async def _ejercicios_esperados(db: AsyncSession, tarea_practica_id: UUID) -> li
         {"tp": str(tarea_practica_id)},
     )
     return [{"orden": r[0], "ejercicio_id": str(r[1]) if r[1] else None} for r in rows.all()]
+
+
+async def _fecha_fin_de_la_tp(db: AsyncSession, tarea_practica_id: UUID) -> datetime | None:
+    """El `fecha_fin` de la TP, o `None` si no tiene plazo (o no es visible).
+
+    Mismo criterio que `_tp_metadata`: `tareas_practicas` es de academic-service
+    pero vive en `academic_main`, así que se lee por SQL crudo sin importar el
+    modelo. La columna es `timestamptz` y nullable: sin plazo no hay vencimiento.
+    Una TP borrada devuelve `None`; el resto del submit ya la rechaza por otro
+    lado (`_assert_comision_visible`).
+    """
+    rows = await db.execute(
+        text("SELECT fecha_fin FROM tareas_practicas WHERE id = :tp AND deleted_at IS NULL"),
+        {"tp": str(tarea_practica_id)},
+    )
+    fila = rows.first()
+    if fila is None or fila[0] is None:
+        return None
+    valor = fila[0]
+    return valor if isinstance(valor, datetime) else None
+
+
+def _ya_vencio(fecha_fin: datetime) -> bool:
+    """Compara con UTC. Un `fecha_fin` sin zona (no debería pasar con
+    `timestamptz`) se toma como UTC en vez de reventar al comparar."""
+    if fecha_fin.tzinfo is None:
+        fecha_fin = fecha_fin.replace(tzinfo=UTC)
+    return datetime.now(UTC) > fecha_fin
 
 
 async def _tp_metadata(

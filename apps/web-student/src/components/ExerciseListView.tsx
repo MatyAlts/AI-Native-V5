@@ -38,6 +38,7 @@ import { puedeEditarLaEntrega } from "../lib/entregaGuard"
 import { devolucionParcialVigente, estaBloqueado, ordenesACorregir } from "../lib/estaBloqueado"
 import { botonesDeDescarga, rotuloDescarga } from "../utils/descargas"
 import { buildEpisodioSourceFile } from "../utils/episodioDownload"
+import { mensajeAlEntregar } from "../utils/mensajesPlazo"
 import { archivoDeDescarga } from "../utils/trabajoCorregido"
 import { PedirAyudaBoton } from "./PedirAyudaModal"
 
@@ -374,7 +375,7 @@ export function ExerciseListView({
       setEntrega(updated)
       clearArtefactoDrafts(entrega.id, ordenes)
     } catch (e) {
-      setSubmitError(String(e))
+      setSubmitError(mensajeAlEntregar(e))
     } finally {
       setSubmitting(false)
     }
