@@ -59,6 +59,12 @@ export interface EditorFalso {
   getModel(): ModeloFalso
   executeEdits(fuente: string, ediciones: EdicionFalsa[]): boolean
   updateOptions(o: Record<string, unknown>): void
+  /** HU-032: decoraciones vigentes (el resaltado de la linea del paso a paso). */
+  __decoraciones: DecoracionFalsa[]
+  /** HU-032: lineas que se pidio mostrar, en orden. */
+  __lineasReveladas: number[]
+  createDecorationsCollection(d?: DecoracionFalsa[]): ColeccionDecoracionesFalsa
+  revealLineInCenterIfOutsideViewport(linea: number): void
   focus(): void
   dispose(): void
 }
@@ -77,6 +83,17 @@ export interface ModeloFalso {
    * del error de sintaxis o de ejecucion). */
   getLineCount(): number
   getLineMaxColumn(linea: number): number
+}
+
+/** Lo minimo de `IModelDeltaDecoration` que el editor usa. */
+export interface DecoracionFalsa {
+  range: { startLineNumber: number; endLineNumber: number }
+  options: Record<string, unknown>
+}
+
+export interface ColeccionDecoracionesFalsa {
+  set(d: DecoracionFalsa[]): void
+  clear(): void
 }
 
 export interface EdicionFalsa {
@@ -215,6 +232,29 @@ function create(_container: HTMLElement, opciones: Record<string, unknown>): Edi
       return true
     },
     updateOptions: () => {},
+    __decoraciones: [],
+    __lineasReveladas: [],
+    // Una coleccion como la de Monaco: `set` reemplaza las decoraciones que
+    // puso ESTA coleccion, `clear` las saca.
+    createDecorationsCollection: (iniciales: DecoracionFalsa[] = []) => {
+      let propias: DecoracionFalsa[] = []
+      const coleccion: ColeccionDecoracionesFalsa = {
+        set(d) {
+          editor.__decoraciones = editor.__decoraciones
+            .filter((x) => !propias.includes(x))
+            .concat(d)
+          propias = [...d]
+        },
+        clear() {
+          coleccion.set([])
+        },
+      }
+      coleccion.set(iniciales)
+      return coleccion
+    },
+    revealLineInCenterIfOutsideViewport: (linea: number) => {
+      editor.__lineasReveladas.push(linea)
+    },
     focus: () => {},
     dispose: () => {},
   }

@@ -42,6 +42,16 @@ export const helpContent: HelpContentMap = {
           codigo.
         </li>
         <li>
+          <strong>Paso a paso y prueba de escritorio (PSeInt):</strong> El boton Paso a paso corre
+          tu algoritmo de a una instruccion: el editor resalta la linea que sigue y arriba dice su
+          numero. Con Siguiente paso avanzas una instruccion; con Continuar llega hasta el final;
+          con Detener volves a editar. Cada condicion de un Si, Mientras o Repetir es un paso, y la
+          cabecera de un Para es un paso por vuelta. En la pestana Salida aparece la prueba de
+          escritorio: una fila por paso, con el valor de cada variable despues de ese paso y lo que
+          escribio. Una variable solo definida se ve vacia hasta que le asignas algo. Si cambias el
+          codigo, el paso a paso se detiene. No cuenta como una ejecucion ni como una prueba.
+        </li>
+        <li>
           <strong>Chat con el tutor:</strong> A la derecha. Enter envia. Shift+Enter agrega una
           linea.
         </li>

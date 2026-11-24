@@ -1,8 +1,12 @@
 import {
+  type Depurador,
   type ErrorPseint,
+  type EstadoDepuracion,
+  type FilaPrueba,
   VERSION as PSEINT_VERSION,
   type ResultadoEjecucion as ResultadoPseint,
   construirDiagramas,
+  crearDepurador,
   ejecutar as ejecutarPseint,
   ejecutarConEntrada as ejecutarPseintConEntrada,
 } from "@platform/pseint"
@@ -30,7 +34,18 @@ import { DiagramaFlujo, Modal } from "@platform/ui"
  *    TimeoutError. Solo cubre loops a nivel Python — una única llamada C
  *    larga (ej. 10**10**8) no dispara trace events y no es interrumpible.
  */
-import { FlaskConical, Maximize2, Minimize2, Minus, Plus, RotateCcw } from "lucide-react"
+import {
+  FastForward,
+  FlaskConical,
+  Footprints,
+  Maximize2,
+  Minimize2,
+  Minus,
+  Plus,
+  RotateCcw,
+  Square,
+  StepForward,
+} from "lucide-react"
 import type * as Monaco from "monaco-editor"
 import type { editor as MonacoEditor } from "monaco-editor"
 import {
@@ -204,6 +219,21 @@ const LANGUAGES_RUNTIME_LOCAL: readonly Language[] = ["python", "pseint"]
 
 /** HU-031: espera desde la ultima tecla hasta redibujar el diagrama. */
 const DIAGRAMA_DEBOUNCE_MS = 500
+
+/**
+ * HU-032: tope de instrucciones del paso a paso. Mas bajo que el de Ejecutar
+ * porque cada paso guarda una fila de la prueba de escritorio: un ciclo
+ * infinito con "Continuar" cortaria recien a los 2 millones de filas.
+ */
+const MAX_PASOS_PASO_A_PASO = 100_000
+
+/** HU-032: una sesion de paso a paso. `id` distingue una sesion vieja que sigue corriendo. */
+interface SesionPasoAPaso {
+  id: number
+  depurador: Depurador
+  estado: EstadoDepuracion
+  filas: FilaPrueba[]
+}
 
 /** Arma el error que ve el alumno (y que viaja al CTR) de una corrida PSeInt. */
 function errorDePseint(r: ResultadoPseint): string | null {
@@ -397,6 +427,14 @@ export function CodeEditor({
     esPseint && construirDiagramas(initialCode).ok ? initialCode : null,
   )
   const [diagramaError, setDiagramaError] = useState<ErrorPseint | null>(null)
+  // HU-032: paso a paso con prueba de escritorio. El ref es el espejo sincrono
+  // (lo leen el listener de edicion de Monaco y las promesas en vuelo).
+  const [sesionPaso, setSesionPaso] = useState<SesionPasoAPaso | null>(null)
+  const sesionPasoRef = useRef<SesionPasoAPaso | null>(null)
+  const [pasoOcupado, setPasoOcupado] = useState(false)
+  const pasoOcupadoRef = useRef(false)
+  const contadorSesionesRef = useRef(0)
+  const decoracionesPasoRef = useRef<MonacoEditor.IEditorDecorationsCollection | null>(null)
   useEffect(() => {
     if (!esPseint) return
     const t = setTimeout(() => {
@@ -903,6 +941,12 @@ export function CodeEditor({
       editor.onDidChangeModelContent(() => {
         const value = editor.getValue()
         setCode(value)
+        // HU-032 (N04): editar detiene el paso a paso; no se sigue con un
+        // codigo que ya no es el que se ve.
+        if (sesionPasoRef.current) {
+          sesionPasoRef.current = null
+          setSesionPaso(null)
+        }
         // Espejo en el caller para que un re-montaje re-siembre con ESTE buffer
         // y no con el de hace media hora. Se dispara SOLO desde un cambio real
         // del modelo: la siembra de `editor.create` no pasa por aca, asi que un
@@ -950,6 +994,8 @@ export function CodeEditor({
         ?.__clipboardListeners
       cleanup?.()
       editorRef.current?.dispose?.()
+      // Las decoraciones del paso a paso eran de ESTE editor (HU-032).
+      decoracionesPasoRef.current = null
     }
   }, [language, flushEdicionPendiente])
 
@@ -1742,8 +1788,12 @@ def __tutor_run_tests(student_code, cases_json):
    * el programa escribio desde el ultimo dato), y la salida llega a la consola
    * a medida que se escribe. No llama al servidor.
    */
-  const runCodePseint = async () => {
-    setRunning(true)
+  /**
+   * Consola y `Leer` de PSeInt: los comparten Ejecutar y el paso a paso
+   * (HU-032, C09: el mismo dialogo). `vigente` corta la salida de una sesion
+   * de paso a paso que ya se detuvo.
+   */
+  const reiniciarConsolaPseint = () => {
     setOutput("")
     outputBufferRef.current = ""
     outputMostradoRef.current = 0
@@ -1751,8 +1801,10 @@ def __tutor_run_tests(student_code, cases_json):
     setViewingRunId(null)
     setOutputTab("consola")
     clearErrorMarkers()
-    const started = performance.now()
+  }
+  const entradaSalidaPseint = (vigente: () => boolean = () => true) => {
     const escribir = (texto: string) => {
+      if (!vigente()) return
       outputBufferRef.current += texto
       setOutput((prev) => `${prev}${texto}`)
     }
@@ -1761,6 +1813,7 @@ def __tutor_run_tests(student_code, cases_json):
       // pagina, y sin esto React no alcanza a pintar lo que el algoritmo
       // escribio antes del `Leer`.
       await new Promise((resolve) => window.setTimeout(resolve, 0))
+      if (!vigente()) throw new Error("detenido")
       const pendiente = outputBufferRef.current.slice(outputMostradoRef.current).trim()
       const valor = window.prompt(armarMensajeDeInput(pendiente, ""))
       if (valor === null) {
@@ -1775,6 +1828,15 @@ def __tutor_run_tests(student_code, cases_json):
       outputMostradoRef.current = outputBufferRef.current.length
       return valor
     }
+    return { leer, escribir }
+  }
+
+  const runCodePseint = async () => {
+    cerrarPasoAPaso()
+    setRunning(true)
+    reiniciarConsolaPseint()
+    const started = performance.now()
+    const { leer, escribir } = entradaSalidaPseint()
     try {
       const r = await ejecutarPseint(code, { leer, escribir })
       const elapsed = performance.now() - started
@@ -1802,7 +1864,102 @@ def __tutor_run_tests(student_code, cases_json):
    * normalizacion que usan Python y el servidor. Como en Python, el conteo lo
    * emite el frontend via `onTestsRun`.
    */
+  /**
+   * HU-032: paso a paso con prueba de escritorio. Corre en el navegador con
+   * el mismo interprete que Ejecutar, pero NO avisa `onCodeExecuted` ni
+   * `onTestsRun` (N03): no entra a los datos del estudio.
+   */
+  const cerrarPasoAPaso = () => {
+    sesionPasoRef.current = null
+    setSesionPaso(null)
+  }
+
+  const mostrarFinPasoAPaso = (estado: EstadoDepuracion) => {
+    const r = estado.resultado
+    const errMsg = r ? errorDePseint(r) : null
+    if (errMsg && r?.error) {
+      setError(errMsg)
+      setErrorMarkerAtLine(r.error.linea, r.error.mensaje)
+    }
+  }
+
+  const iniciarPasoAPaso = () => {
+    if (running || testing || sesionPasoRef.current) return
+    reiniciarConsolaPseint()
+    contadorSesionesRef.current += 1
+    const id = contadorSesionesRef.current
+    const { leer, escribir } = entradaSalidaPseint(() => sesionPasoRef.current?.id === id)
+    const r = crearDepurador(code, { leer, escribir, maxPasos: MAX_PASOS_PASO_A_PASO })
+    if (!r.ok) {
+      // N02: con un error de sintaxis no arranca y dice la linea.
+      setError(`Línea ${r.error.linea}: ${r.error.mensaje}`)
+      setErrorMarkerAtLine(r.error.linea, r.error.mensaje)
+      return
+    }
+    const sesion: SesionPasoAPaso = {
+      id,
+      depurador: r.depurador,
+      estado: r.depurador.estado(),
+      filas: [],
+    }
+    sesionPasoRef.current = sesion
+    setSesionPaso(sesion)
+    if (sesion.estado.terminado) mostrarFinPasoAPaso(sesion.estado)
+  }
+
+  const avanzarPasoAPaso = async (hastaElFinal: boolean) => {
+    const sesion = sesionPasoRef.current
+    if (!sesion || pasoOcupadoRef.current || sesion.estado.terminado) return
+    pasoOcupadoRef.current = true
+    setPasoOcupado(true)
+    try {
+      const estado = hastaElFinal
+        ? await sesion.depurador.continuar()
+        : await sesion.depurador.paso()
+      // Se detuvo (o se edito el codigo) mientras corria: no se pisa nada.
+      if (sesionPasoRef.current?.id !== sesion.id) return
+      const nueva: SesionPasoAPaso = { ...sesion, estado, filas: [...sesion.depurador.filas()] }
+      sesionPasoRef.current = nueva
+      setSesionPaso(nueva)
+      if (estado.terminado) mostrarFinPasoAPaso(estado)
+    } finally {
+      pasoOcupadoRef.current = false
+      setPasoOcupado(false)
+    }
+  }
+
+  // HU-032: resalta en Monaco la linea de la proxima instruccion.
+  const lineaPaso = sesionPaso && !sesionPaso.estado.terminado ? sesionPaso.estado.linea : null
+  useEffect(() => {
+    const editor = editorRef.current
+    if (!editor) return
+    if (lineaPaso === null) {
+      decoracionesPasoRef.current?.clear()
+      return
+    }
+    if (!decoracionesPasoRef.current) {
+      decoracionesPasoRef.current = editor.createDecorationsCollection()
+    }
+    decoracionesPasoRef.current.set([
+      {
+        range: {
+          startLineNumber: lineaPaso,
+          startColumn: 1,
+          endLineNumber: lineaPaso,
+          endColumn: 1,
+        },
+        options: {
+          isWholeLine: true,
+          className: "pseint-linea-actual",
+          linesDecorationsClassName: "pseint-linea-actual-margen",
+        },
+      },
+    ])
+    editor.revealLineInCenterIfOutsideViewport(lineaPaso)
+  }, [lineaPaso])
+
   const runTestsPseint = async () => {
+    cerrarPasoAPaso()
     setTesting(true)
     setOutputTab("pruebas")
     clearErrorMarkers()
@@ -2136,6 +2293,22 @@ def __tutor_run_tests(student_code, cases_json):
             </button>
           )}
 
+          {/* HU-032: paso a paso con prueba de escritorio (solo PSeInt). No
+              emite al CTR: es para entender el algoritmo, no una corrida. */}
+          {esPseint && !sesionPaso && (
+            <button
+              type="button"
+              onClick={iniciarPasoAPaso}
+              disabled={running || testing}
+              data-testid="paso-a-paso-button"
+              title="Ejecutar una instrucción por vez y ver la prueba de escritorio"
+              className="inline-flex items-center gap-1.5 rounded-md border border-accent-brand/40 bg-accent-brand/5 px-3 py-1.5 text-sm font-medium text-accent-brand transition-colors hover:bg-accent-brand/10 disabled:opacity-50 disabled:cursor-not-allowed focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent-brand/40"
+            >
+              <Footprints className="h-4 w-4" aria-hidden="true" />
+              <span>Paso a paso</span>
+            </button>
+          )}
+
           {/* Ejecutar (corrida interactiva — emite codigo_ejecutado) */}
           <button
             type="button"
@@ -2211,6 +2384,17 @@ def __tutor_run_tests(student_code, cases_json):
           </button>
         </div>
       </div>
+
+      {/* HU-032: controles del paso a paso, debajo de la barra del editor. */}
+      {sesionPaso && (
+        <BarraPasoAPaso
+          estado={sesionPaso.estado}
+          ocupado={pasoOcupado}
+          onPaso={() => void avanzarPasoAPaso(false)}
+          onContinuar={() => void avanzarPasoAPaso(true)}
+          onDetener={cerrarPasoAPaso}
+        />
+      )}
 
       {/* Toast naranja cuando se intenta usar el clipboard (auto-oculta en 4s). */}
       {clipboardWarning && (
@@ -2428,11 +2612,12 @@ def __tutor_run_tests(student_code, cases_json):
                     <span>{remoteWait}</span>
                   </div>
                 )}
+                {sesionPaso && !viewingRun && <PruebaDeEscritorio filas={sesionPaso.filas} />}
                 {consoleOutput && <pre className="whitespace-pre-wrap">{consoleOutput}</pre>}
                 {consoleError && (
                   <pre className="whitespace-pre-wrap text-danger">{consoleError}</pre>
                 )}
-                {!consoleOutput && !consoleError && !running && (
+                {!consoleOutput && !consoleError && !running && !sesionPaso && (
                   <span className="text-muted">
                     {!hasRuntime
                       ? `Todavía no hay entorno de ejecución de ${languageLabel}. Podés escribir código y trabajarlo con el tutor: tus ediciones se registran igual.`
@@ -2691,6 +2876,170 @@ function TestKV({
           <span className="ml-2 font-sans text-[10px] not-italic text-muted-soft">({nota})</span>
         )}
       </dd>
+    </div>
+  )
+}
+
+/**
+ * HU-032: indicador de la proxima instruccion y controles del paso a paso.
+ * La linea va en texto (no solo resaltada en el editor) para que se lea con
+ * lector de pantalla y sin depender del color.
+ */
+function BarraPasoAPaso({
+  estado,
+  ocupado,
+  onPaso,
+  onContinuar,
+  onDetener,
+}: {
+  estado: EstadoDepuracion
+  ocupado: boolean
+  onPaso: () => void
+  onContinuar: () => void
+  onDetener: () => void
+}) {
+  const terminado = estado.terminado
+  const conError = terminado && estado.resultado?.estado !== "ok"
+  const boton =
+    "inline-flex items-center gap-1.5 rounded-md border border-border-soft bg-surface px-2.5 py-1 text-xs font-medium text-ink transition-colors hover:bg-surface-alt disabled:opacity-50 disabled:cursor-not-allowed focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent-brand/40"
+  return (
+    <div
+      role="toolbar"
+      aria-label="Paso a paso"
+      className="flex flex-wrap items-center gap-2 border-b border-border-soft bg-accent-brand/5 px-3 py-1.5"
+    >
+      <p aria-live="polite" className="mr-auto text-xs text-body">
+        {terminado ? (
+          <span className={conError ? "font-medium text-danger" : "font-medium text-success"}>
+            {conError ? "El algoritmo se detuvo con un error." : "El algoritmo terminó."}
+          </span>
+        ) : (
+          <>
+            <span className="text-muted">Próxima instrucción: </span>
+            <span className="font-semibold tabular-nums text-ink">Línea {estado.linea}</span>
+            <span className="text-muted"> · en {estado.ambito}</span>
+          </>
+        )}
+      </p>
+      <button
+        type="button"
+        onClick={onPaso}
+        disabled={terminado || ocupado}
+        title="Ejecutar la próxima instrucción"
+        className={boton}
+      >
+        <StepForward className="h-3.5 w-3.5" aria-hidden="true" />
+        Siguiente paso
+      </button>
+      <button
+        type="button"
+        onClick={onContinuar}
+        disabled={terminado || ocupado}
+        title="Ejecutar hasta el final"
+        className={boton}
+      >
+        <FastForward className="h-3.5 w-3.5" aria-hidden="true" />
+        Continuar
+      </button>
+      <button type="button" onClick={onDetener} className={boton}>
+        <Square className="h-3.5 w-3.5" aria-hidden="true" />
+        {terminado ? "Cerrar paso a paso" : "Detener"}
+      </button>
+    </div>
+  )
+}
+
+/** Filas de la prueba de escritorio que se muestran (las ultimas). */
+const FILAS_VISIBLES = 500
+
+/**
+ * HU-032: la prueba de escritorio como tabla. Una columna por variable (en el
+ * orden en que aparecieron) y una fila por paso, con los valores DESPUES del
+ * paso y lo que escribio. Todas las celdas son `td` para que los encabezados
+ * de columna se lean alineados con sus valores.
+ */
+function PruebaDeEscritorio({ filas }: { filas: FilaPrueba[] }) {
+  const variables: string[] = []
+  const vistas = new Set<string>()
+  for (const f of filas) {
+    for (const nombre of Object.keys(f.valores)) {
+      if (!vistas.has(nombre)) {
+        vistas.add(nombre)
+        variables.push(nombre)
+      }
+    }
+  }
+  const ambitos = new Set(filas.map((f) => f.ambito))
+  const conAmbito = ambitos.size > 1
+  const visibles = filas.length > FILAS_VISIBLES ? filas.slice(-FILAS_VISIBLES) : filas
+  const ultimaRef = useRef<HTMLTableRowElement | null>(null)
+  const cantidad = filas.length
+  useEffect(() => {
+    if (cantidad > 0) ultimaRef.current?.scrollIntoView?.({ block: "nearest" })
+  }, [cantidad])
+  const thBase = "sticky top-0 bg-ink px-2 py-1 text-left font-semibold text-muted-soft"
+  const th = `${thBase} text-[10px] uppercase tracking-wider`
+  // Los nombres de variable se ven tal cual los escribio el alumno.
+  const thVariable = `${thBase} text-[11px] font-mono`
+  return (
+    <div className="mb-3 max-h-64 overflow-auto rounded border border-white/10">
+      <table aria-label="Prueba de escritorio" className="w-full border-collapse font-mono text-xs">
+        <thead>
+          <tr className="border-b border-white/10">
+            <th scope="col" className={th}>
+              Paso
+            </th>
+            <th scope="col" className={th}>
+              Línea
+            </th>
+            {conAmbito && (
+              <th scope="col" className={th}>
+                Ámbito
+              </th>
+            )}
+            {variables.map((v) => (
+              <th key={v} scope="col" className={thVariable}>
+                {v}
+              </th>
+            ))}
+            <th scope="col" className={th}>
+              Salida
+            </th>
+          </tr>
+        </thead>
+        <tbody>
+          {filas.length === 0 && (
+            <tr>
+              <td colSpan={variables.length + (conAmbito ? 4 : 3)} className="px-2 py-2 text-muted">
+                Tocá «Siguiente paso»: cada fila muestra cómo quedan las variables después de una
+                instrucción.
+              </td>
+            </tr>
+          )}
+          {visibles.map((f, i) => (
+            <tr
+              key={f.paso}
+              ref={i === visibles.length - 1 ? ultimaRef : undefined}
+              className="border-b border-white/5 text-surface"
+            >
+              <td className="px-2 py-0.5 tabular-nums text-muted">{f.paso}</td>
+              <td className="px-2 py-0.5 tabular-nums text-muted">{f.linea}</td>
+              {conAmbito && <td className="px-2 py-0.5 text-muted">{f.ambito}</td>}
+              {variables.map((v) => (
+                <td key={v} className="px-2 py-0.5 tabular-nums">
+                  {f.valores[v] ?? ""}
+                </td>
+              ))}
+              <td className="whitespace-pre-wrap px-2 py-0.5">{f.salida.replace(/\n$/, "")}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+      {filas.length > FILAS_VISIBLES && (
+        <p className="px-2 py-1 text-[11px] text-muted">
+          Se muestran los últimos {FILAS_VISIBLES} pasos de {filas.length}.
+        </p>
+      )}
     </div>
   )
 }

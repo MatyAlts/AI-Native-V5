@@ -89,3 +89,14 @@ pre {
     line-height: 1.3;
   }
 }
+
+/* HU-032: linea de la proxima instruccion del paso a paso en Monaco (tema
+   oscuro). Fondo suave del acento de marca y una barra en el margen, para que
+   no dependa solo del color. */
+.pseint-linea-actual {
+  background-color: color-mix(in oklab, var(--color-accent-brand) 28%, transparent);
+}
+.pseint-linea-actual-margen {
+  border-left: 3px solid var(--color-accent-brand);
+  margin-left: 3px;
+}
