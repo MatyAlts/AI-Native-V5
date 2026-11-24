@@ -1,6 +1,16 @@
+import {
+  VERSION as PSEINT_VERSION,
+  type ResultadoEjecucion as ResultadoPseint,
+  ejecutar as ejecutarPseint,
+  ejecutarConEntrada as ejecutarPseintConEntrada,
+} from "@platform/pseint"
 import { Modal } from "@platform/ui"
 /**
  * Editor de código con Monaco + ejecución Python en Pyodide.
+ *
+ * PSeInt (HU-030) también corre en el navegador, con el intérprete propio de
+ * `@platform/pseint` (no carga Pyodide). Su `Leer` pide el dato con el mismo
+ * diálogo que el `input()` de Python.
  *
  * Pyodide corre Python completo en el navegador vía WebAssembly. Se
  * carga desde CDN la primera vez (~6 MB) y queda cacheado.
@@ -42,12 +52,14 @@ import {
   type TestCasePublic,
   type TokenGetter,
 } from "../lib/api"
+import { salidaCoincide } from "../lib/comparacionSalida"
 import { mensajeDeCorrida } from "../lib/corridaRemota"
 import { type PasteOrigen, resolverEdicionPendiente } from "../lib/edicionPendiente"
 import { armarMensajeDeInput } from "../lib/inputDialogo"
 import { parseJavaError } from "../lib/javaError"
 import { registerJavaSnippets } from "../lib/javaSnippets"
 import { describirDiferencia, primeraDiferencia } from "../lib/primeraDiferencia"
+import { registerPseintSnippets, registrarLenguajePseint } from "../lib/pseintSnippets"
 import { extractPyodideErrorLine, extractPyodideErrorLineNumber } from "../lib/pyodideError"
 import { registerPythonSnippets } from "../lib/pythonSnippets"
 import { runRemote } from "../lib/runRemote"
@@ -70,6 +82,9 @@ declare global {
 }
 
 const PYODIDE_VERSION = "0.26.3"
+/** Runtime que viaja al CTR en `codigo_ejecutado` (HU-030, C09). */
+const RUNTIME_PYODIDE = "pyodide-0.26"
+const RUNTIME_PSEINT = `pseint-ts-${PSEINT_VERSION}`
 const PYODIDE_URL = `https://cdn.jsdelivr.net/pyodide/v${PYODIDE_VERSION}/full/`
 
 // Fix plataforma 2026-06-10 #1: presupuesto de ejecución del código del
@@ -92,6 +107,10 @@ export interface CodeEditorProps {
     output: string
     error: string | null
     durationMs: number
+    /** Motor que corrió el código, para el CTR: `pyodide-0.26` (Python) o
+     * `pseint-ts-X.Y.Z` (PSeInt). Sin valor en un lenguaje remoto: el
+     * tutor-service deja su default. */
+    runtime?: string
   }) => void
   /** Callback de edición con debouncing de 1s. Recibe el snapshot actual
    * del buffer, `diffChars` = delta de caracteres respecto a la última
@@ -174,11 +193,17 @@ export interface CodeEditorProps {
 }
 
 /**
- * Lenguajes que corren EN EL NAVEGADOR (Pyodide). Instantaneos y gratis.
+ * Lenguajes que corren EN EL NAVEGADOR. Instantaneos y gratis.
  *
- * Python sigue acá y no se toca: no hay razon para mandarlo al servidor.
+ * Python (Pyodide) sigue acá y no se toca: no hay razon para mandarlo al
+ * servidor. PSeInt (HU-030) corre con su interprete propio, sin Pyodide.
  */
-const LANGUAGES_RUNTIME_LOCAL: readonly Language[] = ["python"]
+const LANGUAGES_RUNTIME_LOCAL: readonly Language[] = ["python", "pseint"]
+
+/** Arma el error que ve el alumno (y que viaja al CTR) de una corrida PSeInt. */
+function errorDePseint(r: ResultadoPseint): string | null {
+  return r.error ? `Línea ${r.error.linea}: ${r.error.mensaje}` : null
+}
 
 /**
  * Lenguajes que corren EN EL SERVIDOR (ADR-059).
@@ -312,6 +337,10 @@ export function CodeEditor({
   // acá, para que no vuelva a pasar que el efecto salga temprano y el boton
   // quede habilitado igual.
   const isLocal = LANGUAGES_RUNTIME_LOCAL.includes(language)
+  // De los locales, solo Python carga Pyodide (~6 MB). PSeInt tiene su propio
+  // interprete, ya incluido en el bundle.
+  const usaPyodide = language === "python"
+  const esPseint = language === "pseint"
   // Un lenguaje remoto sin `ejercicioId` NO es ejecutable: el servicio necesita
   // la definicion del ejercicio para inyectar los casos ocultos.
   const isRemoto = LANGUAGES_RUNTIME_REMOTO.includes(language) && Boolean(ejercicioId)
@@ -341,7 +370,9 @@ export function CodeEditor({
   const [code, setCode] = useState(initialCode)
   const [output, setOutput] = useState<string>("")
   const [error, setError] = useState<string | null>(null)
-  const [loading, setLoading] = useState(true)
+  // Solo Python carga un runtime (Pyodide): los textos "Cargando Python..."
+  // dependen de este estado, asi que PSeInt y los remotos arrancan sin carga.
+  const [loading, setLoading] = useState(usaPyodide)
   const [running, setRunning] = useState(false)
   // ED-8: segundos transcurridos cargando Pyodide (para mostrar progreso vivo
   // en vez de una pantalla muerta durante los ~6 MB del primer load).
@@ -549,6 +580,8 @@ export function CodeEditor({
       const monaco = await import(/* @vite-ignore */ "monaco-editor")
       if (disposed || !editorContainerRef.current) return
       monacoRef.current = monaco
+      // Monaco no trae PSeInt: se registra antes de crear el modelo.
+      registrarLenguajePseint(monaco)
 
       const editor = monaco.editor.create(editorContainerRef.current, {
         value: code,
@@ -917,6 +950,8 @@ export function CodeEditor({
       }
       disposables.push(registerJavaSnippets(monaco, marcarSnippet))
       disposables.push(registerPythonSnippets(monaco, marcarSnippet))
+      registrarLenguajePseint(monaco)
+      disposables.push(registerPseintSnippets(monaco, marcarSnippet))
     })()
     return () => {
       cancelled = true
@@ -940,10 +975,10 @@ export function CodeEditor({
     return () => window.clearInterval(t)
   }, [loading])
 
-  // 2. Cargar Pyodide en background — SOLO para lenguajes que corren local.
-  //    Un lenguaje remoto no necesita los ~6 MB de Pyodide en el navegador.
+  // 2. Cargar Pyodide en background — SOLO para Python. Un lenguaje remoto, o
+  //    PSeInt (que tiene su propio interprete), no necesita los ~6 MB.
   useEffect(() => {
-    if (!isLocal) {
+    if (!usaPyodide) {
       setLoading(false)
       return
     }
@@ -1366,7 +1401,7 @@ def __tutor_run_tests(student_code, cases_json):
     return () => {
       cancelled = true
     }
-  }, [isLocal])
+  }, [usaPyodide])
 
   // ED-4: pintar / limpiar markers de error en la linea exacta del editor.
   function clearErrorMarkers() {
@@ -1618,6 +1653,10 @@ def __tutor_run_tests(student_code, cases_json):
       await runCodeRemoto()
       return
     }
+    if (esPseint) {
+      await runCodePseint()
+      return
+    }
     if (!pyodideRef.current) return
     setRunning(true)
     setOutput("")
@@ -1642,7 +1681,13 @@ def __tutor_run_tests(student_code, cases_json):
       // outputBufferRef (no el state `output`, que es stale por el closure)
       // tiene la salida real acumulada que viaja en el evento CTR codigo_ejecutado.
       pushRunHistory(true, elapsed, outputBufferRef.current, null)
-      onCodeExecuted?.({ code, output: outputBufferRef.current, error: null, durationMs: elapsed })
+      onCodeExecuted?.({
+        code,
+        output: outputBufferRef.current,
+        error: null,
+        durationMs: elapsed,
+        runtime: RUNTIME_PYODIDE,
+      })
     } catch (e) {
       // Mostramos SOLO la última línea de excepción del traceback (ver
       // extractPyodideErrorLine), nunca el stack completo de Pyodide. El CTR
@@ -1657,9 +1702,113 @@ def __tutor_run_tests(student_code, cases_json):
         output: outputBufferRef.current,
         error: errMsg,
         durationMs: elapsed,
+        runtime: RUNTIME_PYODIDE,
       })
     } finally {
       setRunning(false)
+    }
+  }
+
+  /**
+   * "Ejecutar" de PSeInt (HU-030, C03): corre en el navegador con el
+   * interprete de `@platform/pseint`. Cada `Leer` pide el dato en el momento
+   * con el MISMO dialogo que el `input()` de Python (`window.prompt` con lo que
+   * el programa escribio desde el ultimo dato), y la salida llega a la consola
+   * a medida que se escribe. No llama al servidor.
+   */
+  const runCodePseint = async () => {
+    setRunning(true)
+    setOutput("")
+    outputBufferRef.current = ""
+    outputMostradoRef.current = 0
+    setError(null)
+    setViewingRunId(null)
+    setOutputTab("consola")
+    clearErrorMarkers()
+    const started = performance.now()
+    const escribir = (texto: string) => {
+      outputBufferRef.current += texto
+      setOutput((prev) => `${prev}${texto}`)
+    }
+    const leer = async (): Promise<string> => {
+      // Un turno del event loop antes del dialogo: `window.prompt` congela la
+      // pagina, y sin esto React no alcanza a pintar lo que el algoritmo
+      // escribio antes del `Leer`.
+      await new Promise((resolve) => window.setTimeout(resolve, 0))
+      const pendiente = outputBufferRef.current.slice(outputMostradoRef.current).trim()
+      const valor = window.prompt(armarMensajeDeInput(pendiente, ""))
+      if (valor === null) {
+        // Cancelar corta la ejecucion (como en Python): el interprete lo
+        // convierte en un error de ejecucion en la linea del `Leer`.
+        escribir("[Cancelaste el pedido de dato. La ejecución se detuvo.]\n")
+        outputMostradoRef.current = outputBufferRef.current.length
+        throw new Error("cancelado")
+      }
+      // Eco del dato, como una consola real.
+      escribir(`${valor}\n`)
+      outputMostradoRef.current = outputBufferRef.current.length
+      return valor
+    }
+    try {
+      const r = await ejecutarPseint(code, { leer, escribir })
+      const elapsed = performance.now() - started
+      const errMsg = errorDePseint(r)
+      if (errMsg && r.error) {
+        setError(errMsg)
+        setErrorMarkerAtLine(r.error.linea, r.error.mensaje)
+      }
+      pushRunHistory(errMsg === null, elapsed, outputBufferRef.current, errMsg)
+      onCodeExecuted?.({
+        code,
+        output: outputBufferRef.current,
+        error: errMsg,
+        durationMs: elapsed,
+        runtime: RUNTIME_PSEINT,
+      })
+    } finally {
+      setRunning(false)
+    }
+  }
+
+  /**
+   * "Probar" de PSeInt (HU-030, C05): corre los casos visibles en el navegador
+   * con la entrada por adelantado, y compara con `salidaCoincide`, la misma
+   * normalizacion que usan Python y el servidor. Como en Python, el conteo lo
+   * emite el frontend via `onTestsRun`.
+   */
+  const runTestsPseint = async () => {
+    setTesting(true)
+    setOutputTab("pruebas")
+    clearErrorMarkers()
+    const started = performance.now()
+    try {
+      const resultados: TestCaseResult[] = []
+      for (const tc of publicTestCases) {
+        const tipoEjecutable = (tc.type ?? "stdin_stdout") === "stdin_stdout"
+        const r = tipoEjecutable ? await ejecutarPseintConEntrada(code, tc.code ?? "") : null
+        const errMsg = r
+          ? errorDePseint(r)
+          : "Este tipo de caso no se puede correr en PSeInt: solo entrada y salida."
+        if (r?.estado === "error_sintaxis" && r.error) {
+          setErrorMarkerAtLine(r.error.linea, r.error.mensaje)
+        }
+        resultados.push({
+          id: tc.id ?? null,
+          name: tc.name ?? null,
+          type: "stdin_stdout",
+          passed: r !== null && errMsg === null && salidaCoincide(r.salida, tc.expected ?? null),
+          expected: tc.expected ?? null,
+          actual: r?.salida ?? "",
+          comparacion: r?.salida ?? "",
+          stdin: tc.code ?? "",
+          error: errMsg,
+        })
+      }
+      setTestResults(resultados)
+      const durationMs = performance.now() - started
+      onTestsRunRef.current?.({ ...contarTests(resultados), durationMs })
+    } finally {
+      setTesting(false)
     }
   }
 
@@ -1761,6 +1910,10 @@ def __tutor_run_tests(student_code, cases_json):
     // es true para Java) y no pasaba absolutamente nada al apretarlo.
     if (isRemoto) {
       await runTestsRemoto()
+      return
+    }
+    if (esPseint) {
+      await runTestsPseint()
       return
     }
     if (!pyodideRef.current) return

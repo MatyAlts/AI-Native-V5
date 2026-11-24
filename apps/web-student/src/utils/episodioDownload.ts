@@ -30,7 +30,7 @@ export interface EpisodioSourceMeta {
 export interface BuildEpisodioSourceFileInput {
   code: string | null
   messages: EpisodioMensaje[]
-  language: "python" | "java" | string | null | undefined
+  language: "python" | "java" | "pseint" | string | null | undefined
   meta: EpisodioSourceMeta
 }
 
@@ -44,13 +44,16 @@ interface LenguajeConfig {
   comentario: string
 }
 
-const LENGUAJES: Record<"python" | "java", LenguajeConfig> = {
+const LENGUAJES: Record<"python" | "java" | "pseint", LenguajeConfig> = {
   python: { extension: "py", comentario: "#" },
   java: { extension: "java", comentario: "//" },
+  // PSeInt comenta con `//`, igual que Java (HU-030).
+  pseint: { extension: "psc", comentario: "//" },
 }
 
+/** Un lenguaje conocido usa su configuracion; uno desconocido (o nulo), la de Python. */
 function resolverLenguaje(language: BuildEpisodioSourceFileInput["language"]): LenguajeConfig {
-  return language === "java" ? LENGUAJES.java : LENGUAJES.python
+  return language === "java" || language === "pseint" ? LENGUAJES[language] : LENGUAJES.python
 }
 
 /** Slug legible y seguro para filename: minusculas, solo [a-z0-9-]. */

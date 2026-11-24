@@ -73,6 +73,10 @@ export interface SeleccionFalsa {
 export interface ModeloFalso {
   getValueInRange(sel: SeleccionFalsa | null): string
   getFullModelRange(): SeleccionFalsa
+  /** Para los marcadores de error en una linea (HU-030: PSeInt marca la linea
+   * del error de sintaxis o de ejecucion). */
+  getLineCount(): number
+  getLineMaxColumn(linea: number): number
 }
 
 export interface EdicionFalsa {
@@ -109,6 +113,12 @@ export const lenguajesConSnippets: string[] = []
  * el alumno y ningun test se enteraba.
  */
 export const comandosRegistrados = new Map<string, () => void>()
+
+/**
+ * Lenguajes registrados con `monaco.languages.register` (HU-030: PSeInt no
+ * viene con Monaco y el editor lo registra antes de crear el modelo).
+ */
+export const lenguajesRegistrados: string[] = []
 
 /** Simula que el alumno acepto una sugerencia de snippet. Hay un id por
  * lenguaje: `aiNative.pythonSnippetAccepted` / `aiNative.javaSnippetAccepted`. */
@@ -175,6 +185,8 @@ function create(_container: HTMLElement, opciones: Record<string, unknown>): Edi
     getModel: () => ({
       getValueInRange: (sel: SeleccionFalsa | null) => sel?.texto ?? "",
       getFullModelRange: () => ({ texto: valor }),
+      getLineCount: () => valor.split("\n").length,
+      getLineMaxColumn: (linea: number) => (valor.split("\n")[linea - 1]?.length ?? 0) + 1,
     }),
     /**
      * Aplica la edicion al buffer y notifica, como hace Monaco real.
@@ -225,6 +237,12 @@ export const KeyMod = { CtrlCmd: 2048 }
 export const KeyCode = { KeyV: 52, KeyC: 33, KeyX: 54, Enter: 3 }
 export const MarkerSeverity = { Error: 8 }
 export const languages = {
+  register: ({ id }: { id: string }) => {
+    lenguajesRegistrados.push(id)
+  },
+  getLanguages: () => lenguajesRegistrados.map((id) => ({ id })),
+  setMonarchTokensProvider: () => disposable,
+  setLanguageConfiguration: () => disposable,
   registerCompletionItemProvider: (lenguaje: string) => {
     lenguajesConSnippets.push(lenguaje)
     return disposable

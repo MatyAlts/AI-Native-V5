@@ -31,8 +31,9 @@ export const helpContent: HelpContentMap = {
           <strong>Enunciado:</strong> Panel colapsable arriba del editor con la consigna de la TP.
         </li>
         <li>
-          <strong>Editor de codigo:</strong> Escribis tu codigo Python, lo ejecutas con Pyodide en
-          el navegador.
+          <strong>Editor de codigo:</strong> Escribis tu codigo en el lenguaje de la TP. Python y
+          PSeInt se ejecutan en tu navegador; en PSeInt, cada Leer te pide el dato en una ventanita,
+          igual que el input() de Python. Java se compila y corre en el servidor.
         </li>
         <li>
           <strong>Chat con el tutor:</strong> A la derecha. Enter envia. Shift+Enter agrega una

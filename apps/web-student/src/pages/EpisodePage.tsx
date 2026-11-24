@@ -1162,6 +1162,10 @@ export function EpisodeView({ episodeId, onExit, ejercicioContext, getToken }: E
             stdout: result.output,
             stderr: result.error ?? "",
             duration_ms: Math.round(result.durationMs),
+            // HU-030, C09: el CTR registra que motor corrio el codigo
+            // (`pseint-ts-X.Y.Z` para PSeInt). Sin valor (lenguaje remoto),
+            // el tutor-service deja su default.
+            ...(result.runtime ? { runtime: result.runtime } : {}),
           }
           emitirConCola(
             (c) => c.codigoEjecutado(payloadEjecucion),
