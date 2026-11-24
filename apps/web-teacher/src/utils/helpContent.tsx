@@ -519,6 +519,13 @@ export const helpContent: HelpContentMap = {
           tests, rubrica, pedagogia). Los campos pedagogicos avanzados se editan como JSON tipado.
         </li>
         <li>
+          <strong>Diagrama de flujo (PSeInt):</strong> en un ejercicio PSeInt, &quot;Insertar
+          diagrama&quot; agrega al enunciado un bloque ```diagrama con el codigo inicial (o una
+          plantilla). El alumno lo ve dibujado, no como codigo. La vista previa de la consigna
+          muestra el diagrama como lo vera el alumno, o la linea del error si el bloque no es PSeInt
+          valido.
+        </li>
+        <li>
           <strong>Filtros:</strong> por unidad tematica (secuenciales, condicionales, repetitivas,
           mixtos), dificultad (basica, intermedia, avanzada) y origen (IA o manual).
         </li>
