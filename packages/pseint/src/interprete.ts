@@ -7,9 +7,14 @@
  * navegador (un diálogo por dato) y para la entrada por adelantado de Probar y
  * del servidor. Cada tanto también hace `yield CEDER` para devolverle el
  * control al event loop y no congelar la página en un ciclo largo.
+ *
+ * Para el paso a paso (HU-032), con `depurando` encendido también hace
+ * `yield PASO` antes de cada instrucción, después de dejar en `punto` cuál es.
+ * `ejecutar` no lo enciende: el recorrido y la cuenta de pasos son los mismos.
  */
 
 import { type Valor, formatear, formatearNumero } from "./formato"
+import type { ResultadoEjecucion } from "./index"
 import {
   type Destino,
   type Expr,
@@ -22,8 +27,17 @@ import {
 
 export const LEER = Symbol("leer")
 export const CEDER = Symbol("ceder")
-type Pedido = typeof LEER | typeof CEDER
+/** Pausa del paso a paso: la próxima instrucción quedó en `Interprete.punto`. */
+export const PASO = Symbol("paso")
+type Pedido = typeof LEER | typeof CEDER | typeof PASO
 type Gen<T> = Generator<Pedido, T, string | undefined>
+
+/**
+ * Tope de instrucciones por ejecución. Alcanza de sobra para los ejercicios
+ * de la materia (un Para de 20.000 vueltas usa ~40.000) y corta un ciclo
+ * infinito en pocos segundos.
+ */
+export const MAX_PASOS_POR_DEFECTO = 2_000_000
 
 /** Cada cuántos pasos se cede el control al event loop. */
 const PASOS_POR_CESION = 20_000
@@ -51,8 +65,19 @@ export class LimiteExcedido extends Error {
   }
 }
 
+interface Arreglo {
+  dims: number[]
+  datos: (Valor | undefined)[]
+  /** 1 en las posiciones que el algoritmo asignó (el paso a paso muestra vacías las demás). */
+  asignados: Uint8Array
+}
+
 class Variable {
-  arreglo: { dims: number[]; datos: (Valor | undefined)[] } | null = null
+  arreglo: Arreglo | null = null
+  /** Si el algoritmo le dio un valor (asignación, Leer, Para o parámetro), no solo `Definir`. */
+  asignada = false
+  /** Cambia con cada escritura en el arreglo: el paso a paso no lo vuelve a formatear si no cambió. */
+  version = 0
   constructor(
     public nombre: string,
     public tipo: Tipo | null,
@@ -70,7 +95,15 @@ class RefElemento {
 }
 
 type Celda = Variable | RefElemento
-type Marco = Map<string, Celda>
+export type Marco = Map<string, Celda>
+
+/** Dónde está la próxima instrucción del paso a paso. */
+export interface PuntoDePaso {
+  linea: number
+  /** Algoritmo, función o subproceso que la contiene. */
+  ambito: string
+  marco: Marco
+}
 
 const NOMBRE_TIPO: Record<Tipo, string> = {
   entero: "Entero",
@@ -104,12 +137,22 @@ export class Interprete {
   private profundidad = 0
   /** Variables de control de un `Para` en curso: no se pueden modificar. */
   private bloqueadas = new Set<Variable>()
+  /** Paso a paso (HU-032): cede `PASO` antes de cada instrucción. */
+  depurando = false
+  /** Con `depurando`, la instrucción que sigue (vale al recibir `PASO`). */
+  punto: PuntoDePaso | null = null
+  private ambito: string
+  /** Nombre de cada parámetro en el marco de una llamada (Por Referencia comparte la celda del que llama). */
+  private nombresParametros = new WeakMap<Marco, Map<string, string>>()
+  private textosArreglos = new WeakMap<Variable, { version: number; texto: string }>()
 
   constructor(
     private programa: Programa,
     private emitir: (texto: string) => void,
     private maxPasos: number,
-  ) {}
+  ) {
+    this.ambito = programa.nombre
+  }
 
   *principal(): Gen<void> {
     yield* this.bloque(this.programa.cuerpo, new Map())
@@ -125,6 +168,10 @@ export class Interprete {
     this.pasos++
     if (this.pasos > this.maxPasos) throw new LimiteExcedido(linea)
     return this.pasos % PASOS_POR_CESION === 0
+  }
+
+  private pausar(linea: number, marco: Marco): void {
+    this.punto = { linea, ambito: this.ambito, marco }
   }
 
   private *bloque(instrs: Instr[], marco: Marco): Gen<void> {
@@ -246,6 +293,8 @@ export class Interprete {
       this.verificarTipo(va.tipo, v, nombre, linea)
       if (va.tipo === null) va.tipo = tipoDe(v)
       va.arreglo!.datos[c.pos] = v
+      va.arreglo!.asignados[c.pos] = 1
+      va.version++
       return
     }
     if (!c) {
@@ -262,6 +311,7 @@ export class Interprete {
     this.verificarTipo(c.tipo, v, nombre, linea)
     if (c.tipo === null) c.tipo = tipoDe(v)
     c.valor = v
+    c.asignada = true
   }
 
   private *asignarDestino(d: Destino, v: Valor, marco: Marco, linea: number): Gen<void> {
@@ -274,6 +324,8 @@ export class Interprete {
     this.verificarTipo(va.tipo, v, d.nombre, linea)
     if (va.tipo === null) va.tipo = tipoDe(v)
     va.arreglo!.datos[pos] = v
+    va.arreglo!.asignados[pos] = 1
+    va.version++
   }
 
   private tipoDestino(d: Destino, marco: Marco, linea: number): Tipo | null {
@@ -336,6 +388,11 @@ export class Interprete {
 
   private *instr(s: Instr, marco: Marco): Gen<void> {
     if (this.contar(s.linea)) yield CEDER
+    // El Repetir no pausa al entrar: su paso es la condición, al final de cada vuelta.
+    if (this.depurando && s.k !== "repetir") {
+      this.pausar(s.linea, marco)
+      yield PASO
+    }
     switch (s.k) {
       case "definir":
         for (const v of s.vars) this.definir(marco, v.clave, v.nombre, s.tipo, s.linea)
@@ -362,8 +419,14 @@ export class Interprete {
           if (c.arreglo) this.error(s.linea, `El arreglo ${d.nombre} ya fue dimensionado.`)
           const total = dims.reduce((a, b) => a * b, 1)
           const ini = c.tipo ? porDefecto(c.tipo) : undefined
-          c.arreglo = { dims, datos: new Array<Valor | undefined>(total).fill(ini) }
+          c.arreglo = {
+            dims,
+            datos: new Array<Valor | undefined>(total).fill(ini),
+            asignados: new Uint8Array(total),
+          }
           c.valor = undefined
+          c.asignada = false
+          c.version++
         }
         return
       case "asignar": {
@@ -414,11 +477,20 @@ export class Interprete {
           if (!(yield* this.condicion(s.cond, marco, "Mientras", s.linea))) return
           yield* this.bloque(s.cuerpo, marco)
           if (this.contar(s.linea)) yield CEDER
+          if (this.depurando) {
+            this.pausar(s.linea, marco)
+            yield PASO
+          }
         }
       case "repetir":
         for (;;) {
           yield* this.bloque(s.cuerpo, marco)
           if (this.contar(s.linea)) yield CEDER
+          if (this.depurando) {
+            // La condición está en la línea del Hasta Que / Mientras Que.
+            this.pausar(s.cond.linea, marco)
+            yield PASO
+          }
           const c = yield* this.condicion(s.cond, marco, "Repetir", s.linea)
           if (s.hastaQue ? c : !c) return
         }
@@ -490,6 +562,11 @@ export class Interprete {
         if (this.contar(s.linea)) yield CEDER
         this.guardarEnCelda(marco, s.clave, s.nombre, v, s.linea, true)
         yield* this.bloque(s.cuerpo, marco)
+        if (this.depurando) {
+          // La cabecera se vuelve a evaluar (avanza y compara) una vez por vuelta.
+          this.pausar(s.linea, marco)
+          yield PASO
+        }
       }
     } finally {
       if (variable) this.bloqueadas.delete(variable)
@@ -533,24 +610,36 @@ export class Interprete {
       } else if (esArreglo) {
         const original = celdaArg as Variable
         const copia = new Variable(p.nombre, original.tipo, undefined)
-        copia.arreglo = { dims: [...original.arreglo!.dims], datos: [...original.arreglo!.datos] }
+        copia.arreglo = {
+          dims: [...original.arreglo!.dims],
+          datos: [...original.arreglo!.datos],
+          asignados: original.arreglo!.asignados.slice(),
+        }
         nuevo.set(p.clave, copia)
       } else {
         const v = yield* this.ev(a, marco)
-        nuevo.set(p.clave, new Variable(p.nombre, tipoDe(v), v))
+        const param = new Variable(p.nombre, tipoDe(v), v)
+        param.asignada = true
+        nuevo.set(p.clave, param)
       }
     }
     if (f.retorno && !nuevo.has(f.retorno.clave)) {
       nuevo.set(f.retorno.clave, new Variable(f.retorno.nombre, null, undefined))
     }
+    if (this.depurando) {
+      this.nombresParametros.set(nuevo, new Map(f.params.map((p) => [p.clave, p.nombre])))
+    }
     this.profundidad++
     if (this.profundidad > PROFUNDIDAD_MAXIMA) {
       this.error(linea, "Demasiadas llamadas anidadas: revisá que la recursión tenga un caso base.")
     }
+    const ambitoAnterior = this.ambito
+    this.ambito = f.nombre
     try {
       yield* this.bloque(f.cuerpo, nuevo)
     } finally {
       this.profundidad--
+      this.ambito = ambitoAnterior
     }
     if (!f.retorno) return undefined
     const c = nuevo.get(f.retorno.clave)
@@ -797,5 +886,108 @@ export class Interprete {
       default:
         return this.error(linea, `No existe la función ${nombre}.`)
     }
+  }
+
+  // ── Paso a paso ───────────────────────────────────────────────────────
+
+  /**
+   * Variables de un marco como las mostraría `Escribir`, en el orden en que
+   * aparecieron. Vacío lo que el algoritmo todavía no asignó (aunque `Definir`
+   * le haya dado el valor por defecto).
+   */
+  variables(marco: Marco): { nombre: string; valor: string }[] {
+    const nombres = this.nombresParametros.get(marco)
+    const vars: { nombre: string; valor: string }[] = []
+    for (const [clave, c] of marco) {
+      const nombre = nombres?.get(clave) ?? c.nombre
+      if (c instanceof RefElemento) {
+        const arr = c.variable.arreglo!
+        vars.push({ nombre, valor: arr.asignados[c.pos] ? formatear(arr.datos[c.pos]!) : "" })
+      } else if (c.arreglo) {
+        vars.push({ nombre, valor: this.textoArreglo(c) })
+      } else {
+        vars.push({ nombre, valor: c.asignada && c.valor !== undefined ? formatear(c.valor) : "" })
+      }
+    }
+    return vars
+  }
+
+  /** `[4, , 7]`; las matrices, por filas: `[[1, 2], [3, 4]]`. */
+  private textoArreglo(v: Variable): string {
+    const previo = this.textosArreglos.get(v)
+    if (previo && previo.version === v.version) return previo.texto
+    const { dims, datos, asignados } = v.arreglo!
+    const armar = (d: number, base: number): string => {
+      const tam = dims[d]!
+      let paso = 1
+      for (let k = d + 1; k < dims.length; k++) paso *= dims[k]!
+      const partes: string[] = []
+      for (let i = 0; i < tam; i++) {
+        const pos = base + i * paso
+        if (d < dims.length - 1) partes.push(armar(d + 1, pos))
+        else partes.push(asignados[pos] ? formatear(datos[pos]!) : "")
+      }
+      return `[${partes.join(", ")}]`
+    }
+    const texto = armar(0, 0)
+    this.textosArreglos.set(v, { version: v.version, texto })
+    return texto
+  }
+}
+
+/** Le devuelve el control al event loop (lo usan `ejecutar` y el paso a paso). */
+export function ceder(): Promise<void> {
+  return new Promise((resolve) => {
+    if (typeof setTimeout === "function") setTimeout(resolve, 0)
+    else resolve()
+  })
+}
+
+/**
+ * Traduce lo que cortó la ejecución a un resultado (lo comparten `ejecutar` y
+ * el paso a paso, para que terminen igual). Devuelve `null` si no es del
+ * intérprete.
+ */
+export function resultadoDeExcepcion(
+  e: unknown,
+  interprete: Interprete,
+  maxPasos: number,
+): ResultadoEjecucion | null {
+  if (e instanceof ErrorEjecucion) {
+    return {
+      estado: "error_ejecucion",
+      salida: interprete.salida,
+      error: { linea: e.linea, mensaje: e.mensaje },
+    }
+  }
+  if (e instanceof LimiteExcedido) {
+    return {
+      estado: "limite_excedido",
+      salida: interprete.salida,
+      error: {
+        linea: e.linea,
+        mensaje: `El algoritmo superó el límite de ${maxPasos.toLocaleString("es-AR")} instrucciones y se detuvo. Revisá si tiene un ciclo que nunca termina.`,
+      },
+    }
+  }
+  if (e instanceof RangeError) {
+    return {
+      estado: "error_ejecucion",
+      salida: interprete.salida,
+      error: {
+        linea: interprete.linea,
+        mensaje: "Demasiadas llamadas anidadas: revisá que la recursión tenga un caso base.",
+      },
+    }
+  }
+  return null
+}
+
+/** Lo que devuelve `ejecutar` cuando se cancela el ingreso de un dato. */
+export function resultadoCancelado(interprete: Interprete): ResultadoEjecucion {
+  return {
+    estado: "error_ejecucion",
+    salida: interprete.salida,
+    error: { linea: interprete.linea, mensaje: "Se canceló el ingreso de datos." },
   }
 }
