@@ -36,6 +36,10 @@ IMAGEN="${JAVA_IMAGE:-${EXECUTION_IMAGE:-eclipse-temurin:21-jdk}}"
 # Java, y si falta no arranca (y se cae tambien Java). Por eso se verifica con
 # los mismos dos gates.
 IMAGEN_PYTHON="${PYTHON_IMAGE:-python:3.12-slim}"
+# `PSEINT_IMAGE` desde HU-030: es OPCIONAL (N06). Vacia, el runner arranca, Java
+# y Python andan, y la correccion de PSeInt sale "sin ejecutar"
+# (`lenguaje_no_disponible`). Si esta, va por digest como las otras.
+IMAGEN_PSEINT="${PSEINT_IMAGE:-}"
 
 # ── 0. Rootless: si esta, el runner sobra ────────────────────────────────────
 # ADR-060 (Alternativas): "Conviene evaluar rootless en el VPS antes de
@@ -154,12 +158,20 @@ if [ -z "${PYTHON_IMAGE:-}" ]; then
     dato "y volver a correr con  PYTHON_IMAGE=<valor> bash $0"
 fi
 verificar_digest "PYTHON_IMAGE" "$IMAGEN_PYTHON"
+if [ -z "$IMAGEN_PSEINT" ]; then
+    avisa "PSEINT_IMAGE vacia (HU-030): es opcional, el runner arranca igual."
+    dato "Sin ella, la correccion con IA de PSeInt sale sin ejecutar (lenguaje_no_disponible)."
+    dato "El digest lo imprime el workflow 'Imagen del sandbox de PSeInt' (ver docs/EASYPANEL-DEPLOY.md)."
+    dato "Si solo esta en el contenedor:  docker exec <runner> printenv PSEINT_IMAGE"
+else
+    verificar_digest "PSEINT_IMAGE" "$IMAGEN_PSEINT"
+fi
 
 # ── 5. Las imagenes tienen que estar bajadas ─────────────────────────────────
 # Si no esta, el `docker pull` (~450MB) entra en el presupuesto de 10s de la
 # corrida del alumno y se come su timeout. Es lo que rompia el smoke en CI.
 titulo "5. Imagenes ya presentes en el host (evita comerse el timeout del alumno)"
-for img in "$IMAGEN" "$IMAGEN_PYTHON"; do
+for img in "$IMAGEN" "$IMAGEN_PYTHON" ${IMAGEN_PSEINT:+"$IMAGEN_PSEINT"}; do
     if docker image inspect "$img" >/dev/null 2>&1; then
         pasa "Imagen local: ${img}"
     else

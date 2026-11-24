@@ -1,0 +1,48 @@
+{
+  "titulo": "Factorial con una función (PSeInt)",
+  "tema": "funciones",
+  "unidad_tematica": "funciones",
+  "dificultad": "intermedia",
+  "enunciado_md": "# Factorial con una función\n\nEl factorial de un número entero `n` (se escribe `n!`) es el producto de todos los enteros de 1 a `n`. Por definición, `0! = 1`.\n\nEscribí un algoritmo en PSeInt que lea un número entero no negativo y muestre su factorial, calculado por una función.\n\n## Requisitos\n\n- Definí una función `Funcion r <- factorial(n)` que devuelva el factorial de `n`.\n- En el algoritmo principal leé el número (sin mensaje previo) y mostrá `n! = resultado`.\n\n## Ojo con el `Para`\n\nEn PSeInt, si el valor inicial de un `Para` es mayor que el final y no ponés `Con Paso`, el ciclo cuenta hacia atrás. Pensá qué pasa con `0!` y `1!`.\n\n## Ejemplo de ejecución\n\n```text\n5\n5! = 120\n```\n",
+  "inicial_codigo": "Funcion r <- factorial(n)\n\t// Calculá el factorial de n y guardalo en r.\nFinFuncion\n\nAlgoritmo factoriales\n\tDefinir n Como Entero\n\t// Leé n y mostrá el resultado usando la función.\nFinAlgoritmo\n",
+  "solucion_referencia": "Funcion r <- factorial(n)\n\tDefinir r, i Como Entero\n\tr <- 1\n\tPara i <- 2 Hasta n Con Paso 1 Hacer\n\t\tr <- r * i\n\tFinPara\nFinFuncion\n\nAlgoritmo factoriales\n\tDefinir n Como Entero\n\tLeer n\n\tEscribir n, \"! = \", factorial(n)\nFinAlgoritmo\n",
+  "language": "pseint",
+  "test_cases": [
+    {
+      "id": "t01",
+      "name": "Factorial del ejemplo",
+      "type": "stdin_stdout",
+      "code": "5\n",
+      "expected": "5! = 120\n",
+      "is_public": true,
+      "weight": 1
+    },
+    {
+      "id": "t02",
+      "name": "Factorial de 1",
+      "type": "stdin_stdout",
+      "code": "1\n",
+      "expected": "1! = 1\n",
+      "is_public": true,
+      "weight": 1
+    },
+    {
+      "id": "t03",
+      "name": "Factorial de 0",
+      "type": "stdin_stdout",
+      "code": "0\n",
+      "expected": "0! = 1\n",
+      "is_public": false,
+      "weight": 1
+    },
+    {
+      "id": "t04",
+      "name": "Factorial de 10",
+      "type": "stdin_stdout",
+      "code": "10\n",
+      "expected": "10! = 3628800\n",
+      "is_public": false,
+      "weight": 1
+    }
+  ]
+}

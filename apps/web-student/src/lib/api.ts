@@ -395,7 +395,14 @@ export interface EventEmitResponse {
  */
 export async function emitCodigoEjecutado(
   episodeId: string,
-  payload: { code: string; stdout: string; stderr: string; duration_ms: number },
+  payload: {
+    code: string
+    stdout: string
+    stderr: string
+    duration_ms: number
+    /** Motor del navegador (HU-030): `pyodide-0.26` o `pseint-ts-X.Y.Z`. */
+    runtime?: string
+  },
   getToken?: TokenGetter,
 ): Promise<EventEmitResponse> {
   const r = await fetch(`/api/v1/episodes/${episodeId}/events/codigo_ejecutado`, {
@@ -796,7 +803,7 @@ export interface TestCasePublic {
  * lenguaje no deberia pedir una migracion. La union de acá es el contrato de
  * la UI, no el de la base.
  */
-export type Language = "python" | "java"
+export type Language = "python" | "java" | "pseint"
 
 /** Lo que el backend asume cuando una fila no declara lenguaje. */
 export const DEFAULT_LANGUAGE: Language = "python"
@@ -807,6 +814,7 @@ export const DEFAULT_LANGUAGE: Language = "python"
 export const LANGUAGE_LABELS: Record<Language, string> = {
   python: "Python",
   java: "Java",
+  pseint: "PSeInt",
 }
 
 /**
@@ -820,6 +828,7 @@ export const LANGUAGE_LABELS: Record<Language, string> = {
 export const LANGUAGE_PLACEHOLDER: Record<Language, string> = {
   python: "# Escribí tu código Python acá\n",
   java: "public class Main {\n    public static void main(String[] args) {\n        // Escribí tu código Java acá\n    }\n}\n",
+  pseint: "Algoritmo sin_titulo\n\t// Escribí tu algoritmo acá\nFinAlgoritmo\n",
 }
 
 /**

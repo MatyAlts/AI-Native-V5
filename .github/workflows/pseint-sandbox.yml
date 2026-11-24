@@ -1,0 +1,72 @@
+name: Imagen del sandbox de PSeInt
+
+# Construye y publica en GHCR la imagen que el runner usa para ejecutar PSeInt
+# en la correccion con IA (HU-030, ADR-064). Se reconstruye cuando cambia el
+# interprete o el Dockerfile. Publicar NO la pone en produccion: hay que copiar
+# el digest que imprime este job a `PSEINT_IMAGE` del execution-runner en
+# EasyPanel (ver docs/EASYPANEL-DEPLOY.md).
+on:
+  push:
+    branches: [main]
+    paths:
+      - "packages/pseint/**"
+      - "infrastructure/pseint-sandbox.Dockerfile"
+      - ".github/workflows/pseint-sandbox.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  packages: write
+
+jobs:
+  publicar:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: docker/setup-buildx-action@v3
+
+      - name: Login a GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      # GHCR exige el nombre del dueño en minusculas.
+      - name: Nombre de la imagen
+        id: nombre
+        run: echo "imagen=ghcr.io/${GITHUB_REPOSITORY_OWNER,,}/pseint-sandbox" >> "$GITHUB_OUTPUT"
+
+      - name: Build y push
+        id: build
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          file: infrastructure/pseint-sandbox.Dockerfile
+          push: true
+          tags: |
+            ${{ steps.nombre.outputs.imagen }}:latest
+            ${{ steps.nombre.outputs.imagen }}:${{ github.sha }}
+
+      # Prueba de humo con las banderas del runner: un DOBLE y un error de
+      # sintaxis (tiene que salir con 101).
+      - name: Prueba de humo
+        env:
+          IMAGEN: ${{ steps.nombre.outputs.imagen }}@${{ steps.build.outputs.digest }}
+        run: |
+          BANDERAS="--rm -i --network=none --read-only --cap-drop=ALL --security-opt=no-new-privileges --user=65534:65534 --tmpfs=/work:rw,size=64m,exec,mode=1777 -w /work"
+          DOBLE=$'Algoritmo doble\n\tDefinir n Como Entero\n\tLeer n\n\tEscribir n * 2\nFinAlgoritmo\n'
+          salida=$(echo 21 | docker run $BANDERAS -e "SRC=$DOBLE" "$IMAGEN" sh -c "node /opt/pseint/run.js")
+          test "$salida" = "42" || { echo "esperaba 42, salio: $salida"; exit 1; }
+          set +e
+          ROTO=$'Algoritmo roto\n\tEscribir "hola\nFinAlgoritmo\n'
+          docker run $BANDERAS -e "SRC=$ROTO" "$IMAGEN" sh -c "node /opt/pseint/run.js" < /dev/null
+          codigo=$?
+          set -e
+          test "$codigo" = "101" || { echo "esperaba 101, salio: $codigo"; exit 1; }
+
+      - name: Digest para PSEINT_IMAGE
+        run: |
+          echo "PSEINT_IMAGE=${{ steps.nombre.outputs.imagen }}@${{ steps.build.outputs.digest }}" | tee -a "$GITHUB_STEP_SUMMARY"

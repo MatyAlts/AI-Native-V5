@@ -108,6 +108,11 @@ def _es_de_plataforma(stderr: str, ultima: str) -> bool:
     return any(p.match(ultima) or p.match(primera) for p in _MENSAJES_PLATAFORMA)
 
 
+# Lenguajes cuyos errores no se cuentan como tropiezos: el detector entiende
+# excepciones de Python y nada mas.
+_SIN_TROPIEZOS = frozenset({"java", "pseint"})
+
+
 def _parece_java(stderr: str, code: str) -> bool:
     if any(p.search(stderr) for p in _JAVA_EN_ERROR):
         return True
@@ -119,11 +124,11 @@ def tipo_de_error(stderr: str, code: str = "", language: str | None = None) -> s
     """Tipo de tropiezo de un `stderr`, o None si no es un tropiezo.
 
     None cuando el stderr esta vacio, es un mensaje de la plataforma o es de
-    Java. Con `language` dado, manda: "java" es siempre None y "python" nunca
-    se descarta como Java. Si la ultima linea no empieza con una excepcion de
+    Java o de PSeInt. Con `language` dado, manda: "java" y "pseint" son siempre
+    None y "python" nunca se descarta como Java. Si la ultima linea no empieza con una excepcion de
     Python conocida, el tipo es "OtroError".
     """
-    if language == "java":
+    if language in _SIN_TROPIEZOS:
         return None
     if not stderr or not stderr.strip():
         return None
@@ -158,16 +163,17 @@ def tropiezos_de_episodio(
 ) -> list[dict[str, Any]]:
     """Tropiezos de un episodio, en orden.
 
-    `language` es el lenguaje del episodio ("python" o "java"), si se sabe. Un
-    episodio Java no tiene tropiezos (N06): sus errores llegan al CTR ya
-    traducidos y pueden parecer de Python.
+    `language` es el lenguaje del episodio ("python", "java" o "pseint"), si se
+    sabe. Un episodio Java no tiene tropiezos (N06): sus errores llegan al CTR
+    ya traducidos y pueden parecer de Python. Uno PSeInt tampoco (HU-030, N03):
+    el regex de excepciones de Python leeria sus errores como "OtroError".
 
     Cada uno: `tipo`, `intentos` (ejecuciones seguidas con ese tipo),
     `resolucion` ("solo", "con_tutor" o "sin_resolver"), `seq_inicio` (primer
     error), `seq_ultimo_error` y `seq_fin` (evento que lo resolvio; None si
     quedo sin resolver).
     """
-    if language == "java":
+    if language in _SIN_TROPIEZOS:
         return []
     ordenados = sorted(events, key=lambda e: _entero(e.get("seq")))
     tropiezos: list[dict[str, Any]] = []

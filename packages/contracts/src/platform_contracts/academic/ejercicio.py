@@ -25,7 +25,7 @@ NivelN4 = Literal[1, 2, 3, 4]
 # precedente de `unidad_tematica` (migración 20260611_0001, que sacó su CHECK
 # para hacerla texto libre) muestra el costo de cerrar un enum en el schema —
 # cada valor nuevo pediria una migración. Agregar un lenguaje es tocar esta linea.
-Language = Literal["python", "java"]
+Language = Literal["python", "java", "pseint"]
 DEFAULT_LANGUAGE: Language = "python"
 
 

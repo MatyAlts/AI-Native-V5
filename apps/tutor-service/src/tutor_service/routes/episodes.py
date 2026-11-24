@@ -756,13 +756,28 @@ async def resume_episode(
     return ResumeEpisodeResponse(**ctx)
 
 
-class CodigoEjecutadoRequest(BaseModel):
-    """Evento emitido por el frontend cuando Pyodide corre código."""
+# Runtime que el frontend declara para una ejecución en el navegador. Va a una
+# cadena append-only, así que se valida: Pyodide (Python) o el intérprete
+# propio de PSeInt (HU-030, `pseint-ts-X.Y.Z`).
+_RUNTIME_RE = r"^(pyodide-\d+(\.\d+)*|pseint-ts-\d+\.\d+\.\d+)$"
+_RUNTIME_POR_DEFECTO = "pyodide-0.26"
 
-    code: str = Field(..., description="Código Python ejecutado")
+
+class CodigoEjecutadoRequest(BaseModel):
+    """Evento emitido por el frontend cuando corre código en el navegador."""
+
+    code: str = Field(..., description="Código ejecutado (Python o PSeInt)")
     stdout: str = Field(default="", description="Stdout capturado")
     stderr: str = Field(default="", description="Stderr capturado")
     duration_ms: float = Field(..., ge=0, description="Duración de la ejecución")
+    runtime: str | None = Field(
+        default=None,
+        pattern=_RUNTIME_RE,
+        description=(
+            "Runtime que ejecutó el código: 'pyodide-0.26' o 'pseint-ts-X.Y.Z'. "
+            "Sin el campo (clientes viejos, Python) queda 'pyodide-0.26'."
+        ),
+    )
 
 
 @router.post(
@@ -801,7 +816,7 @@ async def emit_codigo_ejecutado(
                     "stdout": req.stdout,
                     "stderr": req.stderr,
                     "duration_ms": req.duration_ms,
-                    "runtime": "pyodide-0.26",
+                    "runtime": req.runtime or _RUNTIME_POR_DEFECTO,
                 },
             ),
         )

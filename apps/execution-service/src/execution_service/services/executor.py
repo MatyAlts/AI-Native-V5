@@ -30,7 +30,7 @@ from execution_service.services.result_mapper import (
     infrastructure_failure,
     map_case,
 )
-from execution_service.services.runner_client import RunnerClient
+from execution_service.services.runner_client import LenguajeNoDisponibleError, RunnerClient
 from execution_service.services.sandbox_types import SandboxUnavailableError
 
 # Lenguajes que este servicio sabe ejecutar server-side. Agregar uno es una
@@ -41,7 +41,26 @@ from execution_service.services.sandbox_types import SandboxUnavailableError
 # "Probar" del alumno en Python sigue en el navegador con Pyodide (ADR-033),
 # que es instantaneo y gratis: el web-student no llama a este servicio para
 # Python.
-LENGUAJES_SOPORTADOS: frozenset[str] = frozenset({"java", "python"})
+#
+# PSeInt esta desde HU-030 (ADR-064) con el mismo criterio que Python: el
+# alumno ejecuta y prueba en el navegador con el interprete de
+# `packages/pseint`, y el servidor corre el mismo interprete solo para la
+# correccion con IA. Su imagen es opcional (N06): sin `PSEINT_IMAGE` la
+# corrida sale con todos los casos `skipped`.
+LENGUAJES_SOPORTADOS: frozenset[str] = frozenset({"java", "python", "pseint"})
+
+# Lenguajes que el alumno corre en el NAVEGADOR. Dentro de un episodio el
+# servidor no los ejecuta ni emite `tests_ejecutados` (HU-015 C11, HU-030 C08):
+# el evento que vale es el del navegador.
+LENGUAJES_DE_NAVEGADOR: frozenset[str] = frozenset({"python", "pseint"})
+
+# Metodo del `RunnerClient` por lenguaje. Se resuelve con `getattr` recien al
+# correr, para que un doble que solo implementa un lenguaje siga sirviendo.
+_METODO_DEL_RUNNER: dict[str, str] = {
+    "java": "run_java",
+    "python": "run_python",
+    "pseint": "run_pseint",
+}
 
 # Rotulo generico de un caso oculto. El numero es su posicion entre los ocultos,
 # no su id ni su nombre real: el alumno puede contar cuantos hay sin saber que
@@ -68,18 +87,18 @@ async def run_cases(
         )
 
     cases: list[CaseResult] = []
-    runner = RunnerClient()
-    correr = runner.run_python if ejercicio.language == "python" else runner.run_java
+    correr = getattr(RunnerClient(), _METODO_DEL_RUNNER[ejercicio.language])
 
     try:
         for i, tc in enumerate(ejercicio.test_cases):
-            if ejercicio.language == "python" and tc.type != "stdin_stdout":
+            if ejercicio.language in LENGUAJES_DE_NAVEGADOR and tc.type != "stdin_stdout":
                 # HU-015, C09. Un `pytest_assert` es codigo de prueba, no una
                 # entrada: mandarlo como stdin no lo ejecuta, y con `expected`
                 # nulo cualquier programa que termine bien lo "aprobaba". No
                 # hay como correrlo de verdad server-side, asi que queda
                 # `skipped` (la correccion lo muestra como no ejecutado) y no
-                # cuenta en `total`. Java no pasa por aca.
+                # cuenta en `total`. Java no pasa por aca; PSeInt solo tiene
+                # casos de entrada y salida (HU-030).
                 cases.append(_skipped(tc, i, motivo=_MOTIVO_TIPO_NO_EJECUTABLE))
                 continue
             stdin = tc.code if tc.type == "stdin_stdout" else ""
@@ -96,6 +115,17 @@ async def run_cases(
                     result=result,
                 )
             )
+    except LenguajeNoDisponibleError:
+        # HU-030, N06. Sin imagen de PSeInt en el runner no es un fallo de
+        # infraestructura: la correccion sigue, con todos los casos "sin
+        # ejecutar" (como un lenguaje sin runtime).
+        return RunResult(
+            outcome=RunOutcome.COMPLETED,
+            cases=[
+                _skipped(tc, i, motivo=_MOTIVO_LENGUAJE_NO_DISPONIBLE)
+                for i, tc in enumerate(ejercicio.test_cases)
+            ],
+        )
     except (SandboxUnavailableError, OSError) as exc:
         # Se descarta lo parcial a proposito: media corrida no es un resultado.
         return infrastructure_failure(str(exc))
@@ -156,11 +186,21 @@ async def run_libre(*, source_code: str, language: str, stdin: str = "") -> Corr
             ejecutado=False,
         )
 
-    # Desde HU-015 Python tambien esta en `LENGUAJES_SOPORTADOS`: sin este
-    # despacho, un Ejecutar de Python le mandaria el fuente al comando de Java.
-    runner = RunnerClient()
-    correr = runner.run_python if language == "python" else runner.run_java
-    crudo = await correr(source_code, stdin)
+    # Desde HU-015 Python tambien esta en `LENGUAJES_SOPORTADOS` (y PSeInt
+    # desde HU-030): sin este despacho, un Ejecutar de Python le mandaria el
+    # fuente al comando de Java.
+    correr = getattr(RunnerClient(), _METODO_DEL_RUNNER[language])
+    try:
+        crudo = await correr(source_code, stdin)
+    except LenguajeNoDisponibleError:
+        return CorridaLibre(
+            stdout="",
+            stderr=_MOTIVO_LENGUAJE_NO_DISPONIBLE,
+            exit_code=0,
+            timed_out=False,
+            compile_failed=False,
+            ejecutado=False,
+        )
     return CorridaLibre(
         stdout=crudo.stdout,
         stderr=crudo.stderr,
@@ -173,14 +213,20 @@ async def run_libre(*, source_code: str, language: str, stdin: str = "") -> Corr
 
 _MOTIVO_SIN_RUNTIME = "No hay entorno de ejecucion para este lenguaje."
 _MOTIVO_TIPO_NO_EJECUTABLE = "Este tipo de caso no se ejecuta en el servidor."
-_MOTIVO_EPISODIO = "Python no se ejecuta en el servidor dentro de un episodio."
+_MOTIVO_EPISODIO = (
+    "Este lenguaje se ejecuta en el navegador: dentro de un episodio el servidor no lo corre."
+)
+_MOTIVO_LENGUAJE_NO_DISPONIBLE = (
+    "El servidor no tiene el entorno de este lenguaje instalado: el caso queda sin ejecutar."
+)
 
 
 def sin_ejecutar(ejercicio: Ejercicio) -> RunResult:
     """Todos los casos `skipped`, sin llamar al runner (HU-015, C11).
 
-    Es la respuesta para un Python dentro de un episodio: el Probar del alumno
-    corre en Pyodide y el servidor no ejecuta nada. Es la misma forma que
+    Es la respuesta para un lenguaje de navegador (`LENGUAJES_DE_NAVEGADOR`:
+    Python y PSeInt) dentro de un episodio: el Probar del alumno corre en el
+    navegador y el servidor no ejecuta nada. Es la misma forma que
     devolvia el servicio antes de HU-015 (Python sin runtime), asi que el
     cliente ya la entiende como "sin ejecutar" y no como fallo de
     infraestructura. `total == 0`, y `should_emit` no la deja emitir.

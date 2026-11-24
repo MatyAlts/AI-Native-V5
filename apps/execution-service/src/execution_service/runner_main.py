@@ -8,12 +8,12 @@ superficie de ataque entra en una pantalla.
 ## La propiedad que sostiene
 
 El caller manda **unicamente** `{source_code, stdin, language}`. `language` es
-`java` o `python` y elige entre dos comandos fijos; no puede elegir la imagen,
+`java`, `python` o `pseint` y elige entre comandos fijos; no puede elegir la imagen,
 ni las banderas, ni los limites, ni montar nada: todo eso esta fijo en
 `docker_runner.py`. Comprometer al `execution-service` permite, como maximo,
-pedir que se ejecute un Java o un Python — lo mismo que ya puede hacer un
-alumno. Python se ejecuta aca SOLO para la correccion con IA (HU-015); el
-"Probar" del alumno sigue en Pyodide.
+pedir que se ejecute un Java, un Python o un PSeInt — lo mismo que ya puede
+hacer un alumno. Python y PSeInt se ejecutan aca SOLO para la correccion con
+IA (HU-015, HU-030); el "Probar" del alumno sigue en el navegador.
 
 Esto es lo que un socket-proxy NO da: permitir `POST /containers/create` implica
 permitir `Privileged: true` y `Binds: ["/:/host"]`, porque esos proxies filtran
@@ -28,7 +28,9 @@ por ruta y no por cuerpo del pedido.
     controles que el codigo no puede garantizar solo — se verifica sobre el
     despliegue con `scripts/verificar-despliegue-ejecucion.sh`.
   - `RUNNER_TOKEN` compartido entre ambos, e imagenes (`JAVA_IMAGE`,
-    `PYTHON_IMAGE`) pineadas por digest. Fuera de
+    `PYTHON_IMAGE`) pineadas por digest. `PSEINT_IMAGE` es OPCIONAL (HU-030,
+    N06): vacia, el runner arranca y responde 503 `lenguaje_no_disponible` a
+    las corridas de PSeInt; si esta, tambien va por digest. Fuera de
     desarrollo los dos son OBLIGATORIOS: sin ellos el proceso **no arranca**
     (ver `verificar_configuracion_segura`). Antes fallaban abiertos, que es
     justo el modo de falla que el ADR-060 no puede permitirse.
@@ -48,7 +50,7 @@ from fastapi import FastAPI, Header, HTTPException, status
 from pydantic import BaseModel, Field
 
 from execution_service.config import settings
-from execution_service.services.docker_runner import run_java, run_python
+from execution_service.services.docker_runner import run_java, run_pseint, run_python
 
 logger = logging.getLogger(__name__)
 
@@ -58,13 +60,15 @@ _WARMUP_PULL_TIMEOUT_SECONDS = 600.0
 
 
 async def _warmup_image() -> None:
-    """Baja las imagenes del sandbox (Java y Python) al arrancar.
+    """Baja las imagenes del sandbox (Java, Python y PSeInt) al arrancar.
 
     Una por vez y cada una best-effort: que falle la de Python no impide
-    precalentar la de Java, ni al reves.
+    precalentar la de Java, ni al reves. Una imagen vacia (PSeInt sin
+    configurar, HU-030 N06) se saltea.
     """
-    for imagen in (settings.java_image, settings.python_image):
-        await _pull(imagen)
+    for imagen in (settings.java_image, settings.python_image, settings.pseint_image):
+        if imagen:
+            await _pull(imagen)
 
 
 async def _pull(imagen: str) -> None:
@@ -166,6 +170,13 @@ def verificar_configuracion_segura() -> list[str]:
         problema = _problema_de_imagen(variable, imagen)
         if problema:
             problemas.append(problema)
+    # PSeInt es opcional (HU-030, N06): vacia no es un problema, el runner
+    # arranca sin ese lenguaje. Pero si se configura, va por digest como las
+    # otras: una imagen por tag es el mismo agujero con otro nombre.
+    if settings.pseint_image:
+        problema = _problema_de_imagen("PSEINT_IMAGE", settings.pseint_image)
+        if problema:
+            problemas.append(problema)
 
     return problemas
 
@@ -211,6 +222,12 @@ async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
             detalle,
         )
 
+    if not settings.pseint_image:
+        logger.warning(
+            "runner_sin_pseint: PSEINT_IMAGE vacia. Java y Python andan; las correcciones "
+            "de PSeInt salen sin ejecutar (lenguaje_no_disponible) hasta configurarla."
+        )
+
     tarea = asyncio.create_task(_warmup_image())
     try:
         yield
@@ -237,10 +254,22 @@ class RunRequest(BaseModel):
 
     source_code: str = Field(min_length=1, max_length=100_000)
     stdin: str = Field(default="", max_length=100_000)
-    # Elige entre dos comandos FIJOS de `docker_runner`. No es una imagen ni un
+    # Elige entre comandos FIJOS de `docker_runner`. No es una imagen ni un
     # comando: un valor fuera del Literal es 422. Default "java" para que un
     # execution-service viejo (que no manda el campo) siga andando igual.
-    language: Literal["java", "python"] = "java"
+    language: Literal["java", "python", "pseint"] = "java"
+
+
+# Comando fijo de `docker_runner` por lenguaje.
+_CORREDORES = {"java": run_java, "python": run_python, "pseint": run_pseint}
+
+
+def lenguajes_disponibles() -> list[str]:
+    """Lenguajes que este runner puede ejecutar: PSeInt solo si tiene imagen."""
+    disponibles = ["java", "python"]
+    if settings.pseint_image:
+        disponibles.append("pseint")
+    return disponibles
 
 
 def _check_token(token: str | None) -> None:
@@ -268,8 +297,15 @@ async def run(
     x_runner_token: str | None = Header(default=None),
 ) -> dict[str, object]:
     _check_token(x_runner_token)
-    correr = run_python if req.language == "python" else run_java
-    result = await correr(req.source_code, req.stdin)
+    if req.language not in lenguajes_disponibles():
+        # HU-030, N06: sin `PSEINT_IMAGE` no se lanza docker con una imagen
+        # vacia. El cliente lo traduce a `LenguajeNoDisponibleError` y la
+        # corrida sale "sin ejecutar", no como fallo de infraestructura.
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="lenguaje_no_disponible",
+        )
+    result = await _CORREDORES[req.language](req.source_code, req.stdin)
     return {
         "exit_code": result.exit_code,
         "stdout": result.stdout,
@@ -280,5 +316,6 @@ async def run(
 
 
 @app.get("/health/live")
-async def live() -> dict[str, str]:
-    return {"status": "alive"}
+async def live() -> dict[str, object]:
+    # `lenguajes` deja ver desde afuera si el runner tiene PSeInt (HU-030, N06).
+    return {"status": "alive", "lenguajes": lenguajes_disponibles()}

@@ -37,13 +37,17 @@ describe("CodeEditor — los proveedores de snippets quedan cableados", () => {
     await waitFor(() => expect(lenguajesConSnippets).toContain("python"))
   })
 
+  // HU-030: PSeInt suma su proveedor con el mismo criterio (sin filtrar por
+  // lenguaje), asi que las listas esperadas pasan de dos a tres.
   it("los registra sin importar el lenguaje del episodio", async () => {
     // El editor no filtra: registra los dos proveedores y Monaco despacha por
     // lenguaje del modelo. Si alguien "optimizara" registrando solo el del
     // episodio, cambiar de ejercicio dentro de la misma pestana dejaria al
     // alumno sin snippets hasta recargar.
     render(<CodeEditor initialCode="class Main {}" language="java" />)
-    await waitFor(() => expect([...lenguajesConSnippets].sort()).toEqual(["java", "python"]))
+    await waitFor(() =>
+      expect([...lenguajesConSnippets].sort()).toEqual(["java", "pseint", "python"]),
+    )
   })
 
   it("un re-montaje vuelve a registrarlos (los disposables no dejan el editor mudo)", async () => {
@@ -52,11 +56,13 @@ describe("CodeEditor — los proveedores de snippets quedan cableados", () => {
     // corriera sin volver a registrar— el editor sobrevive al re-montaje del
     // breakpoint mobile sin autocompletado.
     const { unmount } = render(<CodeEditor initialCode="x = 1" language="python" />)
-    await waitFor(() => expect(lenguajesConSnippets.length).toBe(2))
+    await waitFor(() => expect(lenguajesConSnippets.length).toBe(3))
     unmount()
 
     resetMonacoMock()
     render(<CodeEditor initialCode="x = 1" language="python" />)
-    await waitFor(() => expect([...lenguajesConSnippets].sort()).toEqual(["java", "python"]))
+    await waitFor(() =>
+      expect([...lenguajesConSnippets].sort()).toEqual(["java", "pseint", "python"]),
+    )
   })
 })

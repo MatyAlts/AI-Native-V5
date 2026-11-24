@@ -17,6 +17,7 @@
     "@clerk/clerk-react": "^5.61.9",
     "@platform/auth-client": "workspace:*",
     "@platform/contracts": "workspace:*",
+    "@platform/pseint": "workspace:*",
     "@platform/ui": "workspace:*",
     "@tanstack/react-query": "^5.60.0",
     "@tanstack/react-router": "^1.90.0",

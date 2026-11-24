@@ -60,6 +60,7 @@ import {
   runRemoteTestCases,
   updateEjercicio,
 } from "../lib/api"
+import { runTestCasesPseint } from "../lib/pseintRunner"
 import { type TestCaseRunResult, isPyodideRuntimeReady, runTestCases } from "../lib/pyodideRunner"
 import { useTutorialDeVista } from "../tour/useTutorialDeVista"
 import { ejerciciosTour } from "../tour/vistas"
@@ -882,13 +883,17 @@ function EjercicioFormModal({ initial, title, unidades, onClose, onSubmit }: For
               server-side (verificado 2/2 en produccion) y el que no tiene control
               de casos ocultos es Python. El aviso quedo invertido el dia que Java
               salio y nadie volvio a leerlo. */}
-          {(draft.language ?? DEFAULT_LANGUAGE) === "python" &&
+          {/* HU-030: PSeInt tambien corre en el navegador del alumno, asi que el
+              aviso vale igual que para Python. */}
+          {(["python", "pseint"] as Language[]).includes(draft.language ?? DEFAULT_LANGUAGE) &&
             (draft.test_cases ?? []).some((tc) => !tc.is_public) && (
               <p className="mt-2 text-xs text-warning" data-testid="aviso-ocultos-python">
-                Ojo: los casos <strong>ocultos</strong> de Python no se evaluan cuando el alumno
-                aprieta "Probar". Python corre en el navegador del alumno, asi que mandarle los
-                casos ocultos seria mostrarselos — solo se ejecutan los publicos. En Java si se
-                evaluan, porque la ejecucion es server-side.
+                Ojo: los casos <strong>ocultos</strong> de{" "}
+                {LANGUAGE_LABELS[draft.language ?? DEFAULT_LANGUAGE]} no se evaluan cuando el alumno
+                aprieta "Probar". Corre en el navegador del alumno, asi que mandarle los casos
+                ocultos seria mostrarselos — solo se ejecutan los publicos. Si se evaluan en la
+                correccion con IA, que corre en el servidor. En Java se evaluan siempre, porque la
+                ejecucion es server-side.
               </p>
             )}
         </FormSection>
@@ -1237,7 +1242,20 @@ function ResultRow({ r }: { r: TestCaseRunResult }) {
   )
 }
 
-function ProbarEjercicioPanel({
+/**
+ * Donde corre el "Probar" del docente, por lenguaje. Mismo criterio que el
+ * editor del alumno: Python (Pyodide) y PSeInt (interprete propio, HU-030) en
+ * el navegador; Java en el servidor. Antes era binario
+ * (`lang !== DEFAULT_LANGUAGE` => servidor), y un lenguaje nuevo de navegador
+ * se iba al servidor sin querer (N05 de HU-030).
+ */
+const RUNTIME_DEL_PROBAR: Record<Language, "pyodide" | "pseint" | "remoto"> = {
+  python: "pyodide",
+  pseint: "pseint",
+  java: "remoto",
+}
+
+export function ProbarEjercicioPanel({
   testCases,
   initialCode,
   collapsible = true,
@@ -1261,9 +1279,11 @@ function ProbarEjercicioPanel({
   const [results, setResults] = useState<TestCaseRunResult[] | null>(null)
 
   const lang = language ?? DEFAULT_LANGUAGE
+  const runtime = RUNTIME_DEL_PROBAR[lang]
   // Ejecucion server-side: mismo criterio que el editor del alumno. Sin
   // `ejercicioId` no se puede, porque el servicio necesita la definicion.
-  const esRemoto = lang !== DEFAULT_LANGUAGE && Boolean(ejercicioId)
+  const esRemoto = runtime === "remoto" && Boolean(ejercicioId)
+  const esPseint = runtime === "pseint"
 
   async function handleRun() {
     setRunError(null)
@@ -1308,9 +1328,12 @@ function ProbarEjercicioPanel({
     }
 
     // La primera corrida baja Pyodide del CDN (~6 MB): avisamos con "cargando".
-    if (!isPyodideRuntimeReady()) setLoading(true)
+    // PSeInt no carga nada: su interprete ya viene en el bundle.
+    if (!esPseint && !isPyodideRuntimeReady()) setLoading(true)
     try {
-      const res = await runTestCases(code, testCases)
+      const res = esPseint
+        ? await runTestCasesPseint(code, testCases)
+        : await runTestCases(code, testCases)
       setResults(res)
     } catch (e) {
       setRunError(String(e))
@@ -1342,7 +1365,9 @@ function ProbarEjercicioPanel({
         funciona antes de asignarlo.{" "}
         {esRemoto
           ? "Se compila y ejecuta en el servidor, asi que tarda unos segundos."
-          : "Se ejecuta en tu navegador con Pyodide."}{" "}
+          : esPseint
+            ? "Se ejecuta en tu navegador con el interprete de PSeInt de la plataforma."
+            : "Se ejecuta en tu navegador con Pyodide."}{" "}
         No queda registrado en la trazabilidad del alumno.
       </p>
 
@@ -1366,11 +1391,18 @@ function ProbarEjercicioPanel({
               spellCheck={false}
               placeholder="# Pega aca la solucion del ejercicio (o un codigo de prueba) para correrlo contra los test cases"
             />
-            <p className="text-[11px] text-muted mt-1">
-              Recorda: los asserts de tipo <code>{esRemoto ? "junit" : "pytest"}</code> referencian
-              las clases/funciones de este codigo directamente (mismo archivo, sin imports del
-              alumno).
-            </p>
+            {esPseint ? (
+              <p className="text-[11px] text-muted mt-1">
+                En PSeInt los casos son de entrada y salida: cada linea del stdin es un dato que
+                pide <code>Leer</code>.
+              </p>
+            ) : (
+              <p className="text-[11px] text-muted mt-1">
+                Recorda: los asserts de tipo <code>{esRemoto ? "junit" : "pytest"}</code>{" "}
+                referencian las clases/funciones de este codigo directamente (mismo archivo, sin
+                imports del alumno).
+              </p>
+            )}
           </div>
 
           <button

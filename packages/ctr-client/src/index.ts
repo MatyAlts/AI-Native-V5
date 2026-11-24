@@ -223,6 +223,9 @@ export class CTRClient {
     stdout: string
     stderr: string
     duration_ms: number
+    /** Motor del navegador (HU-030): `pyodide-0.26` o `pseint-ts-X.Y.Z`. Sin
+     * el campo, el tutor-service registra `pyodide-0.26`. */
+    runtime?: string
   }): void {
     this.emit({ event_type: "codigo_ejecutado", payload })
   }

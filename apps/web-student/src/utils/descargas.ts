@@ -7,9 +7,9 @@ import type { EntregaEstado } from "../lib/api"
 
 export type TipoDescarga = "borrador" | "entregado"
 
-/** `.java` para Java; cualquier otro valor (o nulo) es `.py`. */
+/** `.java` para Java, `.psc` para PSeInt; cualquier otro valor (o nulo) es `.py`. */
 export function rotuloDescarga(tipo: TipoDescarga, language: string | null | undefined): string {
-  const ext = language === "java" ? ".java" : ".py"
+  const ext = language === "java" ? ".java" : language === "pseint" ? ".psc" : ".py"
   const que = tipo === "borrador" ? "borrador" : "lo entregado"
   return `Descargar ${que} (${ext})`
 }

@@ -64,7 +64,7 @@ class ArtefactoItem(BaseModel):
     ejercicio_id: UUID | None = None
     episode_id: UUID | None = None
     codigo: str
-    language: Literal["python", "java"] = "python"
+    language: Literal["python", "java", "pseint"] = "python"
 
 
 class EntregaSubmitBody(BaseModel):

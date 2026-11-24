@@ -1,0 +1,48 @@
+{
+  "titulo": "Mayor y menor de cinco números (PSeInt)",
+  "tema": "arreglos",
+  "unidad_tematica": "arreglos",
+  "dificultad": "intermedia",
+  "enunciado_md": "# Mayor y menor de cinco números\n\nEscribí un algoritmo en PSeInt que lea cinco números enteros, los guarde en un arreglo y muestre el mayor y el menor.\n\n## Requisitos\n\n- Declará el arreglo con `Dimension` (los arreglos de PSeInt empiezan en 1).\n- Leé los cinco números con un `Para`, uno por línea, sin mostrar mensajes antes de leer.\n- Mostrá `Mayor: X` y en la línea siguiente `Menor: Y`.\n\n## Ejemplo de ejecución\n\n```text\n4\n9\n-2\n7\n1\nMayor: 9\nMenor: -2\n```\n",
+  "inicial_codigo": "Algoritmo mayor_y_menor\n\tDefinir v Como Entero\n\tDimension v[5]\n\t// 1. Leé los cinco números en el arreglo.\n\t// 2. Recorré el arreglo buscando el mayor y el menor.\n\t// 3. Mostrá los resultados.\nFinAlgoritmo\n",
+  "solucion_referencia": "Algoritmo mayor_y_menor\n\tDefinir v Como Entero\n\tDimension v[5]\n\tDefinir i, mayor, menor Como Entero\n\tPara i <- 1 Hasta 5 Hacer\n\t\tLeer v[i]\n\tFinPara\n\tmayor <- v[1]\n\tmenor <- v[1]\n\tPara i <- 2 Hasta 5 Hacer\n\t\tSi v[i] > mayor Entonces\n\t\t\tmayor <- v[i]\n\t\tFinSi\n\t\tSi v[i] < menor Entonces\n\t\t\tmenor <- v[i]\n\t\tFinSi\n\tFinPara\n\tEscribir \"Mayor: \", mayor\n\tEscribir \"Menor: \", menor\nFinAlgoritmo\n",
+  "language": "pseint",
+  "test_cases": [
+    {
+      "id": "t01",
+      "name": "Números del ejemplo",
+      "type": "stdin_stdout",
+      "code": "4\n9\n-2\n7\n1\n",
+      "expected": "Mayor: 9\nMenor: -2\n",
+      "is_public": true,
+      "weight": 1
+    },
+    {
+      "id": "t02",
+      "name": "Todos iguales",
+      "type": "stdin_stdout",
+      "code": "3\n3\n3\n3\n3\n",
+      "expected": "Mayor: 3\nMenor: 3\n",
+      "is_public": true,
+      "weight": 1
+    },
+    {
+      "id": "t03",
+      "name": "Mayor al final y menor al principio",
+      "type": "stdin_stdout",
+      "code": "-10\n0\n5\n8\n20\n",
+      "expected": "Mayor: 20\nMenor: -10\n",
+      "is_public": false,
+      "weight": 1
+    },
+    {
+      "id": "t04",
+      "name": "Todos negativos",
+      "type": "stdin_stdout",
+      "code": "-4\n-1\n-9\n-3\n-7\n",
+      "expected": "Mayor: -1\nMenor: -9\n",
+      "is_public": false,
+      "weight": 1
+    }
+  ]
+}

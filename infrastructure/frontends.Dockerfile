@@ -35,13 +35,14 @@ COPY apps/web-admin/package.json   apps/web-admin/package.json
 COPY apps/web-teacher/package.json apps/web-teacher/package.json
 COPY apps/web-student/package.json apps/web-student/package.json
 COPY apps/web-landing/package.json apps/web-landing/package.json
-# Solo los 4 packages que SON Node (tienen package.json). Los otros
+# Solo los packages que SON Node (tienen package.json). Los otros
 # packages del workspace (observability, platform-ops, test-utils,
 # contracts/src/python) son Python puro y no tienen package.json.
 COPY packages/ui/package.json           packages/ui/package.json
 COPY packages/auth-client/package.json  packages/auth-client/package.json
 COPY packages/contracts/package.json    packages/contracts/package.json
 COPY packages/ctr-client/package.json   packages/ctr-client/package.json
+COPY packages/pseint/package.json       packages/pseint/package.json
 
 # Instala todas las deps del workspace (frozen lockfile = reproducible).
 RUN pnpm install --frozen-lockfile

@@ -2236,7 +2236,7 @@ export async function runRemoteTestCases(
   throw new ExecutionUnavailableError("La ejecucion tardo mas de lo esperado")
 }
 
-export type Language = "python" | "java"
+export type Language = "python" | "java" | "pseint"
 
 /** Lo que el backend asume cuando una fila no declara lenguaje. */
 export const DEFAULT_LANGUAGE: Language = "python"
@@ -2247,6 +2247,7 @@ export const DEFAULT_LANGUAGE: Language = "python"
 export const LANGUAGE_LABELS: Record<Language, string> = {
   python: "Python",
   java: "Java",
+  pseint: "PSeInt",
 }
 
 /**
