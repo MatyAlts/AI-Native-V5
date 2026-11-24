@@ -69,6 +69,7 @@ falla en silencio, que es peor:
 | `RUNNER_TOKEN` | ambos, **mismo valor** | Secreto compartido. Sin él el runner **no arranca** fuera de dev. `openssl rand -base64 32` |
 | `JAVA_IMAGE` | ambos | Pineada por **digest**, no por tag. Con tag mutable el runner **no arranca**. `docker inspect --format='{{index .RepoDigests 0}}' <imagen>` |
 | `PYTHON_IMAGE` | execution-runner | Desde HU-015. Imagen de Python (`python:3.12-slim`) pineada por **digest** de 64 hex, mismo control que `JAVA_IMAGE`: con tag el runner **no arranca**. Se usa SOLO para la corrección con IA; el Probar del alumno en Python sigue en Pyodide. `docker pull python:3.12-slim && docker inspect --format='{{index .RepoDigests 0}}' python:3.12-slim` |
+| `PSEINT_IMAGE` | execution-runner | Desde HU-030, **opcional**. Imagen del sandbox de PSeInt (`ghcr.io/<dueño>/pseint-sandbox`), pineada por **digest** de 64 hex si se carga: con tag el runner **no arranca**, igual que las otras. **Si falta**, el runner arranca igual, Java y Python siguen andando, y la corrección con IA de un ejercicio PSeInt sale **sin ejecutar** (el runner responde 503 `lenguaje_no_disponible`, todos los casos quedan `skipped` y no es fallo de infraestructura). El alumno no lo nota: ejecuta y prueba PSeInt en el navegador. Ver «Imagen de PSeInt» abajo. |
 | `RUNNER_URL` | execution-service | Apunta al runner por la red interna |
 | **`INTERNAL_SERVICE_TOKEN`** | execution-service y **tutor-service**, **mismo valor** | ⚠️ Si no coincide, los ejercicios **con casos ocultos** pierden su `tests_ejecutados`: el tutor los rechaza con 422 y la emisión falla soft. **No se cae nada** — queda un agujero en el corpus, justo en los ejercicios que sostienen el claim del ADR-060. Vigilar `execution_ctr_emissions_failed_total`. |
 | `EXECUTION_ENABLED` | execution-service | Default **`false`** (falla cerrado, como el resto del servicio): un deploy que no la toque deja la ejecución **apagada**, que es el estado seguro. Para encender hay que ponerla explícitamente en `true`, y recién después abrir de a una comisión con `EXECUTION_ENABLED_COMISIONES`. Hasta el 2026-08-03 el default era `true` y esta fila advertía lo contrario: era la única pieza del ADR-060 que fallaba abierto. |
@@ -91,6 +92,27 @@ contenedor cuando un programa vence el wall time (`--name` + `docker kill`):
 antes moría solo el CLI de `docker run` y el contenedor seguía al 100% de CPU.
 Y con `episode_id` el servidor no ejecuta Python: el Probar del alumno sigue
 en Pyodide; server-side corre solo la corrección con IA, que llega sin episodio.
+
+**Imagen de PSeInt (HU-030, ADR-064).** La construye y publica GitHub, no
+EasyPanel: el workflow `.github/workflows/pseint-sandbox.yml` corre en cada push
+a `main` que toque `packages/pseint/**` o `infrastructure/pseint-sandbox.Dockerfile`
+(y a mano con *Run workflow*), la sube a `ghcr.io/<dueño>/pseint-sandbox`, le
+hace una prueba de humo con las banderas del runner y deja en el resumen del job
+una línea `PSEINT_IMAGE=ghcr.io/...@sha256:<64 hex>`. Para activarla:
+
+1. Copiar esa línea **entera** (el digest se corta fácil al pegarlo) a la
+   variable `PSEINT_IMAGE` del execution-runner. Si el paquete de GHCR es
+   privado, el host necesita `docker login ghcr.io` o hacerlo público.
+2. Redeployar **solo el execution-runner**. Al arrancar baja la imagen en segundo
+   plano (warmup) y su `GET /health/live` lista los lenguajes que puede correr:
+   `{"status":"alive","lenguajes":["java","python","pseint"]}`. Sin `pseint` en
+   esa lista, la imagen no está cargada.
+3. Comprobar en el host con `PSEINT_IMAGE=<valor> bash scripts/verificar-despliegue-ejecucion.sh`.
+
+Cada cambio del intérprete publica una imagen nueva con otro digest: hasta que
+no se copie el digest nuevo, el servidor sigue corrigiendo con el intérprete
+anterior mientras el navegador ya usa el nuevo. Mientras `PSEINT_IMAGE` esté
+vacía, el arranque del runner deja un aviso `runner_sin_pseint` en el log.
 
 **El runner NO debe ser alcanzable desde fuera de la red interna.** Su Dockerfile
 bindea `0.0.0.0`, así que esto depende de que EasyPanel no publique el puerto

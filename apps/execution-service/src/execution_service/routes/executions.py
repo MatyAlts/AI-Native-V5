@@ -28,6 +28,7 @@ from execution_service.services.academic_client import (
 from execution_service.services.ctr_emitter import build_payload, should_emit
 from execution_service.services.execution_store import ExecutionState
 from execution_service.services.executor import (
+    LENGUAJES_DE_NAVEGADOR,
     CorridaLibre,
     run_cases,
     run_libre,
@@ -212,10 +213,12 @@ async def _run_and_store(execution_id: UUID, *, req: ExecutionRequest, user: Use
             tenant_id=user.tenant_id,
         )
         ejercicio = await AcademicClient().get_ejercicio(req.ejercicio_id, user.tenant_id)
-        if ejercicio.language == "python" and req.episode_id is not None:
-            # HU-015, C11. Python se ejecuta server-side SOLO para la correccion
-            # con IA, que llega sin episodio. Dentro de un episodio el alumno
-            # prueba en Pyodide (ADR-033) y ese es el evento que vale: correrlo
+        if ejercicio.language in LENGUAJES_DE_NAVEGADOR and req.episode_id is not None:
+            # HU-015, C11 (y HU-030, C08 para PSeInt). Python y PSeInt se
+            # ejecutan server-side SOLO para la correccion con IA, que llega sin
+            # episodio. Dentro de un episodio el alumno prueba en el navegador
+            # (Pyodide, o el interprete de `packages/pseint`) y ese es el evento
+            # que vale: correrlo
             # aca tambien gastaria un cupo del sandbox y podria emitir un
             # segundo `tests_ejecutados` sobre la misma accion. `run` queda en
             # None: no hay nada que emitir.
@@ -223,7 +226,10 @@ async def _run_and_store(execution_id: UUID, *, req: ExecutionRequest, user: Use
                 payload = _payload_libre(
                     CorridaLibre(
                         stdout="",
-                        stderr="Python no se ejecuta en el servidor dentro de un episodio.",
+                        stderr=(
+                            "Este lenguaje se ejecuta en el navegador: dentro de un "
+                            "episodio el servidor no lo corre."
+                        ),
                         exit_code=0,
                         timed_out=False,
                         compile_failed=False,

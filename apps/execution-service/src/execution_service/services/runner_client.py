@@ -24,11 +24,11 @@ crear contenedores es permitir crear uno privilegiado.
 No se expone la API de Docker en ninguna forma. Un componente aparte —el
 **runner**— recibe unicamente `{source_code, stdin, language}` y construye el
 comando el mismo, con la imagen y las banderas fijas en su codigo. `language`
-elige entre dos comandos cerrados (`java` | `python`), no una imagen. El caller
+elige entre comandos cerrados (`java` | `python` | `pseint`), no una imagen. El caller
 no puede influir en un solo parametro del contenedor.
 
 Comprometer el `execution-service` pasa a permitir, como maximo, **pedir que se
-ejecute un Java o un Python** con las mismas protecciones — que es lo que ya
+ejecute un Java, un Python o un PSeInt** con las mismas protecciones — que es lo que ya
 puede hacer cualquier alumno en el navegador.
 
 El runner es deliberadamente minimo (un endpoint, sin base de datos, sin
@@ -54,6 +54,24 @@ from execution_service.services.docker_runner import DockerRunResult
 from execution_service.services.sandbox_types import SandboxUnavailableError
 
 
+class LenguajeNoDisponibleError(Exception):
+    """El runner no tiene imagen para ese lenguaje (HU-030, N06).
+
+    Hoy solo PSeInt puede faltar: `PSEINT_IMAGE` es opcional. NO es un fallo de
+    infraestructura y por eso NO hereda de `SandboxUnavailableError`: la
+    corrida sale con todos los casos `skipped` ("sin ejecutar") y la correccion
+    sigue, en vez de cortarse como si el sandbox se hubiera caido.
+    """
+
+    def __init__(self, language: str) -> None:
+        super().__init__(f"lenguaje_no_disponible: {language}")
+        self.language = language
+
+
+# `detail` con el que el runner responde 503 cuando le falta la imagen.
+LENGUAJE_NO_DISPONIBLE = "lenguaje_no_disponible"
+
+
 class RunnerClient:
     """Habla con el runner por HTTP. No conoce Docker."""
 
@@ -69,6 +87,14 @@ class RunnerClient:
     async def run_python(self, source_code: str, stdin: str = "") -> DockerRunResult:
         """Pide una ejecucion de Python al runner (HU-015, correccion con IA)."""
         return await self._run(source_code, stdin, "python")
+
+    async def run_pseint(self, source_code: str, stdin: str = "") -> DockerRunResult:
+        """Pide una ejecucion de PSeInt al runner (HU-030, correccion con IA).
+
+        Raises:
+            LenguajeNoDisponibleError: el runner no tiene `PSEINT_IMAGE`.
+        """
+        return await self._run(source_code, stdin, "pseint")
 
     async def _run(self, source_code: str, stdin: str, language: str) -> DockerRunResult:
         """Pide una ejecucion al runner.
@@ -91,6 +117,8 @@ class RunnerClient:
         except (httpx.HTTPError, OSError) as exc:
             raise SandboxUnavailableError(f"runner no alcanzable: {type(exc).__name__}") from exc
 
+        if resp.status_code == 503 and _detalle(resp) == LENGUAJE_NO_DISPONIBLE:
+            raise LenguajeNoDisponibleError(language)
         if resp.status_code >= 400:
             raise SandboxUnavailableError(f"runner respondio {resp.status_code}")
 
@@ -102,3 +130,12 @@ class RunnerClient:
             timed_out=bool(body.get("timed_out", False)),
             compile_failed=bool(body.get("compile_failed", False)),
         )
+
+
+def _detalle(resp: httpx.Response) -> str | None:
+    """El `detail` de un error del runner, o None si no es JSON."""
+    try:
+        body = resp.json()
+    except ValueError:
+        return None
+    return body.get("detail") if isinstance(body, dict) else None

@@ -228,6 +228,22 @@ def _docker_args_python(source_code: str) -> list[str]:
     )
 
 
+def _docker_args_pseint(source_code: str) -> list[str]:
+    """`docker run` de PSeInt (HU-030): mismas banderas, otra imagen y comando.
+
+    La imagen trae el mismo interprete que corre en el navegador
+    (`packages/pseint`), con el punto de entrada en `/opt/pseint/run.js`: lee
+    el fuente de `SRC` y la entrada de stdin, y sale con 101 si hay un error de
+    sintaxis ("no compila", como Java), 1 si hay un error de ejecucion o se
+    paso del limite de pasos, y 0 si termino bien.
+    """
+    return _docker_args_base(
+        source_code,
+        imagen=settings.pseint_image,
+        comando="node /opt/pseint/run.js",
+    )
+
+
 def _docker_args_base(
     source_code: str,
     *,
@@ -350,6 +366,26 @@ async def run_python(source_code: str, stdin: str = "") -> DockerRunResult:
         return await _correr(_docker_args_python(source_code), stdin, compila=False)
 
 
+async def run_pseint(source_code: str, stdin: str = "") -> DockerRunResult:
+    """Ejecuta un algoritmo PSeInt en un contenedor aislado (HU-030).
+
+    Como Python, solo para la correccion con IA: el alumno ejecuta y prueba en
+    el navegador. A diferencia de Python, hay "no compila": el interprete
+    revisa la sintaxis antes de ejecutar y sale con 101 si hay un error.
+
+    El que llama se asegura de que `settings.pseint_image` no este vacia (el
+    runner responde `lenguaje_no_disponible` sin llegar aca).
+    """
+    semaforo = _obtener_semaforo()
+    if semaforo.locked():
+        logger.info(
+            "sandbox_saturado techo=%s — la corrida espera turno",
+            settings.execution_max_concurrent_runs,
+        )
+    async with semaforo:
+        return await _correr(_docker_args_pseint(source_code), stdin, compila=True)
+
+
 async def _run_java_sin_techo(source_code: str, stdin: str = "") -> DockerRunResult:
     """El cuerpo real. Separado para que el wall-time NO cuente la espera."""
     return await _correr(_docker_args(source_code), stdin, compila=True)
@@ -400,6 +436,7 @@ async def _matar_contenedor(nombre: str) -> None:
 async def _correr(args: list[str], stdin: str, *, compila: bool) -> DockerRunResult:
     """Lanza el `docker run` y aplica el wall-time.
 
+    `compila=True` (Java y PSeInt): el 101 es "no compila".
     `compila=False` (Python): el 101 no se lee como fallo de compilacion. Un
     `sys.exit(101)` del alumno es un error de ejecucion comun, y tratarlo como
     "no compila" le cortaria la correccion con un motivo falso.
@@ -436,8 +473,8 @@ async def _correr(args: list[str], stdin: str, *, compila: bool) -> DockerRunRes
         stdout=_acotar(out),
         stderr=_acotar(err),
         timed_out=False,
-        # 101 es el codigo que el comando de JAVA reserva para fallo de
-        # compilacion. En Python no hay compilacion: siempre False.
+        # 101 es el codigo que Java y PSeInt reservan para fallo de
+        # compilacion (error de sintaxis). En Python no hay: siempre False.
         compile_failed=compila and code == 101,
     )
 

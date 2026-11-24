@@ -35,6 +35,14 @@ class Settings(BaseSettings):
     # el resultado real de cada caso: el "Probar" del alumno sigue en Pyodide.
     # Mismo control C1 que Java: en produccion, por digest (`PYTHON_IMAGE`).
     python_image: str = Field(default="python:3.12-slim")
+    # Imagen con el interprete de PSeInt (HU-030, ADR-064): el MISMO interprete
+    # TypeScript del navegador (`packages/pseint`), empaquetado en
+    # `/opt/pseint/run.js`. La construye y publica en GHCR
+    # `.github/workflows/pseint-sandbox.yml`. Es OPCIONAL (N06): vacia, el
+    # runner arranca igual, Java y Python siguen, y la correccion de un
+    # ejercicio PSeInt sale "sin ejecutar" (`lenguaje_no_disponible`). Si esta,
+    # mismo control C1: por digest (`PSEINT_IMAGE`).
+    pseint_image: str = Field(default="")
 
     # ── Runner (gate D3 del ADR-060) ─────────────────────────────────────────
     # Este servicio NO monta `/var/run/docker.sock`: ese socket es equivalente a

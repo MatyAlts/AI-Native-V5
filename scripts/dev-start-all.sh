@@ -51,6 +51,19 @@ PYTHON_IMAGE="${PYTHON_IMAGE:-python:3.12-slim}"
 echo "[pull] ${PYTHON_IMAGE} (sandbox de Python para la correccion con IA)"
 docker pull "${PYTHON_IMAGE}" || echo "[warn] no se pudo bajar ${PYTHON_IMAGE}; la correccion con IA de Python va a fallar"
 
+# Imagen de PSeInt (HU-030). Opcional: sin ella la correccion con IA de PSeInt
+# sale "sin ejecutar" y todo lo demas anda. En local se construye desde el
+# repo (el interprete vive en packages/pseint); si ya hay una PSEINT_IMAGE
+# exportada, se respeta.
+if [ -z "${PSEINT_IMAGE:-}" ]; then
+  echo "[build] pseint-sandbox:dev (sandbox de PSeInt para la correccion con IA)"
+  if docker build -q -f infrastructure/pseint-sandbox.Dockerfile -t pseint-sandbox:dev . >/dev/null; then
+    export PSEINT_IMAGE="pseint-sandbox:dev"
+  else
+    echo "[warn] no se pudo construir la imagen de PSeInt; la correccion con IA de PSeInt va a salir sin ejecutar"
+  fi
+fi
+
 start_svc() {
   local module="$1"
   local port="$2"
