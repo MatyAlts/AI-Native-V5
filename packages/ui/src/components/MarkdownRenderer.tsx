@@ -8,9 +8,13 @@
  * Seguridad: react-markdown NO renderiza HTML embebido por default — escapea
  * cualquier `<script>` o atributo peligroso. Si en el futuro alguien habilita
  * `rehype-raw`, revisar XSS.
+ *
+ * Un bloque ```diagrama (HU-031) se dibuja como diagrama de flujo de PSeInt
+ * en vez de mostrarse como código: el pseudocódigo del bloque no se ve.
  */
-import ReactMarkdown from "react-markdown"
+import ReactMarkdown, { type ExtraProps } from "react-markdown"
 import remarkGfm from "remark-gfm"
+import { DiagramaFlujo } from "./DiagramaFlujo"
 
 interface Props {
   content: string
@@ -68,6 +72,14 @@ export function MarkdownRenderer({ content, className }: Props) {
       <ReactMarkdown
         remarkPlugins={[remarkGfm]}
         components={{
+          // HU-031: react-markdown pasa un bloque por `code` DENTRO de `pre`.
+          // Se intercepta en `pre` para no dejar un `<pre>` vacío alrededor
+          // del diagrama.
+          pre: ({ node, children, ...props }) => {
+            const fuente = fuenteDeDiagrama(node)
+            if (fuente !== null) return <DiagramaFlujo fuente={fuente} className="my-3" />
+            return <pre {...props}>{children}</pre>
+          },
           // Override code para distinguir bloque vs inline.
           code: ({ className, children, ...props }) => {
             const match = /language-(\w+)/.exec(className ?? "")
@@ -90,4 +102,13 @@ export function MarkdownRenderer({ content, className }: Props) {
       </ReactMarkdown>
     </div>
   )
+}
+
+/** El texto de un bloque ```diagrama, o `null` si el `pre` es otra cosa. */
+function fuenteDeDiagrama(node: ExtraProps["node"]): string | null {
+  const code = node?.children[0]
+  if (!code || code.type !== "element" || code.tagName !== "code") return null
+  const clases = code.properties?.className
+  if (!Array.isArray(clases) || !clases.includes("language-diagrama")) return null
+  return code.children.map((c) => (c.type === "text" ? c.value : "")).join("")
 }
