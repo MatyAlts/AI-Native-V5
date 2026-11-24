@@ -340,6 +340,14 @@ def test_n06_el_runner_sin_imagen_responde_lenguaje_no_disponible(monkeypatch) -
         llamado["docker"] = True
         raise AssertionError("sin imagen no se lanza docker")
 
+    async def _sin_warmup() -> None:
+        # Correccion de la aceptacion (24/11): el lifespan del runner ya hacia
+        # `docker pull` de Java y Python al arrancar (warmup), y el doble de
+        # abajo lo tomaba por un `docker run` de PSeInt. Lo que se prueba es
+        # `/run`, no el warmup, que tiene sus propios tests.
+        return None
+
+    monkeypatch.setattr(runner_main, "_warmup_image", _sin_warmup)
     monkeypatch.setattr(asyncio, "create_subprocess_exec", _no_docker)
     with TestClient(runner_main.app) as c:
         r = c.post("/run", json={"source_code": DOBLE, "stdin": "3", "language": "pseint"})
