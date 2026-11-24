@@ -1,0 +1,48 @@
+{
+  "titulo": "Precio con IVA (PSeInt)",
+  "tema": "secuencial",
+  "unidad_tematica": "secuenciales",
+  "dificultad": "basica",
+  "enunciado_md": "# Precio con IVA\n\nUn comercio carga sus precios sin impuestos y necesita mostrar el precio final que paga el cliente, con el 21% de IVA incluido.\n\nEscribí un algoritmo en PSeInt que pida el precio sin IVA y muestre el precio final.\n\n## Requisitos\n\n- Mostrá el mensaje `Ingrese el precio sin IVA:` antes de leer el dato.\n- Leé el precio con `Leer` y guardalo en una variable `Real`.\n- Mostrá el resultado con el formato `Precio final: X`.\n\n## Ejemplo de ejecución\n\n```text\nIngrese el precio sin IVA:\n100\nPrecio final: 121\n```\n\nEl `100` es lo que escribe el usuario: no lo vuelvas a mostrar.\n",
+  "inicial_codigo": "Algoritmo precio_con_iva\n\t// 1. Mostrá el mensaje y leé el precio sin IVA.\n\t// 2. Calculá el precio final (precio + 21%).\n\t// 3. Mostrá el resultado con el formato de la consigna.\nFinAlgoritmo\n",
+  "solucion_referencia": "Algoritmo precio_con_iva\n\tDefinir precio, final Como Real\n\tEscribir \"Ingrese el precio sin IVA:\"\n\tLeer precio\n\tfinal <- precio * 1.21\n\tEscribir \"Precio final: \", final\nFinAlgoritmo\n",
+  "language": "pseint",
+  "test_cases": [
+    {
+      "id": "t01",
+      "name": "Precio del ejemplo",
+      "type": "stdin_stdout",
+      "code": "100\n",
+      "expected": "Ingrese el precio sin IVA:\nPrecio final: 121\n",
+      "is_public": true,
+      "weight": 1
+    },
+    {
+      "id": "t02",
+      "name": "Precio con decimales",
+      "type": "stdin_stdout",
+      "code": "50\n",
+      "expected": "Ingrese el precio sin IVA:\nPrecio final: 60.5\n",
+      "is_public": true,
+      "weight": 1
+    },
+    {
+      "id": "t03",
+      "name": "Precio grande",
+      "type": "stdin_stdout",
+      "code": "2500\n",
+      "expected": "Ingrese el precio sin IVA:\nPrecio final: 3025\n",
+      "is_public": false,
+      "weight": 1
+    },
+    {
+      "id": "t04",
+      "name": "Precio cero",
+      "type": "stdin_stdout",
+      "code": "0\n",
+      "expected": "Ingrese el precio sin IVA:\nPrecio final: 0\n",
+      "is_public": false,
+      "weight": 1
+    }
+  ]
+}
