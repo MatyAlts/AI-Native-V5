@@ -171,3 +171,14 @@ export async function ejecutarConEntrada(
     opciones?.maxPasos ?? MAX_PASOS_POR_DEFECTO,
   )
 }
+
+// Diagramas de flujo (HU-031): misma convención de formas que PSeInt.
+export {
+  type AristaDiagrama,
+  type Diagrama,
+  type NodoDiagrama,
+  type PuntoDiagrama,
+  type ResultadoDiagrama,
+  type TipoNodo,
+  construirDiagramas,
+} from "./diagrama"
