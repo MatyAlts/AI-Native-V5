@@ -52,10 +52,12 @@ BANDERAS = [
     "--log-driver=none",
 ]
 
-DOBLE = 'Algoritmo doble\n\tDefinir n Como Entero\n\tLeer n\n\tEscribir n * 2\nFinAlgoritmo\n'
+DOBLE = "Algoritmo doble\n\tDefinir n Como Entero\n\tLeer n\n\tEscribir n * 2\nFinAlgoritmo\n"
 
 
-def _tc(i: int, stdin: str, expected: str, publico: bool = True, tipo: str = "stdin_stdout") -> TestCase:
+def _tc(
+    i: int, stdin: str, expected: str, publico: bool = True, tipo: str = "stdin_stdout"
+) -> TestCase:
     return TestCase(
         id=f"t{i}",
         name=f"caso {i}",
@@ -72,7 +74,9 @@ def _ej(cases: list[TestCase]) -> Ejercicio:
 
 
 def _ok(stdout: str, code: int = 0) -> DockerRunResult:
-    return DockerRunResult(exit_code=code, stdout=stdout, stderr="", timed_out=False, compile_failed=False)
+    return DockerRunResult(
+        exit_code=code, stdout=stdout, stderr="", timed_out=False, compile_failed=False
+    )
 
 
 def _imagen(monkeypatch, valor: str) -> None:
@@ -111,8 +115,8 @@ def runner_falso(monkeypatch):
 
 
 def test_pseint_es_soportado_y_de_navegador() -> None:
-    assert executor.LENGUAJES_SOPORTADOS == frozenset({"java", "python", "pseint"})
-    assert executor.LENGUAJES_DE_NAVEGADOR == frozenset({"python", "pseint"})
+    assert frozenset({"java", "python", "pseint"}) == executor.LENGUAJES_SOPORTADOS
+    assert frozenset({"python", "pseint"}) == executor.LENGUAJES_DE_NAVEGADOR
 
 
 def test_pseint_image_existe_y_es_vacia_por_defecto() -> None:
@@ -135,7 +139,13 @@ async def test_el_cliente_manda_language_pseint(monkeypatch) -> None:
         status_code = 200
 
         def json(self) -> dict:
-            return {"exit_code": 0, "stdout": "42\n", "stderr": "", "timed_out": False, "compile_failed": False}
+            return {
+                "exit_code": 0,
+                "stdout": "42\n",
+                "stderr": "",
+                "timed_out": False,
+                "compile_failed": False,
+            }
 
     class _Cliente:
         def __init__(self, *a, **k) -> None:
@@ -277,17 +287,23 @@ def espia(monkeypatch) -> _Espia:
     return s
 
 
-async def _correr_ruta(monkeypatch, ejercicio: Ejercicio, episode_id: UUID | None, modo: str = "tests") -> None:
+async def _correr_ruta(
+    monkeypatch, ejercicio: Ejercicio, episode_id: UUID | None, modo: str = "tests"
+) -> None:
     class _Academic:
         async def get_ejercicio(self, ejercicio_id: UUID, tenant_id: UUID) -> Ejercicio:
             return ejercicio
 
     monkeypatch.setattr(ruta, "AcademicClient", _Academic)
-    req = ruta.ExecutionRequest(ejercicio_id=ejercicio.id, source_code=DOBLE, episode_id=episode_id, modo=modo)
+    req = ruta.ExecutionRequest(
+        ejercicio_id=ejercicio.id, source_code=DOBLE, episode_id=episode_id, modo=modo
+    )
     await ruta._run_and_store(uuid4(), req=req, user=_usuario())
 
 
-async def test_c08_pseint_en_episodio_no_se_ejecuta_ni_emite(monkeypatch, espia, runner_falso) -> None:
+async def test_c08_pseint_en_episodio_no_se_ejecuta_ni_emite(
+    monkeypatch, espia, runner_falso
+) -> None:
     await _correr_ruta(monkeypatch, _ej([_tc(0, "3", "6")]), episode_id=uuid4())
     assert runner_falso.llamadas == [], "el servidor ejecuto PSeInt dentro de un episodio"
     assert espia.emitidos == []

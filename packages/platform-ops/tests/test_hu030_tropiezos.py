@@ -18,14 +18,22 @@ def test_n03_un_error_pseint_no_es_tropiezo() -> None:
 
 def test_n03_un_episodio_pseint_no_tiene_tropiezos() -> None:
     eventos = [
-        {"seq": 1, "event_type": "codigo_ejecutado", "payload": {"stderr": "Linea 4: division por cero."}},
-        {"seq": 2, "event_type": "codigo_ejecutado", "payload": {"stderr": "Linea 4: division por cero."}},
+        {
+            "seq": 1,
+            "event_type": "codigo_ejecutado",
+            "payload": {"stderr": "Linea 4: division por cero."},
+        },
+        {
+            "seq": 2,
+            "event_type": "codigo_ejecutado",
+            "payload": {"stderr": "Linea 4: division por cero."},
+        },
         {"seq": 3, "event_type": "codigo_ejecutado", "payload": {"stderr": ""}},
     ]
     assert tropiezos_de_episodio(eventos, language="pseint") == []
 
 
 def test_n01_python_sigue_teniendo_tropiezos() -> None:
-    assert tipo_de_error("Traceback...\nZeroDivisionError: division by zero", "", language="python") == (
-        "ZeroDivisionError"
-    )
+    assert tipo_de_error(
+        "Traceback...\nZeroDivisionError: division by zero", "", language="python"
+    ) == ("ZeroDivisionError")

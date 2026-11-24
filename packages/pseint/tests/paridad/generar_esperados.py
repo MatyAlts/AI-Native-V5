@@ -49,7 +49,7 @@ def correr(binario: str, caso: Path) -> dict[str, object]:
     with tempfile.TemporaryDirectory() as tmp:
         fuente = Path(tmp) / "caso.psc"
         fuente.write_bytes(caso.read_text(encoding="utf-8").encode("latin-1"))
-        proc = subprocess.run(
+        proc = subprocess.run(  # noqa: S603 - binario que elige quien regenera, a mano
             [binario, str(fuente), "--nouser", "--fortest", "--rawerrors"],
             input=entrada.encode("latin-1"),
             capture_output=True,

@@ -22,7 +22,9 @@ class _TutorEspia:
     def __init__(self) -> None:
         self.payloads: list[dict[str, Any]] = []
 
-    async def emit_codigo_ejecutado(self, *, episode_id: UUID, user_id: UUID, payload: dict[str, Any]) -> int:
+    async def emit_codigo_ejecutado(
+        self, *, episode_id: UUID, user_id: UUID, payload: dict[str, Any]
+    ) -> int:
         self.payloads.append(payload)
         return 7
 
@@ -56,7 +58,11 @@ async def _emitir(req: ruta.CodigoEjecutadoRequest) -> None:
 @pytest.mark.asyncio
 async def test_c09_pseint_queda_con_su_runtime(tutor) -> None:
     req = ruta.CodigoEjecutadoRequest(
-        code="Algoritmo a\nFinAlgoritmo\n", stdout="", stderr="", duration_ms=3, runtime="pseint-ts-1.0.0"
+        code="Algoritmo a\nFinAlgoritmo\n",
+        stdout="",
+        stderr="",
+        duration_ms=3,
+        runtime="pseint-ts-1.0.0",
     )
     await _emitir(req)
     assert tutor.payloads[-1]["runtime"] == "pseint-ts-1.0.0"
