@@ -131,3 +131,34 @@ una salida por caso más "De Otro Modo", aunque el fuente no lo escriba (si
 ningún caso coincide, sigue de largo). Una función usada dentro de una
 expresión no es una forma aparte. El layout (coordenadas) lo calcula el
 paquete y es determinista; `DiagramaFlujo` de `@platform/ui` solo lo pinta.
+
+## Paso a paso y prueba de escritorio (HU-032)
+
+`crearDepurador` (en `src/depurador.ts`) corre el **mismo intérprete** que
+`ejecutar`: con `depurando` encendido, el intérprete cede `PASO` antes de cada
+instrucción y el depurador decide cuándo seguir. La semántica, la cuenta de
+pasos para `maxPasos` y los errores son los mismos; al terminar, el
+`resultado` es idéntico al de `ejecutar` con los mismos datos (verificado
+sobre todo el corpus de paridad). Desde esta versión el runtime del CTR es
+`pseint-ts-1.1.0`.
+
+**Un paso es una instrucción**: una asignación, un `Definir`, un `Dimension`,
+un `Leer`, un `Escribir`, una llamada a subproceso, `Limpiar Pantalla`,
+`Esperar`, o la evaluación de una condición:
+
+- `Si` y `Segun`: un paso en su línea (evalúa y elige la rama; la que no corre
+  no se pisa).
+- `Mientras`: un paso por cada evaluación de la condición, también la última
+  (la que da falso).
+- `Repetir…Hasta Que`: no hay paso al entrar; la condición es un paso por
+  vuelta, en la línea del `Hasta Que` (o `Mientras Que`).
+- `Para`: la cabecera es un paso por vuelta (la primera asigna el valor
+  inicial; las siguientes avanzan y comparan) más uno final que da falso.
+- Llamar a una función o subproceso lleva a su primera instrucción y cambia el
+  ámbito; al volver, termina la instrucción que la llamó.
+
+Las variables se muestran como las escribe `Escribir`. Una variable solo
+definida (con `Definir`, que le da el valor por defecto) se ve vacía hasta que
+el algoritmo le asigna algo, y lo mismo cada elemento de un arreglo: `[4, , 7]`;
+las matrices, por filas: `[[1, 2], [3, 4]]`. Los parámetros se ven con su
+nombre dentro de la función, aunque sean Por Referencia.

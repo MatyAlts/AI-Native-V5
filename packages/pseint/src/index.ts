@@ -7,11 +7,19 @@
  * Sin DOM ni dependencias de runtime.
  */
 
-import { CEDER, ErrorEjecucion, Interprete, LEER, LimiteExcedido } from "./interprete"
+import {
+  CEDER,
+  Interprete,
+  LEER,
+  MAX_PASOS_POR_DEFECTO,
+  ceder,
+  resultadoCancelado,
+  resultadoDeExcepcion,
+} from "./interprete"
 import { parsear } from "./parser"
 
 /** Versión del intérprete. El runtime del CTR es `pseint-ts-${VERSION}`. */
-export const VERSION = "1.0.0"
+export const VERSION = "1.1.0"
 
 export type EstadoEjecucion = "ok" | "error_sintaxis" | "error_ejecucion" | "limite_excedido"
 
@@ -39,24 +47,13 @@ export interface OpcionesEjecucion {
   maxPasos?: number
 }
 
-/**
- * Tope de instrucciones por ejecución. Alcanza de sobra para los ejercicios
- * de la materia (un Para de 20.000 vueltas usa ~40.000) y corta un ciclo
- * infinito en pocos segundos.
- */
-export const MAX_PASOS_POR_DEFECTO = 2_000_000
+/** Tope de instrucciones por ejecución (definido junto al intérprete). */
+export { MAX_PASOS_POR_DEFECTO }
 
 /** Revisa la sintaxis sin ejecutar. Lista vacía = sin errores. */
 export function verificarSintaxis(fuente: string): ErrorPseint[] {
   const { error } = parsear(fuente)
   return error ? [{ linea: error.linea, mensaje: error.mensaje }] : []
-}
-
-function ceder(): Promise<void> {
-  return new Promise((resolve) => {
-    if (typeof setTimeout === "function") setTimeout(resolve, 0)
-    else resolve()
-  })
 }
 
 async function correr(
@@ -83,11 +80,7 @@ async function correr(
         try {
           dato = await leer()
         } catch {
-          return {
-            estado: "error_ejecucion",
-            salida: interprete.salida,
-            error: { linea: interprete.linea, mensaje: "Se canceló el ingreso de datos." },
-          }
+          return resultadoCancelado(interprete)
         }
         paso = gen.next(dato)
       } else if (paso.value === CEDER) {
@@ -97,33 +90,8 @@ async function correr(
     }
     return { estado: "ok", salida: interprete.salida, error: null }
   } catch (e) {
-    if (e instanceof ErrorEjecucion) {
-      return {
-        estado: "error_ejecucion",
-        salida: interprete.salida,
-        error: { linea: e.linea, mensaje: e.mensaje },
-      }
-    }
-    if (e instanceof LimiteExcedido) {
-      return {
-        estado: "limite_excedido",
-        salida: interprete.salida,
-        error: {
-          linea: e.linea,
-          mensaje: `El algoritmo superó el límite de ${maxPasos.toLocaleString("es-AR")} instrucciones y se detuvo. Revisá si tiene un ciclo que nunca termina.`,
-        },
-      }
-    }
-    if (e instanceof RangeError) {
-      return {
-        estado: "error_ejecucion",
-        salida: interprete.salida,
-        error: {
-          linea: interprete.linea,
-          mensaje: "Demasiadas llamadas anidadas: revisá que la recursión tenga un caso base.",
-        },
-      }
-    }
+    const resultado = resultadoDeExcepcion(e, interprete, maxPasos)
+    if (resultado) return resultado
     throw e
   }
 }
@@ -182,3 +150,13 @@ export {
   type TipoNodo,
   construirDiagramas,
 } from "./diagrama"
+
+// Paso a paso y prueba de escritorio (HU-032), sobre el mismo intérprete.
+export {
+  type Depurador,
+  type EstadoDepuracion,
+  type FilaPrueba,
+  type ResultadoDepurador,
+  type VariableVisible,
+  crearDepurador,
+} from "./depurador"

@@ -1,8 +1,8 @@
 /**
- * Ejecución paso a paso y prueba de escritorio (HU-032). ESQUELETO DE
- * ACEPTACIÓN: fija el contrato que usa el editor del alumno. El constructor
- * lo reemplaza por la implementación sobre el mismo intérprete; no cambia los
- * tipos ni las firmas sin acordarlo.
+ * Ejecución paso a paso y prueba de escritorio (HU-032), sobre el mismo
+ * intérprete que `ejecutar`: el intérprete cede `PASO` antes de cada
+ * instrucción y acá se decide cuándo seguir. Al terminar, el resultado es el
+ * mismo que el de `ejecutar` con los mismos datos.
  *
  * Un paso es UNA instrucción: una asignación, un `Definir`, un `Leer`, un
  * `Escribir`, una llamada a subproceso, o la evaluación de la condición de un
@@ -11,6 +11,19 @@
  * primera instrucción.
  */
 import type { ErrorPseint, OpcionesEjecucion, ResultadoEjecucion } from "./index"
+import {
+  CEDER,
+  Interprete,
+  LEER,
+  MAX_PASOS_POR_DEFECTO,
+  type Marco,
+  PASO,
+  type PuntoDePaso,
+  ceder,
+  resultadoCancelado,
+  resultadoDeExcepcion,
+} from "./interprete"
+import { parsear } from "./parser"
 
 export interface VariableVisible {
   nombre: string
@@ -62,21 +75,120 @@ export type ResultadoDepurador =
  * Prepara la ejecución paso a paso. `leer`, `escribir` y `maxPasos` funcionan
  * igual que en `ejecutar`. Con un error de sintaxis no se crea el depurador.
  */
-export function crearDepurador(_fuente: string, _opciones: OpcionesEjecucion): ResultadoDepurador {
-  const estado: EstadoDepuracion = {
-    linea: null,
-    ambito: "",
-    variables: [],
-    terminado: true,
-    resultado: null,
+export function crearDepurador(fuente: string, opciones: OpcionesEjecucion): ResultadoDepurador {
+  const { programa, error } = parsear(fuente)
+  if (!programa) return { ok: false, error: { linea: error!.linea, mensaje: error!.mensaje } }
+
+  const maxPasos = opciones.maxPasos ?? MAX_PASOS_POR_DEFECTO
+  let salidaDelPaso = ""
+  const interprete = new Interprete(
+    programa,
+    (t) => {
+      salidaDelPaso += t
+      opciones.escribir?.(t)
+    },
+    maxPasos,
+  )
+  interprete.depurando = true
+  const gen = interprete.principal()
+  const filas: FilaPrueba[] = []
+  let resultado: ResultadoEjecucion | null = null
+  let punto: PuntoDePaso | null = null
+  // Lo último que se mostró, para el estado final.
+  let ultimoAmbito = programa.nombre
+  let ultimoMarco: Marco | null = null
+
+  const terminar = (r: ResultadoEjecucion) => {
+    resultado = r
+    punto = null
   }
+  const fallar = (e: unknown) => {
+    const r = resultadoDeExcepcion(e, interprete, maxPasos)
+    if (!r) throw e
+    terminar(r)
+  }
+
+  // Hasta la primera instrucción: antes de ella no hay `Leer` posible.
+  try {
+    let r = gen.next()
+    while (!r.done && r.value !== PASO) r = gen.next()
+    if (r.done) terminar({ estado: "ok", salida: interprete.salida, error: null })
+    else punto = interprete.punto
+  } catch (e) {
+    fallar(e)
+  }
+
+  /** Corre desde la pausa actual hasta la próxima (o el final). */
+  async function avanzar(): Promise<void> {
+    if (resultado || !punto) return
+    const ejecutado = punto
+    salidaDelPaso = ""
+    try {
+      let r = gen.next()
+      for (;;) {
+        if (r.done) {
+          terminar({ estado: "ok", salida: interprete.salida, error: null })
+          break
+        }
+        if (r.value === PASO) {
+          punto = interprete.punto
+          break
+        }
+        if (r.value === LEER) {
+          let dato: string | undefined
+          try {
+            dato = await opciones.leer()
+          } catch {
+            terminar(resultadoCancelado(interprete))
+            break
+          }
+          r = gen.next(dato)
+        } else if (r.value === CEDER) {
+          await ceder()
+          r = gen.next()
+        }
+      }
+    } catch (e) {
+      fallar(e)
+    }
+    const valores: Record<string, string> = {}
+    for (const v of interprete.variables(ejecutado.marco)) valores[v.nombre] = v.valor
+    filas.push({
+      paso: filas.length + 1,
+      linea: ejecutado.linea,
+      ambito: ejecutado.ambito,
+      valores,
+      salida: salidaDelPaso,
+    })
+    ultimoAmbito = ejecutado.ambito
+    ultimoMarco = ejecutado.marco
+  }
+
+  function estado(): EstadoDepuracion {
+    const actual = punto as PuntoDePaso | null
+    const marco = actual?.marco ?? ultimoMarco
+    return {
+      linea: actual?.linea ?? null,
+      ambito: actual?.ambito ?? ultimoAmbito,
+      variables: marco ? interprete.variables(marco) : [],
+      terminado: resultado !== null,
+      resultado,
+    }
+  }
+
   return {
     ok: true,
     depurador: {
-      estado: () => estado,
-      paso: async () => estado,
-      continuar: async () => estado,
-      filas: () => [],
+      estado,
+      paso: async () => {
+        await avanzar()
+        return estado()
+      },
+      continuar: async () => {
+        while (resultado === null) await avanzar()
+        return estado()
+      },
+      filas: () => filas,
     },
   }
 }
