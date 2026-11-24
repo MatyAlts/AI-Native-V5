@@ -43,6 +43,10 @@ from tutor_service.services.contexto_ejecucion import (
     formatear_bloque,
     formatear_bloque_probar,
 )
+from tutor_service.services.contexto_pseint import (
+    CONTEXTO_PSEINT_VERSION,  # noqa: F401 — re-exportada: la versión de la guía se lee desde tutor_core (HU-034 C03)
+    contexto_pseint,
+)
 from tutor_service.services.guardrails import (
     GUARDRAILS_CORPUS_HASH,
     Match,
@@ -2509,6 +2513,14 @@ class TutorCore:
             # genérico sin etiqueta.
             language = ejercicio.get("language") or DEFAULT_LANGUAGE
             parts.append(f"\n\nCódigo inicial:\n```{language}\n{ejercicio['inicial_codigo']}\n```")
+
+        # Bloque 1b — guía de PSeInt (HU-034; versión en CONTEXTO_PSEINT_VERSION, hoy 1.0.0).
+        # Sólo para ejercicios/TPs en PSeInt; para cualquier otro lenguaje no
+        # agrega nada y el contexto queda idéntico. Va acá y no en el prompt
+        # del tutor, que no se toca (coautoría Ana Garis).
+        guia_pseint = contexto_pseint(ejercicio.get("language"))
+        if guia_pseint:
+            parts.append(guia_pseint)
 
         # Bloque 2 — reglas operativas del tutor para este ejercicio (F2). Antes
         # solo se inyectaba `instrucciones_adicionales`; ahora también las flags
