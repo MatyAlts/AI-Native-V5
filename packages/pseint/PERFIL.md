@@ -106,3 +106,28 @@ no es salida del algoritmo y no se compara.
    (2.000.000) pasos con estado `limite_excedido`, para que un ciclo infinito
    no congele el navegador ni ocupe el sandbox.
 6. **Recursión.** Más de 1.000 llamadas anidadas es error de ejecución.
+
+## Diagramas de flujo (HU-031)
+
+`construirDiagramas(fuente)` (`src/diagrama.ts`) dibuja un diagrama por
+algoritmo: primero el principal y después cada `Funcion`/`SubProceso` en el
+orden del fuente. Usa el mismo parser que el intérprete, así que un fuente con
+error de sintaxis no se dibuja y da la misma línea y mensaje. Formas, con la
+convención de PSeInt:
+
+| Instrucción | Forma (`tipo`) |
+|---|---|
+| `Algoritmo`/`Funcion`/`SubProceso` y su fin | óvalo (`inicio`, `fin`) |
+| `Leer` | paralelogramo (`entrada`) |
+| `Escribir` | paralelogramo (`salida`) |
+| asignación, `Definir`, `Dimension` | rectángulo (`proceso`) |
+| `Si`, `Mientras`, `Repetir…Hasta Que`, `Segun` | rombo (`decision`) |
+| cabecera del `Para` | hexágono (`para`) |
+| `SubProceso` llamado como instrucción | rectángulo con doble borde (`llamada`) |
+
+Las salidas del `Si` son F a la izquierda y V a la derecha. En `Repetir…Hasta
+Que` se vuelve al cuerpo por F (con `Mientras Que`, por V). El `Segun` tiene
+una salida por caso más "De Otro Modo", aunque el fuente no lo escriba (si
+ningún caso coincide, sigue de largo). Una función usada dentro de una
+expresión no es una forma aparte. El layout (coordenadas) lo calcula el
+paquete y es determinista; `DiagramaFlujo` de `@platform/ui` solo lo pinta.

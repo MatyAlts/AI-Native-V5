@@ -18,7 +18,7 @@
  *  - ModalState discriminated union (mismo patron que TareasPracticasView)
  *  - PageContainer + helpContent (key "ejercicios")
  */
-import { Badge, EmptyHero, Input, Modal, PageContainer } from "@platform/ui"
+import { Badge, EmptyHero, Input, MarkdownRenderer, Modal, PageContainer } from "@platform/ui"
 import {
   AlertTriangle,
   BookOpen,
@@ -732,7 +732,30 @@ interface FormModalProps {
   onSubmit: (body: EjercicioCreate) => Promise<void>
 }
 
-function EjercicioFormModal({ initial, title, unidades, onClose, onSubmit }: FormModalProps) {
+/** HU-031: plantilla del bloque ```diagrama cuando el ejercicio no tiene codigo inicial. */
+const PLANTILLA_DIAGRAMA = `Algoritmo sin_titulo
+	Definir n Como Entero
+	Leer n
+	Escribir n
+FinAlgoritmo`
+
+/**
+ * Agrega al final del enunciado un bloque ```diagrama con el codigo inicial
+ * (o una plantilla). El alumno lo ve dibujado como diagrama de flujo.
+ */
+export function insertarBloqueDiagrama(enunciado: string, codigo: string | null): string {
+  const fuente = codigo?.trim() ? codigo.trimEnd() : PLANTILLA_DIAGRAMA
+  const base = enunciado.trimEnd()
+  return `${base}${base ? "\n\n" : ""}\`\`\`diagrama\n${fuente}\n\`\`\`\n`
+}
+
+export function EjercicioFormModal({
+  initial,
+  title,
+  unidades,
+  onClose,
+  onSubmit,
+}: FormModalProps) {
   const [draft, setDraft] = useState<EjercicioCreate>(
     initial ?? emptyEjercicio((unidades[0] ?? "secuenciales") as UnidadTematica),
   )
@@ -748,6 +771,8 @@ function EjercicioFormModal({ initial, title, unidades, onClose, onSubmit }: For
   function set<K extends keyof EjercicioCreate>(key: K, value: EjercicioCreate[K]) {
     setDraft((d) => ({ ...d, [key]: value }))
   }
+  // HU-031: el diagrama de flujo es solo para PSeInt.
+  const esPseint = (draft.language ?? DEFAULT_LANGUAGE) === "pseint"
 
   async function handleSubmit() {
     setError(null)
@@ -802,9 +827,25 @@ function EjercicioFormModal({ initial, title, unidades, onClose, onSubmit }: For
             className="w-full border border-border rounded px-2 py-1 text-sm mb-2"
             maxLength={200}
           />
-          <label htmlFor="ejercicio-enunciado" className="block text-xs text-muted mb-1">
-            Enunciado (markdown)
-          </label>
+          <div className="flex items-center justify-between mb-1">
+            <label htmlFor="ejercicio-enunciado" className="block text-xs text-muted">
+              Enunciado (markdown)
+            </label>
+            {esPseint && (
+              <button
+                type="button"
+                onClick={() =>
+                  set(
+                    "enunciado_md",
+                    insertarBloqueDiagrama(draft.enunciado_md ?? "", draft.inicial_codigo ?? null),
+                  )
+                }
+                className="rounded border border-border px-2 py-0.5 text-xs font-medium text-body transition-colors hover:bg-surface-alt"
+              >
+                Insertar diagrama
+              </button>
+            )}
+          </div>
           <textarea
             id="ejercicio-enunciado"
             value={draft.enunciado_md}
@@ -812,6 +853,14 @@ function EjercicioFormModal({ initial, title, unidades, onClose, onSubmit }: For
             className="w-full border border-border rounded px-2 py-1 text-sm font-mono mb-2"
             rows={6}
           />
+          {esPseint && (
+            <section aria-label="Vista previa de la consigna" className="mb-2">
+              <div className="text-xs text-muted mb-1">Vista previa de la consigna</div>
+              <div className="rounded border border-border-soft bg-canvas p-3">
+                <MarkdownRenderer content={draft.enunciado_md ?? ""} />
+              </div>
+            </section>
+          )}
           <label htmlFor="ejercicio-codigo-inicial" className="block text-xs text-muted mb-1">
             Codigo inicial (opcional)
           </label>

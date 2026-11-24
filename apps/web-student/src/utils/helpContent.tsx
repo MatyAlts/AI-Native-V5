@@ -36,6 +36,12 @@ export const helpContent: HelpContentMap = {
           igual que el input() de Python. Java se compila y corre en el servidor.
         </li>
         <li>
+          <strong>Diagrama (PSeInt):</strong> En el panel de salida, la pestana Diagrama dibuja tu
+          algoritmo como diagrama de flujo y se actualiza mientras escribis. Si hay un error de
+          sintaxis, te muestra la linea y deja el ultimo diagrama sin errores. Mirarlo no ejecuta tu
+          codigo.
+        </li>
+        <li>
           <strong>Chat con el tutor:</strong> A la derecha. Enter envia. Shift+Enter agrega una
           linea.
         </li>

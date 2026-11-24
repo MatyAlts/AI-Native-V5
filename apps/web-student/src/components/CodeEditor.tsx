@@ -1,10 +1,12 @@
 import {
+  type ErrorPseint,
   VERSION as PSEINT_VERSION,
   type ResultadoEjecucion as ResultadoPseint,
+  construirDiagramas,
   ejecutar as ejecutarPseint,
   ejecutarConEntrada as ejecutarPseintConEntrada,
 } from "@platform/pseint"
-import { Modal } from "@platform/ui"
+import { DiagramaFlujo, Modal } from "@platform/ui"
 /**
  * Editor de código con Monaco + ejecución Python en Pyodide.
  *
@@ -200,6 +202,9 @@ export interface CodeEditorProps {
  */
 const LANGUAGES_RUNTIME_LOCAL: readonly Language[] = ["python", "pseint"]
 
+/** HU-031: espera desde la ultima tecla hasta redibujar el diagrama. */
+const DIAGRAMA_DEBOUNCE_MS = 500
+
 /** Arma el error que ve el alumno (y que viaja al CTR) de una corrida PSeInt. */
 function errorDePseint(r: ResultadoPseint): string | null {
   return r.error ? `Línea ${r.error.linea}: ${r.error.mensaje}` : null
@@ -382,8 +387,29 @@ export function CodeEditor({
   // F1: estado de la corrida de tests y sus resultados por caso.
   const [testing, setTesting] = useState(false)
   const [testResults, setTestResults] = useState<TestCaseResult[] | null>(null)
-  // Panel de salida (ED-6): pestana activa consola vs pruebas.
-  const [outputTab, setOutputTab] = useState<"consola" | "pruebas">("consola")
+  // Panel de salida (ED-6): pestana activa consola vs pruebas (y, en PSeInt,
+  // el diagrama de flujo, HU-031).
+  const [outputTab, setOutputTab] = useState<"consola" | "pruebas" | "diagrama">("consola")
+  // HU-031: diagrama del buffer. Se recalcula con debounce mientras el alumno
+  // escribe; con un error de sintaxis se conserva el ultimo diagrama valido y
+  // se avisa la linea. Mirarlo no emite nada al CTR ni ejecuta el codigo.
+  const [diagramaFuente, setDiagramaFuente] = useState<string | null>(() =>
+    esPseint && construirDiagramas(initialCode).ok ? initialCode : null,
+  )
+  const [diagramaError, setDiagramaError] = useState<ErrorPseint | null>(null)
+  useEffect(() => {
+    if (!esPseint) return
+    const t = setTimeout(() => {
+      const r = construirDiagramas(code)
+      if (r.ok) {
+        setDiagramaFuente(code)
+        setDiagramaError(null)
+      } else {
+        setDiagramaError(r.error)
+      }
+    }, DIAGRAMA_DEBOUNCE_MS)
+    return () => clearTimeout(t)
+  }, [code, esPseint])
   // Persistencia del tamano del panel editor/salida (patron ED-2, ver las
   // funciones puras declaradas arriba del componente).
   const savedOutputPanelLayout = useMemo(() => readStoredOutputPanelLayout(), [])
@@ -2294,6 +2320,22 @@ def __tutor_run_tests(student_code, cases_json):
                   )}
                 </button>
               )}
+              {esPseint && (
+                <button
+                  type="button"
+                  role="tab"
+                  aria-selected={outputTab === "diagrama"}
+                  onClick={() => setOutputTab("diagrama")}
+                  data-testid="diagrama-tab"
+                  className={`rounded px-2.5 py-1 text-[11px] font-semibold uppercase tracking-wider transition-colors ${
+                    outputTab === "diagrama"
+                      ? "bg-white/10 text-surface"
+                      : "text-muted hover:text-surface"
+                  }`}
+                >
+                  Diagrama
+                </button>
+              )}
             </div>
 
             {/* ED-7: historial de corridas (solo en la pestana Salida) */}
@@ -2402,6 +2444,8 @@ def __tutor_run_tests(student_code, cases_json):
                   </span>
                 )}
               </output>
+            ) : outputTab === "diagrama" ? (
+              <PanelDiagrama fuente={diagramaFuente} error={diagramaError} />
             ) : (
               <TestResultsView results={testResults} testing={testing} />
             )}
@@ -2439,6 +2483,43 @@ def __tutor_run_tests(student_code, cases_json):
           </button>
         </div>
       </Modal>
+    </div>
+  )
+}
+
+/**
+ * HU-031: pestana Diagrama del editor PSeInt. El diagrama va sobre la
+ * superficie clara (igual que en la consigna) aunque el panel sea oscuro.
+ */
+function PanelDiagrama({
+  fuente,
+  error,
+}: {
+  fuente: string | null
+  error: ErrorPseint | null
+}): ReactNode {
+  return (
+    <div className="space-y-2 p-3">
+      {error && (
+        <output
+          aria-live="polite"
+          className="block rounded border border-danger/30 bg-danger/10 px-3 py-2 text-sm text-danger"
+        >
+          <span className="font-semibold">Línea {error.linea}:</span> {error.mensaje}
+          {fuente !== null && (
+            <span className="block text-xs text-muted">
+              Se muestra el último diagrama sin errores.
+            </span>
+          )}
+        </output>
+      )}
+      {fuente !== null ? (
+        <DiagramaFlujo fuente={fuente} />
+      ) : (
+        !error && (
+          <div className="text-sm text-muted">Escribí tu algoritmo para ver su diagrama.</div>
+        )
+      )}
     </div>
   )
 }

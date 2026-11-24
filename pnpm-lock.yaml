@@ -488,6 +488,9 @@ importers:
 
   packages/ui:
     dependencies:
+      '@platform/pseint':
+        specifier: workspace:*
+        version: link:../pseint
       clsx:
         specifier: ^2.1.0
         version: 2.1.1
