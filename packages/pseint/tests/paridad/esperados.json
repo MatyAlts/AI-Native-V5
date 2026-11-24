@@ -1,0 +1,218 @@
+{
+  "01-hola": {
+    "tipo": "ok",
+    "linea": null,
+    "codigo_pseint": null,
+    "salida": "Hola mundo\n"
+  },
+  "02-leer-doble": {
+    "tipo": "ok",
+    "linea": null,
+    "codigo_pseint": null,
+    "salida": "Ingrese un numero:\nEl doble es 42\n"
+  },
+  "03-leer-varios": {
+    "tipo": "ok",
+    "linea": null,
+    "codigo_pseint": null,
+    "salida": "Suma: 6.5\nPromedio: 3.25\n"
+  },
+  "04-texto-leer": {
+    "tipo": "ok",
+    "linea": null,
+    "codigo_pseint": null,
+    "salida": "Como te llamas?\nHola, Ana!\n"
+  },
+  "05-aritmetica": {
+    "tipo": "ok",
+    "linea": null,
+    "codigo_pseint": null,
+    "salida": "3.5\n2\n1\n1024\n10\n14\n-3\n0.3\n0.3333333333\n2.5\n10000000000\n"
+  },
+  "06-funciones-mat": {
+    "tipo": "ok",
+    "linea": null,
+    "codigo_pseint": null,
+    "salida": "7\n-7\n3\n3\n4\n1.4142135624\n3\n0\n1\n0\n1\n3.1415926536\n"
+  },
+  "07-escribir": {
+    "tipo": "ok",
+    "linea": null,
+    "codigo_pseint": null,
+    "salida": "hola chau\n123\na b\nVERDADERO\nVERDADERO FALSO\n\nfin\n"
+  },
+  "08-si": {
+    "tipo": "ok",
+    "linea": null,
+    "codigo_pseint": null,
+    "salida": "42 es par\ndos cifras\nno es cinco\n"
+  },
+  "09-si-anidado": {
+    "tipo": "ok",
+    "linea": null,
+    "codigo_pseint": null,
+    "salida": "Aprobado\n"
+  },
+  "10-segun": {
+    "tipo": "ok",
+    "linea": null,
+    "codigo_pseint": null,
+    "salida": "Martes o miercoles\n"
+  },
+  "11-mientras": {
+    "tipo": "ok",
+    "linea": null,
+    "codigo_pseint": null,
+    "salida": "1 2 3 4 5 \n"
+  },
+  "12-repetir": {
+    "tipo": "ok",
+    "linea": null,
+    "codigo_pseint": null,
+    "salida": "Ingrese un positivo:\nIngrese un positivo:\nIngrese un positivo:\nOk: 8\n"
+  },
+  "13-para": {
+    "tipo": "ok",
+    "linea": null,
+    "codigo_pseint": null,
+    "salida": "7 x 1 = 7\n7 x 2 = 14\n7 x 3 = 21\n7 x 4 = 28\n7 x 5 = 35\n7 x 6 = 42\n7 x 7 = 49\n7 x 8 = 56\n7 x 9 = 63\n7 x 10 = 70\n"
+  },
+  "14-para-paso": {
+    "tipo": "ok",
+    "linea": null,
+    "codigo_pseint": null,
+    "salida": "10\n8\n6\n4\n2\n0\nno deberia\nno deberia\n"
+  },
+  "15-acumulador": {
+    "tipo": "ok",
+    "linea": null,
+    "codigo_pseint": null,
+    "salida": "Total: 29.5\nPromedio: 7.375\n"
+  },
+  "16-arreglo": {
+    "tipo": "ok",
+    "linea": null,
+    "codigo_pseint": null,
+    "salida": "Mayor: 9\n1 7 -2 9 4 \n"
+  },
+  "17-matriz": {
+    "tipo": "ok",
+    "linea": null,
+    "codigo_pseint": null,
+    "salida": "1 2 3 \n2 4 6 \n3 6 9 \n"
+  },
+  "18-ordenar": {
+    "tipo": "ok",
+    "linea": null,
+    "codigo_pseint": null,
+    "salida": "-1\n0\n2\n3.5\n5\n8\n"
+  },
+  "19-funcion": {
+    "tipo": "ok",
+    "linea": null,
+    "codigo_pseint": null,
+    "salida": "16\n9\n10\n"
+  },
+  "20-subproceso": {
+    "tipo": "ok",
+    "linea": null,
+    "codigo_pseint": null,
+    "salida": "-----\nHola Ana\nHola Luis\n---\n"
+  },
+  "21-por-referencia": {
+    "tipo": "ok",
+    "linea": null,
+    "codigo_pseint": null,
+    "salida": "2 1\n2\n"
+  },
+  "22-recursion": {
+    "tipo": "ok",
+    "linea": null,
+    "codigo_pseint": null,
+    "salida": "0! = 1\n1! = 1\n2! = 2\n3! = 6\n4! = 24\n5! = 120\n6! = 720\n"
+  },
+  "23-arreglo-funcion": {
+    "tipo": "ok",
+    "linea": null,
+    "codigo_pseint": null,
+    "salida": "Suma: 24\n"
+  },
+  "24-cadenas": {
+    "tipo": "ok",
+    "linea": null,
+    "codigo_pseint": null,
+    "salida": "12\nPro\ngram\nPROGRAMACION\nhola\nunodos\n13\n50\nVERDADERO\nVERDADERO\n"
+  },
+  "25-acentos": {
+    "tipo": "ok",
+    "linea": null,
+    "codigo_pseint": null,
+    "salida": "Año: ñandú, canción\n"
+  },
+  "26-logicas": {
+    "tipo": "ok",
+    "linea": null,
+    "codigo_pseint": null,
+    "salida": "FALSO\nVERDADERO\nFALSO\nVERDADERO\nFALSO\n"
+  },
+  "27-primos": {
+    "tipo": "ok",
+    "linea": null,
+    "codigo_pseint": null,
+    "salida": "2 3 5 7 11 13 17 19 23 29 \n"
+  },
+  "28-proceso": {
+    "tipo": "ok",
+    "linea": null,
+    "codigo_pseint": null,
+    "salida": "Proceso funciona: 3\n"
+  },
+  "29-error-division": {
+    "tipo": "error_ejecucion",
+    "linea": 4,
+    "codigo_pseint": 296,
+    "salida": "antes\n"
+  },
+  "30-error-indice": {
+    "tipo": "error_ejecucion",
+    "linea": 5,
+    "codigo_pseint": 303,
+    "salida": "antes\n"
+  },
+  "31-error-tipo": {
+    "tipo": "error_ejecucion",
+    "linea": 3,
+    "codigo_pseint": 120,
+    "salida": ""
+  },
+  "32-sintaxis-comillas": {
+    "tipo": "error_sintaxis",
+    "linea": 3,
+    "codigo_pseint": 37,
+    "salida": ""
+  },
+  "33-sintaxis-finsi": {
+    "tipo": "error_sintaxis",
+    "linea": 4,
+    "codigo_pseint": 117,
+    "salida": ""
+  },
+  "34-sintaxis-asignar-igual": {
+    "tipo": "error_sintaxis",
+    "linea": 3,
+    "codigo_pseint": 106,
+    "salida": ""
+  },
+  "35-sintaxis-nombre-repetido": {
+    "tipo": "error_sintaxis",
+    "linea": 2,
+    "codigo_pseint": 48,
+    "salida": ""
+  },
+  "36-sintaxis-reservada": {
+    "tipo": "error_sintaxis",
+    "linea": 2,
+    "codigo_pseint": 234,
+    "salida": ""
+  }
+}
