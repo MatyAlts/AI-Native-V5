@@ -27,7 +27,9 @@ describe("DiagramaFlujo", () => {
     const svgs = container.querySelectorAll('svg[role="img"]')
     expect(svgs.length).toBe(1)
     expect(svgs[0]!.getAttribute("aria-label") ?? "").toMatch(/doble/)
-    const tipos = [...container.querySelectorAll("g[data-tipo]")].map((g) => g.getAttribute("data-tipo"))
+    const tipos = [...container.querySelectorAll("g[data-tipo]")].map((g) =>
+      g.getAttribute("data-tipo"),
+    )
     expect(tipos).toEqual(["inicio", "proceso", "entrada", "salida", "fin"])
     const leer = container.querySelector('g[data-tipo="entrada"]')!
     expect(leer.textContent).toMatch(/n/)
@@ -51,7 +53,9 @@ FinAlgoritmo`
   })
 
   it("C04 con error de sintaxis avisa la línea y no dibuja", () => {
-    const { container } = render(<DiagramaFlujo fuente={'Algoritmo roto\n\tEscribir "hola\nFinAlgoritmo'} />)
+    const { container } = render(
+      <DiagramaFlujo fuente={'Algoritmo roto\n\tEscribir "hola\nFinAlgoritmo'} />,
+    )
     expect(container.querySelector("svg")).toBeNull()
     expect(screen.getByText(/l[ií]nea 2/i)).toBeTruthy()
   })

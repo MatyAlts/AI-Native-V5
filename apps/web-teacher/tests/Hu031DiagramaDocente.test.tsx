@@ -9,6 +9,11 @@
  * N02  En Python no aparece "Insertar diagrama".
  *
  * Contrato: `EjercicioFormModal` se exporta desde `EjerciciosView`.
+ *
+ * Corrección de la aceptación (24/11): el `Modal` de `@platform/ui` se dibuja
+ * en un portal sobre `document.body`, fuera del `container` del render. Se
+ * busca en `document`; con `container` una prueba caía por TypeError y la del
+ * aviso de error pasaba sin medir nada.
  */
 import { act, fireEvent, render, screen, waitFor } from "@testing-library/react"
 import { describe, expect, it, vi } from "vitest"
@@ -45,22 +50,24 @@ const comunes = { title: "Nuevo ejercicio", unidades: ["secuenciales"], onClose:
 
 describe("C05 diagrama en la consigna, del lado del docente", () => {
   it("Insertar diagrama agrega un bloque ```diagrama y la vista previa lo dibuja", async () => {
-    const { container } = render(<Modal {...comunes} initial={base("pseint")} />)
+    render(<Modal {...comunes} initial={base("pseint")} />)
     const boton = screen.getByRole("button", { name: /Insertar diagrama/i })
     await act(async () => {
       fireEvent.click(boton)
     })
-    const enunciado = container.querySelector("#ejercicio-enunciado") as HTMLTextAreaElement
+    const enunciado = document.querySelector("#ejercicio-enunciado") as HTMLTextAreaElement
     expect(enunciado.value).toContain("```diagrama")
     expect(enunciado.value).toContain("Escribi el algoritmo del diagrama.")
-    await waitFor(() => expect(container.querySelectorAll('svg[role="img"]').length).toBeGreaterThanOrEqual(1))
+    await waitFor(() => expect(document.querySelectorAll('svg[role="img"]').length).toBeGreaterThanOrEqual(1))
   })
 
   it("la vista previa avisa si el bloque tiene un error", async () => {
     const md = 'Consigna\n\n```diagrama\nAlgoritmo roto\n\tEscribir "hola\nFinAlgoritmo\n```\n'
-    const { container } = render(<Modal {...comunes} initial={base("pseint", md)} />)
+    render(<Modal {...comunes} initial={base("pseint", md)} />)
+    // Guarda contra la prueba vacía: el formulario tiene que estar en pantalla.
+    expect(document.querySelector("#ejercicio-enunciado")).not.toBeNull()
     await waitFor(() => expect(screen.getByText(/l[ií]nea 2/i)).toBeTruthy())
-    expect(container.querySelector('svg[role="img"]')).toBeNull()
+    expect(document.querySelector('svg[role="img"]')).toBeNull()
   })
 })
 
