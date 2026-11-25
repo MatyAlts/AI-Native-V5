@@ -302,9 +302,13 @@ describe("HU-035 · barra Mis cursos (C01, N02)", () => {
   })
 
   it("C01: el layout raiz monta la barra con esa regla", () => {
+    // Desde la regresion del 25/11 (Hu035bSalidaEpisodio) la barra se monta en
+    // `components/CampusShell.tsx`, que usa el layout raiz.
     const raiz = readFileSync(join(RAIZ, "src/routes/__root.tsx"), "utf-8")
-    expect(raiz).toContain("BarraCursos")
-    expect(raiz).toContain("mostrarBarraCursos")
+    const shell = readFileSync(join(RAIZ, "src/components/CampusShell.tsx"), "utf-8")
+    expect(raiz).toContain("CampusShell")
+    expect(shell).toContain("BarraCursos")
+    expect(shell).toContain("mostrarBarraCursos")
   })
 })
 
