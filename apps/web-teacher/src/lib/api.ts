@@ -1183,6 +1183,10 @@ export interface Unidad {
   nombre: string
   orden: number
   descripcion: string | null
+  /** HU-033: introduccion del campus en HTML (se muestra en `HtmlAislado`). */
+  introduccion_html?: string | null
+  /** HU-033: fecha sin hora ("2027-03-09"); null = abierta. No pasarla por `new Date`. */
+  fecha_apertura?: string | null
   created_by: string
   created_at: string
   updated_at: string
@@ -1199,6 +1203,8 @@ export interface UnidadUpdate {
   nombre?: string
   descripcion?: string | null
   orden?: number
+  introduccion_html?: string | null
+  fecha_apertura?: string | null
 }
 
 export interface UnidadReorderItem {
@@ -1287,6 +1293,37 @@ export const unidadesApi = {
   delete: deleteUnidad,
   reorder: reorderUnidades,
   assignTP: assignTPToUnidad,
+}
+
+// ── Campus del curso (HU-033) ─────────────────────────────────────────
+
+export interface Bienvenida {
+  html: string | null
+}
+
+export async function getBienvenida(
+  comisionId: string,
+  getToken?: TokenGetter,
+): Promise<Bienvenida> {
+  const r = await fetch(`/api/v1/comisiones/${comisionId}/bienvenida`, {
+    headers: await authHeaders(getToken),
+  })
+  await throwIfNotOk(r)
+  return r.json()
+}
+
+export async function putBienvenida(
+  comisionId: string,
+  html: string | null,
+  getToken?: TokenGetter,
+): Promise<Bienvenida> {
+  const r = await fetch(`/api/v1/comisiones/${comisionId}/bienvenida`, {
+    method: "PUT",
+    headers: await authHeaders(getToken),
+    body: JSON.stringify({ html }),
+  })
+  await throwIfNotOk(r)
+  return r.json()
 }
 
 // ── ADR-020: Distribución N1-N4 por episodio ─────────────────────────

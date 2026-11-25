@@ -551,6 +551,43 @@ export const helpContent: HelpContentMap = {
     </div>
   ),
 
+  campus: (
+    <div className="space-y-4 text-sidebar-text-muted">
+      <p className="text-lg font-medium text-[var(--text-inverse)]">Campus del curso</p>
+      <p>
+        Aca armas lo que tus alumnos ven al entrar al campus de esta comision: la bienvenida del
+        curso y, por cada unidad, su introduccion, la fecha en que se abre y el resumen de la
+        tarjeta.
+      </p>
+      <ul className="list-disc list-inside space-y-2 ml-4">
+        <li>
+          <strong>Bienvenida:</strong> escribi el HTML en el editor y mira como queda en la vista
+          previa. Se guarda con "Guardar bienvenida".
+        </li>
+        <li>
+          <strong>Introduccion de la unidad:</strong> HTML libre, puede traer CSS y JavaScript (por
+          ejemplo un resumen interactivo). "Usar estructura sugerida" carga las 7 secciones base
+          para que solo completes el contenido.
+        </li>
+        <li>
+          <strong>Fecha de apertura:</strong> desde ese dia la unidad queda abierta para los
+          alumnos. Sin fecha, la unidad esta abierta siempre.
+        </li>
+        <li>
+          <strong>Resumen de la tarjeta:</strong> el texto corto que aparece en la tarjeta de la
+          unidad.
+        </li>
+      </ul>
+      <div className="bg-sidebar-bg-edge p-4 rounded-lg mt-4">
+        <p className="text-accent-brand font-medium">Recuadro aislado:</p>
+        <p className="text-sm mt-1">
+          El HTML se muestra siempre dentro de un recuadro aislado: los scripts corren, pero no
+          pueden leer la sesion, salir de la pagina ni mandar datos a otro sitio. La vista previa
+          usa el mismo recuadro que ve el alumno.
+        </p>
+      </div>
+    </div>
+  ),
   unidades: (
     <div className="space-y-4 text-sidebar-text-muted">
       <p className="text-lg font-medium text-[var(--text-inverse)]">Unidades de Trazabilidad</p>

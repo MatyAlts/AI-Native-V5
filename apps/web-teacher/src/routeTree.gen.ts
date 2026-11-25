@@ -30,6 +30,7 @@ import { Route as EjerciciosRouteImport } from './routes/ejercicios'
 import { Route as CorreccionesRouteImport } from './routes/correcciones'
 import { Route as CohortQuartilesRouteImport } from './routes/cohort-quartiles'
 import { Route as CohortAdversarialRouteImport } from './routes/cohort-adversarial'
+import { Route as CampusRouteImport } from './routes/campus'
 import { Route as ActiveiaRouteImport } from './routes/activeia'
 import { Route as IndexRouteImport } from './routes/index'
 
@@ -139,6 +140,11 @@ const CohortAdversarialRoute = CohortAdversarialRouteImport.update({
   path: '/cohort-adversarial',
   getParentRoute: () => rootRouteImport,
 } as any)
+const CampusRoute = CampusRouteImport.update({
+  id: '/campus',
+  path: '/campus',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const ActiveiaRoute = ActiveiaRouteImport.update({
   id: '/activeia',
   path: '/activeia',
@@ -153,6 +159,7 @@ const IndexRoute = IndexRouteImport.update({
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/activeia': typeof ActiveiaRoute
+  '/campus': typeof CampusRoute
   '/cohort-adversarial': typeof CohortAdversarialRoute
   '/cohort-quartiles': typeof CohortQuartilesRoute
   '/correcciones': typeof CorreccionesRoute
@@ -178,6 +185,7 @@ export interface FileRoutesByFullPath {
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/activeia': typeof ActiveiaRoute
+  '/campus': typeof CampusRoute
   '/cohort-adversarial': typeof CohortAdversarialRoute
   '/cohort-quartiles': typeof CohortQuartilesRoute
   '/correcciones': typeof CorreccionesRoute
@@ -204,6 +212,7 @@ export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
   '/activeia': typeof ActiveiaRoute
+  '/campus': typeof CampusRoute
   '/cohort-adversarial': typeof CohortAdversarialRoute
   '/cohort-quartiles': typeof CohortQuartilesRoute
   '/correcciones': typeof CorreccionesRoute
@@ -231,6 +240,7 @@ export interface FileRouteTypes {
   fullPaths:
     | '/'
     | '/activeia'
+    | '/campus'
     | '/cohort-adversarial'
     | '/cohort-quartiles'
     | '/correcciones'
@@ -256,6 +266,7 @@ export interface FileRouteTypes {
   to:
     | '/'
     | '/activeia'
+    | '/campus'
     | '/cohort-adversarial'
     | '/cohort-quartiles'
     | '/correcciones'
@@ -281,6 +292,7 @@ export interface FileRouteTypes {
     | '__root__'
     | '/'
     | '/activeia'
+    | '/campus'
     | '/cohort-adversarial'
     | '/cohort-quartiles'
     | '/correcciones'
@@ -307,6 +319,7 @@ export interface FileRouteTypes {
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
   ActiveiaRoute: typeof ActiveiaRoute
+  CampusRoute: typeof CampusRoute
   CohortAdversarialRoute: typeof CohortAdversarialRoute
   CohortQuartilesRoute: typeof CohortQuartilesRoute
   CorreccionesRoute: typeof CorreccionesRoute
@@ -479,6 +492,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof CohortAdversarialRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/campus': {
+      id: '/campus'
+      path: '/campus'
+      fullPath: '/campus'
+      preLoaderRoute: typeof CampusRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/activeia': {
       id: '/activeia'
       path: '/activeia'
@@ -499,6 +519,7 @@ declare module '@tanstack/react-router' {
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   ActiveiaRoute: ActiveiaRoute,
+  CampusRoute: CampusRoute,
   CohortAdversarialRoute: CohortAdversarialRoute,
   CohortQuartilesRoute: CohortQuartilesRoute,
   CorreccionesRoute: CorreccionesRoute,
