@@ -106,7 +106,9 @@ function montar(opciones: { rechazar?: boolean } = {}) {
     return json(200, { data: [], meta: { cursor_next: null } })
   })
   vi.stubGlobal("fetch", fetchMock)
-  renderWithRouter(<CampusView comisionId={COM} getToken={async () => "t"} />)
+  // Dia fijo (HU-039): con la fecha real, "Abre el 09/03/2027" pasaria a
+  // "Abierta desde..." el 09/03/2027 y la prueba fallaria sola.
+  renderWithRouter(<CampusView comisionId={COM} getToken={async () => "t"} hoy="2026-11-25" />)
   return llamadas
 }
 
