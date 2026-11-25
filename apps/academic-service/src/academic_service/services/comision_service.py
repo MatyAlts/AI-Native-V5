@@ -404,8 +404,13 @@ class ComisionService:
     # ── Campus (HU-033) ────────────────────────────────────────────────
 
     async def obtener_bienvenida(self, comision_id: UUID, user: User) -> str | None:
-        """Bienvenida HTML del campus. Solo staff de la comision (u oversight)."""
-        await assert_comision_member(self.session, user, comision_id)
+        """Bienvenida HTML del campus.
+
+        Lectura: staff de la comision (u oversight) y alumno inscripto
+        (HU-035, el alumno la ve en su curso). Escribirla sigue siendo solo
+        del staff (`actualizar_bienvenida`, gate `assert_comision_member`).
+        """
+        await assert_comision_access(self.session, user, comision_id)
         obj = await self.repo.get_or_404(comision_id)
         return obj.bienvenida_html
 

@@ -21,6 +21,7 @@ Comportamiento crítico:
 
 from __future__ import annotations
 
+from datetime import date
 from uuid import UUID, uuid4
 
 from fastapi import HTTPException, status
@@ -34,6 +35,7 @@ from academic_service.models.base import utc_now
 from academic_service.repositories import ComisionRepository
 from academic_service.schemas.unidad import (
     UnidadCreate,
+    UnidadOut,
     UnidadReorderItem,
     UnidadUpdate,
 )
@@ -51,6 +53,20 @@ def _cambios_para_audit(data: UnidadUpdate) -> dict:
         html = cambios.pop("introduccion_html")
         cambios["introduccion_html_chars"] = len(html) if html is not None else None
     return cambios
+
+
+def unidad_para_lector(out: UnidadOut, es_staff: bool, hoy: date) -> UnidadOut:
+    """Vista de la Unidad segun quien la lee (HU-035).
+
+    Un alumno no recibe la introduccion de una unidad que todavia no abrio
+    (`fecha_apertura > hoy`): le llega una copia con `introduccion_html=None`
+    y el resto igual (nombre, descripcion y fecha arman la tarjeta "Abre el
+    ..."). El staff la recibe siempre, para armarla antes de que abra.
+    No muta `out`: devuelve una copia.
+    """
+    if es_staff or out.fecha_apertura is None or out.fecha_apertura <= hoy:
+        return out
+    return out.model_copy(update={"introduccion_html": None})
 
 
 class UnidadService:
