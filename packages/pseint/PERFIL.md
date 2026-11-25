@@ -106,6 +106,13 @@ no es salida del algoritmo y no se compara.
    (2.000.000) pasos con estado `limite_excedido`, para que un ciclo infinito
    no congele el navegador ni ocupe el sandbox.
 6. **Recursión.** Más de 1.000 llamadas anidadas es error de ejecución.
+7. **Límite de salida.** Una ejecución que escribe más de
+   `MAX_SALIDA_POR_DEFECTO` (100.000) caracteres corta con estado
+   `limite_excedido` en la línea del `Escribir` que lo superó, después de
+   escribir lo que entraba. Sin este tope, un ciclo infinito con `Escribir`
+   llegaba al límite de pasos con ~11 MB escritos: 78 s con la pestaña
+   congelada y los 11 MB enteros en el `codigo_ejecutado` del CTR (medido el
+   24/11/2026). Desde la versión 1.2.0 del intérprete.
 
 ## Diagramas de flujo (HU-031)
 
@@ -139,7 +146,7 @@ paquete y es determinista; `DiagramaFlujo` de `@platform/ui` solo lo pinta.
 instrucción y el depurador decide cuándo seguir. La semántica, la cuenta de
 pasos para `maxPasos` y los errores son los mismos; al terminar, el
 `resultado` es idéntico al de `ejecutar` con los mismos datos (verificado
-sobre todo el corpus de paridad). Desde esta versión el runtime del CTR es
+sobre todo el corpus de paridad). Desde la versión 1.1.0 el runtime del CTR es
 `pseint-ts-1.1.0`.
 
 **Un paso es una instrucción**: una asignación, un `Definir`, un `Dimension`,

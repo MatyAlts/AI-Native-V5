@@ -39,6 +39,15 @@ type Gen<T> = Generator<Pedido, T, string | undefined>
  */
 export const MAX_PASOS_POR_DEFECTO = 2_000_000
 
+/**
+ * Tope de caracteres que una ejecución puede escribir. Sin él, un ciclo
+ * infinito con `Escribir` llega al límite de pasos habiendo escrito ~11 MB:
+ * medido el 24/11/2026 en el editor real, 78 s con la pestaña congelada y
+ * los 11 MB viajando enteros al CTR. 100.000 caracteres son miles de líneas:
+ * ningún ejercicio de la materia se acerca.
+ */
+export const MAX_SALIDA_POR_DEFECTO = 100_000
+
 /** Cada cuántos pasos se cede el control al event loop. */
 const PASOS_POR_CESION = 20_000
 /** Más llamadas anidadas que esto es casi seguro una recursión sin caso base. */
@@ -62,6 +71,13 @@ export class ErrorEjecucion extends Error {
 export class LimiteExcedido extends Error {
   constructor(public linea: number) {
     super("limite")
+  }
+}
+
+/** El algoritmo escribió más de `maxSalida` caracteres. */
+export class SalidaExcedida extends Error {
+  constructor(public linea: number) {
+    super("salida")
   }
 }
 
@@ -150,6 +166,7 @@ export class Interprete {
     private programa: Programa,
     private emitir: (texto: string) => void,
     private maxPasos: number,
+    readonly maxSalida: number = MAX_SALIDA_POR_DEFECTO,
   ) {
     this.ambito = programa.nombre
   }
@@ -449,6 +466,16 @@ export class Interprete {
         let texto = ""
         for (const e of s.exprs) texto += formatear(yield* this.ev(e, marco))
         if (s.saltar) texto += "\n"
+        const resto = this.maxSalida - this.salida.length
+        if (texto.length > resto) {
+          // Se escribe lo que entra y se corta: el alumno ve hasta dónde llegó.
+          if (resto > 0) {
+            const parte = texto.slice(0, resto)
+            this.salida += parte
+            this.emitir(parte)
+          }
+          throw new SalidaExcedida(s.linea)
+        }
         this.salida += texto
         this.emitir(texto)
         return
@@ -967,6 +994,16 @@ export function resultadoDeExcepcion(
       error: {
         linea: e.linea,
         mensaje: `El algoritmo superó el límite de ${maxPasos.toLocaleString("es-AR")} instrucciones y se detuvo. Revisá si tiene un ciclo que nunca termina.`,
+      },
+    }
+  }
+  if (e instanceof SalidaExcedida) {
+    return {
+      estado: "limite_excedido",
+      salida: interprete.salida,
+      error: {
+        linea: e.linea,
+        mensaje: `El algoritmo escribió más de ${interprete.maxSalida.toLocaleString("es-AR")} caracteres y se detuvo. Revisá si tiene un ciclo que nunca termina.`,
       },
     }
   }

@@ -12,6 +12,7 @@ import {
   Interprete,
   LEER,
   MAX_PASOS_POR_DEFECTO,
+  MAX_SALIDA_POR_DEFECTO,
   ceder,
   resultadoCancelado,
   resultadoDeExcepcion,
@@ -19,7 +20,7 @@ import {
 import { parsear } from "./parser"
 
 /** Versión del intérprete. El runtime del CTR es `pseint-ts-${VERSION}`. */
-export const VERSION = "1.1.0"
+export const VERSION = "1.2.0"
 
 export type EstadoEjecucion = "ok" | "error_sintaxis" | "error_ejecucion" | "limite_excedido"
 
@@ -49,6 +50,9 @@ export interface OpcionesEjecucion {
 
 /** Tope de instrucciones por ejecución (definido junto al intérprete). */
 export { MAX_PASOS_POR_DEFECTO }
+
+/** Tope de caracteres escritos por ejecución (definido junto al intérprete). */
+export { MAX_SALIDA_POR_DEFECTO }
 
 /** Revisa la sintaxis sin ejecutar. Lista vacía = sin errores. */
 export function verificarSintaxis(fuente: string): ErrorPseint[] {
