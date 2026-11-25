@@ -158,7 +158,12 @@ export const helpContent: HelpContentMap = {
       <ul className="list-disc list-inside space-y-2 ml-4">
         <li>
           <strong>Unidades:</strong> cada tarjeta es una unidad. Hace click para ver su introduccion
-          y sus trabajos practicos. La tarjeta te dice cuantos trabajos tiene.
+          y sus trabajos practicos. La tarjeta te dice en que estado esta (Completa, En curso o
+          cuando abre), cuantos trabajos tiene y cuantos ya entregaste.
+        </li>
+        <li>
+          <strong>Tu avance:</strong> arriba a la derecha, cuantas unidades completaste (todas sus
+          entregas mandadas).
         </li>
         <li>
           <strong>Unidades que todavia no abrieron:</strong> muestran la fecha en que abren. Hasta
@@ -184,7 +189,8 @@ export const helpContent: HelpContentMap = {
         </li>
         <li>
           <strong>Trabajos practicos:</strong> los TPs publicados de la unidad, cada uno con su
-          estado. Hace click en uno para trabajarlo con el tutor, como siempre.
+          estado, cuando vence y cuantos ejercicios llevas hechos. Hace click en uno para trabajarlo
+          con el tutor, como siempre.
         </li>
       </ul>
       <div className="bg-sidebar-bg-edge p-4 rounded-lg mt-2">

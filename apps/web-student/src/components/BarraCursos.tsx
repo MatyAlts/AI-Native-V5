@@ -32,19 +32,19 @@ export interface BarraCursosProps {
 }
 
 const BASE_LINK =
-  "flex items-center shrink-0 rounded-md text-sm no-underline transition-colors border-l-2 whitespace-nowrap md:whitespace-normal"
+  "flex items-center shrink-0 rounded-md no-underline transition-colors border-l-2 whitespace-nowrap md:whitespace-normal"
 
 export function BarraCursos({ cursos, comisionActiva }: BarraCursosProps) {
   return (
     <nav
       aria-label="Mis cursos"
       data-testid="barra-cursos"
-      className="shrink-0 bg-canvas border-b border-border md:border-b-0 md:border-r md:w-60 px-3 py-2 md:px-4 md:py-6 flex md:flex-col gap-1 overflow-x-auto md:overflow-y-auto"
+      className="shrink-0 bg-canvas border-b border-border md:border-b-0 md:border-r md:w-60 px-3 py-2 md:gap-1.5 md:px-4 md:py-6 flex md:flex-col gap-1 overflow-x-auto md:overflow-y-auto"
     >
       <Link
         to="/"
         activeOptions={{ exact: true }}
-        className={`${BASE_LINK} px-2.5 py-2 border-transparent text-body hover:bg-sidebar-bg-edge`}
+        className={`${BASE_LINK} text-sm px-2.5 py-2 md:py-2.5 border-transparent text-body hover:bg-sidebar-bg-edge`}
       >
         Mis cursos
       </Link>
@@ -57,7 +57,7 @@ export function BarraCursos({ cursos, comisionActiva }: BarraCursosProps) {
             params={{ comisionId: c.comision_id }}
             activeOptions={{ exact: true }}
             aria-current={activo ? "page" : undefined}
-            className={`${BASE_LINK} px-2.5 py-2 md:pl-5 ${
+            className={`${BASE_LINK} px-2.5 py-2 text-[13px] md:pl-[22px] ${
               activo
                 ? "bg-accent-brand-soft text-accent-brand-deep font-medium border-accent-brand"
                 : "border-transparent text-body hover:bg-sidebar-bg-edge"

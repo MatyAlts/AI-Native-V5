@@ -26,3 +26,15 @@ export function formatearFecha(fecha: string): string {
   const [anio, mes, dia] = fecha.slice(0, 10).split("-")
   return `${dia}/${mes}/${anio}`
 }
+
+/**
+ * Un instante ISO (`fecha_fin`, `submitted_at`: datetime con zona) pasado al
+ * dia de Argentina, "YYYY-MM-DD". A diferencia de `fecha_apertura`, aca si
+ * corresponde convertir de zona. null si no hay fecha o no se puede leer.
+ */
+export function diaDeInstante(instante: string | null | undefined): string | null {
+  if (!instante) return null
+  const d = new Date(instante)
+  if (Number.isNaN(d.getTime())) return null
+  return hoyCampus(d)
+}
