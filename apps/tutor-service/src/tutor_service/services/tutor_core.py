@@ -37,6 +37,7 @@ from tutor_service.services.clients import (
     GovernanceClient,
     RetrievalResult,
 )
+from tutor_service.services.contexto_codigo import mensaje_con_codigo
 from tutor_service.services.contexto_ejecucion import (
     construir_ultima_ejecucion,
     construir_ultimo_probar,
@@ -842,26 +843,12 @@ class TutorCore:
                 }
             )
 
-        # 4.quater (2026-05-21): inyectar el código actual del editor como
-        # contexto al tutor. Le da awareness para responder preguntas que
-        # referencian el código del alumno ("en la línea 7 tengo un error",
-        # "¿está bien mi while?"). El tutor sigue siendo socrático — la
-        # instrucción es que USE este contexto SIN dar la solución.
-        if state.current_code and state.current_code.strip():
-            numbered = "\n".join(
-                f"{i + 1:3d}  {line}" for i, line in enumerate(state.current_code.splitlines())
-            )
-            messages.append(
-                {
-                    "role": "system",
-                    "content": (
-                        "Código que el alumno tiene actualmente en su editor "
-                        "(con número de línea — referite a líneas específicas "
-                        "cuando ayudes; NO le des la solución completa):\n"
-                        f"```\n{numbered}\n```"
-                    ),
-                }
-            )
+        # 4.quater (2026-05-21; HU-042): el código actual del editor ya NO va
+        # como mensaje `system` (el ai-gateway lo dejaba al final de un
+        # system_instruction largo y el modelo lo ignoraba). Va dentro del
+        # ÚLTIMO mensaje `user`, armado más abajo con `mensaje_con_codigo`,
+        # sólo en el payload de este turno: ni el CTR ni `state.messages`
+        # guardan el código. Ver services/contexto_codigo.py.
 
         # 4.quater.bis (tutor-ve-salida-de-ejecucion): salida (stdout/stderr) de
         # la ULTIMA ejecucion, ya truncada en la sesion. Va pegada al codigo y
@@ -912,7 +899,9 @@ class TutorCore:
                 }
             )
 
-        messages.append({"role": "user", "content": user_message})
+        messages.append(
+            {"role": "user", "content": mensaje_con_codigo(user_message, state.current_code)}
+        )
 
         # 5. Stream del ai-gateway. ADR-040 (Sec 6.2): forwardear materia_id
         # para que el resolver BYOK aplique scope=materia primero (fallback a

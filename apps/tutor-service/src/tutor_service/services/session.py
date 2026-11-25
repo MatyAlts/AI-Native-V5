@@ -143,9 +143,9 @@ class SessionState:
     # se pudo resolver o la TP no tiene rubrica).
     rubrica_context: str | None = None
     # 2026-05-21 — código actual del editor del alumno. Se actualiza con cada
-    # evento `edicion_codigo` que llega al CTR. Se inyecta como `system`
-    # message en el siguiente prompt al tutor para que pueda referirse a
-    # líneas específicas ("en la línea 7 estás haciendo X"). None = el alumno
+    # evento `edicion_codigo` que llega al CTR. Se inyecta dentro del último
+    # mensaje `user` del siguiente turno (HU-042, `contexto_codigo.py`) para
+    # que el tutor pueda referirse a líneas específicas ("en la línea 7 estás haciendo X"). None = el alumno
     # no escribió nada todavía en este episodio.
     current_code: str | None = None
     # tutor-ve-salida-de-ejecucion: salida de la ULTIMA ejecucion del alumno,
