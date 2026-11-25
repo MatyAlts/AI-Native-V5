@@ -41,3 +41,4 @@ class AplicacionPlantillaOut(BaseModel):
     unidades_omitidas: list[str]
     tps_creados: int
     bienvenida_aplicada: bool
+    tps_omitidos: list[str] = []

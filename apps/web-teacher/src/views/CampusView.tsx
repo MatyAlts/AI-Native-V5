@@ -37,6 +37,11 @@ interface Props {
   getToken: () => Promise<string | null>
 }
 
+interface CampusViewProps extends Props {
+  /** Dia de hoy ("YYYY-MM-DD"); por defecto, hoy en Argentina. */
+  hoy?: string
+}
+
 type Estado =
   | { kind: "idle" }
   | { kind: "saving" }
@@ -61,10 +66,25 @@ export const ESTRUCTURA_SUGERIDA = [
   .map((titulo) => `<h2>${titulo}</h2>\n<p></p>`)
   .join("\n\n")
 
-export function textoApertura(fecha: string | null | undefined): string {
+/** Hoy en Argentina como "YYYY-MM-DD" (en-CA formatea asi). */
+export function hoyArgentina(): string {
+  return new Intl.DateTimeFormat("en-CA", {
+    timeZone: "America/Argentina/Buenos_Aires",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).format(new Date())
+}
+
+/**
+ * Texto de apertura de una unidad. Las fechas "YYYY-MM-DD" se comparan como
+ * texto (orden lexicografico = orden de fechas), nunca con `new Date`.
+ */
+export function textoApertura(fecha: string | null | undefined, hoy: string): string {
   if (!fecha) return "Abierta"
   const [anio, mes, dia] = fecha.split("-")
-  return `Abre el ${dia}/${mes}/${anio}`
+  const legible = `${dia}/${mes}/${anio}`
+  return fecha <= hoy ? `Abierta desde el ${legible}` : `Abre el ${legible}`
 }
 
 const AREA =
@@ -261,6 +281,9 @@ function SeccionPlantillas({
             {resultado.unidades_omitidas.length > 0 && (
               <p>{`Ya existían y no se tocaron: ${resultado.unidades_omitidas.join(", ")}.`}</p>
             )}
+            {(resultado.tps_omitidos?.length ?? 0) > 0 && (
+              <p>{`No se crearon ${resultado.tps_omitidos?.join(", ")}: ya hay trabajos prácticos con ese código en esta comisión.`}</p>
+            )}
             {resultado.bienvenida_aplicada && <p>También se cargó la bienvenida.</p>}
           </div>
         )}
@@ -270,8 +293,10 @@ function SeccionPlantillas({
   )
 }
 
-export function CampusView({ comisionId, getToken }: Props) {
+export function CampusView({ comisionId, getToken, hoy }: CampusViewProps) {
   const confirm = useConfirm()
+  const [hoyPorDefecto] = useState(hoyArgentina)
+  const hoyEfectivo = hoy ?? hoyPorDefecto
 
   const [bienvenida, setBienvenida] = useState("")
   const [estadoBienvenida, setEstadoBienvenida] = useState<Estado>({ kind: "idle" })
@@ -321,8 +346,8 @@ export function CampusView({ comisionId, getToken }: Props) {
   async function usarEstructura() {
     if (borrador.introduccion.trim() !== "") {
       const ok = await confirm({
-        title: "Reemplazar la introduccion",
-        message: "La introduccion actual se reemplaza por la estructura sugerida.",
+        title: "Reemplazar la introducción",
+        message: "La introducción actual se reemplaza por la estructura sugerida.",
         confirmLabel: "Reemplazar",
         tone: "danger",
       })
@@ -371,7 +396,7 @@ export function CampusView({ comisionId, getToken }: Props) {
 
         <section className="space-y-3 rounded-lg border border-border bg-surface p-4">
           <h2 className="text-base font-semibold text-ink">Bienvenida del curso</h2>
-          <div className="grid gap-4 lg:grid-cols-2">
+          <div className="space-y-4">
             <div className="space-y-1">
               <label htmlFor="campus-bienvenida" className="text-xs text-muted">
                 HTML de la bienvenida
@@ -419,7 +444,9 @@ export function CampusView({ comisionId, getToken }: Props) {
               <li key={u.id} className="flex flex-wrap items-center justify-between gap-3 p-3">
                 <div className="min-w-0">
                   <div className="font-medium text-ink">{u.nombre}</div>
-                  <div className="text-xs text-muted">{textoApertura(u.fecha_apertura)}</div>
+                  <div className="text-xs text-muted">
+                    {textoApertura(u.fecha_apertura, hoyEfectivo)}
+                  </div>
                   {u.descripcion && (
                     <div className="mt-1 text-sm text-body line-clamp-2">{u.descripcion}</div>
                   )}
@@ -444,7 +471,7 @@ export function CampusView({ comisionId, getToken }: Props) {
                   Usar estructura sugerida
                 </button>
               </div>
-              <div className="grid gap-4 lg:grid-cols-2">
+              <div className="space-y-4">
                 <div className="space-y-1">
                   <label htmlFor="campus-introduccion" className="text-xs text-muted">
                     HTML de la introduccion

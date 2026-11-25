@@ -1340,6 +1340,8 @@ export interface AplicacionPlantilla {
   unidades_omitidas: string[]
   tps_creados: number
   bienvenida_aplicada: boolean
+  /** Codigos de TP que no se crearon porque ya existian en la comision. */
+  tps_omitidos?: string[]
 }
 
 /** Plantillas de la materia de la comision (requiere ser staff de ella). */

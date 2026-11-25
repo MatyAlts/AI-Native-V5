@@ -405,6 +405,7 @@ class PlantillaCampusService:
             "unidades_omitidas": plan.unidades_omitidas,
             "tps_creados": tps_creados,
             "bienvenida_aplicada": plan.bienvenida is not None,
+            "tps_omitidos": tps_omitidos,
         }
         self.session.add(
             AuditLog(
@@ -416,7 +417,6 @@ class PlantillaCampusService:
                 changes={
                     **resultado,
                     "comision_id": str(comision_id),
-                    "tps_omitidos": tps_omitidos,
                 },
             )
         )
