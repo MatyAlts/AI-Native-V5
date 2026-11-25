@@ -115,25 +115,30 @@ describe("C07/C08 paso a paso con prueba de escritorio", () => {
 })
 
 describe("C09 Leer en el paso a paso", () => {
+  // HU-042: el dato se pide en el campo "Dato para Leer" de la consola, no con
+  // window.prompt, y recien en el paso del Leer.
   it("pide el dato recién en el paso del Leer, mostrando la salida previa", async () => {
-    const pedidos: string[] = []
-    window.prompt = vi.fn((m?: string) => {
-      pedidos.push(String(m ?? ""))
-      return "21"
-    }) as typeof window.prompt
+    window.prompt = vi.fn(() => "99") as typeof window.prompt
     render(<CodeEditor initialCode={DOBLE} language={"pseint" as never} />)
     await esperarEditor()
     await click(/^Paso a paso/)
     await click(/^Siguiente paso/) // Definir
     await click(/^Siguiente paso/) // Escribir
-    expect(pedidos.length).toBe(0)
+    expect(screen.queryByLabelText("Dato para Leer")).toBeNull()
     await click(/^Siguiente paso/) // Leer
-    await waitFor(() => expect(pedidos.length).toBe(1))
-    expect(pedidos[0]).toContain("Ingrese un numero:")
-    const celdas = within(tabla())
-      .getAllByRole("cell")
-      .map((c) => c.textContent?.trim())
-    expect(celdas).toContain("21")
+    const campo = (await screen.findByLabelText("Dato para Leer")) as HTMLInputElement
+    expect(screen.getAllByText(/Ingrese un numero:/).length).toBeGreaterThan(0)
+    await act(async () => {
+      fireEvent.change(campo, { target: { value: "21" } })
+      fireEvent.keyDown(campo, { key: "Enter" })
+    })
+    await waitFor(() => {
+      const celdas = within(tabla())
+        .getAllByRole("cell")
+        .map((c) => c.textContent?.trim())
+      expect(celdas).toContain("21")
+    })
+    expect(window.prompt).not.toHaveBeenCalled()
   })
 })
 

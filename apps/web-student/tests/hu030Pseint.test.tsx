@@ -11,7 +11,7 @@
  * N01  Python y Java no cambian en lo que fijan estos tests.
  */
 import { VERSION } from "@platform/pseint"
-import { act, render, screen, waitFor } from "@testing-library/react"
+import { act, fireEvent, render, screen, waitFor } from "@testing-library/react"
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 import { CodeEditor } from "../src/components/CodeEditor"
 import { LANGUAGE_LABELS, LANGUAGE_PLACEHOLDER, type TestCasePublic } from "../src/lib/api"
@@ -69,12 +69,10 @@ describe("C02 PSeInt en el editor", () => {
 })
 
 describe("C03 Ejecutar en el navegador con Leer interactivo", () => {
+  // HU-042: el Leer se responde en un campo de la consola ("Dato para Leer"),
+  // ya no con window.prompt (que congelaba la pagina).
   it("pide el dato, muestra la salida y no llama al servidor", async () => {
-    const pedidos: string[] = []
-    window.prompt = vi.fn((mensaje?: string) => {
-      pedidos.push(String(mensaje ?? ""))
-      return "21"
-    }) as typeof window.prompt
+    window.prompt = vi.fn(() => "99") as typeof window.prompt
     const onCodeExecuted = vi.fn()
     render(
       <CodeEditor
@@ -89,9 +87,14 @@ describe("C03 Ejecutar en el navegador con Leer interactivo", () => {
     await act(async () => {
       boton(/^Ejecutar/).click()
     })
+    const campo = (await screen.findByLabelText("Dato para Leer")) as HTMLInputElement
+    expect(screen.getAllByText(/Ingrese un numero:/).length).toBeGreaterThan(0)
+    await act(async () => {
+      fireEvent.change(campo, { target: { value: "21" } })
+      fireEvent.keyDown(campo, { key: "Enter" })
+    })
     await waitFor(() => expect(onCodeExecuted).toHaveBeenCalled())
-    expect(pedidos.length).toBe(1)
-    expect(pedidos[0]).toContain("Ingrese un numero:")
+    expect(window.prompt).not.toHaveBeenCalled()
     const r = onCodeExecuted.mock.calls[0]![0]
     expect(r.output).toContain("El doble es 42")
     expect(r.error).toBeNull()
