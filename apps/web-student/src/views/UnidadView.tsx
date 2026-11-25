@@ -274,7 +274,7 @@ function detalleTp(tp: AvailableTarea, entrega: Entrega | null, hoy: string): st
   return fin >= hoy ? `Vence el ${formatearFecha(fin)}` : `Cerró el ${formatearFecha(fin)}`
 }
 
-function TarjetaTp({
+export function TarjetaTp({
   tp,
   materiaId,
   entrega,
