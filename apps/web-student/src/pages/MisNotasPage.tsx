@@ -141,8 +141,12 @@ function FilaItem({
   const tareaLabel = entrega.tarea_codigo ?? "TP"
   const tituloLabel = entrega.tarea_titulo ?? "(sin titulo)"
   const entregado = entrega.submitted_at ? formatDateShort(entrega.submitted_at) : null
-  const corregido = entrega.graded_at ? formatDateShort(entrega.graded_at) : null
-  const nota = entrega.nota_final ?? null
+  // Item 27: una re-entrega (`submitted`) arrastra la calificacion de la
+  // correccion anterior, porque devolver no la borra. Esa nota NO es la de
+  // esta entrega: se muestra rotulada como anterior y la fila queda pendiente.
+  const notaAnterior = entrega.estado === "submitted" ? (entrega.nota_final ?? null) : null
+  const nota = entrega.estado === "submitted" ? null : (entrega.nota_final ?? null)
+  const corregido = nota !== null && entrega.graded_at ? formatDateShort(entrega.graded_at) : null
 
   return (
     <li>
@@ -161,6 +165,11 @@ function FilaItem({
             {corregido && <> · corregido {corregido}</>}
             {nota === null && " · el docente no la corrigio todavia"}
           </p>
+          {notaAnterior !== null && (
+            <p data-testid="mis-notas-nota-anterior" className="text-xs text-muted-soft mt-0.5">
+              Re-entrega · nota anterior {notaAnterior.toFixed(2)}
+            </p>
+          )}
         </div>
         <div className="shrink-0 text-right">
           {nota !== null ? (
