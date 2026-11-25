@@ -17,6 +17,7 @@
  * dia anterior; por eso se formatea partiendo el string.
  */
 import { HtmlAislado, PageContainer, useConfirm } from "@platform/ui"
+import { Link } from "@tanstack/react-router"
 import { useCallback, useEffect, useState } from "react"
 import {
   type AplicacionPlantilla,
@@ -115,6 +116,16 @@ export function resumenAplicacion(r: AplicacionPlantilla): string {
   return `Se crearon ${unidades} y ${tps} en borrador.`
 }
 
+/**
+ * Mejora #50: aplicar una plantilla sobre la comision de la que salio no crea
+ * nada (no pisa lo existente) y el "Se crearon 0" se lee como una falla. La
+ * plantilla no guarda la comision de origen (a proposito), asi que se detecta
+ * por el resultado: nada creado y nada cargado.
+ */
+export function aplicacionSinCambios(r: AplicacionPlantilla): boolean {
+  return r.unidades_creadas === 0 && r.tps_creados === 0 && !r.bienvenida_aplicada
+}
+
 function AvisoError({ titulo, msg }: { titulo: string; msg: string }) {
   return (
     <div
@@ -202,7 +213,9 @@ function SeccionPlantillas({
         <h2 className="text-base font-semibold text-ink">Plantillas</h2>
         <p className="text-sm text-muted">
           Guarda este campus para reusarlo en otra comision de la materia, o aplica una plantilla
-          aca. No se pisa nada que ya exista y los TPs llegan en borrador, sin fechas.
+          aca. No se pisa nada que ya exista y los TPs llegan en borrador, sin fechas. Para copiar
+          este campus a otra comision, cambia de comision con el selector de arriba y aplica la
+          plantilla alla.
         </p>
       </div>
 
@@ -285,6 +298,13 @@ function SeccionPlantillas({
               <p>{`No se crearon ${resultado.tps_omitidos?.join(", ")}: ya hay trabajos prácticos con ese código en esta comisión.`}</p>
             )}
             {resultado.bienvenida_aplicada && <p>También se cargó la bienvenida.</p>}
+            {aplicacionSinCambios(resultado) && (
+              <p className="font-medium">
+                No cambió nada: esta comisión ya tiene todo lo que trae la plantilla. Si la
+                guardaste desde esta misma comisión, cambiá a otra comisión de la materia con el
+                selector de arriba y aplicala ahí.
+              </p>
+            )}
           </div>
         )}
         {errorAplicar && <AvisoError titulo="No se pudo aplicar." msg={errorAplicar} />}
@@ -436,7 +456,22 @@ export function CampusView({ comisionId, getToken, hoy }: CampusViewProps) {
           {loading && <p className="text-sm text-muted">Cargando unidades...</p>}
           {!loading && unidades.length === 0 && !errorCarga && (
             <p className="text-sm text-muted">
-              Esta comision todavia no tiene unidades. Crealas en la seccion Unidades.
+              Esta comision todavia no tiene unidades.{" "}
+              <Link
+                to="/unidades"
+                search={{ comisionId }}
+                className="font-medium text-ink underline hover:no-underline"
+              >
+                Crealas en la seccion Unidades
+              </Link>{" "}
+              y volve aca: con Editar le escribis la introduccion a cada una o le cargas la
+              estructura sugerida.
+            </p>
+          )}
+          {!loading && unidades.length > 0 && (
+            <p className="text-sm text-muted">
+              Toca Editar en una unidad para escribir su introduccion, ponerle fecha de apertura o
+              cargarle la estructura sugerida (7 secciones).
             </p>
           )}
           <ul className="divide-y divide-border-soft rounded-lg border border-border bg-surface">
