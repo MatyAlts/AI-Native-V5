@@ -29,18 +29,21 @@
  */
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react"
 import userEvent from "@testing-library/user-event"
+import type { ReactNode } from "react"
 import { afterEach, describe, expect, it, vi } from "vitest"
 import type { Entrega, MateriaInscripta } from "../src/lib/api"
 import { MisNotasList, MisNotasPage, agruparEntregas } from "../src/pages/MisNotasPage"
 import { setupFetchMock } from "./_mocks"
 
-// `MisNotasPage` usa `useNavigate` (sin `<Link>`) — sin RouterProvider,
-// `useNavigate` real explota. Mismo patron que HomePage.test.tsx.
+// `MisNotasPage` usa `<Link>` para volver (HU-040) — sin RouterProvider el
+// `Link` real explota. Se lo reemplaza por un `<a>` plano; el destino del link
+// lo prueba la aceptacion de HU-040 con el router de verdad.
 vi.mock("@tanstack/react-router", async (importOriginal) => {
   const actual = await importOriginal<typeof import("@tanstack/react-router")>()
   return {
     ...actual,
     useNavigate: () => vi.fn(),
+    Link: ({ children, to }: { children?: ReactNode; to: string }) => <a href={to}>{children}</a>,
   }
 })
 

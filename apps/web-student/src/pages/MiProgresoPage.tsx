@@ -29,7 +29,7 @@
  */
 import { HelpButton } from "@platform/ui"
 import { useQuery } from "@tanstack/react-query"
-import { useNavigate } from "@tanstack/react-router"
+import { Link, useNavigate } from "@tanstack/react-router"
 import { ArrowLeft, History, Info, Minus, Sparkles, TrendingDown, TrendingUp } from "lucide-react"
 import { type ReactNode, useState } from "react"
 import { getCurrentUserUuid } from "../auth"
@@ -210,17 +210,28 @@ export function MiProgresoPage({ comisionIdInicial }: MiProgresoPageProps = {}) 
   const comisionId = selectedComisionId ?? inicialValida ?? materias[0]?.comision_id ?? null
 
   return (
-    <div className="page-enter flex-1 overflow-y-auto px-6 py-10">
-      <div className="max-w-3xl mx-auto">
-        <button
-          type="button"
-          onClick={() => navigate({ to: "/" })}
-          className="press-shrink inline-flex items-center gap-1.5 text-xs text-muted hover:text-ink mb-6"
-          data-testid="mi-progreso-back"
-        >
-          <ArrowLeft className="h-3.5 w-3.5" aria-hidden="true" />
-          Volver a mis materias
-        </button>
+    <div className="page-enter flex-1 overflow-y-auto px-4 pt-6 pb-10 sm:px-6 md:px-10 md:pt-8 md:pb-14">
+      <div>
+        {comisionIdInicial ? (
+          <Link
+            to="/curso/$comisionId"
+            params={{ comisionId: comisionIdInicial }}
+            className="press-shrink inline-flex items-center gap-1.5 text-xs text-muted hover:text-ink mb-6"
+            data-testid="mi-progreso-back"
+          >
+            <ArrowLeft className="h-3.5 w-3.5" aria-hidden="true" />
+            Volver al curso
+          </Link>
+        ) : (
+          <Link
+            to="/"
+            className="press-shrink inline-flex items-center gap-1.5 text-xs text-muted hover:text-ink mb-6"
+            data-testid="mi-progreso-back"
+          >
+            <ArrowLeft className="h-3.5 w-3.5" aria-hidden="true" />
+            Volver a Mis cursos
+          </Link>
+        )}
 
         <header className="animate-fade-in-down mb-8 flex items-start justify-between gap-4">
           <div className="min-w-0">

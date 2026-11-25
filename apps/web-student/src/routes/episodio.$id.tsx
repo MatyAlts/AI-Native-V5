@@ -15,8 +15,10 @@
  * se pasa el contexto a EpisodeView y al salir se navega de vuelta al
  * ExerciseListView de la TP correspondiente.
  */
+import { useQueryClient } from "@tanstack/react-query"
 import { createFileRoute, useNavigate, useParams } from "@tanstack/react-router"
-import { destinoAlSalir, enviarEntregaAlSalir } from "../lib/entregaAlSalir"
+import { type MateriaInscripta, getEpisodeState, listMisMaterias } from "../lib/api"
+import { destinoAlSalir, destinoSalidaEjercicio, enviarEntregaAlSalir } from "../lib/entregaAlSalir"
 import { debeEnviarLaEntrega } from "../lib/entregaGuard"
 import { type EjercicioContext, EpisodeView } from "../pages/EpisodePage"
 import { ACTIVE_EXERCISE_CONTEXT_KEY, type ActiveExerciseContext } from "./materia.$id"
@@ -40,6 +42,7 @@ function EpisodioPage() {
   // sendBeacon (que no pasa por el override de window.fetch y llega sin token
   // → 401 → el evento nunca se appendea). Fix QA 2026-06-15 #9.
   const { getToken } = Route.useRouteContext()
+  const queryClient = useQueryClient()
 
   // Leer contexto de ejercicio del sessionStorage (si existe).
   // NB-6: el contexto solo aplica si fue guardado para ESTE episodio.
@@ -49,12 +52,22 @@ function EpisodioPage() {
   const ejercicioContext = readEjercicioContext(id)
 
   async function handleExit() {
+    // HU-040: toda salida reemplaza (no apila) la entrada
+    // del episodio en el historial: "atras" ya no reabre el episodio pausado.
     if (ejercicioContext) {
-      navigate({
-        to: "/materia/$id",
-        params: { id: ejercicioContext.materiaId },
-        search: { returnToExercise: true },
-      })
+      window.sessionStorage.removeItem(ACTIVE_EXERCISE_CONTEXT_KEY)
+      const destino = destinoSalidaEjercicio(ejercicioContext, null, [])
+      if (destino) {
+        navigate({ ...destino, replace: true })
+        return
+      }
+    }
+    // Sin contexto (se entro por URL, o se volvio con "atras" despues de
+    // salir): si el episodio es de un ejercicio, vuelve a su TP y NO manda la
+    // entrega (eso es solo para las TP de un solo ejercicio).
+    const destinoEjercicio = await derivarDestinoEjercicio()
+    if (destinoEjercicio) {
+      navigate({ ...destinoEjercicio, replace: true })
       return
     }
     // TP monolitica (sin ejercicioContext). Cerrar el episodio ES la entrega:
@@ -68,7 +81,22 @@ function EpisodioPage() {
     // Si el servidor la rechazo por plazo vencido (HU-016), el alumno tiene que
     // enterarse: la home muestra el aviso que viaja en `?aviso=plazo-vencido`.
     // Sin `alert()` y sin trabar la salida.
-    navigate(destinoAlSalir(await enviarEntregaAlSalir(id, getToken)))
+    navigate({ ...destinoAlSalir(await enviarEntregaAlSalir(id, getToken)), replace: true })
+  }
+
+  /** Destino de vuelta al TP derivado del estado del episodio; null si no aplica. */
+  async function derivarDestinoEjercicio() {
+    try {
+      const estado = await getEpisodeState(id, getToken)
+      if (estado.ejercicio_orden === null) return null
+      const materias =
+        queryClient.getQueryData<MateriaInscripta[]>(["mis-materias"]) ??
+        (await listMisMaterias(getToken))
+      return destinoSalidaEjercicio(null, estado, materias)
+    } catch {
+      // Best-effort: sin datos se sigue el camino de siempre.
+      return null
+    }
   }
 
   return (

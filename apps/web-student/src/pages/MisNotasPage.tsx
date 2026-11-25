@@ -22,7 +22,7 @@
  * de truncar en silencio (principio 5 de PRODUCT.md).
  */
 import { HelpButton } from "@platform/ui"
-import { useNavigate } from "@tanstack/react-router"
+import { Link } from "@tanstack/react-router"
 import { useEffect, useState } from "react"
 import { GradeDetailView } from "../components/GradeDetailView"
 import { TrabajoCorregidoView } from "../components/TrabajoCorregidoView"
@@ -231,8 +231,6 @@ export interface MisNotasPageProps {
 }
 
 export function MisNotasPage({ comisionIdInicial }: MisNotasPageProps = {}) {
-  const navigate = useNavigate()
-
   const [materias, setMaterias] = useState<MateriaInscripta[] | null>(null)
   const [materiasError, setMateriasError] = useState<string | null>(null)
   const [selectedComisionId, setSelectedComisionId] = useState<string | null>(null)
@@ -313,17 +311,28 @@ export function MisNotasPage({ comisionIdInicial }: MisNotasPageProps = {}) {
     : null
 
   return (
-    <div className="page-enter flex-1 overflow-y-auto px-6 py-10">
-      <div className="max-w-3xl mx-auto">
-        <button
-          type="button"
-          onClick={() => navigate({ to: "/" })}
-          className="press-shrink inline-flex items-center gap-1.5 text-xs text-muted hover:text-ink mb-6"
-          data-testid="mis-notas-back"
-        >
-          <span aria-hidden="true">←</span>
-          Volver a mis materias
-        </button>
+    <div className="page-enter flex-1 overflow-y-auto px-4 pt-6 pb-10 sm:px-6 md:px-10 md:pt-8 md:pb-14">
+      <div>
+        {comisionIdInicial ? (
+          <Link
+            to="/curso/$comisionId"
+            params={{ comisionId: comisionIdInicial }}
+            className="press-shrink inline-flex items-center gap-1.5 text-xs text-muted hover:text-ink mb-6"
+            data-testid="mis-notas-back"
+          >
+            <span aria-hidden="true">←</span>
+            Volver al curso
+          </Link>
+        ) : (
+          <Link
+            to="/"
+            className="press-shrink inline-flex items-center gap-1.5 text-xs text-muted hover:text-ink mb-6"
+            data-testid="mis-notas-back"
+          >
+            <span aria-hidden="true">←</span>
+            Volver a Mis cursos
+          </Link>
+        )}
 
         <header className="mb-8 flex items-start justify-between gap-4">
           <div className="min-w-0">
