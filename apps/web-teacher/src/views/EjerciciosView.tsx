@@ -302,13 +302,13 @@ export function EjerciciosView({ comisionId, getToken }: Props) {
   // filtrada/ordenada por el server). Matchea titulo, enunciado y el label de
   // la unidad tematica. Sin termino -> lista completa.
   const visibles = useMemo(() => {
-    const q = search.trim().toLowerCase()
+    const q = normalizarBusqueda(search.trim())
     if (!q) return ejercicios
     return ejercicios.filter(
       (ej) =>
-        ej.titulo.toLowerCase().includes(q) ||
-        ej.enunciado_md.toLowerCase().includes(q) ||
-        (UNIDAD_LABEL[ej.unidad_tematica] ?? ej.unidad_tematica).toLowerCase().includes(q),
+        normalizarBusqueda(ej.titulo).includes(q) ||
+        normalizarBusqueda(ej.enunciado_md).includes(q) ||
+        normalizarBusqueda(UNIDAD_LABEL[ej.unidad_tematica] ?? ej.unidad_tematica).includes(q),
     )
   }, [ejercicios, search])
 
@@ -702,9 +702,21 @@ export function EjerciciosView({ comisionId, getToken }: Props) {
   )
 }
 
+/**
+ * HU-043: el buscador ignora tildes y mayusculas de los dos lados. NFD separa
+ * la letra de su tilde (tambien si el texto ya llego descompuesto) y se borran
+ * las marcas combinantes.
+ */
+function normalizarBusqueda(texto: string): string {
+  return texto.normalize("NFD").replace(/\p{M}/gu, "").toLowerCase()
+}
+
 function toCreate(ej: Ejercicio): EjercicioCreate {
   return {
     titulo: ej.titulo,
+    // HU-043: sin esto el formulario caia en DEFAULT_LANGUAGE (python) y al
+    // guardar un ejercicio PSeInt lo pasaba a Python.
+    language: ej.language ?? DEFAULT_LANGUAGE,
     enunciado_md: ej.enunciado_md,
     inicial_codigo: ej.inicial_codigo,
     unidad_tematica: ej.unidad_tematica,
