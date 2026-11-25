@@ -117,3 +117,51 @@ export function destinoAlSalir(resultado: ResultadoDeSalida): {
 } {
   return { to: "/", search: resultado === "vencida" ? { aviso: "plazo-vencido" } : {} }
 }
+
+/** Destino de la salida de un ejercicio: la lista de ejercicios de su TP. */
+export interface DestinoSalidaEjercicio {
+  to: "/materia/$id"
+  params: { id: string }
+  search: { tareaId: string }
+  replace: true
+}
+
+/**
+ * A donde vuelve el alumno al salir del episodio de un ejercicio (HU-040).
+ *
+ * Con el contexto del ejercicio (sessionStorage) vuelve a su TP. Sin contexto
+ * (se entro por URL, o "atras" despues de haber salido) lo deriva del estado
+ * del episodio: si es de un ejercicio y su materia aparece entre las del
+ * alumno, tambien vuelve al TP. Si no, `null`: el caller sigue el camino de la
+ * entrega de siempre (TP de un solo ejercicio).
+ *
+ * Siempre `replace: true`: la salida reemplaza la entrada del episodio en el
+ * historial, asi "atras" no reabre el episodio pausado.
+ */
+export function destinoSalidaEjercicio(
+  ctx: { materiaId: string; tareaId: string } | null,
+  estado: {
+    tarea_practica_id: string
+    comision_id: string
+    ejercicio_orden: number | null
+  } | null,
+  materias: ReadonlyArray<{ materia_id: string; comision_id: string }>,
+): DestinoSalidaEjercicio | null {
+  if (ctx) {
+    return {
+      to: "/materia/$id",
+      params: { id: ctx.materiaId },
+      search: { tareaId: ctx.tareaId },
+      replace: true,
+    }
+  }
+  if (!estado || estado.ejercicio_orden === null) return null
+  const materia = materias.find((m) => m.comision_id === estado.comision_id)
+  if (!materia) return null
+  return {
+    to: "/materia/$id",
+    params: { id: materia.materia_id },
+    search: { tareaId: estado.tarea_practica_id },
+    replace: true,
+  }
+}

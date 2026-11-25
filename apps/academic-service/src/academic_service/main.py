@@ -24,6 +24,7 @@ from academic_service.routes import (
     instrumentos,
     materias,
     planes,
+    plantillas_campus,
     student_profiles,
     tareas_practicas,
     tareas_practicas_templates,
@@ -67,6 +68,7 @@ app.include_router(tareas_practicas.router)
 app.include_router(tareas_practicas_templates.router)
 app.include_router(ejercicios.router)
 app.include_router(unidades.router)
+app.include_router(plantillas_campus.router)
 app.include_router(bulk.router)
 
 # Instrumentos del diseno cuasi-experimental (P2-1, P2-2, P2-3 del PlanMejora.md)

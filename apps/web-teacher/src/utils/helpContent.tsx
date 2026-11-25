@@ -551,6 +551,58 @@ export const helpContent: HelpContentMap = {
     </div>
   ),
 
+  campus: (
+    <div className="space-y-4 text-sidebar-text-muted">
+      <p className="text-lg font-medium text-[var(--text-inverse)]">Campus del curso</p>
+      <p>
+        Aca armas lo que tus alumnos ven al entrar al campus de esta comision: la bienvenida del
+        curso y, por cada unidad, su introduccion, la fecha en que se abre y el resumen de la
+        tarjeta.
+      </p>
+      <ul className="list-disc list-inside space-y-2 ml-4">
+        <li>
+          <strong>Bienvenida:</strong> escribi el HTML en el editor y mira como queda en la vista
+          previa. Se guarda con "Guardar bienvenida".
+        </li>
+        <li>
+          <strong>Introduccion de la unidad:</strong> HTML libre, puede traer CSS y JavaScript (por
+          ejemplo un resumen interactivo). "Usar estructura sugerida" carga las 7 secciones base
+          para que solo completes el contenido.
+        </li>
+        <li>
+          <strong>Fecha de apertura:</strong> desde ese dia la unidad queda abierta para los
+          alumnos. Sin fecha, la unidad esta abierta siempre.
+        </li>
+        <li>
+          <strong>Resumen de la tarjeta:</strong> el texto corto que aparece en la tarjeta de la
+          unidad.
+        </li>
+        <li>
+          <strong>Plantillas:</strong> "Guardar como plantilla" guarda una copia de este campus
+          (bienvenida, unidades con su introduccion y los TPs vigentes de cada una) para la materia.
+          Otro docente de la misma materia la elige en "Plantilla para aplicar" y con "Aplicar
+          plantilla" la carga en su comision en un clic.
+        </li>
+      </ul>
+      <div className="bg-sidebar-bg-edge p-4 rounded-lg mt-4">
+        <p className="text-accent-brand font-medium">Que hace aplicar una plantilla:</p>
+        <p className="text-sm mt-1">
+          No pisa nada: una unidad con el mismo nombre que una que ya tenes se deja como esta, y la
+          bienvenida solo se carga si la comision no tenia una. Las fechas no viajan: las unidades
+          llegan abiertas y los TPs en borrador, sin fechas. Ningun alumno los ve hasta que los
+          publicas. Despues retoca fechas y textos.
+        </p>
+      </div>
+      <div className="bg-sidebar-bg-edge p-4 rounded-lg mt-4">
+        <p className="text-accent-brand font-medium">Recuadro aislado:</p>
+        <p className="text-sm mt-1">
+          El HTML se muestra siempre dentro de un recuadro aislado: los scripts corren, pero no
+          pueden leer la sesion, salir de la pagina ni mandar datos a otro sitio. La vista previa
+          usa el mismo recuadro que ve el alumno.
+        </p>
+      </div>
+    </div>
+  ),
   unidades: (
     <div className="space-y-4 text-sidebar-text-muted">
       <p className="text-lg font-medium text-[var(--text-inverse)]">Unidades de Trazabilidad</p>

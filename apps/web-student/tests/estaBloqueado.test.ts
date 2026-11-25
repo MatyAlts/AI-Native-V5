@@ -35,8 +35,11 @@ describe("estaBloqueado: el lock secuencial es solo entre pendientes", () => {
     expect(bloqueados(estados)).toEqual([false, false, true])
   })
 
-  it("un orden anterior sin estado cuenta como pendiente", () => {
-    expect(estaBloqueado(2, [est(2, false)])).toBe(true)
+  // HU-038: antes un orden anterior sin estado contaba como pendiente, y un
+  // hueco en la numeracion (1, 2, 3, 101) trababa el TP para siempre. Ahora
+  // solo cuentan los ejercicios que existen (ver Hu038OrdenConHuecos.test.ts).
+  it("un orden anterior que no existe no bloquea (HU-038)", () => {
+    expect(estaBloqueado(2, [est(2, false)])).toBe(false)
   })
 })
 

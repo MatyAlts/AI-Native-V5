@@ -22,6 +22,7 @@ from academic_service.models.operacional import (
     Ejercicio,
     Inscripcion,
     Periodo,
+    PlantillaCampus,
     TareaPractica,
     TareaPracticaTemplate,
     TpEjercicio,
@@ -44,6 +45,7 @@ __all__ = [
     # Operacional
     "Periodo",
     "PlanEstudios",
+    "PlantillaCampus",
     # Instrumentos research (P2-1, P2-2, P2-3 del PlanMejora.md)
     "RespuestaCuestionarioIA",
     "RespuestaPretestAutoeficacia",

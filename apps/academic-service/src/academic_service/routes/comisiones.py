@@ -15,6 +15,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from academic_service.auth import User, get_current_user, get_db, require_permission
 from academic_service.config import settings
 from academic_service.schemas import (
+    BienvenidaOut,
+    BienvenidaUpdate,
     ComisionCreate,
     ComisionJoinRequest,
     ComisionOut,
@@ -381,6 +383,35 @@ async def update_comision(
     svc = ComisionService(db)
     obj = await svc.update(comision_id, data, user)
     return _redact_invite_code(ComisionOut.model_validate(obj), user)
+
+
+# ── Campus (HU-033) ───────────────────────────────────────────────────
+
+
+@comisiones_router.get("/{comision_id}/bienvenida", response_model=BienvenidaOut)
+async def get_bienvenida(
+    comision_id: UUID,
+    user: User = Depends(require_permission("comision", "read")),
+    db: AsyncSession = Depends(get_db),
+) -> BienvenidaOut:
+    """Bienvenida HTML del campus. El service exige membresia de la comision."""
+    html = await ComisionService(db).obtener_bienvenida(comision_id, user)
+    return BienvenidaOut(html=html)
+
+
+@comisiones_router.put("/{comision_id}/bienvenida", response_model=BienvenidaOut)
+async def put_bienvenida(
+    comision_id: UUID,
+    data: BienvenidaUpdate,
+    # `unidad:update` y no `comision:update`: el docente no tiene ni debe
+    # tener `comision:update` (habilitaria el PATCH de la comision, que no
+    # mira membresia). El campus es contenido de cursada, como las unidades;
+    # el aislamiento real lo da `assert_comision_member` en el service.
+    user: User = Depends(require_permission("unidad", "update")),
+    db: AsyncSession = Depends(get_db),
+) -> BienvenidaOut:
+    obj = await ComisionService(db).actualizar_bienvenida(comision_id, data.html, user)
+    return BienvenidaOut(html=obj.bienvenida_html)
 
 
 @comisiones_router.delete("/{comision_id}", status_code=status.HTTP_204_NO_CONTENT)

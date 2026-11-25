@@ -80,6 +80,9 @@ class Comision(Base, TenantMixin, TimestampMixin):
     ai_budget_monthly_usd: Mapped[Decimal] = mapped_column(
         Numeric(10, 2), default=Decimal("100.00")
     )
+    # HU-033: bienvenida del campus en HTML (puede traer JS). La escribe el
+    # docente; se muestra SIEMPRE dentro de `HtmlAislado` (iframe sandbox).
+    bienvenida_html: Mapped[str | None] = mapped_column(Text, nullable=True)
 
     materia: Mapped[Materia] = relationship(back_populates="comisiones")
     periodo: Mapped[Periodo] = relationship(back_populates="comisiones")
@@ -193,6 +196,11 @@ class Unidad(Base, TenantMixin, TimestampMixin):
     nombre: Mapped[str] = mapped_column(String(100), nullable=False)
     descripcion: Mapped[str | None] = mapped_column(Text, nullable=True)
     orden: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    # HU-033: introduccion de la unidad en el campus (HTML, puede traer JS;
+    # se muestra en `HtmlAislado`) y fecha desde la que se abre. Sin fecha =
+    # abierta. `descripcion` es el resumen de la tarjeta.
+    introduccion_html: Mapped[str | None] = mapped_column(Text, nullable=True)
+    fecha_apertura: Mapped[date | None] = mapped_column(Date, nullable=True)
     updated_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True), nullable=True, onupdate=datetime.utcnow
     )
@@ -208,6 +216,30 @@ class Unidad(Base, TenantMixin, TimestampMixin):
         # para que el ORM la conozca, sin el parámetro DEFERRABLE.
         # La constraint real en la DB SÍ es deferrable (ver migración).
         UniqueConstraint("tenant_id", "comision_id", "orden", name="uq_unidad_orden"),
+    )
+
+
+class PlantillaCampus(Base, TenantMixin, TimestampMixin):
+    """Copia del campus de una comision, reusable en la materia (HU-036).
+
+    El docente guarda el campus de su comision (bienvenida, unidades con su
+    introduccion y los TPs vigentes de cada una) y otro docente de la misma
+    materia lo aplica a su comision en un clic. `contenido` es un JSONB con
+    `version="campus_v1"` armado por `plantilla_campus_service.armar_contenido`:
+    no lleva fechas ni ids de la comision de origen. Aplicar crea los TPs en
+    `draft` sin fechas y no pisa unidades que ya existen (por nombre) ni una
+    bienvenida ya escrita.
+    """
+
+    __tablename__ = "plantillas_campus"
+
+    id: Mapped[uuid.UUID] = uuid_pk()
+    materia_id: Mapped[uuid.UUID] = fk_uuid("materias.id")
+    nombre: Mapped[str] = mapped_column(String(200), nullable=False)
+    contenido: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False)
+    created_by: Mapped[uuid.UUID] = mapped_column(PgUUID(as_uuid=True), nullable=False)
+    updated_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True, onupdate=datetime.utcnow
     )
 
 

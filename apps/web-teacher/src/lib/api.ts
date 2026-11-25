@@ -1183,6 +1183,10 @@ export interface Unidad {
   nombre: string
   orden: number
   descripcion: string | null
+  /** HU-033: introduccion del campus en HTML (se muestra en `HtmlAislado`). */
+  introduccion_html?: string | null
+  /** HU-033: fecha sin hora ("2027-03-09"); null = abierta. No pasarla por `new Date`. */
+  fecha_apertura?: string | null
   created_by: string
   created_at: string
   updated_at: string
@@ -1199,6 +1203,8 @@ export interface UnidadUpdate {
   nombre?: string
   descripcion?: string | null
   orden?: number
+  introduccion_html?: string | null
+  fecha_apertura?: string | null
 }
 
 export interface UnidadReorderItem {
@@ -1287,6 +1293,96 @@ export const unidadesApi = {
   delete: deleteUnidad,
   reorder: reorderUnidades,
   assignTP: assignTPToUnidad,
+}
+
+// ── Campus del curso (HU-033) ─────────────────────────────────────────
+
+export interface Bienvenida {
+  html: string | null
+}
+
+export async function getBienvenida(
+  comisionId: string,
+  getToken?: TokenGetter,
+): Promise<Bienvenida> {
+  const r = await fetch(`/api/v1/comisiones/${comisionId}/bienvenida`, {
+    headers: await authHeaders(getToken),
+  })
+  await throwIfNotOk(r)
+  return r.json()
+}
+
+export async function putBienvenida(
+  comisionId: string,
+  html: string | null,
+  getToken?: TokenGetter,
+): Promise<Bienvenida> {
+  const r = await fetch(`/api/v1/comisiones/${comisionId}/bienvenida`, {
+    method: "PUT",
+    headers: await authHeaders(getToken),
+    body: JSON.stringify({ html }),
+  })
+  await throwIfNotOk(r)
+  return r.json()
+}
+
+// ── Plantillas de campus (HU-036) ─────────────────────────────────────
+
+export interface PlantillaCampus {
+  id: string
+  nombre: string
+  materia_id: string
+  created_at: string
+}
+
+export interface AplicacionPlantilla {
+  unidades_creadas: number
+  unidades_omitidas: string[]
+  tps_creados: number
+  bienvenida_aplicada: boolean
+  /** Codigos de TP que no se crearon porque ya existian en la comision. */
+  tps_omitidos?: string[]
+}
+
+/** Plantillas de la materia de la comision (requiere ser staff de ella). */
+export async function listPlantillasCampus(
+  comisionId: string,
+  getToken?: TokenGetter,
+): Promise<PlantillaCampus[]> {
+  return fetchList<PlantillaCampus>(
+    `/api/v1/plantillas-campus?comision_id=${encodeURIComponent(comisionId)}`,
+    getToken,
+  )
+}
+
+/** Guarda el campus de la comision como plantilla de su materia. */
+export async function guardarPlantillaCampus(
+  comisionId: string,
+  nombre: string,
+  getToken?: TokenGetter,
+): Promise<PlantillaCampus> {
+  const r = await fetch("/api/v1/plantillas-campus", {
+    method: "POST",
+    headers: await authHeaders(getToken),
+    body: JSON.stringify({ comision_id: comisionId, nombre }),
+  })
+  await throwIfNotOk(r)
+  return r.json()
+}
+
+/** Aplica la plantilla a la comision: no pisa lo existente, TPs en borrador. */
+export async function aplicarPlantillaCampus(
+  plantillaId: string,
+  comisionId: string,
+  getToken?: TokenGetter,
+): Promise<AplicacionPlantilla> {
+  const r = await fetch(`/api/v1/plantillas-campus/${plantillaId}/aplicar`, {
+    method: "POST",
+    headers: await authHeaders(getToken),
+    body: JSON.stringify({ comision_id: comisionId }),
+  })
+  await throwIfNotOk(r)
+  return r.json()
 }
 
 // ── ADR-020: Distribución N1-N4 por episodio ─────────────────────────

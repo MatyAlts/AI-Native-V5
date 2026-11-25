@@ -7,10 +7,11 @@ import {
   useUser,
 } from "@clerk/clerk-react"
 import { AuditFooter, HelpButton } from "@platform/ui"
-import { Outlet, createRootRouteWithContext, useRouterState } from "@tanstack/react-router"
+import { createRootRouteWithContext, useRouterState } from "@tanstack/react-router"
 import { type ReactNode, useCallback, useEffect, useState } from "react"
 import { DEV_NO_CLERK, DEV_STUDENT_UUID, clearClerkUserId, setClerkUserId } from "../auth"
 import { BotonVolverPanelDocente } from "../components/BotonVolverPanelDocente"
+import { CampusShell } from "../components/CampusShell"
 import { OlvidarModoVista } from "../components/OlvidarModoVista"
 import { TenantSelector } from "../components/TenantSelector"
 import { OnboardingAlumno } from "../onboarding/OnboardingAlumno"
@@ -284,7 +285,7 @@ function EnrollmentBody({
   if (state === "need-code") {
     return <InviteCodeScreen onSubmit={enroll} error={error} />
   }
-  return <Outlet />
+  return <CampusShell />
 }
 
 // Path real: auth via Clerk.

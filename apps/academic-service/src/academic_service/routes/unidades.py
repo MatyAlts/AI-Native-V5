@@ -14,7 +14,9 @@ FastAPI no confunda `/reorder` con un UUID como path param.
 
 from __future__ import annotations
 
+from datetime import date, datetime, timedelta, timezone
 from uuid import UUID
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from fastapi import APIRouter, Depends, Query, status
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -28,9 +30,21 @@ from academic_service.schemas.unidad import (
     UnidadUpdate,
 )
 from academic_service.services.comision_service import assert_comision_access
-from academic_service.services.unidad_service import UnidadService
+from academic_service.services.unidad_service import UnidadService, unidad_para_lector
 
 router = APIRouter(prefix="/api/v1/unidades", tags=["unidades"])
+
+# La apertura de una unidad se cuenta en el dia de Argentina, no en el UTC del
+# servidor: a las 22 h del 15/03 en Mendoza ya es 16/03 en UTC.
+# Si la imagen no trae tzdata, UTC-3 fijo (Argentina no usa horario de verano).
+try:
+    _ZONA_CAMPUS: timezone | ZoneInfo = ZoneInfo("America/Argentina/Buenos_Aires")
+except ZoneInfoNotFoundError:  # pragma: no cover - depende de la imagen
+    _ZONA_CAMPUS = timezone(timedelta(hours=-3))
+
+
+def _hoy_campus() -> date:
+    return datetime.now(_ZONA_CAMPUS).date()
 
 
 @router.post("", response_model=UnidadOut, status_code=status.HTTP_201_CREATED)
@@ -82,11 +96,14 @@ async def list_unidades(
     (en prod todos comparten un tenant fijo → la RLS no alcanza). Acceso
     válido = docente asignado (`usuarios_comision`) O alumno inscripto
     (`inscripciones`). Quien pide una comisión ajena recibe 403.
+    Al alumno no le llega la introducción de una unidad que todavía no
+    abrió (`unidad_para_lector`, HU-035).
     """
-    await assert_comision_access(db, user, comision_id)
+    es_staff = await assert_comision_access(db, user, comision_id)
     svc = UnidadService(db)
     objs = await svc.list_by_comision(user.tenant_id, comision_id)
-    items = [UnidadOut.model_validate(o) for o in objs]
+    hoy = _hoy_campus()
+    items = [unidad_para_lector(UnidadOut.model_validate(o), es_staff, hoy) for o in objs]
     return ListResponse(data=items, meta=ListMeta(cursor_next=None))
 
 
@@ -103,8 +120,8 @@ async def get_unidad(
     """
     svc = UnidadService(db)
     obj = await svc.get_by_id(unidad_id)
-    await assert_comision_access(db, user, obj.comision_id)
-    return UnidadOut.model_validate(obj)
+    es_staff = await assert_comision_access(db, user, obj.comision_id)
+    return unidad_para_lector(UnidadOut.model_validate(obj), es_staff, _hoy_campus())
 
 
 @router.patch("/{unidad_id}", response_model=UnidadOut)

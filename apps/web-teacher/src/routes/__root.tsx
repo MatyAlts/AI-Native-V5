@@ -43,6 +43,7 @@ import {
   Group,
   Home,
   Layers,
+  LayoutTemplate,
   LifeBuoy,
   PieChart,
   ShieldAlert,
@@ -116,6 +117,8 @@ export const NAV_GROUPS: NavGroup[] = [
     label: "Trabajo del docente",
     items: [
       { id: "/unidades", label: "Unidades", icon: Group },
+      // HU-033: bienvenida e introduccion de cada unidad del campus del alumno.
+      { id: "/campus", label: "Campus del curso", icon: LayoutTemplate },
       { id: "/ejercicios", label: "Banco de ejercicios", icon: BookOpen },
       { id: "/tareas-practicas", label: "Trabajos Prácticos", icon: ClipboardList },
       { id: "/materiales", label: "Materiales", icon: FolderOpen },

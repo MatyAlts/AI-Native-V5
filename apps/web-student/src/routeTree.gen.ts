@@ -16,6 +16,8 @@ import { Route as InstrumentosRouteImport } from './routes/instrumentos'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as MateriaIdRouteImport } from './routes/materia.$id'
 import { Route as EpisodioIdRouteImport } from './routes/episodio.$id'
+import { Route as CursoComisionIdRouteImport } from './routes/curso.$comisionId'
+import { Route as CursoComisionIdUnidadUnidadIdRouteImport } from './routes/curso.$comisionId.unidad.$unidadId'
 
 const ReflexionesRoute = ReflexionesRouteImport.update({
   id: '/reflexiones',
@@ -52,6 +54,17 @@ const EpisodioIdRoute = EpisodioIdRouteImport.update({
   path: '/episodio/$id',
   getParentRoute: () => rootRouteImport,
 } as any)
+const CursoComisionIdRoute = CursoComisionIdRouteImport.update({
+  id: '/curso/$comisionId',
+  path: '/curso/$comisionId',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const CursoComisionIdUnidadUnidadIdRoute =
+  CursoComisionIdUnidadUnidadIdRouteImport.update({
+    id: '/unidad/$unidadId',
+    path: '/unidad/$unidadId',
+    getParentRoute: () => CursoComisionIdRoute,
+  } as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
@@ -59,8 +72,10 @@ export interface FileRoutesByFullPath {
   '/mis-notas': typeof MisNotasRoute
   '/progreso': typeof ProgresoRoute
   '/reflexiones': typeof ReflexionesRoute
+  '/curso/$comisionId': typeof CursoComisionIdRouteWithChildren
   '/episodio/$id': typeof EpisodioIdRoute
   '/materia/$id': typeof MateriaIdRoute
+  '/curso/$comisionId/unidad/$unidadId': typeof CursoComisionIdUnidadUnidadIdRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
@@ -68,8 +83,10 @@ export interface FileRoutesByTo {
   '/mis-notas': typeof MisNotasRoute
   '/progreso': typeof ProgresoRoute
   '/reflexiones': typeof ReflexionesRoute
+  '/curso/$comisionId': typeof CursoComisionIdRouteWithChildren
   '/episodio/$id': typeof EpisodioIdRoute
   '/materia/$id': typeof MateriaIdRoute
+  '/curso/$comisionId/unidad/$unidadId': typeof CursoComisionIdUnidadUnidadIdRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
@@ -78,8 +95,10 @@ export interface FileRoutesById {
   '/mis-notas': typeof MisNotasRoute
   '/progreso': typeof ProgresoRoute
   '/reflexiones': typeof ReflexionesRoute
+  '/curso/$comisionId': typeof CursoComisionIdRouteWithChildren
   '/episodio/$id': typeof EpisodioIdRoute
   '/materia/$id': typeof MateriaIdRoute
+  '/curso/$comisionId/unidad/$unidadId': typeof CursoComisionIdUnidadUnidadIdRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
@@ -89,8 +108,10 @@ export interface FileRouteTypes {
     | '/mis-notas'
     | '/progreso'
     | '/reflexiones'
+    | '/curso/$comisionId'
     | '/episodio/$id'
     | '/materia/$id'
+    | '/curso/$comisionId/unidad/$unidadId'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
@@ -98,8 +119,10 @@ export interface FileRouteTypes {
     | '/mis-notas'
     | '/progreso'
     | '/reflexiones'
+    | '/curso/$comisionId'
     | '/episodio/$id'
     | '/materia/$id'
+    | '/curso/$comisionId/unidad/$unidadId'
   id:
     | '__root__'
     | '/'
@@ -107,8 +130,10 @@ export interface FileRouteTypes {
     | '/mis-notas'
     | '/progreso'
     | '/reflexiones'
+    | '/curso/$comisionId'
     | '/episodio/$id'
     | '/materia/$id'
+    | '/curso/$comisionId/unidad/$unidadId'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
@@ -117,6 +142,7 @@ export interface RootRouteChildren {
   MisNotasRoute: typeof MisNotasRoute
   ProgresoRoute: typeof ProgresoRoute
   ReflexionesRoute: typeof ReflexionesRoute
+  CursoComisionIdRoute: typeof CursoComisionIdRouteWithChildren
   EpisodioIdRoute: typeof EpisodioIdRoute
   MateriaIdRoute: typeof MateriaIdRoute
 }
@@ -172,8 +198,34 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof EpisodioIdRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/curso/$comisionId': {
+      id: '/curso/$comisionId'
+      path: '/curso/$comisionId'
+      fullPath: '/curso/$comisionId'
+      preLoaderRoute: typeof CursoComisionIdRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/curso/$comisionId/unidad/$unidadId': {
+      id: '/curso/$comisionId/unidad/$unidadId'
+      path: '/unidad/$unidadId'
+      fullPath: '/curso/$comisionId/unidad/$unidadId'
+      preLoaderRoute: typeof CursoComisionIdUnidadUnidadIdRouteImport
+      parentRoute: typeof CursoComisionIdRoute
+    }
   }
 }
+
+interface CursoComisionIdRouteChildren {
+  CursoComisionIdUnidadUnidadIdRoute: typeof CursoComisionIdUnidadUnidadIdRoute
+}
+
+const CursoComisionIdRouteChildren: CursoComisionIdRouteChildren = {
+  CursoComisionIdUnidadUnidadIdRoute: CursoComisionIdUnidadUnidadIdRoute,
+}
+
+const CursoComisionIdRouteWithChildren = CursoComisionIdRoute._addFileChildren(
+  CursoComisionIdRouteChildren,
+)
 
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
@@ -181,6 +233,7 @@ const rootRouteChildren: RootRouteChildren = {
   MisNotasRoute: MisNotasRoute,
   ProgresoRoute: ProgresoRoute,
   ReflexionesRoute: ReflexionesRoute,
+  CursoComisionIdRoute: CursoComisionIdRouteWithChildren,
   EpisodioIdRoute: EpisodioIdRoute,
   MateriaIdRoute: MateriaIdRoute,
 }

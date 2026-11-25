@@ -53,6 +53,10 @@ from tutor_service.services.guardrails import (
     OveruseDetector,
 )
 from tutor_service.services.guardrails import detect as detect_adversarial_default
+from tutor_service.services.orden_ejercicios import (
+    ejercicio_anterior_completado,
+    primer_anterior_sin_completar,
+)
 from tutor_service.services.postprocess import infer_prompt_kind
 from tutor_service.services.session import SessionManager, SessionState
 
@@ -339,8 +343,8 @@ class TutorCore:
                 )
 
         # 0c. tp-entregas-correccion (Task 6.3): validar secuencialidad.
-        # Si el ejercicio resuelto tiene orden N>1, el ejercicio N-1 debe
-        # estar completado. Falla soft: si el evaluation-service no responde,
+        # Si el ejercicio resuelto tiene orden N>1, los ejercicios que existen
+        # con orden menor deben estar completados (HU-038). Falla soft: si el evaluation-service no responde,
         # se permite abrir el episodio.
         if ejercicio_orden is not None and ejercicio_orden > 1:
             await self._validate_ejercicio_secuencialidad(
@@ -2210,7 +2214,8 @@ class TutorCore:
         """Valida que el ejercicio anterior esté completado antes de abrir el siguiente.
 
         tp-entregas-correccion (Task 6.3): consulta el evaluation-service para
-        verificar que `ejercicio_orden - 1` está completado en la entrega del alumno.
+        verificar que todos los ejercicios que existen con orden menor estén
+        completados en la entrega del alumno (HU-038, `orden_ejercicios.py`).
 
         Falla soft: si el evaluation-service no responde, se permite abrir el episodio
         (mejor UX que bloquear por indisponibilidad del servicio).
@@ -2253,15 +2258,15 @@ class TutorCore:
 
                 entrega = entregas_data[0]
                 estados = entrega.get("ejercicio_estados", [])
-                prev_orden = ejercicio_orden - 1
-                prev_completado = any(
-                    e.get("orden") == prev_orden and e.get("completado") for e in estados
-                )
-                if not prev_completado:
+                # HU-038: cuentan los ejercicios anteriores QUE EXISTEN, no
+                # `ejercicio_orden - 1` (con huecos en la numeracion ese numero
+                # puede no existir y el TP quedaba trabado).
+                if not ejercicio_anterior_completado(ejercicio_orden, estados):
+                    falta = primer_anterior_sin_completar(ejercicio_orden, estados)
                     raise HTTPException(
                         status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
                         detail=(
-                            f"Debes completar el ejercicio {prev_orden} "
+                            f"Debes completar el ejercicio {falta} "
                             f"antes de abrir el ejercicio {ejercicio_orden}"
                         ),
                     )
