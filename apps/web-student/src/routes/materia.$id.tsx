@@ -34,6 +34,7 @@ import {
   type Entrega,
   type MateriaInscripta,
   fetchConfigHashes,
+  getEntregaForTp,
   getEpisodeState,
   getTareaById,
   listEjerciciosTp,
@@ -81,8 +82,9 @@ type MateriaPageView =
       kind: "grade-detail"
       tarea: AvailableTarea
       entrega: Entrega
-      /** Vista a la que vuelve "← Volver" (hoy, el ExerciseListView). */
-      back: MateriaPageView
+      /** Vista a la que vuelve "← Volver" (el ExerciseListView). `null`:
+       * vuelve al campus (TP monolitico ya entregado, HU-041). */
+      back: MateriaPageView | null
     }
   | {
       kind: "opening"
@@ -342,6 +344,17 @@ function MateriaPage() {
       if (pairs.length > 0) {
         setView({ kind: "exercise-list", tarea })
       } else {
+        // HU-041: un TP monolitico ya entregado (o calificado) no abre un
+        // episodio nuevo: muestra la calificacion o que espera correccion.
+        // Si falla pedir la entrega, se abre como siempre (no bloquea).
+        // `materia` existe (guard de arriba); TS no propaga el narrowing aca.
+        const entrega = materia
+          ? await getEntregaForTp(tarea.id, materia.comision_id).catch(() => null)
+          : null
+        if (entrega && (entrega.estado === "graded" || entrega.estado === "submitted")) {
+          setView({ kind: "grade-detail", tarea, entrega, back: null })
+          return
+        }
         await openEpisodeAndNavigate(tarea, null)
       }
     } catch {
@@ -382,7 +395,13 @@ function MateriaPage() {
       )}
 
       {currentView.kind === "grade-detail" && (
-        <GradeDetailView entrega={currentView.entrega} onBack={() => setView(currentView.back)} />
+        <GradeDetailView
+          entrega={currentView.entrega}
+          onBack={() => {
+            if (currentView.back) setView(currentView.back)
+            else irAlCampus(navigate, materia.comision_id, currentView.tarea, false)
+          }}
+        />
       )}
 
       {currentView.kind === "opening" && (
