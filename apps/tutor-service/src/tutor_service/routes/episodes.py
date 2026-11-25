@@ -23,7 +23,7 @@ from uuid import UUID
 import redis.asyncio as redis
 from fastapi import APIRouter, Depends, Header, HTTPException, status
 from fastapi.responses import StreamingResponse
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
 from tutor_service.auth.dependencies import User, require_role
 from tutor_service.config import settings
@@ -762,6 +762,23 @@ async def resume_episode(
 _RUNTIME_RE = r"^(pyodide-\d+(\.\d+)*|pseint-ts-\d+\.\d+\.\d+)$"
 _RUNTIME_POR_DEFECTO = "pyodide-0.26"
 
+# Tope de `stdout`/`stderr` que entra al CTR por ejecucion. El navegador ya
+# corta antes (PSeInt: `MAX_SALIDA_POR_DEFECTO` del interprete, 100.000), pero
+# esto es lo que protege la cadena append-only de un cliente viejo o de otro
+# lenguaje: el 24/11/2026 un ciclo infinito con `Escribir` mandaba 11 MB en un
+# solo evento, y el nginx acepta hasta 50 MB. Se RECORTA, no se rechaza: un 422
+# haria perder el evento entero de la cadena. Se conserva el principio (lo que
+# el alumno vio primero) y se marca cuanto se omitio.
+SALIDA_CTR_MAX_CHARS = 100_000
+
+
+def _recortar_salida(texto: str) -> str:
+    if len(texto) <= SALIDA_CTR_MAX_CHARS:
+        return texto
+    omitidos = len(texto) - SALIDA_CTR_MAX_CHARS
+    aviso = f"[... salida recortada: {omitidos} caracteres omitidos ...]"
+    return f"{texto[:SALIDA_CTR_MAX_CHARS]}\n{aviso}"
+
 
 class CodigoEjecutadoRequest(BaseModel):
     """Evento emitido por el frontend cuando corre código en el navegador."""
@@ -778,6 +795,11 @@ class CodigoEjecutadoRequest(BaseModel):
             "Sin el campo (clientes viejos, Python) queda 'pyodide-0.26'."
         ),
     )
+
+    @field_validator("stdout", "stderr")
+    @classmethod
+    def _acotar(cls, valor: str) -> str:
+        return _recortar_salida(valor)
 
 
 @router.post(
