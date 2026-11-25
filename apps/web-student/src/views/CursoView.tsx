@@ -7,6 +7,11 @@
  * bienvenida que escribio el docente (HU-033) en el recuadro aislado, y una
  * grilla de tarjetas, una por unidad en orden.
  *
+ * Debajo, "Otros trabajos practicos": los TPs publicados que no estan en
+ * ninguna unidad visible (`unidad_id` vacio, o una unidad borrada: la FK es
+ * `ON DELETE SET NULL`). Sin esta seccion no tenian ningun camino: la pagina
+ * de la materia redirige al campus y el campus solo lista TPs por unidad.
+ *
  * Cada tarjeta: "Unidad N" (por posicion) con su estado a la derecha
  * (Completa / En curso / "Abre el dd/mm/aaaa"), el nombre sin el prefijo
  * "Unidad N · ", el resumen y abajo "N trabajos practicos" con "X de Y
@@ -42,6 +47,7 @@ import {
 } from "../lib/avanceCampus"
 import { formatearFecha } from "../lib/fechaCampus"
 import { helpContent } from "../utils/helpContent"
+import { TarjetaTp } from "./UnidadView"
 
 export interface CursoViewProps {
   comisionId: string
@@ -82,6 +88,18 @@ export function tpsDeUnidad(tareas: AvailableTarea[], unidadId: string): Availab
   return tareas.filter((t) => t.unidad_id === unidadId)
 }
 
+/**
+ * TPs que no cuelgan de ninguna unidad de la lista: sin `unidad_id`, o con el
+ * de una unidad que el alumno no recibe (borrada). Sin esto quedan sin acceso.
+ */
+export function tpsSinUnidad(
+  tareas: AvailableTarea[],
+  unidades: ReadonlyArray<Pick<Unidad, "id">>,
+): AvailableTarea[] {
+  const ids = new Set(unidades.map((u) => u.id))
+  return tareas.filter((t) => !t.unidad_id || !ids.has(t.unidad_id))
+}
+
 export function cantidadTps(n: number): string {
   return n === 1 ? "1 trabajo práctico" : `${n} trabajos prácticos`
 }
@@ -109,6 +127,8 @@ export function CursoView({ comisionId, getToken, hoy }: CursoViewProps) {
       estado: estadoUnidad(u.fecha_apertura, hoy, tps.length, entregados),
     }
   })
+  // Solo con las unidades cargadas: mientras cargan, todo TP pareceria suelto.
+  const sueltos = unidades.isSuccess ? tpsSinUnidad(publicadas, unidadesOrdenadas) : []
   const completas = tarjetas.filter((t) => t.estado === "completa").length
   const comision = materia.comision_nombre ?? `Comisión ${materia.comision_codigo}`
 
@@ -199,6 +219,26 @@ export function CursoView({ comisionId, getToken, hoy }: CursoViewProps) {
           </ul>
         )}
       </section>
+
+      {sueltos.length > 0 && (
+        <section aria-labelledby="titulo-otros-tps" className="flex flex-col gap-3">
+          <h2 id="titulo-otros-tps" className="text-base font-semibold text-ink">
+            Otros trabajos prácticos
+          </h2>
+          <div className="flex flex-col gap-3">
+            {sueltos.map((tp) => (
+              <TarjetaTp
+                key={tp.id}
+                tp={tp}
+                materiaId={materia.materia_id}
+                entrega={porTp.get(tp.id) ?? null}
+                getToken={getToken}
+                hoy={hoy}
+              />
+            ))}
+          </div>
+        </section>
+      )}
     </CampusPagina>
   )
 }
