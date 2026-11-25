@@ -40,6 +40,19 @@ from academic_service.schemas.unidad import (
 from academic_service.services.comision_service import assert_comision_member
 
 
+def _cambios_para_audit(data: UnidadUpdate) -> dict:
+    """Cambios serializables para el AuditLog (columna JSONB).
+
+    `mode="json"` porque `fecha_apertura` es `date`. La introduccion HTML
+    (hasta 512 KB) se registra por su largo, no entera.
+    """
+    cambios = data.model_dump(mode="json", exclude_unset=True)
+    if "introduccion_html" in cambios:
+        html = cambios.pop("introduccion_html")
+        cambios["introduccion_html_chars"] = len(html) if html is not None else None
+    return cambios
+
+
 class UnidadService:
     def __init__(self, session: AsyncSession) -> None:
         self.session = session
@@ -78,6 +91,8 @@ class UnidadService:
             nombre=data.nombre,
             descripcion=data.descripcion,
             orden=data.orden,
+            introduccion_html=data.introduccion_html,
+            fecha_apertura=data.fecha_apertura,
             created_by=user.id,
         )
         self.session.add(unidad)
@@ -170,7 +185,7 @@ class UnidadService:
             action="unidad.update",
             resource_type="unidad",
             resource_id=unidad_id,
-            changes={"after": changes},
+            changes={"after": _cambios_para_audit(data)},
         )
         self.session.add(audit)
         await self.session.flush()

@@ -80,6 +80,9 @@ class Comision(Base, TenantMixin, TimestampMixin):
     ai_budget_monthly_usd: Mapped[Decimal] = mapped_column(
         Numeric(10, 2), default=Decimal("100.00")
     )
+    # HU-033: bienvenida del campus en HTML (puede traer JS). La escribe el
+    # docente; se muestra SIEMPRE dentro de `HtmlAislado` (iframe sandbox).
+    bienvenida_html: Mapped[str | None] = mapped_column(Text, nullable=True)
 
     materia: Mapped[Materia] = relationship(back_populates="comisiones")
     periodo: Mapped[Periodo] = relationship(back_populates="comisiones")
@@ -193,6 +196,11 @@ class Unidad(Base, TenantMixin, TimestampMixin):
     nombre: Mapped[str] = mapped_column(String(100), nullable=False)
     descripcion: Mapped[str | None] = mapped_column(Text, nullable=True)
     orden: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    # HU-033: introduccion de la unidad en el campus (HTML, puede traer JS;
+    # se muestra en `HtmlAislado`) y fecha desde la que se abre. Sin fecha =
+    # abierta. `descripcion` es el resumen de la tarjeta.
+    introduccion_html: Mapped[str | None] = mapped_column(Text, nullable=True)
+    fecha_apertura: Mapped[date | None] = mapped_column(Date, nullable=True)
     updated_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True), nullable=True, onupdate=datetime.utcnow
     )

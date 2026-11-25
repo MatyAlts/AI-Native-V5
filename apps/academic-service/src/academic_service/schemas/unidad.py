@@ -2,10 +2,14 @@
 
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import date, datetime
 from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field
+
+# HU-033: tope del HTML del campus (bienvenida e introduccion de unidad).
+# Alcanza para un resumen interactivo con su JS inline; mas largo es 422.
+HTML_CAMPUS_MAX_CHARS = 512_000
 
 
 class UnidadCreate(BaseModel):
@@ -15,6 +19,8 @@ class UnidadCreate(BaseModel):
     nombre: str = Field(min_length=1, max_length=100)
     descripcion: str | None = Field(default=None, max_length=2000)
     orden: int = Field(default=0, ge=0)
+    introduccion_html: str | None = Field(default=None, max_length=HTML_CAMPUS_MAX_CHARS)
+    fecha_apertura: date | None = None
 
 
 class UnidadUpdate(BaseModel):
@@ -26,6 +32,9 @@ class UnidadUpdate(BaseModel):
     nombre: str | None = Field(default=None, min_length=1, max_length=100)
     descripcion: str | None = None
     orden: int | None = Field(default=None, ge=0)
+    introduccion_html: str | None = Field(default=None, max_length=HTML_CAMPUS_MAX_CHARS)
+    # `null` explicito = sin fecha (la unidad queda abierta).
+    fecha_apertura: date | None = None
 
 
 class UnidadOut(BaseModel):
@@ -39,6 +48,8 @@ class UnidadOut(BaseModel):
     nombre: str
     descripcion: str | None = None
     orden: int
+    introduccion_html: str | None = None
+    fecha_apertura: date | None = None
     created_by: UUID
     created_at: datetime
     updated_at: datetime | None = None

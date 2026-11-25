@@ -8,6 +8,8 @@ from academic_service.schemas.base import (
 )
 from academic_service.schemas.carrera import CarreraCreate, CarreraOut, CarreraUpdate
 from academic_service.schemas.comision import (
+    BienvenidaOut,
+    BienvenidaUpdate,
     ComisionCreate,
     ComisionJoinRequest,
     ComisionOut,
@@ -55,6 +57,8 @@ from academic_service.schemas.usuario_comision import (
 
 __all__ = [
     "BaseResponse",
+    "BienvenidaOut",
+    "BienvenidaUpdate",
     "CarreraCreate",
     "CarreraOut",
     "CarreraUpdate",

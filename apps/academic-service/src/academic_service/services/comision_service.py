@@ -401,6 +401,41 @@ class ComisionService:
     async def get(self, id_: UUID) -> Comision:
         return await self.repo.get_or_404(id_)
 
+    # ── Campus (HU-033) ────────────────────────────────────────────────
+
+    async def obtener_bienvenida(self, comision_id: UUID, user: User) -> str | None:
+        """Bienvenida HTML del campus. Solo staff de la comision (u oversight)."""
+        await assert_comision_member(self.session, user, comision_id)
+        obj = await self.repo.get_or_404(comision_id)
+        return obj.bienvenida_html
+
+    async def actualizar_bienvenida(
+        self, comision_id: UUID, html: str | None, user: User
+    ) -> Comision:
+        """Guarda la bienvenida HTML del campus.
+
+        Mismo gate que las unidades: membresia ANTES de tocar nada (un docente
+        ajeno o un estudiante reciben 403 sin confirmar que la comision
+        existe). El HTML se guarda tal cual; aislarlo es tarea de quien lo
+        muestra (`HtmlAislado` en `@platform/ui`).
+        """
+        await assert_comision_member(self.session, user, comision_id)
+        obj = await self.repo.get_or_404(comision_id)
+        obj.bienvenida_html = html
+
+        audit = AuditLog(
+            tenant_id=obj.tenant_id,
+            user_id=user.id,
+            action="comision.bienvenida.update",
+            resource_type="comision",
+            resource_id=comision_id,
+            # Solo el largo: el HTML puede pesar hasta 512 KB.
+            changes={"bienvenida_html_chars": len(html) if html is not None else None},
+        )
+        self.session.add(audit)
+        await self.session.flush()
+        return obj
+
     async def list(
         self,
         limit: int = 50,

@@ -9,6 +9,8 @@ from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
+from academic_service.schemas.unidad import HTML_CAMPUS_MAX_CHARS
+
 
 class PeriodoBase(BaseModel):
     codigo: str = Field(min_length=4, max_length=20)  # ej. "2026-S1"
@@ -100,6 +102,16 @@ class ComisionOut(ComisionBase):
     invite_code: str | None = None
     created_at: datetime
     deleted_at: datetime | None = None
+
+
+class BienvenidaUpdate(BaseModel):
+    """HU-033: bienvenida del campus de la comision (HTML, puede traer JS)."""
+
+    html: str | None = Field(default=None, max_length=HTML_CAMPUS_MAX_CHARS)
+
+
+class BienvenidaOut(BaseModel):
+    html: str | None = None
 
 
 class ComisionJoinRequest(BaseModel):
