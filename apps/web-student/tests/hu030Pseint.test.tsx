@@ -103,12 +103,17 @@ describe("C03 Ejecutar en el navegador con Leer interactivo", () => {
   })
 
   it("C09 la corrida informa el runtime de PSeInt", async () => {
-    window.prompt = vi.fn(() => "1") as typeof window.prompt
     const onCodeExecuted = vi.fn()
     render(<CodeEditor initialCode={DOBLE} language={"pseint" as never} onCodeExecuted={onCodeExecuted} />)
     await esperarEditor()
     await act(async () => {
       boton(/^Ejecutar/).click()
+    })
+    // HU-042: el Leer se contesta en el campo de la consola.
+    const campo = (await screen.findByLabelText("Dato para Leer")) as HTMLInputElement
+    await act(async () => {
+      fireEvent.change(campo, { target: { value: "1" } })
+      fireEvent.keyDown(campo, { key: "Enter" })
     })
     await waitFor(() => expect(onCodeExecuted).toHaveBeenCalled())
     expect(onCodeExecuted.mock.calls[0]![0].runtime).toBe(`pseint-ts-${VERSION}`)
