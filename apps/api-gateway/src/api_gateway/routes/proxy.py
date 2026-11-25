@@ -45,6 +45,8 @@ ROUTE_MAP: dict[str, str] = {
     "/api/v1/tareas-practicas": settings.academic_service_url,
     "/api/v1/ejercicios": settings.academic_service_url,
     "/api/v1/unidades": settings.academic_service_url,
+    # HU-036: plantillas de campus por materia (web-teacher, CampusView).
+    "/api/v1/plantillas-campus": settings.academic_service_url,
     "/api/v1/bulk": settings.academic_service_url,
     # plan-mejora-instrumentos-research: cuestionario IA previa, pretest
     # autoeficacia Lishinski, test transferencia H2 — consumido por

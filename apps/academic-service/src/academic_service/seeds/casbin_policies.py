@@ -300,6 +300,22 @@ POLICIES: list[tuple[str, str, str, str]] = [
     ("role:docente_admin", "*", "classification_review:*", "read"),
     ("role:docente", "*", "classification_review:*", "create"),
     ("role:docente", "*", "classification_review:*", "read"),
+    # ── Plantillas de campus (HU-036) ─────────────────────────────────
+    # El docente guarda el campus de su comision como plantilla de la materia
+    # y aplica una a su comision. El aislamiento por comision lo da
+    # `assert_comision_member` en el servicio, no esta policy.
+    ("role:superadmin", "*", "plantilla_campus:*", "create"),
+    ("role:superadmin", "*", "plantilla_campus:*", "read"),
+    ("role:superadmin", "*", "plantilla_campus:*", "update"),
+    ("role:superadmin", "*", "plantilla_campus:*", "delete"),
+    ("role:docente_admin", "*", "plantilla_campus:*", "create"),
+    ("role:docente_admin", "*", "plantilla_campus:*", "read"),
+    ("role:docente_admin", "*", "plantilla_campus:*", "update"),
+    ("role:docente_admin", "*", "plantilla_campus:*", "delete"),
+    ("role:docente", "*", "plantilla_campus:*", "create"),
+    ("role:docente", "*", "plantilla_campus:*", "read"),
+    ("role:docente", "*", "plantilla_campus:*", "update"),
+    ("role:docente", "*", "plantilla_campus:*", "delete"),
 ]
 
 

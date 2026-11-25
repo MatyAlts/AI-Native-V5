@@ -219,6 +219,30 @@ class Unidad(Base, TenantMixin, TimestampMixin):
     )
 
 
+class PlantillaCampus(Base, TenantMixin, TimestampMixin):
+    """Copia del campus de una comision, reusable en la materia (HU-036).
+
+    El docente guarda el campus de su comision (bienvenida, unidades con su
+    introduccion y los TPs vigentes de cada una) y otro docente de la misma
+    materia lo aplica a su comision en un clic. `contenido` es un JSONB con
+    `version="campus_v1"` armado por `plantilla_campus_service.armar_contenido`:
+    no lleva fechas ni ids de la comision de origen. Aplicar crea los TPs en
+    `draft` sin fechas y no pisa unidades que ya existen (por nombre) ni una
+    bienvenida ya escrita.
+    """
+
+    __tablename__ = "plantillas_campus"
+
+    id: Mapped[uuid.UUID] = uuid_pk()
+    materia_id: Mapped[uuid.UUID] = fk_uuid("materias.id")
+    nombre: Mapped[str] = mapped_column(String(200), nullable=False)
+    contenido: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False)
+    created_by: Mapped[uuid.UUID] = mapped_column(PgUUID(as_uuid=True), nullable=False)
+    updated_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True, onupdate=datetime.utcnow
+    )
+
+
 class TareaPractica(Base, TenantMixin, TimestampMixin):
     """Trabajo Práctico (TP) asignado a una comisión.
 
