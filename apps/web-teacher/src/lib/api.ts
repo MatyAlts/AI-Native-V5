@@ -1326,6 +1326,63 @@ export async function putBienvenida(
   return r.json()
 }
 
+// ── Plantillas de campus (HU-036) ─────────────────────────────────────
+
+export interface PlantillaCampus {
+  id: string
+  nombre: string
+  materia_id: string
+  created_at: string
+}
+
+export interface AplicacionPlantilla {
+  unidades_creadas: number
+  unidades_omitidas: string[]
+  tps_creados: number
+  bienvenida_aplicada: boolean
+}
+
+/** Plantillas de la materia de la comision (requiere ser staff de ella). */
+export async function listPlantillasCampus(
+  comisionId: string,
+  getToken?: TokenGetter,
+): Promise<PlantillaCampus[]> {
+  return fetchList<PlantillaCampus>(
+    `/api/v1/plantillas-campus?comision_id=${encodeURIComponent(comisionId)}`,
+    getToken,
+  )
+}
+
+/** Guarda el campus de la comision como plantilla de su materia. */
+export async function guardarPlantillaCampus(
+  comisionId: string,
+  nombre: string,
+  getToken?: TokenGetter,
+): Promise<PlantillaCampus> {
+  const r = await fetch("/api/v1/plantillas-campus", {
+    method: "POST",
+    headers: await authHeaders(getToken),
+    body: JSON.stringify({ comision_id: comisionId, nombre }),
+  })
+  await throwIfNotOk(r)
+  return r.json()
+}
+
+/** Aplica la plantilla a la comision: no pisa lo existente, TPs en borrador. */
+export async function aplicarPlantillaCampus(
+  plantillaId: string,
+  comisionId: string,
+  getToken?: TokenGetter,
+): Promise<AplicacionPlantilla> {
+  const r = await fetch(`/api/v1/plantillas-campus/${plantillaId}/aplicar`, {
+    method: "POST",
+    headers: await authHeaders(getToken),
+    body: JSON.stringify({ comision_id: comisionId }),
+  })
+  await throwIfNotOk(r)
+  return r.json()
+}
+
 // ── ADR-020: Distribución N1-N4 por episodio ─────────────────────────
 
 export type NLevel = "N1" | "N2" | "N3" | "N4" | "meta"

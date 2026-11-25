@@ -577,7 +577,22 @@ export const helpContent: HelpContentMap = {
           <strong>Resumen de la tarjeta:</strong> el texto corto que aparece en la tarjeta de la
           unidad.
         </li>
+        <li>
+          <strong>Plantillas:</strong> "Guardar como plantilla" guarda una copia de este campus
+          (bienvenida, unidades con su introduccion y los TPs vigentes de cada una) para la materia.
+          Otro docente de la misma materia la elige en "Plantilla para aplicar" y con "Aplicar
+          plantilla" la carga en su comision en un clic.
+        </li>
       </ul>
+      <div className="bg-sidebar-bg-edge p-4 rounded-lg mt-4">
+        <p className="text-accent-brand font-medium">Que hace aplicar una plantilla:</p>
+        <p className="text-sm mt-1">
+          No pisa nada: una unidad con el mismo nombre que una que ya tenes se deja como esta, y la
+          bienvenida solo se carga si la comision no tenia una. Las fechas no viajan: las unidades
+          llegan abiertas y los TPs en borrador, sin fechas. Ningun alumno los ve hasta que los
+          publicas. Despues retoca fechas y textos.
+        </p>
+      </div>
       <div className="bg-sidebar-bg-edge p-4 rounded-lg mt-4">
         <p className="text-accent-brand font-medium">Recuadro aislado:</p>
         <p className="text-sm mt-1">

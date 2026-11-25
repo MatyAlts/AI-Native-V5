@@ -5,6 +5,9 @@
  *  - Bienvenida del curso en HTML.
  *  - Por unidad: introduccion en HTML (puede traer JS), fecha de apertura y
  *    resumen de la tarjeta (`descripcion`).
+ *  - Plantillas (HU-036): guardar este campus como plantilla de la materia y
+ *    aplicar una plantilla a la comision en un clic (no pisa lo existente; los
+ *    TPs llegan en borrador y sin fechas).
  *
  * El HTML se previsualiza SIEMPRE en `HtmlAislado` (iframe sandbox + CSP), el
  * mismo recuadro que usa el campus del alumno. Nunca `dangerouslySetInnerHTML`.
@@ -15,7 +18,18 @@
  */
 import { HtmlAislado, PageContainer, useConfirm } from "@platform/ui"
 import { useCallback, useEffect, useState } from "react"
-import { type Unidad, getBienvenida, listUnidades, putBienvenida, updateUnidad } from "../lib/api"
+import {
+  type AplicacionPlantilla,
+  type PlantillaCampus,
+  type Unidad,
+  aplicarPlantillaCampus,
+  getBienvenida,
+  guardarPlantillaCampus,
+  listPlantillasCampus,
+  listUnidades,
+  putBienvenida,
+  updateUnidad,
+} from "../lib/api"
 import { helpContent } from "../utils/helpContent"
 
 interface Props {
@@ -73,6 +87,187 @@ function AvisoEstado({ estado }: { estado: Estado }) {
       </div>
     )
   return null
+}
+
+export function resumenAplicacion(r: AplicacionPlantilla): string {
+  const unidades = r.unidades_creadas === 1 ? "1 unidad" : `${r.unidades_creadas} unidades`
+  const tps = r.tps_creados === 1 ? "1 trabajo práctico" : `${r.tps_creados} trabajos prácticos`
+  return `Se crearon ${unidades} y ${tps} en borrador.`
+}
+
+function AvisoError({ titulo, msg }: { titulo: string; msg: string }) {
+  return (
+    <div
+      role="alert"
+      className="rounded-lg border border-danger/30 bg-danger-soft px-3 py-2 text-sm text-danger"
+    >
+      <span className="font-semibold">{titulo}</span>{" "}
+      <span className="font-mono text-xs break-all">{msg}</span>
+    </div>
+  )
+}
+
+function SeccionPlantillas({
+  comisionId,
+  getToken,
+  onAplicada,
+}: Props & { onAplicada: () => void }) {
+  const [plantillas, setPlantillas] = useState<PlantillaCampus[]>([])
+  const [cargando, setCargando] = useState(true)
+  const [errorLista, setErrorLista] = useState<string | null>(null)
+  const [nombre, setNombre] = useState("")
+  const [guardando, setGuardando] = useState(false)
+  const [guardada, setGuardada] = useState(false)
+  const [errorGuardar, setErrorGuardar] = useState<string | null>(null)
+  const [elegida, setElegida] = useState("")
+  const [aplicando, setAplicando] = useState(false)
+  const [resultado, setResultado] = useState<AplicacionPlantilla | null>(null)
+  const [errorAplicar, setErrorAplicar] = useState<string | null>(null)
+
+  useEffect(() => {
+    let vigente = true
+    setCargando(true)
+    setErrorLista(null)
+    listPlantillasCampus(comisionId, getToken)
+      .then((ps) => {
+        if (!vigente) return
+        setPlantillas(ps)
+        setElegida((actual) => (ps.some((p) => p.id === actual) ? actual : (ps[0]?.id ?? "")))
+      })
+      .catch((e) => vigente && setErrorLista(String(e)))
+      .finally(() => vigente && setCargando(false))
+    return () => {
+      vigente = false
+    }
+  }, [comisionId, getToken])
+
+  async function guardar() {
+    const limpio = nombre.trim()
+    if (limpio === "") return
+    setGuardando(true)
+    setGuardada(false)
+    setErrorGuardar(null)
+    try {
+      const nueva = await guardarPlantillaCampus(comisionId, limpio, getToken)
+      setPlantillas((ps) => [...ps, nueva])
+      setElegida((actual) => actual || nueva.id)
+      setNombre("")
+      setGuardada(true)
+    } catch (e) {
+      setErrorGuardar(String(e))
+    } finally {
+      setGuardando(false)
+    }
+  }
+
+  async function aplicar() {
+    if (!elegida) return
+    setAplicando(true)
+    setResultado(null)
+    setErrorAplicar(null)
+    try {
+      const r = await aplicarPlantillaCampus(elegida, comisionId, getToken)
+      setResultado(r)
+      onAplicada()
+    } catch (e) {
+      setErrorAplicar(String(e))
+    } finally {
+      setAplicando(false)
+    }
+  }
+
+  return (
+    <section className="space-y-4 rounded-lg border border-border bg-surface p-4">
+      <div>
+        <h2 className="text-base font-semibold text-ink">Plantillas</h2>
+        <p className="text-sm text-muted">
+          Guarda este campus para reusarlo en otra comision de la materia, o aplica una plantilla
+          aca. No se pisa nada que ya exista y los TPs llegan en borrador, sin fechas.
+        </p>
+      </div>
+
+      <div className="space-y-2">
+        <label htmlFor="campus-plantilla-nombre" className="text-xs text-muted">
+          Nombre de la plantilla
+        </label>
+        <div className="flex flex-wrap items-center gap-3">
+          <input
+            id="campus-plantilla-nombre"
+            type="text"
+            maxLength={200}
+            className="block w-full max-w-sm rounded-lg border border-border bg-surface px-3 py-1.5 text-sm text-ink"
+            value={nombre}
+            onChange={(e) => {
+              setNombre(e.target.value)
+              setGuardada(false)
+            }}
+          />
+          <button
+            type="button"
+            className={BOTON_PRIMARIO}
+            disabled={nombre.trim() === "" || guardando}
+            onClick={guardar}
+          >
+            Guardar como plantilla
+          </button>
+          {guardada && <span className="text-sm text-success">Plantilla guardada</span>}
+        </div>
+        {errorGuardar && <AvisoError titulo="No se pudo guardar." msg={errorGuardar} />}
+      </div>
+
+      <div className="space-y-2">
+        {errorLista && (
+          <AvisoError titulo="No se pudieron cargar las plantillas." msg={errorLista} />
+        )}
+        {!cargando && !errorLista && plantillas.length === 0 && (
+          <p className="text-sm text-muted">Todavía no hay plantillas de esta materia</p>
+        )}
+        {plantillas.length > 0 && (
+          <>
+            <label htmlFor="campus-plantilla-aplicar" className="text-xs text-muted">
+              Plantilla para aplicar
+            </label>
+            <div className="flex flex-wrap items-center gap-3">
+              <select
+                id="campus-plantilla-aplicar"
+                className="block w-full max-w-sm rounded-lg border border-border bg-surface px-3 py-1.5 text-sm text-ink"
+                value={elegida}
+                onChange={(e) => {
+                  setElegida(e.target.value)
+                  setResultado(null)
+                  setErrorAplicar(null)
+                }}
+              >
+                {plantillas.map((p) => (
+                  <option key={p.id} value={p.id}>
+                    {p.nombre}
+                  </option>
+                ))}
+              </select>
+              <button
+                type="button"
+                className={BOTON_PRIMARIO}
+                disabled={!elegida || aplicando}
+                onClick={aplicar}
+              >
+                Aplicar plantilla
+              </button>
+            </div>
+          </>
+        )}
+        {resultado && (
+          <div className="space-y-1 rounded-lg border border-border-soft bg-surface-alt px-3 py-2 text-sm text-ink">
+            <p>{resumenAplicacion(resultado)}</p>
+            {resultado.unidades_omitidas.length > 0 && (
+              <p>{`Ya existían y no se tocaron: ${resultado.unidades_omitidas.join(", ")}.`}</p>
+            )}
+            {resultado.bienvenida_aplicada && <p>También se cargó la bienvenida.</p>}
+          </div>
+        )}
+        {errorAplicar && <AvisoError titulo="No se pudo aplicar." msg={errorAplicar} />}
+      </div>
+    </section>
+  )
 }
 
 export function CampusView({ comisionId, getToken }: Props) {
@@ -327,6 +522,8 @@ export function CampusView({ comisionId, getToken }: Props) {
             </div>
           )}
         </section>
+
+        <SeccionPlantillas comisionId={comisionId} getToken={getToken} onAplicada={cargar} />
       </div>
     </PageContainer>
   )
