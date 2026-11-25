@@ -1,10 +1,14 @@
 /**
  * Página de la materia seleccionada (post-craft Fase 2): /materia/$id.
  *
+ * Desde el campus (HU-035) se entra siempre con `?tareaId=<tp>`: la pagina
+ * abre ese TP y deja el parametro en la URL, asi recargar vuelve al mismo TP.
+ * Sin `tareaId` ni `returnToExercise` no hay nada que mostrar aca: se redirige
+ * al campus del curso (`/curso/$comisionId`). El viejo selector de unidades y
+ * de TPs ya no se muestra.
+ *
  * Layout:
  *   - Header contextual: kicker mono `CODIGO_MATERIA · COMISION · PERIODO`.
- *   - <TareaSelector> con las 3 zonas (Continuar / Proximas / Vencidas)
- *     que ya existe — recibe `comisionId` derivado de la inscripcion.
  *
  * Single-flight per page: usamos useQuery con la misma key `mis-materias`
  * que la home. Si el alumno entra desde la home, el dato ya está en cache
@@ -12,11 +16,11 @@
  * inicial (caso refresh / link compartido).
  *
  * Flujo multi-ejercicio (tp-entregas-correccion):
- *   click TP con ejercicios → mostrar ExerciseListView
+ *   TP con ejercicios → mostrar ExerciseListView
  *   click ejercicio → POST /api/v1/episodes con ejercicio_orden → navegar
  *
  * Flujo monolitico (legacy):
- *   click TP → POST /api/v1/episodes (sin ejercicio_orden) → navegar
+ *   TP sin ejercicios → POST /api/v1/episodes (sin ejercicio_orden) → navegar
  */
 import { useQuery } from "@tanstack/react-query"
 import { Link, createFileRoute, useNavigate, useParams } from "@tanstack/react-router"
@@ -25,8 +29,6 @@ import { z } from "zod"
 import { ExerciseListView } from "../components/ExerciseListView"
 import { GradeDetailView } from "../components/GradeDetailView"
 import { OpeningStage } from "../components/OpeningStage"
-import { TareaSelector } from "../components/TareaSelector"
-import { UnidadSelector } from "../components/UnidadSelector"
 import {
   type AvailableTarea,
   type Entrega,
@@ -61,8 +63,7 @@ export interface ActiveExerciseContext {
 const searchSchema = z.object({
   returnToExercise: z.boolean().optional(),
   // HU-035: el campus (pestaña Trabajos practicos de la unidad) entra con el
-  // TP elegido; se abre directo por el mismo camino que un click en el
-  // TareaSelector (`handleSelectTarea`).
+  // TP elegido; se abre directo (`handleSelectTarea`) y queda en la URL.
   tareaId: z.string().optional(),
 })
 
@@ -73,24 +74,14 @@ export const Route = createFileRoute("/materia/$id")({
 
 /** Estado de la navegacion dentro de la pagina de materia. */
 type MateriaPageView =
-  | { kind: "unidades" }
-  | {
-      kind: "selector"
-      unidadId: string | null | undefined
-      /** UI-5: true si llegamos por auto-skip (0-1 unidad). En ese caso el
-       * paso "Unidades" no aporta eleccion, asi que NO ofrecemos "← Volver a
-       * unidades" (loopearia): el header ya tiene "← Mis materias". */
-      autoSkipped?: boolean
-    }
+  /** Mientras se resuelve el TP de la URL (o se redirige al campus). */
+  | { kind: "cargando" }
   | { kind: "exercise-list"; tarea: AvailableTarea }
   | {
       kind: "grade-detail"
       tarea: AvailableTarea
       entrega: Entrega
-      /** Vista a la que vuelve "← Volver". La nota se alcanza desde el
-       * ExerciseListView (multi-ejercicio) y tambien directo desde el selector
-       * (NB-7: TP vencida ya calificada) — guardamos el origen para no perder
-       * el filtro de unidad al volver. */
+      /** Vista a la que vuelve "← Volver" (hoy, el ExerciseListView). */
       back: MateriaPageView
     }
   | {
@@ -108,7 +99,7 @@ function MateriaPage() {
   const { id } = useParams({ from: "/materia/$id" })
   const { returnToExercise, tareaId } = Route.useSearch()
   const navigate = useNavigate()
-  const [view, setView] = useState<MateriaPageView>({ kind: "unidades" })
+  const [view, setView] = useState<MateriaPageView>({ kind: "cargando" })
   // NB-10: guard anti doble-submit. Un doble-click en "Empezar" disparaba dos
   // POST /episodes → dos episodios. La ref es sincronica (a diferencia de un
   // useState) asi que el segundo click ve el flag ya seteado y aborta.
@@ -126,56 +117,74 @@ function MateriaPage() {
 
   const materia = (materias ?? []).find((m) => m.materia_id === id)
 
-  // Si el alumno volvio de un ejercicio, recuperar el contexto y re-abrir el ExerciseListView.
+  // HU-035: `?tareaId=` abre ese TP directo y QUEDA en la URL: recargar vuelve
+  // al mismo TP. Se abre una sola vez por `tareaId` (ref; sobrevive al doble
+  // efecto de StrictMode). Un TP sin ejercicios abre el episodio enseguida y
+  // ahi la URL se reemplaza por la del episodio (ver `openEpisodeAndNavigate`),
+  // para que el "atras" desde el episodio no abra otro.
+  const tareaIdConsumida = useRef<string | null>(null)
+
+  // Si el alumno volvio de un ejercicio, recuperar el contexto y re-abrir el
+  // ExerciseListView, dejando la URL en `?tareaId=<tp>` (sobrevive a recargar).
+  const vueltaConsumida = useRef(false)
+  // El ref garantiza que la vuelta se procese una sola vez.
   useEffect(() => {
     if (!returnToExercise) return
     if (!materia) return
+    if (vueltaConsumida.current) return
+    vueltaConsumida.current = true
     const raw = window.sessionStorage.getItem(ACTIVE_EXERCISE_CONTEXT_KEY)
-    if (!raw) return
-    let ctx: ActiveExerciseContext
+    let ctx: ActiveExerciseContext | null = null
     try {
-      ctx = JSON.parse(raw) as ActiveExerciseContext
+      ctx = raw ? (JSON.parse(raw) as ActiveExerciseContext) : null
     } catch {
-      window.sessionStorage.removeItem(ACTIVE_EXERCISE_CONTEXT_KEY)
-      return
+      ctx = null
     }
-    if (ctx.materia_id !== id) {
-      window.sessionStorage.removeItem(ACTIVE_EXERCISE_CONTEXT_KEY)
-      return
-    }
-    // Limpiar el contexto ya consumido
     window.sessionStorage.removeItem(ACTIVE_EXERCISE_CONTEXT_KEY)
-    // Quitar el query param de la URL sin reemplazar la entrada de historial
-    void navigate({ to: "/materia/$id", params: { id }, replace: true })
-    // Fetch de la tarea y abrir el ExerciseListView
-    getTareaById(ctx.tarea_id)
+    if (!ctx || ctx.materia_id !== id) {
+      irAlCampus(navigate, materia.comision_id, null, true)
+      return
+    }
+    const tareaVuelta = ctx.tarea_id
+    // El TP ya se abre aca: que el efecto de `tareaId` no lo vuelva a abrir.
+    tareaIdConsumida.current = tareaVuelta
+    void navigate({
+      to: "/materia/$id",
+      params: { id },
+      search: { tareaId: tareaVuelta },
+      replace: true,
+    })
+    getTareaById(tareaVuelta)
       .then((tarea) => {
         if (tarea) setView({ kind: "exercise-list", tarea })
+        else irAlCampus(navigate, materia.comision_id, null, true)
       })
-      .catch(() => {
-        /* best-effort */
-      })
+      .catch(() => irAlCampus(navigate, materia.comision_id, null, true))
   }, [returnToExercise, materia, id, navigate])
 
-  // HU-035: `?tareaId=` abre ese TP directo. Se consume una sola vez (ref) y
-  // se saca de la URL con `replace`: si quedara, el "atras" desde el episodio
-  // volveria a abrir el TP (y una TP monolitica abriria otro episodio).
-  const tareaIdConsumida = useRef<string | null>(null)
   // `handleSelectTarea` (funcion del render, no memoizada) queda fuera de las
   // deps a proposito: el ref garantiza una sola apertura por `tareaId`.
   useEffect(() => {
     if (!tareaId || !materia) return
     if (tareaIdConsumida.current === tareaId) return
     tareaIdConsumida.current = tareaId
-    void navigate({ to: "/materia/$id", params: { id }, replace: true })
     getTareaById(tareaId)
       .then((tarea) => {
         if (tarea) void handleSelectTarea(tarea)
+        else irAlCampus(navigate, materia.comision_id, null, true)
       })
-      .catch(() => {
-        /* best-effort: queda la vista de unidades de siempre */
-      })
-  }, [tareaId, materia, id, navigate])
+      .catch(() => irAlCampus(navigate, materia.comision_id, null, true))
+  }, [tareaId, materia, navigate])
+
+  // HU-035: la materia sola no tiene pantalla propia; va al campus del curso.
+  useEffect(() => {
+    if (tareaId || returnToExercise || !materia) return
+    void navigate({
+      to: "/curso/$comisionId",
+      params: { comisionId: materia.comision_id },
+      replace: true,
+    })
+  }, [tareaId, returnToExercise, materia, navigate])
 
   if (isLoading) {
     return <PageLoading />
@@ -255,7 +264,11 @@ function MateriaPage() {
             // previo para que episodio.$id no lo aplique a este episodio.
             window.sessionStorage.removeItem(ACTIVE_EXERCISE_CONTEXT_KEY)
           }
-          navigate({ to: "/episodio/$id", params: { id: candidate.episode_id } })
+          navigate({
+            to: "/episodio/$id",
+            params: { id: candidate.episode_id },
+            replace: ejercicio == null,
+          })
           return
         }
       } catch (e) {
@@ -295,7 +308,9 @@ function MateriaPage() {
         // NB-6: TP monolitica → limpiar cualquier contexto de ejercicio previo.
         window.sessionStorage.removeItem(ACTIVE_EXERCISE_CONTEXT_KEY)
       }
-      navigate({ to: "/episodio/$id", params: { id: res.episode_id } })
+      // TP monolitica: se llega con `?tareaId=` y el episodio REEMPLAZA esa
+      // entrada; si quedara, el "atras" desde el episodio abriria otro.
+      navigate({ to: "/episodio/$id", params: { id: res.episode_id }, replace: ejercicio == null })
     } catch (e) {
       setView({
         kind: "opening",
@@ -313,7 +328,7 @@ function MateriaPage() {
   }
 
   /**
-   * Callback del TareaSelector.
+   * Abre el TP que vino en `?tareaId=`.
    * - TP sin ejercicios asociados (tabla intermedia vacía): abre episodio monolítico.
    * - TP con ejercicios: muestra ExerciseListView.
    *
@@ -345,29 +360,7 @@ function MateriaPage() {
         <div className="bg-danger-soft text-danger px-6 py-2 text-sm">{currentView.error}</div>
       )}
 
-      {currentView.kind === "unidades" && (
-        <div className="flex-1 overflow-y-auto px-6 py-8">
-          <div className="max-w-3xl mx-auto">
-            <UnidadSelector
-              comisionId={materia.comision_id}
-              onSelect={(unidadId) => setView({ kind: "selector", unidadId: unidadId ?? null })}
-              onAutoSkip={(unidadId) => setView({ kind: "selector", unidadId, autoSkipped: true })}
-            />
-          </div>
-        </div>
-      )}
-
-      {currentView.kind === "selector" && (
-        <TareaSelector
-          comisionId={materia.comision_id}
-          onSelect={handleSelectTarea}
-          unidadId={currentView.unidadId}
-          onBack={currentView.autoSkipped ? undefined : () => setView({ kind: "unidades" })}
-          onViewGrade={(tarea, entrega) =>
-            setView({ kind: "grade-detail", tarea, entrega, back: currentView })
-          }
-        />
-      )}
+      {currentView.kind === "cargando" && <PageLoading />}
 
       {currentView.kind === "exercise-list" && (
         <ExerciseListView
@@ -384,7 +377,7 @@ function MateriaPage() {
               back: currentView,
             })
           }
-          onBack={() => setView({ kind: "unidades" })}
+          onBack={() => irAlCampus(navigate, materia.comision_id, currentView.tarea, false)}
         />
       )}
 
@@ -407,11 +400,11 @@ function MateriaPage() {
           }}
           onCancel={() => {
             // Si veniamos de un ejercicio dentro de TP multi, volvemos a
-            // la lista de ejercicios; si no, al selector general.
+            // la lista de ejercicios; si no, al campus.
             if (currentView.ejercicioId != null) {
               setView({ kind: "exercise-list", tarea: currentView.tarea })
             } else {
-              setView({ kind: "unidades" })
+              irAlCampus(navigate, materia.comision_id, currentView.tarea, false)
             }
           }}
         />
@@ -420,14 +413,42 @@ function MateriaPage() {
   )
 }
 
+/**
+ * Vuelve al campus: a la pestaña de TPs de la unidad del TP si se conoce, si
+ * no a la pagina del curso. `replace` cuando la pagina de materia no tiene
+ * nada que mostrar (no tiene sentido volver a ella con "atras").
+ */
+function irAlCampus(
+  navigate: ReturnType<typeof useNavigate>,
+  comisionId: string,
+  tarea: AvailableTarea | null,
+  replace: boolean,
+) {
+  if (tarea?.unidad_id) {
+    void navigate({
+      to: "/curso/$comisionId/unidad/$unidadId",
+      params: { comisionId, unidadId: tarea.unidad_id },
+      search: { pestana: "tps" },
+      replace,
+    })
+    return
+  }
+  void navigate({ to: "/curso/$comisionId", params: { comisionId }, replace })
+}
+
 function ContextualHeader({ materia }: { materia: MateriaInscripta }) {
   return (
     <div
       data-testid="materia-context-header"
       className="border-b border-border-soft px-6 py-3 bg-white flex items-center gap-3 flex-wrap"
     >
-      <Link to="/" className="text-xs text-muted hover:text-body" data-testid="materia-back-link">
-        ← Mis materias
+      <Link
+        to="/curso/$comisionId"
+        params={{ comisionId: materia.comision_id }}
+        className="text-xs text-muted hover:text-body"
+        data-testid="materia-back-link"
+      >
+        ← Volver al curso
       </Link>
       <span aria-hidden="true" className="text-muted-soft">
         |
