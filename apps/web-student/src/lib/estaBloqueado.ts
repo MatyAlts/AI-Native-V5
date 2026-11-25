@@ -3,8 +3,12 @@
  *
  * Reglas (change publicar-nota-y-pedir-correccion, D6):
  *  - Un ejercicio COMPLETADO nunca esta bloqueado.
- *  - Uno pendiente esta bloqueado si ALGUN ejercicio de `orden` menor no esta
- *    completado (un orden anterior sin estado cuenta como pendiente).
+ *  - Uno pendiente esta bloqueado si ALGUN ejercicio QUE EXISTE en `estados`
+ *    con `orden` menor no esta completado. Los numeros que no existen no
+ *    cuentan (HU-038): un TP con ordenes 1, 2, 3, 101 deja abrir el 101 con
+ *    el 1, el 2 y el 3 completos. Antes se exigia todo 1..n-1 y un hueco en
+ *    la numeracion trababa el TP para siempre. El tutor-service aplica la
+ *    misma regla al abrir el episodio (`services/orden_ejercicios.py`).
  *
  * Con una devolucion parcial ("2 y 4" de 5) el 2 se habilita, el 4 espera al 2
  * y el 1/3/5 siguen completados. Con avance normal o devolucion total es
@@ -19,10 +23,7 @@ export interface EstadoEjercicioLike {
 export function estaBloqueado(orden: number, estados: readonly EstadoEjercicioLike[]): boolean {
   const propio = estados.find((e) => e.orden === orden)
   if (propio?.completado) return false
-  for (let o = 1; o < orden; o++) {
-    if (!estados.find((e) => e.orden === o)?.completado) return true
-  }
-  return false
+  return estados.some((e) => e.orden < orden && !e.completado)
 }
 
 /** Espejo de `ordenes_a_corregir` del backend: marcados, o todos si no hay marcas. */
