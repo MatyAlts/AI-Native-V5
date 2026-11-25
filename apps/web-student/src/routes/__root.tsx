@@ -7,12 +7,15 @@ import {
   useUser,
 } from "@clerk/clerk-react"
 import { AuditFooter, HelpButton } from "@platform/ui"
+import { useQuery } from "@tanstack/react-query"
 import { Outlet, createRootRouteWithContext, useRouterState } from "@tanstack/react-router"
 import { type ReactNode, useCallback, useEffect, useState } from "react"
 import { DEV_NO_CLERK, DEV_STUDENT_UUID, clearClerkUserId, setClerkUserId } from "../auth"
+import { BarraCursos, comisionDelPath, mostrarBarraCursos } from "../components/BarraCursos"
 import { BotonVolverPanelDocente } from "../components/BotonVolverPanelDocente"
 import { OlvidarModoVista } from "../components/OlvidarModoVista"
 import { TenantSelector } from "../components/TenantSelector"
+import { listMisMaterias } from "../lib/api"
 import { OnboardingAlumno } from "../onboarding/OnboardingAlumno"
 import { helpContent } from "../utils/helpContent"
 import { debeIrAlPanelDocente } from "../utils/modoVista"
@@ -284,7 +287,34 @@ function EnrollmentBody({
   if (state === "need-code") {
     return <InviteCodeScreen onSubmit={enroll} error={error} />
   }
-  return <Outlet />
+  return <CampusShell />
+}
+
+/**
+ * HU-035: columna izquierda "Mis cursos" + contenido. Solo se monta con el
+ * alumno ya inscripto (rama "enrolled" de EnrollmentBody, dentro de
+ * LayoutShell). En el episodio no hay barra (`mostrarBarraCursos`): queda
+ * pantalla completa como antes. Los cursos salen de `["mis-materias"]`, la
+ * misma query que la home, y el curso activo del path `/curso/<id>`.
+ */
+function CampusShell() {
+  const pathname = useRouterState({ select: (s) => s.location.pathname })
+  const conBarra = mostrarBarraCursos(pathname)
+  const { data: cursos } = useQuery({
+    queryKey: ["mis-materias"],
+    queryFn: () => listMisMaterias(),
+    staleTime: 5 * 60 * 1000,
+    enabled: conBarra,
+  })
+  if (!conBarra) return <Outlet />
+  return (
+    <div className="flex-1 min-h-0 flex flex-col md:flex-row">
+      <BarraCursos cursos={cursos ?? []} comisionActiva={comisionDelPath(pathname)} />
+      <div className="flex-1 min-w-0 min-h-0 flex flex-col">
+        <Outlet />
+      </div>
+    </div>
+  )
 }
 
 // Path real: auth via Clerk.

@@ -148,4 +148,64 @@ export const helpContent: HelpContentMap = {
       </ul>
     </div>
   ),
+  campusCurso: (
+    <div className="space-y-4 text-muted-soft">
+      <p className="text-lg font-medium text-[var(--text-inverse)]">Tu curso</p>
+      <p>
+        La pagina de tu curso: arriba, la bienvenida que preparo tu docente; abajo, las unidades en
+        el orden en que se cursan.
+      </p>
+      <ul className="list-disc list-inside space-y-2 ml-4">
+        <li>
+          <strong>Unidades:</strong> cada tarjeta es una unidad. Hace click para ver su introduccion
+          y sus trabajos practicos. La tarjeta te dice cuantos trabajos tiene.
+        </li>
+        <li>
+          <strong>Unidades que todavia no abrieron:</strong> muestran la fecha en que abren. Hasta
+          ese dia no se pueden abrir.
+        </li>
+        <li>
+          <strong>Mis notas y Mi progreso:</strong> se abren ya filtrados por este curso.
+        </li>
+        <li>
+          <strong>Barra de la izquierda:</strong> &quot;Mis cursos&quot; te lleva al inicio y cada
+          curso te trae a su pagina.
+        </li>
+      </ul>
+    </div>
+  ),
+  campusUnidad: (
+    <div className="space-y-4 text-muted-soft">
+      <p className="text-lg font-medium text-[var(--text-inverse)]">Unidad</p>
+      <p>Cada unidad tiene dos pestanas.</p>
+      <ul className="list-disc list-inside space-y-2 ml-4">
+        <li>
+          <strong>Introduccion:</strong> el material que preparo tu docente para arrancar la unidad.
+        </li>
+        <li>
+          <strong>Trabajos practicos:</strong> los TPs publicados de la unidad, cada uno con su
+          estado. Hace click en uno para trabajarlo con el tutor, como siempre.
+        </li>
+      </ul>
+      <div className="bg-sidebar-bg-edge p-4 rounded-lg mt-2">
+        <p className="text-warning font-medium">Que significa cada estado?</p>
+        <ul className="text-sm mt-1 space-y-1">
+          <li>
+            <strong>Pendiente:</strong> todavia no completaste ningun ejercicio.
+          </li>
+          <li>
+            <strong>En curso:</strong> completaste al menos un ejercicio, o el docente te lo
+            devolvio para corregir.
+          </li>
+          <li>
+            <strong>Esperando correccion:</strong> ya lo entregaste; falta que el docente lo
+            corrija.
+          </li>
+          <li>
+            <strong>Calificado:</strong> el docente ya lo corrigio; al lado ves la nota.
+          </li>
+        </ul>
+      </div>
+    </div>
+  ),
 }

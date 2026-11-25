@@ -60,6 +60,10 @@ export interface ActiveExerciseContext {
 
 const searchSchema = z.object({
   returnToExercise: z.boolean().optional(),
+  // HU-035: el campus (pestaña Trabajos practicos de la unidad) entra con el
+  // TP elegido; se abre directo por el mismo camino que un click en el
+  // TareaSelector (`handleSelectTarea`).
+  tareaId: z.string().optional(),
 })
 
 export const Route = createFileRoute("/materia/$id")({
@@ -102,7 +106,7 @@ type MateriaPageView =
 
 function MateriaPage() {
   const { id } = useParams({ from: "/materia/$id" })
-  const { returnToExercise } = Route.useSearch()
+  const { returnToExercise, tareaId } = Route.useSearch()
   const navigate = useNavigate()
   const [view, setView] = useState<MateriaPageView>({ kind: "unidades" })
   // NB-10: guard anti doble-submit. Un doble-click en "Empezar" disparaba dos
@@ -152,6 +156,26 @@ function MateriaPage() {
         /* best-effort */
       })
   }, [returnToExercise, materia, id, navigate])
+
+  // HU-035: `?tareaId=` abre ese TP directo. Se consume una sola vez (ref) y
+  // se saca de la URL con `replace`: si quedara, el "atras" desde el episodio
+  // volveria a abrir el TP (y una TP monolitica abriria otro episodio).
+  const tareaIdConsumida = useRef<string | null>(null)
+  // `handleSelectTarea` (funcion del render, no memoizada) queda fuera de las
+  // deps a proposito: el ref garantiza una sola apertura por `tareaId`.
+  useEffect(() => {
+    if (!tareaId || !materia) return
+    if (tareaIdConsumida.current === tareaId) return
+    tareaIdConsumida.current = tareaId
+    void navigate({ to: "/materia/$id", params: { id }, replace: true })
+    getTareaById(tareaId)
+      .then((tarea) => {
+        if (tarea) void handleSelectTarea(tarea)
+      })
+      .catch(() => {
+        /* best-effort: queda la vista de unidades de siempre */
+      })
+  }, [tareaId, materia, id, navigate])
 
   if (isLoading) {
     return <PageLoading />

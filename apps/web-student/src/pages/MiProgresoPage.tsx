@@ -186,7 +186,13 @@ const APPROPRIATION_TO_ORDINAL: Record<string, number> = {
 export const NOTA_TENDENCIA =
   "La tendencia resume como vino cambiando tu forma de trabajar con el tutor en tareas parecidas. Es una mirada general de tu recorrido, no una nota."
 
-export function MiProgresoPage() {
+export interface MiProgresoPageProps {
+  /** Comision elegida al entrar (HU-035, `/progreso?comisionId=`). Solo se
+   * usa si es una de las comisiones del alumno. */
+  comisionIdInicial?: string
+}
+
+export function MiProgresoPage({ comisionIdInicial }: MiProgresoPageProps = {}) {
   const navigate = useNavigate()
 
   const materiasQuery = useQuery({
@@ -197,7 +203,11 @@ export function MiProgresoPage() {
 
   const materias = materiasQuery.data ?? []
   const [selectedComisionId, setSelectedComisionId] = useState<string | null>(null)
-  const comisionId = selectedComisionId ?? materias[0]?.comision_id ?? null
+  const inicialValida =
+    comisionIdInicial && materias.some((m) => m.comision_id === comisionIdInicial)
+      ? comisionIdInicial
+      : null
+  const comisionId = selectedComisionId ?? inicialValida ?? materias[0]?.comision_id ?? null
 
   return (
     <div className="page-enter flex-1 overflow-y-auto px-6 py-10">

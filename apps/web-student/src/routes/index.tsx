@@ -60,7 +60,9 @@ function HomePage() {
         isLoading={isLoading}
         error={error ? String(error) : null}
         materias={data ?? []}
-        onEnter={(materia) => navigate({ to: "/materia/$id", params: { id: materia.materia_id } })}
+        onEnter={(materia) =>
+          navigate({ to: "/curso/$comisionId", params: { comisionId: materia.comision_id } })
+        }
       />
     </>
   )

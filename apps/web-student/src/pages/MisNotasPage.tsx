@@ -224,7 +224,13 @@ function EmptyState() {
 
 // ─── Orquestador ───────────────────────────────────────────────────────────
 
-export function MisNotasPage() {
+export interface MisNotasPageProps {
+  /** Comision elegida al entrar (HU-035, `/mis-notas?comisionId=`). Solo se
+   * usa si es una de las comisiones del alumno. */
+  comisionIdInicial?: string
+}
+
+export function MisNotasPage({ comisionIdInicial }: MisNotasPageProps = {}) {
   const navigate = useNavigate()
 
   const [materias, setMaterias] = useState<MateriaInscripta[] | null>(null)
@@ -251,7 +257,11 @@ export function MisNotasPage() {
     }
   }, [])
 
-  const comisionId = selectedComisionId ?? materias?.[0]?.comision_id ?? null
+  const inicialValida =
+    comisionIdInicial && materias?.some((m) => m.comision_id === comisionIdInicial)
+      ? comisionIdInicial
+      : null
+  const comisionId = selectedComisionId ?? inicialValida ?? materias?.[0]?.comision_id ?? null
 
   // `listMisEntregas` ya trae `nota_final` resuelta por fila (mismo batch
   // que `tarea_codigo`/`tarea_titulo`, ver `evaluation-service::

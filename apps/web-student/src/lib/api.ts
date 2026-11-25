@@ -886,6 +886,12 @@ export interface Unidad {
   nombre: string
   descripcion: string | null
   orden: number
+  /** HTML de la introduccion (HU-033). El backend lo manda en `null` al alumno
+   * si la unidad todavia no abrio (`unidad_para_lector`, HU-035). Se muestra
+   * siempre con `HtmlAislado`. Opcional por fixtures viejos. */
+  introduccion_html?: string | null
+  /** "YYYY-MM-DD" o null (abierta siempre). Ver `lib/fechaCampus.ts`. */
+  fecha_apertura?: string | null
 }
 
 export async function listUnidades(comisionId: string, getToken?: TokenGetter): Promise<Unidad[]> {
@@ -951,6 +957,27 @@ export async function getTareaById(
   if (r.status === 404) return null
   if (!r.ok) throw new Error(`get tarea failed: ${r.status}`)
   return (await r.json()) as AvailableTarea
+}
+
+/**
+ * Todas las TPs publicadas de la comision, recorriendo todas las paginas
+ * (HU-035: el campus cuenta los TPs por unidad y no puede quedarse con la
+ * primera pagina). Tope de paginas por si el cursor no avanza.
+ */
+export async function listTodasLasTareas(
+  comisionId: string,
+  getToken?: TokenGetter,
+): Promise<AvailableTarea[]> {
+  const todas: AvailableTarea[] = []
+  let cursor: string | undefined
+  for (let pagina = 0; pagina < 50; pagina++) {
+    const page = await listAvailableTareas(comisionId, cursor, getToken)
+    todas.push(...page.data)
+    const siguiente = page.meta?.cursor_next ?? null
+    if (!siguiente || siguiente === cursor) break
+    cursor = siguiente
+  }
+  return todas
 }
 
 export const tareasPracticasApi = {
@@ -1174,6 +1201,22 @@ export async function listMisMaterias(getToken?: TokenGetter): Promise<MateriaIn
     meta: { total?: number | null }
   }
   return body.data
+}
+
+/**
+ * Bienvenida HTML del campus de la comision (HU-033/HU-035). La lee el alumno
+ * inscripto; `null` si el docente no la escribio. Se muestra con `HtmlAislado`.
+ */
+export async function getBienvenida(
+  comisionId: string,
+  getToken?: TokenGetter,
+): Promise<string | null> {
+  const r = await fetch(`/api/v1/comisiones/${encodeURIComponent(comisionId)}/bienvenida`, {
+    headers: await authHeaders(getToken),
+  })
+  if (!r.ok) throw new Error(`get bienvenida failed: ${r.status}`)
+  const body = (await r.json()) as { html: string | null }
+  return body.html ?? null
 }
 
 export const materiasApi = {
