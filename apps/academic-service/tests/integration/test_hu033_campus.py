@@ -230,13 +230,13 @@ async def test_n01_estudiante_no_escribe_la_bienvenida(tenant_a_id: UUID) -> Non
 
 
 def test_c02_rutas_de_la_bienvenida() -> None:
+    # FastAPI 0.139 envuelve cada include_router en un `_IncludedRouter` con
+    # path vacio: recorrer `app.routes` no ve ninguna ruta de ningun router.
+    # La especificacion OpenAPI si las lista todas.
     from academic_service.main import app
 
-    metodos: set[str] = set()
-    for r in app.routes:
-        if getattr(r, "path", "") == "/api/v1/comisiones/{comision_id}/bienvenida":
-            metodos |= set(getattr(r, "methods", set()))
-    assert {"GET", "PUT"} <= metodos, metodos
+    ops = app.openapi()["paths"].get("/api/v1/comisiones/{comision_id}/bienvenida", {})
+    assert {"get", "put"} <= set(ops), ops
 
 
 # ── N05 / K02 ──────────────────────────────────────────────────────────
