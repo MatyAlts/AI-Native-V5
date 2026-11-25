@@ -4,7 +4,7 @@
  * Solo "Mis cursos" (la home) y un link por curso del alumno, a
  * `/curso/<comision_id>`. El curso activo lleva `aria-current="page"` aunque el
  * alumno este dentro de una unidad (`/curso/<c>/unidad/<u>`): lo decide
- * `comisionActiva`, que el layout raiz saca del path.
+ * `comisionActiva`, que `CampusShell` saca del path.
  *
  * No aparece en el episodio (`mostrarBarraCursos`): el episodio sigue siendo
  * pantalla completa como antes. En pantallas chicas la barra se apila arriba
