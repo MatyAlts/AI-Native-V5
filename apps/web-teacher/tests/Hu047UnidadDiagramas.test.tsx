@@ -168,7 +168,12 @@ describe("HU-047 · unidad tematica Diagramas de flujo", () => {
     expect(sel.selectedOptions[0]?.textContent).toBe("Diagramas de flujo")
   })
 
-  for (const nombre of ["Preuniversitario 2027", "Preuniversitario de Programación"]) {
+  for (const nombre of [
+    "Preuniversitario 2027",
+    "Preuniversitario de Programación",
+    "Pre Universitario Tecnicatura en Programación a Distancia",
+    "Pre-Universitario",
+  ]) {
     it(`C03: "${nombre}" usa la lista de Programacion 1 sin POO`, async () => {
       await montar(nombre)
       const vals = await valoresDelFiltro()

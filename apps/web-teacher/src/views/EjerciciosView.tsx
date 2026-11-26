@@ -147,8 +147,13 @@ const UNIDAD_ORDER: Record<string, number> = Object.fromEntries(
 // Sin nombre resoluble -> union (no bloquea la carga).
 function unidadKeysParaMateria(nombre: string | null | undefined): string[] {
   const n = (nombre ?? "").toLowerCase()
-  const sinTildes = n.normalize("NFD").replace(/\p{Diacritic}/gu, "")
-  if (sinTildes.includes("preuniversitario")) return UNIDADES_PROG1
+  // Sin tildes, espacios ni guiones: en prod la materia se llama
+  // "Pre Universitario Tecnicatura en Programacion a Distancia" (con espacio).
+  const compacto = n
+    .normalize("NFD")
+    .replace(/\p{Diacritic}/gu, "")
+    .replace(/[\s-]+/g, "")
+  if (compacto.includes("preuniversitario")) return UNIDADES_PROG1
   if (/\b(2|ii)\b/.test(n)) return UNIDADES_PROG2
   if (/\b(1|i)\b/.test(n)) return UNIDADES_PROG1
   return [...UNIDADES_PROG1, ...UNIDADES_PROG2]
