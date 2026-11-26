@@ -245,10 +245,15 @@ export function CursoView({ comisionId, getToken, hoy }: CursoViewProps) {
 
 // ── Piezas compartidas con la pagina de la unidad ──────────────────────
 
-/** Contenedor de las paginas del campus: todo el ancho, padding del prototipo. */
+/**
+ * Contenedor de las paginas del campus: todo el ancho, padding del prototipo.
+ * `relative` lo hace bloque contenedor de los absolutos de adentro (los
+ * `sr-only`): sin eso toman el documento y lo estiran, y aparece un segundo
+ * scroll con un espacio vacio debajo del pie (HU-049).
+ */
 export function CampusPagina({ children }: { children: ReactNode }) {
   return (
-    <div className="flex-1 overflow-y-auto">
+    <div className="relative flex-1 overflow-y-auto">
       <div className="page-enter flex flex-col gap-6 px-4 pt-6 pb-10 sm:px-6 md:px-10 md:pt-8 md:pb-14">
         {children}
       </div>
