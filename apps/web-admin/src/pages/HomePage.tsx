@@ -13,6 +13,10 @@ import type { Route } from "../router/Router"
  */
 const STATUS_LABEL: Record<string, { label: string; tone: "success" | "warning" | "danger" }> = {
   ready: { label: "Operativo", tone: "success" },
+  // `/api/v1/health` del api-gateway es liveness y responde `{"status":"ok"}`
+  // (api-gateway routes/health.py). Sin esta entrada el home decía
+  // "no responde" con el gateway sano (revisión de prod 2026-11-26).
+  ok: { label: "Operativo", tone: "success" },
   degraded: { label: "Degradado", tone: "warning" },
   error: { label: "Caído", tone: "danger" },
 }
