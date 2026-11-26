@@ -217,6 +217,24 @@ Su paso 0 avisa si Docker corre **rootless** — en ese caso el runner sobra.
 ### classifier-service
 `SERVICE_NAME, SERVICE_PORT, ENVIRONMENT, LOG_LEVEL, LOG_FORMAT, CORS_ORIGINS, OTEL_ENDPOINT, SENTRY_DSN, CLASSIFIER_DB_URL, DB_ECHO, REDIS_URL, CTR_SERVICE_URL, AI_GATEWAY_URL, LEXICAL_ANOTACION_OVERRIDE_ENABLED, GUARDRAIL_MODIFIER_ENABLED, EJE_FINO_MAX_TOKENS, EJE_FINO_JUEZ_VERSION, ACADEMIC_DB_URL`
 
+> **Barrido de pendientes (HU-051).** `BARRIDO_TENANT_IDS` (JSON, p. ej. `'["<uuid del tenant>"]'`)
+> lista los tenants que se barren desde el arranque: con RLS forzado `classifier_db` no deja listarlos.
+> **Cargar el tenant del piloto**; sin la variable igual funciona, pero tras cada reinicio un tenant
+> recién entra al barrido con su primer `POST /classify_episode`. Opcionales: `BARRIDO_HABILITADO`
+> (default `true`), `BARRIDO_INTERVALO_SEGUNDOS` (300), `BARRIDO_PENDIENTE_MAX_DIAS` (7),
+> `BARRIDO_LOTE_MAXIMO` (50 trazas por tenant y por tarea en cada pasada),
+> `BARRIDO_REVISAR_CADA_SEGUNDOS` (1800).
+>
+> **Orden: la migración `20261126_0009` antes que el código nuevo.** El entrypoint del contenedor
+> corre `alembic upgrade head` antes de uvicorn, pero si alembic falla **sigue igual** (`|| echo
+> WARN`). Después del redeploy verificar `SELECT version_num FROM alembic_version` = `20261126_0009`
+> en `classifier_db`. Sin la tabla, el POST sigue respondiendo 202 (la anotación falla y se loguea
+> `classify_episode_no_se_pudo_anotar_pendiente`) y cada pasada del barrido loguea
+> `barrido_pasada_fallo`: nada se rompe, pero nada se reintenta.
+>
+> Para seguirlo: `SELECT estado, COUNT(*) FROM clasificaciones_pendientes GROUP BY 1;` (con
+> `app.current_tenant` seteado o como superusuario) y el log `barrido_pasada` con sus contadores.
+
 > `ACADEMIC_DB_URL` obligatoria (HU-017): ver la nota del ctr-service. Sin ella, revisar una
 > clasificación, la cola de revisión y `GET /classifications/{id}` responden 503 a quien no sea
 > `superadmin`/`docente_admin` (el alumno dueño igual ve la suya).
