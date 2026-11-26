@@ -526,8 +526,9 @@ export const helpContent: HelpContentMap = {
           valido.
         </li>
         <li>
-          <strong>Filtros:</strong> por unidad tematica (secuenciales, condicionales, repetitivas,
-          mixtos), dificultad (basica, intermedia, avanzada) y origen (IA o manual).
+          <strong>Filtros:</strong> por unidad tematica (diagramas de flujo, secuenciales,
+          condicionales, repetitivas, mixtos), dificultad (basica, intermedia, avanzada) y origen
+          (IA o manual).
         </li>
         <li>
           <strong>Editar:</strong> el ejercicio se actualiza globalmente. Cuidado: si el ejercicio

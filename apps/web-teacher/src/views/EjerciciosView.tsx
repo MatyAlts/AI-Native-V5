@@ -84,11 +84,14 @@ type ModalState =
 
 // Unidades tematicas por materia. El backend acepta cualquiera (texto libre),
 // asi que esto es solo la lista sugerida/visible en los selectores.
-// - Prog 1: temas imperativos (secuenciales -> recursividad).
+// - Prog 1: diagramas de flujo y temas imperativos (diagramas -> recursividad).
+//   "diagramas" (diagramas de flujo y prueba de escritorio) es la Unidad 1 del
+//   Preuniversitario, que usa esta misma lista (HU-047).
 // - Prog 2: temas de POO (introduccion -> bases de datos).
 // El selector se filtra por la materia activa (ver unidadKeysParaMateria);
 // UNIDAD_LABEL es la UNION global para que cualquier ejercicio muestre su label.
 const UNIDADES_PROG1 = [
+  "diagramas",
   "secuenciales",
   "condicionales",
   "repetitivas",
@@ -112,6 +115,7 @@ const UNIDADES_PROG2 = [
 ]
 
 const UNIDAD_LABEL: Record<string, string> = {
+  diagramas: "Diagramas de flujo",
   secuenciales: "Secuenciales",
   condicionales: "Condicionales",
   repetitivas: "Repetitivas",
@@ -137,10 +141,19 @@ const UNIDAD_ORDER: Record<string, number> = Object.fromEntries(
 )
 
 // Elige la lista de unidades segun la materia activa. Keyea por el nombre
-// ("Programacion 2" / "Programacion II" -> Prog 2; "...1" / "I" -> Prog 1).
+// ("Preuniversitario ..." -> Prog 1; "Programacion 2" / "Programacion II" ->
+// Prog 2; "...1" / "I" -> Prog 1). El Preuniversitario va primero porque su
+// nombre ("Preuniversitario 2027") no matchea ni 1 ni 2 y caia en la union.
 // Sin nombre resoluble -> union (no bloquea la carga).
 function unidadKeysParaMateria(nombre: string | null | undefined): string[] {
   const n = (nombre ?? "").toLowerCase()
+  // Sin tildes, espacios ni guiones: en prod la materia se llama
+  // "Pre Universitario Tecnicatura en Programacion a Distancia" (con espacio).
+  const compacto = n
+    .normalize("NFD")
+    .replace(/\p{Diacritic}/gu, "")
+    .replace(/[\s-]+/g, "")
+  if (compacto.includes("preuniversitario")) return UNIDADES_PROG1
   if (/\b(2|ii)\b/.test(n)) return UNIDADES_PROG2
   if (/\b(1|i)\b/.test(n)) return UNIDADES_PROG1
   return [...UNIDADES_PROG1, ...UNIDADES_PROG2]
@@ -1944,7 +1957,7 @@ Devolve EXACTAMENTE esta estructura, respetando los nombres de campo tal cual:
   "titulo": "string (1 a 200 caracteres)",
   "enunciado_md": "string en markdown con la consigna completa",
   "inicial_codigo": "string con codigo scaffold, o null si no aplica",
-  "unidad_tematica": "UNO de: secuenciales | condicionales | repetitivas | mixtos | funciones | manejo_errores | manejo_archivos | estructura_datos | recursividad | poo | poo_avanzada | relaciones_uml | colecciones | herencia_polimorfismo | interfaces_excepciones | genericos | bases_datos",
+  "unidad_tematica": "UNO de: diagramas | secuenciales | condicionales | repetitivas | mixtos | funciones | manejo_errores | manejo_archivos | estructura_datos | recursividad | poo | poo_avanzada | relaciones_uml | colecciones | herencia_polimorfismo | interfaces_excepciones | genericos | bases_datos",
   "dificultad": "basica | intermedia | avanzada (o null)",
   "prerequisitos": { "sintacticos": ["..."], "conceptuales": ["..."] },
   "test_cases": [
