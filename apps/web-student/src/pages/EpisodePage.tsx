@@ -1778,16 +1778,16 @@ function PanelHeader({
   return (
     <div
       data-testid={`section-kicker-${level.toLowerCase()}`}
-      className="relative px-4 py-3 border-b border-border-soft bg-surface-alt/40 flex items-center gap-3"
+      className="relative px-4 py-3.5 border-b border-border-soft bg-surface-alt/40 flex items-center gap-3"
     >
       {/* Banda vertical del color del nivel */}
       <div
         aria-hidden="true"
-        className="absolute left-0 top-0 bottom-0 w-0.5"
+        className="absolute left-0 top-0 bottom-0 w-1"
         style={{ backgroundColor: colorVar }}
       />
       <div
-        className="inline-flex h-6 w-6 items-center justify-center rounded-md"
+        className="inline-flex h-8 w-8 items-center justify-center rounded-md [&>svg]:h-4 [&>svg]:w-4"
         style={{
           backgroundColor: `color-mix(in oklch, ${colorVar} 12%, transparent)`,
           color: colorVar,
@@ -1797,12 +1797,12 @@ function PanelHeader({
       </div>
       <div className="flex flex-col gap-0 min-w-0 flex-1">
         <span
-          className="text-[9px] uppercase tracking-[0.14em] font-semibold leading-none"
+          className="text-[10px] uppercase tracking-[0.14em] font-semibold leading-none"
           style={{ color: colorVar }}
         >
           {level}
         </span>
-        <h2 className="text-sm font-semibold text-ink leading-tight tracking-tight">{label}</h2>
+        <h2 className="text-lg font-bold text-ink leading-tight tracking-tight">{label}</h2>
       </div>
       {badge && (
         <span
