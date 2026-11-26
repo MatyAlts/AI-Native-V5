@@ -1,5 +1,7 @@
 """classifier-service: clasificación N4 con árbol explicable."""
 
+import asyncio
+import contextlib
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 
@@ -16,12 +18,29 @@ from classifier_service.routes import (
     interrater,
     review,
 )
+from classifier_service.services import barrido, pendientes
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     setup_observability(app)
-    yield
+    # HU-051: barrido de pendientes de clasificar. Recibe la lista viva de
+    # tenants de `services/pendientes.py` (los del env + los que hacen POST).
+    tarea: asyncio.Task[None] | None = None
+    if settings.barrido_habilitado:
+        for tenant_id in settings.barrido_tenant_ids:
+            pendientes.registrar_tenant(tenant_id)
+        tarea = asyncio.create_task(
+            barrido.bucle(settings.barrido_intervalo_segundos, pendientes.TENANTS_DEL_BARRIDO),
+            name="classifier.barrido",
+        )
+    try:
+        yield
+    finally:
+        if tarea is not None:
+            tarea.cancel()
+            with contextlib.suppress(asyncio.CancelledError):
+                await tarea
 
 
 app = FastAPI(

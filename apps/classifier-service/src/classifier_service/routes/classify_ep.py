@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import functools
 import logging
+from dataclasses import dataclass
 from uuid import UUID
 
 import httpx
@@ -46,6 +47,7 @@ from classifier_service.services.juez_v2 import (
     clasificar_regimen_v2,
 )
 from classifier_service.services.juez_v3 import clasificar_regimen_v3
+from classifier_service.services.pendientes import anotar_pendiente, registrar_tenant
 from classifier_service.services.regimen_llm import (
     REGIMEN_TO_APPROPRIATION,
     SUBGRUPOS_JUZGADOS_POR_JUEZ,
@@ -466,8 +468,11 @@ async def classify_episode(
 
     Contrato (deuda QA 2026-05-07, HU-050 del 26/11/2026):
       - Traza sin `episodio_cerrado` (la cola del CTR todavía no guardó el
-        cierre) → 202 ACCEPTED «traza incompleta», sin persistir nada ni
-        llamar al juez. El cliente reintenta.
+        cierre) → 202 ACCEPTED «traza incompleta», sin persistir ninguna
+        clasificación ni llamar al juez. El cliente reintenta, y además
+        (HU-051) el episodio queda anotado en `clasificaciones_pendientes`
+        para que el barrido (`services/barrido.py`) lo clasifique solo cuando
+        el cierre llegue.
       - Episodio nuevo con la traza completa → 201 CREATED + classification
         recién insertada, con `features['eventos_vistos']` = cantidad de
         eventos que devolvió el CTR.
@@ -485,10 +490,76 @@ async def classify_episode(
         profile cambiado) → 201 CREATED + nueva fila; la vieja queda con
         `is_current=false` (append-only ADR-010).
 
+    La lógica vive en `clasificar_episodio`, que comparte con el barrido.
+
     Race condition guard: si dos POSTs concurrentes pasan el pre-SELECT y
     colisionan en el índice único (episode_id, classifier_config_hash,
     eventos_vistos) a nivel DB, el perdedor atrapa el IntegrityError, hace
     rollback y re-SELECT devuelve la fila ganadora con 200 OK.
+    """
+    # HU-051: el tenant entra al barrido de este proceso (ver
+    # `services/pendientes.py`: con RLS forzado no se pueden listar tenants
+    # desde la base).
+    registrar_tenant(user.tenant_id)
+    try:
+        res = await clasificar_episodio(episode_id, user, verificar_acceso=True)
+    except httpx.HTTPStatusError as e:
+        raise _error_de_acceso_del_ctr(e) from None
+    if res.clasificacion is None:
+        # HU-051 C01: el clasificador se anota el episodio para reintentarlo
+        # solo. Si la anotación falla (p. ej. la migración 20261126_0009
+        # todavía no corrió) el 202 sale igual: la web del alumno reintenta
+        # como en la HU-050, y la falla queda en el log.
+        comision = (res.episode or {}).get("comision_id")
+        try:
+            async with tenant_session(user.tenant_id) as session:
+                await anotar_pendiente(
+                    session, user.tenant_id, episode_id, UUID(comision) if comision else None
+                )
+        except Exception:
+            logger.exception(
+                "classify_episode_no_se_pudo_anotar_pendiente",
+                extra={"episode_id": str(episode_id)},
+            )
+        return JSONResponse(
+            status_code=status.HTTP_202_ACCEPTED, content={"detail": TRAZA_INCOMPLETA}
+        )
+    if not res.nueva:
+        response.status_code = status.HTTP_200_OK
+    return _salida(res.clasificacion)
+
+
+@dataclass(frozen=True)
+class ResultadoClasificacion:
+    """Lo que devuelve `clasificar_episodio`.
+
+    - `clasificacion is None`: traza incompleta (el CTR no guardó el cierre).
+      Nada se persistió. El POST responde 202.
+    - `nueva=True`: se insertó una fila (201).
+    - `nueva=False`: ya existía (200, no-op idempotente).
+    `episode` es lo que devolvió el CTR, o None si no hizo falta pedirlo.
+    """
+
+    clasificacion: Classification | None
+    nueva: bool
+    episode: dict | None
+
+
+async def clasificar_episodio(
+    episode_id: UUID, user: User, *, verificar_acceso: bool = False
+) -> ResultadoClasificacion:
+    """Camino único de clasificación: el POST y el barrido (HU-051) usan este.
+
+    Pide la traza al CTR con la identidad de `user` por
+    `_fetch_episode_from_ctr` y corre el juez por `_aplicar_juez_eje_fino`,
+    los dos resueltos en tiempo de llamada (las pruebas los doblan en este
+    módulo). Los errores HTTP del CTR se propagan como `httpx.HTTPError`: el
+    POST los traduce y el barrido los registra.
+
+    `verificar_acceso`: el corte temprano de una fila previa a la HU-050 no
+    trae la traza, así que el POST pide igual la lectura al CTR (HU-017). El
+    barrido no lo necesita: usa una cuenta de servicio sobre episodios que ya
+    están en su propia base.
     """
     profile = DEFAULT_REFERENCE_PROFILE
     # B2b (6.6, 2026-09-27): antes pasaba "v4.0.0" hardcodeado acá — un
@@ -505,28 +576,27 @@ async def classify_episode(
         existing = await _find_current_classification(session, episode_id, config_hash)
     vistos = _eventos_vistos(existing) if existing is not None else None
     if existing is not None and vistos is None:
-        # HU-050 N04: fila previa a la HU (sin `eventos_vistos`). Se devuelve
-        # como siempre, sin traer la traza ni recalcular.
+        # HU-050 N04 / HU-051 N02: fila previa a la HU (sin `eventos_vistos`).
+        # Se devuelve como siempre, sin traer la traza ni recalcular.
         # HU-017: el corte temprano no puede saltear el control de acceso.
-        if not user.roles & _LECTURA_SIN_CTR and settings.enforce_comision_access:
+        if (
+            verificar_acceso
+            and not user.roles & _LECTURA_SIN_CTR
+            and settings.enforce_comision_access
+        ):
             await _exigir_lectura_en_ctr(episode_id, user)
-        response.status_code = status.HTTP_200_OK
-        return _salida(existing)
+        return ResultadoClasificacion(existing, nueva=False, episode=None)
 
     # Traer la traza del CTR. Con una fila previa también: es la única forma
     # de saber si la cola guardó eventos después de clasificarla (HU-050 C03).
     # De paso es el control de acceso (HU-017): el CTR la da solo a quien
     # puede leer el episodio.
-    try:
-        episode = await _fetch_episode_from_ctr(episode_id, user)
-    except httpx.HTTPStatusError as e:
-        raise _error_de_acceso_del_ctr(e) from None
+    episode = await _fetch_episode_from_ctr(episode_id, user)
 
     events = episode.get("events", [])
     if existing is not None and vistos is not None and len(events) <= vistos:
         # HU-050 N02/N03: la fila ya se calculó con esta traza. No cambia.
-        response.status_code = status.HTTP_200_OK
-        return _salida(existing)
+        return ResultadoClasificacion(existing, nueva=False, episode=episode)
     if not _traza_completa(events):
         # HU-050 C01: el cierre todavía no está guardado. Nada se persiste (una
         # etiqueta a medias quedaría congelada) y no se llama al juez.
@@ -534,9 +604,7 @@ async def classify_episode(
             "classify_episode_traza_incompleta",
             extra={"episode_id": str(episode_id), "eventos": len(events)},
         )
-        return JSONResponse(
-            status_code=status.HTTP_202_ACCEPTED, content={"detail": TRAZA_INCOMPLETA}
-        )
+        return ResultadoClasificacion(None, nueva=False, episode=episode)
 
     result = classify_episode_from_events(events, reference_profile=profile)
     # HU-050 C03: cuántos eventos vio esta clasificación. Un POST posterior que
@@ -579,11 +647,10 @@ async def classify_episode(
             # HU-017: acá no hace falta otro control. El usuario ya leyó el
             # episodio del CTR con su identidad (arriba), y el CTR solo se lo
             # dio por ser dueño, miembro u oversight.
-            response.status_code = status.HTTP_200_OK
-            return _salida(existing)
+            return ResultadoClasificacion(existing, nueva=False, episode=episode)
 
     # Path normal: classification recién insertada → 201 (default del router).
-    return _salida(persisted)
+    return ResultadoClasificacion(persisted, nueva=True, episode=episode)
 
 
 # ── Agregación por comisión ───────────────────────────────────────────
