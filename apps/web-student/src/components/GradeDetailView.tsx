@@ -31,7 +31,16 @@ export function GradeDetailView({ entrega, onBack }: GradeDetailViewProps) {
     setLoading(true)
     setError(null)
 
-    if (entrega.estado !== "graded" && entrega.estado !== "returned") {
+    // Item 27: una re-entrega `submitted` que trae `nota_final` tiene la
+    // calificacion de la correccion anterior (devolver no la borra). Se pide
+    // para mostrar el feedback que dice que rehacer, rotulado como anterior.
+    const esReentregaConCorreccionPrevia =
+      entrega.estado === "submitted" && entrega.nota_final != null
+    if (
+      entrega.estado !== "graded" &&
+      entrega.estado !== "returned" &&
+      !esReentregaConCorreccionPrevia
+    ) {
       setLoading(false)
       return
     }
@@ -50,7 +59,9 @@ export function GradeDetailView({ entrega, onBack }: GradeDetailViewProps) {
     return () => {
       cancelled = true
     }
-  }, [entrega.id, entrega.estado])
+  }, [entrega.id, entrega.estado, entrega.nota_final])
+
+  const esPendiente = entrega.estado === "submitted"
 
   return (
     <div className="flex-1 overflow-y-auto px-6 py-8" data-testid="grade-detail-view">
@@ -98,8 +109,29 @@ export function GradeDetailView({ entrega, onBack }: GradeDetailViewProps) {
           </div>
         )}
 
+        {/* Re-entrega: la correccion anterior, rotulada como tal (item 27) */}
+        {!loading && calificacion && esPendiente && (
+          <div
+            data-testid="correccion-anterior"
+            className="mt-6 rounded-lg border border-border-soft bg-surface p-5"
+          >
+            <p className="text-xs font-mono uppercase tracking-wider text-muted mb-1">
+              Correccion anterior
+            </p>
+            <p className="text-sm text-muted mb-3">
+              Nota anterior: <span className="font-mono">{calificacion.nota_final}</span> / 10. La
+              nota nueva aparece cuando tu docente corrija esta entrega.
+            </p>
+            {calificacion.feedback_general && (
+              <p className="text-sm text-body whitespace-pre-wrap leading-relaxed">
+                {calificacion.feedback_general}
+              </p>
+            )}
+          </div>
+        )}
+
         {/* Calificacion cargada */}
-        {!loading && calificacion && (
+        {!loading && calificacion && !esPendiente && (
           <div className="space-y-6" data-testid="calificacion-detail">
             {/* Nota final */}
             <div className="rounded-lg border border-border-soft bg-surface p-6 flex items-center gap-6">
