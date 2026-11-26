@@ -67,6 +67,11 @@ class Classification(Base, TenantMixin):
     Regla append-only (ADR-010):
       - Reclasificar = UPDATE is_current=false en fila vieja + INSERT fila nueva.
       - Nunca se borra ni modifica el resto de la fila anterior.
+      - Se reclasifica por dos motivos: `classifier_config_hash` nuevo, o
+        (HU-050) la misma configuración viendo MÁS eventos del CTR que los
+        `features['eventos_vistos']` de la fila anterior (la traza terminó
+        de guardarse después del primer POST). Las filas sin `eventos_vistos`
+        (previas a la HU) no se recalculan por esta vía.
 
     **`is_current` — cambio de semántica (B3+B5, ronda de revisión 2026-09-27):**
     dejó de significar "la última clasificación que corrió para este episodio"
@@ -109,14 +114,15 @@ class Classification(Base, TenantMixin):
     )
     is_current: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
 
-    __table_args__ = (
-        UniqueConstraint(
-            "episode_id",
-            "classifier_config_hash",
-            name="uq_classifications_episode_config",
-        ),
-        Index("ix_classifications_episode_current", "episode_id", "is_current"),
-    )
+    # Unicidad (HU-050, migración 20261126_0008): UNA fila por
+    # `(episode_id, classifier_config_hash, features['eventos_vistos'])`, con
+    # las filas sin `eventos_vistos` (todas las previas a la HU) contadas como
+    # un solo valor. Antes era `(episode_id, classifier_config_hash)`: con la
+    # misma configuración, un POST que ve MÁS eventos del CTR ahora recalcula y
+    # agrega una fila. El índice es de expresión y vive solo en la migración
+    # (mismo criterio que 20261104_0007: varios tests hacen `create_all` sobre
+    # SQLite).
+    __table_args__ = (Index("ix_classifications_episode_current", "episode_id", "is_current"),)
 
 
 class InterraterRating(Base, TenantMixin):

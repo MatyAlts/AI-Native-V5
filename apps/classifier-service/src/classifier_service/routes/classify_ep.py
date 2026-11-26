@@ -13,6 +13,7 @@ from uuid import UUID
 
 import httpx
 from fastapi import APIRouter, Depends, HTTPException, Query, Response, status
+from fastapi.responses import JSONResponse
 from platform_ops import pasiva_por_sobreuso
 from pydantic import BaseModel
 from sqlalchemy import select
@@ -173,11 +174,14 @@ async def _find_current_classification(
     episode_id: UUID,
     classifier_config_hash: str,
 ) -> Classification | None:
-    """SELECT defensivo: ¿existe ya una clasificación con este hash?
+    """SELECT defensivo: la última clasificación con este hash, si hay.
 
-    Usado por el handler como pre-check de idempotencia ANTES de pegarle al
-    CTR. Si ya existe, evitamos la roundtrip HTTP completa al ctr-service y
-    devolvemos la fila tal cual con 200 (no-op idempotente).
+    Usado por el handler como pre-check de idempotencia. Desde la HU-050 puede
+    haber varias filas con el mismo hash (una por cada recálculo con más
+    eventos del CTR, ver migración 20261126_0008): se devuelve la última por
+    `id`, que es la que vio más eventos. Si no tiene `eventos_vistos` (fila
+    previa a la HU) el handler la devuelve sin pegarle al CTR; si lo tiene,
+    el handler trae la traza y compara la cantidad de eventos.
 
     NOTA: `persist_classification` también hace este SELECT internamente —
     duplicarlo acá es intencional para (1) cortar temprano y (2) tener un
@@ -200,12 +204,35 @@ async def _find_current_classification(
     filtro viejo tampoco la habría encontrado ahí.
     """
     result = await session.execute(
-        select(Classification).where(
+        select(Classification)
+        .where(
             Classification.episode_id == episode_id,
             Classification.classifier_config_hash == classifier_config_hash,
         )
+        .order_by(Classification.id.desc())
+        .limit(1)
     )
     return result.scalar_one_or_none()
+
+
+# HU-050: respuesta del POST cuando el CTR todavía no guardó el cierre.
+TRAZA_INCOMPLETA = "traza incompleta: el cierre del episodio todavia no esta guardado en el CTR"
+
+
+def _eventos_vistos(c: Classification) -> int | None:
+    """`features['eventos_vistos']` de una fila, o None si es previa a la HU-050."""
+    v = (c.features or {}).get("eventos_vistos")
+    return v if isinstance(v, int) and not isinstance(v, bool) else None
+
+
+def _traza_completa(events: list[dict]) -> bool:
+    """HU-050 C01: la traza está completa cuando el CTR ya guardó el cierre.
+
+    La cola del CTR persiste los eventos de forma asíncrona y en orden de
+    `seq`, y el `episodio_cerrado` es el último: si está, están todos los
+    anteriores. Sin él, clasificar dejaría una etiqueta calculada a medias.
+    """
+    return any(e.get("event_type") == "episodio_cerrado" for e in events)
 
 
 def _marcar_para_revision(features: dict, result: object, razon: str) -> None:
@@ -422,26 +449,46 @@ def _salida(c: Classification) -> ClassificationOut:
     "/classify_episode/{episode_id}",
     response_model=ClassificationOut,
     status_code=status.HTTP_201_CREATED,
+    responses={
+        status.HTTP_202_ACCEPTED: {
+            "description": "Traza incompleta: el CTR todavia no guardo el cierre. "
+            "No se persiste nada; reintentar."
+        }
+    },
 )
 async def classify_episode(
     episode_id: UUID,
     response: Response,
     user: User = Depends(require_role(*CLASSIFY_ROLES)),
-) -> ClassificationOut:
-    """Clasifica un episodio dado (idempotente por classifier_config_hash).
+) -> ClassificationOut | JSONResponse:
+    """Clasifica un episodio dado (idempotente por classifier_config_hash
+    y cantidad de eventos vistos).
 
-    Contrato (deuda QA 2026-05-07):
-      - Episodio nuevo → 201 CREATED + classification recién insertada.
-      - Re-POST con MISMO classifier_config_hash → 200 OK + classification
-        existente (no-op idempotente, NO se viola el UniqueConstraint).
+    Contrato (deuda QA 2026-05-07, HU-050 del 26/11/2026):
+      - Traza sin `episodio_cerrado` (la cola del CTR todavía no guardó el
+        cierre) → 202 ACCEPTED «traza incompleta», sin persistir nada ni
+        llamar al juez. El cliente reintenta.
+      - Episodio nuevo con la traza completa → 201 CREATED + classification
+        recién insertada, con `features['eventos_vistos']` = cantidad de
+        eventos que devolvió el CTR.
+      - Re-POST con MISMO classifier_config_hash y los mismos eventos → 200
+        OK + classification existente (no-op idempotente, sin juez).
+      - Re-POST con MISMO hash y MÁS eventos que los vistos por la última
+        fila de ese hash → 201 CREATED + fila nueva (la traza terminó de
+        guardarse después del primer POST); la anterior queda
+        `is_current=false` (append-only ADR-010). Si una revisión humana
+        gobierna, la nueva entra `is_current=false` (`persist_classification`).
+      - Fila con ese hash SIN `eventos_vistos` (todas las previas a la
+        HU-050) → 200 OK con esa fila, sin traer la traza: recalcular la
+        historia es una decisión aparte (HU-051).
       - Re-POST con classifier_config_hash DISTINTO (bump LABELER_VERSION o
         profile cambiado) → 201 CREATED + nueva fila; la vieja queda con
         `is_current=false` (append-only ADR-010).
 
     Race condition guard: si dos POSTs concurrentes pasan el pre-SELECT y
-    colisionan en el UniqueConstraint(episode_id, classifier_config_hash) a
-    nivel DB, el perdedor atrapa el IntegrityError, hace rollback y re-SELECT
-    devuelve la fila ganadora con 200 OK.
+    colisionan en el índice único (episode_id, classifier_config_hash,
+    eventos_vistos) a nivel DB, el perdedor atrapa el IntegrityError, hace
+    rollback y re-SELECT devuelve la fila ganadora con 200 OK.
     """
     profile = DEFAULT_REFERENCE_PROFILE
     # B2b (6.6, 2026-09-27): antes pasaba "v4.0.0" hardcodeado acá — un
@@ -453,25 +500,48 @@ async def classify_episode(
     # literal sincronizado a mano en un tercer lugar.
     config_hash = compute_classifier_config_hash(profile)
 
-    # Pre-check idempotencia: si ya existe la classification current con este
-    # hash, devolvemos 200 sin pegarle al ctr-service (ahorro de roundtrip).
+    # Pre-check idempotencia: la última fila con este hash, si hay.
     async with tenant_session(user.tenant_id) as session:
         existing = await _find_current_classification(session, episode_id, config_hash)
-    if existing is not None:
+    vistos = _eventos_vistos(existing) if existing is not None else None
+    if existing is not None and vistos is None:
+        # HU-050 N04: fila previa a la HU (sin `eventos_vistos`). Se devuelve
+        # como siempre, sin traer la traza ni recalcular.
         # HU-017: el corte temprano no puede saltear el control de acceso.
         if not user.roles & _LECTURA_SIN_CTR and settings.enforce_comision_access:
             await _exigir_lectura_en_ctr(episode_id, user)
         response.status_code = status.HTTP_200_OK
         return _salida(existing)
 
-    # No existe — flujo normal: fetch eventos del CTR + clasificar + persistir.
+    # Traer la traza del CTR. Con una fila previa también: es la única forma
+    # de saber si la cola guardó eventos después de clasificarla (HU-050 C03).
+    # De paso es el control de acceso (HU-017): el CTR la da solo a quien
+    # puede leer el episodio.
     try:
         episode = await _fetch_episode_from_ctr(episode_id, user)
     except httpx.HTTPStatusError as e:
         raise _error_de_acceso_del_ctr(e) from None
 
     events = episode.get("events", [])
+    if existing is not None and vistos is not None and len(events) <= vistos:
+        # HU-050 N02/N03: la fila ya se calculó con esta traza. No cambia.
+        response.status_code = status.HTTP_200_OK
+        return _salida(existing)
+    if not _traza_completa(events):
+        # HU-050 C01: el cierre todavía no está guardado. Nada se persiste (una
+        # etiqueta a medias quedaría congelada) y no se llama al juez.
+        logger.info(
+            "classify_episode_traza_incompleta",
+            extra={"episode_id": str(episode_id), "eventos": len(events)},
+        )
+        return JSONResponse(
+            status_code=status.HTTP_202_ACCEPTED, content={"detail": TRAZA_INCOMPLETA}
+        )
+
     result = classify_episode_from_events(events, reference_profile=profile)
+    # HU-050 C03: cuántos eventos vio esta clasificación. Un POST posterior que
+    # encuentre más la recalcula.
+    result.features = {**(result.features or {}), "eventos_vistos": len(events)}
     # Juez LLM del eje fino: GOBIERNA la etiqueta oficial de los con-tutor
     # no-delegación (v4.0.0). No-op si el flag está OFF; degrada a proxy +
     # needs_review si el juez no responde "ok" o el gateway falla.

@@ -9,8 +9,13 @@ idempotencia documentado en CLAUDE.md / backlog QA 2026-05-07:
 
 Contrato verificado:
   - Test A: episodio nuevo (sin classification previa) -> 201 CREATED.
-  - Test B: re-POST con MISMO classifier_config_hash -> 200 OK con la
-    classification existente (idempotente, NO se viola UniqueConstraint).
+  - Test B: re-POST con MISMO classifier_config_hash sobre una fila previa
+    a la HU-050 (sin `features['eventos_vistos']`) -> 200 OK con la
+    classification existente, sin pegarle al CTR (HU-050 N04).
+  - Test B2 (HU-050): misma situacion pero la fila tiene `eventos_vistos`:
+    el handler SI trae la traza del CTR (es la unica forma de saber si la
+    cola guardo eventos despues) y, con la misma cantidad, devuelve 200 sin
+    insertar.
   - Test C: re-POST con classifier_config_hash DISTINTO (simula bump
     LABELER_VERSION o profile cambiado) -> 201 CREATED con nueva fila;
     la vieja queda con `is_current=false` (append-only ADR-010).
@@ -230,6 +235,11 @@ async def test_classify_episode_200_cuando_existe_misma_config(
 
     CRITICA: no debe haber fetch al CTR (ahorro de roundtrip) ni INSERT.
 
+    HU-050: el corte sin CTR vale SOLO para filas previas a la HU, que no
+    tienen `features['eventos_vistos']` (la fila de este test tiene
+    `features={"k": 1}`): esas no se recalculan (N04). Una fila con
+    `eventos_vistos` obliga a mirar el CTR: la cubre el test B2 de abajo.
+
     HU-017: el corte sin CTR queda para `classifier_worker` y oversight; un
     `docente` pelado ahora se valida contra el CTR antes de recibir la fila
     (`test_hu017_classify_post_ajeno.py`). Por eso este test usa docente_admin.
@@ -270,6 +280,46 @@ async def test_classify_episode_200_cuando_existe_misma_config(
     assert session.added_rows == []
     # No se llamo al CTR (corte temprano por pre-check)
     ctr_mock.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_classify_episode_200_con_eventos_vistos_mira_el_ctr(
+    client: AsyncClient,
+) -> None:
+    """HU-050: una fila con `eventos_vistos` no corta antes del CTR.
+
+    Con la misma cantidad de eventos que vio, el re-POST devuelve 200 con la
+    fila existente y no inserta (N02); pero tuvo que traer la traza para
+    saberlo (C03: si hubiera mas eventos, recalcularia).
+    """
+    episode_id = uuid4()
+    comision_id = uuid4()
+    payload = _fake_episode_payload(episode_id, comision_id)
+    existing = _make_classification(
+        episode_id=episode_id,
+        comision_id=comision_id,
+        classifier_config_hash=compute_classifier_config_hash(DEFAULT_REFERENCE_PROFILE),
+        is_current=True,
+    )
+    existing.features = {"eventos_vistos": len(payload["events"])}
+    session = _make_session(existing_first_select=existing)
+    ctr_mock = AsyncMock(return_value=payload)
+
+    with (
+        patch(
+            "classifier_service.routes.classify_ep.tenant_session",
+            lambda tid: _fake_tenant_session(session, tid),
+        ),
+        patch("classifier_service.routes.classify_ep._fetch_episode_from_ctr", ctr_mock),
+    ):
+        r = await client.post(
+            f"/api/v1/classify_episode/{episode_id}",
+            headers={**_auth_headers(), "X-User-Roles": "docente_admin"},
+        )
+
+    assert r.status_code == 200, r.text
+    assert session.added_rows == []
+    ctr_mock.assert_awaited_once()
 
 
 # ── Test C: re-POST con config distinta -> 201 reclasificacion ───────────

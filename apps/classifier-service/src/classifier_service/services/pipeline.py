@@ -1,9 +1,14 @@
 """Pipeline: episodio cerrado → features → árbol → clasificación persistida.
 
-El worker de classifier-service escucha eventos `episodio_cerrado`, carga
-todos los eventos del episodio desde el ctr-service, calcula las 3
-coherencias, aplica el árbol N4, y persiste la clasificación como fila
-append-only en `classifications`. Normalmente entra con `is_current=true`
+No hay un worker que escuche `episodio_cerrado`: la clasificación la dispara
+`POST /api/v1/classify_episode/{id}` (`routes/classify_ep.py`), que llama la
+web del alumno al cerrar el ejercicio y los scripts de reclasificación
+(`reclassify_all.py`). El handler trae todos los eventos del episodio desde el
+ctr-service y, si la traza ya tiene guardado el `episodio_cerrado` (HU-050: si
+no, responde 202 sin persistir, porque la cola del CTR guarda los eventos de
+forma asíncrona), este módulo calcula las 3 coherencias, aplica el árbol N4 y
+persiste la clasificación como fila append-only en `classifications`, con
+`features['eventos_vistos']` = cantidad de eventos que vio. Normalmente entra con `is_current=true`
 (marcando la anterior, si existía, como `is_current=false`) — EXCEPTO si
 una anulación humana gobierna ese episodio (B3+B5,
 `services/review.py::submit_review`), en cuyo caso la fila de máquina se
@@ -152,10 +157,13 @@ async def persist_classification(
     """Persiste append-only (ADR-010).
 
     Idempotencia: si ya existe UNA FILA CUALQUIERA (vigente o no) con este
-    `(episode_id, classifier_config_hash)`, la devuelve tal cual (no-op, sin
-    insertar ni tocar su `is_current`). Si no existe ninguna con ese hash
-    (reclasificación real con config nueva), degrada las vigentes que
-    correspondan e inserta la nueva.
+    `(episode_id, classifier_config_hash)` — y, cuando `result.features`
+    trae `eventos_vistos` (HU-050), con ese mismo `eventos_vistos` —, la
+    devuelve tal cual (no-op, sin insertar ni tocar su `is_current`). Si no
+    existe (config nueva, o la misma config viendo más eventos del CTR),
+    degrada las vigentes que correspondan e inserta la nueva. Decidir SI hay
+    que recalcular (más eventos que la vigente, filas previas a la HU) es
+    del handler (`routes/classify_ep.py`), no de esta función.
 
     Esto cierra la deuda QA "POST /classify_episode/{id} no es idempotente":
     el `UniqueConstraint(episode_id, classifier_config_hash)` haría fallar
@@ -193,12 +201,19 @@ async def persist_classification(
     # no-vigente — sin ampliar el chequeo, la siguiente corrida automática
     # con el mismo hash intentaría un INSERT que choca con el
     # UniqueConstraint(episode_id, classifier_config_hash).
-    existing_same_hash = await session.execute(
-        select(Classification).where(
-            Classification.episode_id == episode_id,
-            Classification.classifier_config_hash == classifier_config_hash,
-        )
+    #
+    # HU-050: con `eventos_vistos` en el resultado, la identidad de la fila
+    # es `(hash, eventos_vistos)` — la misma que el índice único de la
+    # migración 20261126_0008. Una fila del mismo hash que vio MENOS eventos
+    # no es "la misma clasificación": se degrada abajo y se inserta la nueva.
+    vistos = (result.features or {}).get("eventos_vistos")
+    misma = select(Classification).where(
+        Classification.episode_id == episode_id,
+        Classification.classifier_config_hash == classifier_config_hash,
     )
+    if vistos is not None:
+        misma = misma.where(Classification.features["eventos_vistos"].astext == str(vistos))
+    existing_same_hash = await session.execute(misma.order_by(Classification.id.desc()).limit(1))
     current_row = existing_same_hash.scalar_one_or_none()
     if current_row is not None:
         logger.debug(
@@ -210,19 +225,20 @@ async def persist_classification(
         )
         return current_row
 
-    # Reclasificación con hash nuevo: degradar las vigentes — EXCEPTO una de
-    # procedencia humana. `~features.has_key("revision_humana")` es la
-    # exclusión que gate 1.4 pide ("la anulación humana gobierna hasta que
-    # otro humano la cambie"); la comparación de hash es la defensa original
-    # (caso de carrera puntual) y ahora también es redundante-pero-inocua
-    # con el SELECT de arriba (que ya garantiza que ninguna fila vigente
-    # comparte este hash exacto).
+    # Reclasificación (hash nuevo, o HU-050: mismo hash con más eventos
+    # vistos): degradar las vigentes — EXCEPTO una de procedencia humana.
+    # `~features.has_key("revision_humana")` es la exclusión que gate 1.4 pide
+    # ("la anulación humana gobierna hasta que otro humano la cambie").
+    # Antes había además `classifier_config_hash != classifier_config_hash`
+    # como defensa de carrera; la HU-050 la sacó porque el recálculo con más
+    # eventos tiene que degradar justamente la vigente del MISMO hash. La
+    # carrera la sigue cubriendo el índice único (dos POST que vieron la misma
+    # traza chocan en el INSERT y el handler recupera la ganadora).
     await session.execute(
         update(Classification)
         .where(
             Classification.episode_id == episode_id,
             Classification.is_current.is_(True),
-            Classification.classifier_config_hash != classifier_config_hash,
             ~Classification.features.has_key("revision_humana"),
         )
         .values(is_current=False)

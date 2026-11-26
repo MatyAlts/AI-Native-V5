@@ -23,7 +23,7 @@ Pertenece al **plano pedagógico-evaluativo**. Materializa el componente "Clasif
 ## 4. Qué NO hace (anti-responsabilidades)
 
 - **NO emite ni modifica eventos del CTR**: es consumidor read-only. Todas las escrituras al CTR pasan por [tutor-service](./tutor-service.md).
-- **NO dispara automáticamente al cerrarse el episodio**: el pipeline está descripto como worker en el docstring de `services/pipeline.py`, pero el trigger corriente es manual (`POST /classify_episode/{id}`). El hook automático desde el stream `ctr.p*` está previsto en F3+ y hoy (F9) no hay worker en `apps/classifier-service/src/classifier_service/workers/` — **verificar estado actual**. El endpoint manual cubre el piloto.
+- **NO dispara automáticamente al cerrarse el episodio**: no hay worker que escuche `episodio_cerrado` (verificado 2026-11-26; el docstring de `services/pipeline.py` lo decía y se corrigió en HU-050). El trigger es `POST /classify_episode/{id}`, que llama la web del alumno al cerrar y los scripts de reclasificación. Como la cola del CTR guarda los eventos de forma asíncrona, ese POST puede llegar antes que el cierre: responde 202 y la web reintenta (HU-050).
 - **NO retorna un score único**: devuelve 5 valores + una categoría + un texto-razón. Cualquier colapso a escalar único distorsiona la tesis.
 - **NO es black-box**: el árbol en `tree.py` es un `if/elif/else` legible con umbrales en el `reference_profile`. No hay modelo entrenado, no hay pesos opacos.
 - **NO valida autorización de negocio**: confía en headers `X-*` del api-gateway. Tiene `CLASSIFY_ROLES` y `READ_ROLES` sólo como check de rol-a-endpoint.
@@ -32,7 +32,7 @@ Pertenece al **plano pedagógico-evaluativo**. Materializa el componente "Clasif
 
 | Método | Path | Qué hace | Auth |
 |---|---|---|---|
-| `POST` | `/api/v1/classify_episode/{episode_id}` | Trae el episodio del CTR, corre el pipeline, persiste la clasificación. Idempotente por `classifier_config_hash`. | Rol en `CLASSIFY_ROLES`. |
+| `POST` | `/api/v1/classify_episode/{episode_id}` | Trae el episodio del CTR, corre el pipeline, persiste la clasificación. Idempotente por `classifier_config_hash` y `features['eventos_vistos']` (HU-050): 202 «traza incompleta» sin persistir si el CTR todavía no guardó el `episodio_cerrado`; recalcula (fila nueva, append-only) si ve más eventos que la fila anterior; las filas previas a la HU (sin `eventos_vistos`) no se recalculan. | Rol en `CLASSIFY_ROLES`. |
 | `GET` | `/api/v1/classifications/{episode_id}` | Clasificación `is_current=true` del episodio. 404 si no hay. | Rol en `READ_ROLES`. |
 | `GET` | `/api/v1/classifications/aggregated?comision_id=...&period_days=30` | Distribución + promedios de coherencias + timeseries diaria para dashboard docente. | Rol en `READ_ROLES`. |
 | `GET` | `/health`, `/health/ready` | Health real con `check_postgres` + `check_http(ctr)` (epic `real-health-checks`, 2026-05-04). | Ninguna. |
