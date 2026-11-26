@@ -119,11 +119,14 @@ export function ClasificacionesPage(): ReactNode {
 
     fetch(`/api/v1/classifications/subgrupos?comision_id=${comisionId}&period_days=${periodDays}`)
       .then(async (r) => {
-        if (r.status === 404 || r.status === 501) {
+        // El backend todavía no tiene `/classifications/subgrupos`: la ruta
+        // cae en `/classifications/{episode_id}` y vuelve 422 (no es un UUID).
+        // Antes sólo 404/501 contaban como "no disponible" y cualquier otro
+        // error dejaba el bloque en "Cargando subgrupos..." para siempre.
+        if (!r.ok) {
           if (!cancelled) setSubgruposPending(true)
           return null
         }
-        if (!r.ok) return null
         return r.json()
       })
       .then((data: SubgruposStats | null) => {

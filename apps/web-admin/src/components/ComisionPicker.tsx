@@ -14,7 +14,7 @@
  * en loop infinito (gotcha documentada en CLAUDE.md "Frontends React").
  */
 import { type ReactNode, useEffect, useMemo, useState } from "react"
-import { type Comision, comisionesApi } from "../lib/api"
+import { type Comision, comisionesApi, materiasApi } from "../lib/api"
 
 interface ComisionPickerProps {
   value: string | null
@@ -35,6 +35,10 @@ export function ComisionPicker({
   className = "",
 }: ComisionPickerProps): ReactNode {
   const [items, setItems] = useState<Comision[]>([])
+  // Nombre de la materia por id. El listado de comisiones no lo trae, y sin él
+  // el selector muestra "C1, C1, C2…" sin forma de saber de qué materia es
+  // cada una. Best-effort: si falla, se cae al código pelado.
+  const [materias, setMaterias] = useState<Record<string, string>>({})
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
 
@@ -59,6 +63,15 @@ export function ComisionPicker({
         setError(`Error: ${e.message}`)
         setLoading(false)
       })
+    materiasApi
+      .list({ limit: 200 })
+      .then((page) => {
+        if (cancelled) return
+        setMaterias(Object.fromEntries(page.data.map((m) => [m.id, m.nombre])))
+      })
+      .catch(() => {
+        // Sin materias el selector sigue andando con el código solo.
+      })
     return () => {
       cancelled = true
     }
@@ -66,11 +79,13 @@ export function ComisionPicker({
 
   const options = useMemo(
     () =>
-      items.map((c) => ({
-        id: c.id,
-        label: c.codigo,
-      })),
-    [items],
+      items
+        .map((c) => {
+          const materia = materias[c.materia_id]
+          return { id: c.id, label: materia ? `${materia} · ${c.codigo}` : c.codigo }
+        })
+        .sort((a, b) => a.label.localeCompare(b.label, "es")),
+    [items, materias],
   )
 
   if (loading) {
