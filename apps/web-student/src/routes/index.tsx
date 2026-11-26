@@ -75,7 +75,7 @@ export function AvisoEntregaVencida({ onClose }: { onClose: () => void }) {
       <div
         role="alert"
         data-testid="aviso-entrega-vencida"
-        className="animate-fade-in-down max-w-3xl mx-auto flex items-start justify-between gap-3 rounded-lg border border-warning/40 bg-warning-soft px-4 py-3 text-sm text-warning"
+        className="animate-fade-in-down flex items-start justify-between gap-3 rounded-lg border border-warning/40 bg-warning-soft px-4 py-3 text-sm text-warning"
       >
         <span className="leading-relaxed">{MENSAJE_ENTREGA_VENCIDA}</span>
         <button
@@ -106,7 +106,7 @@ export function HomeContent({ isLoading, error, materias, onEnter }: HomeContent
         data-testid="home-loading"
         aria-label="Cargando tus materias"
       >
-        <div className="max-w-3xl mx-auto space-y-6">
+        <div className="space-y-6">
           <div className="space-y-3">
             <div className="skeleton h-3 w-32 rounded" />
             <div className="skeleton h-9 w-56 rounded" />
@@ -139,7 +139,7 @@ export function HomeContent({ isLoading, error, materias, onEnter }: HomeContent
 
   return (
     <div className="page-enter flex-1 overflow-y-auto px-6 py-12">
-      <div className="max-w-3xl mx-auto">
+      <div>
         <header className="animate-fade-in-down mb-8 flex items-start justify-between gap-4">
           <div className="min-w-0">
             <p
@@ -365,7 +365,7 @@ const LEVELS: LevelBlurb[] = [
 function EmptyState() {
   return (
     <div className="page-enter flex-1 overflow-y-auto px-6 py-12">
-      <div className="max-w-3xl mx-auto">
+      <div>
         <header className="animate-fade-in-down mb-10">
           <div className="inline-flex items-center gap-2 mb-4 px-3 py-1 rounded-full bg-accent-brand-soft border border-accent-brand/20">
             <Sparkles className="h-3.5 w-3.5 text-accent-brand" />

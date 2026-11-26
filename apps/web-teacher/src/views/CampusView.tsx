@@ -18,7 +18,7 @@
  */
 import { HtmlAislado, PageContainer, useConfirm } from "@platform/ui"
 import { Link } from "@tanstack/react-router"
-import { useCallback, useEffect, useState } from "react"
+import { useCallback, useEffect, useRef, useState } from "react"
 import {
   type AplicacionPlantilla,
   type PlantillaCampus,
@@ -326,6 +326,16 @@ export function CampusView({ comisionId, getToken, hoy }: CampusViewProps) {
   const [editando, setEditando] = useState<Unidad | null>(null)
   const [borrador, setBorrador] = useState<Borrador>({ introduccion: "", fecha: "", resumen: "" })
   const [estadoUnidad, setEstadoUnidad] = useState<Estado>({ kind: "idle" })
+  // HU-043: el editor se abre debajo de la lista de unidades, fuera de la vista.
+  // Cada "Editar" sube este contador y el efecto lleva el bloque del editor a la
+  // vista; guardar (que tambien cambia `editando`) no mueve la pagina.
+  const editorRef = useRef<HTMLDivElement>(null)
+  const [pedidoScroll, setPedidoScroll] = useState(0)
+
+  useEffect(() => {
+    if (pedidoScroll === 0) return
+    editorRef.current?.scrollIntoView?.({ behavior: "smooth", block: "start" })
+  }, [pedidoScroll])
 
   const cargar = useCallback(() => {
     setLoading(true)
@@ -355,6 +365,7 @@ export function CampusView({ comisionId, getToken, hoy }: CampusViewProps) {
 
   function abrirEditor(u: Unidad) {
     setEditando(u)
+    setPedidoScroll((n) => n + 1)
     setEstadoUnidad({ kind: "idle" })
     setBorrador({
       introduccion: u.introduccion_html ?? "",
@@ -499,7 +510,10 @@ export function CampusView({ comisionId, getToken, hoy }: CampusViewProps) {
           </ul>
 
           {editando && (
-            <div className="space-y-4 rounded-lg border border-border-strong bg-surface p-4">
+            <div
+              ref={editorRef}
+              className="scroll-mt-4 space-y-4 rounded-lg border border-border-strong bg-surface p-4"
+            >
               <div className="flex flex-wrap items-center justify-between gap-2">
                 <h3 className="font-semibold text-ink">{editando.nombre}</h3>
                 <button type="button" className={BOTON_SECUNDARIO} onClick={usarEstructura}>
