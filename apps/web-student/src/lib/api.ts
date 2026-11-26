@@ -359,15 +359,22 @@ export async function* sendMessage(
   }
 }
 
+/**
+ * Pide la clasificación del episodio. Devuelve `null` si el classifier
+ * responde 202 «traza incompleta» (HU-050): la cola del CTR todavía no guardó
+ * el cierre y no se clasificó nada. Quien llama reintenta
+ * (`lib/clasificacionConReintentos.ts`); un 202 nunca es una clasificación.
+ */
 export async function classifyEpisode(
   episodeId: string,
   getToken?: TokenGetter,
-): Promise<Classification> {
+): Promise<Classification | null> {
   const r = await fetch(`/api/v1/classify_episode/${episodeId}`, {
     method: "POST",
     headers: await authHeaders(getToken),
   })
   if (!r.ok) throw new Error(`classify failed: ${r.status}`)
+  if (r.status === 202) return null
   return r.json()
 }
 

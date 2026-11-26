@@ -51,7 +51,6 @@ import {
   LANGUAGE_PLACEHOLDER,
   type Language,
   type TestCasePublic,
-  classifyEpisode,
   closeEpisode,
   emitCodigoEjecutado,
   emitCopiaIntentada,
@@ -75,6 +74,7 @@ import {
   saveArtefactoDraft,
 } from "../lib/artefactos"
 import { type CodigoResuelto, esPlaceholder, resolverCascadaDeCodigo } from "../lib/cascadaCodigo"
+import { clasificarConReintentos } from "../lib/clasificacionConReintentos"
 import { codigoEntregadoDe } from "../lib/codigoEntregado"
 import { mensajeAvisoDescartado } from "../lib/ctrDropAviso"
 import {
@@ -212,6 +212,10 @@ export function EpisodeView({ episodeId, onExit, ejercicioContext, getToken }: E
   const [streaming, setStreaming] = useState(false)
   const [classification, setClassification] = useState<Classification | null>(null)
   const [classificationFailed, setClassificationFailed] = useState<boolean>(false)
+  // HU-050 C04: el classifier siguió respondiendo 202 «traza incompleta»
+  // después de todos los reintentos. No es un error: el CTR no terminó de
+  // guardar el cierre todavía.
+  const [classificationPending, setClassificationPending] = useState<boolean>(false)
   const [error, setError] = useState<string | null>(null)
   // Contador para "Reintentar" cuando el episodio no se pudo abrir: cambiarlo
   // re-dispara la hidratacion sin remontar la pantalla.
@@ -804,8 +808,11 @@ export function EpisodeView({ episodeId, onExit, ejercicioContext, getToken }: E
     setClosed(true)
     setReflectionTargetId(episodeId)
     try {
-      const c = await classifyEpisode(episodeId)
-      setClassification(c)
+      // HU-050: reintenta mientras el CTR no guardó el cierre (202), todo
+      // dentro de 60 s. `null` = sigue incompleta: aviso, no error.
+      const c = await clasificarConReintentos(episodeId)
+      if (c) setClassification(c)
+      else setClassificationPending(true)
     } catch (e) {
       // Best-effort: no bloqueamos el cierre si falla la clasificación,
       // pero seteamos el flag para mostrar un panel de fallback en lugar
@@ -980,12 +987,13 @@ export function EpisodeView({ episodeId, onExit, ejercicioContext, getToken }: E
   // Fallback: el episodio cerró pero la clasificación falló. Mejor mostrar
   // un panel explícito que dejar al alumno en limbo viendo la UI del
   // episodio activo (con `closed=true` pero sin feedback ni CTA claro).
-  if (classificationFailed && reflectionTargetId === null) {
+  if ((classificationFailed || classificationPending) && reflectionTargetId === null) {
     return (
       <ClassificationFallbackPanel
         onReset={salir}
         isMultiExercise={ejercicioContext != null}
         esUltimoEjercicio={esUltimoEjercicio}
+        procesando={!classificationFailed && classificationPending}
       />
     )
   }
@@ -2410,10 +2418,14 @@ function ClassificationFallbackPanel({
   onReset,
   isMultiExercise,
   esUltimoEjercicio,
+  procesando = false,
 }: {
   onReset: () => void
   isMultiExercise: boolean
   esUltimoEjercicio: boolean
+  // HU-050 C04: la traza siguió incompleta después de los reintentos (202).
+  // No es una falla: cambia el título y el texto, el botón es el mismo.
+  procesando?: boolean
 }) {
   // Panel mínimo cuando el cierre fue OK pero `classifyEpisode` falló.
   // Antes de este componente, el alumno quedaba en limbo: `closed=true`
@@ -2427,13 +2439,21 @@ function ClassificationFallbackPanel({
           Cierre del ejercicio
         </p>
         <h2 className="font-serif text-3xl font-medium leading-tight text-ink">
-          Cerramos tu episodio
+          {procesando ? "Tu cierre se está procesando" : "Cerramos tu episodio"}
         </h2>
-        <p className="mt-4 text-base leading-relaxed text-body">
-          Tu trabajo quedó registrado criptográficamente. La clasificación pedagógica no se pudo
-          calcular en este momento — el sistema la va a procesar más tarde y vas a poder verla en{" "}
-          <strong>Mis reflexiones</strong>.
-        </p>
+        {procesando ? (
+          <p className="mt-4 text-base leading-relaxed text-body">
+            Tu trabajo quedó registrado. Todavía estamos terminando de guardar los últimos pasos del
+            ejercicio, así que la devolución pedagógica no está lista. Podés seguir: no hace falta
+            que hagas nada más.
+          </p>
+        ) : (
+          <p className="mt-4 text-base leading-relaxed text-body">
+            Tu trabajo quedó registrado criptográficamente. La clasificación pedagógica no se pudo
+            calcular en este momento — el sistema la va a procesar más tarde y vas a poder verla en{" "}
+            <strong>Mis reflexiones</strong>.
+          </p>
+        )}
       </div>
       <div className="flex justify-end">
         <button
