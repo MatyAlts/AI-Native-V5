@@ -690,7 +690,10 @@ async def seed_classifications(
                         ":eid, :t, :c, :cch, :app, :reason, "
                         ":ct, :ccd, :orph, :stab, :evo, "
                         "'{}'::jsonb, :ca, true"
-                        ") ON CONFLICT ON CONSTRAINT uq_classifications_episode_config DO NOTHING"
+                        # HU-050 (migracion 20261126_0008): la unicidad es un
+                        # indice de expresion, no una constraint con nombre.
+                        ") ON CONFLICT (episode_id, classifier_config_hash, "
+                        "(COALESCE(features ->> 'eventos_vistos', ''))) DO NOTHING"
                     ),
                     {
                         "eid": str(episode_id),
