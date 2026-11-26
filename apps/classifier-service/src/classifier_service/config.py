@@ -2,6 +2,7 @@
 
 from functools import lru_cache
 from typing import Literal
+from uuid import UUID
 
 from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -116,6 +117,26 @@ class Settings(BaseSettings):
     # Cuando se prenda: bumpear `classifier_config_hash` (cambia la salida
     # del pipeline) y emitir ADR-052 con el modelo de reglas vigente.
     guardrail_modifier_enabled: bool = False
+
+    # ── Barrido de pendientes (HU-051, `services/barrido.py`) ────────────────
+    # Reintenta los episodios a los que el POST respondió 202 (el CTR no había
+    # guardado el cierre) y recalcula las clasificaciones de las últimas 48 h
+    # cuya traza creció. Corre dentro del servicio (`main.lifespan`).
+    barrido_habilitado: bool = True  # apagable para tests / dev
+    barrido_intervalo_segundos: float = Field(default=300.0, gt=0)
+    # Un pendiente sin cierre después de estos días pasa a 'descartado'.
+    barrido_pendiente_max_dias: int = Field(default=7, gt=0)
+    # Tope de trazas que se le piden al CTR por tenant, por pasada y por
+    # tarea (pendientes y recálculo): como mucho 2x esto por pasada.
+    barrido_lote_maximo: int = Field(default=50, gt=0)
+    # Una clasificación ya revisada no se le vuelve a pedir al CTR antes de
+    # esto (memoria del proceso).
+    barrido_revisar_cada_segundos: float = Field(default=1800.0, ge=0)
+    # Tenants que se barren desde el arranque (env JSON:
+    # BARRIDO_TENANT_IDS='["<uuid>"]'). Con RLS forzado la base no puede
+    # listarlos; los que hacen un POST en este proceso se suman solos (ver
+    # `services/pendientes.py`).
+    barrido_tenant_ids: list[UUID] = Field(default_factory=list)
 
     # ── Auth cross-service (A0.1 / A0.4) ─────────────────────────────────────
     # El classifier-service es interno: el api-gateway proxya sus endpoints de
