@@ -13,7 +13,11 @@ la versión (semver) para que quede trazable; el LLM no la ve.
 from __future__ import annotations
 
 # 1.0.0 (24/11/2026, HU-034): primera versión de la guía.
-CONTEXTO_PSEINT_VERSION = "1.0.0"
+# 1.1.0 (25/11/2026, HU-042): suma la referencia breve de cómo se comporta el
+#   intérprete de la plataforma (Escribir, Leer, `/`, `+` con textos), tomada
+#   de `packages/pseint/PERFIL.md`. En producción el tutor afirmó que las comas
+#   de `Escribir` separan con espacio, y es falso.
+CONTEXTO_PSEINT_VERSION = "1.1.0"
 
 LENGUAJE_PSEINT = "pseint"
 
@@ -41,7 +45,25 @@ CONTEXTO_PSEINT = (
     "- Seguís siendo socrático: preguntas antes que respuestas."
 )
 
+# HU-042 C02: hechos del intérprete de la plataforma (perfil 20250314, ver
+# `packages/pseint/PERFIL.md`). Cada hecho va en su propia línea.
+REFERENCIA_LENGUAJE_PSEINT = (
+    "\n\n[Cómo se comporta PSeInt en esta plataforma]\n"
+    "Si tenés dudas de cómo se comporta algo, guiate por esto y no por otro "
+    "lenguaje:\n"
+    "- `Escribir a, b` escribe los valores pegados, sin espacios ni separador "
+    "entre ellos: para separarlos hay que escribir el espacio a mano "
+    '(`Escribir a, " ", b`). Al final salta de línea, salvo con `Sin Saltar`.\n'
+    "- `Leer` toma un valor por línea; `Leer a, b` pide dos datos.\n"
+    "- `/` siempre divide con decimales (`7/2` da 3.5); para la división entera "
+    "se usa `trunc(a/b)` y el resto es `MOD`.\n"
+    '- `+` también concatena textos, pero mezclar texto y número (`"a" + 1`) '
+    "es un error."
+)
+
 
 def contexto_pseint(language: object) -> str:
     """Devuelve la guía si el lenguaje es PSeInt; si no, cadena vacía."""
-    return CONTEXTO_PSEINT if language == LENGUAJE_PSEINT else ""
+    if language != LENGUAJE_PSEINT:
+        return ""
+    return CONTEXTO_PSEINT + REFERENCIA_LENGUAJE_PSEINT

@@ -13,11 +13,16 @@
  *
  * Flujo multi-ejercicio: si hay `active-exercise-context` en sessionStorage,
  * se pasa el contexto a EpisodeView y al salir se navega de vuelta al
- * ExerciseListView de la TP correspondiente.
+ * ExerciseListView de la TP correspondiente. Si no está (otra pestaña o el
+ * navegador reiniciado), se reconstruye desde el servidor ANTES de montar
+ * EpisodeView (HU-042, `lib/contextoEjercicio.ts`): la hidratación depende
+ * del contexto y no tiene que correr dos veces.
  */
 import { useQueryClient } from "@tanstack/react-query"
 import { createFileRoute, useNavigate, useParams } from "@tanstack/react-router"
+import { useEffect, useMemo, useRef, useState } from "react"
 import { type MateriaInscripta, getEpisodeState, listMisMaterias } from "../lib/api"
+import { type ContextoEjercicioServidor, resolverContextoEjercicio } from "../lib/contextoEjercicio"
 import { destinoAlSalir, destinoSalidaEjercicio, enviarEntregaAlSalir } from "../lib/entregaAlSalir"
 import { debeEnviarLaEntrega } from "../lib/entregaGuard"
 import { type EjercicioContext, EpisodeView } from "../pages/EpisodePage"
@@ -49,14 +54,43 @@ function EpisodioPage() {
   // sessionStorage usa una unica clave global — sin scope por episodio, un
   // contexto viejo (de otro episodio) se leia como si fuera el actual y hacia
   // que al cerrar el episodio se marcara como completo un ejercicio ajeno.
-  const ejercicioContext = readEjercicioContext(id)
+  // Se lee una vez por episodio: `handleExit` borra la clave y eso no tiene
+  // que desmontar el episodio para ir a buscar el contexto al servidor.
+  const contextoLocal = useMemo(() => readEjercicioContext(id), [id])
+  const hayContextoLocal = contextoLocal !== null
+  const getTokenRef = useRef(getToken)
+  getTokenRef.current = getToken
+
+  // HU-042: sin contexto local, se pide al servidor. `undefined` = todavia
+  // resolviendo; `null` = el episodio no es de un ejercicio (o no se pudo).
+  const [contextoServidor, setContextoServidor] = useState<
+    ContextoEjercicioServidor | null | undefined
+  >(hayContextoLocal ? null : undefined)
+  useEffect(() => {
+    if (hayContextoLocal) return
+    let vigente = true
+    setContextoServidor(undefined)
+    void resolverContextoEjercicio(
+      id,
+      getTokenRef.current,
+      queryClient.getQueryData<MateriaInscripta[]>(["mis-materias"]),
+    ).then((ctx) => {
+      if (vigente) setContextoServidor(ctx)
+    })
+    return () => {
+      vigente = false
+    }
+  }, [id, hayContextoLocal, queryClient])
+
+  const ejercicioContext = contextoLocal ?? contextoServidor ?? null
 
   async function handleExit() {
     // HU-040: toda salida reemplaza (no apila) la entrada
     // del episodio en el historial: "atras" ya no reabre el episodio pausado.
     if (ejercicioContext) {
       window.sessionStorage.removeItem(ACTIVE_EXERCISE_CONTEXT_KEY)
-      const destino = destinoSalidaEjercicio(ejercicioContext, null, [])
+      const { materiaId, tareaId } = ejercicioContext
+      const destino = materiaId ? destinoSalidaEjercicio({ materiaId, tareaId }, null, []) : null
       if (destino) {
         navigate({ ...destino, replace: true })
         return
@@ -97,6 +131,14 @@ function EpisodioPage() {
       // Best-effort: sin datos se sigue el camino de siempre.
       return null
     }
+  }
+
+  if (contextoServidor === undefined) {
+    return (
+      <div className="flex-1 p-6" aria-busy="true">
+        <span className="sr-only">Cargando el episodio…</span>
+      </div>
+    )
   }
 
   return (

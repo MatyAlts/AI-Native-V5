@@ -981,7 +981,13 @@ export function EpisodeView({ episodeId, onExit, ejercicioContext, getToken }: E
   // un panel explícito que dejar al alumno en limbo viendo la UI del
   // episodio activo (con `closed=true` pero sin feedback ni CTA claro).
   if (classificationFailed && reflectionTargetId === null) {
-    return <ClassificationFallbackPanel onReset={salir} />
+    return (
+      <ClassificationFallbackPanel
+        onReset={salir}
+        isMultiExercise={ejercicioContext != null}
+        esUltimoEjercicio={esUltimoEjercicio}
+      />
+    )
   }
 
   // HU-009 C05: el alumno cerró el modal de reflexión antes de que llegara la
@@ -2400,10 +2406,20 @@ function ClosingWaitPanel() {
   )
 }
 
-function ClassificationFallbackPanel({ onReset }: { onReset: () => void }) {
+function ClassificationFallbackPanel({
+  onReset,
+  isMultiExercise,
+  esUltimoEjercicio,
+}: {
+  onReset: () => void
+  isMultiExercise: boolean
+  esUltimoEjercicio: boolean
+}) {
   // Panel mínimo cuando el cierre fue OK pero `classifyEpisode` falló.
   // Antes de este componente, el alumno quedaba en limbo: `closed=true`
   // pero sin classification, la UI seguía mostrando el episodio activo.
+  // HU-042: el botón dice lo mismo que la pantalla de cierre normal; en un
+  // ejercicio vuelve al TP, no a "mis materias".
   return (
     <div className="flex-1 p-6 overflow-y-auto max-w-2xl mx-auto w-full">
       <div className="rounded-2xl border border-border-soft bg-surface p-7 mb-6">
@@ -2425,7 +2441,11 @@ function ClassificationFallbackPanel({ onReset }: { onReset: () => void }) {
           onClick={onReset}
           className="press-shrink px-5 py-2.5 bg-accent-brand hover:bg-accent-brand-deep text-white rounded-lg text-sm font-medium transition-colors"
         >
-          Volver a mis materias
+          {!isMultiExercise
+            ? "Volver a mis materias"
+            : esUltimoEjercicio
+              ? "Volver al TP"
+              : "Siguiente ejercicio →"}
         </button>
       </div>
     </div>

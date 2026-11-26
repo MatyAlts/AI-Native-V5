@@ -1054,8 +1054,9 @@ async def test_interact_inyecta_current_code_con_numeros_de_linea(
     tutor: TutorCore, fake_ai: FakeAIGatewayClient
 ) -> None:
     """2026-05-21: si la sesión tiene current_code, el tutor recibe el código
-    con números de línea como mensaje `system` antes del prompt del alumno.
-    Esto permite que el tutor responda 'en la línea 7 tenés X'."""
+    con números de línea. Esto permite que el tutor responda 'en la línea 7
+    tenés X'. Desde HU-042 va dentro del último mensaje `user` (como `system`
+    el modelo lo ignoraba), no como un mensaje `system` aparte."""
     tenant_id = uuid4()
     student_id = uuid4()
     episode_id = await tutor.open_episode(
@@ -1078,13 +1079,12 @@ async def test_interact_inyecta_current_code_con_numeros_de_linea(
     async for _ in tutor.interact(episode_id, "¿qué pasa si edad es 18?"):
         pass
 
-    # Verificar que el código del editor llegó al LLM como system message
-    sys_msgs = [m for m in fake_ai.last_messages if m["role"] == "system"]
-    code_msg = next(
-        (m for m in sys_msgs if "Código que el alumno tiene actualmente" in m["content"]),
-        None,
-    )
-    assert code_msg is not None, "current_code no se inyectó como system message"
+    # HU-042: el código del editor llega dentro del último mensaje user.
+    code_msg = [m for m in fake_ai.last_messages if m["role"] == "user"][-1]
+    assert "¿qué pasa si edad es 18?" in code_msg["content"]
+    assert not any(
+        m["role"] == "system" and "edad = 25" in m["content"] for m in fake_ai.last_messages
+    ), "el código ya no va como system message"
     # Verificar numerado de líneas
     assert "  1  edad = 25" in code_msg["content"]
     assert "  2  if edad < 18:" in code_msg["content"]
@@ -1110,12 +1110,10 @@ async def test_interact_sin_current_code_no_inyecta_mensaje(
     async for _ in tutor.interact(episode_id, "no entiendo el enunciado"):
         pass
 
-    code_msgs = [
-        m
-        for m in fake_ai.last_messages
-        if m["role"] == "system" and "Código que el alumno tiene actualmente" in m["content"]
-    ]
-    assert code_msgs == [], "no debería inyectar system de código cuando current_code=None"
+    code_msgs = [m for m in fake_ai.last_messages if "Código que el alumno tiene" in m["content"]]
+    assert code_msgs == [], "no debería inyectar el código cuando current_code=None"
+    # Sin código, el último user es el texto del alumno tal cual (HU-042).
+    assert fake_ai.last_messages[-1] == {"role": "user", "content": "no entiendo el enunciado"}
 
 
 # ── tutor-ve-salida-de-ejecucion ────────────────────────────────────
@@ -1234,10 +1232,13 @@ async def test_interact_inyecta_la_salida_entre_el_codigo_y_el_mensaje(
         pass
 
     msgs = fake_ai.last_messages
-    idx_code = next(i for i, m in enumerate(msgs) if "Código que el alumno tiene" in m["content"])
     idx_out = next(i for i, m in enumerate(msgs) if "Salida de la ultima ejecucion" in m["content"])
-    assert msgs[-1] == {"role": "user", "content": "me tira error"}
-    assert idx_code < idx_out < len(msgs) - 1
+    # HU-042: el código viaja dentro del último mensaje user, junto al texto
+    # del alumno; la salida sigue como system justo antes.
+    assert msgs[-1]["role"] == "user"
+    assert "Código que el alumno tiene" in msgs[-1]["content"]
+    assert msgs[-1]["content"].endswith("me tira error")
+    assert idx_out < len(msgs) - 1
     assert "NameError: name 'resultado' is not defined" in msgs[idx_out]["content"]
 
 

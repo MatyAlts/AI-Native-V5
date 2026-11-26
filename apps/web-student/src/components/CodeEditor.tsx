@@ -15,8 +15,10 @@ import { DiagramaFlujo, Modal } from "@platform/ui"
  * Editor de código con Monaco + ejecución Python en Pyodide.
  *
  * PSeInt (HU-030) también corre en el navegador, con el intérprete propio de
- * `@platform/pseint` (no carga Pyodide). Su `Leer` pide el dato con el mismo
- * diálogo que el `input()` de Python.
+ * `@platform/pseint` (no carga Pyodide). Su `Leer` pide el dato en un campo
+ * de la consola ("Dato para Leer", HU-042), sin `window.prompt`: el intérprete
+ * es asíncrono y puede esperar sin congelar la página. Python sigue con
+ * `window.prompt` porque Pyodide corre `input()` de forma síncrona.
  *
  * Pyodide corre Python completo en el navegador vía WebAssembly. Se
  * carga desde CDN la primera vez (~6 MB) y queda cacheado.
@@ -434,6 +436,26 @@ export function CodeEditor({
   const [pasoOcupado, setPasoOcupado] = useState(false)
   const pasoOcupadoRef = useRef(false)
   const contadorSesionesRef = useRef(0)
+  // HU-042: `Leer` de PSeInt pendiente. El ref guarda con qué responderle al
+  // interprete (null = se cancelo); el state solo muestra el campo.
+  const leerPendienteRef = useRef<((valor: string | null) => void) | null>(null)
+  const [pidiendoDato, setPidiendoDato] = useState(false)
+  const [datoLeer, setDatoLeer] = useState("")
+  const campoLeerRef = useRef<HTMLInputElement | null>(null)
+  const responderLeer = (valor: string | null) => {
+    const responder = leerPendienteRef.current
+    leerPendienteRef.current = null
+    setPidiendoDato(false)
+    setDatoLeer("")
+    responder?.(valor)
+  }
+  // El foco va al campo apenas aparece, para que el alumno escriba directo.
+  useEffect(() => {
+    if (pidiendoDato) campoLeerRef.current?.focus()
+  }, [pidiendoDato])
+  // Al desmontar, un `Leer` en espera se cancela para que el interprete no
+  // quede colgado.
+  useEffect(() => () => leerPendienteRef.current?.(null), [])
   const decoracionesPasoRef = useRef<MonacoEditor.IEditorDecorationsCollection | null>(null)
   useEffect(() => {
     if (!esPseint) return
@@ -946,6 +968,7 @@ export function CodeEditor({
         if (sesionPasoRef.current) {
           sesionPasoRef.current = null
           setSesionPaso(null)
+          responderLeer(null)
         }
         // Espejo en el caller para que un re-montaje re-siembre con ESTE buffer
         // y no con el de hace media hora. Se dispara SOLO desde un cambio real
@@ -1784,13 +1807,13 @@ def __tutor_run_tests(student_code, cases_json):
   /**
    * "Ejecutar" de PSeInt (HU-030, C03): corre en el navegador con el
    * interprete de `@platform/pseint`. Cada `Leer` pide el dato en el momento
-   * con el MISMO dialogo que el `input()` de Python (`window.prompt` con lo que
-   * el programa escribio desde el ultimo dato), y la salida llega a la consola
+   * en el campo "Dato para Leer" de la consola (HU-042; antes era
+   * `window.prompt`, que congelaba la pagina), y la salida llega a la consola
    * a medida que se escribe. No llama al servidor.
    */
   /**
    * Consola y `Leer` de PSeInt: los comparten Ejecutar y el paso a paso
-   * (HU-032, C09: el mismo dialogo). `vigente` corta la salida de una sesion
+   * (HU-032, C09: el mismo campo). `vigente` corta la salida de una sesion
    * de paso a paso que ya se detuvo.
    */
   const reiniciarConsolaPseint = () => {
@@ -1809,13 +1832,19 @@ def __tutor_run_tests(student_code, cases_json):
       setOutput((prev) => `${prev}${texto}`)
     }
     const leer = async (): Promise<string> => {
-      // Un turno del event loop antes del dialogo: `window.prompt` congela la
-      // pagina, y sin esto React no alcanza a pintar lo que el algoritmo
-      // escribio antes del `Leer`.
-      await new Promise((resolve) => window.setTimeout(resolve, 0))
       if (!vigente()) throw new Error("detenido")
-      const pendiente = outputBufferRef.current.slice(outputMostradoRef.current).trim()
-      const valor = window.prompt(armarMensajeDeInput(pendiente, ""))
+      // HU-042: el dato se pide en la consola, debajo de lo que el programa
+      // ya escribio. Enter lo confirma; Escape (o detener el paso a paso)
+      // lo cancela.
+      setViewingRunId(null)
+      setOutputTab("consola")
+      const valor = await new Promise<string | null>((resolve) => {
+        leerPendienteRef.current?.(null)
+        leerPendienteRef.current = resolve
+        setDatoLeer("")
+        setPidiendoDato(true)
+      })
+      if (!vigente()) throw new Error("detenido")
       if (valor === null) {
         // Cancelar corta la ejecucion (como en Python): el interprete lo
         // convierte en un error de ejecucion en la linea del `Leer`.
@@ -1872,6 +1901,7 @@ def __tutor_run_tests(student_code, cases_json):
   const cerrarPasoAPaso = () => {
     sesionPasoRef.current = null
     setSesionPaso(null)
+    responderLeer(null)
   }
 
   const mostrarFinPasoAPaso = (estado: EstadoDepuracion) => {
@@ -2614,6 +2644,26 @@ def __tutor_run_tests(student_code, cases_json):
                 )}
                 {sesionPaso && !viewingRun && <PruebaDeEscritorio filas={sesionPaso.filas} />}
                 {consoleOutput && <pre className="whitespace-pre-wrap">{consoleOutput}</pre>}
+                {pidiendoDato && (
+                  <input
+                    ref={campoLeerRef}
+                    type="text"
+                    aria-label="Dato para Leer"
+                    placeholder="Escribí el dato y apretá Enter"
+                    value={datoLeer}
+                    onChange={(e) => setDatoLeer(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter") {
+                        e.preventDefault()
+                        responderLeer(datoLeer)
+                      } else if (e.key === "Escape") {
+                        e.preventDefault()
+                        responderLeer(null)
+                      }
+                    }}
+                    className="mt-1 w-full max-w-md rounded border border-white/20 bg-white/5 px-2 py-1 font-mono text-sm text-surface placeholder:text-muted focus:outline-none focus-visible:ring-2 focus-visible:ring-accent-brand/40"
+                  />
+                )}
                 {consoleError && (
                   <pre className="whitespace-pre-wrap text-danger">{consoleError}</pre>
                 )}
